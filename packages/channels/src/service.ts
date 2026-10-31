@@ -12,6 +12,7 @@ import {
 } from "@orc/core/channels";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
+import { createLogger } from "@orc/core/logger";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "@orc/core/secrets";
 import { ChannelStore } from "@orc/db/channels";
 import { getSqlite } from "@orc/db/client";
@@ -21,10 +22,13 @@ import {
   createChannelTransport,
   ProviderFailure,
   type ProviderIdentity,
+  safeProviderCode,
   type TransportFactory,
 } from "./providers.js";
 import { renderMessage } from "./render.js";
 import { routeMessage } from "./routing.js";
+
+const logger = createLogger("channels");
 
 export type ChannelHandler = (
   route: ChannelRoute,
@@ -54,6 +58,11 @@ export class ChannelService {
   private readonly live = new Map<string, Live>();
   private readonly errors = new Map<string, string>();
   private readonly conflicts = new Set<string>();
+  private readonly transportFailures = new Map<
+    string,
+    { code: string; since: number; count: number }
+  >();
+  private readonly connectionFailures = new Map<string, string>();
   private readonly turns = new Map<string, Promise<void>>();
   private readonly turnEpoch = new Map<string, number>();
   private readonly pending = new Map<string, number>();
@@ -354,15 +363,46 @@ export class ChannelService {
           });
           await transport.start(
             (message) => {
-              void this.receive(message).catch(() =>
+              void this.receive(message).catch(() => {
+                logger.error("Channel inbound processing failed", {
+                  connection: c.id,
+                  provider: c.provider,
+                  operation: "receive",
+                  code: "inbound_processing_failed",
+                  event: fingerprint(message.message_id).slice(0, 16),
+                });
                 this.errors.set(
                   c.id,
                   "Inbound processing failed; inspect the originating session.",
-                ),
-              );
+                );
+              });
             },
             (code) => {
               const live = this.live.get(c.id);
+              const previous = this.transportFailures.get(c.id);
+              if (code) {
+                const safe = safeProviderCode(code);
+                if (previous?.code === safe) previous.count++;
+                else {
+                  this.transportFailures.set(c.id, { code: safe, since: Date.now(), count: 1 });
+                  logger.warn("Channel transport failed", {
+                    connection: c.id,
+                    provider: c.provider,
+                    operation: "listen",
+                    code: safe,
+                  });
+                }
+              } else if (previous) {
+                logger.info("Channel transport recovered", {
+                  connection: c.id,
+                  provider: c.provider,
+                  operation: "listen",
+                  code: previous.code,
+                  failures: previous.count,
+                  duration_ms: Date.now() - previous.since,
+                });
+                this.transportFailures.delete(c.id);
+              }
               if (live) live.error = code || null;
               if (code.includes("409")) {
                 this.conflicts.add(c.id);
@@ -373,6 +413,16 @@ export class ChannelService {
               }
             },
           );
+          const previousFailure = this.connectionFailures.get(c.id);
+          if (previousFailure) {
+            logger.info("Channel connection recovered", {
+              connection: c.id,
+              provider: c.provider,
+              operation: "connect",
+              code: previousFailure,
+            });
+            this.connectionFailures.delete(c.id);
+          }
           if (!this.conflicts.has(c.id)) this.errors.delete(c.id);
         } catch (error) {
           await this.stopConnection(c.id);
@@ -380,6 +430,22 @@ export class ChannelService {
           throw error;
         }
       } catch (error) {
+        const code =
+          error instanceof ProviderFailure
+            ? safeProviderCode(error.message)
+            : error instanceof ConflictError
+              ? "connection_conflict"
+              : error instanceof ValidationError
+                ? "configuration_invalid"
+                : "connection_failed";
+        if (this.connectionFailures.get(c.id) !== code)
+          logger.warn("Channel connection failed", {
+            connection: c.id,
+            provider: c.provider,
+            operation: "connect",
+            code,
+          });
+        this.connectionFailures.set(c.id, code);
         this.errors.set(
           c.id,
           error instanceof ProviderFailure ||

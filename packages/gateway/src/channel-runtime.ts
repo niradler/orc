@@ -1,14 +1,18 @@
+import { createHash } from "node:crypto";
 import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
 import { type ChannelService, getChannelService } from "@orc/channels";
+import { ProviderFailure, safeProviderCode } from "@orc/channels/providers";
 import { renderMessage } from "@orc/channels/render";
 import { type ChannelInbound, type ChannelTarget, channelCommand } from "@orc/core/channels";
 import { ChatSettingsSchema, chatSystemPrompt } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { createLogger } from "@orc/core/logger";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import {
+  channelControls,
   channelDirectCommand,
   channelHelp,
   channelPrompt,
@@ -18,6 +22,22 @@ import { HumanRequestChannels } from "./human-requests.js";
 import { getGatewayManager } from "./manager.js";
 import { appendMessage, getOrCreateChat, updateGatewaySession } from "./store.js";
 import type { GatewayAdapter, IncomingMessage, SendOpts, SupportsInlineButtons } from "./types.js";
+
+const logger = createLogger("gateway:channel-runtime");
+
+function telegramPreview(text: string): string {
+  const chars = Array.from(text).slice(-2800);
+  let start = chars.length;
+  let length = 0;
+  while (start > 0) {
+    const char = chars[start - 1] ?? "";
+    const size = char === "&" ? 5 : char === "<" || char === ">" ? 4 : char.length;
+    if (length + size > 2800) break;
+    length += size;
+    start--;
+  }
+  return chars.slice(start).join("");
+}
 
 function incoming(service: ChannelService, message: ChannelInbound): IncomingMessage {
   return {
@@ -34,6 +54,7 @@ function channelAdapter(
   service: ChannelService,
   connection: string,
   target: ChannelTarget,
+  stopForRequest?: (requestId: string) => string | undefined,
 ): GatewayAdapter & SupportsInlineButtons {
   const bindDestination = (chatId: string) => {
     const current = service.connection(connection).targets.find((t) => t.id === target.id);
@@ -67,9 +88,16 @@ function channelAdapter(
     async sendWithButtons(chatId, text, buttons, opts) {
       bindDestination(chatId);
       const provider = service.connection(connection).provider;
-      const mapped = buttons.map((row) =>
+      const attentionId = buttons
+        .flat()
+        .map((button) => button.value.match(/^\/attention (\S+)/)?.[1])
+        .find(Boolean);
+      const stop =
+        provider === "telegram" && attentionId ? stopForRequest?.(attentionId) : undefined;
+      const controls = stop ? [...buttons, [{ label: "Stop this turn", value: stop }]] : buttons;
+      const mapped = controls.map((row) =>
         row.map((button) => {
-          const requestId = button.value.match(/^\/attention (\S+)/)?.[1];
+          const requestId = button.value.match(/^\/attention (\S+)/)?.[1] ?? attentionId;
           const request = requestId ? new HumanRequestStore(getSqlite()).get(requestId) : null;
           const users = request?.input.origin.channel
             ? [request.input.origin.channel.sender_id]
@@ -145,7 +173,7 @@ export async function startChannelRuntime(
   const sessions = new Set<AgentSession>();
   const activeTurns = new Map<
     string,
-    { session: AgentSession; recordId: string; cancelled: boolean }
+    { session: AgentSession; recordId: string; messageId: string; cancelled: boolean }
   >();
   const conversationKey = (message: ChannelInbound) =>
     JSON.stringify([message.connection, message.chat, message.thread ?? null, message.sender]);
@@ -157,6 +185,7 @@ export async function startChannelRuntime(
     text: string,
     format = "markdown",
     projectId?: string,
+    buttons?: NonNullable<SendOpts["buttons"]>,
   ) => {
     if (stopping) return;
     const current = service.connection(message.connection);
@@ -173,6 +202,15 @@ export async function startChannelRuntime(
       (projectId && recipient.project_ids.length && !recipient.project_ids.includes(projectId))
     )
       return;
+    if (buttons?.length)
+      return channelAdapter(service, message.connection, {
+        ...recipient,
+        user_ids: [message.sender],
+      }).sendWithButtons(message.chat, text, buttons, {
+        parseMode: format === "markdown" ? "markdown" : undefined,
+        projectId,
+        threadId: message.thread,
+      });
     const result = await service.send({
       connection: message.connection,
       target: target.id,
@@ -280,6 +318,42 @@ export async function startChannelRuntime(
     });
     let session: AgentSession | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let progressId: string | undefined;
+    let progressMarkup: Record<string, unknown> | undefined;
+    let phase = "start";
+    let failureCode = "agent_turn_failed";
+    const updateProgress = async (text: string, running = false) => {
+      if (!progressId) return;
+      try {
+        const current = service.connection(message.connection);
+        if (
+          !current.enabled ||
+          !current.targets.some(
+            (recipient) =>
+              recipient.id === target.id &&
+              recipient.inbound &&
+              recipient.outbound &&
+              recipient.chat_id === message.chat &&
+              (!recipient.thread_id || recipient.thread_id === message.thread) &&
+              recipient.user_ids.includes(message.sender),
+          )
+        ) {
+          progressId = undefined;
+          return;
+        }
+        await service.edit(progressId, {
+          project_id: projectId,
+          message: { text, format: "plain", links: [] },
+          ...(running ? { overrides: { reply_markup: progressMarkup } } : {}),
+        });
+      } catch {
+        logger.warn("Channel preview update failed", {
+          connection: message.connection,
+          session: record.id,
+        });
+        progressId = undefined;
+      }
+    };
     try {
       await updateGatewaySession(record.id, { status: "running", last_activity_at: new Date() });
       session = await openAgentSession(
@@ -315,7 +389,12 @@ export async function startChannelRuntime(
         record.runtime_session_id ?? undefined,
       );
       sessions.add(session);
-      const turn = { session, recordId: record.id, cancelled: false };
+      const turn = {
+        session,
+        recordId: record.id,
+        messageId: message.message_id,
+        cancelled: false,
+      };
       activeTurns.set(conversationKey(message), turn);
       const active = session;
       timer = setTimeout(
@@ -325,8 +404,36 @@ export async function startChannelRuntime(
         60 * 60 * 1000,
       );
       timer.unref();
+      if (provider === "telegram") {
+        const stopAction = service.store.action(
+          message.connection,
+          target.id,
+          message.chat,
+          message.thread,
+          [message.sender],
+          `/stop ${message.message_id}`,
+        );
+        progressMarkup = { inline_keyboard: [[{ text: "Stop", callback_data: stopAction }]] };
+        const progress = await service.send({
+          connection: message.connection,
+          target: target.id,
+          project_id: projectId,
+          message: { text: "Working…", format: "plain" },
+          overrides: { reply_markup: progressMarkup },
+          ...(message.thread ? { thread_id: message.thread } : {}),
+        });
+        if (progress.status !== "accepted")
+          throw new ConflictError("Progress delivery not confirmed");
+        progressId = progress.id;
+      }
+      if (turn.cancelled) {
+        await updateProgress("Stopped.");
+        return;
+      }
       await session.send(channelPrompt(service.connection(message.connection), message.text));
+      phase = "generate";
       let output = "";
+      let previewAt = 0;
       let runtimeId: string | undefined;
       for await (const event of session.events()) {
         if (turn.cancelled) break;
@@ -335,8 +442,14 @@ export async function startChannelRuntime(
           throw new ValidationError(
             "Agent output exceeds the channel message limit; inspect the session in ORC",
           );
-        if (event.type === "error")
+        if (event.type === "text" && progressId && Date.now() - previewAt >= 1500) {
+          await updateProgress(telegramPreview(output) || "Working…", true);
+          previewAt = Date.now();
+        }
+        if (event.type === "error") {
+          failureCode = "agent_reported_error";
           throw new Error("Agent turn failed; inspect the originating session in ORC");
+        }
         if (event.type === "question_request" && event.data.questions.some((q) => q.isSecret))
           throw new Error("Secret input must be supplied through the originating agent interface");
         if (event.type === "result") {
@@ -344,10 +457,31 @@ export async function startChannelRuntime(
           break;
         }
       }
-      if (turn.cancelled) return;
+      if (turn.cancelled) {
+        await updateProgress("Stopped.");
+        return;
+      }
       runtimeId ??= session.getRuntimeSessionId?.();
+      phase = "deliver";
       if (output) {
-        await reply(message, target, output, "markdown", projectId);
+        const telegram = provider === "telegram";
+        const chunked =
+          telegram &&
+          renderMessage("telegram", {
+            text: output,
+            format: "markdown",
+            links: [],
+          }).payloads.length > 1;
+        await reply(
+          message,
+          target,
+          output,
+          "markdown",
+          projectId,
+          telegram && !chunked ? channelControls() : undefined,
+        );
+        if (chunked)
+          await reply(message, target, "Chat controls", "plain", projectId, channelControls());
         await appendMessage({
           chatKey: chat.id,
           direction: "out",
@@ -357,17 +491,38 @@ export async function startChannelRuntime(
           gatewaySessionId: record.id,
         });
       }
+      await updateProgress(
+        output ? "Completed. Reply below." : "Turn completed without a text reply.",
+      );
       await updateGatewaySession(record.id, {
         status: "idle",
         runtime_session_id: runtimeId,
         last_activity_at: new Date(),
         last_error: null,
       });
-    } catch {
-      if (activeTurns.get(conversationKey(message))?.cancelled) return;
+    } catch (error) {
+      if (activeTurns.get(conversationKey(message))?.cancelled) {
+        await updateProgress("Stopped.");
+        return;
+      }
+      const code =
+        error instanceof ProviderFailure
+          ? safeProviderCode(error.message)
+          : error instanceof ValidationError
+            ? "validation_failed"
+            : failureCode;
+      logger.error("Channel agent turn failed", {
+        connection: message.connection,
+        provider,
+        session: record.id,
+        operation: phase,
+        code,
+        event: createHash("sha256").update(message.message_id).digest("hex").slice(0, 16),
+      });
+      await updateProgress("This turn failed. Check the session in ORC.");
       await updateGatewaySession(record.id, {
         status: "error",
-        last_error: "Channel agent turn failed; inspect this session",
+        last_error: `Channel agent turn failed (${phase}/${code}); inspect this session`,
         last_activity_at: new Date(),
       });
       await reply(
@@ -423,7 +578,24 @@ export async function startChannelRuntime(
           (t) => t.attention && t.inbound && t.outbound && t.user_ids.length,
         )) {
           const destination = `${c.id}:${t.id}`;
-          adapters.set(destination, channelAdapter(service, c.id, t));
+          adapters.set(
+            destination,
+            channelAdapter(service, c.id, t, (requestId) => {
+              const request = requests.find((r) => r.id === requestId);
+              const source = request?.input.origin.channel;
+              if (!source) return;
+              const turn = activeTurns.get(
+                JSON.stringify([
+                  source.connection,
+                  source.chat_id,
+                  source.thread_id ?? null,
+                  source.sender_id,
+                ]),
+              );
+              if (turn && request?.input.origin.session_id === turn.session.id)
+                return `/stop ${turn.messageId}`;
+            }),
+          );
           for (const project of projects)
             if (!t.project_ids.length || (project && t.project_ids.includes(project)))
               targets.push({
@@ -476,7 +648,7 @@ export async function startChannelRuntime(
         await reply(
           message,
           target,
-          "This button expired or was already used. Open Attention needed in ORC.",
+          "This button expired or was already used. Use /status for fresh chat controls, or open Attention needed in ORC for approvals.",
           "plain",
         );
         return true;
@@ -485,7 +657,14 @@ export async function startChannelRuntime(
     }
     const command = channelCommand(text);
     if (command?.name === "help" || command?.name === "start") {
-      await reply(message, target, channelHelp(service.connection(message.connection)), "markdown");
+      await reply(
+        message,
+        target,
+        channelHelp(service.connection(message.connection)),
+        "markdown",
+        undefined,
+        channelControls(),
+      );
       return true;
     }
     if (
@@ -494,8 +673,19 @@ export async function startChannelRuntime(
         command.args === "stop" &&
         activeTurns.has(conversationKey(message)))
     ) {
-      service.cancelPending(message);
       const turn = activeTurns.get(conversationKey(message));
+      if (command.name === "stop" && command.args && command.args !== turn?.messageId) {
+        await reply(
+          message,
+          target,
+          "This turn is no longer running.",
+          "plain",
+          undefined,
+          channelControls(),
+        );
+        return true;
+      }
+      service.cancelPending(message);
       if (turn) {
         turn.cancelled = true;
         await updateGatewaySession(turn.recordId, { status: "stopped" });
@@ -505,9 +695,11 @@ export async function startChannelRuntime(
         message,
         target,
         turn
-          ? "Stopped the current turn and cleared queued messages. Use /session new for a new conversation."
-          : "No agent turn is running. Use /session new for a new conversation.",
+          ? "Stopped the current turn and cleared queued messages. Tap New session for a new conversation."
+          : "No agent turn is running. Tap New session for a new conversation.",
         "plain",
+        undefined,
+        channelControls(),
       );
       return true;
     }

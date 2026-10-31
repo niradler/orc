@@ -8,6 +8,8 @@ export const ChannelBuiltinCommands = [
   { command: "agent", description: "Select an agent or restore the default" },
   { command: "model", description: "Select a model or restore the default" },
   { command: "session", description: "New, list, switch or stop a conversation" },
+  { command: "session_new", description: "Start a new conversation" },
+  { command: "session_list", description: "Choose a conversation" },
   { command: "stop", description: "Stop the current turn and queued messages" },
 ] as const;
 export const ChannelCommandsSchema = z
@@ -45,7 +47,11 @@ export function channelCommand(text: string): { name: string; args: string } | n
   if (slack) source = `/${(slack[1]?.trim() || "help").replace(/^\//, "")}`;
   const match = source.match(/^\/([a-z][a-z0-9_]*)(?:@\w+)?(?:\s+([\s\S]*))?$/i);
   if (!match || match[1]?.toLowerCase() === "orc") return null;
-  return { name: (match[1] ?? "").toLowerCase(), args: match[2]?.trim() ?? "" };
+  const name = (match[1] ?? "").toLowerCase();
+  const args = match[2]?.trim() ?? "";
+  if (!args && (name === "session_new" || name === "session_list"))
+    return { name: "session", args: name === "session_new" ? "new" : "list" };
+  return { name, args };
 }
 export type ChannelProviderInfo = {
   id: "telegram" | "slack";

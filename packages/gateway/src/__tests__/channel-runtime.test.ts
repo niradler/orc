@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,6 +11,7 @@ import {
 import { ChannelService } from "@orc/channels";
 import type { ChannelTransport } from "@orc/channels/providers";
 import { resetConfig } from "@orc/core/config";
+import { getLogDir } from "@orc/core/logger";
 import { ChannelStore } from "@orc/db/channels";
 import { createTestDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
@@ -26,9 +27,12 @@ let service: ChannelService;
 let stop: () => Promise<void>;
 const calls: Array<{ resume: boolean; opts: SessionOpts; prompt: string }> = [];
 const sent: Record<string, unknown>[] = [];
+const edited: Array<{ id: string; body: Record<string, unknown> }> = [];
 let requirePermission = false;
 let approved = false;
 let requireQuestion = false;
+let fixtureOutput = "**Reply received**";
+let fixtureError = false;
 let questionAnswer: Record<string, string[]> | undefined;
 function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let start: () => void = () => {};
@@ -42,6 +46,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let alive = true;
   const ask = requirePermission;
   const question = requireQuestion;
+  const fail = fixtureError;
   return {
     id: `fixture-${calls.length}`,
     alive: () => alive,
@@ -59,6 +64,10 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
     },
     async *events(): AsyncIterable<AgentEvent> {
       await started;
+      if (fail) {
+        yield { type: "error", data: "PRIVATE_PROVIDER_ERROR https://private.example/token" };
+        return;
+      }
       if (ask) {
         yield {
           type: "permission_request",
@@ -86,7 +95,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
         };
         await decision;
       }
-      yield { type: "text", data: "**Reply received**" };
+      yield { type: "text", data: fixtureOutput };
       yield { type: "result", data: { runtimeSessionId: "native-fixture" } };
     },
     close: async () => {
@@ -122,7 +131,9 @@ beforeAll(async () => {
       sent.push(body);
       return String(sent.length);
     },
-    edit: async () => {},
+    edit: async (id, body) => {
+      edited.push({ id, body });
+    },
     start: async () => {},
     stop: async () => {},
   };
@@ -203,13 +214,38 @@ test("native permission request uses durable Attention and a bound button respon
   let callback = "";
   const deadline = Date.now() + 7000;
   while (!callback && Date.now() < deadline) {
-    const native = sent.find((p) => p.reply_markup) as
+    const native = sent.find(
+      (p) =>
+        p.message_thread_id === 456 &&
+        String(p.text).includes("harmless fixture action") &&
+        p.reply_markup,
+    ) as
       | { reply_markup?: { inline_keyboard: Array<Array<{ callback_data: string }>> } }
       | undefined;
     callback = native?.reply_markup?.inline_keyboard[0]?.[0]?.callback_data ?? "";
     if (!callback) await Bun.sleep(50);
   }
   if (!callback) throw new Error("Attention notification was not sent");
+  const attention = sent.find(
+    (p) => p.message_thread_id === 456 && String(p.text).includes("harmless fixture action"),
+  );
+  const stopButton = (
+    attention?.reply_markup as
+      | { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }
+      | undefined
+  )?.inline_keyboard
+    .flat()
+    .find((button) => button.text === "Stop this turn");
+  expect(stopButton?.callback_data).toMatch(/^orc_action:/);
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    kind: "action",
+    text: stopButton?.callback_data ?? "",
+    message_id: "attention-stop-wrong-user",
+    thread: "456",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("expired");
   await service.receive({
     ...message,
     message_id: "action-wrong",
@@ -393,7 +429,7 @@ test("channel commands manage scoped sessions, custom shortcuts and native slash
     text: "/session mode bypass",
     thread: "commands",
   });
-  expect(String(sent.at(-1)?.text)).toContain("Use /session new");
+  expect(String(sent.at(-1)?.text)).toContain("Use /session_new");
   await stop();
   stop = await startChannelRuntime(service);
   await service.receive({
@@ -407,6 +443,7 @@ test("channel commands manage scoped sessions, custom shortcuts and native slash
 
 test("stop interrupts a pending agent turn and discards already queued messages", async () => {
   requirePermission = true;
+  const sentBefore = sent.length;
   const count = calls.length;
   const pending = service.receive({ ...message, message_id: "stop-running", thread: "stop" });
   const deadline = Date.now() + 3000;
@@ -418,7 +455,28 @@ test("stop interrupts a pending agent turn and discards already queued messages"
     thread: "stop",
     text: "must not execute",
   });
-  await service.receive({ ...message, message_id: "stop-control", thread: "stop", text: "/stop" });
+  let stopCallback = "";
+  const stopDeadline = Date.now() + 4000;
+  while (!stopCallback && Date.now() < stopDeadline) {
+    const notice = sent
+      .slice(sentBefore)
+      .findLast((p) => String(p.text).includes("harmless fixture action"));
+    const keyboard = notice?.reply_markup as
+      | { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }
+      | undefined;
+    stopCallback =
+      keyboard?.inline_keyboard.flat().find((button) => button.text === "Stop this turn")
+        ?.callback_data ?? "";
+    if (!stopCallback) await Bun.sleep(20);
+  }
+  if (!stopCallback) throw new Error("Pending approval did not retain its Stop control");
+  await service.receive({
+    ...message,
+    message_id: "stop-control",
+    thread: "stop",
+    kind: "action",
+    text: stopCallback,
+  });
   await Promise.all([pending, queued]);
   expect(calls.length).toBe(count + 1);
   expect(sent.some((p) => String(p.text).includes("Stopped the current turn"))).toBe(true);
@@ -516,6 +574,251 @@ test("project and model controls isolate sessions and spawn in the selected proj
   await send("model-default-run", "use default model");
   expect(calls.at(-1)?.opts.model).toBeUndefined();
   await service.save({ ...service.connection("test"), credentials: {}, targets: current.targets });
+});
+
+const originalMessage = message;
+test("native chat panel buttons create sessions, paginate allowed projects and reject another sender", async () => {
+  const message = { ...originalMessage, sender: "also-authorized" };
+  requirePermission = false;
+  const base = calls.length;
+  await service.receive({ ...message, text: "/start", message_id: "panel-start", thread: "panel" });
+  const keyboard = (body: Record<string, unknown>) =>
+    (
+      body.reply_markup as {
+        inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+      }
+    ).inline_keyboard.flat();
+  const find = (label: string) =>
+    keyboard(sent.at(-1) ?? {}).find((b) => b.text === label)?.callback_data ?? "";
+  const newSession = find("New session");
+  expect(newSession).toMatch(/^orc_action:/);
+  await service.receive({
+    ...message,
+    sender: "nir",
+    text: newSession,
+    kind: "action",
+    message_id: "panel-wrong-user",
+    thread: "panel",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("expired");
+  await service.receive({
+    ...message,
+    text: newSession,
+    kind: "action",
+    message_id: "panel-new",
+    thread: "panel",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("Created and activated");
+  const current = service.connection("test");
+  const ids = Array.from({ length: 19 }, (_, i) => `picker-${i}`);
+  for (const [i, id] of ids.entries())
+    getSqlite()
+      .query("INSERT INTO projects (id,name,scope) VALUES (?,?,?)")
+      .run(id, `Picker ${String(i).padStart(2, "0")}`, home);
+  await service.save({
+    ...current,
+    credentials: {},
+    targets: current.targets.map((t) => ({ ...t, project_ids: ["p1", ...ids] })),
+  });
+  await service.receive({
+    ...message,
+    text: "/project",
+    message_id: "panel-project",
+    thread: "panel",
+  });
+  const first = keyboard(sent.at(-1) ?? {}).map((b) => b.text);
+  expect(first).not.toContain("channel-second");
+  expect(first).toContain("Next ›");
+  const next = find("Next ›");
+  await service.receive({
+    ...message,
+    text: next,
+    kind: "action",
+    message_id: "panel-next",
+    thread: "panel",
+  });
+  expect(keyboard(sent.at(-1) ?? {}).map((b) => b.text)).toContain("Picker 08");
+  expect(find("‹ Previous")).toMatch(/^orc_action:/);
+  const select = find("Picker 08");
+  await service.receive({
+    ...message,
+    text: select,
+    kind: "action",
+    message_id: "panel-select",
+    thread: "panel",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("Project: Picker 08");
+  expect(calls.length).toBe(base);
+  await service.save({
+    ...current,
+    revision: service.connection("test").revision,
+    credentials: {},
+  });
+});
+
+test("native turn preview updates, clears Stop and cannot stop a later turn", async () => {
+  const message = { ...originalMessage, sender: "also-authorized" };
+  requirePermission = false;
+  const offset = sent.length;
+  await service.receive({ ...message, message_id: "preview-first", thread: "preview" });
+  const progress = sent.slice(offset).find((p) => p.text === "Working…");
+  expect(progress).toBeDefined();
+  if (!progress) throw new Error("Working preview missing");
+  const callback =
+    (progress.reply_markup as { inline_keyboard: Array<Array<{ callback_data: string }>> })
+      .inline_keyboard[0]?.[0]?.callback_data ?? "";
+  expect(edited.some((p) => String(p.body.text).includes("Reply received"))).toBe(true);
+  expect(edited.some((p) => p.body.text === "Completed. Reply below.")).toBe(true);
+  requirePermission = true;
+  const count = calls.length;
+  const pending = service.receive({ ...message, message_id: "preview-second", thread: "preview" });
+  const deadline = Date.now() + 3000;
+  while (calls.length === count && Date.now() < deadline) await Bun.sleep(10);
+  await service.receive({
+    ...message,
+    text: callback,
+    kind: "action",
+    message_id: "preview-stale-stop",
+    thread: "preview",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("no longer running");
+  const activeProgress = sent.findLast((p) => p.text === "Working…");
+  if (!activeProgress) throw new Error("Active preview missing");
+  const stopCallback =
+    (activeProgress.reply_markup as { inline_keyboard: Array<Array<{ callback_data: string }>> })
+      .inline_keyboard[0]?.[0]?.callback_data ?? "";
+  await service.receive({
+    ...message,
+    text: stopCallback,
+    kind: "action",
+    message_id: "preview-stop",
+    thread: "preview",
+  });
+  await pending;
+  expect(edited.some((p) => p.body.text === "Stopped.")).toBe(true);
+  requirePermission = false;
+});
+
+test("long Telegram replies have one final control panel and Slack keeps its existing message rendering", async () => {
+  requirePermission = false;
+  const output = "Long answer ".repeat(500);
+  fixtureOutput = output;
+  try {
+    const offset = sent.length;
+    await service.receive({
+      ...message,
+      sender: "also-authorized",
+      message_id: "long-answer",
+      thread: "long",
+    });
+    const replies = sent.slice(offset).filter((p) => p.text !== "Working…");
+    expect(replies.filter((p) => p.reply_markup)).toHaveLength(1);
+    expect(replies.at(-1)?.text).toBe("Chat controls");
+    expect(
+      replies
+        .slice(0, -1)
+        .map((p) => p.text)
+        .join(""),
+    ).toBe(output);
+    const current = service.connection("test");
+    await service.save({
+      ...current,
+      id: "slack-long",
+      name: "Slack long reply",
+      revision: 0,
+      provider: "slack",
+      credentials: { bot_token: "fixture", app_token: "fixture" },
+    });
+    const slackOffset = sent.length;
+    await service.receive({
+      ...message,
+      connection: "slack-long",
+      message_id: "slack-answer",
+      thread: "slack",
+    });
+    const slackReply = sent.slice(slackOffset);
+    expect(slackReply).toHaveLength(1);
+    expect(slackReply[0]?.text).toBe(output.trim());
+    expect(slackReply[0]?.blocks).toBeUndefined();
+  } finally {
+    fixtureOutput = "**Reply received**";
+  }
+});
+
+test("agent failures retain safe phase/session diagnostics and the conversation can recover", async () => {
+  requirePermission = false;
+  fixtureError = true;
+  const offset = sent.length;
+  try {
+    await service.receive({
+      ...message,
+      sender: "also-authorized",
+      message_id: "diagnostic-private-id",
+      thread: "failure",
+    });
+  } finally {
+    fixtureError = false;
+  }
+  const record = getSqlite()
+    .query<{ id: string; last_error: string; status: string }, []>(
+      "SELECT id,last_error,status FROM gateway_sessions WHERE chat_id LIKE '%failure%' ORDER BY created_at DESC LIMIT 1",
+    )
+    .get();
+  expect(record?.status).toBe("error");
+  expect(record?.last_error).toContain("generate/agent_reported_error");
+  expect(JSON.stringify(sent.slice(offset))).not.toContain("PRIVATE_PROVIDER_ERROR");
+  const dir = getLogDir();
+  if (!dir) throw new Error("Diagnostic log file was not created");
+  const text = readFileSync(join(dir, "orc.log"), "utf8");
+  expect(text).not.toContain("PRIVATE_PROVIDER_ERROR");
+  const failure = text
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .findLast((row) => row.msg === "Channel agent turn failed");
+  expect(JSON.parse(failure.data)).toMatchObject({
+    connection: "test",
+    provider: "telegram",
+    session: record?.id,
+    operation: "generate",
+    code: "agent_reported_error",
+  });
+  expect(JSON.parse(failure.data).event).toMatch(/^[a-f0-9]{16}$/);
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    message_id: "diagnostic-recovered",
+    thread: "failure",
+  });
+  expect(
+    getSqlite()
+      .query<{ status: string; last_error: string | null }, [string]>(
+        "SELECT status,last_error FROM gateway_sessions WHERE id=?",
+      )
+      .get(record?.id ?? ""),
+  ).toMatchObject({ status: "idle", last_error: null });
+  expect(readFileSync(join(dir, "orc.log"), "utf8")).toContain("agent_reported_error");
+});
+
+test("Unicode and HTML-heavy output retains a bounded editable preview", async () => {
+  requirePermission = false;
+  const before = edited.length;
+  fixtureOutput = `${"😀<&>".repeat(800)}z`;
+  try {
+    await service.receive({
+      ...message,
+      sender: "also-authorized",
+      message_id: "unicode-preview",
+      thread: "unicode",
+    });
+    const preview = edited.slice(before).find((entry) => entry.body.reply_markup);
+    expect(preview).toBeDefined();
+    expect(String(preview?.body.text)).toContain("😀");
+    expect(String(preview?.body.text).length).toBeLessThanOrEqual(4000);
+    expect(/[\uD800-\uDFFF]/u.test(String(preview?.body.text))).toBe(false);
+  } finally {
+    fixtureOutput = "**Reply received**";
+  }
 });
 
 test("editing a recipient during a running turn cannot redirect its reply", async () => {

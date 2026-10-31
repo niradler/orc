@@ -5,6 +5,35 @@ const escapeText = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const safeUrl = (text: string) => (/^https?:\/\//i.test(text) ? text : "");
 
+function plainChunks(text: string, limit: number): string[] {
+  const chars = Array.from(text);
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < chars.length) {
+    let end = start;
+    let length = 0;
+    let line = start;
+    let space = start;
+    while (end < chars.length) {
+      const char = chars[end] ?? "";
+      const size = escapeText(char).length;
+      if (length + size > limit) break;
+      length += size;
+      end++;
+      if (char === "\n") line = end;
+      if (/\s/u.test(char)) space = end;
+    }
+    if (end < chars.length) {
+      const minimum = start + (end - start) / 2;
+      if (line > minimum) end = line;
+      else if (space > minimum) end = space;
+    }
+    chunks.push(escapeText(chars.slice(start, end).join("")));
+    start = end;
+  }
+  return chunks;
+}
+
 function tokens(items: Token[], provider: string): string {
   const telegram = provider === "telegram";
   return items
@@ -90,10 +119,7 @@ export function renderMessage(
   if (text.length > limit) {
     plain = true;
     warnings.push("Long message delivered in plain-text chunks to preserve all content safely.");
-    const chars = Array.from(message.text);
-    chunks = [];
-    for (let i = 0; i < chars.length; i += 500)
-      chunks.push(escapeText(chars.slice(i, i + 500).join("")));
+    chunks = plainChunks(message.text, limit);
   }
   const payloads: Record<string, unknown>[] = chunks.map((chunk) =>
     provider === "telegram"

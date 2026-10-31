@@ -16,6 +16,42 @@ import {
 } from "./store.js";
 import type { DirectCommandResult } from "./types.js";
 
+export function channelControls(): NonNullable<DirectCommandResult["buttons"]> {
+  return [
+    [
+      { label: "New session", value: "/session_new" },
+      { label: "Sessions", value: "/session_list" },
+    ],
+    [
+      { label: "Project", value: "/project" },
+      { label: "Agent", value: "/agent" },
+      { label: "Model", value: "/model" },
+    ],
+    [
+      { label: "Status", value: "/status" },
+      { label: "Stop", value: "/stop" },
+    ],
+  ];
+}
+
+function picker(
+  command: string,
+  items: Array<{ label: string; value: string }>,
+  page: number,
+): NonNullable<DirectCommandResult["buttons"]> {
+  const size = 8;
+  const offset = Math.min(page * size, Math.max(0, Math.ceil(items.length / size) - 1) * size);
+  const rows = items.slice(offset, offset + size).map((item) => [item]);
+  const navigation = [];
+  if (offset > 0)
+    navigation.push({ label: "‹ Previous", value: `/${command} page ${offset / size - 1}` });
+  if (offset + size < items.length)
+    navigation.push({ label: "Next ›", value: `/${command} page ${offset / size + 1}` });
+  if (navigation.length) rows.push(navigation);
+  rows.push([{ label: "Chat controls", value: "/status" }]);
+  return rows;
+}
+
 export type ChannelConversation = {
   chatKey: string;
   projectId: string;
@@ -33,7 +69,7 @@ export function channelHelp(connection: ChannelConnection): string {
     ...channelCommands(connection.config).map((c) => `/${c.command} — ${c.description}`),
     "",
     "Send a message to the active agent. Follow-ups continue the selected session.",
-    "Use /agent default, /model default or /project default to restore routing defaults.",
+    "Use the buttons to choose a project, agent, model or session, and restore the agent or model default.",
   ].join("\n");
 }
 export async function ensureChannelSession(input: ChannelConversation) {
@@ -67,9 +103,12 @@ export async function channelDirectCommand(
   const active = await getActiveGatewaySession(input.chatKey);
   const current = active?.project_id === input.projectId ? active : null;
   const agent = input.mode.replace(/^agent:/, "");
+  const pageMatch = command.args.match(/^page (\d{1,6})$/);
+  const page = Number(pageMatch?.[1] ?? 0);
   if (command.name === "status")
     return {
       text: `Project: ${input.projectId}\nFolder: ${input.cwd}\nAgent: ${agent}\nModel: ${current?.model ?? (agent === input.defaultAgent ? input.defaultModel : undefined) ?? "provider default"}\nSession: ${current ? `${current.id} (${current.status})` : "new conversation"}`,
+      buttons: channelControls(),
     };
   if (command.name === "project" || command.name === "projects") {
     const projects = getSqlite()
@@ -78,10 +117,17 @@ export async function channelDirectCommand(
       )
       .all()
       .filter((p) => !input.allowedProjects.length || input.allowedProjects.includes(p.id));
-    if (!command.args)
+    if (!command.args || pageMatch)
       return {
         text: `Current project: ${projects.find((p) => p.id === input.projectId)?.name ?? input.projectId}\nChoose a project; its folder becomes the agent working directory.`,
-        buttons: projects.slice(0, 20).map((p) => [{ label: p.name, value: `/project ${p.id}` }]),
+        buttons: picker(
+          "project",
+          projects.map((p) => ({
+            label: `${p.id === input.projectId ? "✓ " : ""}${p.name}`,
+            value: `/project ${p.id}`,
+          })),
+          page,
+        ),
       };
     const requested = command.args === "default" ? input.defaultProject : command.args;
     const selected = projects.find(
@@ -104,17 +150,25 @@ export async function channelDirectCommand(
     return {
       text: `Project: ${selected.name}\nAgent working folder: ${selected.scope}\n${previous ? "Resuming this project's conversation." : "The next message starts a conversation in this project."}`,
       projectId: selected.id,
+      buttons: channelControls(),
     };
   }
   if (command.name === "agent") {
     const agents = listRegisteredBackends();
-    if (!command.args)
+    if (!command.args || pageMatch)
       return {
         text: `Current agent: ${agent}\nDefault: ${input.defaultAgent}`,
-        buttons: [
-          [{ label: "Default agent", value: "/agent default" }],
-          ...agents.slice(0, 15).map((name) => [{ label: name, value: `/agent ${name}` }]),
-        ],
+        buttons: picker(
+          "agent",
+          [
+            { label: "Default agent", value: "/agent default" },
+            ...agents.map((name) => ({
+              label: `${name === agent ? "✓ " : ""}${name}`,
+              value: `/agent ${name}`,
+            })),
+          ],
+          page,
+        ),
       };
     const selected = command.args === "default" ? input.defaultAgent : command.args;
     if (!agents.includes(selected))
@@ -129,26 +183,36 @@ export async function channelDirectCommand(
     );
     if (previous) await setActiveGatewaySession(input.chatKey, previous.id);
     else await ensureChannelSession({ ...input, mode });
-    return { text: `Agent: ${selected}. The next message uses its selected conversation.` };
+    return {
+      text: `Agent: ${selected}. The next message uses its selected conversation.`,
+      buttons: channelControls(),
+    };
   }
   if (command.name === "model") {
     const session = await ensureChannelSession(input);
-    if (!command.args || command.args === "list") {
+    if (!command.args || command.args === "list" || pageMatch) {
       const models = await discoverAgentModels(
         agent.replace(/-cli$/, ""),
         resolveExecHost(),
         input.cwd,
       ).catch(() => []);
       return {
-        text: `Current model: ${session.model ?? (agent === input.defaultAgent ? input.defaultModel : undefined) ?? "provider default"}\nUse /model <id> or choose a model.`,
-        buttons: [
-          [{ label: "Default model", value: "/model default" }],
-          ...models.slice(0, 15).map((m) => [{ label: m.label, value: `/model ${m.id}` }]),
-        ],
+        text: `Current model: ${session.model ?? (agent === input.defaultAgent ? input.defaultModel : undefined) ?? "provider default"}\nChoose a model below or tap Default model.`,
+        buttons: picker(
+          "model",
+          [
+            { label: "Default model", value: "/model default" },
+            ...models.map((m) => ({
+              label: `${m.id === session.model ? "✓ " : ""}${m.label}`,
+              value: `/model ${m.id}`,
+            })),
+          ],
+          page,
+        ),
       };
     }
     if (command.args !== "default" && !/^[a-z0-9][a-z0-9._:/@+-]{0,199}$/i.test(command.args))
-      return { text: "Use /model <model-id> or /model default." };
+      return { text: "Use /model to choose a model." };
     const model =
       command.args === "default"
         ? agent === input.defaultAgent
@@ -156,32 +220,42 @@ export async function channelDirectCommand(
           : null
         : command.args;
     await updateGatewaySession(session.id, { model });
-    return { text: `Model: ${model ?? "provider default"}. It takes effect on the next message.` };
+    return {
+      text: `Model: ${model ?? "provider default"}. It takes effect on the next message.`,
+      buttons: channelControls(),
+    };
   }
   if (command.name === "session" || command.name === "sessions") {
     const [operation = "list", argument = ""] =
-      command.name === "sessions" ? ["list"] : command.args.split(/\s+/);
+      command.name === "sessions" ? ["list"] : (command.args || "list").split(/\s+/);
     const sessions = (await listGatewaySessions(input.chatKey, input.projectId)).filter(
       (s) => s.project_id === input.projectId,
     );
-    if (operation === "list")
+    if (operation === "list" || pageMatch)
       return {
         text: sessions.length
-          ? sessions
+          ? "Choose a session below. ✓ marks the active session.\n" +
+            sessions
+              .filter((s) => s.status !== "stopped")
+              .slice(page * 8, page * 8 + 8)
               .map(
                 (s, i) =>
                   `${i + 1}. ${s.id === current?.id ? "▶ " : ""}${s.id} · ${s.backend} · ${s.model ?? "default model"} · ${s.status}`,
               )
               .join("\n")
-          : "No sessions in this project yet. Send a message or use /session new.",
+          : "No sessions in this project yet. Send a message or tap New conversation.",
         buttons: [
-          [{ label: "New conversation", value: "/session new" }],
-          ...sessions
-            .filter((s) => s.status !== "stopped")
-            .slice(0, 15)
-            .map((s) => [
-              { label: `${s.backend} · ${s.id.slice(-6)}`, value: `/session switch ${s.id}` },
-            ]),
+          [{ label: "New conversation", value: "/session_new" }],
+          ...picker(
+            "session",
+            sessions
+              .filter((s) => s.status !== "stopped")
+              .map((s) => ({
+                label: `${s.id === current?.id ? "✓ " : ""}${s.backend} · ${s.id.slice(-6)}`,
+                value: `/session switch ${s.id}`,
+              })),
+            page,
+          ),
         ],
       };
     if (operation === "new") {
@@ -197,18 +271,22 @@ export async function channelDirectCommand(
         model:
           current?.model ?? (agent === input.defaultAgent ? (input.defaultModel ?? null) : null),
       });
-      return { text: `Created and activated ${agent} session ${session.id}.` };
+      return {
+        text: `Created and activated ${agent} session ${session.id}.`,
+        buttons: channelControls(),
+      };
     }
     if (operation === "switch") {
       const selected = /^\d+$/.test(argument)
         ? sessions[Number(argument) - 1]
         : sessions.find((s) => s.id === argument || s.id.endsWith(argument));
       if (!selected || selected.status === "stopped")
-        return { text: "Session is unavailable in this project. Use /session list." };
+        return { text: "Session is unavailable in this project. Use /session_list to choose one." };
       await setActiveGatewaySession(input.chatKey, selected.id);
       await updateChatMode(input.chatKey, `agent:${selected.backend}`);
       return {
         text: `Active session: ${selected.id} · ${selected.backend} · ${selected.model ?? "default model"}`,
+        buttons: channelControls(),
       };
     }
     if (operation === "stop") {
@@ -217,7 +295,7 @@ export async function channelDirectCommand(
       return { text: "Stopped this conversation. The next message starts a new session." };
     }
     return {
-      text: "Use /session new, /session list, /session switch <id-or-number>, or /session stop.",
+      text: "Use /session_new for a new conversation, /session_list to choose one, or /stop to stop the current turn.",
     };
   }
   return null;

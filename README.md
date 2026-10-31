@@ -661,6 +661,14 @@ only; inbound invocation and Attention notifications are separate opt-ins.
 
 See the [channel setup, routing, API/MCP and native payload reference](skills/orc-platform/references/channels.md).
 
+In Telegram, `/start`, `/help` and `/status` show native chat-control buttons.
+Tap **New session**, **Sessions**, **Project**, **Agent** or **Model** to operate
+the conversation; long pickers have Previous/Next buttons. `/session_new` and
+`/session_list` also appear in Telegram's command menu (Telegram command names
+allow underscores, not hyphens). Agent turns show an updating preview with a
+**Stop** button bound to that turn; the complete reply retains chat controls.
+Existing argument-based commands remain available for compatibility.
+
 ### Legacy gateway (Telegram / Slack)
 
 Approve agent work from your phone, search memory, or start a live AI session.
