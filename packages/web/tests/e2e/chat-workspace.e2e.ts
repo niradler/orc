@@ -27,6 +27,295 @@ async function openChat(page: import("@playwright/test").Page) {
   await page.goto("/?chat=open");
   await expect(page.getByTestId("chat-input")).toBeEnabled();
 }
+
+async function workspaceFixture(page: import("@playwright/test").Page, hosts = ["lab"]) {
+  await page.route("**/api/ssh", (route) =>
+    route.fulfill({ json: { host: null, hosts, supported: true } }),
+  );
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "orc_folder_history",
+      JSON.stringify({
+        local: {
+          last: "/local/projects/a-long-project-name/packages/application",
+          recent: ["/local/projects/a-long-project-name/packages/application", "/local/older"],
+        },
+        "ssh:lab": { last: "/remote/current", recent: ["/remote/current", "/remote/older"] },
+      }),
+    );
+  });
+}
+
+test("workspace icons stay inside the composer and preserve draft and host-scoped selections", async ({
+  page,
+  request,
+}, testInfo) => {
+  await workspaceFixture(page);
+  await request.patch("/api/settings", {
+    headers,
+    data: { chat: { ...defaults, model: "fixture-extra-long-model-name-for-compact-composer" } },
+  });
+  await openChat(page);
+  const composer = page.getByTestId("chat-composer-box");
+  const workspace = composer.getByTestId("chat-workspace");
+  await expect(workspace).toBeVisible();
+  await expect(composer.getByTestId("chat-model-button")).toBeVisible();
+  await page.getByTestId("chat-input").fill("Keep this unsent draft while choosing a workspace");
+  await expect(page.getByTestId("chat-workspace-cwd")).toBeHidden();
+  const worktree = workspace.getByTestId("chat-workspace-worktree");
+  await expect(worktree).toHaveAttribute("aria-pressed", "false");
+  await worktree.click();
+  await expect(worktree).toHaveAttribute("aria-pressed", "true");
+
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const name of ["host", "browse", "recent", "worktree"]) {
+      const icon = workspace.getByTestId(`chat-workspace-${name}`);
+      await expect(icon).toBeVisible();
+      const bounds = await icon.boundingBox();
+      expect(bounds).not.toBeNull();
+      if (width < 640) {
+        expect(bounds?.width).toBeGreaterThanOrEqual(44);
+        expect(bounds?.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    await workspace.getByTestId("chat-workspace-host").click();
+    await expect(page.getByTestId("chat-workspace-host-option")).toHaveCount(2);
+    await page.screenshot({ path: testInfo.outputPath(`workspace-host-${width}.png`) });
+    await page.getByTestId("chat-workspace-host-option").filter({ hasText: "lab" }).click();
+    await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
+      "title",
+      `lab: ${width === 1440 ? "/remote/current" : "/remote/older"}`,
+    );
+    await workspace.getByTestId("chat-workspace-recent").click();
+    const recent = page.getByTestId("chat-workspace-recent-option");
+    await expect(recent).toHaveText(
+      width === 1440 ? ["/remote/current", "/remote/older"] : ["/remote/older", "/remote/current"],
+    );
+    await page.screenshot({ path: testInfo.outputPath(`workspace-recent-${width}.png`) });
+    await recent.filter({ hasText: "/remote/older" }).click();
+    await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
+      "title",
+      "lab: /remote/older",
+    );
+    await workspace.getByTestId("chat-workspace-host").click();
+    await page.getByTestId("chat-workspace-host-option").filter({ hasText: "Local" }).click();
+    await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
+      "title",
+      "Local: /local/projects/a-long-project-name/packages/application",
+    );
+    await expect(worktree).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("chat-input")).toHaveValue(
+      "Keep this unsent draft while choosing a workspace",
+    );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath(`workspace-toolbar-${width}.png`) });
+  }
+  await workspace.getByTestId("chat-workspace-recent").click();
+  await page.getByTestId("chat-workspace-cwd").fill("/local/not-applied-yet");
+  await page.keyboard.press("Escape");
+  await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
+    "title",
+    "Local: /local/projects/a-long-project-name/packages/application",
+  );
+  await workspace.getByTestId("chat-workspace-recent").click();
+  await expect(page.getByTestId("chat-workspace-cwd")).toHaveValue("/local/not-applied-yet");
+  await page.getByTestId("chat-workspace-cwd").fill("");
+  await page.getByTestId("chat-workspace-apply").click();
+  await expect(worktree).toBeDisabled();
+  await expect(worktree).toHaveAttribute("aria-pressed", "false");
+  await page.screenshot({ path: testInfo.outputPath("workspace-disabled-320.png") });
+  let launch: unknown;
+  await page.route("**/api/chat/stream", (route) => {
+    launch = route.request().postDataJSON();
+    return route.fulfill({ status: 400, json: { error: "Captured default-folder launch" } });
+  });
+  await page.getByTestId("chat-send-button").click();
+  await expect
+    .poll(() => launch)
+    .toMatchObject({
+      workspace: { host: null, cwd: "", worktree: false },
+    });
+});
+
+test("switching to a host without folder history turns off worktree and preserves the draft", async ({
+  page,
+}) => {
+  await workspaceFixture(page, ["lab", "empty-host"]);
+  await openChat(page);
+  await page.getByTestId("chat-input").fill("Draft for a new execution host");
+  const worktree = page.getByTestId("chat-workspace-worktree");
+  await worktree.click();
+  await expect(worktree).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("chat-workspace-host").click();
+  await page.getByTestId("chat-workspace-host-option").filter({ hasText: "empty-host" }).click();
+  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+    "title",
+    "empty-host: Default folder",
+  );
+  await expect(worktree).toBeDisabled();
+  await expect(worktree).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("chat-input")).toHaveValue("Draft for a new execution host");
+  let launch: unknown;
+  await page.route("**/api/chat/stream", (route) => {
+    launch = route.request().postDataJSON();
+    return route.fulfill({ status: 400, json: { error: "Captured default-folder host launch" } });
+  });
+  await page.getByTestId("chat-send-button").click();
+  await expect
+    .poll(() => launch)
+    .toMatchObject({
+      workspace: { host: "empty-host", cwd: "", worktree: false },
+    });
+});
+
+test("native folder choice preserves cancellation and surfaces genuine picker errors", async ({
+  page,
+}) => {
+  await workspaceFixture(page);
+  let result: "cancel" | "error" | "chosen" = "cancel";
+  let picks = 0;
+  await page.route("**/api/terminals/pick-folder", (route) => {
+    picks++;
+    expect(route.request().postDataJSON()).toEqual({
+      initial: "/local/projects/a-long-project-name/packages/application",
+      host: null,
+    });
+    return result === "error"
+      ? route.fulfill({ status: 500, json: { error: "Folder dialog failed to open" } })
+      : route.fulfill({ json: { path: result === "cancel" ? null : "/local/chosen" } });
+  });
+  await openChat(page);
+  await page.getByTestId("chat-input").fill("Preserve the draft");
+  const browse = page.getByTestId("chat-workspace-browse");
+  const path = page.getByTestId("chat-workspace-path");
+  await browse.click();
+  await expect.poll(() => picks).toBe(1);
+  await expect(browse).toBeEnabled();
+  await expect(path).toHaveAttribute(
+    "title",
+    "Local: /local/projects/a-long-project-name/packages/application",
+  );
+  await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
+  result = "error";
+  await browse.click();
+  await expect(page.getByTestId("chat-workspace-error")).toContainText(
+    "Folder dialog failed to open",
+  );
+  await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
+  await expect(path).toHaveAttribute(
+    "title",
+    "Local: /local/projects/a-long-project-name/packages/application",
+  );
+  result = "chosen";
+  await browse.click();
+  await expect(path).toHaveAttribute("title", "Local: /local/chosen");
+  await expect(page.getByTestId("chat-workspace-error")).toBeHidden();
+  await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the draft");
+});
+
+test("a delayed native folder result cannot change a newly selected conversation", async ({
+  page,
+}) => {
+  await workspaceFixture(page);
+  let finishPicker = () => {};
+  const pendingPicker = new Promise<void>((resolvePicker) => {
+    finishPicker = resolvePicker;
+  });
+  let requested = false;
+  await page.route("**/api/terminals/pick-folder", async (route) => {
+    requested = true;
+    await pendingPicker;
+    await route.fulfill({ json: { path: "/local/late-choice-for-first-conversation" } });
+  });
+  await openChat(page);
+  await page.getByTestId("chat-input").fill("First conversation draft");
+  await page.getByTestId("chat-workspace-browse").click();
+  await expect.poll(() => requested).toBe(true);
+  await expect(page.getByTestId("chat-workspace-host")).toBeDisabled();
+  await page.getByTestId("chat-clear-button").filter({ visible: true }).click();
+  await expect(page.getByTestId("chat-input")).toHaveValue("");
+  await page.getByTestId("chat-input").fill("Second conversation draft");
+  const completed = page.waitForResponse((response) =>
+    response.url().endsWith("/api/terminals/pick-folder"),
+  );
+  finishPicker();
+  await (await completed).finished();
+  await expect(page.getByTestId("chat-workspace-browse")).toBeEnabled();
+  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+    "title",
+    "Local: /local/projects/a-long-project-name/packages/application",
+  );
+  await expect(page.getByTestId("chat-input")).toHaveValue("Second conversation draft");
+});
+
+test("headless local browsing falls back safely and remote browsing stays on its selected host", async ({
+  page,
+}) => {
+  await workspaceFixture(page);
+  let nativePicks = 0;
+  await page.route("**/api/terminals/pick-folder", (route) => {
+    nativePicks++;
+    return route.fulfill({
+      status: 400,
+      json: { error: "No folder picker is available on this machine", code: "VALIDATION_ERROR" },
+    });
+  });
+  const browseRequests: (string | null)[] = [];
+  await page.route("**/api/terminals/browse?**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const host = params.get("host");
+    browseRequests.push(host);
+    return route.fulfill({
+      json: {
+        host,
+        path: params.get("path"),
+        parent: host === "lab" ? "/remote" : "/local",
+        directories: ["child"],
+      },
+    });
+  });
+  await openChat(page);
+  await page.getByTestId("chat-input").fill("Preserve the remote draft");
+  await page.getByTestId("chat-workspace-browse").click();
+  await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
+  await expect.poll(() => nativePicks).toBe(1);
+  await expect.poll(() => browseRequests.length).toBeGreaterThan(0);
+  expect(browseRequests.at(-1)).toBe("");
+  await page.getByTestId("remote-folder-browser").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+    "title",
+    "Local: /local/projects/a-long-project-name/packages/application",
+  );
+  await page.getByTestId("chat-workspace-host").click();
+  await page.getByTestId("chat-workspace-host-option").filter({ hasText: "lab" }).click();
+  await page.getByTestId("chat-workspace-browse").click();
+  await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
+  await expect.poll(() => browseRequests.at(-1)).toBe("lab");
+  expect(nativePicks).toBe(1);
+  await page.getByTestId("remote-folder-name-child").dblclick();
+  await expect(page.getByTestId("remote-folder-selection")).toHaveValue("/remote/current/child");
+  await page.getByTestId("remote-folder-pick").click();
+  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+    "title",
+    "lab: /remote/current/child",
+  );
+  await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the remote draft");
+  await page.getByTestId("chat-workspace-worktree").click();
+  let launch: unknown;
+  await page.route("**/api/chat/stream", (route) => {
+    launch = route.request().postDataJSON();
+    return route.fulfill({ status: 400, json: { error: "Captured remote launch" } });
+  });
+  await page.getByTestId("chat-send-button").click();
+  await expect
+    .poll(() => launch)
+    .toMatchObject({
+      workspace: { host: "lab", cwd: "/remote/current/child", worktree: true },
+    });
+});
 for (const width of [320, 820, 1440]) {
   test(`chat model, saved history and configuration work at ${width}px`, async ({
     page,

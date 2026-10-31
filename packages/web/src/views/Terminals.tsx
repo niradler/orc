@@ -6,7 +6,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { ResumeActions } from "@/components/ResumeActions";
 import { ContinueInChat } from "@/components/terminals/ContinueInChat";
-import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
+import { NewTerminalMenu, useTerminalLaunchDraft } from "@/components/terminals/NewTerminalMenu";
 import { RenameTerminal } from "@/components/terminals/RenameTerminal";
 import { TerminalCheckout } from "@/components/terminals/TerminalCheckout";
 import { TerminalList } from "@/components/terminals/TerminalList";
@@ -152,6 +152,8 @@ export default function Terminals() {
   const optionsButtonRef = useRef<HTMLElement | null>(null);
   const [optionsTerminalId, setOptionsTerminalId] = useState<string | null>(null);
   const [launchHost, setLaunchHost] = useState<string | null | undefined>();
+  const defaultLaunchHost = launchHost === undefined ? (ssh?.host ?? null) : launchHost;
+  const launchDraft = useTerminalLaunchDraft(defaultLaunchHost, menuOpen);
   const handleMenuOpenChange = useCallback((open: boolean) => {
     if (open) setLaunchHost(undefined);
     setMenuOpen(open);
@@ -347,12 +349,12 @@ export default function Terminals() {
       {label && "Terminal options"}
     </Button>
   );
-  const defaultLaunchHost = launchHost === undefined ? (ssh?.host ?? null) : launchHost;
   const worktreeManager = (
     <WorktreeManager launchers={info.launchers} host={info.host} onCreate={handleCreate} />
   );
   const newMenu = (
     <NewTerminalMenu
+      draft={launchDraft}
       key={defaultLaunchHost ?? "local"}
       open={menuOpen}
       onOpenChange={handleMenuOpenChange}

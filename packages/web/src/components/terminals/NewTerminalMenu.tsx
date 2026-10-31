@@ -10,8 +10,9 @@ import {
   type Worktree,
 } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { RecentFolders } from "@/components/RecentFolders";
-import { RemoteFolderBrowser } from "@/components/terminals/RemoteFolderBrowser";
+import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { useSsh } from "@/hooks/useSsh";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
@@ -38,6 +39,7 @@ interface NewTerminalMenuProps {
   className?: string;
   compact?: boolean;
   iconOnly?: boolean;
+  draft?: ReturnType<typeof useTerminalLaunchDraft>;
 }
 
 type Removal = { worktree: Worktree; step: "confirm" | "dirty" };
@@ -59,6 +61,53 @@ function useDebounced(value: string, ms: number): string {
   return debounced;
 }
 
+export function useTerminalLaunchDraft(defaultHost: string | null, open: boolean) {
+  const [prefs] = useState(() => readLaunchPrefs(storage));
+  const [host, setHost] = useState<string | null>(defaultHost);
+  const [cwd, setCwd] = useState(
+    () => folderHistory(defaultHost).last || (defaultHost ? "" : prefs.cwd),
+  );
+  const [worktree, setWorktree] = useState(prefs.worktree);
+  const [remoteBrowsing, setRemoteBrowsing] = useState(false);
+  const folders = useRef(
+    new Map<string | null, string>([
+      [null, folderHistory(null).last || prefs.cwd],
+      [defaultHost, folderHistory(defaultHost).last || (defaultHost ? "" : prefs.cwd)],
+    ]),
+  );
+  const previouslyOpen = useRef(false);
+  useEffect(() => {
+    const opening = open && !previouslyOpen.current;
+    previouslyOpen.current = open;
+    if (!open) setRemoteBrowsing(false);
+    if (opening) {
+      const last = folderHistory(host).last;
+      if (last) setCwd(last);
+    }
+  }, [open, host]);
+  const folderPickerSession = useFolderPickerSession();
+  const previousDefault = useRef(defaultHost);
+  useEffect(() => {
+    if (previousDefault.current === defaultHost) return;
+    previousDefault.current = defaultHost;
+    setHost(defaultHost);
+    setCwd(folders.current.get(defaultHost) ?? folderHistory(defaultHost).last);
+    setRemoteBrowsing(false);
+  }, [defaultHost]);
+  return {
+    host,
+    setHost,
+    cwd,
+    setCwd,
+    worktree,
+    setWorktree,
+    remoteBrowsing,
+    setRemoteBrowsing,
+    folders,
+    folderPickerSession,
+  };
+}
+
 export function NewTerminalMenu({
   open,
   onOpenChange,
@@ -70,24 +119,26 @@ export function NewTerminalMenu({
   className,
   compact = false,
   iconOnly = false,
+  draft,
 }: NewTerminalMenuProps) {
   const hostSelectId = useId();
-  const [prefs] = useState(() => readLaunchPrefs(storage));
-  const [host, setHost] = useState<string | null>(defaultHost);
-  const [cwd, setCwd] = useState(
-    () => folderHistory(defaultHost).last || (defaultHost ? "" : prefs.cwd),
-  );
-  const [worktree, setWorktree] = useState(prefs.worktree);
-  const [remoteBrowsing, setRemoteBrowsing] = useState(false);
+  const localDraft = useTerminalLaunchDraft(defaultHost, open);
+  const {
+    host,
+    setHost,
+    cwd,
+    setCwd,
+    worktree,
+    setWorktree,
+    remoteBrowsing,
+    setRemoteBrowsing,
+    folders,
+    folderPickerSession,
+  } = draft ?? localDraft;
   const [localError, setLocalError] = useState<string | null>(null);
   const [removal, setRemoval] = useState<Removal | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const folders = useRef(
-    new Map<string | null, string>([
-      [null, folderHistory(null).last || prefs.cwd],
-      [defaultHost, folderHistory(defaultHost).last || (defaultHost ? "" : prefs.cwd)],
-    ]),
-  );
+  const folderTrigger = useRef<HTMLButtonElement>(null);
   const { data: ssh, error: hostsError } = useSsh();
   const remoteSupported = !host || ssh?.supported === true;
   const {
@@ -118,14 +169,8 @@ export function NewTerminalMenu({
   const busy = pending || checkingHost || !remoteSupported;
 
   useEffect(() => {
-    if (!open) return;
-    const last = folderHistory(host).last;
-    if (last) setCwd(last);
-  }, [open, host]);
-
-  useEffect(() => {
-    // The confirm dialog is portalled outside the menu; clicks in it must not close the menu.
-    if (!open || removal) return;
+    // Portalled child dialogs own outside clicks and Escape until they close.
+    if (!open || removal || remoteBrowsing) return;
     rootRef.current?.querySelector<HTMLInputElement>("input[data-testid='terminal-cwd']")?.focus();
     const onPointerDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
@@ -145,7 +190,7 @@ export function NewTerminalMenu({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open, onOpenChange, removal]);
+  }, [open, onOpenChange, removal, remoteBrowsing]);
 
   const chooseFolder = (path: string) => {
     setCwd(path);
@@ -163,6 +208,7 @@ export function NewTerminalMenu({
   };
 
   const browse = () => {
+    folderPickerSession.reset(cwd.trim());
     setLocalError(null);
     setRemoteBrowsing(true);
   };
@@ -228,7 +274,12 @@ export function NewTerminalMenu({
   const MenuSurface = compact ? DialogPrimitive.Content : "div";
 
   return (
-    <DialogPrimitive.Root open={compact && open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root
+      open={compact && open}
+      onOpenChange={(next) => {
+        if (!remoteBrowsing) onOpenChange(next);
+      }}
+    >
       <div ref={rootRef} className={cn("relative", className)}>
         <button
           type="button"
@@ -332,6 +383,7 @@ export function NewTerminalMenu({
                 <button
                   type="button"
                   data-testid="terminal-browse"
+                  ref={folderTrigger}
                   disabled={busy}
                   onClick={browse}
                   title="Choose a folder"
@@ -350,19 +402,18 @@ export function NewTerminalMenu({
                 rememberFolder(host, path);
               }}
             />
-            {remoteBrowsing && (
-              <RemoteFolderBrowser
-                key={host}
-                host={host}
-                initial={cwd.trim()}
-                onPick={(path) => {
-                  chooseFolder(path);
-                  rememberFolder(host, path);
-                  setRemoteBrowsing(false);
-                }}
-                onClose={() => setRemoteBrowsing(false)}
-              />
-            )}
+            <FolderPickerDialog
+              session={folderPickerSession}
+              open={remoteBrowsing}
+              onOpenChange={setRemoteBrowsing}
+              host={host}
+              initial={cwd.trim()}
+              returnFocusRef={folderTrigger}
+              onPick={(path) => {
+                chooseFolder(path);
+                rememberFolder(host, path);
+              }}
+            />
             <label className="flex items-center gap-2 px-1 cursor-pointer select-none">
               <input
                 type="checkbox"

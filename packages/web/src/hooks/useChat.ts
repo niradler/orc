@@ -28,6 +28,7 @@ import {
 } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError, api, getApiSecret, getApiUrl } from "@/api/client";
+import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import {
@@ -167,6 +168,15 @@ function useChatController() {
   );
   const [tabs, setTabs] = useState<ChatTab[]>([initial]);
   const [activeKey, setActiveKey] = useState(initial.key);
+  const workspacePickerSession = useFolderPickerSession();
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const pickerConversation = useRef(activeKey);
+  useEffect(() => {
+    if (pickerConversation.current === activeKey) return;
+    pickerConversation.current = activeKey;
+    setWorkspacePickerOpen(false);
+    workspacePickerSession.reset("");
+  }, [activeKey, workspacePickerSession.reset]);
   const [ready, setReady] = useState(false);
   const [responding, setResponding] = useState(false);
   // Refs hold the latest tabs synchronously, so concurrent streams never update stale copies.
@@ -942,6 +952,13 @@ function useChatController() {
     activity: tab.activity,
     error: tab.error,
     workspace: tab.workspace,
+    workspacePickerSession,
+    workspacePickerOpen,
+    setWorkspacePickerOpen,
+    openWorkspacePicker: (initial: string) => {
+      workspacePickerSession.reset(initial);
+      setWorkspacePickerOpen(true);
+    },
     setWorkspace: (workspace: ChatWorkspace) =>
       update(activeRef.current, (current) =>
         current.thread || current.streaming ? {} : { workspace },

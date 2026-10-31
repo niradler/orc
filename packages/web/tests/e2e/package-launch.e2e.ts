@@ -219,6 +219,16 @@ test("Use package selects Codex, browses SSH, and opens chat on the selected hos
     .click();
   await page.getByTestId("setup-backend").selectOption("codex");
   await page.getByTestId("setup-host").selectOption("test-ssh");
+  const originalFolder = await page.getByTestId("setup-cwd").inputValue();
+  await page.getByTestId("setup-browse").click();
+  await expect(page.getByTestId("folder-picker-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("folder-picker-dialog")).toBeHidden();
+  await expect(page.getByTestId("setup-cwd")).toHaveValue(originalFolder);
+  await expect(page.getByTestId("setup-browse")).toBeFocused();
+  await page.getByTestId("setup-browse").click();
+  await page.getByTestId("remote-folder-cancel").click();
+  await expect(page.getByTestId("setup-cwd")).toHaveValue(originalFolder);
   await page.getByTestId("setup-browse").click();
   await page.getByTestId("remote-folder-pick").click();
   await expect(page.getByTestId("setup-cwd")).toHaveValue("/srv/free-folder");

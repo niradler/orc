@@ -122,25 +122,29 @@ test("should share recent folders and last selection between chat and terminal, 
   );
   await page.goto("/");
   await page.getByTestId("chat-open-button").click();
-  const workspace = page.getByTestId("chat-workspace");
-  await workspace.locator("summary").click();
-  await page.getByTestId("chat-workspace-host").selectOption("");
+  await page.getByTestId("chat-workspace-host").click();
+  await page.getByTestId("chat-workspace-host-option").filter({ hasText: "Local" }).click();
+  await page.getByTestId("chat-workspace-recent").click();
   await page.getByTestId("chat-workspace-cwd").fill(cwd);
+  await page.getByTestId("chat-workspace-apply").click();
+  // Exercise the native chooser contract without opening an OS dialog in CI.
+  await page.route("**/api/terminals/pick-folder", (route) => {
+    expect(route.request().postDataJSON()).toEqual({ initial: cwd, host: null });
+    return route.fulfill({ json: { path: cwd } });
+  });
   await page.getByTestId("chat-workspace-browse").click();
-  await page.screenshot({ path: "/tmp/orc-chat-folder-browser.png", fullPage: true });
-  await page.getByTestId("remote-folder-pick").click();
-  await expect(workspace.getByTestId("recent-folders").locator("option")).toContainText([
-    "Recent folders (1)",
-    cwd,
-  ]);
+  await page.getByTestId("chat-workspace-recent").click();
+  await expect(page.getByTestId("chat-workspace-recent-option")).toContainText([cwd]);
+  await page.keyboard.press("Escape");
   await page.reload();
-  await expect(page.getByTestId("chat-workspace")).toContainText(cwd);
+  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute("title", `Local: ${cwd}`);
   await gotoView(page, "terminals");
   await page.getByTestId("terminal-new").click();
   await page.getByTestId("terminal-host-select").selectOption("");
   await expect(page.getByTestId("terminal-cwd")).toHaveValue(cwd);
+  await page.unroute("**/api/terminals/pick-folder");
   await page.getByTestId("terminal-browse").click();
-  await page.getByTestId("remote-folder-name-nested").click();
+  await page.getByTestId("remote-folder-name-nested").dblclick();
   await page.getByTestId("remote-folder-pick").click();
   await expect(page.getByTestId("terminal-cwd")).toHaveValue(join(cwd, "nested"));
   await page.reload();
@@ -150,9 +154,10 @@ test("should share recent folders and last selection between chat and terminal, 
   await page.keyboard.press("Escape");
   const open = page.getByTestId("chat-open-button");
   if (await open.isVisible()) await open.click();
-  await page.getByTestId("chat-workspace").locator("summary").click();
-  await page.getByTestId("chat-workspace").getByTestId("recent-folders").selectOption(cwd);
-  await page.getByTestId("chat-workspace-worktree").check();
+  await page.getByTestId("chat-workspace-recent").click();
+  await page.getByTestId("chat-workspace-recent-option").filter({ hasText: cwd }).last().click();
+  await page.getByTestId("chat-workspace-worktree").click();
+  await expect(page.getByTestId("chat-workspace-worktree")).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({ path: "/tmp/orc-chat-worktree.png", fullPage: true });
   const response = page.waitForResponse(
     (response) =>
