@@ -8,9 +8,10 @@ export const SessionFileSchema = z.object({
   path: z.string(),
   size: z.number().int().nonnegative(),
   mimeType: z.string(),
+  description: z.string().max(1000).optional(),
 });
 export type SessionFile = z.infer<typeof SessionFileSchema>;
-export type UploadFile = { name: string; mimeType: string; data: Uint8Array };
+export type UploadFile = { name: string; mimeType: string; data: Uint8Array; description?: string };
 export const UploadDirectorySchema = z
   .string()
   .trim()

@@ -472,6 +472,7 @@ export interface paths {
                                     path: string;
                                     size: number;
                                     mimeType: string;
+                                    description?: string;
                                 }[];
                             }[];
                             historyBefore?: number | null;
@@ -622,6 +623,7 @@ export interface paths {
                                     path: string;
                                     size: number;
                                     mimeType: string;
+                                    description?: string;
                                 }[];
                             }[];
                             historyBefore?: number | null;
@@ -822,6 +824,7 @@ export interface paths {
                                     path: string;
                                     size: number;
                                     mimeType: string;
+                                    description?: string;
                                 }[];
                             }[];
                             historyBefore?: number | null;
@@ -894,6 +897,7 @@ export interface paths {
                                     path: string;
                                     size: number;
                                     mimeType: string;
+                                    description?: string;
                                 }[];
                             }[];
                             before: number | null;
@@ -1100,6 +1104,7 @@ export interface paths {
                                     path: string;
                                     size: number;
                                     mimeType: string;
+                                    description?: string;
                                 }[];
                             }[];
                             historyBefore?: number | null;

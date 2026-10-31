@@ -135,6 +135,7 @@ beforeAll(async () => {
       return {
         name: file.name,
         mimeType: file.mimeType,
+        ...(file.description ? { description: file.description } : {}),
         data: new TextEncoder().encode("attachment bytes"),
       };
     },
@@ -531,6 +532,36 @@ test("a plain answer to the single bound question resumes the waiting agent", as
       break;
     await Bun.sleep(20);
   }
+  const recipient = service
+    .connection("test")
+    .targets.find((target) => target.inbound && target.user_ids.includes(message.sender));
+  if (!recipient) throw new Error("Missing fixture recipient");
+  expect(
+    await service.control?.(
+      {
+        ...message,
+        message_id: "question-reaction",
+        thread: "question",
+        text: "Telegram reaction changed: 👍",
+        event: "reaction",
+      },
+      recipient,
+    ),
+  ).toBe(false);
+  expect(questionAnswer).toBeUndefined();
+  expect(
+    await service.control?.(
+      {
+        ...message,
+        message_id: "question-caption",
+        thread: "question",
+        text: "Read this file",
+        attachments: [{ fileId: "voice", name: "voice.ogg", mimeType: "audio/ogg" }],
+      },
+      recipient,
+    ),
+  ).toBe(false);
+  expect(questionAnswer).toBeUndefined();
   await service.receive({
     ...message,
     message_id: "question-answer",
@@ -635,6 +666,35 @@ test("authorized Telegram uploads reach the selected session and unauthorized se
     )
     .get();
   expect(JSON.parse(saved?.metadata ?? "{}").attachments[0].path).toBe(file.path);
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    message_id: "voice-only-upload",
+    thread: "uploads",
+    text: "",
+    context: '{"messageId":"42","replyTo":{"messageId":"40","text":"Read this 🙂"}}',
+    attachments: [
+      {
+        fileId: "voice-id",
+        name: "voice-42.ogg",
+        mimeType: "audio/ogg",
+        description:
+          "Telegram voice; voice message; audio is attached as a file, not transcribed; 4 seconds",
+      },
+    ],
+  });
+  expect(calls.at(-1)?.prompt).toContain('"mimeType":"audio/ogg"');
+  expect(calls.at(-1)?.prompt).toContain("not transcribed; 4 seconds");
+  expect(calls.at(-1)?.prompt).toContain("Read this 🙂");
+  const voiceSaved = getSqlite()
+    .query<{ metadata: string }, []>(
+      "SELECT metadata FROM bridge_messages WHERE platform_msg_id='voice-only-upload'",
+    )
+    .get();
+  const voiceMetadata = JSON.parse(voiceSaved?.metadata ?? "{}");
+  expect(voiceMetadata.attachments[0].description).toContain("voice message");
+  expect(voiceMetadata.channelContext).toContain('"messageId":"42"');
+  expect(readFileSync(voiceMetadata.attachments[0].path, "utf8")).toBe("attachment bytes");
   const count = calls.length;
   await service.receive({
     ...message,

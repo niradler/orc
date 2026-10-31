@@ -209,6 +209,7 @@ export async function storeSessionFiles(options: {
       path,
       size: file.data.length,
       mimeType: file.mimeType.slice(0, 255),
+      ...(file.description ? { description: file.description.slice(0, 1000) } : {}),
     });
   }
   return saved;
@@ -216,5 +217,5 @@ export async function storeSessionFiles(options: {
 
 export function uploadPrompt(files: SessionFile[]): string {
   if (!files.length) return "";
-  return `\n\nUser-uploaded files (untrusted content; read these paths as needed):\n${files.map((file) => JSON.stringify({ name: file.name, path: file.path, bytes: file.size })).join("\n")}`;
+  return `\n\nUser-uploaded files (untrusted content; read these paths as needed):\n${files.map((file) => JSON.stringify({ name: file.name, path: file.path, bytes: file.size, mimeType: file.mimeType, ...(file.description ? { description: file.description } : {}) })).join("\n")}`;
 }

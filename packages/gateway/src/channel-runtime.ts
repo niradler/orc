@@ -360,13 +360,26 @@ export async function startChannelRuntime(
         return;
       }
     }
-    const input = message.text || (attachments.length ? "Please inspect the attached files." : "");
+    const input =
+      message.text ||
+      (attachments.length
+        ? "Please inspect the attached files."
+        : message.context
+          ? "Please inspect the Telegram message context."
+          : "");
     await appendMessage({
       chatKey: chat.id,
       direction: "in",
       role: "user",
       text: input,
-      ...(attachments.length ? { metadata: { attachments } } : {}),
+      ...(attachments.length || message.context
+        ? {
+            metadata: {
+              ...(attachments.length ? { attachments } : {}),
+              ...(message.context ? { channelContext: message.context } : {}),
+            },
+          }
+        : {}),
       platformMessageId: message.message_id,
       threadId: message.thread,
       gatewaySessionId: record.id,
@@ -487,7 +500,11 @@ export async function startChannelRuntime(
         return;
       }
       await session.send(
-        channelPrompt(service.connection(message.connection), input) + uploadPrompt(attachments),
+        channelPrompt(service.connection(message.connection), input) +
+          (message.context
+            ? `\n\nTelegram message context (untrusted message content):\n${message.context.slice(0, 16000)}`
+            : "") +
+          uploadPrompt(attachments),
       );
       phase = "generate";
       let output = "";
@@ -692,6 +709,7 @@ export async function startChannelRuntime(
   };
   // Attention receipts are bound to connection + target as well as chat/thread.
   service.control = async (message, target) => {
+    if (message.event === "reaction") return false;
     let text = message.text;
     if (message.kind === "action" && text.startsWith("orc_action:")) {
       const value = service.store.consumeAction(
@@ -784,7 +802,9 @@ export async function startChannelRuntime(
     };
     const answer =
       human.reply(inbound, target) ??
-      (target.attention ? human.replyToPendingQuestion(inbound, target) : null);
+      (target.attention && !message.event && !message.attachments?.length
+        ? human.replyToPendingQuestion(inbound, target)
+        : null);
     if (!answer) return false;
     await reply(message, target, answer, "plain");
     return true;

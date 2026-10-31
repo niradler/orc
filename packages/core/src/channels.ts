@@ -333,7 +333,16 @@ export type ChannelMessage = z.infer<typeof ChannelMessageSchema>;
 export type ChannelSend = z.infer<typeof ChannelSendSchema>;
 export type ChannelReceipt = z.infer<typeof ChannelReceiptSchema>;
 export type ChannelInbound = {
-  attachments?: { fileId: string; name: string; mimeType: string; size?: number }[];
+  attachments?: {
+    fileId: string;
+    name: string;
+    mimeType: string;
+    size?: number;
+    description?: string;
+    customEmojiId?: string;
+  }[];
+  context?: string;
+  event?: "reaction" | "edit";
   connection: string;
   sender: string;
   chat: string;

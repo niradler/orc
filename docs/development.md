@@ -180,6 +180,16 @@ the composer. Files stay staged until Send and remain with their queued message.
 Telegram accepts documents, photos and media from approved recipients/senders.
 File-only messages ask the agent to inspect the attachments.
 
+Telegram voice notes remain original audio files, with MIME type and duration in
+the agent's file manifest; no transcription service is added. Video notes, live
+photos, static/animated/video stickers and custom emoji are downloaded through the
+same bounded path. Text/caption emoji, replies, quotes, hidden links, album IDs,
+edits and supported structured message context are retained for the agent.
+Reaction updates are delivered only when Telegram makes them available (the bot
+must have the required administrator rights); sender, route and topic checks still
+apply. Anonymous reactions cannot impersonate an approved sender. Reactions,
+edits and file captions do not implicitly answer a pending agent question.
+
 Uploads are limited to 10 files and 20 MB combined per message. The default is
 `<conversation working folder>/.orc/sessions/<ORC session ID>/uploads/<upload ID>/<filename>`.
 The selected execution host owns the file: SSH conversations transfer bytes to that

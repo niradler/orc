@@ -6,35 +6,9 @@ import {
 } from "@orc/core/channels";
 import { OrcError, ValidationError } from "@orc/core/errors";
 import { UPLOAD_MAX_BYTES, type UploadFile } from "@orc/core/session-file-types";
+import { telegramContext, telegramFile, telegramFiles, telegramReaction } from "./telegram.js";
 
 export type NativePayload = Record<string, unknown>;
-export function telegramFiles(
-  message: Record<string, unknown>,
-): NonNullable<ChannelInbound["attachments"]> {
-  const result: NonNullable<ChannelInbound["attachments"]> = [];
-  for (const kind of ["document", "audio", "voice", "video", "animation", "photo"]) {
-    const source =
-      kind === "photo" && Array.isArray(message.photo) ? message.photo.at(-1) : message[kind];
-    if (!source || typeof source !== "object") continue;
-    const file = source as Record<string, unknown>;
-    if (typeof file.file_id !== "string" || file.file_id.length > 1024) continue;
-    result.push({
-      fileId: file.file_id,
-      name:
-        typeof file.file_name === "string"
-          ? file.file_name.slice(0, 255)
-          : `${kind}-${String(message.message_id)}.${kind === "photo" ? "jpg" : kind === "voice" ? "ogg" : "bin"}`,
-      mimeType:
-        typeof file.mime_type === "string"
-          ? file.mime_type.slice(0, 255)
-          : kind === "photo"
-            ? "image/jpeg"
-            : "application/octet-stream",
-      ...(typeof file.file_size === "number" ? { size: file.file_size } : {}),
-    });
-  }
-  return result;
-}
 export type ProviderIdentity = { id: string; name: string };
 export type ChannelTransport = {
   downloadFile?(file: NonNullable<ChannelInbound["attachments"]>[number]): Promise<UploadFile>;
@@ -236,6 +210,18 @@ export const createChannelTransport: TransportFactory = (connection, credentials
   return {
     async downloadFile(file) {
       if (provider !== "telegram") throw new ProviderFailure("file_provider_unsupported");
+      if (file.customEmojiId) {
+        if (!/^\d{1,30}$/.test(file.customEmojiId)) throw new ProviderFailure("invalid_file_path");
+        const stickers = await call("getCustomEmojiStickers", {
+          custom_emoji_ids: [file.customEmojiId],
+        });
+        const sticker = Array.isArray(stickers)
+          ? stickers.find((item) => item?.custom_emoji_id === file.customEmojiId)
+          : undefined;
+        const resolved = telegramFile("sticker", sticker, file.customEmojiId);
+        if (!resolved) throw new ProviderFailure("invalid_response");
+        file = { ...resolved, description: `Telegram custom emoji; ${resolved.description}` };
+      }
       if (file.size !== undefined && file.size > UPLOAD_MAX_BYTES)
         throw new ValidationError("Telegram files must be at most 20 MB");
       const result = await call("getFile", { file_id: file.fileId });
@@ -278,7 +264,12 @@ export const createChannelTransport: TransportFactory = (connection, credentials
           data.set(chunk, offset);
           offset += chunk.length;
         }
-        return { name: file.name, mimeType: file.mimeType, data };
+        return {
+          name: file.name,
+          mimeType: file.mimeType,
+          data,
+          ...(file.description ? { description: file.description } : {}),
+        };
       } catch (error) {
         if (error instanceof ValidationError || error instanceof ProviderFailure) throw error;
         throw new ProviderFailure("file_download_failed");
@@ -333,40 +324,73 @@ export const createChannelTransport: TransportFactory = (connection, credentials
                 provider,
                 token,
                 "getUpdates",
-                { offset, timeout: 25, allowed_updates: ["message", "callback_query"] },
+                {
+                  offset,
+                  timeout: 25,
+                  allowed_updates: [
+                    "message",
+                    "edited_message",
+                    "callback_query",
+                    "message_reaction",
+                  ],
+                },
                 AbortSignal.any([abort.signal, AbortSignal.timeout(35000)]),
               )) as unknown as Array<Record<string, unknown>>;
               failed("");
               for (const update of result) {
                 offset = Number(update.update_id) + 1;
                 try {
+                  if (update.message_reaction) {
+                    const reaction = telegramReaction(update, connection.id);
+                    if (
+                      reaction &&
+                      (resumeCursor ||
+                        Number((update.message_reaction as Record<string, unknown>).date) * 1000 >=
+                          startedAt - 1000)
+                    )
+                      receive(reaction);
+                    continue;
+                  }
                   const callback = update.callback_query as Record<string, unknown> | undefined;
-                  const msg = (update.message ?? callback?.message) as
+                  const msg = (update.message ?? update.edited_message ?? callback?.message) as
                     | Record<string, unknown>
                     | undefined;
                   const from = (callback?.from ?? msg?.from) as Record<string, unknown> | undefined;
                   const chat = msg?.chat as Record<string, unknown> | undefined;
                   if (!msg || !from || !chat || from.is_bot) continue;
-                  if (!resumeCursor && !callback && Number(msg.date) * 1000 < startedAt - 1000)
+                  if (
+                    !resumeCursor &&
+                    !callback &&
+                    Number(msg.edit_date ?? msg.date) * 1000 < startedAt - 1000
+                  )
                     continue;
                   if (callback)
                     void call("answerCallbackQuery", { callback_query_id: callback.id }).catch(
                       () => {},
                     );
                   const attachments = callback ? [] : telegramFiles(msg);
+                  const context = callback ? undefined : telegramContext(msg);
+                  if (!callback && !attachments.length && !context && !msg.text && !msg.caption)
+                    continue;
                   receive({
                     connection: connection.id,
                     sender: String(from.id),
                     chat: String(chat.id),
                     ...(msg.message_thread_id ? { thread: String(msg.message_thread_id) } : {}),
                     text: String(callback?.data ?? msg.text ?? msg.caption ?? ""),
-                    message_id: callback ? `cb:${callback.id}` : `${chat.id}:${msg.message_id}`,
+                    message_id: callback
+                      ? `cb:${callback.id}`
+                      : update.edited_message
+                        ? `edit:${chat.id}:${msg.message_id}:${update.update_id}`
+                        : `${chat.id}:${msg.message_id}`,
                     kind: callback ? "action" : "message",
+                    ...(update.edited_message ? { event: "edit" as const } : {}),
                     is_direct: chat.type === "private",
                     ...(attachments.length ? { attachments } : {}),
+                    ...(context ? { context } : {}),
                     is_mention:
                       !!botName &&
-                      String(msg.text ?? "")
+                      String(msg.text ?? msg.caption ?? "")
                         .toLowerCase()
                         .includes(`@${botName.toLowerCase()}`),
                   });
