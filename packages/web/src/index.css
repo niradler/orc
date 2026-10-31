@@ -181,6 +181,60 @@
   }
 }
 
+@utility chat-composer-tools {
+  html[data-compact-viewport="true"] & {
+    flex-wrap: nowrap;
+  }
+}
+
+@utility chat-composer-selectors {
+  html[data-compact-viewport="true"] & {
+    flex: 0 1 auto;
+    max-width: 60%;
+
+    & > :first-child {
+      flex-shrink: 0;
+    }
+
+    & button {
+      max-width: 100%;
+      min-height: 44px;
+    }
+  }
+}
+
+@utility chat-empty-state {
+  html[data-compact-viewport="true"] & {
+    & h3 {
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    & p {
+      display: none;
+    }
+  }
+}
+
+@utility chat-workspace-controls {
+  html[data-compact-viewport="true"] & {
+    flex: 1 1 11rem;
+    min-width: 44px;
+  }
+}
+
+@utility chat-workspace-actions {
+  html[data-compact-viewport="true"] & {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+
+    & > * {
+      flex-shrink: 0;
+    }
+  }
+}
+
 @utility terminal-glow {
   text-shadow: 0 0 8px rgba(120, 176, 255, 0.4);
 }
