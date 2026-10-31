@@ -322,7 +322,6 @@ export function ChatPanel({
             </button>
           </ActionHelp>
         </header>
-        <ChatWorkspaceControls />
         <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
         {reconnecting && (
           <p
@@ -561,9 +560,12 @@ export function ChatPanel({
               className="chat-composer-input block max-h-[min(12rem,calc(var(--app-height,100dvh)*0.3))] w-full resize-none overflow-y-auto bg-transparent p-2 text-base leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60"
             />
             <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-1 items-start gap-0">
-                <ChatAgentPicker />
-                <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+                <div className="flex min-w-0 items-center">
+                  <ChatAgentPicker />
+                  <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
+                </div>
+                <ChatWorkspaceControls />
               </div>
               <div className="flex items-center gap-1">
                 {streaming && (

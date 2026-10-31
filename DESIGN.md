@@ -550,6 +550,21 @@ chrome follows the app theme. Match file/editor/diff toolbars to shared variants
 do not add another permanent navigation column. Changes to layout must preserve
 PTY continuity, keyboard input, output replay and file save/reopen.
 
+### Folder selection
+
+Use one shared folder-picker dialog in chat, terminals and future folder-selection
+flows. Keep its navigation, selection, confirmation and error behavior consistent
+across screens; callers supply the host, initial folder and selected-folder action.
+Desktop-native pickers remain appropriate for local folders; SSH and headless
+hosts use this shared in-app picker.
+
+Follow familiar file-dialog conventions: Back/Forward/Up, clickable breadcrumbs
+and direct path entry, a scrollable folder list, and an explicit selected-folder
+footer. Distinguish selecting a folder from opening it. Keep host and full path
+available, preserve drafts on cancellation, and support keyboard navigation and
+44px touch targets. Loading and failed navigation must never confirm stale data.
+Keep the same structure on phones, with controls wrapping and the list scrolling.
+
 ### Feedback and motion
 
 Loading skeletons should resemble content without dominating the page. Empty

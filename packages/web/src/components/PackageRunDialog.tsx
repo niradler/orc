@@ -3,7 +3,7 @@ import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { type AgentSetup, api, type PackageFull } from "@/api/client";
-import { RemoteFolderBrowser } from "@/components/terminals/RemoteFolderBrowser";
+import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,6 +37,7 @@ export function PackageRunDialog({
   const [copied, setCopied] = useState(false);
   const [commandMode, setCommandMode] = useState<"run" | "install">("run");
   const commandBox = useRef<HTMLDivElement>(null);
+  const folderTrigger = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const terminals = useTerminals();
@@ -137,9 +138,12 @@ export function PackageRunDialog({
     }
   }
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && !command.isPending && onClose()}>
+    <Dialog
+      open
+      onOpenChange={(open) => !open && !browsing && !busy && !command.isPending && onClose()}
+    >
       <DialogContent
-        closeDisabled={busy || command.isPending}
+        closeDisabled={busy || command.isPending || browsing}
         className="flex min-w-0 w-[min(960px,calc(100vw-2rem))] max-w-none max-h-[calc(var(--app-height,100dvh)-2rem)] flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6">
@@ -260,6 +264,7 @@ export function PackageRunDialog({
                       type="button"
                       variant="outline"
                       data-testid="setup-browse"
+                      ref={folderTrigger}
                       disabled={
                         hostInfo.isFetching ||
                         Boolean(hostInfo.error) ||
@@ -284,15 +289,14 @@ export function PackageRunDialog({
                       Browse
                     </Button>
                   </div>
-                  {browsing && host && (
-                    <RemoteFolderBrowser
-                      key={host}
-                      initial={setup.cwd}
-                      host={host}
-                      onPick={(cwd) => change({ cwd })}
-                      onClose={() => setBrowsing(false)}
-                    />
-                  )}
+                  <FolderPickerDialog
+                    open={browsing && !!host}
+                    onOpenChange={setBrowsing}
+                    host={host}
+                    initial={setup.cwd}
+                    onPick={(cwd) => change({ cwd })}
+                    returnFocusRef={folderTrigger}
+                  />
                 </div>
                 <details data-testid="setup-components" className="text-sm space-y-1">
                   <summary className="cursor-pointer min-h-11 content-center sm:min-h-8">
