@@ -1,5 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { ChannelConnectionSchema, type ChannelInbound, channelCommand } from "@orc/core/channels";
+import {
+  ChannelCommandsSchema,
+  ChannelConnectionSchema,
+  type ChannelInbound,
+  channelCommand,
+} from "@orc/core/channels";
 import { createChannelTransport, slackManifest } from "./providers.js";
 
 const originalFetch = globalThis.fetch;
@@ -43,7 +48,28 @@ test("Telegram registers built-in and custom slash commands through its owned tr
     description: "Chat controls and custom shortcuts",
   });
   expect(commands).toContainEqual({ command: "summary", description: "Summarize" });
+  expect(commands).toContainEqual({
+    command: "session_new",
+    description: "Start a new conversation",
+  });
+  expect(commands).toContainEqual({
+    command: "session_list",
+    description: "Choose a conversation",
+  });
+  for (const item of commands as Array<{ command: string }>)
+    expect(item.command).toMatch(/^[a-z][a-z0-9_]{0,31}$/);
   await transport.stop();
+});
+
+test("single-token session controls support Telegram mentions without shadowing shortcuts", () => {
+  expect(channelCommand("/session_new@orcbot")).toEqual({ name: "session", args: "new" });
+  expect(channelCommand("/session_list")).toEqual({ name: "session", args: "list" });
+  expect(channelCommand("/session new")).toEqual({ name: "session", args: "new" });
+  expect(
+    ChannelCommandsSchema.safeParse([
+      { command: "session_new", description: "override", prompt: "override" },
+    ]).success,
+  ).toBe(false);
 });
 
 test("Slack Socket Mode acknowledges slash commands and routes them with verified sender/channel identity", async () => {
