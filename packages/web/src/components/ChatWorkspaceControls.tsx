@@ -22,7 +22,7 @@ export function ChatWorkspaceControls() {
     setWorkspace({ host, cwd: path, worktree: workspace?.worktree ?? false });
   };
   return (
-    <details data-testid="chat-workspace" className="px-4 py-2 text-sm">
+    <details data-testid="chat-workspace" className="chat-workspace px-4 py-2 text-sm">
       <summary className="cursor-pointer min-h-11 py-3 wrap-break-word">
         Working folder: {cwd || "Default folder"}
         {workspace?.worktree ? " · New worktree" : ""}

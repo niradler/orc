@@ -104,6 +104,12 @@
   }
 }
 
+@utility chat-workspace {
+  html[data-compact-viewport="true"] & {
+    display: none;
+  }
+}
+
 @utility chat-scroll-latest {
   html[data-compact-viewport="true"] & {
     position: absolute;
