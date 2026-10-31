@@ -358,7 +358,7 @@ export function ChatPanel({
             </button>
           )}
           {messages.length === 0 && !streaming && (
-            <div className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center gap-2">
+            <div className="chat-empty-state mx-auto flex h-full w-full max-w-3xl flex-col justify-center gap-2">
               <h3 className="text-lg font-medium">What are you working on?</h3>
               <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
                 Ask about your tasks, review agent activity, or work through a coding question.
@@ -560,8 +560,11 @@ export function ChatPanel({
               className="chat-composer-input block max-h-[min(12rem,calc(var(--app-height,100dvh)*0.3))] w-full resize-none overflow-y-auto bg-transparent p-2 text-base leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60"
             />
             <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
-                <div className="flex min-w-0 items-center">
+              <div className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+                <div
+                  data-testid="chat-composer-selectors"
+                  className="chat-composer-selectors flex min-w-0 items-center"
+                >
                   <ChatAgentPicker />
                   <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
                 </div>
