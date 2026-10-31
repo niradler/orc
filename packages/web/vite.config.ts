@@ -55,6 +55,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: "127.0.0.1",
     port: Number(process.env.ORC_WEB_PORT) || 9742,
     proxy: {
       "/webhooks/": {
@@ -67,5 +68,8 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  preview: {
+    host: "127.0.0.1",
   },
 });
