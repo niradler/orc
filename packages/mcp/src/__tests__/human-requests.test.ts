@@ -88,3 +88,46 @@ test("should continue explicit MCP requests with project and origin binding and 
     ),
   ).rejects.toThrow("calling agent");
 });
+
+test("should deliver command results only to the requesting MCP workflow", async () => {
+  const options = {
+    agentSessionId: "command-session",
+    projectScopes: [{ id: "project-a", name: "human-a" }],
+  };
+  const input = {
+    prompt: "Run a user supplied command",
+    origin: { backend: "external", session_id: "command-session", request_id: "mcp-command" },
+    command: {
+      host: null,
+      cwd: "/tmp",
+      script: 'printf "%s" "$ORC_INPUT_TOKEN"',
+      arguments: [{ name: "TOKEN", label: "Token" }],
+    },
+  };
+  const request = JSON.parse(await executeTool("command_request", input, options));
+  expect(request.input.kind).toBe("command");
+  expect(request.input.project_id).toBe("project-a");
+  await expect(
+    executeTool("human_request_get", { id: request.id }, { agentSessionId: "other-session" }),
+  ).rejects.toThrow("another agent");
+  const claimed = store.claimCommand(request.id, request.version);
+  const waiting = executeTool("human_request_get", { id: request.id, wait_seconds: 2 }, options);
+  store.completeCommand(request.id, claimed.version, {
+    kind: "command",
+    exit_code: 0,
+    stdout: "[REDACTED]",
+    stderr: "",
+    truncated: false,
+  });
+  const delivered = JSON.parse(await waiting);
+  expect(delivered.response.stdout).toBe("[REDACTED]");
+  expect(
+    JSON.parse(
+      await executeTool(
+        "human_request_acknowledge",
+        { id: request.id, version: delivered.version },
+        options,
+      ),
+    ).status,
+  ).toBe("delivered");
+});

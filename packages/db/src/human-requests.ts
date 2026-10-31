@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
+  CommandResultSchema,
   type HumanRequest,
   HumanRequestInputSchema,
   HumanRequestSchema,
@@ -78,6 +79,11 @@ export class HumanRequestStore {
   }
 
   private expire(): void {
+    this.db
+      .query(
+        "UPDATE human_requests SET status='unavailable',delivery_error='Command execution was interrupted or its result is unknown; inspect the host before creating another request',version=version+1 WHERE status='running' AND responded_at<?",
+      )
+      .run(this.now() - 330000);
     const cutoff =
       this.now() - (loadConfig().preferences.attention_retention_hours ?? 72) * 3600000;
     this.db
@@ -188,7 +194,7 @@ export class HumanRequestStore {
     this.expire();
     return this.db
       .query<{ id: string }, []>(
-        "SELECT id FROM human_requests WHERE status IN ('pending','answered','unavailable') ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'answered' THEN 1 ELSE 2 END,created_at,id LIMIT 100",
+        "SELECT id FROM human_requests WHERE status IN ('pending','running','answered','unavailable') ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'answered' THEN 1 ELSE 2 END,created_at,id LIMIT 100",
       )
       .all()
       .map((row) => this.get(row.id));
@@ -196,6 +202,7 @@ export class HumanRequestStore {
 
   respond(id: string, version: number, raw: unknown): HumanRequest {
     const response = HumanResponseSchema.parse(raw);
+    if (response.kind === "command") throw new ValidationError("Use the Run action for commands");
     return this.db
       .transaction(() => {
         const request = this.get(id);
@@ -220,6 +227,35 @@ export class HumanRequestStore {
         return this.get(id);
       })
       .immediate();
+  }
+
+  claimCommand(id: string, version: number): HumanRequest {
+    return this.db
+      .transaction(() => {
+        const request = this.get(id);
+        if (request.input.kind !== "command")
+          throw new ValidationError("This is not a command request");
+        if (request.status !== "pending" || request.version !== version)
+          throw new ConflictError("Command is stale or already started; reload it");
+        this.db
+          .query(
+            "UPDATE human_requests SET status='running',responded_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+          )
+          .run(this.now(), id, version);
+        return this.get(id);
+      })
+      .immediate();
+  }
+
+  completeCommand(id: string, version: number, raw: unknown): HumanRequest {
+    const result = CommandResultSchema.parse(raw);
+    const changed = this.db
+      .query(
+        "UPDATE human_requests SET status='answered',response=?,version=version+1 WHERE id=? AND status='running' AND version=?",
+      )
+      .run(JSON.stringify(result), id, version);
+    if (!changed.changes) throw new ConflictError("Command execution no longer owns this request");
+    return this.get(id);
   }
 
   acknowledge(id: string, version: number): HumanRequest {

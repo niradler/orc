@@ -29,6 +29,7 @@ import {
   ChatSessionPicker,
 } from "@/components/ChatControls";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
+import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -321,6 +322,7 @@ export function ChatPanel({
             </button>
           </ActionHelp>
         </header>
+        <ChatWorkspaceControls />
         <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
         {reconnecting && (
           <p

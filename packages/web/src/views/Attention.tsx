@@ -4,6 +4,7 @@ import { MessageSquare, Pencil } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type LiveSession } from "@/api/client";
+import { CommandRequestForm } from "@/components/CommandRequestForm";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -153,8 +154,12 @@ function RequestCard({ request }: { request: HumanRequest }) {
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <span className={pending ? "text-warning" : undefined}>
-            {request.input.kind === "question" ? "Question" : "Approval"} ·{" "}
-            {request.input.origin.backend}
+            {request.input.kind === "command"
+              ? "Command"
+              : request.input.kind === "question"
+                ? "Question"
+                : "Approval"}{" "}
+            · {request.input.origin.backend}
           </span>
           {(request.input.rule_binding || request.input.rule_bindings?.length) && (
             <span>ORC rule</span>
@@ -212,6 +217,7 @@ function RequestCard({ request }: { request: HumanRequest }) {
             )}
           </span>
         </div>
+        {request.input.kind === "command" && <CommandRequestForm request={request} />}
         {request.input.action && (
           <div className="min-w-0 space-y-2 text-sm">
             <dl className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs">
@@ -380,7 +386,7 @@ function RequestCard({ request }: { request: HumanRequest }) {
             {secondaryActions}
           </div>
         )}
-        {request.response && (
+        {request.response && request.response.kind !== "command" && (
           <p data-testid="attention-response" className="text-sm whitespace-pre-wrap wrap-anywhere">
             {request.response.kind === "question"
               ? request.response.answer

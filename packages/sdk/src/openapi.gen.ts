@@ -1154,6 +1154,12 @@ export interface paths {
                         model?: string;
                         /** Format: uuid */
                         threadId?: string;
+                        workspace?: {
+                            host?: string | null;
+                            cwd?: string;
+                            /** @default false */
+                            worktree?: boolean;
+                        };
                         system?: string;
                         autoApprove?: boolean;
                         /** @enum {string} */
@@ -1623,7 +1629,21 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval";
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -1647,11 +1667,19 @@ export interface paths {
                                 expires_in_seconds: number;
                             };
                             /** @enum {string} */
-                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
                             /** @default null */
                             delivery_error: string | null;
                             version: number;
                             response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
                                 /** @enum {string} */
                                 kind: "question";
                                 answer: string;
@@ -1713,7 +1741,21 @@ export interface paths {
                             workspace: string;
                         }[];
                         /** @enum {string} */
-                        kind: "question" | "approval";
+                        kind: "question" | "approval" | "command";
+                        command?: {
+                            script: string;
+                            cwd: string;
+                            host: string | null;
+                            /** @default [] */
+                            arguments?: {
+                                name: string;
+                                label: string;
+                                /** @default true */
+                                required?: boolean;
+                            }[];
+                            /** @default 60 */
+                            timeout_seconds?: number;
+                        };
                         prompt: string;
                         /** @default [] */
                         choices?: string[];
@@ -1780,7 +1822,21 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval";
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -1804,11 +1860,19 @@ export interface paths {
                                 expires_in_seconds: number;
                             };
                             /** @enum {string} */
-                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
                             /** @default null */
                             delivery_error: string | null;
                             version: number;
                             response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
                                 /** @enum {string} */
                                 kind: "question";
                                 answer: string;
@@ -1892,7 +1956,21 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval";
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -1916,11 +1994,19 @@ export interface paths {
                                 expires_in_seconds: number;
                             };
                             /** @enum {string} */
-                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
                             /** @default null */
                             delivery_error: string | null;
                             version: number;
                             response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
                                 /** @enum {string} */
                                 kind: "question";
                                 answer: string;
@@ -1970,6 +2056,14 @@ export interface paths {
                     "application/json": {
                         version: number;
                         response: {
+                            /** @enum {string} */
+                            kind: "command";
+                            script?: string;
+                            exit_code: number;
+                            stdout: string;
+                            stderr: string;
+                            truncated: boolean;
+                        } | {
                             /** @enum {string} */
                             kind: "question";
                             answer: string;
@@ -2024,7 +2118,21 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval";
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -2048,11 +2156,165 @@ export interface paths {
                                 expires_in_seconds: number;
                             };
                             /** @enum {string} */
-                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
                             /** @default null */
                             delivery_error: string | null;
                             version: number;
                             response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        version: number;
+                        script: string;
+                        values: {
+                            [key: string]: string;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
+                                    execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
                                 /** @enum {string} */
                                 kind: "question";
                                 answer: string;
@@ -2144,7 +2406,21 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval";
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -2168,11 +2444,19 @@ export interface paths {
                                 expires_in_seconds: number;
                             };
                             /** @enum {string} */
-                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
                             /** @default null */
                             delivery_error: string | null;
                             version: number;
                             response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
                                 /** @enum {string} */
                                 kind: "question";
                                 answer: string;
@@ -2264,7 +2548,21 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval";
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -2288,11 +2586,19 @@ export interface paths {
                                 expires_in_seconds: number;
                             };
                             /** @enum {string} */
-                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
                             /** @default null */
                             delivery_error: string | null;
                             version: number;
                             response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
                                 /** @enum {string} */
                                 kind: "question";
                                 answer: string;
@@ -4948,7 +5254,21 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval";
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -4972,11 +5292,19 @@ export interface paths {
                                 expires_in_seconds: number;
                             };
                             /** @enum {string} */
-                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
                             /** @default null */
                             delivery_error: string | null;
                             version: number;
                             response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
                                 /** @enum {string} */
                                 kind: "question";
                                 answer: string;

@@ -12,6 +12,7 @@ import {
   type ChatQuestion,
   ChatSettingsSchema,
   type ChatThread,
+  type ChatWorkspace,
 } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
 import {
@@ -28,6 +29,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { ApiError, api, getApiSecret, getApiUrl } from "@/api/client";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
+import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import {
   CHAT_PREFERENCES_KEY,
   CHAT_TABS_KEY,
@@ -53,6 +55,7 @@ interface PendingPermission {
 
 /** One open conversation. Each tab streams on its own, so turns keep running in the background. */
 export interface ChatTab {
+  workspace?: ChatWorkspace;
   createdAt?: number;
   projectId?: string | null;
   /** Closed from the open list; retained in history so drafts and background work survive. */
@@ -668,8 +671,15 @@ function useChatController() {
         assistantId: crypto.randomUUID(),
         respondingAgent: config.agent,
       }));
-      await follow(key, (signal) =>
-        fetch(`${getApiUrl()}/chat/stream`, {
+      await follow(key, async (signal) => {
+        let workspace = current.workspace;
+        if (!thread && !workspace) {
+          const ssh = await api.ssh.get();
+          const last = folderHistory(ssh.host).last;
+          workspace = { host: ssh.host, ...(last ? { cwd: last } : {}), worktree: false };
+        }
+        if (!thread && workspace?.cwd) rememberFolder(workspace.host ?? null, workspace.cwd);
+        return fetch(`${getApiUrl()}/chat/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({
@@ -680,11 +690,11 @@ function useChatController() {
             ...(config.permissionMode && ["claude", "codex"].includes(config.agent)
               ? { permissionMode: config.permissionMode }
               : {}),
-            ...(thread ? { threadId: thread.id } : {}),
+            ...(thread ? { threadId: thread.id } : { workspace }),
           }),
           signal,
-        }),
-      );
+        });
+      });
     },
     [ready, follow, update, find],
   );
@@ -931,6 +941,11 @@ function useChatController() {
     streamText: tab.streamText,
     activity: tab.activity,
     error: tab.error,
+    workspace: tab.workspace,
+    setWorkspace: (workspace: ChatWorkspace) =>
+      update(activeRef.current, (current) =>
+        current.thread || current.streaming ? {} : { workspace },
+      ),
     config: tab.config,
     setConfig,
     changePermissions,
