@@ -110,9 +110,17 @@ export function CommandRequestForm({
                 className="block min-w-0 space-y-1 text-xs"
                 key={arg.name}
               >
-                <span>
-                  {arg.label}
-                  {!arg.required ? " (optional)" : ""}
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  <span>
+                    {arg.label}
+                    {!arg.required ? " (optional)" : ""}
+                  </span>
+                  <code
+                    data-testid={`attention-argument-name-${arg.name}`}
+                    className="break-all font-mono text-xs text-muted-foreground"
+                  >
+                    {`ORC_INPUT_${arg.name}`}
+                  </code>
                 </span>
                 <Input
                   id={`argument-${request.id}-${arg.name}`}

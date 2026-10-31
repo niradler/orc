@@ -12,6 +12,9 @@ Declare as many inputs as needed (up to 20), for example
 `{name:"PASSWORD",label:"Service password",description:"Used only for this login",required:true}`.
 Every input is masked and redacted, including usernames, URLs and other values
 that do not look like passwords. Inputs are never returned raw to the agent.
+Each field shows its friendly label beside the exact command variable, such as
+`Access key` and `ORC_INPUT_KEY`, so it can be matched to `$ORC_INPUT_KEY` or
+`$env:ORC_INPUT_KEY` in the preview without revealing the entered value.
 Use the execution host's shell syntax for environment variables, for example
 `my-cli login --password "$ORC_INPUT_PASSWORD"` in bash/zsh or
 `my-cli login --password "$env:ORC_INPUT_PASSWORD"` in PowerShell.

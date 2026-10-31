@@ -71,6 +71,10 @@ test("should review compact requests, preserve masked drafts and return redacted
   await expect(card.getByTestId("attention-command")).toHaveCount(0);
   for (const [name, value] of Object.entries(values)) {
     const input = card.getByTestId(`attention-argument-${name}`);
+    const variable = `ORC_INPUT_${name}`;
+    await expect(card.getByTestId(`attention-argument-name-${name}`)).toHaveText(variable);
+    await expect(card.getByTestId("attention-command-preview")).toContainText(variable);
+    await expect(input).toHaveAccessibleName(new RegExp(variable));
     await expect(input).toHaveAttribute("type", "password");
     await input.fill(value);
   }
@@ -158,6 +162,14 @@ for (const width of [320, 390])
       await card.getByTestId("attention-review").tap();
       await card.getByTestId("attention-argument-ACCOUNT").fill("private-touch-account");
       await card.getByTestId("attention-argument-KEY").fill("private-touch-key");
+      for (const name of ["ACCOUNT", "KEY"]) {
+        await expect(card.getByTestId(`attention-argument-name-${name}`)).toHaveText(
+          `ORC_INPUT_${name}`,
+        );
+        await expect(card.getByTestId("attention-command-preview")).toContainText(
+          `ORC_INPUT_${name}`,
+        );
+      }
       await card.scrollIntoViewIfNeeded();
       for (const testId of [
         "attention-review",
