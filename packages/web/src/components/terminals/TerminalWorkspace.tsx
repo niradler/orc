@@ -34,6 +34,8 @@ type WorkspaceProps = {
   selected: Terminal;
   terminals: Terminal[];
   renderTerminal: (id: string) => ReactNode;
+  renderActions: (terminal: Terminal, active: boolean) => ReactNode;
+  renderOptions: (terminal: Terminal) => ReactNode;
 };
 type TreeProps = WorkspaceProps & {
   node: Layout;
@@ -202,6 +204,20 @@ function WorkspaceTree(props: TreeProps) {
         <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden px-1">
           {terminal && (
             <>
+              <span
+                className="min-w-0 flex-1 truncate text-xs text-on-surface"
+                title={`${terminal.name} · ${terminal.host ?? "Local"} · ${terminal.cwd ?? ""}`}
+              >
+                <span data-testid="terminal-name">{terminal.name}</span>
+                {terminal.host && (
+                  <span
+                    data-testid="terminal-selected-host"
+                    className="ml-2 text-on-surface-variant"
+                  >
+                    {terminal.host}
+                  </span>
+                )}
+              </span>
               {node.kind !== "git" && (
                 <div className="pane-checkout-context min-w-0 max-w-72">
                   <TerminalCheckout terminal={terminal} paneId={node.id} />
@@ -239,63 +255,8 @@ function WorkspaceTree(props: TreeProps) {
           <TerminalSquare size={16} aria-hidden="true" />
           <ChevronDown size={11} aria-hidden="true" />
         </button>
-        <details
-          className="relative md:hidden"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") event.currentTarget.removeAttribute("open");
-          }}
-          onClick={(event) => {
-            if ((event.target as HTMLElement).closest("button"))
-              event.currentTarget.removeAttribute("open");
-          }}
-        >
-          <summary
-            data-testid="pane-actions"
-            aria-label="Pane actions"
-            title="Pane actions"
-            className="list-none flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface cursor-pointer"
-          >
-            <Ellipsis size={18} />
-          </summary>
-          <div className="absolute right-0 top-full z-30 w-60 rounded-md border border-outline-variant bg-surface-high p-2 shadow-lg">
-            <button
-              type="button"
-              data-testid="pane-action-split-horizontal"
-              disabled={leaves(root).length >= 8}
-              onClick={() => split("row")}
-              className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
-            >
-              Split side by side
-            </button>
-            <button
-              type="button"
-              disabled={leaves(root).length >= 8}
-              onClick={() => split("column")}
-              className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
-            >
-              Split top and bottom
-            </button>
-            {leaves(root).length > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => zoom(zoomed ? null : node.id)}
-                  className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
-                >
-                  {zoomed ? "Restore split layout" : "Expand pane"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => close(node.id)}
-                  className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
-                >
-                  Close pane
-                </button>
-              </>
-            )}
-          </div>
-        </details>
-        <div className="hidden md:flex items-center gap-1">
+        {terminal && props.renderActions(terminal, active === node.id)}
+        <div className="pane-extra-actions items-center gap-1">
           <ActionHelp label="Split side by side">
             <button
               type="button"
@@ -351,6 +312,68 @@ function WorkspaceTree(props: TreeProps) {
             </ActionHelp>
           )}
         </div>
+        <details
+          className="relative"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") event.currentTarget.removeAttribute("open");
+          }}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("button"))
+              event.currentTarget.removeAttribute("open");
+          }}
+        >
+          <summary
+            data-testid="pane-actions"
+            aria-label="Pane actions"
+            title="Pane actions"
+            className="list-none flex min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface cursor-pointer"
+          >
+            <Ellipsis size={18} />
+          </summary>
+          <div className="absolute right-0 top-full z-30 w-60 rounded-md border border-outline-variant bg-surface-high p-2 shadow-lg">
+            {terminal && props.renderOptions(terminal)}
+            <div className="pane-menu-layout-actions">
+              <button
+                type="button"
+                data-testid="pane-action-split-horizontal"
+                disabled={leaves(root).length >= 8}
+                onClick={() => split("row")}
+                className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+              >
+                Split side by side
+              </button>
+              <button
+                type="button"
+                data-testid="pane-action-split-vertical"
+                disabled={leaves(root).length >= 8}
+                onClick={() => split("column")}
+                className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+              >
+                Split top and bottom
+              </button>
+              {leaves(root).length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    data-testid="pane-action-focus"
+                    onClick={() => zoom(zoomed ? null : node.id)}
+                    className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+                  >
+                    {zoomed ? "Restore split layout" : "Expand pane"}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="pane-action-close"
+                    onClick={() => close(node.id)}
+                    className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+                  >
+                    Close pane
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </details>
       </header>
       {!terminal ? (
         <p className="p-4 text-sm text-on-surface-variant">

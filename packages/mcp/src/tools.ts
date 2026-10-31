@@ -3,7 +3,11 @@ import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service"
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
-import { HumanRequestInputSchema, HumanRequestSchema } from "@orc/core/human-requests";
+import {
+  CommandSpecSchema,
+  HumanRequestInputSchema,
+  HumanRequestSchema,
+} from "@orc/core/human-requests";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import {
@@ -115,7 +119,20 @@ const skillRevertParams = skillHistoryParams.extend({
   expected_change_id: z.string().min(1),
   reason: z.string().trim().min(1).max(2000),
 });
-const humanCreateParams = HumanRequestInputSchema.safeExtend({ project: projectParam });
+const humanCreateParams = HumanRequestInputSchema.safeExtend({
+  project: projectParam,
+});
+const commandCreateParams = z
+  .object({
+    origin: HumanRequestInputSchema.shape.origin,
+    title: HumanRequestInputSchema.shape.title,
+    prompt: HumanRequestInputSchema.shape.prompt,
+    command: CommandSpecSchema,
+    project: projectParam,
+    project_id: HumanRequestInputSchema.shape.project_id,
+    expires_in_seconds: HumanRequestInputSchema.shape.expires_in_seconds,
+  })
+  .strict();
 const humanGetParams = z
   .object({
     id: z.string().min(1).max(128),
@@ -133,6 +150,12 @@ const digestCompleteParams = z
   })
   .strict();
 export const toolDefinitions = [
+  {
+    name: "command_request",
+    description:
+      "Ask the user to run a command in Attention needed. Supply a script for the execution host's default shell (same as terminals), exact host (null for API host), cwd and argument declarations. Reference each user-filled value as a quoted environment variable: $ORC_INPUT_NAME in bash/zsh, $env:ORC_INPUT_NAME in PowerShell; never ask for secrets in chat. The user can edit the script and explicitly Run. This call creates a durable request; poll human_request_get with wait_seconds:30 until answered (pending/running means keep waiting). The command result is returned to this requesting workflow, with supplied values redacted. Acknowledge after consuming it. Cancelled/expired/unavailable never authorize retries.",
+    inputSchema: commandCreateParams,
+  },
   {
     name: "channel_list",
     description:
@@ -166,7 +189,7 @@ export const toolDefinitions = [
   {
     name: "human_request",
     description:
-      "Create a durable question or ordinary approval in Attention needed. This never executes a command or grants OS privileges. Retain the returned id and poll human_request_get; deliver the response only to the requesting workflow.",
+      "Ask the user for help in Attention needed: a question, approval or reviewed command with multiple secure inputs. Use title for a short action name and prompt to explain why it is needed. For kind:command supply the exact host, cwd, native-shell script and command.arguments with name, label, optional description and required. All input fields are masked; values travel only to the reviewed command and are redacted from its output, never returned raw to the agent. Reference values as quoted $ORC_INPUT_NAME in bash/zsh or $env:ORC_INPUT_NAME in PowerShell. Creation never executes anything or grants OS privileges; the user reviews and explicitly runs it. Retain the id and poll human_request_get while pending/running, consume only in the requesting workflow, then acknowledge the returned version. Cancelled/expired/unavailable never authorize retries.",
     inputSchema: humanCreateParams,
   },
   {
@@ -1082,8 +1105,11 @@ export async function executeTool(
     const { id: _id, project: _project, ...body } = channelEditParams.parse(args);
     return JSON.stringify(await orcApi("PATCH", path, { body: { ...body, project_id: scope } }));
   }
-  if (name === "human_request") {
-    const { project, ...input } = humanCreateParams.parse(args);
+  if (name === "human_request" || name === "command_request") {
+    const { project, ...input } =
+      name === "command_request"
+        ? { ...commandCreateParams.parse(args), kind: "command" as const }
+        : humanCreateParams.parse(args);
     const scope = project
       ? resolveProjectId(project)?.id
       : (input.project_id ?? options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
@@ -1119,7 +1145,7 @@ export async function executeTool(
         await orcApi("POST", `${path}/acknowledge`, { body: { version: input.version } }),
       );
     const deadline = Date.now() + input.wait_seconds * 1000;
-    while (request.status === "pending" && Date.now() < deadline) {
+    while (["pending", "running"].includes(request.status) && Date.now() < deadline) {
       await Bun.sleep(Math.min(500, deadline - Date.now()));
       request = await read();
     }

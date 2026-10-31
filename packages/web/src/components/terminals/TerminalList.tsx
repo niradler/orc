@@ -83,7 +83,7 @@ export function TerminalList({
               data-status={terminal.status}
               data-active={active}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 transition-colors",
+                "flex min-h-11 items-center gap-2 px-3 py-1.5 transition-colors",
                 active ? "bg-surface-highest" : "hover:bg-surface",
               )}
             >
@@ -104,7 +104,7 @@ export function TerminalList({
                   setMenuId(terminal.id);
                 }}
                 to={{ pathname: `/terminals/${terminal.id}`, search: next.toString() }}
-                title={`${terminal.name}\n${terminal.cwd ?? ""}\n${state}`}
+                title={`${terminal.name}\n${label}\n${terminal.cwd ?? ""}\n${state}`}
                 aria-current={active ? "page" : undefined}
                 className="flex-1 min-w-0"
                 onKeyDown={(event) => {
@@ -116,15 +116,23 @@ export function TerminalList({
               >
                 <div
                   className={cn(
-                    "truncate font-body text-xs",
+                    "flex min-w-0 items-center gap-1.5 font-body text-xs",
                     active ? "text-on-surface font-medium" : "text-on-surface",
                   )}
                 >
-                  {terminal.name}
+                  <Icon size={11} className="shrink-0" aria-label={label} />
+                  <span className="truncate">{terminal.name}</span>
                 </div>
                 <div className="flex items-center gap-1 font-label text-xs text-on-surface-variant min-w-0">
-                  <Icon size={10} className="shrink-0" />
-                  <span className="shrink-0">{label}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {terminal.host && (
+                      <span data-testid="terminal-item-host" className="text-primary">
+                        {terminal.host}
+                        {tail ? " · " : ""}
+                      </span>
+                    )}
+                    {tail || (!terminal.host && label)}
+                  </span>
                   <span
                     data-testid="terminal-item-state"
                     className={cn(
@@ -134,23 +142,7 @@ export function TerminalList({
                   >
                     {state}
                   </span>
-                  {terminal.host && (
-                    <span
-                      data-testid="terminal-item-host"
-                      className="shrink-0 normal-case tracking-normal text-primary"
-                    >
-                      @{terminal.host}
-                    </span>
-                  )}
                 </div>
-                {tail && (
-                  <div
-                    className="truncate text-xs text-on-surface-variant"
-                    title={terminal.cwd ?? undefined}
-                  >
-                    {tail}
-                  </div>
-                )}
               </Link>
               <TerminalActions
                 terminal={terminal}

@@ -5,7 +5,7 @@ import { api } from "@/api/client";
 
 interface RemoteFolderBrowserProps {
   initial: string;
-  host: string;
+  host: string | null;
   onPick: (path: string) => void;
   onClose: () => void;
 }
@@ -17,7 +17,13 @@ export function RemoteFolderBrowser({ initial, host, onPick, onClose }: RemoteFo
     queryFn: () => api.terminals.browse(path || undefined, host),
     retry: false,
   });
-  const join = (name: string) => (data ? `${data.path.replace(/\/$/, "")}/${name}` : name);
+  const join = (name: string) => {
+    if (!data) return name;
+    const windows = /^(?:[A-Za-z]:[\\/]|\\\\)/.test(data.path);
+    const separator = windows ? "\\" : "/";
+    const parent = data.path.replace(windows ? /[\\/]$/ : /\/$/, "");
+    return `${parent}${separator}${name}`;
+  };
 
   return (
     <div
@@ -59,7 +65,9 @@ export function RemoteFolderBrowser({ initial, host, onPick, onClose }: RemoteFo
               className="w-full min-h-11 flex items-center gap-1.5 px-1 py-0.5 rounded-md font-body text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface"
             >
               <Folder size={11} className="shrink-0 text-on-surface-variant" />
-              <span className="truncate">{name}</span>
+              <span data-testid={`remote-folder-name-${name}`} className="truncate">
+                {name}
+              </span>
             </button>
           </li>
         ))}

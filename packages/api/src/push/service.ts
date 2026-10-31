@@ -99,7 +99,12 @@ export function truncate(text: string, max: number): string {
 }
 
 export function attentionMessage(request: HumanRequest): PushMessage {
-  const verb = request.input.kind === "approval" ? "Approval needed" : "Question";
+  const verb =
+    request.input.kind === "command"
+      ? "Command requested"
+      : request.input.kind === "approval"
+        ? "Approval needed"
+        : "Question";
   return {
     title: `${verb} · ${request.input.origin.backend}`,
     body: truncate(request.input.prompt, 180),

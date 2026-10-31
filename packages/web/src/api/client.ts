@@ -617,6 +617,12 @@ export const api = {
       ),
   },
   humanRequests: {
+    run: (id: string, version: number, script: string, values: Record<string, string>) =>
+      req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/run`, {
+        version,
+        script,
+        values,
+      }),
     list: () => req<HumanRequest[]>("GET", "/human-requests"),
     respond: (id: string, version: number, response: HumanResponse) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/respond`, {

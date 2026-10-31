@@ -8,6 +8,10 @@
   display: none;
 }
 
+.pane-extra-actions {
+  display: none;
+}
+
 @container (max-width: 399px) {
   .pane-view-label {
     display: none;
@@ -21,6 +25,14 @@
 }
 
 @container (min-width: 720px) {
+  .pane-extra-actions {
+    display: flex;
+  }
+
+  .pane-menu-layout-actions {
+    display: none;
+  }
+
   .pane-task-context {
     display: inline-flex;
   }

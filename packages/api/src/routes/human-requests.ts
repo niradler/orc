@@ -1,5 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { changes } from "@orc/core/changes";
 import {
+  CommandRunSchema,
   HumanRequestInputSchema,
   HumanRequestSchema,
   HumanResponseSchema,
@@ -7,6 +9,7 @@ import {
 import { getSqlite } from "@orc/db/client";
 import { currentHumanRequest, HumanRequestStore } from "@orc/db/human-requests";
 import { bodyLimit } from "hono/body-limit";
+import { prepareCommand } from "../lib/command-request.js";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
@@ -45,7 +48,9 @@ app.openapi(
       store()
         .list()
         .map((request) => current(request.id))
-        .filter((request) => ["pending", "answered", "unavailable"].includes(request.status)),
+        .filter((request) =>
+          ["pending", "running", "answered", "unavailable"].includes(request.status),
+        ),
       200,
     ),
 );
@@ -99,6 +104,27 @@ app.openapi(
     const input = c.req.valid("json");
     current(c.req.valid("param").id);
     return c.json(store().respond(c.req.valid("param").id, input.version, input.response), 200);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/human-requests/{id}/run",
+    tags: ["Human requests"],
+    request: { params, body: { content: { "application/json": { schema: CommandRunSchema } } } },
+    responses: response,
+  }),
+  async (c) => {
+    const input = c.req.valid("json");
+    const id = c.req.valid("param").id;
+    const prepared = await prepareCommand(current(id), input);
+    const claimed = store().claimCommand(id, input.version);
+    changes.publish("human-requests");
+    const result = await prepared.execute();
+    const completed = store().completeCommand(id, claimed.version, result);
+    changes.publish("human-requests");
+    return c.json(completed, 200);
   },
 );
 

@@ -10,9 +10,11 @@ import {
   type Worktree,
 } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RecentFolders } from "@/components/RecentFolders";
 import { RemoteFolderBrowser } from "@/components/terminals/RemoteFolderBrowser";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { useSsh } from "@/hooks/useSsh";
+import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
 import {
   CWD_KEY,
@@ -35,6 +37,7 @@ interface NewTerminalMenuProps {
   onCreate: (input: CreateTerminalInput) => Promise<boolean>;
   className?: string;
   compact?: boolean;
+  iconOnly?: boolean;
 }
 
 type Removal = { worktree: Worktree; step: "confirm" | "dirty" };
@@ -66,18 +69,25 @@ export function NewTerminalMenu({
   onCreate,
   className,
   compact = false,
+  iconOnly = false,
 }: NewTerminalMenuProps) {
   const hostSelectId = useId();
   const [prefs] = useState(() => readLaunchPrefs(storage));
   const [host, setHost] = useState<string | null>(defaultHost);
-  const [cwd, setCwd] = useState(defaultHost ? "" : prefs.cwd);
+  const [cwd, setCwd] = useState(
+    () => folderHistory(defaultHost).last || (defaultHost ? "" : prefs.cwd),
+  );
   const [worktree, setWorktree] = useState(prefs.worktree);
-  const [browsing, setBrowsing] = useState(false);
   const [remoteBrowsing, setRemoteBrowsing] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [removal, setRemoval] = useState<Removal | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const folders = useRef(new Map<string | null, string>([[null, prefs.cwd]]));
+  const folders = useRef(
+    new Map<string | null, string>([
+      [null, folderHistory(null).last || prefs.cwd],
+      [defaultHost, folderHistory(defaultHost).last || (defaultHost ? "" : prefs.cwd)],
+    ]),
+  );
   const { data: ssh, error: hostsError } = useSsh();
   const remoteSupported = !host || ssh?.supported === true;
   const {
@@ -105,7 +115,13 @@ export function NewTerminalMenu({
   );
   const removeWorktree = useRemoveWorktree();
   const rows = listing?.root ? listing.worktrees : [];
-  const busy = pending || browsing || checkingHost || !remoteSupported;
+  const busy = pending || checkingHost || !remoteSupported;
+
+  useEffect(() => {
+    if (!open) return;
+    const last = folderHistory(host).last;
+    if (last) setCwd(last);
+  }, [open, host]);
 
   useEffect(() => {
     // The confirm dialog is portalled outside the menu; clicks in it must not close the menu.
@@ -140,46 +156,33 @@ export function NewTerminalMenu({
   const chooseHost = (alias: string | null) => {
     folders.current.set(host, cwd);
     setHost(alias);
-    setCwd(folders.current.get(alias) ?? "");
+    setCwd(folders.current.get(alias) ?? folderHistory(alias).last);
     setRemoteBrowsing(false);
     setLocalError(null);
     setRemoval(null);
   };
 
-  const browse = async (): Promise<string | null> => {
+  const browse = () => {
     setLocalError(null);
-    if (host) {
-      setRemoteBrowsing(true);
-      return null;
-    }
-    setBrowsing(true);
-    try {
-      const { path } = await api.terminals.pickFolder(cwd.trim() || undefined, null);
-      if (path) chooseFolder(path);
-      return path;
-    } catch (e) {
-      setLocalError(e instanceof Error ? e.message : String(e));
-      return null;
-    } finally {
-      setBrowsing(false);
-    }
+    setRemoteBrowsing(true);
   };
 
   const launch = async (kind: TerminalKind) => {
     setLocalError(null);
-    let folderToUse = cwd.trim();
+    const folderToUse = cwd.trim();
     if (needsFolderPick(kind, folderToUse)) {
-      const picked = await browse();
-      if (!picked) return;
-      folderToUse = picked;
+      browse();
+      return;
     }
     if (await onCreate({ ...launchRequest(kind, folderToUse, worktree), host })) {
+      rememberFolder(host, folderToUse);
       if (host === null) saveLaunchPref(storage, CWD_KEY, folderToUse);
     }
   };
 
   const openCheckout = (kind: TerminalKind, row: Worktree) => {
     setLocalError(null);
+    rememberFolder(host, row.path);
     void onCreate({ ...launchRequest(kind, row.path, false), host });
   };
 
@@ -233,10 +236,16 @@ export function NewTerminalMenu({
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => onOpenChange(!open)}
-          className="w-full min-w-11 inline-flex items-center justify-center gap-2 min-h-11 px-3 py-2 rounded-md bg-primary border border-primary text-primary-foreground font-label text-xs hover:bg-primary/90 transition-colors"
+          title="New terminal"
+          className={cn(
+            "min-w-11 inline-flex items-center justify-center gap-2 min-h-11 rounded-md font-label text-xs transition-colors",
+            iconOnly
+              ? "w-11 shrink-0 sm:w-8 sm:min-w-8 sm:min-h-8 text-on-surface-variant hover:bg-surface"
+              : "w-full px-3 py-2 bg-primary border border-primary text-primary-foreground hover:bg-primary/90",
+          )}
         >
           <Plus size={14} />
-          <span className={compact ? "sr-only" : undefined}>New terminal</span>
+          <span className={compact || iconOnly ? "sr-only" : undefined}>New terminal</span>
         </button>
         {compact && open && <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />}
         {open && (
@@ -285,7 +294,7 @@ export function NewTerminalMenu({
                 data-testid="terminal-host-select"
                 value={host ?? ""}
                 onChange={(event) => chooseHost(event.target.value || null)}
-                disabled={pending || browsing}
+                disabled={pending}
               >
                 <option value="">Local</option>
                 {[...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])].map(
@@ -315,6 +324,7 @@ export function NewTerminalMenu({
                   data-testid="terminal-cwd"
                   value={cwd}
                   onChange={(e) => chooseFolder(e.target.value)}
+                  onBlur={() => rememberFolder(host, cwd)}
                   placeholder="~ (home folder)"
                   spellCheck={false}
                   className="min-w-0 flex-1 bg-background border border-control-border rounded-md min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-hidden focus:ring-2 focus:ring-focus"
@@ -323,22 +333,31 @@ export function NewTerminalMenu({
                   type="button"
                   data-testid="terminal-browse"
                   disabled={busy}
-                  onClick={() => void browse()}
+                  onClick={browse}
                   title="Choose a folder"
                   className="shrink-0 inline-flex items-center gap-1 min-h-11 px-2 py-1 rounded-md border border-control-border font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
                 >
                   <FolderOpen size={12} />
-                  {browsing ? "Choosing" : "Browse"}
+                  Browse
                 </button>
               </div>
             </label>
-            {host && remoteBrowsing && (
+            <RecentFolders
+              host={host}
+              disabled={pending}
+              onPick={(path) => {
+                chooseFolder(path);
+                rememberFolder(host, path);
+              }}
+            />
+            {remoteBrowsing && (
               <RemoteFolderBrowser
                 key={host}
                 host={host}
                 initial={cwd.trim()}
                 onPick={(path) => {
                   chooseFolder(path);
+                  rememberFolder(host, path);
                   setRemoteBrowsing(false);
                 }}
                 onClose={() => setRemoteBrowsing(false)}

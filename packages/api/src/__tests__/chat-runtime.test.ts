@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -500,84 +500,20 @@ describe("native chat runtime", () => {
   });
 
   test("rejects a stale stopped record when the Codex writer is still owned", async () => {
-    const directory = join(home, ".codex", "thread-writer-locks");
-    mkdirSync(directory, { recursive: true });
-    const lockPath = join(directory, "race-native.lock");
-    writeFileSync(lockPath, "");
-    const command =
-      process.platform === "win32"
-        ? [
-            "powershell.exe",
-            "-NoProfile",
-            "-Command",
-            "$f=[System.IO.File]::Open($env:ORC_TEST_LOCK,'Open','ReadWrite','ReadWrite'); $f.Lock(0,1); [Console]::WriteLine('ready'); [Console]::In.ReadLine() | Out-Null; $f.Unlock(0,1); $f.Dispose()",
-          ]
-        : ["sh", "-c", 'exec 9<"$ORC_TEST_LOCK"; flock -x 9; echo ready; read release'];
-    const child = Bun.spawn(command, {
-      env: { ...process.env, ORC_TEST_LOCK: lockPath },
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 10000,
-    });
-    try {
-      const reader = child.stdout.getReader();
-      const ready = await reader.read();
-      reader.releaseLock();
-      expect(new TextDecoder().decode(ready.value)).toContain("ready");
-      getDb()
-        .insert(bridge_chats)
-        .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
-        .onConflictDoNothing()
-        .run();
-      getDb()
-        .insert(gateway_sessions)
-        .values({
-          id: "source-race",
-          backend: "codex",
-          mode: "direct",
-          status: "stopped",
-          chat_id: LIVE_CHAT_ID,
-          runtime_session_id: "race-native",
-          cwd: home,
-        })
-        .run();
-      expect((await request("/chat/threads", { sourceSessionId: "source-race" })).status).toBe(409);
-    } finally {
-      child.stdin.write("release\n");
-      child.stdin.end();
-      expect(await child.exited).toBe(0);
-    }
-    const preparedResponse = await request("/chat/threads", { sourceSessionId: "source-race" });
-    expect(preparedResponse.status).toBe(200);
-    const prepared = (await preparedResponse.json()) as ChatThread;
-    const resumed = Bun.spawn(command, {
-      env: { ...process.env, ORC_TEST_LOCK: lockPath },
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 10000,
-    });
-    try {
-      const reader = resumed.stdout.getReader();
-      const ready = await reader.read();
-      reader.releaseLock();
-      expect(new TextDecoder().decode(ready.value)).toContain("ready");
-      const count = calls.length;
-      const result = await turn({
-        threadId: prepared.id,
-        messages: [{ role: "user", content: "continue" }],
-      });
-      expect(result.events).toContainEqual({
-        type: "error",
-        message: "End the original agent session before resuming it in chat.",
-      });
-      expect(calls).toHaveLength(count);
-    } finally {
-      resumed.stdin.write("release\n");
-      resumed.stdin.end();
-      expect(await resumed.exited).toBe(0);
-    }
+    const child = Bun.spawn(
+      ["bun", join(import.meta.dir, "../../scripts/verify-codex-silent-exit.ts"), "--resume-only"],
+      { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 20000 },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    if (code !== 0) throw new Error(stderr || stdout);
+    expect(stderr).toContain("End the original agent session before resuming it in chat.");
+    expect(stdout).toContain(
+      "stopped Codex record rejects a held writer, resumes after release and blocks re-acquisition",
+    );
   });
   test("requires auth, validates shapes and denies unknown conversations and permission requests", async () => {
     for (const [path, body] of [

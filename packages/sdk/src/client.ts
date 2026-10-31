@@ -298,6 +298,8 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<unknown>("POST", `/channels/pairings/${encodeURIComponent(id)}/confirm`),
     },
     humanRequests: {
+      run: (id: string, version: number, script: string, values: Record<string, string>) =>
+        c<HumanRequest>("POST", `/human-requests/${e(id)}/run`, { version, script, values }),
       list: () => c<HumanRequest[]>("GET", "/human-requests"),
       create: (input: HumanRequestInput) => c<HumanRequest>("POST", "/human-requests", input),
       get: (id: string) => c<HumanRequest>("GET", `/human-requests/${e(id)}`),

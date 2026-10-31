@@ -1,7 +1,7 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { chooseChatAgent, openChatActions, openChatSettings, settingsSection } from "./_chat-ui";
-import { API_SECRET, gotoView } from "./_helpers";
+import { API_SECRET, gotoView, openTerminalOptions } from "./_helpers";
 
 for (const width of [390, 1440]) {
   test(`chat answers approvals/questions and exposes quiet continuation icons at ${width}px`, async ({
@@ -188,9 +188,10 @@ for (const width of [390, 1440]) {
     await page.screenshot({ path: testInfo.outputPath(`chat-interactions-${width}.png`) });
     await toTerminal.click();
     await expect(page).toHaveURL(/\/terminals\/icon-terminal/);
+    await openTerminalOptions(page);
     const toChat = page.getByTestId("terminal-continue-chat").filter({ visible: true });
     await expect(toChat).toHaveAttribute("title", "Continue in chat");
-    await expect(toChat).toHaveText("");
+    await expect(toChat).toHaveText("Continue in chat");
     await toChat.click();
     await expect(page).toHaveURL(/chat=open/);
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeVisible();

@@ -103,6 +103,23 @@ export const ChatHistoryPageSchema = z.object({
   before: z.number().int().nonnegative().nullable(),
 });
 export type ChatHistoryPage = z.infer<typeof ChatHistoryPageSchema>;
+export const ChatWorkspaceSchema = z
+  .object({
+    host: z
+      .string()
+      .max(255)
+      .regex(/^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/)
+      .nullable()
+      .optional(),
+    cwd: z.string().trim().max(4096).optional(),
+    worktree: z.boolean().default(false),
+  })
+  .strict()
+  .refine(
+    (value) => !value.worktree || !!value.cwd?.trim(),
+    "Choose a folder before creating a worktree",
+  );
+export type ChatWorkspace = z.infer<typeof ChatWorkspaceSchema>;
 export const ChatThreadSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),

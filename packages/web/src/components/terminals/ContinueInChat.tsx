@@ -4,7 +4,15 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { useChat } from "@/hooks/useChat";
 
-export function ContinueInChat({ terminal }: { terminal: Terminal }) {
+export function ContinueInChat({
+  terminal,
+  showLabel = false,
+  onContinued,
+}: {
+  terminal: Terminal;
+  showLabel?: boolean;
+  onContinued?: () => void;
+}) {
   const chat = useChat();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -21,6 +29,7 @@ export function ContinueInChat({ terminal }: { terminal: Terminal }) {
       next.delete("session");
       next.set("chat", "open");
       navigate({ search: next.toString() });
+      onContinued?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not continue in chat.");
     } finally {
@@ -36,9 +45,10 @@ export function ContinueInChat({ terminal }: { terminal: Terminal }) {
         title="Continue in chat"
         disabled={pending || !terminal.live_session_id}
         onClick={() => void open()}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface disabled:opacity-40"
+        className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md px-2 text-sm text-on-surface-variant hover:bg-surface disabled:opacity-40"
       >
         <MessageSquare size={17} />
+        {showLabel && "Continue in chat"}
       </button>
       {error && (
         <p

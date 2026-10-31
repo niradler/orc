@@ -69,6 +69,7 @@ export function createMcpServer({
       name === "session_handoff" ||
         name === "tool_invoke" ||
         name === "human_request" ||
+        name === "command_request" ||
         name.startsWith("channel_")
         ? undefined
         : args,

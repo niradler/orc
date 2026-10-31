@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { repoRoot } from "./_helpers";
+import { repoRoot, reviewAttentionRequest } from "./_helpers";
 
 let server: ChildProcess;
 let base: string;
@@ -60,6 +60,7 @@ test("a managed approval survives reload, opens its chat and clears after a chat
   await expect(card).toContainText("Managed approval fixture");
   await page.reload();
   await expect(card).toHaveCount(1);
+  await reviewAttentionRequest(card);
   await card.getByTestId("attention-open-chat").click();
   await expect(page.getByTestId("chat-panel")).toBeVisible();
   await page.getByTestId("chat-panel").getByRole("button", { name: "Deny", exact: true }).click();
@@ -81,6 +82,7 @@ test("an inbox answer clears the original prompt and suppresses its observed dup
   await page.reload();
   await expect(card).toHaveCount(1);
   await expect(page.locator('[data-testid^="attention-session-"]')).toHaveCount(0);
+  await reviewAttentionRequest(card);
   await card.getByTestId("attention-open-chat").click();
   await card.getByTestId("attention-deny").click();
   await expect(page.getByTestId("chat-panel")).toContainText("Fixture response: denied");
@@ -136,6 +138,7 @@ test("a managed notice cannot hide a question with the same native ID on another
   await expect(page.locator('[data-testid^="attention-session-"]')).toContainText(
     "fixture-secondary",
   );
+  await reviewAttentionRequest(card);
   await page.screenshot({
     path: join(repoRoot(), ".claude/docs/attention-host-visibility.png"),
     fullPage: true,

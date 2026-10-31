@@ -24,6 +24,7 @@ import {
   ChatSettingsSchema,
   type ChatThread,
   ChatThreadSchema,
+  ChatWorkspaceSchema,
   chatSystemPrompt,
 } from "@orc/core/chat";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
@@ -40,6 +41,7 @@ import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
+import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
 import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
@@ -49,6 +51,8 @@ import { chatHistory } from "../sessions/chat-history.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
 import { selectedTerminalHost } from "../terminals/host.js";
+import { launchDeps, sessionDirDeps } from "../terminals/service.js";
+import { prepareSessionDirectory } from "../terminals/session-dir.js";
 
 const logger = createLogger("api:chat");
 const app = createRouter();
@@ -253,19 +257,31 @@ async function newThread(
   agent?: string,
   model?: string,
   sourceId?: string,
-  launch?: { host?: string | null | undefined; cwd: string },
+  launch?: {
+    host?: string | null | undefined;
+    cwd?: string | undefined;
+    worktree?: boolean | undefined;
+  },
 ): Promise<ChatThread> {
   const config = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
   if (agent) config.agent = agent;
   if (model !== undefined) config.model = model;
   const host = launch ? selectedTerminalHost(loadConfig(), launch.host) : resolveExecHost();
+  const cwd = launch
+    ? await prepareSessionDirectory(
+        { ...launch, worktree: false },
+        sessionDirDeps(await launchDeps(loadConfig(), host), host),
+      )
+    : host.kind === "ssh"
+      ? await hostHome(host)
+      : process.cwd();
   const thread: ChatThread = {
     id: crypto.randomUUID(),
     title: "New chat",
     config,
     backend: config.agent === "codex" ? "codex-cli" : config.agent === "claude" ? "claude" : "acpx",
     runtimeId: null,
-    cwd: launch?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd()),
+    cwd,
     host: host.kind === "ssh" ? host.alias : null,
     sourceId: sourceId ?? null,
     messages: [],
@@ -661,6 +677,24 @@ app.openapi(
   },
 );
 
+async function checkChatWorkspaceRules(thread: ChatThread, cwd = thread.cwd): Promise<void> {
+  if (
+    thread.backend === "claude" ||
+    !loadConfig().rules.enabled ||
+    !new RuleStore(getSqlite()).active(cwd).length
+  )
+    return;
+  try {
+    await sessionRules(thread.backend, { cwd, executionHost: thread.host });
+  } catch (error) {
+    throw new OrcError(
+      error instanceof Error ? error.message : "This backend cannot enforce the workspace rules",
+      "CHAT_RULE_ADAPTER",
+      503,
+    );
+  }
+}
+
 const requestSchema = z
   .object({
     messages: z
@@ -680,6 +714,7 @@ const requestSchema = z
       .optional(),
     model: ChatModelSchema.optional(),
     threadId: id.optional(),
+    workspace: ChatWorkspaceSchema.optional(),
     // Retained for older clients; server settings own the effective prompt and permissions.
     system: z.string().max(20000).optional(),
     autoApprove: z.boolean().optional(),
@@ -708,7 +743,10 @@ app.openapi(
     const body = c.req.valid("json");
     const thread = body.threadId
       ? requireThread(body.threadId)
-      : await newThread(body.agent, body.model);
+      : await newThread(body.agent, body.model, undefined, body.workspace);
+    if (body.threadId && body.workspace)
+      throw new ValidationError("An existing conversation keeps its working folder.");
+    rememberTerminalFolder(thread.cwd, thread.host);
     if (body.threadId && body.agent && body.agent !== thread.config.agent)
       throw new ValidationError("Start a new chat to change agents.");
     if (body.threadId && thread.messages.length && !thread.runtimeId)
@@ -716,22 +754,7 @@ app.openapi(
         "The previous turn did not establish a resumable session. Start a new chat.",
       );
     if (body.model !== undefined) thread.config.model = body.model;
-    if (
-      thread.backend !== "claude" &&
-      loadConfig().rules.enabled &&
-      new RuleStore(getSqlite()).active(thread.cwd).length > 0
-    )
-      try {
-        await sessionRules(thread.backend, { cwd: thread.cwd, executionHost: thread.host });
-      } catch (error) {
-        throw new OrcError(
-          error instanceof Error
-            ? error.message
-            : "This backend cannot enforce the workspace rules",
-          "CHAT_RULE_ADAPTER",
-          503,
-        );
-      }
+    await checkChatWorkspaceRules(thread);
     const input = [...body.messages]
       .reverse()
       .find((message) => message.role === "user")
@@ -785,6 +808,19 @@ app.openapi(
       if (!mock) {
         const check = await backend.preflight({ executionHost: thread.host });
         if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
+      }
+      if (!body.threadId && body.workspace?.worktree) {
+        const host = selectedTerminalHost(loadConfig(), thread.host);
+        const cwd = await prepareSessionDirectory(
+          { cwd: thread.cwd, worktree: true },
+          {
+            ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
+            validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
+          },
+        );
+        if (cwd === thread.cwd)
+          throw new ValidationError("Choose a Git repository folder to create a worktree.");
+        thread.cwd = cwd;
       }
     } catch (error) {
       active.delete(key);

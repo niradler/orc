@@ -21,11 +21,9 @@ import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { useLiveSessions } from "@/hooks/useSessions";
 import { useSsh } from "@/hooks/useSsh";
-import { TERMINAL_KINDS } from "@/lib/terminal-kinds";
 import { runningTerminalForSession, terminalPath } from "@/lib/terminal-links";
 import { terminalStatus } from "@/lib/terminal-presentation";
 import { useTerminals } from "@/lib/terminals";
-import { cn } from "@/lib/utils";
 import { workspaceDestination } from "@/lib/workspace-navigation";
 
 const SIDEBAR_DEFAULT = 256;
@@ -151,7 +149,8 @@ export default function Terminals() {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const optionsButtonRef = useRef<HTMLButtonElement>(null);
+  const optionsButtonRef = useRef<HTMLElement | null>(null);
+  const [optionsTerminalId, setOptionsTerminalId] = useState<string | null>(null);
   const [launchHost, setLaunchHost] = useState<string | null | undefined>();
   const handleMenuOpenChange = useCallback((open: boolean) => {
     if (open) setLaunchHost(undefined);
@@ -328,6 +327,26 @@ export default function Terminals() {
   const selected = terminalId ? terminals.find((t) => t.id === terminalId) : undefined;
   const mobileTerminalId = params.get("paneTerminal") ?? terminalId;
   const mobileTerminal = terminals.find((terminal) => terminal.id === mobileTerminalId);
+  const optionsTerminal =
+    terminals.find((terminal) => terminal.id === optionsTerminalId) ?? mobileTerminal ?? selected;
+  const optionsButton = (terminal?: Terminal, label = false) => (
+    <Button
+      variant="ghost"
+      size={label ? "sm" : "icon"}
+      data-testid="terminal-options"
+      aria-label="Terminal options"
+      className={label ? "w-full justify-start" : "min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"}
+      onClick={(event) => {
+        optionsButtonRef.current =
+          event.currentTarget.closest("details")?.querySelector("summary") ?? event.currentTarget;
+        setOptionsTerminalId(terminal?.id ?? null);
+        setOptionsOpen(true);
+      }}
+    >
+      <MoreHorizontal size={16} />
+      {label && "Terminal options"}
+    </Button>
+  );
   const defaultLaunchHost = launchHost === undefined ? (ssh?.host ?? null) : launchHost;
   const worktreeManager = (
     <WorktreeManager launchers={info.launchers} host={info.host} onCreate={handleCreate} />
@@ -343,6 +362,7 @@ export default function Terminals() {
       error={createError}
       onCreate={handleCreate}
       compact={!isDesktop}
+      iconOnly
     />
   );
 
@@ -354,11 +374,9 @@ export default function Terminals() {
           style={{ width: sidebar.width }}
           className="relative shrink-0 flex flex-col min-h-0 border-r border-outline-variant bg-background"
         >
-          <div className="shrink-0 p-3">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-medium text-on-surface">Sessions</h2>
-              {worktreeManager}
-            </div>
+          <div className="flex shrink-0 items-center gap-1 px-3 py-1.5">
+            <h2 className="min-w-0 flex-1 text-sm font-medium text-on-surface">Sessions</h2>
+            {worktreeManager}
             {newMenu}
           </div>
           <TerminalList
@@ -388,7 +406,7 @@ export default function Terminals() {
         </aside>
       )}
       <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-        {!isDesktop && (
+        {!isDesktop && !selected && (
           <div className="shrink-0 flex items-center gap-2 px-2 py-1 border-b border-surface-highest">
             <TerminalSelect
               aria-label="Terminal"
@@ -416,65 +434,13 @@ export default function Terminals() {
             </TerminalSelect>
             <div className="shrink-0">{newMenu}</div>
             {mobileTerminal && <ContinueInChat key={mobileTerminal.id} terminal={mobileTerminal} />}
-            <Button
-              variant="ghost"
-              size="icon"
-              data-testid="terminal-options"
-              ref={optionsButtonRef}
-              aria-label="Terminal options"
-              onClick={() => setOptionsOpen(true)}
-            >
-              <MoreHorizontal size={18} />
-            </Button>
+            {optionsButton(mobileTerminal)}
           </div>
         )}
 
         {selected ? (
           <>
-            <header className="hidden lg:flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 border-b border-outline-variant bg-background min-w-0">
-              <span
-                className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  selected.status === "running" ? "bg-secondary" : "bg-outline",
-                )}
-              />
-              <div className="flex-1 min-w-0">
-                <div
-                  data-testid="terminal-name"
-                  title={selected.name}
-                  className="truncate font-body text-sm text-on-surface"
-                >
-                  {selected.name}
-                </div>
-                <div className="truncate font-label text-xs text-on-surface-variant">
-                  {TERMINAL_KINDS[selected.kind].label}
-                  {selected.host && (
-                    <span data-testid="terminal-selected-host" title={`SSH host: ${selected.host}`}>
-                      {" "}
-                      · {selected.host}
-                    </span>
-                  )}
-                  {selected.cwd && (
-                    <span className="normal-case tracking-normal"> · {selected.cwd}</span>
-                  )}
-                  <span> · {terminalStatus(selected, connectionOf(selected.id))}</span>
-                </div>
-                <div className={params.get("view") === "git" ? "hidden" : "md:hidden"}>
-                  <TerminalCheckout key={selected.id} terminal={selected} />
-                </div>
-              </div>
-
-              {actionError && (
-                <span role="alert" className="w-full font-body text-sm text-error wrap-break-word">
-                  {actionError}
-                </span>
-              )}
-              <ContinueInChat key={selected.id} terminal={selected} />
-              {selected.live_session_id && (
-                <SessionLinks liveSessionId={selected.live_session_id} />
-              )}
-            </header>
-            {!isDesktop && actionError && (
+            {actionError && (
               <p role="alert" className="p-2 text-sm text-error wrap-break-word">
                 {actionError}
               </p>
@@ -483,6 +449,10 @@ export default function Terminals() {
               selected={selected}
               terminals={terminals}
               renderTerminal={(id) => <TerminalViewport terminalId={id} />}
+              renderActions={(_terminal, active) =>
+                !isDesktop && active ? <div className="shrink-0">{newMenu}</div> : null
+              }
+              renderOptions={(terminal) => optionsButton(terminal, true)}
             />
           </>
         ) : (
@@ -514,7 +484,7 @@ export default function Terminals() {
           </Centered>
         )}
       </section>
-      <Sheet open={optionsOpen && !isDesktop} onOpenChange={setOptionsOpen}>
+      <Sheet open={optionsOpen} onOpenChange={setOptionsOpen}>
         <SheetContent
           aria-describedby={undefined}
           onCloseAutoFocus={(event) => {
@@ -526,22 +496,31 @@ export default function Terminals() {
             <SheetTitle>Terminal options</SheetTitle>
           </SheetHeader>
           <SheetBody className="space-y-4">
-            {mobileTerminal && (
+            {optionsTerminal && (
               <div className="space-y-2 text-sm">
-                <p className="wrap-break-word font-medium">{mobileTerminal.name}</p>
-                <p className="break-all text-on-surface-variant">{mobileTerminal.cwd}</p>
-                <p>{terminalStatus(mobileTerminal, connectionOf(mobileTerminal.id))}</p>
-                {mobileTerminal.live_session_id && (
-                  <SessionLinks liveSessionId={mobileTerminal.live_session_id} />
+                <p className="wrap-break-word font-medium">{optionsTerminal.name}</p>
+                <p className="break-all text-on-surface-variant">{optionsTerminal.cwd}</p>
+                <p>{terminalStatus(optionsTerminal, connectionOf(optionsTerminal.id))}</p>
+                <ContinueInChat
+                  key={optionsTerminal.id}
+                  terminal={optionsTerminal}
+                  showLabel
+                  onContinued={() => {
+                    optionsButtonRef.current = null;
+                    setOptionsOpen(false);
+                  }}
+                />
+                {optionsTerminal.live_session_id && (
+                  <SessionLinks liveSessionId={optionsTerminal.live_session_id} />
                 )}
-                <TerminalCheckout key={mobileTerminal.id} terminal={mobileTerminal} />
+                <TerminalCheckout key={optionsTerminal.id} terminal={optionsTerminal} />
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     data-testid="terminal-rename"
                     onClick={() => {
                       setOptionsOpen(false);
-                      setRenaming(mobileTerminal);
+                      setRenaming(optionsTerminal);
                     }}
                   >
                     Rename
@@ -549,10 +528,10 @@ export default function Terminals() {
                   <Button
                     variant="outline"
                     data-testid="terminal-duplicate"
-                    disabled={creating || !canDuplicate(mobileTerminal)}
+                    disabled={creating || !canDuplicate(optionsTerminal)}
                     onClick={() => {
                       setOptionsOpen(false);
-                      void duplicateTerminal(mobileTerminal);
+                      void duplicateTerminal(optionsTerminal);
                     }}
                   >
                     Duplicate tab
@@ -563,9 +542,9 @@ export default function Terminals() {
                   data-testid="terminal-close-selected"
                   onClick={() => {
                     setOptionsOpen(false);
-                    requestClose(mobileTerminal);
+                    requestClose(optionsTerminal);
                   }}
-                  aria-label={`Close ${mobileTerminal.name}`}
+                  aria-label={`Close ${optionsTerminal.name}`}
                   className="text-error"
                 >
                   Close terminal

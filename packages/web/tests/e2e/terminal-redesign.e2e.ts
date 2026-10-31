@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
-import { API_SECRET, apiGet, apiPost } from "./_helpers";
+import { API_SECRET, apiGet, apiPost, splitTerminalPane } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
 for (const theme of ["dark", "light"] as const) {
@@ -43,12 +43,12 @@ for (const theme of ["dark", "light"] as const) {
       await page.goto(`/terminals/${terminal.id}?project=all&sentinel=keep`);
       await expect(page.getByTestId("terminal-viewport")).toBeVisible();
       await expect.poll(() => sockets).toBe(1);
-      await page.getByTestId("pane-split-horizontal").click();
+      await splitTerminalPane(page.getByTestId("workspace-pane").first(), "horizontal");
       const git = page
         .getByTestId("workspace-pane")
         .filter({ has: page.getByTestId("terminal-git-panel") });
       await expect(git).toContainText("main");
-      await git.getByTestId("pane-split-vertical").click();
+      await splitTerminalPane(git, "vertical");
       const files = page
         .getByTestId("workspace-pane")
         .filter({ has: page.getByTestId("file-panel") });
