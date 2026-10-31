@@ -170,6 +170,9 @@
 }
 
 @utility chat-composer-input {
+  /* Leave conversation space beside the fixed header and composer controls. */
+  max-height: min(12rem, max(3rem, calc(var(--app-height, 100dvh) - 17.5rem)));
+
   html[data-compact-viewport="true"] & {
     max-height: 48px;
   }
