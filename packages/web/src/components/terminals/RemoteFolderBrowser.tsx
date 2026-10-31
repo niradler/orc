@@ -17,7 +17,13 @@ export function RemoteFolderBrowser({ initial, host, onPick, onClose }: RemoteFo
     queryFn: () => api.terminals.browse(path || undefined, host),
     retry: false,
   });
-  const join = (name: string) => (data ? `${data.path.replace(/\/$/, "")}/${name}` : name);
+  const join = (name: string) => {
+    if (!data) return name;
+    const windows = /^(?:[A-Za-z]:[\\/]|\\\\)/.test(data.path);
+    const separator = windows ? "\\" : "/";
+    const parent = data.path.replace(windows ? /[\\/]$/ : /\/$/, "");
+    return `${parent}${separator}${name}`;
+  };
 
   return (
     <div

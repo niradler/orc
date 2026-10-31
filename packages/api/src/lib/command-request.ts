@@ -1,11 +1,13 @@
 import { loadConfig } from "@orc/core/config";
-import { ValidationError } from "@orc/core/errors";
-import { hostBinary, hostExec, hostIsDirectory } from "@orc/core/exec-host";
+import { ConflictError, ValidationError } from "@orc/core/errors";
+import { expandHostPath, hostBinary, hostExec, hostIsDirectory } from "@orc/core/exec-host";
 import { CommandRunSchema, type HumanRequest } from "@orc/core/human-requests";
 import { selectedTerminalHost } from "../terminals/host.js";
+import { launchDeps } from "../terminals/service.js";
+import { commandShell } from "./command-shell.js";
 
 // The payload, including secrets, travels on stdin. Nothing sensitive enters argv or files.
-const EXECUTE = `import {spawn} from "node:child_process";
+const EXECUTE = `import {spawn,spawnSync} from "node:child_process";
 const data = await Bun.stdin.json();
 const secrets = Object.values(data.values).filter(Boolean).flatMap(value => [
   value, encodeURIComponent(value), Buffer.from(value).toString("base64"),
@@ -25,9 +27,15 @@ const read = async stream => {
 try {
  const env = {...process.env};
  for (const [name,value] of Object.entries(data.values)) env["ORC_INPUT_"+name] = value;
- const proc = spawn("sh",["-c",data.script], {cwd:data.cwd, env, detached:true, stdio:["ignore","pipe","pipe"]});
+ const [shell,...args] = data.shell;
+ const windows = process.platform === "win32";
+ const proc = spawn(shell,[...args,data.script], {cwd:data.cwd, env, detached:!windows, windowsHide:true, stdio:["ignore","pipe","pipe"]});
  const exited = new Promise((resolve,reject) => {proc.once("error",reject);proc.once("close",code=>resolve(code ?? -1));});
- const stop = () => {try { process.kill(-proc.pid,"SIGKILL"); } catch {}};
+ const stop = () => {
+   if (!proc.pid) return;
+   if (windows) spawnSync("taskkill",["/PID",String(proc.pid),"/T","/F"], {windowsHide:true,stdio:"ignore",timeout:5000});
+   else {try { process.kill(-proc.pid,"SIGKILL"); } catch {}}
+ };
  let timedOut = false;
  const timer = setTimeout(() => {timedOut = true;stop();}, data.timeout*1000);
  let stdout,stderr,exit_code;
@@ -43,25 +51,29 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
   const spec = request.input.command;
   if (request.input.kind !== "command" || !spec)
     throw new ValidationError("This is not a command request");
+  if (request.status !== "pending" || request.version !== run.version)
+    throw new ConflictError("Command is stale or already started; reload it");
   if (
     Object.keys(run.values).some((name) => !spec.arguments.some((arg) => arg.name === name)) ||
     spec.arguments.some((arg) => arg.required && !run.values[arg.name])
   )
     throw new ValidationError("Fill the required arguments and use only declared names");
-  const host = selectedTerminalHost(loadConfig(), spec.host);
-  if (host.kind === "local" && process.platform === "win32")
-    throw new ValidationError("Command requests require a POSIX execution host");
-  if (!(await hostIsDirectory(host, spec.cwd)))
+  const config = loadConfig();
+  const host = selectedTerminalHost(config, spec.host);
+  const cwd = await expandHostPath(host, spec.cwd);
+  if (!(await hostIsDirectory(host, cwd)))
     throw new ValidationError("The command folder is unavailable on the selected host");
   const bun = await hostBinary(host, "bun");
   if (!bun) throw new ValidationError("Command execution requires Bun on the selected host");
+  const shell = commandShell(await launchDeps(config, host));
   return {
     execute: async () => {
       try {
         const result = await hostExec(host, [bun, "--eval", EXECUTE], {
           input: JSON.stringify({
             script: run.script,
-            cwd: spec.cwd,
+            cwd,
+            shell,
             values: run.values,
             timeout: spec.timeout_seconds,
           }),

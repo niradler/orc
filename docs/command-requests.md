@@ -6,14 +6,17 @@ Provide `origin` (the requesting session/backend and an idempotent request ID),
 `cwd`, `script`, optional `arguments`, and `timeout_seconds` (1–300, default 60).
 
 Declare arguments as `{name:"PASSWORD",label:"Service password",required:true}`.
-Use quoted environment variables in the script, for example
-`my-cli login --password "$ORC_INPUT_PASSWORD"`.
+Use the execution host's shell syntax for environment variables, for example
+`my-cli login --password "$ORC_INPUT_PASSWORD"` in bash/zsh or
+`my-cli login --password "$env:ORC_INPUT_PASSWORD"` in PowerShell.
 Do not include secrets in the tool call, script, prompt or argument labels.
 
 The request does not execute anything. The user reviews the host/folder, edits
 the script, fills password-style fields, and clicks **Run command**. Values are
 cleared after submission and never stored in ORC's request, result or transcript.
-The selected POSIX host needs Bun and sh. Commands run with that host user's
+The selected host needs Bun. Commands use the same default shell as terminals:
+the host's configured shell (such as zsh or bash), or PowerShell on Windows.
+A local terminal shell override also applies. Commands run with that host user's
 permissions, without privilege escalation. Review commands before supplying credentials:
 a command can use credentials to contact external services.
 
@@ -27,7 +30,8 @@ arguments, files or logs by ORC. A command can still pass a value into its own c
 encodings are redacted before output leaves the execution host. Arbitrary
 transformations and data sent to other services cannot be hidden by output redaction.
 Keep secrets in the masked fields, not the editable command. Output is limited to
-64,000 characters per stream and timeout stops the process group.
+64,000 characters per stream and timeout stops the process group on POSIX or
+the process tree on Windows.
 Concurrent or repeated Run requests cannot execute twice. Interrupted runs become
 unavailable after the execution lease; inspect the host before creating another request.
 An unknown transport outcome is reported explicitly and never retried automatically.

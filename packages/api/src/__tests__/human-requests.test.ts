@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { getSqlite } from "@orc/db/client";
+import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -71,6 +72,27 @@ test("should reject credentials and incomplete approvals at the boundary", async
   ).toBe(400);
 });
 
+test("should reject stale and running commands before checking their execution host", async () => {
+  const store = new HumanRequestStore(getSqlite());
+  const request = store.create({
+    kind: "command",
+    prompt: "Do not run stale commands",
+    origin: { backend: "external", session_id: "stale-command", request_id: "stale-command" },
+    command: { host: "unconfigured-command-host", cwd: "/missing", script: "true" },
+  });
+  const run = (version: number) =>
+    req(app, "POST", `/human-requests/${request.id}/run`, {
+      version,
+      script: "true",
+      values: {},
+    });
+  expect((await run(request.version + 1)).status).toBe(409);
+  expect(store.get(request.id).status).toBe("pending");
+  const claimed = store.claimCommand(request.id, request.version);
+  expect((await run(claimed.version)).status).toBe(409);
+  expect(store.get(request.id).status).toBe("running");
+});
+
 test("should invalidate an unanswered request when its reviewed rule revision changes", async () => {
   const previous = process.env.ORC_RULES_ENABLED;
   process.env.ORC_RULES_ENABLED = "true";
@@ -120,7 +142,7 @@ test("should invalidate an unanswered request when its reviewed rule revision ch
   }
 });
 
-test("should run only once, honor edits, redact user values and retain only the result", async () => {
+test("should run once with the host shell, redact values and retain only the result", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-command-"));
   const secret = "p@ss'\"$()do-not-expand";
   const entry = await (
@@ -157,7 +179,9 @@ test("should run only once, honor edits, redact user values and retain only the 
   const input = {
     version: 1,
     script:
-      'printf "edited:"; printf "%s" "$ORC_INPUT_PASSWORD"; printf "%s" "$ORC_INPUT_PASSWORD" >&2; pwd',
+      process.platform === "win32"
+        ? '[Console]::Out.Write("edited:" + $env:ORC_INPUT_PASSWORD); [Console]::Error.Write($env:ORC_INPUT_PASSWORD); (Get-Location).Path'
+        : 'printf "edited:"; printf "%s" "$ORC_INPUT_PASSWORD"; printf "%s" "$ORC_INPUT_PASSWORD" >&2; pwd',
     values: { PASSWORD: secret },
   };
   const responses = await Promise.all([
@@ -184,7 +208,7 @@ test("should run only once, honor edits, redact user values and retain only the 
   ).toBe(200);
 });
 
-test("should bound output and report failed commands without automatically retrying", async () => {
+test("should report failed commands without automatically retrying", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-command-failure-"));
   const entry = await (
     await req(app, "POST", "/human-requests", {
@@ -194,13 +218,16 @@ test("should bound output and report failed commands without automatically retry
       command: { host: null, cwd, script: "exit 7" },
     })
   ).json<HumanRequest>();
-  const completed = await (
-    await req(app, "POST", `/human-requests/${entry.id}/run`, {
-      version: 1,
-      script: "printf failed >&2; exit 7",
-      values: {},
-    })
-  ).json<HumanRequest>();
+  const response = await req(app, "POST", `/human-requests/${entry.id}/run`, {
+    version: 1,
+    script:
+      process.platform === "win32"
+        ? '[Console]::Error.Write("failed"); exit 7'
+        : "printf failed >&2; exit 7",
+    values: {},
+  });
+  expect(response.status).toBe(200);
+  const completed = await response.json<HumanRequest>();
   expect(completed.response).toMatchObject({ kind: "command", exit_code: 7, stderr: "failed" });
 });
 
@@ -233,6 +260,22 @@ test("should reject cancelled, stale, unknown-argument and invalid-folder execut
       })
     ).status,
   ).toBe(409);
+  const invalid = new HumanRequestStore(getSqlite()).create({
+    kind: "command",
+    prompt: "Invalid folder",
+    origin: { backend: "external", session_id: "validation", request_id: "invalid-folder" },
+    command: { host: null, cwd: join(cwd, "missing"), script: "true" },
+  });
+  const rejected = await req(app, "POST", `/human-requests/${invalid.id}/run`, {
+    version: invalid.version,
+    script: "true",
+    values: {},
+  });
+  expect(rejected.status).toBe(400);
+  expect(await rejected.json()).toMatchObject({
+    error: "The command folder is unavailable on the selected host",
+  });
+  expect(new HumanRequestStore(getSqlite()).get(invalid.id).status).toBe("pending");
 });
 
 test("should enforce a command timeout and bound/redact large output", async () => {
@@ -254,13 +297,13 @@ test("should enforce a command timeout and bound/redact large output", async () 
     ).json<HumanRequest>();
   const entry = await create("timeout", 1);
   const before = Date.now();
-  const completed = await (
-    await req(app, "POST", `/human-requests/${entry.id}/run`, {
-      version: 1,
-      script: "sleep 30 & wait",
-      values: {},
-    })
-  ).json<HumanRequest>();
+  const response = await req(app, "POST", `/human-requests/${entry.id}/run`, {
+    version: 1,
+    script: process.platform === "win32" ? "Start-Sleep -Seconds 30" : "sleep 30 & wait",
+    values: {},
+  });
+  expect(response.status).toBe(200);
+  const completed = await response.json<HumanRequest>();
   expect(Date.now() - before).toBeLessThan(5000);
   expect(completed.response).toMatchObject({ kind: "command", exit_code: -1 });
   const large = await create("large");
@@ -268,7 +311,10 @@ test("should enforce a command timeout and bound/redact large output", async () 
   const result = await (
     await req(app, "POST", `/human-requests/${large.id}/run`, {
       version: 1,
-      script: 'i=0; while [ "$i" -lt 20000 ]; do printf "%s" "$ORC_INPUT_VALUE"; i=$((i+1)); done',
+      script:
+        process.platform === "win32"
+          ? "for ($index=0; $index -lt 20000; $index++) { [Console]::Out.Write($env:ORC_INPUT_VALUE) }"
+          : 'i=0; while [ "$i" -lt 20000 ]; do printf "%s" "$ORC_INPUT_VALUE"; i=$((i+1)); done',
       values: { VALUE: value },
     })
   ).json<HumanRequest>();
@@ -279,3 +325,28 @@ test("should enforce a command timeout and bound/redact large output", async () 
     expect(result.response.stdout).not.toContain(value);
   }
 });
+
+test("should stop command descendants on timeout", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-command-descendants-"));
+  const marker = join(cwd, "child-survived.txt").replaceAll("'", "''");
+  const script =
+    process.platform === "win32"
+      ? `$child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', "Start-Sleep -Seconds 3; Set-Content -LiteralPath '${marker}' -Value survived") -WindowStyle Hidden -PassThru; $child.WaitForExit()`
+      : `(sleep 3; printf survived > '${marker}') & wait`;
+  const entry = new HumanRequestStore(getSqlite()).create({
+    kind: "command",
+    prompt: "Verify timeout cleanup",
+    origin: { backend: "test", session_id: "descendants", request_id: "descendants" },
+    command: { host: null, cwd, script, timeout_seconds: 1 },
+  });
+  const response = await req(app, "POST", `/human-requests/${entry.id}/run`, {
+    version: entry.version,
+    script,
+    values: {},
+  });
+  expect(response.status).toBe(200);
+  const completed = await response.json<HumanRequest>();
+  expect(completed.response).toMatchObject({ kind: "command", exit_code: -1 });
+  await Bun.sleep(3000);
+  expect(existsSync(join(cwd, "child-survived.txt"))).toBe(false);
+}, 10000);

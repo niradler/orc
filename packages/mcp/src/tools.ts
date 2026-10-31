@@ -153,7 +153,7 @@ export const toolDefinitions = [
   {
     name: "command_request",
     description:
-      "Ask the user to run a command in Attention needed. Supply a shell script, exact host (null for API host), cwd and argument declarations. Reference each user-filled value as a quoted $ORC_INPUT_NAME environment variable; never ask for secrets in chat. The user can edit the script and explicitly Run. This call creates a durable request; poll human_request_get with wait_seconds:30 until answered (pending/running means keep waiting). The command result is returned to this requesting workflow, with supplied values redacted. Acknowledge after consuming it. Cancelled/expired/unavailable never authorize retries.",
+      "Ask the user to run a command in Attention needed. Supply a script for the execution host's default shell (same as terminals), exact host (null for API host), cwd and argument declarations. Reference each user-filled value as a quoted environment variable: $ORC_INPUT_NAME in bash/zsh, $env:ORC_INPUT_NAME in PowerShell; never ask for secrets in chat. The user can edit the script and explicitly Run. This call creates a durable request; poll human_request_get with wait_seconds:30 until answered (pending/running means keep waiting). The command result is returned to this requesting workflow, with supplied values redacted. Acknowledge after consuming it. Cancelled/expired/unavailable never authorize retries.",
     inputSchema: commandCreateParams,
   },
   {

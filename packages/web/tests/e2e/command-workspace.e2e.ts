@@ -31,7 +31,11 @@ test("should edit and run a masked command from Attention after reload", async (
   await expect(card.getByTestId("attention-argument-PASSWORD")).toHaveAttribute("type", "password");
   await card
     .getByTestId("attention-command")
-    .fill('printf "edited:"; printf "%s" "$ORC_INPUT_PASSWORD"');
+    .fill(
+      process.platform === "win32"
+        ? '[Console]::Out.Write("edited:" + $env:ORC_INPUT_PASSWORD)'
+        : 'printf "edited:"; printf "%s" "$ORC_INPUT_PASSWORD"',
+    );
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.screenshot({ path: `/tmp/orc-command-input-${width}.png`, fullPage: true });
@@ -62,13 +66,20 @@ test("should edit and run a masked command from Attention after reload", async (
   await expect(remoteCard.getByTestId("attention-command")).toHaveValue("printf original");
   await apiPost(request, `/human-requests/${remote.id}/run`, {
     version: 1,
-    script: "printf edited-elsewhere",
+    script:
+      process.platform === "win32"
+        ? '[Console]::Out.Write("edited-elsewhere")'
+        : "printf edited-elsewhere",
     values: {},
   });
   await expect(remoteCard.getByTestId("attention-command-result")).toContainText(
     "edited-elsewhere",
   );
-  await expect(remoteCard.getByTestId("attention-command")).toHaveValue("printf edited-elsewhere");
+  await expect(remoteCard.getByTestId("attention-command")).toHaveValue(
+    process.platform === "win32"
+      ? '[Console]::Out.Write("edited-elsewhere")'
+      : "printf edited-elsewhere",
+  );
 });
 
 test("should share recent folders and last selection between chat and terminal, and launch chat in a worktree", async ({
