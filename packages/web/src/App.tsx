@@ -331,10 +331,6 @@ export default function App() {
               <Dialog.Content
                 ref={chatDialogRef}
                 data-testid="mobile-chat-sheet"
-                onEscapeKeyDown={(event) => {
-                  if (document.querySelector('[data-streamdown="link-safety-modal"]'))
-                    event.preventDefault();
-                }}
                 onCloseAutoFocus={(event) => {
                   event.preventDefault();
                   if (!chatRequested) chatButtonRef.current?.focus();
