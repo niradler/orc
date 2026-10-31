@@ -7,6 +7,7 @@ import {
   Maximize2,
   Minimize2,
   MoreHorizontal,
+  Paperclip,
   Pencil,
   RefreshCw,
   Settings2,
@@ -18,6 +19,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
+import { ChatAttachments } from "@/components/ChatAttachments";
 import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
@@ -49,6 +51,15 @@ const iconButton =
 const textParts = {
   Text: ({ text }: { text: string }) => <AgentMessageText>{text}</AgentMessageText>,
 };
+const attachmentKeys = new WeakMap<File, string>();
+function attachmentKey(file: File): string {
+  let key = attachmentKeys.get(file);
+  if (!key) {
+    key = crypto.randomUUID();
+    attachmentKeys.set(file, key);
+  }
+  return key;
+}
 function keepConversationDialog(event: Event) {
   if (event.target instanceof Element && event.target.closest('[role="dialog"]'))
     event.preventDefault();
@@ -84,6 +95,9 @@ export function ChatPanel({
     responding,
     activeKey,
     draft,
+    files,
+    addFiles,
+    removeFile,
     setDraft,
     queued,
     queuePaused,
@@ -101,7 +115,7 @@ export function ChatPanel({
   const [historyVisible, setHistoryVisible] = useState(true);
   const docked = fullscreen && desktop && historyVisible;
   const submit = () => {
-    if (!ready || !draft.trim()) return;
+    if (!ready || (!draft.trim() && !files.length)) return;
     void send(draft);
     setDraft("");
   };
@@ -205,12 +219,13 @@ export function ChatPanel({
             !docked && "pl-40",
           )}
         >
-          <h2
-            className="min-w-0 flex-1 truncate text-sm font-medium"
-            title={thread?.title || "Sessions"}
-          >
-            {thread?.title || "Sessions"}
-          </h2>
+          {thread?.title ? (
+            <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={thread.title}>
+              {thread.title}
+            </h2>
+          ) : (
+            <div className="min-w-0 flex-1" aria-hidden="true" />
+          )}
           {streaming && (
             <LoaderCircle
               size={14}
@@ -396,6 +411,7 @@ export function ChatPanel({
                   </div>
                   <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
                     <ChatActivityList value={message.metadata.custom.activity} />
+                    <ChatAttachments value={message.metadata.custom.attachments} />
                     <MessagePrimitive.Parts components={textParts} />
                   </div>
                 </div>
@@ -535,8 +551,38 @@ export function ChatPanel({
               submit();
             }}
             data-testid="chat-composer-box"
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              if (event.dataTransfer.files.length) {
+                event.preventDefault();
+                addFiles(Array.from(event.dataTransfer.files));
+              }
+            }}
             className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
           >
+            {files.length > 0 && (
+              <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">
+                {files.map((file, index) => (
+                  <li
+                    key={attachmentKey(file)}
+                    className="flex min-w-0 max-w-full items-center gap-1 rounded border border-border px-2 text-xs"
+                  >
+                    <span className="truncate">{file.name}</span>
+                    <button
+                      type="button"
+                      data-testid="chat-remove-attachment"
+                      aria-label={`Remove ${file.name}`}
+                      className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11`}
+                      onClick={() => removeFile(index)}
+                    >
+                      <X size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <textarea
               ref={input}
               data-testid="chat-input"
@@ -545,6 +591,12 @@ export function ChatPanel({
               disabled={!ready}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
+              onPaste={(event) => {
+                if (event.clipboardData.files.length) {
+                  event.preventDefault();
+                  addFiles(Array.from(event.clipboardData.files));
+                }
+              }}
               onKeyDown={(event) => {
                 if (
                   event.key === "Enter" &&
@@ -561,6 +613,26 @@ export function ChatPanel({
             />
             <div className="flex items-center justify-between gap-2">
               <div className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+                <label
+                  className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 focus-within:ring-2 focus-within:ring-focus`}
+                  aria-label="Attach files"
+                  data-testid="chat-attach-button"
+                  title="Attach files (up to 20 MB total)"
+                >
+                  <Paperclip size={16} />
+                  <input
+                    type="file"
+                    multiple
+                    data-testid="chat-file-input"
+                    aria-label="Attach files"
+                    disabled={!ready}
+                    className="sr-only"
+                    onChange={(event) => {
+                      addFiles(Array.from(event.target.files ?? []));
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
                 <div
                   data-testid="chat-composer-selectors"
                   className="chat-composer-selectors flex min-w-0 items-center"
@@ -587,7 +659,7 @@ export function ChatPanel({
                 <ActionHelp label={streaming ? "Queue message" : "Send message"}>
                   <button
                     type="submit"
-                    disabled={!ready || !draft.trim()}
+                    disabled={!ready || (!draft.trim() && !files.length)}
                     data-testid="chat-send-button"
                     aria-label={streaming ? "Queue message" : "Send message"}
                     className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"

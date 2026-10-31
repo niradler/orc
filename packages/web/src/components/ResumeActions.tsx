@@ -1,3 +1,4 @@
+import { nativeChatResumeUnavailableReason } from "@orc/core/chat";
 import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, Copy, Link2, MessageSquare, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -29,13 +30,9 @@ export function ResumeActions({ session }: { session: LiveSession }) {
   const command = resumeCommand(session);
   const existing = runningTerminalForSession(terminals, session.id);
   const scope = params.get("project") ?? session.project_id;
-  const chatUnavailable = !["claude", "codex"].includes(session.agent)
-    ? "Chat currently supports Claude and Codex sessions."
-    : !command || !session.cwd
-      ? "Session has no native session ID or working folder."
-      : session.status === "running" || session.status === "idle"
-        ? "End the original agent session before resuming it in chat."
-        : undefined;
+  const chatUnavailable =
+    nativeChatResumeUnavailableReason(session.agent) ??
+    (!command || !session.cwd ? "Session has no native session ID or working folder." : undefined);
   useEffect(() => {
     if (!copied) return;
     const timeout = setTimeout(() => setCopied(null), 2000);
@@ -43,6 +40,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
   }, [copied]);
 
   async function open(): Promise<void> {
+    setMenuOpen(false);
     setError(null);
     if (existing) {
       navigate(scopedSessionPath(terminalPath(existing.id), scope));
@@ -98,13 +96,14 @@ export function ResumeActions({ session }: { session: LiveSession }) {
       <fieldset aria-label="Resume session" className="inline-flex">
         <button
           type="button"
-          data-testid="open-terminal-resume"
-          disabled={pending || chatPending || (!existing && !info?.ready)}
-          onClick={() => void open()}
+          data-testid="open-chat-resume"
+          disabled={pending || chatPending || !!chatUnavailable}
+          title={chatUnavailable ?? "Resume in chat"}
+          onClick={() => void openChat()}
           className={`${ACTION} rounded-r-none`}
         >
-          <SquareTerminal size={13} />
-          {pending ? "Resuming…" : "Resume in terminal"}
+          <MessageSquare size={13} />
+          {chatPending ? "Resuming…" : "Resume"}
         </button>
         <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <Popover.Trigger asChild>
@@ -128,14 +127,18 @@ export function ResumeActions({ session }: { session: LiveSession }) {
             >
               <button
                 type="button"
-                data-testid="open-chat-resume"
-                disabled={pending || chatPending || !!chatUnavailable}
-                title={chatUnavailable}
-                onClick={() => void openChat()}
+                data-testid="open-terminal-resume"
+                disabled={pending || chatPending || (!existing && !info?.ready)}
+                title={
+                  !existing && !info?.ready
+                    ? (info?.reason ?? "Integrated terminals are unavailable")
+                    : "Resume in terminal"
+                }
+                onClick={() => void open()}
                 className={`${ACTION} min-h-11 w-full justify-start border-0`}
               >
-                <MessageSquare size={13} />
-                {chatPending ? "Resuming…" : "Continue in chat"}
+                <SquareTerminal size={13} />
+                {pending ? "Resuming…" : "Terminal"}
               </button>
               {command && (
                 <button
@@ -169,10 +172,9 @@ export function ResumeActions({ session }: { session: LiveSession }) {
           </Popover.Portal>
         </Popover.Root>
       </fieldset>
-      {info && !info.ready && !existing && (
-        <p className="text-xs text-outline">
-          {info.reason ??
-            "Integrated terminals unavailable. Use the copied command in your own terminal."}
+      {chatUnavailable && (
+        <p data-testid="chat-resume-unavailable" className="text-xs text-outline">
+          {chatUnavailable}
         </p>
       )}
       {copied && (

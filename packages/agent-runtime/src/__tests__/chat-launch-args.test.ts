@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AcpxSession } from "../acpx";
@@ -51,5 +51,52 @@ test("should pass ACPX arguments literally and respect explicit permission flags
     expect(seen).toBe(true);
   } finally {
     await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("should load an explicit native ACPX session and reject a replacement identity", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-native-"));
+  const script = join(cwd, "agent.ts");
+  const recorded = join(cwd, "argv.json");
+  writeFileSync(
+    script,
+    `import {writeFileSync} from 'node:fs'; const args=process.argv.slice(2);writeFileSync(${JSON.stringify(recorded)},JSON.stringify(args));console.log(JSON.stringify({acpxSessionId:args.includes('cursor')?'original-native':'replacement-native'}));`,
+  );
+  try {
+    for (const agent of ["cursor", "gemini"]) {
+      const session = new AcpxSession(
+        {
+          cwd,
+          acpxAgent: agent,
+          runtimeSessionId: "original-native",
+          acpxNativeSessionId: "original-native",
+        },
+        [process.execPath, script],
+        { kind: "local" },
+      );
+      try {
+        if (agent === "cursor") await session.ensureSession();
+        else
+          await expect(session.ensureSession()).rejects.toThrow(
+            "did not resume the requested native session",
+          );
+        const args = JSON.parse(readFileSync(recorded, "utf8")) as string[];
+        expect(args.slice(-7)).toEqual([
+          agent,
+          "sessions",
+          "ensure",
+          "--name",
+          "original-native",
+          "--resume-session",
+          "original-native",
+        ]);
+        expect(session.getRuntimeSessionId()).toBe("original-native");
+      } finally {
+        await session.close();
+      }
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });

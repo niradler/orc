@@ -33,6 +33,7 @@ export const projects = sqliteTable(
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     obsidian_path: text("obsidian_path"),
     max_workers: integer("max_workers"),
+    upload_directory: text("upload_directory"),
     ...timestamps,
   },
   (t) => [uniqueIndex("projects_name_idx").on(t.name)],

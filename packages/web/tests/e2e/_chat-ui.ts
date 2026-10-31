@@ -2,7 +2,7 @@ import { expect, type Page } from "@playwright/test";
 
 export async function chooseChatAgent(page: Page, agent: string): Promise<void> {
   await page.getByTestId("chat-agent-button").filter({ visible: true }).click();
-  await page.getByTestId("chat-agent-select").selectOption(agent);
+  await page.getByTestId(`chat-agent-option-${agent}`).click();
 }
 
 export async function openChatModel(page: Page): Promise<void> {

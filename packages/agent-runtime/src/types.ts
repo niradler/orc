@@ -31,6 +31,7 @@ export type SessionOpts = {
   runtimeSessionId?: string | undefined;
   autoApprove?: boolean | undefined;
   acpxAgent?: string | undefined;
+  acpxNativeSessionId?: string | undefined;
   a2aUrl?: string | undefined;
   agentApiUrl?: string | undefined;
   permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions" | undefined;

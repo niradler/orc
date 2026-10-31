@@ -14,6 +14,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "@orc/core/secrets";
+import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES, type UploadFile } from "@orc/core/session-file-types";
 import { ChannelStore } from "@orc/db/channels";
 import { getSqlite } from "@orc/db/client";
 import {
@@ -54,6 +55,40 @@ const forbiddenKeys = new Set([
 ]);
 
 export class ChannelService {
+  async downloadAttachments(message: ChannelInbound, target: ChannelTarget): Promise<UploadFile[]> {
+    const attachments = message.attachments ?? [];
+    if (attachments.length > UPLOAD_MAX_FILES) throw new ValidationError("Attach at most 10 files");
+    const authorize = () => {
+      const connection = this.connection(message.connection);
+      if (
+        !connection.enabled ||
+        !connection.targets.some(
+          (recipient) =>
+            recipient.id === target.id &&
+            recipient.inbound &&
+            recipient.chat_id === message.chat &&
+            (!recipient.thread_id || recipient.thread_id === message.thread) &&
+            recipient.user_ids.includes(message.sender),
+        )
+      )
+        throw new ForbiddenError("Upload sender is no longer authorized");
+    };
+    const files: UploadFile[] = [];
+    let size = 0;
+    for (const attachment of attachments) {
+      authorize();
+      const transport = this.live.get(message.connection)?.transport;
+      if (!transport?.downloadFile)
+        throw new ValidationError("File downloads are unavailable for this connection");
+      const file = await transport.downloadFile(attachment);
+      authorize();
+      size += file.data.length;
+      if (size > UPLOAD_MAX_BYTES)
+        throw new ValidationError("Attachments must total at most 20 MB");
+      files.push(file);
+    }
+    return files;
+  }
   private readonly owner = randomUUID();
   private readonly live = new Map<string, Live>();
   private readonly errors = new Map<string, string>();

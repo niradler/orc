@@ -5,10 +5,39 @@ import {
   channelCommands,
 } from "@orc/core/channels";
 import { OrcError, ValidationError } from "@orc/core/errors";
+import { UPLOAD_MAX_BYTES, type UploadFile } from "@orc/core/session-file-types";
 
 export type NativePayload = Record<string, unknown>;
+export function telegramFiles(
+  message: Record<string, unknown>,
+): NonNullable<ChannelInbound["attachments"]> {
+  const result: NonNullable<ChannelInbound["attachments"]> = [];
+  for (const kind of ["document", "audio", "voice", "video", "animation", "photo"]) {
+    const source =
+      kind === "photo" && Array.isArray(message.photo) ? message.photo.at(-1) : message[kind];
+    if (!source || typeof source !== "object") continue;
+    const file = source as Record<string, unknown>;
+    if (typeof file.file_id !== "string" || file.file_id.length > 1024) continue;
+    result.push({
+      fileId: file.file_id,
+      name:
+        typeof file.file_name === "string"
+          ? file.file_name.slice(0, 255)
+          : `${kind}-${String(message.message_id)}.${kind === "photo" ? "jpg" : kind === "voice" ? "ogg" : "bin"}`,
+      mimeType:
+        typeof file.mime_type === "string"
+          ? file.mime_type.slice(0, 255)
+          : kind === "photo"
+            ? "image/jpeg"
+            : "application/octet-stream",
+      ...(typeof file.file_size === "number" ? { size: file.file_size } : {}),
+    });
+  }
+  return result;
+}
 export type ProviderIdentity = { id: string; name: string };
 export type ChannelTransport = {
+  downloadFile?(file: NonNullable<ChannelInbound["attachments"]>[number]): Promise<UploadFile>;
   identity(): Promise<ProviderIdentity>;
   send(payload: NativePayload): Promise<string>;
   edit(id: string, payload: NativePayload): Promise<void>;
@@ -205,6 +234,56 @@ export const createChannelTransport: TransportFactory = (connection, credentials
   if (!token) throw new ValidationError("Missing channel bot token");
   const call = (method: string, body?: NativePayload) => request(provider, token, method, body);
   return {
+    async downloadFile(file) {
+      if (provider !== "telegram") throw new ProviderFailure("file_provider_unsupported");
+      if (file.size !== undefined && file.size > UPLOAD_MAX_BYTES)
+        throw new ValidationError("Telegram files must be at most 20 MB");
+      const result = await call("getFile", { file_id: file.fileId });
+      if (Number(result.file_size) > UPLOAD_MAX_BYTES)
+        throw new ValidationError("Telegram files must be at most 20 MB");
+      const path = result.file_path;
+      if (
+        typeof path !== "string" ||
+        !/^[a-zA-Z0-9_./-]+$/.test(path) ||
+        path.split("/").includes("..")
+      )
+        throw new ProviderFailure("invalid_file_path");
+      try {
+        const response = await fetch(`https://api.telegram.org/file/bot${token}/${path}`, {
+          signal: AbortSignal.timeout(60_000),
+          redirect: "error",
+        });
+        if (!response.ok || !response.body) throw new ProviderFailure("file_download_failed");
+        if (Number(response.headers.get("content-length")) > UPLOAD_MAX_BYTES)
+          throw new ValidationError("Telegram files must be at most 20 MB");
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            size += value.length;
+            if (size > UPLOAD_MAX_BYTES)
+              throw new ValidationError("Telegram files must be at most 20 MB");
+            chunks.push(value);
+          }
+        } finally {
+          await reader.cancel();
+          reader.releaseLock();
+        }
+        const data = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          data.set(chunk, offset);
+          offset += chunk.length;
+        }
+        return { name: file.name, mimeType: file.mimeType, data };
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof ProviderFailure) throw error;
+        throw new ProviderFailure("file_download_failed");
+      }
+    },
     async identity() {
       const body = await call(provider === "telegram" ? "getMe" : "auth.test");
       botId = String(body.id ?? body.user_id ?? "");
@@ -274,6 +353,7 @@ export const createChannelTransport: TransportFactory = (connection, credentials
                     void call("answerCallbackQuery", { callback_query_id: callback.id }).catch(
                       () => {},
                     );
+                  const attachments = callback ? [] : telegramFiles(msg);
                   receive({
                     connection: connection.id,
                     sender: String(from.id),
@@ -283,6 +363,7 @@ export const createChannelTransport: TransportFactory = (connection, credentials
                     message_id: callback ? `cb:${callback.id}` : `${chat.id}:${msg.message_id}`,
                     kind: callback ? "action" : "message",
                     is_direct: chat.type === "private",
+                    ...(attachments.length ? { attachments } : {}),
                     is_mention:
                       !!botName &&
                       String(msg.text ?? "")

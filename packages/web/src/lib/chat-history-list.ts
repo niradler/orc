@@ -1,4 +1,4 @@
-import type { ChatThread } from "@orc/core/chat";
+import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
@@ -39,7 +39,7 @@ function timestamp(value: number | string | null | undefined): number {
   return Number.isFinite(result) ? result : 0;
 }
 const nativeKey = (agent: string, id: string, host?: string | null) =>
-  JSON.stringify([host || null, agent, id]);
+  JSON.stringify([host || null, agent === "cursor" ? "cursor-agent" : agent, id]);
 const runtimeKey = (agent: string, id: string) => JSON.stringify([agent, id]);
 
 /** A conversation's date, not its selected/open state, determines its position. */
@@ -64,6 +64,7 @@ export function chatHistoryList(
       !tab.thread &&
       !tab.messages.length &&
       !tab.draft.trim() &&
+      !tab.files.length &&
       !tab.queued.length &&
       !tab.streaming &&
       !tab.error &&
@@ -136,7 +137,7 @@ export function chatHistoryList(
     if (thread.sourceId && !sources.has(thread.sourceId)) sources.set(thread.sourceId, entry);
   }
   for (const session of native) {
-    if (!["claude", "codex"].includes(session.agent)) continue;
+    if (!nativeChatAgent(session.agent)) continue;
     const key = session.session_id
       ? nativeKey(session.agent, session.session_id, session.host)
       : null;

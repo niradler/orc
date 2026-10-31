@@ -1,3 +1,4 @@
+import { nativeChatAgent } from "@orc/core/chat";
 import { MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -18,7 +19,7 @@ export function ContinueInChat({
   const [params] = useSearchParams();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  if (!["codex", "claude"].includes(terminal.kind)) return null;
+  if (!nativeChatAgent(terminal.kind)) return null;
   async function open() {
     if (!terminal.live_session_id) return;
     setPending(true);
@@ -41,14 +42,18 @@ export function ContinueInChat({
       <button
         type="button"
         data-testid="terminal-continue-chat"
-        aria-label="Continue in chat"
-        title="Continue in chat"
+        aria-label="Resume"
+        title={
+          terminal.live_session_id
+            ? "Resume in chat"
+            : "Waiting for the agent session to be registered"
+        }
         disabled={pending || !terminal.live_session_id}
         onClick={() => void open()}
         className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md px-2 text-sm text-on-surface-variant hover:bg-surface disabled:opacity-40"
       >
         <MessageSquare size={17} />
-        {showLabel && "Continue in chat"}
+        {showLabel && "Resume"}
       </button>
       {error && (
         <p

@@ -46,6 +46,21 @@ const archive: ArchiveSession = {
   updated_at: "2026-10-30T00:00:01Z",
 };
 
+test("should merge Cursor CLI aliases without merging Cursor IDE archives", () => {
+  const entries = chatHistoryList(
+    [],
+    [{ ...saved, agent: "cursor", sourceId: null }],
+    [{ ...live, agent: "cursor-agent" }],
+    [
+      { ...archive, agent: "cursor-agent" },
+      { ...archive, id: "ide", agent: "cursor" },
+    ],
+  );
+  expect(entries).toHaveLength(2);
+  expect(entries.some((entry) => entry.id === "archive:ide")).toBe(true);
+  expect(entries.some((entry) => entry.id === `chat:${saved.id}`)).toBe(true);
+});
+
 test("archive project metadata cannot overwrite an authoritative native association", () => {
   for (const archiveProject of ["project-b", null]) {
     const entries = chatHistoryList(

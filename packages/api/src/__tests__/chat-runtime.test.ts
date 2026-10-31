@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -182,9 +182,102 @@ afterAll(() => {
   if (oldMock === undefined) delete process.env.ORC_E2E_CHAT_MOCK;
   else process.env.ORC_E2E_CHAT_MOCK = oldMock;
   resetConfig();
+  rmSync(home, { recursive: true, force: true });
 });
 
 describe("native chat runtime", () => {
+  test("should connect Cursor chat to ORC MCP and resume its selected provider", async () => {
+    const originalAcpx = createBackend("acpx");
+    const cursorCalls: { id: string | null; opts: SessionOpts; prompt?: string }[] = [];
+    registerBackend("acpx", () => ({
+      ...originalAcpx,
+      startSession: async (opts) => {
+        const call = { id: null, opts };
+        cursorCalls.push(call);
+        return session(call);
+      },
+      resumeSession: async (id, opts) => {
+        const call = { id, opts };
+        cursorCalls.push(call);
+        return session(call);
+      },
+    }));
+    try {
+      const first = await turn({
+        agent: "cursor",
+        messages: [{ role: "user", content: "Cursor first turn" }],
+      });
+      expect(first.response.status).toBe(200);
+      expect(first.events.some((event) => event.type === "done")).toBe(true);
+      expect(cursorCalls[0]?.opts).toMatchObject({ acpxAgent: "cursor", orcMcp: true });
+      const thread = first.events.find((event) => event.type === "thread");
+      if (thread?.type !== "thread") throw new Error("Missing Cursor thread");
+      const next = await turn({
+        threadId: thread.thread.id,
+        messages: [{ role: "user", content: "Cursor follow-up" }],
+      });
+      expect(next.response.status).toBe(200);
+      expect(cursorCalls[1]?.id).toBe("native-fixture");
+    } finally {
+      registerBackend("acpx", () => originalAcpx);
+    }
+  });
+
+  test("should bridge discovered Gemini sessions to their exact native ACPX identity", async () => {
+    getDb()
+      .insert(bridge_chats)
+      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+      .onConflictDoNothing()
+      .run();
+    const originalAcpx = createBackend("acpx");
+    const nativeCalls: { id: string | null; opts: SessionOpts; prompt?: string }[] = [];
+    registerBackend("acpx", () => ({
+      ...originalAcpx,
+      startSession: async () => {
+        throw new Error("Native resume must not create a new session");
+      },
+      resumeSession: async (id, opts) => {
+        const call = { id, opts };
+        nativeCalls.push(call);
+        return session(call);
+      },
+    }));
+    try {
+      for (const [backend, agent] of [["gemini", "gemini"]] as const) {
+        const id = `native-${backend}`;
+        getDb()
+          .insert(gateway_sessions)
+          .values({
+            id,
+            backend,
+            mode: "direct",
+            status: "idle",
+            chat_id: LIVE_CHAT_ID,
+            runtime_session_id: "native-fixture",
+            cwd: home,
+          })
+          .run();
+        const preparedResponse = await request("/chat/threads", { sourceSessionId: id });
+        expect(preparedResponse.status).toBe(200);
+        const prepared = (await preparedResponse.json()) as ChatThread;
+        expect(prepared.config.agent).toBe(agent);
+        expect(prepared.backend).toBe("acpx");
+        const result = await turn({
+          threadId: prepared.id,
+          messages: [{ role: "user", content: "Continue original native work" }],
+        });
+        expect(result.events.some((event) => event.type === "error")).toBe(false);
+        expect(nativeCalls.at(-1)).toMatchObject({
+          id: "native-fixture",
+          opts: { acpxAgent: agent, acpxNativeSessionId: "native-fixture", cwd: home },
+          prompt: expect.stringContaining("Continue original native work"),
+        });
+      }
+    } finally {
+      registerBackend("acpx", () => originalAcpx);
+    }
+  });
+
   test("should admit Codex native pause policies while refusing policies it cannot enforce", async () => {
     const previous = process.env.ORC_RULES_ENABLED;
     process.env.ORC_RULES_ENABLED = "true";
@@ -431,7 +524,7 @@ describe("native chat runtime", () => {
     expect(saved.historyBefore).toBe(605);
   });
 
-  test("resumes discovered native identity and directory, rejects active/unsupported/missing sources", async () => {
+  test("resumes native identity and stale status while rejecting real owners, unsupported and missing sources", async () => {
     getDb()
       .insert(bridge_chats)
       .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
@@ -452,7 +545,7 @@ describe("native chat runtime", () => {
     for (const [id, backend, status] of [
       ["source-ended", "codex", "stopped"],
       ["source-running", "codex", "running"],
-      ["source-other", "gemini", "stopped"],
+      ["source-other", "cursor", "stopped"],
     ] as const)
       getDb()
         .insert(gateway_sessions)
@@ -469,9 +562,58 @@ describe("native chat runtime", () => {
         })
         .run();
     expect((await request("/chat/threads", { sourceSessionId: "source-running" })).status).toBe(
-      409,
+      200,
     );
+    for (const [id, pid] of [
+      ["claude-owned", process.pid],
+      ["claude-stale", 2147483647],
+    ] as const) {
+      getDb()
+        .insert(gateway_sessions)
+        .values({
+          id,
+          backend: "claude",
+          mode: "direct",
+          status: "idle",
+          pid,
+          chat_id: LIVE_CHAT_ID,
+          runtime_session_id: id,
+          cwd: home,
+        })
+        .run();
+    }
+    expect((await request("/chat/threads", { sourceSessionId: "claude-owned" })).status).toBe(409);
+    const staleResponse = await request("/chat/threads", { sourceSessionId: "claude-stale" });
+    expect(staleResponse.status).toBe(200);
+    const staleThread = (await staleResponse.json()) as ChatThread;
+    getSqlite()
+      .query("UPDATE gateway_sessions SET pid = ? WHERE id = ?")
+      .run(process.pid, "claude-stale");
+    const nowOwned = await turn({
+      threadId: staleThread.id,
+      messages: [{ role: "user", content: "Do not overlap owners" }],
+    });
+    expect(nowOwned.events).toContainEqual({
+      type: "error",
+      message:
+        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+    });
     expect((await request("/chat/threads", { sourceSessionId: "source-other" })).status).toBe(400);
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-cursor-cli",
+        backend: "cursor-agent",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "native-cursor",
+        cwd: home,
+      })
+      .run();
+    const cursorResume = await request("/chat/threads", { sourceSessionId: "source-cursor-cli" });
+    expect(cursorResume.status).toBe(400);
+    expect(await cursorResume.text()).toContain("separate session stores");
     expect((await request("/chat/threads", { sourceSessionId: "missing" })).status).toBe(404);
     const prepared = (await (
       await request("/chat/threads", { sourceSessionId: "source-ended" })

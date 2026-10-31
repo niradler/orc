@@ -77,8 +77,7 @@ for (const width of [1440, 390]) {
     await context.locator("summary").click();
     await detail.getByTestId("transcript-search").fill("Hidden plugin guidance");
     await expect(context.getByTestId("agent-context-content")).toBeVisible();
-    await detail.getByTestId("resume-actions-menu").click();
-    await page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume").click();
+    await detail.getByTestId("open-chat-resume").click();
     const message = page.getByTestId("chat-message-content").filter({ visible: true });
     await expect(message.getByTestId("agent-context")).toHaveCount(2);
     const panel = message.locator('[data-tag="recommended_plugins"]');

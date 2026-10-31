@@ -4,7 +4,8 @@ export const ChannelProviderSchema = z.enum(["telegram", "slack"]);
 export const ChannelBuiltinCommands = [
   { command: "help", description: "Chat controls and custom shortcuts" },
   { command: "status", description: "Current project, agent, model and session" },
-  { command: "project", description: "Select a project and its working folder" },
+  { command: "projects", description: "Select a project and its working folder" },
+  { command: "project", description: "Select a project (alias for /projects)" },
   { command: "agent", description: "Select an agent or restore the default" },
   { command: "model", description: "Select a model or restore the default" },
   { command: "session", description: "New, list, switch or stop a conversation" },
@@ -332,6 +333,7 @@ export type ChannelMessage = z.infer<typeof ChannelMessageSchema>;
 export type ChannelSend = z.infer<typeof ChannelSendSchema>;
 export type ChannelReceipt = z.infer<typeof ChannelReceiptSchema>;
 export type ChannelInbound = {
+  attachments?: { fileId: string; name: string; mimeType: string; size?: number }[];
   connection: string;
   sender: string;
   chat: string;

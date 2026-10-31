@@ -956,7 +956,8 @@ export async function hostBinary(host: ExecHost, name: string): Promise<string |
 }
 
 export async function expandHostPath(host: ExecHost, path: string): Promise<string> {
-  if (host.kind === "local" || (path !== "~" && !path.startsWith("~/"))) return path;
+  if (path !== "~" && !path.startsWith("~/")) return path;
+  if (host.kind === "local") return path === "~" ? homedir() : join(homedir(), path.slice(2));
   const { home } = await probeHost(host);
   return path === "~" ? home : `${home}/${path.slice(2)}`;
 }

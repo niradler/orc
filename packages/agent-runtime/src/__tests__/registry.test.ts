@@ -11,6 +11,7 @@ describe("backend registry", () => {
     // names now, which keeps `codex` meaning "acpx driving codex".
     expect(backends).toContain("claude-cli");
     expect(backends).toContain("codex-cli");
+    expect(backends).toContain("cursor");
   });
 
   it("creates a claude backend", () => {

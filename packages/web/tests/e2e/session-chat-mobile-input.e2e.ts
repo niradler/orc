@@ -92,7 +92,7 @@ test("phone keyboard text reaches a real terminal without keydown", async ({
 });
 
 for (const width of [1440, 390]) {
-  test(`Sessions offers chat resume in the terminal dropdown at ${width}px`, async ({
+  test(`Sessions defaults to chat resume and preserves server ownership errors at ${width}px`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -141,16 +141,17 @@ for (const width of [1440, 390]) {
       return route.fulfill({ json: thread });
     });
     await gotoView(page, "sessions");
-    await expect(page.getByTestId("open-terminal-resume")).toBeVisible();
-    await expect(page.getByTestId("open-chat-resume")).toHaveCount(0);
+    await expect(page.getByTestId("open-chat-resume")).toHaveText("Resume");
+    await expect(page.getByTestId("open-terminal-resume")).toHaveCount(0);
     await page.getByTestId("resume-actions-menu").click();
-    await page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume").click();
+    await expect(page.getByTestId("open-terminal-resume")).toHaveText("Terminal");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("open-chat-resume").click();
     await expect(page.getByRole("alert")).toContainText("Session is still active");
     await page.goto(`/sessions?project=all&session=${session.id}`);
     const detail = page.getByTestId("live-session-detail");
     await expect(detail).toBeVisible();
-    await detail.getByTestId("resume-actions-menu").click();
-    await page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume").click();
+    await detail.getByTestId("open-chat-resume").click();
     await expect(detail).toBeHidden();
     await expect(page.getByTestId("chat-panel").filter({ visible: true })).toBeVisible();
     await expect(page.getByTestId("chat-message-content").filter({ visible: true })).toContainText(
@@ -162,10 +163,10 @@ for (const width of [1440, 390]) {
   });
 }
 
-test("chat resume refuses active agents and is disabled for unsupported agents", async ({
+test("stale status does not disable supported native agents and Cursor IDE is explained", async ({
   page,
 }) => {
-  const sessions = ["codex", "claude", "gemini"].map((agent, index) => ({
+  const sessions = ["codex", "claude", "gemini", "cursor-agent", "cursor"].map((agent, index) => ({
     id: agent,
     agent,
     session_id: `native-${agent}`,
@@ -178,17 +179,15 @@ test("chat resume refuses active agents and is disabled for unsupported agents",
   }));
   await page.route("**/api/sessions/live?**", (route) => route.fulfill({ json: { sessions } }));
   await gotoView(page, "sessions");
-  const menus = page.getByTestId("resume-actions-menu");
-  await expect(menus).toHaveCount(3);
-  for (let index = 0; index < 3; index++) {
-    await menus.nth(index).click();
-    const button = page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume");
-    await expect(button).toHaveText("Continue in chat");
-    await expect(button).toBeDisabled();
-    await expect(button).toHaveAttribute(
-      "title",
-      index < 2 ? /End the original agent/ : /supports Claude and Codex/,
-    );
-    await page.keyboard.press("Escape");
+  const buttons = page.getByTestId("open-chat-resume");
+  await expect(buttons).toHaveCount(4);
+  for (const button of (await buttons.all()).slice(0, 3)) {
+    await expect(button).toHaveText("Resume");
+    await expect(button).toBeEnabled();
   }
+  await expect(buttons.nth(3)).toBeDisabled();
+  await expect(page.getByTestId("chat-resume-unavailable")).toContainText(
+    "separate session stores",
+  );
+  await expect(page.getByTestId("resume-unavailable")).toContainText("Cursor IDE");
 });

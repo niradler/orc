@@ -162,7 +162,8 @@ for (const agent of ["claude", "codex"] as const) {
     );
     await expect(row).toBeVisible();
     await expect(row.getByTestId("live-status")).toContainText("Ready");
-    await row.getByTestId("open-terminal-resume").click();
+    await row.getByTestId("resume-actions-menu").click();
+    await page.getByTestId("resume-actions-dropdown").getByTestId("open-terminal-resume").click();
     await page.waitForURL(/\/terminals\/[^/]+$/);
     const terminalId = new URL(page.url()).pathname.split("/").at(-1);
     const terminal = await apiGet<{

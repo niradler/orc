@@ -11,6 +11,7 @@ import {
 import { ChannelService } from "@orc/channels";
 import type { ChannelTransport } from "@orc/channels/providers";
 import { resetConfig } from "@orc/core/config";
+import { ValidationError } from "@orc/core/errors";
 import { getLogDir } from "@orc/core/logger";
 import { ChannelStore } from "@orc/db/channels";
 import { createTestDb, getSqlite } from "@orc/db/client";
@@ -33,6 +34,7 @@ let approved = false;
 let requireQuestion = false;
 let fixtureOutput = "**Reply received**";
 let fixtureError = false;
+let downloadedFiles = 0;
 let questionAnswer: Record<string, string[]> | undefined;
 function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let start: () => void = () => {};
@@ -126,6 +128,16 @@ beforeAll(async () => {
     stop: async () => {},
   }));
   const transport: ChannelTransport = {
+    downloadFile: async (file) => {
+      downloadedFiles++;
+      if (file.fileId === "fail-download")
+        throw new ValidationError("Telegram files must be at most 20 MB");
+      return {
+        name: file.name,
+        mimeType: file.mimeType,
+        data: new TextEncoder().encode("attachment bytes"),
+      };
+    },
     identity: async () => ({ id: "bot", name: "bot" }),
     send: async (body) => {
       sent.push(body);
@@ -540,7 +552,7 @@ test("project and model controls isolate sessions and spawn in the selected proj
     targets: current.targets.map((t) => ({ ...t, project_ids: ["p1", "p2"] })),
   });
   const send = (id: string, text: string) =>
-    service.receive({ ...message, message_id: id, thread: "900", text });
+    service.receive({ ...message, sender: "also-authorized", message_id: id, thread: "900", text });
   await send("model-set", "/model fixture-model");
   await send("model-run", "first project message");
   expect(calls.at(-1)?.opts).toMatchObject({
@@ -548,8 +560,11 @@ test("project and model controls isolate sessions and spawn in the selected proj
     model: "fixture-model",
     humanRequestContext: { projectId: "p1" },
   });
-  await send("project-choose", "/project channel-second");
+  await send("project-choose", "/projects channel-second");
   expect(String(sent.at(-1)?.text)).toContain(join(home, "second"));
+  await send("status-selected-project", "/status");
+  expect(String(sent.at(-1)?.text)).toContain("Project: channel-second\n");
+  expect(String(sent.at(-1)?.text)).toContain(`Folder: ${join(home, "second")}`);
   await send("project-run", "second project message");
   expect(calls.at(-1)?.opts).toMatchObject({
     cwd: join(home, "second"),
@@ -562,6 +577,8 @@ test("project and model controls isolate sessions and spawn in the selected proj
     )
     .get();
   await send("project-default", "/project default");
+  await send("status-default-project", "/status");
+  expect(String(sent.at(-1)?.text)).toContain("Project: channel-runtime\n");
   await send("project-resume", "back to first project");
   expect(calls.at(-1)?.opts.cwd).toBe(home);
   expect(calls.at(-1)?.opts.model).toBe("fixture-model");
@@ -577,6 +594,80 @@ test("project and model controls isolate sessions and spawn in the selected proj
 });
 
 const originalMessage = message;
+test("authorized Telegram uploads reach the selected session and unauthorized senders cannot trigger downloads", async () => {
+  const before = downloadedFiles;
+  const attachment = {
+    fileId: "telegram-upload",
+    name: "notes.txt",
+    mimeType: "text/plain",
+    size: 16,
+  };
+  await service.receive({
+    ...message,
+    sender: "not-approved",
+    message_id: "upload-denied",
+    thread: "uploads",
+    text: "",
+    attachments: [attachment],
+  });
+  expect(downloadedFiles).toBe(before);
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    message_id: "upload-allowed",
+    thread: "uploads",
+    text: "",
+    attachments: [attachment],
+  });
+  expect(downloadedFiles).toBe(before + 1);
+  const manifest = calls
+    .at(-1)
+    ?.prompt.split("\n")
+    .find((line) => line.startsWith('{"name":'));
+  if (!manifest) throw new Error("Missing attachment path in agent prompt");
+  const file = JSON.parse(manifest) as { path: string };
+  expect(readFileSync(file.path, "utf8")).toBe("attachment bytes");
+  expect(file.path).toContain(join(home, ".orc", "sessions"));
+  expect(calls.at(-1)?.opts.executionHost).toBeNull();
+  const saved = getSqlite()
+    .query<{ metadata: string }, []>(
+      "SELECT metadata FROM bridge_messages WHERE platform_msg_id='upload-allowed'",
+    )
+    .get();
+  expect(JSON.parse(saved?.metadata ?? "{}").attachments[0].path).toBe(file.path);
+  const count = calls.length;
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    message_id: "upload-too-large",
+    thread: "uploads",
+    text: "",
+    attachments: [{ ...attachment, fileId: "fail-download" }],
+  });
+  expect(calls.length).toBe(count);
+  expect(String(sent.at(-1)?.text)).toContain("20 MB");
+});
+test("Cursor is selectable without changing the reply routing default", async () => {
+  const count = calls.length;
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    text: "/agent cursor",
+    message_id: "cursor-select",
+    thread: "cursor-picker",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("Agent: cursor");
+  expect(calls.length).toBe(count);
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    text: "/agent default",
+    message_id: "cursor-default",
+    thread: "cursor-picker",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("Agent: channels-fixture");
+});
+
 test("native chat panel buttons create sessions, paginate allowed projects and reject another sender", async () => {
   const message = { ...originalMessage, sender: "also-authorized" };
   requirePermission = false;
@@ -591,6 +682,7 @@ test("native chat panel buttons create sessions, paginate allowed projects and r
   const find = (label: string) =>
     keyboard(sent.at(-1) ?? {}).find((b) => b.text === label)?.callback_data ?? "";
   const newSession = find("New session");
+  expect(find("Projects")).toMatch(/^orc_action:/);
   expect(newSession).toMatch(/^orc_action:/);
   await service.receive({
     ...message,

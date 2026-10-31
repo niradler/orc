@@ -71,9 +71,20 @@ export async function writeOrcMcpConfigFile(
   host: ExecHost = resolveExecHost(),
   project?: string,
   mode: OrcMcpMode = "meta",
+  format: "claude" | "acpx" = "claude",
 ): Promise<OrcMcpConfigFile> {
   if (host.kind === "ssh") await ensureSshMaster(host);
-  const content = JSON.stringify({ mcpServers: buildOrcMcpServers(host, false, mode, project) });
+  const servers = buildOrcMcpServers(host, false, mode, project);
+  const mcpServers =
+    format === "acpx"
+      ? Object.entries(servers).map(([name, server]) => ({
+          name,
+          type: server.type,
+          url: server.url,
+          headers: Object.entries(server.headers ?? {}).map(([name, value]) => ({ name, value })),
+        }))
+      : servers;
+  const content = JSON.stringify({ mcpServers });
   if (host.kind === "ssh") {
     const path = remoteTempPath(".mcp.json");
     await writeHostFile(host, path, content);

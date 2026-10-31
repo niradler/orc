@@ -1,5 +1,19 @@
 import { z } from "zod";
 import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-options.js";
+import { SessionFileSchema } from "./session-file-types.js";
+
+export const CHAT_AGENTS = ["codex", "claude", "cursor", "gemini", "copilot"] as const;
+export function nativeChatAgent(agent: string): string | null {
+  return ["claude", "codex", "gemini"].includes(agent) ? agent : null;
+}
+
+export function nativeChatResumeUnavailableReason(agent: string): string | null {
+  if (agent === "cursor-agent")
+    return "Cursor CLI and ACP chat use separate session stores. Use Terminal to resume this conversation.";
+  return nativeChatAgent(agent)
+    ? null
+    : "This session provider cannot resume in chat. Use Terminal when available.";
+}
 
 export { ChatPermissionModeSchema } from "./chat-options.js";
 
@@ -95,6 +109,7 @@ export const ChatMessageSchema = z.object({
   timestamp: z.number(),
   agent: z.string().optional(),
   activity: z.array(ChatActivitySchema).optional(),
+  attachments: z.array(SessionFileSchema).max(10).optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const CHAT_HISTORY_PAGE_SIZE = 500;
@@ -133,6 +148,7 @@ export const ChatThreadSchema = z.object({
   messages: z.array(ChatMessageSchema),
   historyBefore: z.number().int().nonnegative().nullable().optional(),
   importedMessages: z.number().int().nonnegative().optional(),
+  projectId: z.string().optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

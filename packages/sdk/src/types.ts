@@ -257,6 +257,7 @@ export type SessionDetail = Session & {
 
 export type ProjectStatus = "active" | "archived" | "paused";
 export type Project = {
+  upload_directory?: string | null;
   id: string;
   name: string;
   description: string | null;
@@ -463,6 +464,7 @@ export type CreateTaskLinkInput = {
 };
 
 export type CreateProjectInput = {
+  upload_directory?: string | null;
   name: string;
   description?: string;
   status?: ProjectStatus;
@@ -474,6 +476,7 @@ export type CreateProjectInput = {
 };
 
 export type UpdateProjectInput = {
+  upload_directory?: string | null;
   name?: string;
   description?: string | null;
   status?: ProjectStatus;

@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../config.js";
 import {
   describeSshFailure,
   envScript,
   execHostFor,
+  expandHostPath,
   forwardedEnv,
   isSshTransportFailure,
+  LOCAL_HOST,
+  listHostDirectories,
   parseProbe,
   parseSshConfigHosts,
   remoteCommand,
@@ -26,6 +29,13 @@ const host: SshExecHost = {
   secret: "s3cret",
   connectTimeoutSecs: 10,
 };
+
+test("should resolve local home paths and list the default folder", async () => {
+  expect(await expandHostPath(LOCAL_HOST, "~")).toBe(homedir());
+  expect(await expandHostPath(LOCAL_HOST, "~/projects")).toBe(join(homedir(), "projects"));
+  expect(await expandHostPath(LOCAL_HOST, "/literal/path")).toBe("/literal/path");
+  expect((await listHostDirectories(LOCAL_HOST, "")).path).toBe(homedir());
+});
 
 async function runRemote(script: string): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn(["sh", "-c", script], {

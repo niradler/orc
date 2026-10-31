@@ -4,6 +4,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./session-files": "./src/session-files.ts",
+    "./session-file-types": "./src/session-file-types.ts",
     "./channels": "./src/channels.ts",
     "./human-requests": "./src/human-requests.ts",
     "./push": "./src/push.ts",

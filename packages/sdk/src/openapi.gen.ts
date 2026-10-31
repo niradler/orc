@@ -466,9 +466,17 @@ export interface paths {
                                     id: string;
                                     text: string;
                                 })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
+                            projectId?: string;
                             updatedAt: number;
                         };
                     };
@@ -608,9 +616,17 @@ export interface paths {
                                     id: string;
                                     text: string;
                                 })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
+                            projectId?: string;
                             updatedAt: number;
                         };
                     };
@@ -800,9 +816,17 @@ export interface paths {
                                     id: string;
                                     text: string;
                                 })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
+                            projectId?: string;
                             updatedAt: number;
                         };
                     };
@@ -864,6 +888,13 @@ export interface paths {
                                     id: string;
                                     text: string;
                                 })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                }[];
                             }[];
                             before: number | null;
                         };
@@ -1063,9 +1094,17 @@ export interface paths {
                                     id: string;
                                     text: string;
                                 })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
+                            projectId?: string;
                             updatedAt: number;
                         };
                     };
@@ -1145,6 +1184,7 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
+                        projectId?: string;
                         messages: {
                             /** @enum {string} */
                             role: "user" | "assistant" | "system";
@@ -1206,6 +1246,48 @@ export interface paths {
             };
             responses: {
                 /** @description Chat events, activity, permissions and conversation identity */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "multipart/form-data": {
+                        payload: string;
+                        files: string | string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Chat events after saving attached files */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -13745,6 +13827,7 @@ export interface components {
             tags: string[] | null;
             obsidian_path: string | null;
             max_workers: number | null;
+            upload_directory: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -13763,6 +13846,7 @@ export interface components {
             tags?: string[];
             obsidian_path?: string;
             max_workers?: number;
+            upload_directory?: string | null;
         };
         UpdateProject: {
             name?: string;
@@ -13774,6 +13858,7 @@ export interface components {
             tags?: string[] | null;
             obsidian_path?: string;
             max_workers?: number | null;
+            upload_directory?: string | null;
         };
         ProjectComment: {
             id: string;

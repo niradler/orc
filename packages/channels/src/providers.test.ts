@@ -5,10 +5,55 @@ import {
   type ChannelInbound,
   channelCommand,
 } from "@orc/core/channels";
-import { createChannelTransport, slackManifest } from "./providers.js";
+import { createChannelTransport, slackManifest, telegramFiles } from "./providers.js";
 
 const originalFetch = globalThis.fetch;
 const OriginalSocket = globalThis.WebSocket;
+test("Telegram extracts documents and largest photos and bounds file downloads", async () => {
+  expect(
+    telegramFiles({
+      message_id: 12,
+      document: {
+        file_id: "document-id",
+        file_name: "report.pdf",
+        mime_type: "application/pdf",
+        file_size: 4,
+      },
+    }),
+  ).toEqual([{ fileId: "document-id", name: "report.pdf", mimeType: "application/pdf", size: 4 }]);
+  expect(
+    telegramFiles({
+      message_id: 12,
+      photo: [{ file_id: "small" }, { file_id: "large", file_size: 4 }],
+    })[0]?.fileId,
+  ).toBe("large");
+  let downloads = 0;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    if (String(url).endsWith("getFile"))
+      return Response.json({
+        ok: true,
+        result: { file_path: "documents/report.bin", file_size: 4 },
+      });
+    downloads++;
+    return new Response(new Uint8Array([0, 255, 1, 10]));
+  }) as typeof fetch;
+  const transport = createChannelTransport(
+    ChannelConnectionSchema.parse({ id: "uploads", name: "Uploads", provider: "telegram" }),
+    { token: "private-fixture" },
+  );
+  if (!transport.downloadFile) throw new Error("No Telegram file downloader");
+  const file = await transport.downloadFile({
+    fileId: "document-id",
+    name: "report.bin",
+    mimeType: "application/octet-stream",
+    size: 4,
+  });
+  expect(file.data).toEqual(new Uint8Array([0, 255, 1, 10]));
+  await expect(
+    transport.downloadFile({ fileId: "large", name: "large.bin", mimeType: "", size: 20_000_001 }),
+  ).rejects.toThrow("20 MB");
+  expect(downloads).toBe(1);
+});
 afterEach(() => {
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = OriginalSocket;
