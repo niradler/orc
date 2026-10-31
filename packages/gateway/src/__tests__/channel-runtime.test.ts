@@ -226,6 +226,26 @@ test("native permission request uses durable Attention and a bound button respon
     if (!callback) await Bun.sleep(50);
   }
   if (!callback) throw new Error("Attention notification was not sent");
+  const attention = sent.find(
+    (p) => p.message_thread_id === 456 && String(p.text).includes("harmless fixture action"),
+  );
+  const stopButton = (
+    attention?.reply_markup as
+      | { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }
+      | undefined
+  )?.inline_keyboard
+    .flat()
+    .find((button) => button.text === "Stop this turn");
+  expect(stopButton?.callback_data).toMatch(/^orc_action:/);
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    kind: "action",
+    text: stopButton?.callback_data ?? "",
+    message_id: "attention-stop-wrong-user",
+    thread: "456",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("expired");
   await service.receive({
     ...message,
     message_id: "action-wrong",
@@ -409,7 +429,7 @@ test("channel commands manage scoped sessions, custom shortcuts and native slash
     text: "/session mode bypass",
     thread: "commands",
   });
-  expect(String(sent.at(-1)?.text)).toContain("Use /session new");
+  expect(String(sent.at(-1)?.text)).toContain("Use /session_new");
   await stop();
   stop = await startChannelRuntime(service);
   await service.receive({
@@ -423,6 +443,7 @@ test("channel commands manage scoped sessions, custom shortcuts and native slash
 
 test("stop interrupts a pending agent turn and discards already queued messages", async () => {
   requirePermission = true;
+  const sentBefore = sent.length;
   const count = calls.length;
   const pending = service.receive({ ...message, message_id: "stop-running", thread: "stop" });
   const deadline = Date.now() + 3000;
@@ -434,7 +455,28 @@ test("stop interrupts a pending agent turn and discards already queued messages"
     thread: "stop",
     text: "must not execute",
   });
-  await service.receive({ ...message, message_id: "stop-control", thread: "stop", text: "/stop" });
+  let stopCallback = "";
+  const stopDeadline = Date.now() + 4000;
+  while (!stopCallback && Date.now() < stopDeadline) {
+    const notice = sent
+      .slice(sentBefore)
+      .findLast((p) => String(p.text).includes("harmless fixture action"));
+    const keyboard = notice?.reply_markup as
+      | { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }
+      | undefined;
+    stopCallback =
+      keyboard?.inline_keyboard.flat().find((button) => button.text === "Stop this turn")
+        ?.callback_data ?? "";
+    if (!stopCallback) await Bun.sleep(20);
+  }
+  if (!stopCallback) throw new Error("Pending approval did not retain its Stop control");
+  await service.receive({
+    ...message,
+    message_id: "stop-control",
+    thread: "stop",
+    kind: "action",
+    text: stopCallback,
+  });
   await Promise.all([pending, queued]);
   expect(calls.length).toBe(count + 1);
   expect(sent.some((p) => String(p.text).includes("Stopped the current turn"))).toBe(true);
@@ -756,6 +798,27 @@ test("agent failures retain safe phase/session diagnostics and the conversation 
       .get(record?.id ?? ""),
   ).toMatchObject({ status: "idle", last_error: null });
   expect(readFileSync(join(dir, "orc.log"), "utf8")).toContain("agent_reported_error");
+});
+
+test("Unicode and HTML-heavy output retains a bounded editable preview", async () => {
+  requirePermission = false;
+  const before = edited.length;
+  fixtureOutput = `${"😀<&>".repeat(800)}z`;
+  try {
+    await service.receive({
+      ...message,
+      sender: "also-authorized",
+      message_id: "unicode-preview",
+      thread: "unicode",
+    });
+    const preview = edited.slice(before).find((entry) => entry.body.reply_markup);
+    expect(preview).toBeDefined();
+    expect(String(preview?.body.text)).toContain("😀");
+    expect(String(preview?.body.text).length).toBeLessThanOrEqual(4000);
+    expect(/[\uD800-\uDFFF]/u.test(String(preview?.body.text))).toBe(false);
+  } finally {
+    fixtureOutput = "**Reply received**";
+  }
 });
 
 test("editing a recipient during a running turn cannot redirect its reply", async () => {

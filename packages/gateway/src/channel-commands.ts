@@ -197,7 +197,7 @@ export async function channelDirectCommand(
         input.cwd,
       ).catch(() => []);
       return {
-        text: `Current model: ${session.model ?? (agent === input.defaultAgent ? input.defaultModel : undefined) ?? "provider default"}\nUse /model <id> or choose a model.`,
+        text: `Current model: ${session.model ?? (agent === input.defaultAgent ? input.defaultModel : undefined) ?? "provider default"}\nChoose a model below or tap Default model.`,
         buttons: picker(
           "model",
           [
@@ -212,7 +212,7 @@ export async function channelDirectCommand(
       };
     }
     if (command.args !== "default" && !/^[a-z0-9][a-z0-9._:/@+-]{0,199}$/i.test(command.args))
-      return { text: "Use /model <model-id> or /model default." };
+      return { text: "Use /model to choose a model." };
     const model =
       command.args === "default"
         ? agent === input.defaultAgent
@@ -281,7 +281,7 @@ export async function channelDirectCommand(
         ? sessions[Number(argument) - 1]
         : sessions.find((s) => s.id === argument || s.id.endsWith(argument));
       if (!selected || selected.status === "stopped")
-        return { text: "Session is unavailable in this project. Use /session list." };
+        return { text: "Session is unavailable in this project. Use /session_list to choose one." };
       await setActiveGatewaySession(input.chatKey, selected.id);
       await updateChatMode(input.chatKey, `agent:${selected.backend}`);
       return {
@@ -295,7 +295,7 @@ export async function channelDirectCommand(
       return { text: "Stopped this conversation. The next message starts a new session." };
     }
     return {
-      text: "Use /session new, /session list, /session switch <id-or-number>, or /session stop.",
+      text: "Use /session_new for a new conversation, /session_list to choose one, or /stop to stop the current turn.",
     };
   }
   return null;

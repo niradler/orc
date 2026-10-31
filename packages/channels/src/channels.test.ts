@@ -158,6 +158,29 @@ test("long text is split without losing content or Unicode", () => {
     source.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
   );
 });
+test("long Telegram replies use full bounded chunks and preserve line/word boundaries", () => {
+  const source = Array.from(
+    { length: 90 },
+    (_, i) =>
+      `E2E_LINE_${String(i + 1).padStart(3, "0")} | Native Telegram chat continuity and controls verified.`,
+  ).join("\n");
+  const result = renderMessage(
+    "telegram",
+    ChannelMessageSchema.parse({ text: source, format: "plain" }),
+  );
+  const chunks = result.payloads.map((p) => String(p.text));
+  expect(chunks).toHaveLength(2);
+  expect(chunks.join("")).toBe(source);
+  expect(chunks[0]).toEndWith("\n");
+  expect(chunks.every((chunk) => chunk.length <= 4000)).toBe(true);
+  const words = "Preserve every complete word across Telegram messages. ".repeat(150);
+  const split = renderMessage(
+    "telegram",
+    ChannelMessageSchema.parse({ text: words, format: "plain" }),
+  ).payloads.map((p) => String(p.text));
+  expect(split.join("")).toBe(words);
+  expect(split.slice(0, -1).every((chunk) => chunk.endsWith(" "))).toBe(true);
+});
 test("Slack common rendering preserves quotation marks and task-list state", () => {
   const result = renderMessage(
     "slack",

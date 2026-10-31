@@ -25,6 +25,20 @@ import type { GatewayAdapter, IncomingMessage, SendOpts, SupportsInlineButtons }
 
 const logger = createLogger("gateway:channel-runtime");
 
+function telegramPreview(text: string): string {
+  const chars = Array.from(text).slice(-2800);
+  let start = chars.length;
+  let length = 0;
+  while (start > 0) {
+    const char = chars[start - 1] ?? "";
+    const size = char === "&" ? 5 : char === "<" || char === ">" ? 4 : char.length;
+    if (length + size > 2800) break;
+    length += size;
+    start--;
+  }
+  return chars.slice(start).join("");
+}
+
 function incoming(service: ChannelService, message: ChannelInbound): IncomingMessage {
   return {
     connectionId: message.connection,
@@ -40,6 +54,7 @@ function channelAdapter(
   service: ChannelService,
   connection: string,
   target: ChannelTarget,
+  stopForRequest?: (requestId: string) => string | undefined,
 ): GatewayAdapter & SupportsInlineButtons {
   const bindDestination = (chatId: string) => {
     const current = service.connection(connection).targets.find((t) => t.id === target.id);
@@ -73,9 +88,16 @@ function channelAdapter(
     async sendWithButtons(chatId, text, buttons, opts) {
       bindDestination(chatId);
       const provider = service.connection(connection).provider;
-      const mapped = buttons.map((row) =>
+      const attentionId = buttons
+        .flat()
+        .map((button) => button.value.match(/^\/attention (\S+)/)?.[1])
+        .find(Boolean);
+      const stop =
+        provider === "telegram" && attentionId ? stopForRequest?.(attentionId) : undefined;
+      const controls = stop ? [...buttons, [{ label: "Stop this turn", value: stop }]] : buttons;
+      const mapped = controls.map((row) =>
         row.map((button) => {
-          const requestId = button.value.match(/^\/attention (\S+)/)?.[1];
+          const requestId = button.value.match(/^\/attention (\S+)/)?.[1] ?? attentionId;
           const request = requestId ? new HumanRequestStore(getSqlite()).get(requestId) : null;
           const users = request?.input.origin.channel
             ? [request.input.origin.channel.sender_id]
@@ -421,7 +443,7 @@ export async function startChannelRuntime(
             "Agent output exceeds the channel message limit; inspect the session in ORC",
           );
         if (event.type === "text" && progressId && Date.now() - previewAt >= 1500) {
-          await updateProgress(output.slice(-2800) || "Working…", true);
+          await updateProgress(telegramPreview(output) || "Working…", true);
           previewAt = Date.now();
         }
         if (event.type === "error") {
@@ -556,7 +578,24 @@ export async function startChannelRuntime(
           (t) => t.attention && t.inbound && t.outbound && t.user_ids.length,
         )) {
           const destination = `${c.id}:${t.id}`;
-          adapters.set(destination, channelAdapter(service, c.id, t));
+          adapters.set(
+            destination,
+            channelAdapter(service, c.id, t, (requestId) => {
+              const request = requests.find((r) => r.id === requestId);
+              const source = request?.input.origin.channel;
+              if (!source) return;
+              const turn = activeTurns.get(
+                JSON.stringify([
+                  source.connection,
+                  source.chat_id,
+                  source.thread_id ?? null,
+                  source.sender_id,
+                ]),
+              );
+              if (turn && request?.input.origin.session_id === turn.session.id)
+                return `/stop ${turn.messageId}`;
+            }),
+          );
           for (const project of projects)
             if (!t.project_ids.length || (project && t.project_ids.includes(project)))
               targets.push({
@@ -656,8 +695,8 @@ export async function startChannelRuntime(
         message,
         target,
         turn
-          ? "Stopped the current turn and cleared queued messages. Use /session new for a new conversation."
-          : "No agent turn is running. Use /session new for a new conversation.",
+          ? "Stopped the current turn and cleared queued messages. Tap New session for a new conversation."
+          : "No agent turn is running. Tap New session for a new conversation.",
         "plain",
         undefined,
         channelControls(),
