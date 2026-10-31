@@ -111,6 +111,31 @@ export class ProviderFailure extends OrcError {
     super(`Channel provider: ${code}`, "CHANNEL_PROVIDER_ERROR", 502);
   }
 }
+
+export function safeProviderCode(value: string): string {
+  const code = value.replace(/^Channel provider: /, "");
+  if (/^http_[1-5][0-9]{2}_code_[0-9]{1,3}$/.test(code)) return code;
+  const known = new Set([
+    "rate_limited",
+    "invalid_response",
+    "network_or_timeout",
+    "webhook_already_owned",
+    "invalid_socket_url",
+    "socket_connect_timeout",
+    "socket_connect_failed",
+    "socket_disconnected",
+    "polling_failed",
+    "invalid_auth",
+    "not_authed",
+    "token_revoked",
+    "account_inactive",
+    "missing_scope",
+    "channel_not_found",
+    "not_in_channel",
+    "restricted_action",
+  ]);
+  return known.has(code) ? code : "provider_failure";
+}
 async function request(
   provider: string,
   token: string,

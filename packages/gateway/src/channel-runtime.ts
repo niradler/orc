@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
 import { type ChannelService, getChannelService } from "@orc/channels";
+import { ProviderFailure, safeProviderCode } from "@orc/channels/providers";
 import { renderMessage } from "@orc/channels/render";
 import { type ChannelInbound, type ChannelTarget, channelCommand } from "@orc/core/channels";
 import { ChatSettingsSchema, chatSystemPrompt } from "@orc/core/chat";
@@ -296,6 +298,8 @@ export async function startChannelRuntime(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let progressId: string | undefined;
     let progressMarkup: Record<string, unknown> | undefined;
+    let phase = "start";
+    let failureCode = "agent_turn_failed";
     const updateProgress = async (text: string, running = false) => {
       if (!progressId) return;
       try {
@@ -405,6 +409,7 @@ export async function startChannelRuntime(
         return;
       }
       await session.send(channelPrompt(service.connection(message.connection), message.text));
+      phase = "generate";
       let output = "";
       let previewAt = 0;
       let runtimeId: string | undefined;
@@ -419,8 +424,10 @@ export async function startChannelRuntime(
           await updateProgress(output.slice(-2800) || "Working…", true);
           previewAt = Date.now();
         }
-        if (event.type === "error")
+        if (event.type === "error") {
+          failureCode = "agent_reported_error";
           throw new Error("Agent turn failed; inspect the originating session in ORC");
+        }
         if (event.type === "question_request" && event.data.questions.some((q) => q.isSecret))
           throw new Error("Secret input must be supplied through the originating agent interface");
         if (event.type === "result") {
@@ -433,6 +440,7 @@ export async function startChannelRuntime(
         return;
       }
       runtimeId ??= session.getRuntimeSessionId?.();
+      phase = "deliver";
       if (output) {
         const telegram = provider === "telegram";
         const chunked =
@@ -470,15 +478,29 @@ export async function startChannelRuntime(
         last_activity_at: new Date(),
         last_error: null,
       });
-    } catch {
+    } catch (error) {
       if (activeTurns.get(conversationKey(message))?.cancelled) {
         await updateProgress("Stopped.");
         return;
       }
+      const code =
+        error instanceof ProviderFailure
+          ? safeProviderCode(error.message)
+          : error instanceof ValidationError
+            ? "validation_failed"
+            : failureCode;
+      logger.error("Channel agent turn failed", {
+        connection: message.connection,
+        provider,
+        session: record.id,
+        operation: phase,
+        code,
+        event: createHash("sha256").update(message.message_id).digest("hex").slice(0, 16),
+      });
       await updateProgress("This turn failed. Check the session in ORC.");
       await updateGatewaySession(record.id, {
         status: "error",
-        last_error: "Channel agent turn failed; inspect this session",
+        last_error: `Channel agent turn failed (${phase}/${code}); inspect this session`,
         last_activity_at: new Date(),
       });
       await reply(

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,6 +11,7 @@ import {
 import { ChannelService } from "@orc/channels";
 import type { ChannelTransport } from "@orc/channels/providers";
 import { resetConfig } from "@orc/core/config";
+import { getLogDir } from "@orc/core/logger";
 import { ChannelStore } from "@orc/db/channels";
 import { createTestDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
@@ -31,6 +32,7 @@ let requirePermission = false;
 let approved = false;
 let requireQuestion = false;
 let fixtureOutput = "**Reply received**";
+let fixtureError = false;
 let questionAnswer: Record<string, string[]> | undefined;
 function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let start: () => void = () => {};
@@ -44,6 +46,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let alive = true;
   const ask = requirePermission;
   const question = requireQuestion;
+  const fail = fixtureError;
   return {
     id: `fixture-${calls.length}`,
     alive: () => alive,
@@ -61,6 +64,10 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
     },
     async *events(): AsyncIterable<AgentEvent> {
       await started;
+      if (fail) {
+        yield { type: "error", data: "PRIVATE_PROVIDER_ERROR https://private.example/token" };
+        return;
+      }
       if (ask) {
         yield {
           type: "permission_request",
@@ -694,6 +701,61 @@ test("long Telegram replies have one final control panel and Slack keeps its exi
   } finally {
     fixtureOutput = "**Reply received**";
   }
+});
+
+test("agent failures retain safe phase/session diagnostics and the conversation can recover", async () => {
+  requirePermission = false;
+  fixtureError = true;
+  const offset = sent.length;
+  try {
+    await service.receive({
+      ...message,
+      sender: "also-authorized",
+      message_id: "diagnostic-private-id",
+      thread: "failure",
+    });
+  } finally {
+    fixtureError = false;
+  }
+  const record = getSqlite()
+    .query<{ id: string; last_error: string; status: string }, []>(
+      "SELECT id,last_error,status FROM gateway_sessions WHERE chat_id LIKE '%failure%' ORDER BY created_at DESC LIMIT 1",
+    )
+    .get();
+  expect(record?.status).toBe("error");
+  expect(record?.last_error).toContain("generate/agent_reported_error");
+  expect(JSON.stringify(sent.slice(offset))).not.toContain("PRIVATE_PROVIDER_ERROR");
+  const dir = getLogDir();
+  if (!dir) throw new Error("Diagnostic log file was not created");
+  const text = readFileSync(join(dir, "orc.log"), "utf8");
+  expect(text).not.toContain("PRIVATE_PROVIDER_ERROR");
+  const failure = text
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .findLast((row) => row.msg === "Channel agent turn failed");
+  expect(JSON.parse(failure.data)).toMatchObject({
+    connection: "test",
+    provider: "telegram",
+    session: record?.id,
+    operation: "generate",
+    code: "agent_reported_error",
+  });
+  expect(JSON.parse(failure.data).event).toMatch(/^[a-f0-9]{16}$/);
+  await service.receive({
+    ...message,
+    sender: "also-authorized",
+    message_id: "diagnostic-recovered",
+    thread: "failure",
+  });
+  expect(
+    getSqlite()
+      .query<{ status: string; last_error: string | null }, [string]>(
+        "SELECT status,last_error FROM gateway_sessions WHERE id=?",
+      )
+      .get(record?.id ?? ""),
+  ).toMatchObject({ status: "idle", last_error: null });
+  expect(readFileSync(join(dir, "orc.log"), "utf8")).toContain("agent_reported_error");
 });
 
 test("editing a recipient during a running turn cannot redirect its reply", async () => {
