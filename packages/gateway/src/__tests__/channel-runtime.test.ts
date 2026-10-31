@@ -30,6 +30,7 @@ const edited: Array<{ id: string; body: Record<string, unknown> }> = [];
 let requirePermission = false;
 let approved = false;
 let requireQuestion = false;
+let fixtureOutput = "**Reply received**";
 let questionAnswer: Record<string, string[]> | undefined;
 function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let start: () => void = () => {};
@@ -87,7 +88,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
         };
         await decision;
       }
-      yield { type: "text", data: "**Reply received**" };
+      yield { type: "text", data: fixtureOutput };
       yield { type: "result", data: { runtimeSessionId: "native-fixture" } };
     },
     close: async () => {
@@ -647,6 +648,52 @@ test("native turn preview updates, clears Stop and cannot stop a later turn", as
   await pending;
   expect(edited.some((p) => p.body.text === "Stopped.")).toBe(true);
   requirePermission = false;
+});
+
+test("long Telegram replies have one final control panel and Slack keeps its existing message rendering", async () => {
+  requirePermission = false;
+  const output = "Long answer ".repeat(500);
+  fixtureOutput = output;
+  try {
+    const offset = sent.length;
+    await service.receive({
+      ...message,
+      sender: "also-authorized",
+      message_id: "long-answer",
+      thread: "long",
+    });
+    const replies = sent.slice(offset).filter((p) => p.text !== "Working…");
+    expect(replies.filter((p) => p.reply_markup)).toHaveLength(1);
+    expect(replies.at(-1)?.text).toBe("Chat controls");
+    expect(
+      replies
+        .slice(0, -1)
+        .map((p) => p.text)
+        .join(""),
+    ).toBe(output);
+    const current = service.connection("test");
+    await service.save({
+      ...current,
+      id: "slack-long",
+      name: "Slack long reply",
+      revision: 0,
+      provider: "slack",
+      credentials: { bot_token: "fixture", app_token: "fixture" },
+    });
+    const slackOffset = sent.length;
+    await service.receive({
+      ...message,
+      connection: "slack-long",
+      message_id: "slack-answer",
+      thread: "slack",
+    });
+    const slackReply = sent.slice(slackOffset);
+    expect(slackReply).toHaveLength(1);
+    expect(slackReply[0]?.text).toBe(output.trim());
+    expect(slackReply[0]?.blocks).toBeUndefined();
+  } finally {
+    fixtureOutput = "**Reply received**";
+  }
 });
 
 test("editing a recipient during a running turn cannot redirect its reply", async () => {

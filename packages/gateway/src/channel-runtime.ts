@@ -434,7 +434,24 @@ export async function startChannelRuntime(
       }
       runtimeId ??= session.getRuntimeSessionId?.();
       if (output) {
-        await reply(message, target, output, "markdown", projectId, channelControls());
+        const telegram = provider === "telegram";
+        const chunked =
+          telegram &&
+          renderMessage("telegram", {
+            text: output,
+            format: "markdown",
+            links: [],
+          }).payloads.length > 1;
+        await reply(
+          message,
+          target,
+          output,
+          "markdown",
+          projectId,
+          telegram && !chunked ? channelControls() : undefined,
+        );
+        if (chunked)
+          await reply(message, target, "Chat controls", "plain", projectId, channelControls());
         await appendMessage({
           chatKey: chat.id,
           direction: "out",
