@@ -64,3 +64,23 @@ Here is the task and what else is in progress:
 - Links use dashboard paths such as `/tasks/<id>` (see [Web navigation](web.md)).
 - An invalid spec is shown to the human as raw JSON with the error, so keep
   `root` and `children` keys consistent and props within the catalog.
+- Layouts are bounded to 200 rendered elements and must be acyclic. Only Stack,
+  Grid and Card accept children. Actions are supported only on Button `press`;
+  state watchers, repeaters and automatic actions are rejected.
+
+## MCP defaults and prompts
+
+Settings → MCP controls the server's default tool mode (`meta` or `full`) and
+named MCP prompts. An explicit HTTP `?mode=` or CLI `--mode` overrides the default.
+New internal chat/channel connections use the configured default too. Restart
+existing stdio clients after a settings change.
+
+The authenticated `/api/settings/mcp` GET/PATCH endpoints persist these values in
+the existing global JSON config under `mcp.default_mode` and `mcp.prompts`.
+Each prompt has `name`, `title`, `description`, `content`, and `include_ui_catalog`.
+Prompt names are unique. The built-in `render-ui` prompt includes the current
+catalog automatically; custom prompts can opt in. `prompts/list` lists saved
+prompts and `prompts/get` returns their user message. Prompts take no arguments.
+
+The Resources disclosure lists `orc://ui/catalog`. The resource and `ui_catalog`
+tool remain schema-generated references, independent of editable prompt text.

@@ -2,11 +2,14 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { CHAT_UI_CATALOG_URI, chatUiCatalogText } from "@orc/core/chat-ui";
+import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { z } from "zod";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
@@ -53,19 +56,15 @@ export interface McpServerOptions extends ToolOptions {
   projects?: string[];
 }
 
-export function createMcpServer({
-  mode = "meta",
-  project,
-  projects,
-  ...options
-}: McpServerOptions = {}) {
+export function createMcpServer({ mode, project, projects, ...options }: McpServerOptions = {}) {
   if (project !== undefined && projects !== undefined)
     throw new Error("Use project or projects, not both");
   const names = projects ? normalizeMcpProjects(projects) : parseMcpProjects(project);
   const selected = names ? resolveMcpProjects(names) : undefined;
+  const selectedMode = mode ?? loadConfig().mcp.default_mode;
   const server = new Server(
     { name: "orc", version: "0.0.1" },
-    { capabilities: { tools: {}, resources: {} } },
+    { capabilities: { tools: {}, resources: {}, prompts: {} } },
   );
 
   // The set of tools this connection serves. Every lookup, listing and meta
@@ -161,7 +160,7 @@ export function createMcpServer({
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: mode === "meta" ? metaToolListing() : listing(served),
+    tools: selectedMode === "meta" ? metaToolListing() : listing(served),
   }));
 
   // In meta mode a CallTool naming a real tool is routed through the same
@@ -169,10 +168,39 @@ export function createMcpServer({
   // the served set still bounds what is reachable.
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    if (mode === "meta" && isMetaToolName(name)) {
+    if (selectedMode === "meta" && isMetaToolName(name)) {
       return runMetaTool(served, name, args, callTool);
     }
     return callTool(name, args);
+  });
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: loadConfig().mcp.prompts.map(({ name, title, description }) => ({
+      name,
+      title,
+      description,
+    })),
+  }));
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const prompt = loadConfig().mcp.prompts.find((item) => item.name === request.params.name);
+    if (!prompt) throw new Error(`Unknown prompt: ${request.params.name}`);
+    if (Object.keys(request.params.arguments ?? {}).length)
+      throw new Error("This prompt does not accept arguments");
+    return {
+      description: prompt.description,
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              prompt.content,
+              ...(prompt.include_ui_catalog ? [chatUiCatalogText()] : []),
+            ].join("\n\n"),
+          },
+        },
+      ],
+    };
   });
 
   // Static references. Each is mirrored by a tool for clients that cannot read resources.
@@ -200,8 +228,11 @@ export function createMcpServer({
   return server;
 }
 
-export async function startStdioServer(mode: McpMode = "meta") {
-  const server = createMcpServer({ agentSessionId: agentSessionFromEnv(), mode });
+export async function startStdioServer(mode?: McpMode) {
+  const server = createMcpServer({
+    agentSessionId: agentSessionFromEnv(),
+    ...(mode ? { mode } : {}),
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logger.info("MCP server running on stdio");

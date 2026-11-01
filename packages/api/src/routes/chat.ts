@@ -1000,7 +1000,7 @@ async function streamChat(
           model: thread.config.model || undefined,
           systemPromptAppend: chatSystemPrompt(thread.config.system),
           orcMcp: thread.config.mcp === "orc",
-          orcMcpMode: "meta",
+          orcMcpMode: loadConfig().mcp.default_mode,
           mcpAlwaysLoad: true,
           acpxAgent: thread.config.agent,
           acpxNativeSessionId:

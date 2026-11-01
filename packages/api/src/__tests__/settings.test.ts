@@ -6,6 +6,7 @@ import { globalConfigPath, resetConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth";
+import { mcpRouter } from "../routes/mcp";
 import { settingsRouter } from "../routes/settings";
 
 const originalHome = process.env.HOME;
@@ -20,6 +21,7 @@ app.onError((error, c) =>
 );
 app.use("/api/*", bearerAuth("test-secret"));
 app.route("/api", settingsRouter);
+app.route("/", mcpRouter);
 const headers = { Authorization: "Bearer test-secret", "Content-Type": "application/json" };
 
 beforeAll(() => {
@@ -45,6 +47,104 @@ test("should require authentication for reading and writing preferences", async 
   for (const method of ["GET", "PATCH"]) {
     expect((await app.request("/api/settings", { method })).status).toBe(401);
   }
+  for (const method of ["GET", "PATCH"]) {
+    expect((await app.request("/api/settings/mcp", { method })).status).toBe(401);
+  }
+});
+
+test("should persist MCP defaults and serve prompts and explicit mode overrides over HTTP", async () => {
+  const settings = {
+    default_mode: "full",
+    prompts: [
+      {
+        name: "render-ui",
+        title: "Live components",
+        description: "Test prompt",
+        content: "Use real entity ids",
+        include_ui_catalog: true,
+      },
+    ],
+  };
+  const saved = await app.request("/api/settings/mcp", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(settings),
+  });
+  expect(saved.status).toBe(200);
+  resetConfig();
+  expect(await (await app.request("/api/settings/mcp", { headers })).json()).toEqual(settings);
+  const raw = JSON.parse(readFileSync(globalConfigPath(), "utf8"));
+  expect(raw.api.secret).toBe("private-server-secret");
+  expect(raw.mcp.default_mode).toBe("full");
+  async function rpc(method: string, params = {}, query = "") {
+    const response = await app.request(`/mcp${query}`, {
+      method: "POST",
+      headers: {
+        ...headers,
+        Authorization: "Bearer private-server-secret",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+  }
+  expect(
+    (await rpc("tools/list")).result.tools.map((tool: { name: string }) => tool.name),
+  ).toContain("ui_catalog");
+  expect(
+    (await rpc("tools/list", {}, "?mode=meta")).result.tools.map(
+      (tool: { name: string }) => tool.name,
+    ),
+  ).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
+  expect((await rpc("prompts/list")).result.prompts).toEqual([
+    { name: "render-ui", title: "Live components", description: "Test prompt" },
+  ]);
+  const prompt = (await rpc("prompts/get", { name: "render-ui" })).result.messages[0].content.text;
+  expect(prompt).toContain("Use real entity ids");
+  expect(prompt).toContain("# ORC chat UI components");
+  expect((await rpc("prompts/get", { name: "missing" })).error).toBeDefined();
+  expect(
+    (await rpc("prompts/get", { name: "render-ui", arguments: { unexpected: "x" } })).error,
+  ).toBeDefined();
+  for (const body of [
+    { default_mode: "bad" },
+    { ...settings, api_secret: "bad" },
+    { ...settings, prompts: [...settings.prompts, ...settings.prompts] },
+    { ...settings, prompts: [{ ...settings.prompts[0], name: "../bad" }] },
+  ]) {
+    expect(
+      (
+        await app.request("/api/settings/mcp", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify(body),
+        })
+      ).status,
+    ).toBe(400);
+  }
+  const plain = {
+    default_mode: "meta",
+    prompts: [{ ...settings.prompts[0], include_ui_catalog: false }],
+  };
+  expect(
+    (
+      await app.request("/api/settings/mcp", {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(plain),
+      })
+    ).status,
+  ).toBe(200);
+  expect((await rpc("prompts/get", { name: "render-ui" })).result.messages[0].content.text).toBe(
+    "Use real entity ids",
+  );
+  expect(
+    (await rpc("tools/list", {}, "?mode=full")).result.tools.map(
+      (tool: { name: string }) => tool.name,
+    ),
+  ).toContain("ui_catalog");
 });
 
 test("should persist selected settings without changing or exposing credentials", async () => {

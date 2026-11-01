@@ -6,6 +6,14 @@ import { expect, test } from "@playwright/test";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
+test.beforeEach(async ({ page }) => {
+  // Upload fixtures use mock chat; installed model-discovery processes must not
+  // outlive the test and keep its temporary workspace open on Windows.
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
+});
+
 for (const width of [1440, 390]) {
   test(`file-only drafts stay reachable through session history at ${width}px`, async ({
     page,

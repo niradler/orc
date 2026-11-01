@@ -6,6 +6,7 @@ import { AttentionSettings } from "@/components/AttentionSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
+import { McpSettingsForm } from "@/components/McpSettingsForm";
 import { NotificationSettings } from "@/components/NotificationSettings";
 import { ServerSettings } from "@/components/ServerSettings";
 import { SshHostSettings } from "@/components/SshHostSettings";
@@ -26,6 +27,7 @@ const sections = [
   "notifications",
   "channels",
   "chat",
+  "mcp",
   "knowledge",
   "terminals",
   "storage",
@@ -39,6 +41,7 @@ const sectionLabels: Record<Section, string> = {
   notifications: "Notifications",
   channels: "Channels",
   chat: "Chat",
+  mcp: "MCP",
   knowledge: "Knowledge",
   terminals: "Terminals",
   storage: "Storage",
@@ -203,6 +206,9 @@ export default function Settings() {
           </section>
           <div hidden={section !== "execution"}>
             <SshHostSettings />
+          </div>
+          <div hidden={section !== "mcp"}>
+            <McpSettingsForm />
           </div>
           <div hidden={section !== "server"}>
             <ServerSettings />

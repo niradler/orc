@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 
 export type Tone = "neutral" | "progress" | "success" | "warning" | "error";
 
@@ -17,12 +17,12 @@ export function chatUiHref(href: string, currentSearch: string): string {
   if (!href.startsWith("/")) return href;
   const current = new URLSearchParams(currentSearch);
   if (current.get("chat") !== "open") return href;
-  const [pathname, search = ""] = href.split("?", 2);
-  const query = new URLSearchParams(search);
+  const target = new URL(href, "http://orc.local");
+  const query = target.searchParams;
   query.set("chat", "open");
   const thread = current.get("chatThread");
   if (thread) query.set("chatThread", thread);
-  return `${pathname}?${query}`;
+  return `${target.pathname}?${query}${target.hash}`;
 }
 
 export function UiLink({
@@ -156,7 +156,7 @@ export function ProgressBar({ value, label }: { value: number; label?: string })
 
 export function when(value: string | number | null | undefined): string {
   if (value == null) return "—";
-  const date = new Date(value);
+  const date = new Date(typeof value === "number" ? value * 1000 : value);
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleString(undefined, {
     month: "short",

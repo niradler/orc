@@ -1,5 +1,5 @@
 import { type Components, defineRegistry } from "@json-render/react";
-import { chatUiCatalog } from "@orc/core/chat-ui";
+import { chatUiCatalog, isChatUiHref } from "@orc/core/chat-ui";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -45,9 +45,7 @@ function cellText(value: Cell): string {
 }
 
 function safeHref(value: Cell): string | null {
-  return typeof value === "string" && (/^\/(?!\/)/.test(value) || /^https?:\/\//i.test(value))
-    ? value
-    : null;
+  return typeof value === "string" && isChatUiHref(value) ? value : null;
 }
 
 const components: Components<typeof chatUiCatalog> = {

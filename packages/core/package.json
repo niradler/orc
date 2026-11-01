@@ -14,6 +14,7 @@
     "./chat-context": "./src/chat-context.ts",
     "./chat-options": "./src/chat-options.ts",
     "./chat-ui": "./src/chat-ui.ts",
+    "./mcp-settings": "./src/mcp-settings.ts",
     "./process-supervisor": "./src/process-supervisor.ts",
     "./github-auth": "./src/github-auth.ts",
     "./job-actions": "./src/job-actions.ts",

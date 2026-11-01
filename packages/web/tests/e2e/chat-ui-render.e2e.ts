@@ -1,5 +1,6 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, type Page, type Request, test } from "@playwright/test";
+import { chatUiGalleryMessage } from "../fixtures/chat-ui-gallery";
 import { API_SECRET } from "./_helpers";
 
 const THREAD = "60000000-0000-4000-8000-000000000001";
@@ -96,7 +97,7 @@ const content = [
   "```",
 ].join("\n");
 
-async function mockApi(page: Page, requests: Request[]) {
+async function mockApi(page: Page, requests: Request[], messageContent = content) {
   // Registered first so the chat routes below take precedence.
   await page.route("**/api/**", (route) => {
     const request = route.request();
@@ -111,6 +112,52 @@ async function mockApi(page: Page, requests: Request[]) {
     if (path === "/jobs/j1") return route.fulfill({ json: job });
     if (path === "/jobs/j1/trigger") return route.fulfill({ json: { run_id: "r1" } });
     if (path === "/projects/p1") return route.fulfill({ json: project });
+    if (path === "/projects/p1/summary")
+      return route.fulfill({
+        json: { project, tasks: { total: 1, by_status: { doing: 1 } }, jobs: 1, memories: 1 },
+      });
+    if (path === "/projects") return route.fulfill({ json: { projects: [project], total: 1 } });
+    if (path === "/jobs") return route.fulfill({ json: { jobs: [job], total: 1 } });
+    if (path === "/sessions/live")
+      return route.fulfill({
+        json: {
+          sessions: [
+            {
+              id: "s1",
+              name: "Demo agent session",
+              agent: "codex",
+              status: "idle",
+              last_activity_at: stamp,
+            },
+          ],
+          total: 1,
+        },
+      });
+    if (path === "/memories/demo")
+      return route.fulfill({
+        json: {
+          project_id: "p1",
+          name: "demo",
+          description: "Gallery memory",
+          content: "Example saved fact",
+          priority: 50,
+          updated_at: stamp,
+        },
+      });
+    if (path === "/scratchpads/s1")
+      return route.fulfill({
+        json: {
+          id: "s1",
+          title: "Gallery scratchpad",
+          kind: "markdown",
+          tags: ["demo"],
+          updated_at: stamp,
+        },
+      });
+    if (path === "/skills/orc-platform")
+      return route.fulfill({
+        json: { name: "orc-platform", description: "Operate ORC", source: "builtin" },
+      });
     return route.fallback();
   });
   const now = Date.now();
@@ -126,7 +173,7 @@ async function mockApi(page: Page, requests: Request[]) {
     backend: "codex-cli",
     messages: [
       { id: "q", role: "user", content: "show me", timestamp: now - 1 },
-      { id: "a", role: "assistant", content, timestamp: now },
+      { id: "a", role: "assistant", content: messageContent, timestamp: now },
     ],
   };
   await page.addInitScript(
@@ -149,6 +196,41 @@ async function mockApi(page: Page, requests: Request[]) {
 }
 
 for (const width of [1440, 390, 320]) {
+  test(`all 26 components render in chat at ${width}px`, async ({ page }, testInfo) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await mockApi(
+      page,
+      [],
+      chatUiGalleryMessage({ task: "t1", job: "j1", project: "p1", pad: "s1", memory: "demo" }),
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+    const block = page.getByTestId("chat-ui-block");
+    for (const id of [
+      "task",
+      "task-list",
+      "job",
+      "job-list",
+      "project",
+      "project-list",
+      "session-list",
+      "memory",
+      "pad",
+      "skill",
+    ]) {
+      await expect(block.getByTestId(`chat-ui-${id}`)).toBeAttached();
+    }
+    await expect(block).toContainText("Demo agent session");
+    await expect(block).toContainText("Example saved fact");
+    await expect(block.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByTestId("chat-ui-invalid")).toHaveCount(0);
+    expect(await block.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
+      0,
+    );
+    await block.screenshot({ path: testInfo.outputPath(`all-components-${width}.png`) });
+    expect(errors).toEqual([]);
+  });
   test(`orc-ui blocks render live ORC components at ${width}px`, async ({ page }, testInfo) => {
     const requests: Request[] = [];
     await mockApi(page, requests);
@@ -193,10 +275,56 @@ test("orc-ui actions call the API and confirm destructive runs", async ({ page }
 
   const triggers = () => requests.filter((request) => request.url().endsWith("/jobs/j1/trigger"));
   await block.getByTestId("chat-ui-job-run").click();
+  await expect(page.getByRole("dialog", { name: "Run this job now?" })).toContainText(
+    "Target job: j1",
+  );
   await page.getByTestId("confirm-dialog-cancel").click();
   expect(triggers()).toHaveLength(0);
   await block.getByTestId("chat-ui-job-run").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(block.getByTestId("chat-ui-action-result")).toHaveText("Job run started");
   expect(triggers()).toHaveLength(1);
+});
+
+test("component examples in hidden context and outer code fences remain inert", async ({
+  page,
+}) => {
+  const example = `\`\`\`orc-ui\n${JSON.stringify(spec)}\n\`\`\``;
+  await mockApi(
+    page,
+    [],
+    `<orc-context>\n${example}\n</orc-context>\nVisible text\n\`\`\`\`markdown\n${example}\n\`\`\`\``,
+  );
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const message = page.getByTestId("chat-message-content").last();
+  await expect(message).toContainText("Visible text");
+  await expect(message.getByTestId("chat-ui-block")).toHaveCount(0);
+  await expect(message.getByTestId("agent-context")).toHaveCount(0);
+});
+
+test("state-bound action parameters resolve on press and do not run on load", async ({ page }) => {
+  const requests: Request[] = [];
+  const stateSpec = {
+    root: "button",
+    state: { taskId: "t1" },
+    elements: {
+      button: {
+        type: "Button",
+        props: { label: "Mark done" },
+        on: {
+          press: { action: "task.update", params: { id: { $state: "/taskId" }, status: "done" } },
+        },
+      },
+    },
+  };
+  await mockApi(page, requests, `\`\`\`orc-ui\n${JSON.stringify(stateSpec)}\n\`\`\``);
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const button = page.getByTestId("chat-ui-button");
+  await expect(button).toBeVisible();
+  expect(requests.filter((request) => request.method() === "PATCH")).toHaveLength(0);
+  await button.click();
+  await expect(page.getByTestId("chat-ui-action-result")).toHaveText("Task updated");
+  const mutation = requests.find((request) => request.method() === "PATCH");
+  expect(mutation?.url()).toContain("/api/tasks/t1");
+  expect(mutation?.postDataJSON()).toEqual({ status: "done" });
 });

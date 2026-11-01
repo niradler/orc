@@ -10,7 +10,12 @@ function SpecView({ spec }: { spec: Spec }) {
   const handlers = useChatUiHandlers();
   const navigate = useNavigate();
   return (
-    <JSONUIProvider registry={registry} handlers={handlers} navigate={navigate}>
+    <JSONUIProvider
+      registry={registry}
+      handlers={handlers}
+      navigate={navigate}
+      initialState={spec.state}
+    >
       <Renderer spec={spec} registry={registry} />
     </JSONUIProvider>
   );

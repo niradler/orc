@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 import { ChatUiBlock } from "@/components/chat-ui/ChatUiBlock";
 import { Markdown } from "@/components/Markdown";
-import { splitAgentMessage, splitUiBlocks } from "@/lib/agent-message";
+import { splitAgentMessage, splitUiBlocks, type UiMessagePart } from "@/lib/agent-message";
 
 export function AgentMessageText({
   children,
@@ -14,7 +14,17 @@ export function AgentMessageText({
   plain?: boolean;
   revealContext?: boolean;
 }) {
-  const parts = useMemo(() => (plain ? null : splitUiBlocks(children)), [children, plain]);
+  const parts = useMemo(() => {
+    if (plain) return null;
+    return splitAgentMessage(children).flatMap<UiMessagePart>((part) =>
+      part.kind === "context"
+        ? [{ kind: "text", text: part.text, offset: part.offset }]
+        : splitUiBlocks(part.text).map((block) => ({
+            ...block,
+            offset: block.offset + part.offset,
+          })),
+    );
+  }, [children, plain]);
   if (!parts?.some((part) => part.kind === "ui"))
     return (
       <AgentText plain={plain} revealContext={revealContext}>

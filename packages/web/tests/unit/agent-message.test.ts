@@ -2,6 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { splitAgentMessage, splitUiBlocks } from "../../src/lib/agent-message";
 
 describe("orc-ui blocks", () => {
+  test("should leave quoted component examples inside an outer code fence inert", () => {
+    const source = "````markdown\n```orc-ui\n{}\n```\n````";
+    expect(splitUiBlocks(source)).toEqual([{ kind: "text", text: source, offset: 0 }]);
+    expect(splitUiBlocks("```orc-ui\r\n{}\r\n```\r\n")[0]).toMatchObject({
+      kind: "ui",
+      source: "{}\r\n",
+      complete: true,
+    });
+  });
   test("splits complete fences from surrounding text", () => {
     const source = 'Here:\n```orc-ui\n{"root":"a"}\n```\nDone';
     expect(splitUiBlocks(source)).toEqual([

@@ -150,7 +150,11 @@ export function ChatUiActionProvider({ children }: { children: ReactNode }) {
       <ConfirmDialog
         open={Boolean(confirming)}
         title={copy?.title ?? "Confirm action"}
-        description={copy?.description ?? "This runs as you through the ORC API."}
+        description={
+          confirming && copy
+            ? `${copy.description} Target ${confirming.name === "task.delete" ? "task" : "job"}: ${confirming.id}.`
+            : "This runs as you through the ORC API."
+        }
         confirmLabel={copy?.label ?? "Confirm"}
         variant={copy?.destructive === false ? "warning" : "destructive"}
         onConfirm={() => settleConfirm(true)}

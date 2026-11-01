@@ -100,7 +100,7 @@ const env = {
   ORC_DB_PATH: pwDbPath,
   // Knowledge files default next to the DB (the shared OS tmp dir); keep them per run.
   ORC_KNOWLEDGE_ROOT: join(pwHome, "knowledge"),
-  ORC_API_SECRET: "orc-playwright-isolated-secret",
+  ORC_API_SECRET: "dev",
   ORC_E2E_CHAT_MOCK: "1",
   ORC_TERMINALS_ENABLED: "1",
   ORC_TERMINALS_ALLOW_WITHOUT_SECRET: "1",

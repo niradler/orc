@@ -453,7 +453,7 @@ export async function startChannelRuntime(
             : {}),
           systemPromptAppend: chatSystemPrompt(defaults.system),
           orcMcp: true,
-          orcMcpMode: "meta",
+          orcMcpMode: loadConfig().mcp.default_mode,
           orcMcpProject: project.name,
         },
         record.runtime_session_id ?? undefined,

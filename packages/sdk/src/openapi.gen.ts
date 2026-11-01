@@ -2731,6 +2731,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read MCP connection defaults and prompts */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description MCP defaults and prompts; no credentials */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @default meta
+                             * @enum {string}
+                             */
+                            default_mode: "meta" | "full";
+                            /**
+                             * @default [
+                             *       {
+                             *         "name": "render-ui",
+                             *         "title": "Render ORC components",
+                             *         "description": "Answer a web chat request using the current ORC UI catalog.",
+                             *         "content": "For a webchat turn, answer with an orc-ui JSON block using the catalog below. Resolve real entity ids with ORC tools first. For other sources, answer in Markdown.",
+                             *         "include_ui_catalog": true
+                             *       }
+                             *     ]
+                             */
+                            prompts: {
+                                name: string;
+                                title: string;
+                                /** @default  */
+                                description: string;
+                                content: string;
+                                /** @default false */
+                                include_ui_catalog: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Persist MCP connection defaults and prompts */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @default meta
+                         * @enum {string}
+                         */
+                        default_mode?: "meta" | "full";
+                        /**
+                         * @default [
+                         *       {
+                         *         "name": "render-ui",
+                         *         "title": "Render ORC components",
+                         *         "description": "Answer a web chat request using the current ORC UI catalog.",
+                         *         "content": "For a webchat turn, answer with an orc-ui JSON block using the catalog below. Resolve real entity ids with ORC tools first. For other sources, answer in Markdown.",
+                         *         "include_ui_catalog": true
+                         *       }
+                         *     ]
+                         */
+                        prompts?: {
+                            name: string;
+                            title: string;
+                            /** @default  */
+                            description?: string;
+                            content: string;
+                            /** @default false */
+                            include_ui_catalog?: boolean;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description MCP defaults and prompts; no credentials */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @default meta
+                             * @enum {string}
+                             */
+                            default_mode: "meta" | "full";
+                            /**
+                             * @default [
+                             *       {
+                             *         "name": "render-ui",
+                             *         "title": "Render ORC components",
+                             *         "description": "Answer a web chat request using the current ORC UI catalog.",
+                             *         "content": "For a webchat turn, answer with an orc-ui JSON block using the catalog below. Resolve real entity ids with ORC tools first. For other sources, answer in Markdown.",
+                             *         "include_ui_catalog": true
+                             *       }
+                             *     ]
+                             */
+                            prompts: {
+                                name: string;
+                                title: string;
+                                /** @default  */
+                                description: string;
+                                content: string;
+                                /** @default false */
+                                include_ui_catalog: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;

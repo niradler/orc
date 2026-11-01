@@ -4,6 +4,35 @@ import { CHAT_UI_FENCE, chatUiCatalogText, parseChatUiSpec } from "./chat-ui";
 const parse = (spec: unknown) => parseChatUiSpec(JSON.stringify(spec));
 
 describe("parseChatUiSpec", () => {
+  test("should reject malformed elements, cycles, missing children and executable watchers", () => {
+    for (const element of [
+      null,
+      1,
+      { type: "Stack", children: ["a"] },
+      { type: "Stack", children: ["missing"] },
+      {
+        type: "Text",
+        props: { text: "x" },
+        watch: { "/x": { action: "task.comment", params: { id: "t", content: "automatic" } } },
+      },
+      {
+        type: "Text",
+        props: { text: "x" },
+        on: { press: { action: "task.update", params: { id: "t" } } },
+      },
+    ])
+      expect(parse({ root: "a", elements: { a: element } }).ok).toBe(false);
+  });
+
+  test("should bound expanded layouts even when element definitions are shared", () => {
+    const elements: Record<string, unknown> = {};
+    for (let i = 0; i < 10; i++)
+      elements[String(i)] = {
+        type: "Stack",
+        children: i < 9 ? [String(i + 1), String(i + 1)] : [],
+      };
+    expect(parse({ root: "0", elements }).ok).toBe(false);
+  });
   test("accepts leaf elements without props or children", () => {
     const result = parse({
       root: "main",
@@ -28,6 +57,9 @@ describe("parseChatUiSpec", () => {
   });
 
   test("rejects unknown components and invalid props", () => {
+    expect(
+      parse({ root: "a", elements: { a: { type: "Task", props: { id: "../../jobs/x" } } } }).ok,
+    ).toBe(false);
     expect(parse({ root: "a", elements: { a: { type: "Nope" } } })).toMatchObject({ ok: false });
     expect(parse({ root: "a", elements: { a: { type: "Task", props: {} } } })).toMatchObject({
       ok: false,
@@ -35,7 +67,13 @@ describe("parseChatUiSpec", () => {
   });
 
   test("rejects script and protocol-relative links", () => {
-    for (const href of ["javascript:alert(1)", "//evil.example", "data:text/html,x"])
+    for (const href of [
+      "javascript:alert(1)",
+      "//evil.example",
+      "data:text/html,x",
+      "/\\evil.example",
+      "/\t/evil.example",
+    ])
       expect(
         parse({ root: "a", elements: { a: { type: "Link", props: { label: "x", href } } } }),
       ).toMatchObject({ ok: false });

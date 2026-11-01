@@ -1,4 +1,4 @@
-import { autoFixSpec, defineCatalog, type Spec, validateSpec } from "@json-render/core";
+import { defineCatalog, type Spec, validateSpec } from "@json-render/core";
 import { schema } from "@json-render/react/schema";
 import { z } from "zod";
 
@@ -23,13 +23,26 @@ const TaskStatus = z.enum([
 const TaskPriority = z.enum(["low", "normal", "high", "critical"]);
 const Cell = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 // Dashboard paths and web links only; javascript:, data: and protocol-relative URLs are rejected.
-const Href = z
-  .string()
-  .max(2000)
-  .refine((href) => /^\/(?!\/)/.test(href) || /^https?:\/\//i.test(href), {
-    message: "Use a dashboard path starting with / or an http(s) URL",
-  });
+export function isChatUiHref(href: string): boolean {
+  if (
+    /[\s\\]/.test(href) ||
+    Array.from(href).some(
+      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    )
+  )
+    return false;
+  return /^\/(?!\/)/.test(href) || /^https?:\/\/[^/]+/i.test(href);
+}
+
+const Href = z.string().max(2000).refine(isChatUiHref, {
+  message: "Use a dashboard path starting with / or an http(s) URL",
+});
 const Limit = z.number().int().min(1).max(50).optional();
+const EntityId = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9_-]+$/);
 
 export const chatUiCatalog = defineCatalog(schema, {
   components: {
@@ -126,13 +139,13 @@ export const chatUiCatalog = defineCatalog(schema, {
       description: "A monospace code or command block.",
     },
     Task: {
-      props: z.object({ id: z.string() }),
+      props: z.object({ id: EntityId }),
       description:
         "Live ORC task by id: title, status/priority/progress, project and links, with a status control. Prefer this over describing a task by hand.",
     },
     TaskList: {
       props: z.object({
-        projectId: z.string().optional(),
+        projectId: EntityId.optional(),
         status: TaskStatus.optional(),
         limit: Limit,
       }),
@@ -140,20 +153,20 @@ export const chatUiCatalog = defineCatalog(schema, {
         "Live task rows, optionally filtered by project id and status (default limit 10).",
     },
     Job: {
-      props: z.object({ id: z.string() }),
+      props: z.object({ id: EntityId }),
       description:
         "Live ORC job by id: trigger, schedule, last/next run, enabled state and Run now.",
     },
     JobList: {
       props: z.object({
-        projectId: z.string().optional(),
+        projectId: EntityId.optional(),
         enabled: z.boolean().optional(),
         limit: Limit,
       }),
       description: "Live job rows, optionally filtered by project id or enabled state.",
     },
     Project: {
-      props: z.object({ id: z.string() }),
+      props: z.object({ id: EntityId }),
       description: "Live ORC project by id with its status and task counts.",
     },
     ProjectList: {
@@ -164,15 +177,15 @@ export const chatUiCatalog = defineCatalog(schema, {
       description: "Live project rows.",
     },
     SessionList: {
-      props: z.object({ projectId: z.string().optional(), limit: Limit }),
+      props: z.object({ projectId: EntityId.optional(), limit: Limit }),
       description: "Live discovered agent sessions, most recent activity first.",
     },
     Memory: {
-      props: z.object({ projectId: z.string(), name: z.string() }),
+      props: z.object({ projectId: EntityId, name: z.string().min(1).max(128) }),
       description: "Live ORC memory (project id plus name) with its description and content.",
     },
     Pad: {
-      props: z.object({ id: z.string() }),
+      props: z.object({ id: EntityId }),
       description: "Live scratchpad summary with a link to open it.",
     },
     Skill: {
@@ -183,7 +196,7 @@ export const chatUiCatalog = defineCatalog(schema, {
   actions: {
     "task.update": {
       params: z.object({
-        id: z.string(),
+        id: EntityId,
         status: TaskStatus.optional(),
         priority: TaskPriority.optional(),
         progress: z.number().int().min(0).max(100).optional(),
@@ -191,19 +204,19 @@ export const chatUiCatalog = defineCatalog(schema, {
       description: "Update a task's status, priority or progress.",
     },
     "task.comment": {
-      params: z.object({ id: z.string(), content: z.string().min(1).max(10000) }),
+      params: z.object({ id: EntityId, content: z.string().min(1).max(10000) }),
       description: "Add a comment to a task as the signed-in user.",
     },
     "task.delete": {
-      params: z.object({ id: z.string() }),
+      params: z.object({ id: EntityId }),
       description: "Delete a task. The user always confirms first.",
     },
     "job.run": {
-      params: z.object({ id: z.string() }),
+      params: z.object({ id: EntityId }),
       description: "Trigger a job run now. The user always confirms first.",
     },
     "job.setEnabled": {
-      params: z.object({ id: z.string(), enabled: z.boolean() }),
+      params: z.object({ id: EntityId, enabled: z.boolean() }),
       description: "Enable or disable a job.",
     },
   },
@@ -218,32 +231,86 @@ export const CHAT_UI_CONFIRMED_ACTIONS: ReadonlySet<ChatUiActionName> = new Set(
 
 export type ChatUiParseResult = { ok: true; spec: Spec } | { ok: false; error: string };
 
+const BindingSchema = z
+  .object({
+    action: z.string(),
+    params: z.record(z.string(), z.unknown()).default({}),
+    confirm: z.unknown().optional(),
+  })
+  .strict();
+const ElementSchema = z
+  .object({
+    type: z.string(),
+    props: z.record(z.string(), z.unknown()).default({}),
+    children: z.array(z.string()).max(CHAT_UI_MAX_ELEMENTS).default([]),
+    on: z.record(z.string(), z.union([BindingSchema, z.array(BindingSchema).max(10)])).optional(),
+  })
+  .strict();
+const SpecSchema = z
+  .object({
+    root: z.string(),
+    elements: z.record(z.string(), ElementSchema),
+    state: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+function actionBinding(binding: z.infer<typeof BindingSchema>) {
+  return { action: binding.action, params: binding.params };
+}
+
 /** Parses a fenced spec and checks structure, component props and action names. */
 export function parseChatUiSpec(source: string): ChatUiParseResult {
+  if (source.length > 1_000_000) return { ok: false, error: "Spec exceeds 1 MB" };
   let raw: unknown;
   try {
     raw = JSON.parse(source);
   } catch (error) {
     return { ok: false, error: `Invalid JSON: ${(error as Error).message}` };
   }
-  const input = raw as Partial<Spec> | null;
-  if (!input || typeof input !== "object" || Array.isArray(input) || !isRecord(input.elements))
-    return { ok: false, error: "Spec must be an object with root and elements" };
-  // Leaf elements may omit props/children; the renderer and schema expect both.
+  const input = SpecSchema.safeParse(raw);
+  if (!input.success) return { ok: false, error: issueText("spec", input.error) };
   const normalized: Spec = {
-    ...input,
-    root: input.root as string,
+    root: input.data.root,
+    ...(input.data.state ? { state: input.data.state } : {}),
     elements: Object.fromEntries(
-      Object.entries(input.elements).map(([key, element]) => [
+      Object.entries(input.data.elements).map(([key, element]) => [
         key,
-        isRecord(element) ? normalizeElement(element) : element,
+        {
+          type: element.type,
+          props: element.props,
+          children: element.children,
+          ...(element.on
+            ? {
+                on: Object.fromEntries(
+                  Object.entries(element.on).map(([event, bindings]) => [
+                    event,
+                    Array.isArray(bindings) ? bindings.map(actionBinding) : actionBinding(bindings),
+                  ]),
+                ),
+              }
+            : {}),
+        },
       ]),
-    ) as Spec["elements"],
+    ),
   };
-  const { spec } = autoFixSpec(normalized);
+  const spec = normalized;
   const elements = Object.values(spec.elements);
   if (elements.length > CHAT_UI_MAX_ELEMENTS)
     return { ok: false, error: `Spec exceeds ${CHAT_UI_MAX_ELEMENTS} elements` };
+  // Bound rendered nodes as well as definitions: a tiny cyclic/shared graph can
+  // otherwise recurse forever or expand exponentially in React.
+  let rendered = 0;
+  function visit(key: string, ancestors: Set<string>): boolean {
+    if (!Object.keys(spec.elements).includes(key) || ancestors.has(key)) return false;
+    if (++rendered > CHAT_UI_MAX_ELEMENTS) return false;
+    const next = new Set(ancestors).add(key);
+    return (spec.elements[key]?.children ?? []).every((child) => visit(child, next));
+  }
+  if (!visit(spec.root, new Set()))
+    return {
+      ok: false,
+      error: "Invalid layout: missing element, cycle, or too many rendered nodes",
+    };
   const issues = validateSpec(spec).issues.filter((issue) => issue.severity === "error");
   if (issues.length) return { ok: false, error: issues.map((issue) => issue.message).join("; ") };
   const checked = chatUiCatalog.validate(spec);
@@ -251,14 +318,24 @@ export function parseChatUiSpec(source: string): ChatUiParseResult {
   // The catalog schema checks element shape; props and action params are checked here.
   const { components, actions } = chatUiCatalog.data;
   for (const [key, element] of Object.entries(spec.elements)) {
+    if (!Object.keys(components).includes(element.type))
+      return { ok: false, error: `Unknown component: ${element.type}` };
     const props = components[element.type as keyof typeof components].props.safeParse(
       element.props,
     );
     if (!props.success) return { ok: false, error: issueText(`${key}.props`, props.error) };
+    element.props = props.data;
+    if (element.children?.length && !["Stack", "Grid", "Card"].includes(element.type))
+      return { ok: false, error: `${element.type} does not accept children` };
+    if (
+      Object.keys(element.on ?? {}).some((event) => element.type !== "Button" || event !== "press")
+    )
+      return { ok: false, error: "Actions require a Button press" };
     for (const bindings of Object.values(element.on ?? {}))
       for (const binding of [bindings].flat()) {
         const action = actions[binding.action as ChatUiActionName];
-        if (!action) return { ok: false, error: `Unknown action: ${binding.action}` };
+        if (!Object.keys(actions).includes(binding.action))
+          return { ok: false, error: `Unknown action: ${binding.action}` };
         // Dynamic params ($state etc.) are resolved at press time and re-checked by the API.
         if (!hasDynamic(binding.params)) {
           const params = action.params.safeParse(binding.params ?? {});
@@ -268,25 +345,6 @@ export function parseChatUiSpec(source: string): ChatUiParseResult {
       }
   }
   return { ok: true, spec };
-}
-
-function normalizeElement(element: Record<string, unknown>): Record<string, unknown> {
-  const normalized = { props: {}, children: [], ...element };
-  if (!isRecord(element.on)) return normalized;
-  // Spec-level confirm waits on json-render's own dialog; ORC confirms destructive actions itself.
-  const on = Object.fromEntries(
-    Object.entries(element.on).map(([event, bindings]) => [
-      event,
-      Array.isArray(bindings) ? bindings.map(withoutConfirm) : withoutConfirm(bindings),
-    ]),
-  );
-  return { ...normalized, on };
-}
-
-function withoutConfirm(binding: unknown): unknown {
-  if (!isRecord(binding)) return binding;
-  const { confirm: _confirm, ...rest } = binding;
-  return rest;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
