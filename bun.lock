@@ -15,7 +15,7 @@
     },
     "packages/agent-runtime": {
       "name": "@orc/agent-runtime",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.311",
         "@orc/core": "workspace:*",
@@ -27,7 +27,7 @@
     },
     "packages/api": {
       "name": "@orc/api",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@hono/swagger-ui": "^0.6.1",
         "@hono/zod-openapi": "^1.6.3",
@@ -54,7 +54,7 @@
     },
     "packages/channels": {
       "name": "@orc/channels",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -63,7 +63,7 @@
     },
     "packages/cli": {
       "name": "orc-ai",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "bin": {
         "orc": "dist/index.js",
       },
@@ -95,7 +95,7 @@
     },
     "packages/core": {
       "name": "@orc/core",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@json-render/core": "0.21.3",
         "@json-render/react": "0.21.3",
@@ -107,7 +107,7 @@
     },
     "packages/db": {
       "name": "@orc/db",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@orc/core": "workspace:*",
         "drizzle-orm": "^0.45.4",
@@ -118,7 +118,7 @@
     },
     "packages/desktop": {
       "name": "@orc/desktop",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "devDependencies": {
         "electron": "45.0.0",
         "electron-builder": "^26.18.1",
@@ -126,7 +126,7 @@
     },
     "packages/gateway": {
       "name": "@orc/gateway",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@orc/agent-runtime": "workspace:*",
         "@orc/channels": "workspace:*",
@@ -140,7 +140,7 @@
     },
     "packages/knowledge": {
       "name": "@orc/knowledge",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -158,7 +158,7 @@
     },
     "packages/mcp": {
       "name": "@orc/mcp",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.32.2",
         "@orc/core": "workspace:*",
@@ -176,7 +176,7 @@
     },
     "packages/runner": {
       "name": "@orc/runner",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@orc/agent-runtime": "workspace:*",
         "@orc/core": "workspace:*",
@@ -189,7 +189,7 @@
     },
     "packages/sdk": {
       "name": "@orc/sdk",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@orc/core": "workspace:*",
       },
@@ -200,7 +200,7 @@
     },
     "packages/task-service": {
       "name": "@orc/task-service",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -210,7 +210,7 @@
     },
     "packages/web": {
       "name": "@orc/web",
-      "version": "0.1.54",
+      "version": "0.1.56",
       "dependencies": {
         "@assistant-ui/react": "^0.15.31",
         "@codemirror/commands": "^6.11.1",

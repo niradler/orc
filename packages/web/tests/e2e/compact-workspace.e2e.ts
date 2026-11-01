@@ -151,9 +151,16 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
   ]) {
     await apiPost(request, "/scratchpads", { title, kind, project_id: project.id });
   }
-  await apiPost(request, "/jobs", {
+  const previewJob = await apiPost<{ id: string }>(request, "/jobs", {
     name: "Knowledge digest",
     command: "echo preview",
+    trigger_type: "manual",
+    project_id: project.id,
+    enabled: false,
+  });
+  await apiPost(request, "/jobs", {
+    name: "Background workspace job",
+    command: "echo background",
     trigger_type: "manual",
     project_id: project.id,
     enabled: false,
@@ -198,7 +205,8 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
         );
         if (route === "sessions") await expect(page.getByTestId("live-session-row")).toBeVisible();
         if (route === "scratchpad") await expect(page.getByTestId("scratchpad-row")).toHaveCount(3);
-        if (route === "jobs") await expect(page.getByTestId("job-row")).toHaveCount(1);
+        if (route === "jobs")
+          await expect(page.locator(`[data-job-id="${previewJob.id}"]`)).toBeVisible();
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
           `${theme} ${width} ${route}`,

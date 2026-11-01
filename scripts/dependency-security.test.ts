@@ -221,3 +221,29 @@ test("should safely serialize hostile query-string array elements through the AP
     );
   expect(qs.stringify({ a: ["one", "two"] }, { arrayFormat: "comma" })).toBe("a=one%2Ctwo");
 });
+
+test("should bound minimatch preprocessing through both desktop dependency paths", () => {
+  const desktopRequire = createRequire(join(repo, "packages/desktop/package.json"));
+  const electronBuilderRequire = createRequire(desktopRequire.resolve("electron-builder"));
+  const builderRequire = createRequire(electronBuilderRequire.resolve("app-builder-lib"));
+  const universalRequire = createRequire(builderRequire.resolve("@electron/universal"));
+  for (const resolver of [builderRequire, universalRequire]) {
+    const entry = resolver.resolve("minimatch");
+    expect(Bun.semver.satisfies(version(entry), ">=11.0.3 <12")).toBe(true);
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        "--eval",
+        `const {Minimatch}=require(${JSON.stringify(entry)});` +
+          `const pattern=Array(10).fill('**/../x/y').join('/');` +
+          `const matcher=new Minimatch(pattern,{optimizationLevel:2,braceExpandMax:64});` +
+          `console.log(JSON.stringify({patterns:matcher.set.length,ordinary:new Minimatch('**/*.ts').match('src/index.ts')}));`,
+      ],
+      { timeout: 5000, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(child.exitCode).toBe(0);
+    const result = JSON.parse(child.stdout.toString());
+    expect(result.patterns).toBeLessThanOrEqual(64);
+    expect(result.ordinary).toBe(true);
+  }
+});

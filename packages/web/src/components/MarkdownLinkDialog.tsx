@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { LinkSafetyModalProps } from "streamdown";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,24 @@ import {
 export function MarkdownLinkDialog({ isOpen, onClose, onConfirm, url }: LinkSafetyModalProps) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const dialog = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    // A reopened dialog can paint before Radix replaces its parent's document listener.
+    const handleEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        !(event.target instanceof Node) ||
+        !dialog.current?.contains(event.target)
+      )
+        return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", handleEscape, true);
+    return () => window.removeEventListener("keydown", handleEscape, true);
+  }, [isOpen, onClose]);
   return (
     <Dialog
       open={isOpen}
@@ -21,6 +39,7 @@ export function MarkdownLinkDialog({ isOpen, onClose, onConfirm, url }: LinkSafe
       }}
     >
       <DialogContent
+        ref={dialog}
         data-streamdown="link-safety-modal"
         data-testid="markdown-link-dialog"
         onEscapeKeyDown={(event) => {
