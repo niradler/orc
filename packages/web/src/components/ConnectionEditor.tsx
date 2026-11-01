@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, Eye, EyeOff, KeyRound, Plus, X } from "lucide-react";
+import { CircleAlert, CircleCheck, Eye, EyeOff, LogIn, Plus, X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { FormDialog } from "@/components/FormDialog";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useConnection, useSaveConnection, useTestConnection } from "@/hooks/useIntegrations";
+import {
+  useAuthorizeConnection,
+  useConnection,
+  useSaveConnection,
+  useSignOutConnection,
+  useTestConnection,
+} from "@/hooks/useIntegrations";
 import {
   type AuthMode,
   authModesFor,
@@ -79,6 +85,8 @@ function ConnectionForm({
   const [testedKey, setTestedKey] = useState<string | null>(null);
   const save = useSaveConnection();
   const check = useTestConnection();
+  const authorize = useAuthorizeConnection();
+  const signOut = useSignOutConnection();
   const set = (patch: Partial<ConnectionDraft>) =>
     setDraft((current) => {
       const next = { ...current, ...patch };
@@ -110,15 +118,37 @@ function ConnectionForm({
     if (!validate()) return;
     save.mutate({ name, source: toSource(draft), create: !editing }, { onSuccess: closeAfterSave });
   };
+  // Sign-in reads the saved entry, so the draft is saved first; the provider then returns the
+  // browser to the callback page, which finishes it.
+  const signIn = async (closeAfterSave: () => void) => {
+    if (!validate()) return;
+    try {
+      if (!editing || dirty)
+        await save.mutateAsync({ name, source: toSource(draft), create: !editing });
+      const start = await authorize.mutateAsync(name);
+      closeAfterSave();
+      if (start.authorizationUrl) window.location.assign(start.authorizationUrl);
+    } catch {
+      // Shown from the mutation state below.
+    }
+  };
+  const busy = save.isPending || authorize.isPending;
+  const signInButton = (closeAfterSave: () => void) => (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      data-testid="connection-sign-in"
+      disabled={busy}
+      onClick={() => void signIn(closeAfterSave)}
+    >
+      <LogIn className="size-4" />
+      {authorize.isPending ? "Signing in…" : editing && !dirty ? "Sign in" : "Save and sign in"}
+    </Button>
+  );
 
   return (
-    <FormDialog
-      open
-      dirty={dirty}
-      busy={save.isPending}
-      onClose={onClose}
-      testId="connection-editor"
-    >
+    <FormDialog open dirty={dirty} busy={busy} onClose={onClose} testId="connection-editor">
       {(requestClose, closeAfterSave) => (
         <>
           <DialogHeader>
@@ -229,7 +259,33 @@ function ConnectionForm({
               )}
 
               {modes.length > 0 && (
-                <AuthSection name={name} draft={draft} editing={editing} set={set} />
+                <AuthSection
+                  draft={draft}
+                  editing={editing}
+                  set={set}
+                  account={
+                    <div className="flex flex-wrap items-center gap-2">
+                      {signInButton(closeAfterSave)}
+                      {editing && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          data-testid="connection-sign-out"
+                          disabled={busy || signOut.isPending}
+                          onClick={() => signOut.mutate(initialName)}
+                        >
+                          Sign out
+                        </Button>
+                      )}
+                      {signOut.isSuccess && (
+                        <span role="status" className="text-xs text-muted-foreground">
+                          Signed out.
+                        </span>
+                      )}
+                    </div>
+                  }
+                />
               )}
 
               <details
@@ -299,10 +355,14 @@ function ConnectionForm({
                 pending={check.isPending && testedKey === key}
                 result={result}
                 error={testError}
+                signIn={remote ? signInButton(closeAfterSave) : null}
               />
-              {(invalid || save.error) && (
+              {(invalid || save.error || authorize.error || signOut.error) && (
                 <p role="alert" className="text-sm text-error">
-                  {invalid ?? save.error?.message}
+                  {invalid ??
+                    save.error?.message ??
+                    authorize.error?.message ??
+                    signOut.error?.message}
                 </p>
               )}
             </div>
@@ -313,7 +373,7 @@ function ConnectionForm({
                 size="sm"
                 data-testid="connection-test"
                 onClick={runTest}
-                disabled={check.isPending || save.isPending}
+                disabled={check.isPending || busy}
                 className="mr-auto"
               >
                 {check.isPending ? "Testing…" : "Test connection"}
@@ -323,7 +383,7 @@ function ConnectionForm({
                 variant="ghost"
                 size="sm"
                 onClick={requestClose}
-                disabled={save.isPending}
+                disabled={busy}
                 className="font-label text-sm text-muted-foreground"
               >
                 Cancel
@@ -332,7 +392,7 @@ function ConnectionForm({
                 type="submit"
                 size="sm"
                 data-testid="connection-save"
-                disabled={save.isPending || (editing && !dirty)}
+                disabled={busy || (editing && !dirty)}
               >
                 {save.isPending ? "Saving…" : editing ? "Save" : "Add connection"}
               </Button>
@@ -359,7 +419,7 @@ function TypePicker({
         {connectionTypes.map((option) => (
           <label
             key={option.value}
-            className="flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-outline-variant px-2 text-center text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/10 has-[:checked]:font-medium has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
+            className="flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-outline-variant px-2 text-center text-sm has-checked:border-primary has-checked:bg-primary/10 has-checked:font-medium has-focus-visible:ring-2 has-focus-visible:ring-ring"
           >
             <input
               type="radio"
@@ -378,15 +438,16 @@ function TypePicker({
 }
 
 function AuthSection({
-  name,
   draft,
   editing,
   set,
+  account,
 }: {
-  name: string;
   draft: ConnectionDraft;
   editing: boolean;
   set: (patch: Partial<ConnectionDraft>) => void;
+  /** Sign-in controls for the browser and device flows. */
+  account: ReactNode;
 }) {
   const clientCredentials = draft.oauthFlow === "client_credentials";
   return (
@@ -481,13 +542,7 @@ function AuthSection({
               )}
             </Field>
           ) : (
-            <p className="flex gap-2 text-xs text-muted-foreground">
-              <KeyRound className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              <span>
-                Sign in once with <code>spec auth {name || "<name>"}</code> on the ORC host; ORC
-                uses the tokens it stores.
-              </span>
-            </p>
+            account
           )}
         </>
       )}
@@ -499,10 +554,12 @@ function TestResult({
   pending,
   result,
   error,
+  signIn,
 }: {
   pending: boolean;
   result: { status: string; count: number | null; message: string | null } | undefined;
   error: Error | null;
+  signIn: ReactNode;
 }) {
   if (pending)
     return (
@@ -537,8 +594,9 @@ function TestResult({
       <div className="min-w-0">
         <p>{auth ? "Reachable — the server needs a sign-in." : "Couldn't connect."}</p>
         {result.message && (
-          <p className="break-words text-xs text-muted-foreground">{result.message}</p>
+          <p className="wrap-break-word text-xs text-muted-foreground">{result.message}</p>
         )}
+        {auth && signIn && <div className="mt-2">{signIn}</div>}
       </div>
     </div>
   );

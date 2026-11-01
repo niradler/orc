@@ -287,6 +287,7 @@ export type IntegrationPromptList = components["schemas"]["IntegrationPromptList
 export type IntegrationPromptResult = components["schemas"]["IntegrationPromptResult"];
 export type IntegrationRefreshResult = components["schemas"]["IntegrationRefreshResult"];
 export type IntegrationTestResult = components["schemas"]["IntegrationTestResult"];
+export type IntegrationAuthorization = components["schemas"]["IntegrationAuthorization"];
 export type IntegrationResource = components["schemas"]["IntegrationResource"];
 export type IntegrationResourceContents = components["schemas"]["IntegrationResourceContents"];
 export type IntegrationResourceList = components["schemas"]["IntegrationResourceList"];

@@ -4300,6 +4300,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/connections/{name}/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start an OAuth sign-in for a remote MCP connection
+         * @description Returns `redirect` with the URL to open, or `authorized` when the server needs no sign-in or uses the client-credentials flow. The provider sends the browser back to `redirectUrl`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        redirectUrl: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Sign-in started */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationAuthorization"];
+                    };
+                };
+            };
+        };
+        /** Sign out: drop the connection's stored OAuth tokens */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Signed out */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/authorize/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish an OAuth sign-in with the code the provider returned */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        code: string;
+                        state: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Signed in */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/integrations/connections/{name}/tools": {
         parameters: {
             query?: never;
@@ -14640,6 +14751,11 @@ export interface components {
             name: string;
             type: string;
             count: number;
+        };
+        IntegrationAuthorization: {
+            /** @enum {string} */
+            status: "authorized" | "redirect";
+            authorizationUrl: string | null;
         };
         IntegrationToolList: {
             tools: components["schemas"]["IntegrationTool"][];

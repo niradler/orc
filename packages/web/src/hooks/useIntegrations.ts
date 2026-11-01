@@ -83,6 +83,27 @@ export function useRefreshConnection() {
   return useConnectionMutation((name: string) => api.integrations.refresh(name));
 }
 
+/** The provider sends the browser back to this page, which finishes the sign-in. */
+export const oauthCallbackUrl = (name: string) =>
+  `${window.location.origin}/integrations/oauth/${encodeURIComponent(name)}/callback`;
+
+export function useAuthorizeConnection() {
+  return useConnectionMutation((name: string) =>
+    api.integrations.authorize(name, oauthCallbackUrl(name)),
+  );
+}
+
+export function useFinishAuthorization() {
+  return useConnectionMutation(
+    ({ name, code, state }: { name: string; code: string; state: string }) =>
+      api.integrations.finishAuthorization(name, code, state),
+  );
+}
+
+export function useSignOutConnection() {
+  return useConnectionMutation((name: string) => api.integrations.signOut(name));
+}
+
 export function useSetToolEnabled() {
   return useConnectionMutation(
     ({ name, tool, enabled }: { name: string; tool: string; enabled: boolean }) =>

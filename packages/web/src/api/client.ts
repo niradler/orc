@@ -108,6 +108,7 @@ export type {
   FlowRun,
   FlowSource,
   HealthResponse,
+  IntegrationAuthorization,
   IntegrationConnection,
   IntegrationConnectionDetail,
   IntegrationConnectionSource,
@@ -177,6 +178,7 @@ import type {
   FlowRun,
   FlowSource,
   HealthResponse,
+  IntegrationAuthorization,
   IntegrationConnection,
   IntegrationConnectionDetail,
   IntegrationConnectionSource,
@@ -781,6 +783,17 @@ export const api = {
     remove: (name: string) => req<void>("DELETE", `/integrations/connections/${enc(name)}`),
     refresh: (name: string) =>
       req<IntegrationRefreshResult>("POST", `/integrations/connections/${enc(name)}/refresh`, {}),
+    authorize: (name: string, redirectUrl: string) =>
+      req<IntegrationAuthorization>("POST", `/integrations/connections/${enc(name)}/authorize`, {
+        redirectUrl,
+      }),
+    finishAuthorization: (name: string, code: string, state: string) =>
+      req<void>("POST", `/integrations/connections/${enc(name)}/authorize/callback`, {
+        code,
+        state,
+      }),
+    signOut: (name: string) =>
+      req<void>("DELETE", `/integrations/connections/${enc(name)}/authorize`),
     tools: (name: string) =>
       req<{ tools: IntegrationTool[] }>("GET", `/integrations/connections/${enc(name)}/tools`),
     tool: (name: string, tool: string) =>

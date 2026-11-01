@@ -225,6 +225,74 @@ test("tests an unsaved connection without registering it", async () => {
   ).toBe(400);
 }, 30_000);
 
+test("signs a remote MCP connection in through the browser redirect and out again", async () => {
+  const tokenRequests: URLSearchParams[] = [];
+  const oauth = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      const { pathname, origin } = new URL(request.url);
+      if (pathname === "/.well-known/oauth-authorization-server")
+        return Response.json({
+          issuer: origin,
+          authorization_endpoint: `${origin}/authorize`,
+          token_endpoint: `${origin}/token`,
+          registration_endpoint: `${origin}/register`,
+          response_types_supported: ["code"],
+          code_challenge_methods_supported: ["S256"],
+        });
+      if (pathname === "/register")
+        return Response.json(
+          { ...((await request.json()) as object), client_id: "orc-client" },
+          { status: 201 },
+        );
+      if (pathname === "/token") {
+        tokenRequests.push(new URLSearchParams(await request.text()));
+        return Response.json({ access_token: "access", token_type: "Bearer", expires_in: 3600 });
+      }
+      if (pathname.startsWith("/.well-known")) return new Response(null, { status: 404 });
+      return new Response(null, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+    },
+  });
+  try {
+    const source = { type: "http", url: `http://127.0.0.1:${oauth.port}/mcp` };
+    expect(
+      (await req(app, "POST", "/integrations/connections", { name: "remote", source })).status,
+    ).toBe(200);
+    const base = "/integrations/connections/remote/authorize";
+    const redirectUrl = "https://orc.example.com/integrations/oauth/remote/callback";
+    const start = await req(app, "POST", base, { redirectUrl });
+    const { status, authorizationUrl } = await start.json<{
+      status: string;
+      authorizationUrl: string;
+    }>();
+    expect(status).toBe("redirect");
+    const authorize = new URL(authorizationUrl).searchParams;
+    expect(authorize.get("redirect_uri")).toBe(redirectUrl);
+    expect(authorize.get("client_id")).toBe("orc-client");
+    const state = authorize.get("state") ?? "";
+
+    expect(
+      (await req(app, "POST", `${base}/callback`, { code: "c", state: "forged" })).status,
+    ).toBe(400);
+    expect((await req(app, "POST", `${base}/callback`, { code: "c", state })).status).toBe(204);
+    expect(tokenRequests.at(-1)?.get("code")).toBe("c");
+    expect(tokenRequests.at(-1)?.get("redirect_uri")).toBe(redirectUrl);
+    // The state is single-use.
+    expect((await req(app, "POST", `${base}/callback`, { code: "c", state })).status).toBe(400);
+
+    expect((await req(app, "DELETE", base)).status).toBe(204);
+    expect((await req(app, "POST", base, { redirectUrl: "not a url" })).status).toBe(400);
+    expect(
+      (await req(app, "POST", "/integrations/connections/missing/authorize", { redirectUrl }))
+        .status,
+    ).toBe(404);
+    expect((await req(app, "DELETE", "/integrations/connections/remote")).status).toBe(204);
+  } finally {
+    oauth.stop(true);
+  }
+}, 30_000);
+
 test("lists, toggles, reads and renders an MCP connection's resources and prompts", async () => {
   const fixture = join(import.meta.dir, "fixtures", "mcp-features-server.ts");
   const source = { type: "stdio", command: process.execPath, args: [fixture] };

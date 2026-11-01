@@ -478,6 +478,77 @@ app.openapi(
   },
 );
 
+// Sign-in runs through the browser: ORC starts it with the web page that will receive the callback,
+// and that page hands the code back. spec-cli keeps the PKCE verifier keyed by state between the two.
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/integrations/connections/{name}/authorize",
+    tags,
+    summary: "Start an OAuth sign-in for a remote MCP connection",
+    description:
+      "Returns `redirect` with the URL to open, or `authorized` when the server needs no sign-in " +
+      "or uses the client-credentials flow. The provider sends the browser back to `redirectUrl`.",
+    request: { params: nameParam, ...json(z.object({ redirectUrl: z.string().url().max(2000) })) },
+    responses: ok(
+      "Sign-in started",
+      z
+        .object({
+          status: z.enum(["authorized", "redirect"]),
+          authorizationUrl: z.string().nullable(),
+        })
+        .openapi("IntegrationAuthorization"),
+    ),
+  }),
+  async (c) => {
+    const { name } = c.req.valid("param");
+    const { redirectUrl } = c.req.valid("json");
+    const start = await withSpecs(503, (client) =>
+      client.specs.startAuthorization(name, { redirectUrl }),
+    );
+    return c.json({
+      status: start.status,
+      authorizationUrl: start.status === "redirect" ? start.authorizationUrl : null,
+    });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/integrations/connections/{name}/authorize/callback",
+    tags,
+    summary: "Finish an OAuth sign-in with the code the provider returned",
+    request: {
+      params: nameParam,
+      ...json(z.object({ code: z.string().min(1).max(4000), state: z.string().min(1).max(500) })),
+    },
+    responses: { 204: { description: "Signed in" } },
+  }),
+  async (c) => {
+    const { name } = c.req.valid("param");
+    const callback = c.req.valid("json");
+    await withSpecs(400, (client) => client.specs.finishAuthorization(name, callback));
+    return c.body(null, 204);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/integrations/connections/{name}/authorize",
+    tags,
+    summary: "Sign out: drop the connection's stored OAuth tokens",
+    request: { params: nameParam },
+    responses: { 204: { description: "Signed out" } },
+  }),
+  async (c) => {
+    const { name } = c.req.valid("param");
+    await withSpecs(400, (client) => client.specs.revoke(name));
+    return c.body(null, 204);
+  },
+);
+
 app.openapi(
   createRoute({
     method: "get",
