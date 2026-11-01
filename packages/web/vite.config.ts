@@ -62,6 +62,10 @@ export default defineConfig({
         target: `http://localhost:${process.env.ORC_API_PORT ?? 7701}`,
         changeOrigin: true,
       },
+      "/mcp": {
+        target: `http://localhost:${process.env.ORC_API_PORT ?? 7701}`,
+        changeOrigin: true,
+      },
       "/api": {
         target: `http://localhost:${process.env.ORC_API_PORT ?? 7701}`,
         changeOrigin: true,

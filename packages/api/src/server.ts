@@ -20,6 +20,7 @@ import { gitRouter } from "./routes/git.js";
 import { githubRouter } from "./routes/github.js";
 import { healthRouter } from "./routes/health.js";
 import { humanRequestsRouter } from "./routes/human-requests.js";
+import { integrationsRouter } from "./routes/integrations.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { knowledgeRouter } from "./routes/knowledge.js";
 import { mcpRouter } from "./routes/mcp.js";
@@ -122,6 +123,7 @@ export function createApp() {
   app.route("/api", channelsRouter);
   app.route("/api", systemRouter);
   app.route("/api", mcpToolRouter);
+  app.route("/api", integrationsRouter);
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
   app.route("/api", skillsRouter);
