@@ -613,7 +613,7 @@ export const toolDefinitions = [
   {
     name: "ui_catalog",
     description:
-      `Components and actions for rendering live ORC UI (tasks, jobs, projects, tables, buttons) inside an ORC web chat reply. ` +
+      `Components and actions for live tasks, jobs, session monitoring and saved scratchpad artifacts inside an ORC web chat reply. ` +
       `Read before answering a webchat turn with components. Same content as the ${CHAT_UI_CATALOG_URI} resource.`,
     inputSchema: z.object({}),
   },

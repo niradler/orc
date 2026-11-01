@@ -1,17 +1,14 @@
 import type { Job, Task } from "@orc/sdk/types";
 import { useQuery } from "@tanstack/react-query";
 import { api, type TaskStatus } from "@/api/client";
-import { Markdown } from "@/components/Markdown";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { useJob } from "@/hooks/useJobs";
-import { useMemory } from "@/hooks/useMemories";
-import { useProject, useProjectSummary } from "@/hooks/useProjects";
+import { useProject } from "@/hooks/useProjects";
 import { useScratchpad } from "@/hooks/useScratchpads";
 import { useTask } from "@/hooks/useTasks";
 import { formatWhen, STATUS as SESSION_STATUS } from "@/lib/live-sessions";
-import { memoryPath } from "@/lib/memory-routes";
 import { scratchpadPath } from "@/lib/scratchpad-routes";
 import { cn } from "@/lib/utils";
 import { useChatUiAction } from "./actions";
@@ -28,6 +25,7 @@ import {
   UiLink,
   when,
 } from "./primitives";
+import { ScratchpadArtifact } from "./ScratchpadArtifact";
 
 const TASK_STATUSES: TaskStatus[] = [
   "todo",
@@ -214,127 +212,6 @@ export function JobCard({ id }: { id: string }) {
   );
 }
 
-export function JobList({
-  projectId,
-  enabled,
-  limit = DEFAULT_LIMIT,
-}: {
-  projectId?: string;
-  enabled?: boolean;
-  limit?: number;
-}) {
-  const params = { project_id: projectId, enabled, limit };
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["jobs", "chat-ui", params],
-    queryFn: () => api.jobs.list(params),
-  });
-  if (isLoading) return <Loading label="Loading jobs" />;
-  if (error || !data) return <Failure label="Jobs unavailable." error={error} />;
-  return (
-    <Panel testId="chat-ui-job-list">
-      {data.jobs.length ? (
-        <Rows>
-          {data.jobs.map((job) => (
-            <li key={job.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
-              <UiLink
-                href={`/jobs/${job.id}`}
-                className="min-w-0 text-sm no-underline hover:underline"
-              >
-                <span className="truncate">{job.name}</span>
-              </UiLink>
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-on-surface-variant">
-                <Dot tone={job.enabled ? "success" : "neutral"} />
-                <span className="font-mono">{schedule(job)}</span>
-              </span>
-            </li>
-          ))}
-        </Rows>
-      ) : (
-        <Empty>No matching jobs.</Empty>
-      )}
-    </Panel>
-  );
-}
-
-const PROJECT_TONE = { active: "success", paused: "warning", archived: "neutral" } as const;
-const OPEN_STATUSES = ["doing", "review", "blocked", "todo"] as const;
-
-export function ProjectCard({ id }: { id: string }) {
-  const { data, isLoading, error } = useProjectSummary(id);
-  if (isLoading) return <Loading label="Loading project" />;
-  if (error || !data) return <Failure label="Project unavailable." error={error ?? "Not found"} />;
-  const { project, tasks } = data;
-  return (
-    <Panel testId="chat-ui-project" className="flex flex-col gap-2">
-      <div className="flex min-w-0 items-start justify-between gap-2">
-        <UiLink href={`/projects/${project.id}`} className={cn(titleLink, "break-words")}>
-          {project.name}
-        </UiLink>
-        <span className="flex shrink-0 items-center gap-1.5 text-xs text-on-surface-variant">
-          <Dot tone={PROJECT_TONE[project.status]} />
-          {label(project.status)}
-        </span>
-      </div>
-      {project.description && (
-        <p className="line-clamp-2 text-xs text-on-surface-variant">{project.description}</p>
-      )}
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs min-[420px]:grid-cols-4">
-        {OPEN_STATUSES.map((status) => (
-          <div key={status} className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="text-on-surface-variant">{label(status)}</dt>
-            <dd className="tabular-nums text-on-surface">{tasks.by_status[status] ?? 0}</dd>
-          </div>
-        ))}
-      </dl>
-      <Meta>
-        <span>{tasks.total} tasks</span>
-        <span>{data.jobs} jobs</span>
-        <span>{data.memories} memories</span>
-      </Meta>
-    </Panel>
-  );
-}
-
-export function ProjectList({
-  status,
-  limit = DEFAULT_LIMIT,
-}: {
-  status?: "active" | "paused" | "archived";
-  limit?: number;
-}) {
-  const params = { status, limit };
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["projects", "chat-ui", params],
-    queryFn: () => api.projects.list(params),
-  });
-  if (isLoading) return <Loading label="Loading projects" />;
-  if (error || !data) return <Failure label="Projects unavailable." error={error} />;
-  return (
-    <Panel testId="chat-ui-project-list">
-      {data.projects.length ? (
-        <Rows>
-          {data.projects.map((project) => (
-            <li key={project.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
-              <UiLink
-                href={`/projects/${project.id}`}
-                className="min-w-0 text-sm no-underline hover:underline"
-              >
-                <span className="truncate">{project.name}</span>
-              </UiLink>
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-on-surface-variant">
-                <Dot tone={PROJECT_TONE[project.status]} />
-                {label(project.status)}
-              </span>
-            </li>
-          ))}
-        </Rows>
-      ) : (
-        <Empty>No matching projects.</Empty>
-      )}
-    </Panel>
-  );
-}
-
 export function SessionList({
   projectId,
   limit = DEFAULT_LIMIT,
@@ -418,78 +295,27 @@ function hasLongContent(content: string): boolean {
   return content.length > 240 || content.split("\n").length > 4;
 }
 
-export function MemoryCard({ projectId, name }: { projectId: string; name: string }) {
-  const { data: memory, isLoading, error } = useMemory(projectId, name);
-  if (isLoading) return <Loading label="Loading memory" />;
-  if (error || !memory) return <Failure label="Memory unavailable." error={error ?? "Not found"} />;
-  return (
-    <ExpandablePanel
-      testId="chat-ui-memory"
-      title={memory.name}
-      heading={
-        <UiLink
-          href={memoryPath(memory.project_id, memory.name)}
-          className={cn(titleLink, "break-all")}
-        >
-          {memory.name}
-        </UiLink>
-      }
-      canExpand={hasLongContent(memory.content)}
-    >
-      {(expanded) => (
-        <div className="space-y-1.5">
-          {memory.description && (
-            <p className="text-xs text-on-surface-variant">{memory.description}</p>
-          )}
-          <p
-            data-testid="chat-ui-memory-content"
-            className={cn(
-              "whitespace-pre-wrap break-words text-on-surface",
-              expanded ? "text-base leading-relaxed" : "line-clamp-4 text-xs",
-            )}
-          >
-            {memory.content}
-          </p>
-          <Meta>
-            <ProjectName id={memory.project_id} />
-            {memory.priority != null && <span>Priority {memory.priority}</span>}
-            <span>Updated {when(memory.updated_at)}</span>
-          </Meta>
-        </div>
-      )}
-    </ExpandablePanel>
-  );
-}
-
-export function PadCard({ id }: { id: string }) {
+export function ScratchpadCard({ id }: { id: string }) {
   const { data: pad, isLoading, error } = useScratchpad(id);
   if (isLoading) return <Loading label="Loading scratchpad" />;
   if (error || !pad)
     return <Failure label="Scratchpad unavailable." error={error ?? "Not found"} />;
   return (
     <ExpandablePanel
-      testId="chat-ui-pad"
+      testId="chat-ui-scratchpad"
       title={pad.title}
       heading={
         <UiLink href={scratchpadPath(pad.id)} className={cn(titleLink, "break-words")}>
           {pad.title}
         </UiLink>
       }
-      canExpand={pad.kind === "doc" && hasLongContent(pad.content)}
+      canExpand={pad.kind !== "doc" || hasLongContent(pad.content)}
     >
       {(expanded) => (
         <div className="space-y-1.5">
-          {pad.kind === "doc" && pad.content && (
-            <div data-testid="chat-ui-pad-content">
-              {expanded ? (
-                <Markdown readable>{pad.content}</Markdown>
-              ) : (
-                <p className="line-clamp-4 whitespace-pre-wrap break-words text-xs text-on-surface">
-                  {pad.content}
-                </p>
-              )}
-            </div>
-          )}
+          <div data-testid="chat-ui-scratchpad-content">
+            <ScratchpadArtifact pad={pad} expanded={expanded} />
+          </div>
           <Meta>
             <span>{label(pad.kind)}</span>
             {pad.tags.map((tag) => (

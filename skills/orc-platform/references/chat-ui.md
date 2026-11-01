@@ -57,15 +57,20 @@ Here is the task and what else is in progress:
 - Entity components (Task, TaskList, Job, ...) take ids and load current data as
   the signed-in human, then stay live. Resolve ids with ORC tools first; never
   invent them, and do not copy fields that the component already shows.
-- The catalog has 11 components: Task, TaskList, Job, JobList, Project, ProjectList,
-  SessionList, Memory, Pad, Button and Stack. Markdown is the default for
-  ordinary answers, formatting, tables, facts, status summaries and links.
-  Use a component only when live state, an action or contextual navigation adds value.
-  Do not build a gallery or duplicate an entity's fields in prose. Stack only groups
-  useful components; Button performs an API action.
-- Long task descriptions, session summaries/lists, memory content and document previews offer Expand
-  and Fullscreen controls in their headers. These are built-in views of the same
-  live data; agents do not need extra JSON props. Escape or Close returns to chat.
+- The catalog has 7 components: Task, TaskList, Job, SessionList, Scratchpad, Button
+  and Stack. Markdown is the default for ordinary answers, tables, summaries and links.
+  TaskList and SessionList are for monitoring changing queues/activity, not static search results.
+  Stack groups components; Button performs an authenticated API action.
+- Scratchpad renders the latest saved artifact by id: HTML dashboards, Excalidraw
+  diagrams and documents. Create the artifact with scratchpad tools first, then emit
+  `{"root":"artifact","elements":{"artifact":{"type":"Scratchpad","props":{"id":"<pad-id>"}}}}`.
+  For a dataset dashboard, embed the dataset and inline charts (SVG, canvas or inline
+  JavaScript) in a self-contained HTML pad. Chat HTML has an opaque sandbox origin,
+  no ORC API bridge and no external scripts/network. Do not include secrets.
+  The editor is available through the title link; previews follow saved revisions.
+- Long task descriptions, session summaries/lists and scratchpad artifacts offer
+  Expand and Fullscreen header controls. No extra JSON props are needed.
+  Escape or Close returns to chat.
 - Skill is deliberately absent: a static skill viewer is agent-facing. Reviewing
   and approving a proposed skill diff is a separate workflow, not this component.
 - Buttons run catalog actions (`task.update`, ...) through the ORC API as the

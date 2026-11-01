@@ -91,6 +91,9 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("chat-message-attachments")).toContainText("report.bin");
       await apiPatch(request, "/settings", { theme: "light" });
       await page.reload();
+      // setInputFiles can bypass a disabled input while the linked thread is restoring.
+      await expect(page.getByTestId("chat-message-attachments")).toContainText("report.bin");
+      await expect(page.getByTestId("chat-input")).toBeEnabled();
       await page.getByTestId("chat-file-input").setInputFiles({
         name: "follow-up.txt",
         mimeType: "text/plain",

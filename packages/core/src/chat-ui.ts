@@ -64,38 +64,15 @@ export const chatUiCatalog = defineCatalog(schema, {
       description:
         "Live ORC job by id: trigger, schedule, last/next run, enabled state and Run now.",
     },
-    JobList: {
-      props: z.object({
-        projectId: EntityId.optional(),
-        enabled: z.boolean().optional(),
-        limit: Limit,
-      }),
-      description: "Live job rows, optionally filtered by project id or enabled state.",
-    },
-    Project: {
-      props: z.object({ id: EntityId }),
-      description: "Live ORC project by id with its status and task counts.",
-    },
-    ProjectList: {
-      props: z.object({
-        status: z.enum(["active", "paused", "archived"]).optional(),
-        limit: Limit,
-      }),
-      description: "Live project rows.",
-    },
     SessionList: {
       props: z.object({ projectId: EntityId.optional(), limit: Limit }),
       description:
         "Live session activity, summaries and related task links; long content expands/fullscreens.",
     },
-    Memory: {
-      props: z.object({ projectId: EntityId, name: z.string().min(1).max(128) }),
-      description: "Live ORC memory (project id plus name) with its description and content.",
-    },
-    Pad: {
+    Scratchpad: {
       props: z.object({ id: EntityId }),
       description:
-        "Live scratchpad and document preview; long text expands/fullscreens, with an editor link.",
+        "Saved HTML dashboards, Excalidraw diagrams and documents by id; inline preview, expand/fullscreen and editor. HTML must be self-contained: embed data, inline chart code/SVG; no network or ORC API access.",
     },
   },
   actions: {
@@ -312,8 +289,8 @@ export function chatUiCatalogText(): string {
   return `# ORC chat UI components
 
 Webchat only: use components only when <orc-context> says source: webchat.
-Default to Markdown. Use a component for current/live entity data, an API action,
-or contextual navigation; never just to decorate text or repeat a status.
+Default to Markdown, including links and static status summaries. Use components
+for live monitoring, direct API interaction or rendering saved scratchpad artifacts.
 Entity components load as the signed-in user and stay live. Resolve ids first.
 
 Reply with an orc-ui fence; ordinary text outside it is Markdown:

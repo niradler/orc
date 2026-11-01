@@ -1,5 +1,6 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, type Page, type Request, test } from "@playwright/test";
+import { CHAT_DASHBOARD_HTML } from "../fixtures/chat-dashboard";
 import { chatUiGalleryMessage } from "../fixtures/chat-ui-gallery";
 import { API_SECRET } from "./_helpers";
 
@@ -84,6 +85,134 @@ const content = [
   '{"root": "broken"',
   "```",
 ].join("\n");
+
+const artifactSpec = {
+  root: "artifact",
+  elements: { artifact: { type: "Scratchpad", props: { id: "s1" } } },
+};
+
+for (const width of [1440, 390, 320]) {
+  test(`HTML dashboard is interactive and isolated at ${width}px`, async ({ page }, testInfo) => {
+    await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(artifactSpec)}\n\`\`\``);
+    await page.route("**/api/scratchpads/s1", (route) =>
+      route.fulfill({
+        json: {
+          id: "s1",
+          title: "Dataset dashboard",
+          kind: "html",
+          content: CHAT_DASHBOARD_HTML,
+          tags: [],
+          updated_at: stamp,
+        },
+      }),
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+    const panel = page.getByTestId("chat-ui-scratchpad");
+    const frame = page.frameLocator('[data-testid="chat-ui-scratchpad-html"]');
+    await expect(frame.getByRole("img", { name: "Quarterly revenue chart" })).toBeVisible();
+    await frame.getByRole("button", { name: "Show orders" }).click();
+    await expect(frame.getByRole("img", { name: "Quarterly orders chart" })).toBeVisible();
+    const iframe = page.getByTestId("chat-ui-scratchpad-html");
+    await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+    const contentFrame = await (await iframe.elementHandle())?.contentFrame();
+    if (!contentFrame) throw new Error("Dashboard frame missing");
+    const isolation = await contentFrame.evaluate(async () => {
+      let parentBlocked = false;
+      let storageBlocked = false;
+      let networkBlocked = false;
+      try {
+        void parent.document.body;
+      } catch {
+        parentBlocked = true;
+      }
+      try {
+        void localStorage.length;
+      } catch {
+        storageBlocked = true;
+      }
+      try {
+        await fetch("http://127.0.0.1:7701/api/tasks");
+      } catch {
+        networkBlocked = true;
+      }
+      return { parentBlocked, storageBlocked, networkBlocked, bridgeAbsent: !("orc" in window) };
+    });
+    expect(isolation).toEqual({
+      parentBlocked: true,
+      storageBlocked: true,
+      networkBlocked: true,
+      bridgeAbsent: true,
+    });
+    await panel.getByTestId("chat-ui-fullscreen").click();
+    const dialog = page.getByTestId("chat-ui-fullscreen-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(frame.getByRole("heading", { name: "Dataset dashboard" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`dashboard-fullscreen-${width}.png`) });
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(frame.getByRole("heading", { name: "Dataset dashboard" })).toBeVisible();
+  });
+}
+
+test("scratchpad diagram renders as an isolated image and invalid content stays contained", async ({
+  page,
+}) => {
+  await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(artifactSpec)}\n\`\`\``);
+  const content = JSON.stringify({
+    type: "excalidraw",
+    elements: [
+      {
+        id: "box",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 100,
+        strokeColor: "#25262a",
+        backgroundColor: "#8ab4f8",
+        fillStyle: "solid",
+      },
+    ],
+    appState: {},
+    files: {},
+  });
+  await page.route("**/api/scratchpads/s1", (route) =>
+    route.fulfill({
+      json: {
+        id: "s1",
+        title: "Dataset pipeline",
+        kind: "diagram",
+        content,
+        tags: [],
+        updated_at: stamp,
+      },
+    }),
+  );
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const image = page.getByTestId("chat-ui-scratchpad-diagram");
+  await expect(image).toBeVisible();
+  expect(
+    await image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0),
+  ).toBe(true);
+  await page.route("**/api/scratchpads/s1", (route) =>
+    route.fulfill({
+      json: {
+        id: "s1",
+        title: "Broken diagram",
+        kind: "diagram",
+        content: "invalid",
+        tags: [],
+        updated_at: stamp,
+      },
+    }),
+  );
+  await page.reload();
+  await expect(page.getByTestId("chat-ui-scratchpad").getByRole("alert")).toContainText(
+    "Diagram preview unavailable",
+  );
+  await expect(page.getByTestId("chat-input")).toBeVisible();
+});
 
 async function mockApi(page: Page, requests: Request[], messageContent = content) {
   // Registered first so the chat routes below take precedence.
@@ -181,32 +310,21 @@ async function mockApi(page: Page, requests: Request[], messageContent = content
 }
 
 for (const width of [1440, 390, 320]) {
-  test(`all 11 components render in chat at ${width}px`, async ({ page }, testInfo) => {
+  test(`all 7 components render in chat at ${width}px`, async ({ page }, testInfo) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await mockApi(
       page,
       [],
-      chatUiGalleryMessage({ task: "t1", job: "j1", project: "p1", pad: "s1", memory: "demo" }),
+      chatUiGalleryMessage({ task: "t1", job: "j1", project: "p1", pad: "s1" }),
     );
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
     const block = page.getByTestId("chat-ui-block");
-    for (const id of [
-      "task",
-      "task-list",
-      "job",
-      "job-list",
-      "project",
-      "project-list",
-      "session-list",
-      "memory",
-      "pad",
-    ]) {
+    for (const id of ["task", "task-list", "job", "session-list", "scratchpad"]) {
       await expect(block.getByTestId(`chat-ui-${id}`)).toBeAttached();
     }
     await expect(block).toContainText("Demo agent session");
-    await expect(block).toContainText("Example saved fact");
     await expect(block.getByRole("alert")).toHaveCount(0);
     await expect(page.getByTestId("chat-ui-invalid")).toHaveCount(0);
     expect(await block.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
@@ -329,11 +447,10 @@ for (const theme of ["dark", "light"] as const) {
       const richSpec = {
         root: "main",
         elements: {
-          main: { type: "Stack", children: ["task", "memory", "sessions", "pad"] },
+          main: { type: "Stack", children: ["task", "sessions", "pad"] },
           task: { type: "Task", props: { id: "t1" } },
-          memory: { type: "Memory", props: { projectId: "p1", name: "demo" } },
           sessions: { type: "SessionList", props: { limit: 10 } },
-          pad: { type: "Pad", props: { id: "s1" } },
+          pad: { type: "Scratchpad", props: { id: "s1" } },
         },
       };
       await mockApi(page, requests, `\`\`\`orc-ui\n${JSON.stringify(richSpec)}\n\`\`\``);
@@ -383,19 +500,15 @@ for (const theme of ["dark", "light"] as const) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
 
-      const memory = page.getByTestId("chat-ui-memory");
-      const text = page.getByTestId("chat-ui-memory-content");
+      const reader = page.getByTestId("chat-ui-scratchpad");
+      const text = page.getByTestId("chat-ui-scratchpad-content").locator("p").first();
       await expect(text).toHaveCSS("-webkit-line-clamp", "4");
-      await memory.getByTestId("chat-ui-expand").click();
-      await expect(text).toHaveCSS("-webkit-line-clamp", "none");
-      await memory.getByTestId("chat-ui-fullscreen").click();
+      await reader.getByTestId("chat-ui-expand").click();
+      await expect(reader).toContainText("Paragraph 12");
+      await reader.getByTestId("chat-ui-fullscreen").click();
       const dialog = page.getByTestId("chat-ui-fullscreen-dialog");
       await expect(dialog).toBeVisible();
       await expect(dialog).toContainText("Paragraph 12");
-      await expect(dialog.getByRole("link", { name: "demo", exact: true })).toHaveAttribute(
-        "href",
-        /memories/,
-      );
       await expect
         .poll(async () => Math.round((await dialog.boundingBox())?.width ?? 0))
         .toBe(width);
@@ -423,14 +536,14 @@ for (const theme of ["dark", "light"] as const) {
       });
       await page.keyboard.press("Escape");
       await expect(dialog).toHaveCount(0);
-      await expect(memory.getByTestId("chat-ui-fullscreen")).toBeFocused();
-      await expect(memory.getByTestId("chat-ui-expand")).toHaveAttribute("aria-expanded", "true");
+      await expect(reader.getByTestId("chat-ui-fullscreen")).toBeFocused();
+      await expect(reader.getByTestId("chat-ui-expand")).toHaveAttribute("aria-expanded", "true");
 
       const sessions = page.getByTestId("chat-ui-session-list");
       await expect(sessions.locator("li")).toHaveCount(3);
       await sessions.getByTestId("chat-ui-expand").click();
       await expect(sessions.locator("li")).toHaveCount(6);
-      const pad = page.getByTestId("chat-ui-pad");
+      const pad = page.getByTestId("chat-ui-scratchpad");
       await pad.getByTestId("chat-ui-fullscreen").click();
       await expect(dialog).toContainText("Paragraph 12");
       await dialog.getByRole("button", { name: "Close", exact: true }).click();

@@ -2,17 +2,7 @@ import { type Components, defineRegistry } from "@json-render/react";
 import { chatUiCatalog } from "@orc/core/chat-ui";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  JobCard,
-  JobList,
-  MemoryCard,
-  PadCard,
-  ProjectCard,
-  ProjectList,
-  SessionList,
-  TaskCard,
-  TaskList,
-} from "./entities";
+import { JobCard, ScratchpadCard, SessionList, TaskCard, TaskList } from "./entities";
 
 const GAP = { sm: "gap-1.5", md: "gap-3", lg: "gap-5" } as const;
 const BUTTON_VARIANT = {
@@ -51,14 +41,8 @@ const components: Components<typeof chatUiCatalog> = {
     <TaskList projectId={props.projectId} status={props.status} limit={props.limit} />
   ),
   Job: ({ props }) => <JobCard id={props.id} />,
-  JobList: ({ props }) => (
-    <JobList projectId={props.projectId} enabled={props.enabled} limit={props.limit} />
-  ),
-  Project: ({ props }) => <ProjectCard id={props.id} />,
-  ProjectList: ({ props }) => <ProjectList status={props.status} limit={props.limit} />,
   SessionList: ({ props }) => <SessionList projectId={props.projectId} limit={props.limit} />,
-  Memory: ({ props }) => <MemoryCard projectId={props.projectId} name={props.name} />,
-  Pad: ({ props }) => <PadCard id={props.id} />,
+  Scratchpad: ({ props }) => <ScratchpadCard id={props.id} />,
 };
 
 // Actions are dispatched through JSONUIProvider handlers (see ChatUiRenderer), which need

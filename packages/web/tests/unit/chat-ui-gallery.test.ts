@@ -3,15 +3,11 @@ import { chatUiCatalog, parseChatUiSpec } from "@orc/core/chat-ui";
 import { chatUiGallery } from "../fixtures/chat-ui-gallery";
 
 test("should provide a valid example of every catalog component", () => {
-  const spec = chatUiGallery({ task: "t1", job: "j1", project: "p1", pad: "s1", memory: "demo" });
+  const spec = chatUiGallery({ task: "t1", job: "j1", project: "p1", pad: "s1" });
   expect(Object.keys(chatUiCatalog.data.components).sort()).toEqual([
     "Button",
     "Job",
-    "JobList",
-    "Memory",
-    "Pad",
-    "Project",
-    "ProjectList",
+    "Scratchpad",
     "SessionList",
     "Stack",
     "Task",
