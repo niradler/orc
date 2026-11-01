@@ -1,6 +1,7 @@
 import { discoverAgentModels, listRegisteredBackends } from "@orc/agent-runtime";
 import type { ChannelConnection } from "@orc/core/channels";
 import { ChannelBuiltinCommands, channelCommand, channelCommands } from "@orc/core/channels";
+import { CHAT_AGENTS } from "@orc/core/chat";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import type { GatewayMode } from "@orc/core/types";
 import { getSqlite } from "@orc/db/client";
@@ -23,7 +24,7 @@ export function channelControls(): NonNullable<DirectCommandResult["buttons"]> {
       { label: "Sessions", value: "/session_list" },
     ],
     [
-      { label: "Project", value: "/project" },
+      { label: "Projects", value: "/projects" },
       { label: "Agent", value: "/agent" },
       { label: "Model", value: "/model" },
     ],
@@ -105,11 +106,15 @@ export async function channelDirectCommand(
   const agent = input.mode.replace(/^agent:/, "");
   const pageMatch = command.args.match(/^page (\d{1,6})$/);
   const page = Number(pageMatch?.[1] ?? 0);
-  if (command.name === "status")
+  if (command.name === "status") {
+    const project = getSqlite()
+      .query<{ name: string }, [string]>("SELECT name FROM projects WHERE id = ?")
+      .get(input.projectId);
     return {
-      text: `Project: ${input.projectId}\nFolder: ${input.cwd}\nAgent: ${agent}\nModel: ${current?.model ?? (agent === input.defaultAgent ? input.defaultModel : undefined) ?? "provider default"}\nSession: ${current ? `${current.id} (${current.status})` : "new conversation"}`,
+      text: `Project: ${project?.name ?? input.projectId}\nFolder: ${input.cwd}\nAgent: ${agent}\nModel: ${current?.model ?? (agent === input.defaultAgent ? input.defaultModel : undefined) ?? "provider default"}\nSession: ${current ? `${current.id} (${current.status})` : "new conversation"}`,
       buttons: channelControls(),
     };
+  }
   if (command.name === "project" || command.name === "projects") {
     const projects = getSqlite()
       .query<{ id: string; name: string; scope: string | null }, []>(
@@ -154,7 +159,7 @@ export async function channelDirectCommand(
     };
   }
   if (command.name === "agent") {
-    const agents = listRegisteredBackends();
+    const agents = Array.from(new Set([...CHAT_AGENTS, ...listRegisteredBackends()]));
     if (!command.args || pageMatch)
       return {
         text: `Current agent: ${agent}\nDefault: ${input.defaultAgent}`,

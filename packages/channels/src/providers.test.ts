@@ -6,12 +6,187 @@ import {
   channelCommand,
 } from "@orc/core/channels";
 import { createChannelTransport, slackManifest } from "./providers.js";
+import { telegramFiles } from "./telegram.js";
 
 const originalFetch = globalThis.fetch;
 const OriginalSocket = globalThis.WebSocket;
+test("Telegram extracts documents and largest photos and bounds file downloads", async () => {
+  expect(
+    telegramFiles({
+      message_id: 12,
+      document: {
+        file_id: "document-id",
+        file_name: "report.pdf",
+        mime_type: "application/pdf",
+        file_size: 4,
+      },
+    }),
+  ).toEqual([
+    {
+      fileId: "document-id",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      size: 4,
+      description: "Telegram document",
+    },
+  ]);
+  expect(
+    telegramFiles({
+      message_id: 12,
+      photo: [{ file_id: "small" }, { file_id: "large", file_size: 4 }],
+    })[0]?.fileId,
+  ).toBe("large");
+  let downloads = 0;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    if (String(url).endsWith("getFile"))
+      return Response.json({
+        ok: true,
+        result: { file_path: "documents/report.bin", file_size: 4 },
+      });
+    downloads++;
+    return new Response(new Uint8Array([0, 255, 1, 10]));
+  }) as typeof fetch;
+  const transport = createChannelTransport(
+    ChannelConnectionSchema.parse({ id: "uploads", name: "Uploads", provider: "telegram" }),
+    { token: "private-fixture" },
+  );
+  if (!transport.downloadFile) throw new Error("No Telegram file downloader");
+  const file = await transport.downloadFile({
+    fileId: "document-id",
+    name: "report.bin",
+    mimeType: "application/octet-stream",
+    size: 4,
+  });
+  expect(file.data).toEqual(new Uint8Array([0, 255, 1, 10]));
+  await expect(
+    transport.downloadFile({ fileId: "large", name: "large.bin", mimeType: "", size: 20_000_001 }),
+  ).rejects.toThrow("20 MB");
+  expect(downloads).toBe(1);
+});
 afterEach(() => {
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = OriginalSocket;
+});
+
+test("should resolve a custom emoji to its real sticker format and download its original bytes", async () => {
+  const methods: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const method = String(url).split("/").at(-1) ?? "";
+    methods.push(method);
+    if (method === "getCustomEmojiStickers") {
+      expect(JSON.parse(String(init?.body))).toEqual({ custom_emoji_ids: ["123"] });
+      return Response.json({
+        ok: true,
+        result: [{ file_id: "real-id", custom_emoji_id: "123", is_video: true, emoji: "🙂" }],
+      });
+    }
+    if (method === "getFile") {
+      expect(JSON.parse(String(init?.body))).toEqual({ file_id: "real-id" });
+      return Response.json({ ok: true, result: { file_path: "stickers/real.webm" } });
+    }
+    return new Response(new Uint8Array([0, 255, 1, 2]));
+  }) as typeof fetch;
+  const transport = createChannelTransport(
+    ChannelConnectionSchema.parse({ id: "tg", name: "Telegram", provider: "telegram" }),
+    { token: "fixture" },
+  );
+  if (!transport.downloadFile) throw new Error("Missing file downloader");
+  const file = await transport.downloadFile({
+    fileId: "custom-emoji:123",
+    customEmojiId: "123",
+    name: "emoji.webp",
+    mimeType: "image/webp",
+  });
+  expect(file).toMatchObject({
+    name: "sticker-123.webm",
+    mimeType: "video/webm",
+    description: expect.stringContaining("emoji: 🙂"),
+  });
+  expect(file.data).toEqual(new Uint8Array([0, 255, 1, 2]));
+  expect(methods).toEqual(["getCustomEmojiStickers", "getFile", "real.webm"]);
+});
+
+test("should deliver emoji, captions, voice files, stickers, video notes and attributed reactions from polling", async () => {
+  const received: ChannelInbound[] = [];
+  let polls = 0;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (!String(url).endsWith("getUpdates"))
+      return Response.json({ ok: true, result: { username: "orcbot" } });
+    expect(JSON.parse(String(init?.body)).allowed_updates).toContain("message_reaction");
+    if (polls++ === 0) {
+      const base = {
+        chat: { id: 20, type: "private" },
+        from: { id: 12 },
+        date: Math.floor(Date.now() / 1000),
+        message_id: 42,
+      };
+      const reaction = {
+        chat: base.chat,
+        user: base.from,
+        date: base.date,
+        message_id: 42,
+        old_reaction: [],
+        new_reaction: [{ type: "emoji", emoji: "👍" }],
+      };
+      return Response.json({
+        ok: true,
+        result: [
+          { update_id: 1, message: { ...base, voice: { file_id: "voice", duration: 4 } } },
+          {
+            update_id: 2,
+            message: { ...base, sticker: { file_id: "sticker", emoji: "🙂", is_animated: true } },
+          },
+          { update_id: 3, message: { ...base, video_note: { file_id: "video", duration: 3 } } },
+          {
+            update_id: 4,
+            message: { ...base, caption: "Look 🙂 @orcbot", photo: [{ file_id: "photo" }] },
+          },
+          { update_id: 5, message_reaction: reaction },
+          {
+            update_id: 6,
+            message_reaction: { ...reaction, user: undefined, actor_chat: { id: 20 } },
+          },
+          { update_id: 7, message_reaction: { ...reaction, user: { id: 99, is_bot: true } } },
+          { update_id: 8, message: { ...base, text: "👍 👨‍👩‍👧‍👦" } },
+          { update_id: 9, edited_message: { ...base, text: "Edited 🙂", edit_date: base.date } },
+        ],
+      });
+    }
+    return new Promise((_resolve, reject) =>
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }),
+    );
+  }) as typeof fetch;
+  const transport = createChannelTransport(
+    ChannelConnectionSchema.parse({ id: "tg", name: "Telegram", provider: "telegram" }),
+    { token: "fixture" },
+    { loadCursor: () => "1", saveCursor: () => {} },
+  );
+  try {
+    await transport.identity();
+    await transport.start(
+      (value) => received.push(value),
+      () => {},
+    );
+    const deadline = Date.now() + 2000;
+    while (polls < 2 && Date.now() < deadline) await Bun.sleep(10);
+    expect(received).toHaveLength(7);
+    expect(received[0]?.attachments?.[0]).toMatchObject({
+      name: "voice-42.ogg",
+      mimeType: "audio/ogg",
+    });
+    expect(received[1]?.attachments?.[0]?.name).toBe("sticker-42.tgs");
+    expect(received[2]?.attachments?.[0]?.name).toBe("video_note-42.mp4");
+    expect(received[3]).toMatchObject({ text: "Look 🙂 @orcbot", is_mention: true });
+    expect(received[4]?.text).toContain('"current":["👍"]');
+    expect(received[5]?.text).toBe("👍 👨‍👩‍👧‍👦");
+    expect(received[6]).toMatchObject({ message_id: "edit:20:42:9", text: "Edited 🙂" });
+    expect(JSON.parse(received[6]?.context ?? "{}")).toMatchObject({
+      messageId: "42",
+      edited: true,
+    });
+  } finally {
+    await transport.stop();
+  }
 });
 
 test("Telegram registers built-in and custom slash commands through its owned transport", async () => {

@@ -2,11 +2,11 @@ import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ArchiveSearchResult } from "@orc/core/session-archive";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
 import {
   API_BASE,
@@ -18,6 +18,7 @@ import {
   repoRoot,
   tid,
 } from "./_helpers";
+import { test } from "./_terminal-fixture";
 
 const execute = promisify(execFile);
 const nativeContent = (agent: "claude" | "codex", id: string, cwd: string, text: string) =>
@@ -386,110 +387,153 @@ test("connected embedding HTTP provider enables semantic retrieval and failure v
 });
 
 for (const agent of ["claude", "codex"] as const) {
-  test(`archived ${agent} history prepares a native session and opens the pinned terminal`, async ({
-    page,
-    request,
-  }) => {
-    const availability = await apiGet<{ ready: boolean; launchers: string[] }>(
+  for (const destination of ["chat", "terminal"] as const) {
+    test(`archived ${agent} history prepares a native session and opens pinned ${destination}`, async ({
+      page,
       request,
-      "/terminals",
-    );
-    test.skip(
-      !availability.ready || !availability.launchers.includes(agent),
-      `${agent} CLI and PTY required`,
-    );
-    const git = async (...args: string[]) =>
-      (await execute("git", args, { timeout: 30_000, windowsHide: true })).stdout.trim();
-    const root = mkdtempSync(join(tmpdir(), "orc-archive-resume-"));
-    const source = join(root, "source");
-    const remote = join(root, "remote.git");
-    const target = join(root, "target");
-    await git("init", "--bare", remote);
-    await git("init", source);
-    const subdirectory = agent === "codex" ? "packages/app" : "";
-    const sourceCwd = join(source, subdirectory);
-    mkdirSync(sourceCwd, { recursive: true });
-    writeFileSync(join(source, "work.txt"), "archived work\n");
-    writeFileSync(join(sourceCwd, "context.txt"), "session cwd marker\n");
-    await git("-C", source, "add", "work.txt", ".");
-    await git(
-      "-C",
-      source,
-      "-c",
-      "user.name=ORC Test",
-      "-c",
-      "user.email=test@example.invalid",
-      "commit",
-      "-m",
-      "Archive fixture",
-    );
-    const commit = await git("-C", source, "rev-parse", "HEAD");
-    await git("-C", source, "remote", "add", "origin", remote);
-    await git("-C", source, "push", "origin", "HEAD:refs/heads/archive/test");
-    await git("clone", "--branch", "archive/test", remote, target);
-    const name = tid(`archive-resume-${agent}`);
-    const project = await apiPost<{ id: string }>(request, "/projects", { name, scope: target });
-    const nativeId = randomUUID();
-    const accepted = await apiPost<{ session: { id: string } }>(
-      request,
-      "/sessions/archive/upload",
-      {
-        project: name,
-        source_id: name,
-        agent,
-        session_id: nativeId,
-        title: `Continue ${agent} archived work`,
-        metadata: {
-          cwd: sourceCwd,
-          repository: remote,
-          branch: "archive/test",
-          commit,
-          subdirectory,
-        },
-        bundle: {
-          version: 1,
-          files: [
-            {
-              path: "session.jsonl",
-              content: nativeContent(agent, nativeId, sourceCwd, "Continue archived work"),
+      terminalIds,
+    }) => {
+      const availability = await apiGet<{ ready: boolean; launchers: string[] }>(
+        request,
+        "/terminals",
+      );
+      test.skip(
+        !availability.ready || !availability.launchers.includes(agent),
+        `${agent} CLI and PTY required`,
+      );
+      const git = async (...args: string[]) =>
+        (await execute("git", args, { timeout: 30_000, windowsHide: true })).stdout.trim();
+      // The run harness owns this home and removes it after the API and its children exit.
+      const root = mkdtempSync(join(homedir(), "orc-archive-resume-"));
+      try {
+        const source = join(root, "source");
+        const remote = join(root, "remote.git");
+        const target = join(root, "target");
+        await git("init", "--bare", remote);
+        await git("init", source);
+        const subdirectory = agent === "codex" ? "packages/app" : "";
+        const sourceCwd = join(source, subdirectory);
+        mkdirSync(sourceCwd, { recursive: true });
+        writeFileSync(join(source, "work.txt"), "archived work\n");
+        writeFileSync(join(sourceCwd, "context.txt"), "session cwd marker\n");
+        await git("-C", source, "add", "work.txt", ".");
+        await git(
+          "-C",
+          source,
+          "-c",
+          "user.name=ORC Test",
+          "-c",
+          "user.email=test@example.invalid",
+          "commit",
+          "-m",
+          "Archive fixture",
+        );
+        const commit = await git("-C", source, "rev-parse", "HEAD");
+        await git("-C", source, "remote", "add", "origin", remote);
+        await git("-C", source, "push", "origin", "HEAD:refs/heads/archive/test");
+        await git("clone", "--branch", "archive/test", remote, target);
+        const name = tid(`archive-resume-${agent}`);
+        const project = await apiPost<{ id: string }>(request, "/projects", {
+          name,
+          scope: target,
+        });
+        const nativeId = randomUUID();
+        const accepted = await apiPost<{ session: { id: string } }>(
+          request,
+          "/sessions/archive/upload",
+          {
+            project: name,
+            source_id: name,
+            agent,
+            session_id: nativeId,
+            title: `Continue ${agent} archived work`,
+            metadata: {
+              cwd: sourceCwd,
+              repository: remote,
+              branch: "archive/test",
+              commit,
+              subdirectory,
             },
-          ],
-        },
-      },
-    );
-    await gotoView(page, "sessions");
-    await page.goto(`/sessions?project=${project.id}`);
-    await page.getByTestId("archive-disclosure").locator("summary").click();
-    await page
-      .locator(`[data-testid="archive-session-row"][data-archive-id="${accepted.session.id}"]`)
-      .click();
-    await page.getByTestId("archive-resume").click();
-    await page.waitForURL(/\/terminals\/[^/]+$/);
-    const terminalId = new URL(page.url()).pathname.split("/").at(-1);
-    const terminal = await apiGet<{
-      cwd: string;
-      kind: string;
-      live_session_id: string;
-      status: string;
-      pid: number | null;
-    }>(request, `/terminals/${terminalId}`);
-    expect(terminal.kind).toBe(agent);
-    expect(terminal.status).toBe("running");
-    expect(terminal.pid).toBeGreaterThan(0);
-    expect(await git("-C", terminal.cwd, "rev-parse", "HEAD")).toBe(commit);
-    expect(terminal.cwd.replace(/\\/g, "/")).toContain("/.orc/worktrees/");
-    if (subdirectory)
-      expect(terminal.cwd.replace(/\\/g, "/").endsWith(`/${subdirectory}`)).toBe(true);
-    const archive = await apiGet<{
-      revisions: unknown[];
-      handoffs: { revision: number; handoff_id: string }[];
-    }>(request, `/sessions/archive/${accepted.session.id}`);
-    expect(archive.revisions).toHaveLength(1);
-    expect(archive.handoffs).toHaveLength(1);
-    expect(archive.handoffs[0]?.revision).toBe(1);
-    const stopped = await request.delete(`${API_BASE}/terminals/${terminalId}`, {
-      headers: AUTH_HEADERS,
+            bundle: {
+              version: 1,
+              files: [
+                {
+                  path: "session.jsonl",
+                  content: nativeContent(agent, nativeId, sourceCwd, "Continue archived work"),
+                },
+              ],
+            },
+          },
+        );
+        await gotoView(page, "sessions");
+        await page.goto(`/sessions?project=${project.id}`);
+        await page.getByTestId("archive-disclosure").locator("summary").click();
+        await page
+          .locator(`[data-testid="archive-session-row"][data-archive-id="${accepted.session.id}"]`)
+          .click();
+        await expect(page.getByTestId("archive-resume")).toHaveText("Resume");
+        if (destination === "chat") {
+          const handoffResponse = page.waitForResponse(
+            (response) =>
+              response.url().endsWith(`/api/sessions/archive/${accepted.session.id}/resume`) &&
+              response.request().method() === "POST",
+          );
+          const prepared = page.waitForResponse(
+            (response) =>
+              response.url().endsWith("/api/chat/threads") &&
+              response.request().method() === "POST",
+          );
+          await page.getByTestId("archive-resume").click();
+          const handoff = await (await handoffResponse).json();
+          const thread = await (await prepared).json();
+          await expect(page.getByTestId("chat-panel").filter({ visible: true })).toBeVisible();
+          expect(handoff.source_session_id).toBe(nativeId);
+          expect(thread.runtimeId).toBe(handoff.session_id);
+          expect(thread.sourceId).toBe(handoff.live_session_id);
+          expect(thread.config.agent).toBe(agent);
+          expect(thread.projectId).toBe(project.id);
+          expect(await git("-C", thread.cwd, "rev-parse", "HEAD")).toBe(commit);
+          expect(thread.cwd.replace(/\\/g, "/")).toContain("/.orc/worktrees/");
+          return;
+        }
+        await page.getByTestId("archive-resume-menu").click();
+        await page.getByTestId("archive-resume-terminal").click();
+        await page.waitForURL(/\/terminals\/[^/]+$/);
+        const terminalId = new URL(page.url()).pathname.split("/").at(-1);
+        const terminal = await apiGet<{
+          cwd: string;
+          kind: string;
+          live_session_id: string;
+          status: string;
+          pid: number | null;
+        }>(request, `/terminals/${terminalId}`);
+        expect(terminal.kind).toBe(agent);
+        expect(terminal.status).toBe("running");
+        expect(terminal.pid).toBeGreaterThan(0);
+        expect(await git("-C", terminal.cwd, "rev-parse", "HEAD")).toBe(commit);
+        expect(terminal.cwd.replace(/\\/g, "/")).toContain("/.orc/worktrees/");
+        if (subdirectory)
+          expect(terminal.cwd.replace(/\\/g, "/").endsWith(`/${subdirectory}`)).toBe(true);
+        const archive = await apiGet<{
+          revisions: unknown[];
+          handoffs: { revision: number; handoff_id: string }[];
+        }>(request, `/sessions/archive/${accepted.session.id}`);
+        expect(archive.revisions).toHaveLength(1);
+        expect(archive.handoffs).toHaveLength(1);
+        expect(archive.handoffs[0]?.revision).toBe(1);
+        const stopped = await request.delete(`${API_BASE}/terminals/${terminalId}`, {
+          headers: AUTH_HEADERS,
+        });
+        expect(stopped.status()).toBe(204);
+      } finally {
+        await page.goto("about:blank");
+        for (const id of terminalIds) {
+          const response = await request.delete(`${API_BASE}/terminals/${id}`, {
+            headers: AUTH_HEADERS,
+          });
+          expect([204, 404]).toContain(response.status());
+        }
+      }
     });
-    expect(stopped.status()).toBe(204);
-  });
+  }
 }

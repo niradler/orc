@@ -26,6 +26,8 @@ import {
   ChatThreadSchema,
   ChatWorkspaceSchema,
   chatSystemPrompt,
+  nativeChatAgent,
+  nativeChatResumeUnavailableReason,
 } from "@orc/core/chat";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
 import { loadConfig } from "@orc/core/config";
@@ -34,12 +36,20 @@ import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/e
 import { createLogger } from "@orc/core/logger";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import type { PushMessage } from "@orc/core/push";
+import {
+  type SessionFile,
+  UPLOAD_MAX_BYTES,
+  UPLOAD_MAX_FILES,
+  type UploadFile,
+} from "@orc/core/session-file-types";
+import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
@@ -292,9 +302,10 @@ async function newThread(
       where: and(eq(gateway_sessions.id, sourceId), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
     });
     if (!source) throw new NotFoundError("Session", sourceId);
-    if (!["claude", "codex"].includes(source.backend))
+    const agent = nativeChatAgent(source.backend);
+    if (!agent)
       throw new ValidationError(
-        "Chat resume currently supports Claude and Codex. Use Terminals to resume other agents.",
+        nativeChatResumeUnavailableReason(source.backend) ?? "This session cannot resume in chat.",
       );
     if (
       !source.runtime_session_id ||
@@ -302,17 +313,26 @@ async function newThread(
       !source.cwd
     )
       throw new ValidationError("Session has no valid native session identity or working folder.");
-    if (source.status === "running" || source.status === "idle")
-      throw new ConflictError("End the original agent session before resuming it in chat.");
     await getHandoffService().verifyResume(source.id);
     const runtime = hostRuntime(execHostFor(source.execution_host ?? null));
+    if (
+      source.backend !== "codex" &&
+      (source.status === "running" || source.status === "idle") &&
+      source.pid &&
+      (await runtime.processAlive(source.pid))
+    )
+      throw new ConflictError(
+        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+      );
     if (source.backend === "codex" && (await codexWriterOwned(runtime, source.runtime_session_id)))
       throw new ConflictError("End the original agent session before resuming it in chat.");
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
-    thread.config.agent = source.backend;
+    thread.config.agent = agent;
     thread.config.model = model ?? source.model ?? "";
-    thread.backend = source.backend === "codex" ? "codex-cli" : "claude";
+    thread.backend =
+      source.backend === "codex" ? "codex-cli" : source.backend === "claude" ? "claude" : "acpx";
+    if (source.project_id) thread.projectId = source.project_id;
     thread.runtimeId = source.runtime_session_id;
     thread.cwd = source.cwd;
     thread.host = source.execution_host ?? null;
@@ -697,6 +717,7 @@ async function checkChatWorkspaceRules(thread: ChatThread, cwd = thread.cwd): Pr
 
 const requestSchema = z
   .object({
+    projectId: z.string().min(1).max(100).optional(),
     messages: z
       .array(
         z
@@ -739,282 +760,386 @@ app.openapi(
       },
     },
   }),
-  async (c) => {
-    const body = c.req.valid("json");
-    const thread = body.threadId
-      ? requireThread(body.threadId)
-      : await newThread(body.agent, body.model, undefined, body.workspace);
-    if (body.threadId && body.workspace)
-      throw new ValidationError("An existing conversation keeps its working folder.");
-    rememberTerminalFolder(thread.cwd, thread.host);
-    if (body.threadId && body.agent && body.agent !== thread.config.agent)
-      throw new ValidationError("Start a new chat to change agents.");
-    if (body.threadId && thread.messages.length && !thread.runtimeId)
-      throw new ConflictError(
-        "The previous turn did not establish a resumable session. Start a new chat.",
-      );
-    if (body.model !== undefined) thread.config.model = body.model;
-    await checkChatWorkspaceRules(thread);
-    const input = [...body.messages]
-      .reverse()
-      .find((message) => message.role === "user")
-      ?.content.trim();
-    if (!input) throw new ValidationError("A user message is required.");
-    if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
-      throw new ValidationError("This chat reached its history size limit. Start a new chat.");
-    const key = thread.runtimeId
-      ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
-      : thread.id;
-    if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
-      throw new ConflictError("This session is already responding.");
-    if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
-    if (body.permissionMode !== undefined) {
-      if (!["codex", "claude"].includes(thread.config.agent))
-        throw new ValidationError("Permission modes are supported by Claude and Codex.");
-      thread.config.permissionMode = body.permissionMode;
-    }
-    if (runs.size >= 4)
-      throw new ConflictError("All chat workers are busy. Try again when a response finishes.");
-    const mock = process.env.ORC_E2E_CHAT_MOCK === "1";
-    if (!mock && thread.backend === "acpx" && thread.config.mcp === "orc")
-      throw new ValidationError(
-        "The ORC MCP connection is supported by Claude and Codex. Select host configuration in Settings to use other agents.",
-      );
-    const backend = createBackend(thread.backend);
-    active.add(key);
-    const runId = crypto.randomUUID();
-    let stopped = false;
-    let halt = () => {};
-    const halted = new Promise<void>((resolve) => {
-      halt = resolve;
-    });
-    const run: ChatRun = {
-      session: null,
-      permissions: new Set(),
-      questions: new Map(),
-      threadId: thread.id,
-      thread,
-      key,
-      events: [],
-      listeners: new Set(),
-      stop: () => {
-        stopped = true;
-        halt();
-        void run.session?.close().catch(() => {});
-      },
-    };
-    runs.set(runId, run);
-    try {
-      if (!mock) {
-        const check = await backend.preflight({ executionHost: thread.host });
-        if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
-      }
-      if (!body.threadId && body.workspace?.worktree) {
-        const host = selectedTerminalHost(loadConfig(), thread.host);
-        const cwd = await prepareSessionDirectory(
-          { cwd: thread.cwd, worktree: true },
-          {
-            ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
-            validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
+  async (c) => streamChat(c, c.req.valid("json")),
+);
+
+let pendingUploads = 0;
+app.use("/chat/uploads", async (_c, next) => {
+  if (pendingUploads >= 4 || runs.size >= 4)
+    throw new ConflictError("All upload workers are busy. Try again shortly.");
+  pendingUploads++;
+  try {
+    await next();
+  } finally {
+    pendingUploads--;
+  }
+});
+app.use("/chat/uploads", bodyLimit({ maxSize: UPLOAD_MAX_BYTES + 1_000_000 }));
+const uploadFileSchema = z.instanceof(File).openapi({ type: "string", format: "binary" });
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/uploads",
+    tags: ["Chat"],
+    request: {
+      body: {
+        content: {
+          "multipart/form-data": {
+            schema: z.object({
+              payload: z.string().max(600000),
+              files: z.union([uploadFileSchema, z.array(uploadFileSchema)]),
+            }),
           },
-        );
-        if (cwd === thread.cwd)
-          throw new ValidationError("Choose a Git repository folder to create a worktree.");
-        thread.cwd = cwd;
-      }
-    } catch (error) {
-      active.delete(key);
-      runs.delete(runId);
-      throw error;
-    }
-    thread.messages.push({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: input,
-      timestamp: Date.now(),
-    });
-    if (thread.title === "New chat") thread.title = input.slice(0, 100);
-    const assistant: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: "",
-      timestamp: Date.now(),
-      agent: thread.config.agent,
-      activity: [],
-    };
-    thread.updatedAt = Date.now();
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Chat events after saving attached files",
+        content: { "text/event-stream": { schema: z.string() } },
+      },
+    },
+  }),
+  async (c) => {
+    const form = c.req.valid("form");
+    const files = Array.isArray(form.files) ? form.files : [form.files];
+    if (
+      !files.length ||
+      files.length > UPLOAD_MAX_FILES ||
+      files.reduce((sum, file) => sum + file.size, 0) > UPLOAD_MAX_BYTES
+    )
+      throw new ValidationError("Attach at most 10 files, totaling at most 20 MB");
+    let payload: unknown;
     try {
-      store().save(thread);
-    } catch (error) {
-      active.delete(key);
-      runs.delete(runId);
-      throw error;
+      payload = JSON.parse(form.payload);
+    } catch {
+      throw new ValidationError("Invalid upload message");
     }
-    const execute = async () => {
-      const timer = setTimeout(run.stop, 15 * 60000);
-      const emit = async (event: ChatEvent) => {
-        if (event.type === "text") assistant.content += event.text;
-        assistant.activity = appendChatActivity(assistant.activity ?? [], event);
-        publish(run, event);
-      };
-      try {
-        await emit({ type: "thread", thread, runId });
-        if (mock) {
-          // "Respond after 2000ms" holds the mock turn open for background-run tests.
-          await Promise.race([
-            Bun.sleep(Math.min(Number(input.match(/after (\d+)ms/i)?.[1] ?? 75), 10000)),
-            halted,
-          ]);
-          if (!stopped)
-            await emit({
-              type: "text",
-              text: input.match(/Reply with exactly:\s*([^.?!\n]+)[.?!]?/i)?.[1]?.trim() || input,
-            });
-          await Bun.sleep(75);
-          thread.runtimeId ??= `mock-${thread.id}`;
-        } else {
-          const opts: SessionOpts = {
-            toolAllowlist: thread.toolAllowlist,
-            chatAgentOptions: thread.config.agentOptions[thread.config.agent],
-            interactive: true,
-            attentionContext: { chatThreadId: thread.id, sessionTitle: thread.title },
-            cwd: thread.cwd,
-            executionHost: thread.host,
-            autoApprove: thread.config.autoApprove,
-            permissionMode: ["claude", "codex"].includes(thread.config.agent)
-              ? thread.config.permissionMode
-              : undefined,
-            model: thread.config.model || undefined,
-            systemPromptAppend: chatSystemPrompt(thread.config.system),
-            orcMcp: thread.config.mcp === "orc",
-            orcMcpMode: "meta",
-            mcpAlwaysLoad: true,
-            acpxAgent: thread.config.agent,
-          };
-          if (thread.sourceId) {
-            await getHandoffService().verifyResume(thread.sourceId);
-            if (
-              thread.config.agent === "codex" &&
-              thread.runtimeId &&
-              (await codexWriterOwned(hostRuntime(execHostFor(thread.host)), thread.runtimeId))
-            )
-              throw new ConflictError("End the original agent session before resuming it in chat.");
-          }
-          run.session = thread.runtimeId
-            ? await backend.resumeSession(thread.runtimeId, opts)
-            : await backend.startSession(opts);
-          if (stopped) return;
-          const prompt =
-            thread.backend === "acpx"
-              ? [thread.config.system, input].filter(Boolean).join("\n\n")
-              : input;
-          await run.session.send(prompt);
-          let receivedResult = false;
-          let outputBytes = 0;
-          for await (const event of run.session.events()) {
-            if (stopped) break;
-            outputBytes += JSON.stringify(event).length;
-            if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
-            if (event.type === "result") {
-              if (
-                event.data.runtimeSessionId &&
-                !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(event.data.runtimeSessionId)
-              )
-                throw new Error("The agent returned an invalid session identity.");
-              if (
-                thread.runtimeId &&
-                event.data.runtimeSessionId &&
-                thread.runtimeId !== event.data.runtimeSessionId
-              )
-                throw new Error(
-                  "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
-                );
-              thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
-              if (thread.sourceId) await getHandoffService().markResumed(thread.sourceId);
-              receivedResult = true;
-              break;
-            }
-            if (
-              event.type === "text" ||
-              event.type === "thinking" ||
-              event.type === "system_status"
-            )
-              await emit({ type: event.type, text: event.data });
-            else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
-            else if (event.type === "permission_request") {
-              run.permissions.add(event.data.requestId);
-              changes.publish("human-requests");
-              await emit(event);
-              notify(
-                "chat",
-                chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
-              );
-            } else if (event.type === "question_request") {
-              run.questions.set(event.data.requestId, event.data);
-              changes.publish("human-requests");
-              await emit(event);
-              notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
-            } else if (event.type === "request_resolved") {
-              run.permissions.delete(event.data.requestId);
-              run.questions.delete(event.data.requestId);
-              changes.publish("human-requests");
-              await emit({ type: "request_resolved", requestId: event.data.requestId });
-            } else if (event.type === "error") await emit({ type: "error", message: event.data });
-          }
-          if (!receivedResult && !stopped)
-            await emit({
-              type: "error",
-              message:
-                "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
-            });
-          if (receivedResult && !thread.runtimeId)
-            await emit({
-              type: "error",
-              message:
-                "The agent returned no session identity; this conversation cannot continue safely.",
-            });
-        }
-      } catch (error) {
-        logger.error("Chat turn failed", { error, runId });
+    const parsed = requestSchema.safeParse(payload);
+    if (!parsed.success) throw new ValidationError("Invalid upload message");
+    const body = parsed.data;
+    const uploads: UploadFile[] = [];
+    for (const file of files)
+      uploads.push({
+        name: file.name,
+        mimeType: file.type,
+        data: new Uint8Array(await file.arrayBuffer()),
+      });
+    return streamChat(c, body, uploads);
+  },
+);
+
+async function streamChat(
+  c: Context,
+  body: z.infer<typeof requestSchema>,
+  uploads: UploadFile[] = [],
+) {
+  const thread = body.threadId
+    ? requireThread(body.threadId)
+    : await newThread(body.agent, body.model, undefined, body.workspace);
+  if (!body.threadId && body.projectId) thread.projectId = body.projectId;
+  if (body.threadId && body.projectId && body.projectId !== thread.projectId)
+    throw new ValidationError("An existing conversation keeps its project");
+  const project = thread.projectId
+    ? getSqlite()
+        .query<{ upload_directory: string | null }, [string]>(
+          "SELECT upload_directory FROM projects WHERE id=? AND status='active'",
+        )
+        .get(thread.projectId)
+    : null;
+  if (uploads.length && thread.projectId && !project)
+    throw new ValidationError("Select an active project for uploads");
+  if (body.threadId && body.workspace)
+    throw new ValidationError("An existing conversation keeps its working folder.");
+  rememberTerminalFolder(thread.cwd, thread.host);
+  if (body.threadId && body.agent && body.agent !== thread.config.agent)
+    throw new ValidationError("Start a new chat to change agents.");
+  if (body.threadId && thread.messages.length && !thread.runtimeId)
+    throw new ConflictError(
+      "The previous turn did not establish a resumable session. Start a new chat.",
+    );
+  if (body.model !== undefined) thread.config.model = body.model;
+  await checkChatWorkspaceRules(thread);
+  const input = [...body.messages]
+    .reverse()
+    .find((message) => message.role === "user")
+    ?.content.trim();
+  if (!input) throw new ValidationError("A user message is required.");
+  if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
+    throw new ValidationError("This chat reached its history size limit. Start a new chat.");
+  const key = thread.runtimeId
+    ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
+    : thread.id;
+  if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
+    throw new ConflictError("This session is already responding.");
+  if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
+  if (body.permissionMode !== undefined) {
+    if (!["codex", "claude"].includes(thread.config.agent))
+      throw new ValidationError("Permission modes are supported by Claude and Codex.");
+    thread.config.permissionMode = body.permissionMode;
+  }
+  if (runs.size >= 4)
+    throw new ConflictError("All chat workers are busy. Try again when a response finishes.");
+  const mock = process.env.ORC_E2E_CHAT_MOCK === "1";
+  const backend = createBackend(thread.backend);
+  active.add(key);
+  const runId = crypto.randomUUID();
+  let stopped = false;
+  let halt = () => {};
+  const halted = new Promise<void>((resolve) => {
+    halt = resolve;
+  });
+  const run: ChatRun = {
+    session: null,
+    permissions: new Set(),
+    questions: new Map(),
+    threadId: thread.id,
+    thread,
+    key,
+    events: [],
+    listeners: new Set(),
+    stop: () => {
+      stopped = true;
+      halt();
+      void run.session?.close().catch(() => {});
+    },
+  };
+  runs.set(runId, run);
+  let attachments: SessionFile[] = [];
+  try {
+    if (!mock) {
+      const check = await backend.preflight({ executionHost: thread.host });
+      if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
+    }
+    if (!body.threadId && body.workspace?.worktree) {
+      const host = selectedTerminalHost(loadConfig(), thread.host);
+      const cwd = await prepareSessionDirectory(
+        { cwd: thread.cwd, worktree: true },
+        {
+          ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
+          validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
+        },
+      );
+      if (cwd === thread.cwd)
+        throw new ValidationError("Choose a Git repository folder to create a worktree.");
+      thread.cwd = cwd;
+    }
+    attachments = await storeSessionFiles({
+      host: execHostFor(thread.host),
+      cwd: thread.cwd,
+      sessionId: thread.id,
+      directory: project?.upload_directory ?? null,
+      files: uploads,
+    });
+  } catch (error) {
+    active.delete(key);
+    runs.delete(runId);
+    throw error;
+  }
+  thread.messages.push({
+    id: crypto.randomUUID(),
+    role: "user",
+    content: input,
+    ...(attachments.length ? { attachments } : {}),
+    timestamp: Date.now(),
+  });
+  if (thread.title === "New chat") thread.title = input.slice(0, 100);
+  const assistant: ChatMessage = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: "",
+    timestamp: Date.now(),
+    agent: thread.config.agent,
+    activity: [],
+  };
+  thread.updatedAt = Date.now();
+  try {
+    store().save(thread);
+  } catch (error) {
+    active.delete(key);
+    runs.delete(runId);
+    throw error;
+  }
+  const execute = async () => {
+    const timer = setTimeout(run.stop, 15 * 60000);
+    const emit = async (event: ChatEvent) => {
+      if (event.type === "text") assistant.content += event.text;
+      assistant.activity = appendChatActivity(assistant.activity ?? [], event);
+      publish(run, event);
+    };
+    try {
+      await emit({ type: "thread", thread, runId });
+      if (mock) {
+        // "Respond after 2000ms" holds the mock turn open for background-run tests.
+        await Promise.race([
+          Bun.sleep(Math.min(Number(input.match(/after (\d+)ms/i)?.[1] ?? 75), 10000)),
+          halted,
+        ]);
         if (!stopped)
+          await emit({
+            type: "text",
+            text: input.match(/Reply with exactly:\s*([^.?!\n]+)[.?!]?/i)?.[1]?.trim() || input,
+          });
+        await Bun.sleep(75);
+        thread.runtimeId ??= `mock-${thread.id}`;
+      } else {
+        const opts: SessionOpts = {
+          toolAllowlist: thread.toolAllowlist,
+          chatAgentOptions: thread.config.agentOptions[thread.config.agent],
+          interactive: true,
+          attentionContext: { chatThreadId: thread.id, sessionTitle: thread.title },
+          cwd: thread.cwd,
+          executionHost: thread.host,
+          autoApprove: thread.config.autoApprove,
+          permissionMode: ["claude", "codex"].includes(thread.config.agent)
+            ? thread.config.permissionMode
+            : undefined,
+          model: thread.config.model || undefined,
+          systemPromptAppend: chatSystemPrompt(thread.config.system),
+          orcMcp: thread.config.mcp === "orc",
+          orcMcpMode: "meta",
+          mcpAlwaysLoad: true,
+          acpxAgent: thread.config.agent,
+          acpxNativeSessionId:
+            thread.backend === "acpx" && thread.sourceId
+              ? (thread.runtimeId ?? undefined)
+              : undefined,
+        };
+        if (thread.sourceId) {
+          await getHandoffService().verifyResume(thread.sourceId);
+          const source = await getDb().query.gateway_sessions.findFirst({
+            where: and(
+              eq(gateway_sessions.id, thread.sourceId),
+              eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+            ),
+          });
+          if (
+            source &&
+            source.backend !== "codex" &&
+            source.pid &&
+            (source.status === "running" || source.status === "idle") &&
+            (await hostRuntime(execHostFor(source.execution_host ?? null)).processAlive(source.pid))
+          )
+            throw new ConflictError(
+              "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+            );
+          if (
+            thread.config.agent === "codex" &&
+            thread.runtimeId &&
+            (await codexWriterOwned(hostRuntime(execHostFor(thread.host)), thread.runtimeId))
+          )
+            throw new ConflictError("End the original agent session before resuming it in chat.");
+        }
+        run.session = thread.runtimeId
+          ? await backend.resumeSession(thread.runtimeId, opts)
+          : await backend.startSession(opts);
+        if (stopped) return;
+        const prompt =
+          thread.backend === "acpx"
+            ? [thread.config.system, input + uploadPrompt(attachments)].filter(Boolean).join("\n\n")
+            : input + uploadPrompt(attachments);
+        await run.session.send(prompt);
+        let receivedResult = false;
+        let outputBytes = 0;
+        for await (const event of run.session.events()) {
+          if (stopped) break;
+          outputBytes += JSON.stringify(event).length;
+          if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
+          if (event.type === "result") {
+            if (
+              event.data.runtimeSessionId &&
+              !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(event.data.runtimeSessionId)
+            )
+              throw new Error("The agent returned an invalid session identity.");
+            if (
+              thread.runtimeId &&
+              event.data.runtimeSessionId &&
+              thread.runtimeId !== event.data.runtimeSessionId
+            )
+              throw new Error(
+                "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
+              );
+            thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
+            if (thread.sourceId) await getHandoffService().markResumed(thread.sourceId);
+            receivedResult = true;
+            break;
+          }
+          if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
+            await emit({ type: event.type, text: event.data });
+          else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
+          else if (event.type === "permission_request") {
+            run.permissions.add(event.data.requestId);
+            changes.publish("human-requests");
+            await emit(event);
+            notify(
+              "chat",
+              chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
+            );
+          } else if (event.type === "question_request") {
+            run.questions.set(event.data.requestId, event.data);
+            changes.publish("human-requests");
+            await emit(event);
+            notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
+          } else if (event.type === "request_resolved") {
+            run.permissions.delete(event.data.requestId);
+            run.questions.delete(event.data.requestId);
+            changes.publish("human-requests");
+            await emit({ type: "request_resolved", requestId: event.data.requestId });
+          } else if (event.type === "error") await emit({ type: "error", message: event.data });
+        }
+        if (!receivedResult && !stopped)
           await emit({
             type: "error",
             message:
-              error instanceof Error ? error.message : "The agent could not complete the response.",
-          }).catch(() => {});
-      } finally {
-        clearTimeout(timer);
-        const nativeId = run.session?.getRuntimeSessionId?.();
-        if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
-          thread.runtimeId = nativeId;
-        await run.session?.close().catch(() => {});
-        if (assistant.content || assistant.activity?.length) thread.messages.push(assistant);
-        thread.updatedAt = Date.now();
-        try {
-          store().save(thread);
-          if (!stopped) publish(run, { type: "session", runtimeId: thread.runtimeId });
-          if (!stopped && assistant.content)
-            notify("chat", chatPush(thread, "Reply ready", truncate(assistant.content, 180)));
-        } catch (error) {
-          logger.error("Chat history could not be saved", { error, runId });
-          if (!stopped)
-            publish(run, {
-              type: "error",
-              message: "This response could not be saved. Start a new chat before continuing.",
-            });
-        } finally {
-          active.delete(key);
-          runs.delete(runId);
-          changes.publish("human-requests");
-          publish(run, { type: "done" });
-          for (const listener of run.listeners) listener(null);
-        }
+              "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
+          });
+        if (receivedResult && !thread.runtimeId)
+          await emit({
+            type: "error",
+            message:
+              "The agent returned no session identity; this conversation cannot continue safely.",
+          });
       }
-    };
-    void execute();
-    return follow(c, run);
-  },
-);
+    } catch (error) {
+      logger.error("Chat turn failed", { error, runId });
+      if (!stopped)
+        await emit({
+          type: "error",
+          message:
+            error instanceof Error ? error.message : "The agent could not complete the response.",
+        }).catch(() => {});
+    } finally {
+      clearTimeout(timer);
+      const nativeId = run.session?.getRuntimeSessionId?.();
+      if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
+        thread.runtimeId = nativeId;
+      await run.session?.close().catch(() => {});
+      if (assistant.content || assistant.activity?.length) thread.messages.push(assistant);
+      thread.updatedAt = Date.now();
+      try {
+        store().save(thread);
+        if (!stopped) publish(run, { type: "session", runtimeId: thread.runtimeId });
+        if (!stopped && assistant.content)
+          notify("chat", chatPush(thread, "Reply ready", truncate(assistant.content, 180)));
+      } catch (error) {
+        logger.error("Chat history could not be saved", { error, runId });
+        if (!stopped)
+          publish(run, {
+            type: "error",
+            message: "This response could not be saved. Start a new chat before continuing.",
+          });
+      } finally {
+        active.delete(key);
+        runs.delete(runId);
+        changes.publish("human-requests");
+        publish(run, { type: "done" });
+        for (const listener of run.listeners) listener(null);
+      }
+    }
+  };
+  void execute();
+  return follow(c, run);
+}
 
 app.openapi(
   createRoute({

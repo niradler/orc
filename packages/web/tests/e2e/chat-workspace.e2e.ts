@@ -46,6 +46,69 @@ async function workspaceFixture(page: import("@playwright/test").Page, hosts = [
   });
 }
 
+for (const width of [1440, 390]) {
+  test(`workspace path keeps its ending and exposes a copyable full path at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    await workspaceFixture(page);
+    await page.setViewportSize({ width, height: 900 });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await openChat(page);
+    const path = page.getByTestId("chat-workspace-path");
+    const fullPath = "/local/projects/a-long-project-name/packages/application";
+    await expect(path).toBeVisible();
+    await expect(path).toHaveText(fullPath);
+    const truncation = await path.locator("span").evaluate((element) => ({
+      direction: getComputedStyle(element).direction,
+      overflow: getComputedStyle(element).textOverflow,
+      clipped: element.scrollWidth > element.clientWidth,
+    }));
+    expect(truncation).toMatchObject({ direction: "rtl", overflow: "ellipsis" });
+    expect(truncation.clipped).toBe(true);
+    for (const theme of ["dark", "light"]) {
+      await request.patch("/api/settings", { headers, data: { theme } });
+      await page.reload();
+      await path.hover();
+      const details = page.getByTestId("chat-workspace-path-details");
+      await expect(details).toBeVisible();
+      await expect(page.getByTestId("chat-workspace-full-path")).toHaveText(fullPath);
+      await page.getByTestId("chat-workspace-copy-path").click();
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(fullPath);
+      await expect(page.getByTestId("chat-workspace-copy-path")).toHaveAttribute(
+        "aria-label",
+        "Folder path copied",
+      );
+      const bounds = await details.boundingBox();
+      expect(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`workspace-path-${theme}-${width}.png`) });
+      await page.keyboard.press("Escape");
+      await expect(details).toBeHidden();
+    }
+    await path.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("chat-workspace-path-details")).toBeVisible();
+    await expect(page.getByTestId("chat-workspace-copy-path")).toBeFocused();
+  });
+}
+
+test("an unset workspace shows and copies the resolved default folder", async ({ page }) => {
+  await page.route("**/api/ssh", (route) =>
+    route.fulfill({ json: { host: null, hosts: [], supported: true } }),
+  );
+  await page.route("**/api/terminals/browse?**", (route) =>
+    route.fulfill({
+      json: { host: null, path: "C:\\Users\\Nir", parent: "C:\\Users", directories: [] },
+    }),
+  );
+  await page.addInitScript(() => localStorage.removeItem("orc_folder_history"));
+  await openChat(page);
+  await expect(page.getByTestId("chat-workspace-path")).toHaveText("C:\\Users\\Nir");
+  await page.getByTestId("chat-workspace-path").click();
+  await expect(page.getByTestId("chat-workspace-full-path")).toHaveText("C:\\Users\\Nir");
+  await expect(page.getByTestId("chat-workspace-copy-path")).toBeEnabled();
+});
+
 test("workspace icons stay inside the composer and preserve draft and host-scoped selections", async ({
   page,
   request,
@@ -144,6 +207,11 @@ test("switching to a host without folder history turns off worktree and preserve
   page,
 }) => {
   await workspaceFixture(page, ["lab", "empty-host"]);
+  await page.route("**/api/terminals/browse?host=empty-host", (route) =>
+    route.fulfill({
+      json: { host: "empty-host", path: "/home/empty-host", parent: "/home", directories: [] },
+    }),
+  );
   await openChat(page);
   await page.getByTestId("chat-input").fill("Draft for a new execution host");
   const worktree = page.getByTestId("chat-workspace-worktree");
@@ -153,7 +221,7 @@ test("switching to a host without folder history turns off worktree and preserve
   await page.getByTestId("chat-workspace-host-option").filter({ hasText: "empty-host" }).click();
   await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
     "title",
-    "empty-host: Default folder",
+    "empty-host: /home/empty-host",
   );
   await expect(worktree).toBeDisabled();
   await expect(worktree).toHaveAttribute("aria-pressed", "false");

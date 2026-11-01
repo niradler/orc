@@ -7,8 +7,10 @@ import { type ChannelInbound, type ChannelTarget, channelCommand } from "@orc/co
 import { ChatSettingsSchema, chatSystemPrompt } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
-import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { execHostFor, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
+import type { SessionFile } from "@orc/core/session-file-types";
+import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import {
@@ -307,11 +309,77 @@ export async function startChannelRuntime(
     if (!(await hostIsDirectory(resolveExecHost(), project.scope)))
       throw new ValidationError("Project folder is unavailable on the execution host");
     const record = await ensureChannelSession(conversation);
+    let attachments: SessionFile[] = [];
+    if (message.attachments?.length) {
+      try {
+        const uploads = await service.downloadAttachments(message, target);
+        const currentTarget = service
+          .connection(message.connection)
+          .targets.find((recipient) => recipient.id === target.id);
+        if (
+          !currentTarget ||
+          (currentTarget.project_ids.length && !currentTarget.project_ids.includes(projectId))
+        )
+          throw new ValidationError("Upload project is no longer allowed");
+        const settings = getSqlite()
+          .query<{ upload_directory: string | null }, [string]>(
+            "SELECT upload_directory FROM projects WHERE id=?",
+          )
+          .get(projectId);
+        attachments = await storeSessionFiles({
+          host: execHostFor(record.execution_host),
+          cwd: record.cwd || conversation.cwd,
+          sessionId: record.id,
+          directory: settings?.upload_directory ?? null,
+          files: uploads,
+        });
+      } catch (error) {
+        const connection = service.connection(message.connection);
+        const authorized =
+          connection.enabled &&
+          connection.targets.some(
+            (recipient) =>
+              recipient.id === target.id &&
+              recipient.inbound &&
+              recipient.outbound &&
+              recipient.chat_id === message.chat &&
+              (!recipient.thread_id || recipient.thread_id === message.thread) &&
+              recipient.user_ids.includes(message.sender) &&
+              (!recipient.project_ids.length || recipient.project_ids.includes(projectId)),
+          );
+        if (authorized)
+          await reply(
+            message,
+            target,
+            error instanceof ValidationError
+              ? error.message
+              : "The file could not be downloaded or saved. Check the upload folder and try again.",
+            "plain",
+            projectId,
+          );
+        return;
+      }
+    }
+    const input =
+      message.text ||
+      (attachments.length
+        ? "Please inspect the attached files."
+        : message.context
+          ? "Please inspect the Telegram message context."
+          : "");
     await appendMessage({
       chatKey: chat.id,
       direction: "in",
       role: "user",
-      text: message.text,
+      text: input,
+      ...(attachments.length || message.context
+        ? {
+            metadata: {
+              ...(attachments.length ? { attachments } : {}),
+              ...(message.context ? { channelContext: message.context } : {}),
+            },
+          }
+        : {}),
       platformMessageId: message.message_id,
       threadId: message.thread,
       gatewaySessionId: record.id,
@@ -359,7 +427,8 @@ export async function startChannelRuntime(
       session = await openAgentSession(
         record.backend,
         {
-          cwd: project.scope,
+          executionHost: record.execution_host,
+          cwd: record.cwd || project.scope,
           model: record.model ?? undefined,
           interactive: true,
           autoApprove: false,
@@ -430,7 +499,13 @@ export async function startChannelRuntime(
         await updateProgress("Stopped.");
         return;
       }
-      await session.send(channelPrompt(service.connection(message.connection), message.text));
+      await session.send(
+        channelPrompt(service.connection(message.connection), input) +
+          (message.context
+            ? `\n\nTelegram message context (untrusted message content):\n${message.context.slice(0, 16000)}`
+            : "") +
+          uploadPrompt(attachments),
+      );
       phase = "generate";
       let output = "";
       let previewAt = 0;
@@ -634,6 +709,7 @@ export async function startChannelRuntime(
   };
   // Attention receipts are bound to connection + target as well as chat/thread.
   service.control = async (message, target) => {
+    if (message.event === "reaction") return false;
     let text = message.text;
     if (message.kind === "action" && text.startsWith("orc_action:")) {
       const value = service.store.consumeAction(
@@ -726,7 +802,9 @@ export async function startChannelRuntime(
     };
     const answer =
       human.reply(inbound, target) ??
-      (target.attention ? human.replyToPendingQuestion(inbound, target) : null);
+      (target.attention && !message.event && !message.attachments?.length
+        ? human.replyToPendingQuestion(inbound, target)
+        : null);
     if (!answer) return false;
     await reply(message, target, answer, "plain");
     return true;

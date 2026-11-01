@@ -64,9 +64,10 @@ test("registered agents share idle visibility, transcripts, task links and termi
     await picker.locator(`[data-testid="session-task-option"][data-task-id="${task.id}"]`).click();
     await expect(picker).toBeHidden();
     await expect(row.getByTestId("open-task")).toBeVisible();
-    if (backend !== "cursor") await expect(row.getByTestId("open-terminal-resume")).toBeVisible();
+    if (backend !== "cursor") await expect(row.getByTestId("open-chat-resume")).toBeVisible();
     if (backend !== "cursor") {
       await row.getByTestId("resume-actions-menu").click();
+      await expect(page.getByTestId("open-terminal-resume")).toHaveText("Terminal");
       await expect(page.getByTestId("copy-resume")).toBeVisible();
       await page.keyboard.press("Escape");
     }

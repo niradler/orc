@@ -68,7 +68,7 @@ for (const width of [1440, 390]) {
     await expect(detail.getByTestId("transcript-turn")).toContainText(
       "Inspect the terminal workflow",
     );
-    await expect(detail.getByTestId("open-terminal-resume")).toHaveText("Resume in terminal");
+    await expect(detail.getByTestId("open-chat-resume")).toHaveText("Resume");
     await expect(page.getByTestId("copy-resume")).toHaveCount(0);
     await detail.getByTestId("resume-actions-menu").press("Enter");
     await page.getByTestId("copy-resume").click();

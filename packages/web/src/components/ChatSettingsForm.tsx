@@ -128,7 +128,7 @@ export function ChatSettingsForm() {
               value={config.mcp}
               onChange={(e) => setConfig({ ...config, mcp: e.target.value as ChatSettings["mcp"] })}
             >
-              <option value="orc">Connect ORC MCP (Claude and Codex)</option>
+              <option value="orc">Connect ORC MCP</option>
               <option value="native">Use the agent’s host configuration</option>
             </select>
             <p className="text-xs text-muted-foreground">

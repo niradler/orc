@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { createRoute, z } from "@hono/zod-openapi";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { UploadDirectorySchema } from "@orc/core/session-file-types";
 import { getDb } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
@@ -58,6 +59,7 @@ const ProjectSchema = z
     tags: z.array(z.string()).nullable(),
     obsidian_path: z.string().nullable(),
     max_workers: z.number().int().nullable(),
+    upload_directory: z.string().nullable(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
@@ -77,6 +79,7 @@ const CreateProjectSchema = z
     tags: z.array(z.string()).optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).optional(),
+    upload_directory: UploadDirectorySchema.nullable().optional(),
   })
   .openapi("CreateProject");
 
@@ -95,6 +98,7 @@ const UpdateProjectSchema = z
     tags: z.array(z.string()).nullable().optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).nullable().optional(),
+    upload_directory: UploadDirectorySchema.nullable().optional(),
   })
   .openapi("UpdateProject");
 
@@ -233,6 +237,7 @@ function toDto(p: typeof projects.$inferSelect) {
   return {
     ...p,
     max_workers: p.max_workers ?? null,
+    upload_directory: p.upload_directory ?? null,
     git_remote_url: p.git_remote_url ?? null,
     created_at: p.created_at.toISOString(),
     updated_at: p.updated_at.toISOString(),
@@ -368,6 +373,7 @@ app.openapi(createRoute_, async (c) => {
     tags: body.tags,
     obsidian_path: body.obsidian_path,
     max_workers: body.max_workers,
+    upload_directory: body.upload_directory,
     created_at: now,
     updated_at: now,
   });
@@ -400,6 +406,7 @@ app.openapi(updateRoute, async (c) => {
       ...(body.tags !== undefined ? { tags: body.tags } : {}),
       ...(body.obsidian_path !== undefined ? { obsidian_path: body.obsidian_path } : {}),
       ...(body.max_workers !== undefined ? { max_workers: body.max_workers } : {}),
+      ...(body.upload_directory !== undefined ? { upload_directory: body.upload_directory } : {}),
       updated_at: new Date(),
     })
     .where(eq(projects.id, id));

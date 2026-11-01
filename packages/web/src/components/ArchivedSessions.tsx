@@ -1,5 +1,6 @@
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
@@ -15,11 +16,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useChat } from "@/hooks/useChat";
 import { useProjects } from "@/hooks/useProjects";
 
 export function ArchivedSessions({ projectId }: { projectId: string }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const chat = useChat();
   const qc = useQueryClient();
   const projects = useProjects();
   const [pagination, setPagination] = useState({ key: "", offset: 0 });
@@ -134,6 +138,36 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
     });
   }
 
+  async function resume(destination: "chat" | "terminal"): Promise<void> {
+    await run(async () => {
+      if (!selected) return;
+      const ready = await api.sessions.archiveResume(selected.id, {
+        revision: selected.revision,
+        repository,
+        branch,
+        commit,
+        subdirectory,
+      });
+      if (ready.status !== "ready" || !ready.live_session_id)
+        throw new Error(ready.error || "Session preparation failed");
+      if (destination === "terminal") {
+        const terminal = await api.terminals.create({
+          kind: selected.agent,
+          live_session_id: ready.live_session_id,
+        });
+        navigate(`/terminals/${terminal.id}`);
+      } else {
+        chat.openThread(await api.chat.resume(ready.live_session_id), {
+          projectId: selected.project_id,
+        });
+        setSelected(null);
+        const next = new URLSearchParams(params);
+        next.set("chat", "open");
+        next.delete("session");
+        navigate({ search: next.toString() });
+      }
+    });
+  }
   if (!visible) return null;
   return (
     <section className="mt-4 space-y-3 border-t border-border pt-2" data-testid="session-archive">
@@ -390,31 +424,38 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
               onChange={(e) => setSubdirectory(e.target.value)}
               placeholder="Repository root"
             />
-            <Button
-              data-testid="archive-resume"
-              disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
-              onClick={() =>
-                void run(async () => {
-                  if (!selected) return;
-                  const ready = await api.sessions.archiveResume(selected.id, {
-                    revision: selected.revision,
-                    repository,
-                    branch,
-                    commit,
-                    subdirectory,
-                  });
-                  if (ready.status !== "ready" || !ready.live_session_id)
-                    throw new Error(ready.error || "Session preparation failed");
-                  const terminal = await api.terminals.create({
-                    kind: selected.agent,
-                    live_session_id: ready.live_session_id,
-                  });
-                  navigate(`/terminals/${terminal.id}`);
-                })
-              }
-            >
-              {pending ? "Preparing…" : "Prepare and resume in terminal"}
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                data-testid="archive-resume"
+                disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
+                onClick={() => void resume("chat")}
+              >
+                {pending ? "Preparing…" : "Resume"}
+              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label="More resume options"
+                    data-testid="archive-resume-menu"
+                  >
+                    <ChevronDown size={14} />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-40 p-1" align="start">
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    data-testid="archive-resume-terminal"
+                    disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
+                    onClick={() => void resume("terminal")}
+                  >
+                    Terminal
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            </div>
             {error && (
               <p role="alert" className="text-sm text-error">
                 {error}

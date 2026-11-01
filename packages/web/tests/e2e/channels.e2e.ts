@@ -114,7 +114,10 @@ for (const width of [1440, 390]) {
         .click();
       await editor.getByTestId("channel-enable-replies-me").click();
       await editor.getByTestId("channel-replies-project").selectOption(project.id);
-      await editor.getByTestId("channel-replies-agent").fill("default");
+      await expect(
+        editor.getByTestId("channel-replies-agent").locator('option[value="cursor"]'),
+      ).toHaveCount(1);
+      await editor.getByTestId("channel-replies-agent").selectOption("default");
       await editor.getByTestId("channel-replies-model").fill("test-model");
       await editor.getByTestId("channel-replies-setup").scrollIntoViewIfNeeded();
       await page.screenshot({ path: `../../.claude/docs/channels-replies-${width}.png` });

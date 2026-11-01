@@ -315,7 +315,10 @@ function RequestCard({
               </section>
               {nativeDetails && (
                 <details className="text-xs text-outline">
-                  <summary className="min-h-11 cursor-pointer py-1 sm:min-h-8 [@media(pointer:coarse)]:min-h-11">
+                  <summary
+                    data-testid="attention-native-details-toggle"
+                    className="min-h-11 cursor-pointer py-1 sm:min-h-8 [@media(pointer:coarse)]:min-h-11"
+                  >
                     Full request details
                   </summary>
                   <pre className="whitespace-pre-wrap break-all mt-2">

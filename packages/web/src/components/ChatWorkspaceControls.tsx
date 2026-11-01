@@ -1,4 +1,5 @@
-import { Check, FolderOpen, GitBranch, History, LoaderCircle, Monitor } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Check, Copy, FolderOpen, GitBranch, History, LoaderCircle, Monitor } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, getApiUrl } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
@@ -33,14 +34,29 @@ export function ChatWorkspaceControls() {
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [pathDraft, setPathDraft] = useState<string | null>(null);
+  const [pathOpen, setPathOpen] = useState(false);
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const pathClose = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const keyboardPath = useRef(false);
+  const pathDetails = useRef<HTMLDivElement>(null);
   const host = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
   const history = useFolderHistory(host);
   const cwd = workspace?.cwd ?? history.last;
+  const defaultFolder = useQuery({
+    queryKey: ["chat-default-folder", host],
+    queryFn: () => api.terminals.browse(undefined, host),
+    enabled: !!ssh && !cwd && !thread,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const displayPath = cwd || defaultFolder.data?.path || "~";
+  const copied = copiedPath === displayPath;
   const worktree = workspace?.worktree ?? false;
   const disabled = streaming || !ssh || picking;
   const current = useRef({ host, thread, streaming, activeKey });
   const mounted = useRef(true);
   const folderTrigger = useRef<HTMLButtonElement>(null);
+  const copyTrigger = useRef<HTMLButtonElement>(null);
   const previousConversation = useRef(activeKey);
   current.current = { host, thread, streaming, activeKey };
   useEffect(() => {
@@ -51,11 +67,13 @@ export function ChatWorkspaceControls() {
     setBrowse(false);
     setPathDraft(null);
     setError("");
+    setPathOpen(false);
   }, [activeKey, setBrowse]);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      if (pathClose.current) clearTimeout(pathClose.current);
     };
   }, []);
   useEffect(() => {
@@ -113,8 +131,16 @@ export function ChatWorkspaceControls() {
       setPicking(false);
     }
   };
-  const folderParts = cwd.replace(/[\\/]+$/, "").split(/[\\/]/);
-  const folderName = folderParts[folderParts.length - 1] || cwd || "Default folder";
+  const keepPathOpen = () => {
+    if (pathClose.current) clearTimeout(pathClose.current);
+    setPathOpen(true);
+  };
+  const closePathSoon = () => {
+    if (pathClose.current) clearTimeout(pathClose.current);
+    pathClose.current = setTimeout(() => {
+      if (!pathDetails.current?.contains(document.activeElement)) setPathOpen(false);
+    }, 180);
+  };
   return (
     <div data-testid="chat-workspace" className="chat-workspace-controls min-w-0">
       <fieldset
@@ -297,13 +323,73 @@ export function ChatWorkspaceControls() {
             <GitBranch size={16} />
           </button>
         </ActionHelp>
-        <span
-          data-testid="chat-workspace-path"
-          title={`${host ?? "Local"}: ${cwd || "Default folder"}`}
-          className="sr-only text-xs text-muted-foreground sm:not-sr-only sm:max-w-28 sm:truncate sm:px-1"
-        >
-          {folderName}
-        </span>
+        <Popover open={pathOpen} onOpenChange={setPathOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="chat-workspace-path"
+              title={`${host ?? "Local"}: ${displayPath}`}
+              aria-label={`Workspace folder: ${displayPath}`}
+              onMouseEnter={() => {
+                keyboardPath.current = false;
+                keepPathOpen();
+              }}
+              onMouseLeave={closePathSoon}
+              onBlur={closePathSoon}
+              onClick={(event) => {
+                event.preventDefault();
+                keyboardPath.current = event.detail === 0;
+                keepPathOpen();
+                if (pathOpen && keyboardPath.current) copyTrigger.current?.focus();
+              }}
+              className="workspace-path-trigger min-h-11 min-w-0 flex-1 rounded-md px-1 text-left text-xs text-muted-foreground hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus sm:min-h-8"
+            >
+              <span dir="rtl" className="block truncate text-left">
+                <bdi dir="ltr">{displayPath}</bdi>
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            data-testid="chat-workspace-path-details"
+            ref={pathDetails}
+            side="top"
+            align="end"
+            className="flex w-max max-w-[calc(100vw-2rem)] items-start gap-2 p-2"
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              if (keyboardPath.current) copyTrigger.current?.focus();
+            }}
+            onMouseEnter={keepPathOpen}
+            onMouseLeave={closePathSoon}
+            onFocusCapture={keepPathOpen}
+            onBlurCapture={closePathSoon}
+          >
+            <span
+              className="min-w-0 self-center break-all font-mono text-xs"
+              data-testid="chat-workspace-full-path"
+            >
+              {displayPath}
+            </span>
+            <button
+              type="button"
+              data-testid="chat-workspace-copy-path"
+              ref={copyTrigger}
+              aria-label={copied ? "Folder path copied" : "Copy folder path"}
+              className={iconButton}
+              disabled={!cwd && !defaultFolder.data?.path}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(displayPath);
+                  setCopiedPath(displayPath);
+                } catch {
+                  setError("Could not copy the folder path. Select and copy the full path above.");
+                }
+              }}
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </PopoverContent>
+        </Popover>
       </fieldset>
       {picking && (
         <span role="status" className="basis-full px-2 text-xs text-muted-foreground">

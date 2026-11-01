@@ -15,6 +15,7 @@ import {
   type ChatWorkspace,
 } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
+import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES } from "@orc/core/session-file-types";
 import {
   createContext,
   createElement,
@@ -66,6 +67,8 @@ export interface ChatTab {
   config: ChatConfig;
   messages: ChatMessage[];
   draft: string;
+  files: File[];
+  queuedFiles: Record<string, File[]>;
   queued: ChatMessage[];
   editingQueuedId: string | null;
   queuedDraft: string;
@@ -96,6 +99,8 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     config,
     messages: [],
     draft: "",
+    files: [],
+    queuedFiles: {},
     queued: [],
     editingQueuedId: null,
     queuedDraft: "",
@@ -117,7 +122,12 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
   };
 }
 const isBlank = (tab: ChatTab) =>
-  !tab.thread && !tab.messages.length && !tab.queued.length && !tab.streaming && !tab.draft.trim();
+  !tab.thread &&
+  !tab.messages.length &&
+  !tab.queued.length &&
+  !tab.files.length &&
+  !tab.streaming &&
+  !tab.draft.trim();
 
 function readStorage(key: string): string | null {
   try {
@@ -167,6 +177,20 @@ function useChatController() {
     ),
   );
   const [tabs, setTabs] = useState<ChatTab[]>([initial]);
+  useEffect(() => {
+    if (
+      !tabs.some(
+        (tab) => tab.files.length || tab.queued.some((entry) => tab.queuedFiles[entry.id]?.length),
+      )
+    )
+      return;
+    const protectUploads = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protectUploads);
+    return () => window.removeEventListener("beforeunload", protectUploads);
+  }, [tabs]);
   const [activeKey, setActiveKey] = useState(initial.key);
   const workspacePickerSession = useFolderPickerSession();
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
@@ -262,7 +286,20 @@ function useChatController() {
           stream.controller.abort();
           return;
         }
-        update(key, () => ({ thread: event.thread, runId: event.runId }));
+        update(key, (tab) => ({
+          thread: event.thread,
+          runId: event.runId,
+          messages: tab.messages.map((message, index) =>
+            index === tab.messages.length - 1 && message.role === "user"
+              ? {
+                  ...message,
+                  attachments: [...event.thread.messages]
+                    .reverse()
+                    .find((entry) => entry.role === "user")?.attachments,
+                }
+              : message,
+          ),
+        }));
       } else if (event.type === "text")
         update(key, (tab) => ({ streamText: tab.streamText + event.text }));
       else if (event.type === "error") update(key, () => ({ error: event.message }));
@@ -670,6 +707,8 @@ function useChatController() {
       )
         return;
       const { config, thread } = current;
+      const pendingFiles = current.queuedFiles[userMessage.id] ?? [];
+      let accepted = false;
       update(key, (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== userMessage.id),
         messages: [...tab.messages, userMessage],
@@ -681,18 +720,18 @@ function useChatController() {
         assistantId: crypto.randomUUID(),
         respondingAgent: config.agent,
       }));
-      await follow(key, async (signal) => {
-        let workspace = current.workspace;
-        if (!thread && !workspace) {
-          const ssh = await api.ssh.get();
-          const last = folderHistory(ssh.host).last;
-          workspace = { host: ssh.host, ...(last ? { cwd: last } : {}), worktree: false };
-        }
-        if (!thread && workspace?.cwd) rememberFolder(workspace.host ?? null, workspace.cwd);
-        return fetch(`${getApiUrl()}/chat/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({
+      await follow(
+        key,
+        async (signal) => {
+          let workspace = current.workspace;
+          if (!thread && !workspace) {
+            const ssh = await api.ssh.get();
+            const last = folderHistory(ssh.host).last;
+            workspace = { host: ssh.host, ...(last ? { cwd: last } : {}), worktree: false };
+          }
+          if (!thread && workspace?.cwd) rememberFolder(workspace.host ?? null, workspace.cwd);
+          const payload = {
+            ...(!thread && current.projectId ? { projectId: current.projectId } : {}),
             messages: [{ role: "user", content: userMessage.content }],
             agent: config.agent,
             model: config.model,
@@ -701,10 +740,31 @@ function useChatController() {
               ? { permissionMode: config.permissionMode }
               : {}),
             ...(thread ? { threadId: thread.id } : { workspace }),
-          }),
-          signal,
-        });
-      });
+          };
+          const files = current.queuedFiles[userMessage.id] ?? [];
+          let form: FormData | undefined;
+          if (files.length) {
+            form = new FormData();
+            form.set("payload", JSON.stringify(payload));
+            for (const file of files) form.append("files", file, file.name);
+          }
+          return fetch(`${getApiUrl()}/chat/${form ? "uploads" : "stream"}`, {
+            method: "POST",
+            headers: { ...(!form ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
+            body: form ?? JSON.stringify(payload),
+            signal,
+          });
+        },
+        () => {
+          accepted = true;
+        },
+      );
+      update(key, (tab) => ({
+        queuedFiles: Object.fromEntries(
+          Object.entries(tab.queuedFiles).filter(([id]) => id !== userMessage.id),
+        ),
+        ...(!accepted && pendingFiles.length ? { files: [...pendingFiles, ...tab.files] } : {}),
+      }));
     },
     [ready, follow, update, find],
   );
@@ -730,15 +790,18 @@ function useChatController() {
   const send = useCallback(
     async (input: string) => {
       const key = activeRef.current;
-      if (!ready || !find(key) || !input.trim()) return;
+      const current = find(key);
+      if (!ready || !current || (!input.trim() && !current.files.length)) return;
       const entry: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
-        content: input.trim(),
+        content: input.trim() || "Please inspect the attached files.",
         timestamp: Date.now(),
       };
       update(key, (tab) => ({
         queued: [...tab.queued, entry],
+        files: [],
+        queuedFiles: { ...tab.queuedFiles, [entry.id]: tab.files },
         // An explicit new send resumes a stopped queue.
         queuePaused: false,
         error: tab.streaming ? tab.error : null,
@@ -809,6 +872,9 @@ function useChatController() {
     (id: string) =>
       update(activeRef.current, (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== id),
+        queuedFiles: Object.fromEntries(
+          Object.entries(tab.queuedFiles).filter(([key]) => key !== id),
+        ),
         ...(tab.editingQueuedId === id ? { editingQueuedId: null, queuedDraft: "" } : {}),
       })),
     [update],
@@ -935,6 +1001,21 @@ function useChatController() {
     showThread,
     messages: tab.messages,
     draft: tab.draft,
+    files: tab.files,
+    addFiles: (files: File[]) =>
+      update(activeRef.current, (current) => {
+        const next = [...new Set([...current.files, ...files])];
+        if (
+          next.length > UPLOAD_MAX_FILES ||
+          next.reduce((sum, file) => sum + file.size, 0) > UPLOAD_MAX_BYTES
+        )
+          return { error: "Attach at most 10 files, totaling at most 20 MB" };
+        return { files: next, error: null };
+      }),
+    removeFile: (index: number) =>
+      update(activeRef.current, (current) => ({
+        files: current.files.filter((_, candidate) => candidate !== index),
+      })),
     setDraft,
     queued: tab.queued,
     queuePaused: tab.queuePaused,
@@ -1028,7 +1109,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       role: message.role,
       content: [{ type: "text", text: message.content }],
       createdAt: new Date(message.timestamp),
-      metadata: { custom: { agent: message.agent, activity: message.activity } },
+      metadata: {
+        custom: {
+          agent: message.agent,
+          activity: message.activity,
+          attachments: message.attachments,
+        },
+      },
     }));
     if (chat.streaming)
       history.push({

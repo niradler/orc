@@ -53,8 +53,7 @@ for (const width of [1440, 390]) {
       (response) =>
         response.url().endsWith("/api/chat/threads") && response.request().method() === "POST",
     );
-    await page.getByTestId("live-session-detail").getByTestId("resume-actions-menu").click();
-    await page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume").click();
+    await page.getByTestId("live-session-detail").getByTestId("open-chat-resume").click();
     const thread = await (await prepared).json();
     expect(thread.historyBefore).toBe(605);
     await expect(page.getByTestId("chat-message")).toHaveCount(500);

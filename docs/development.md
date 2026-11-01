@@ -173,6 +173,41 @@ agent-browser close                        # close browser
 
 Refs (`@e1`, `@e2`, …) are assigned per snapshot - always take a fresh snapshot after navigation before using refs. Check for `[OBJECT OBJECT]` or `RETRY` buttons in snapshots as signals of error states.
 
+## Conversation file uploads
+
+Web chat accepts files with the attachment button, clipboard paste or a drop onto
+the composer. Files stay staged until Send and remain with their queued message.
+Telegram accepts documents, photos and media from approved recipients/senders.
+File-only messages ask the agent to inspect the attachments.
+
+Telegram voice notes remain original audio files, with MIME type and duration in
+the agent's file manifest; no transcription service is added. Video notes, live
+photos, static/animated/video stickers and custom emoji are downloaded through the
+same bounded path. Text/caption emoji, replies, quotes, hidden links, album IDs,
+edits and supported structured message context are retained for the agent.
+Reaction updates are delivered only when Telegram makes them available (the bot
+must have the required administrator rights); sender, route and topic checks still
+apply. Anonymous reactions cannot impersonate an approved sender. Reactions,
+edits and file captions do not implicitly answer a pending agent question.
+
+Uploads are limited to 10 files and 20 MB combined per message. The default is
+`<conversation working folder>/.orc/sessions/<ORC session ID>/uploads/<upload ID>/<filename>`.
+The selected execution host owns the file: SSH conversations transfer bytes to that
+host before giving the agent its absolute path. Native agent permissions remain
+in force. Files are untrusted input; ORC does not execute them or unpack archives.
+
+Projects → Edit → Configuration → Upload directory overrides `.orc/sessions`.
+Relative paths resolve against the actual conversation folder/worktree; absolute
+paths and `~/` resolve on the execution host. External locations can require agent
+read approval. Generated session directories inside a Git repository are excluded
+through its local `info/exclude`; existing ignore files are preserved. Session
+files remain on disk when a conversation is closed; there is no automatic expiry.
+
+The authenticated `POST /api/chat/uploads` endpoint accepts multipart `payload`
+(the normal chat-stream JSON request) and one or more `files` fields, then returns
+the normal SSE stream. Saved message attachment metadata includes name, size,
+MIME type and host-local path. File bytes are never served as same-origin web assets.
+
 ## Agent backends
 
 `packages/agent-runtime` registers one backend per way of reaching an agent, and `probeBackends()` reports whether each is usable *right now*. That probe is the single source for `GET /api/backends`, `orc doctor`, the dashboard's backend picker, and the gateway's startup log - they cannot disagree.
@@ -185,6 +220,13 @@ Refs (`@e1`, `@e2`, …) are assigned per snapshot - always take a fresh snapsho
 | `a2a`        | `http`       | An endpoint per session — nothing local.                                |
 | `claude-cli` | `cli`        | The `claude` binary. The pre-SDK implementation.                        |
 | `codex-cli`  | `cli`        | The `codex` binary, driven natively.                                    |
+| `cursor`     | `cli`        | Cursor Agent CLI (`cursor-agent acp`) and acpx on the execution host. Chat can inject ORC HTTP MCP through a private ACPX config file. |
+
+Cursor ACP chats and native terminal CLI conversations use separate stores. New
+Cursor chats in ORC continue through ACPX; a discovered native Cursor CLI session
+must resume through Terminal. ORC explains this limitation instead of submitting
+a terminal session ID to ACP or silently starting another conversation. Cursor IDE
+history also remains distinct from CLI sessions.
 
 Two rules that are easy to get wrong:
 

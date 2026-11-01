@@ -532,13 +532,23 @@ function EditProjectDialog({
   const [tags, setTags] = useState((project.tags ?? []).join(", "));
   const [scope, setScope] = useState(project.scope ?? "");
   const [gitRemoteUrl, setGitRemoteUrl] = useState(project.git_remote_url ?? "");
+  const [uploadDirectory, setUploadDirectory] = useState(project.upload_directory ?? "");
   const [maxWorkers, setMaxWorkers] = useState(
     project.max_workers != null ? String(project.max_workers) : "",
   );
   const updateProject = useUpdateProject();
   const { data: summary } = useProjectSummary(project.id);
   const dirty =
-    JSON.stringify([name, description, status, tags, scope, gitRemoteUrl, maxWorkers]) !==
+    JSON.stringify([
+      name,
+      description,
+      status,
+      tags,
+      scope,
+      gitRemoteUrl,
+      maxWorkers,
+      uploadDirectory,
+    ]) !==
     JSON.stringify([
       project.name,
       project.description ?? "",
@@ -547,6 +557,7 @@ function EditProjectDialog({
       project.scope ?? "",
       project.git_remote_url ?? "",
       project.max_workers != null ? String(project.max_workers) : "",
+      project.upload_directory ?? "",
     ]);
 
   const handleSubmit = (e: React.FormEvent, closeAfterSave: () => void) => {
@@ -566,6 +577,7 @@ function EditProjectDialog({
       scope: scope.trim() || null,
       git_remote_url: gitRemoteUrl.trim() || null,
       max_workers: maxWorkers ? Number(maxWorkers) : null,
+      upload_directory: uploadDirectory.trim() || null,
     };
     updateProject.mutate(input, {
       onSuccess: closeAfterSave,
@@ -698,6 +710,23 @@ function EditProjectDialog({
                     />
                     <p className="text-xs text-muted-foreground">
                       Clear this field to remove the saved address.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label htmlFor="edit-project-upload-directory">
+                      Upload directory (optional)
+                    </Label>
+                    <Input
+                      id="edit-project-upload-directory"
+                      data-testid="edit-project-upload-directory"
+                      value={uploadDirectory}
+                      onChange={(event) => setUploadDirectory(event.target.value)}
+                      placeholder=".orc/sessions"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Relative to the conversation folder, or an absolute path on its execution
+                      host. External folders may require agent read permission. Empty uses
+                      .orc/sessions.
                     </p>
                   </div>
                   <div className="space-y-1.5">

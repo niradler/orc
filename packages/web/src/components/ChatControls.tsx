@@ -1,8 +1,8 @@
-import { ChatModelSchema } from "@orc/core/chat";
+import { CHAT_AGENTS, ChatModelSchema } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, History, PanelLeftClose, Plus, X } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import claudeIcon from "@/assets/providers/claude.svg?no-inline";
 import codexIcon from "@/assets/providers/codex.svg?no-inline";
@@ -21,7 +21,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useChat } from "@/hooks/useChat";
+import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { useSsh } from "@/hooks/useSsh";
 import { type ChatHistoryEntry, chatHistoryList, mergeHistoryState } from "@/lib/chat-history-list";
 
@@ -159,7 +167,7 @@ export function ChatSessionPicker({
               }, selectedArchive.project_id)
             }
           >
-            {pending ? "Preparing…" : "Prepare and resume in chat"}
+            {pending ? "Preparing…" : "Resume"}
           </Button>
         </section>
       ) : (
@@ -250,6 +258,23 @@ function SessionHistoryFrame({
       (tab.permissions.length || tab.questions.length || tab.attention || tab.error),
   ).length;
   const content = useRef<HTMLDivElement>(null);
+  const sidebar = useRef<HTMLElement>(null);
+  const [sidebarMax, setSidebarMax] = useState(640);
+  useEffect(() => {
+    const parent = sidebar.current?.parentElement;
+    if (!docked || !parent) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setSidebarMax(Math.max(208, Math.min(640, (entry?.contentRect.width ?? 1040) - 360))),
+    );
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [docked]);
+  const sidebarWidth = usePanelWidth({
+    storageKey: "orc_chat_history_width",
+    initial: 256,
+    min: 208,
+    max: sidebarMax,
+  });
   const newSession = (
     <Button
       variant="ghost"
@@ -284,9 +309,25 @@ function SessionHistoryFrame({
   if (docked)
     return (
       <aside
+        ref={sidebar}
         data-testid="chat-session-sidebar"
-        className="flex w-64 shrink-0 flex-col border-r border-border px-3 py-3"
+        style={{ width: sidebarWidth.width }}
+        className="relative flex min-w-0 shrink-0 flex-col border-r border-border px-3 py-3"
       >
+        {/* biome-ignore lint/a11y/useSemanticElements: resizable sidebar requires an interactive separator */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize session history"
+          aria-valuenow={sidebarWidth.width}
+          aria-valuemin={208}
+          aria-valuemax={sidebarMax}
+          tabIndex={0}
+          data-testid="chat-history-resize"
+          title="Drag to resize, use arrow keys, or double-click to reset"
+          className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
+          {...sidebarWidth.handleProps}
+        />
         <div className="mb-3 flex items-center justify-between">
           <h2 className="px-2 text-sm font-medium flex-1">Sessions</h2>
           {newSession}
@@ -399,7 +440,6 @@ function HistoryRow({
     attention: "New response",
     error: "Error",
   }[state];
-  const liveBusy = entry.kind === "native" && ["running", "idle"].includes(entry.session.status);
   const selectRow = () => {
     if (entry.kind === "local") {
       chat.selectTab(entry.tab.key);
@@ -427,15 +467,12 @@ function HistoryRow({
       data-state={state}
       className={`group flex min-w-0 items-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
     >
-      <ActionHelp
-        label={`${agent || "Unknown provider"} · ${status}`}
-        description={`${entry.title}${liveBusy ? ". End the original agent before resuming here." : ""}`}
-      >
+      <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
         <button
           type="button"
           data-testid={testId}
           aria-current={selected ? "true" : undefined}
-          disabled={pending || liveBusy}
+          disabled={pending}
           onClick={selectRow}
           className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60"
         >
@@ -472,11 +509,7 @@ function HistoryRow({
           <span className="sr-only">
             {agent ? ` · ${agent}` : ""}
             {tab?.draft ? " · Draft" : ""}
-            {liveBusy
-              ? " · End the original agent before resuming here."
-              : entry.kind === "archive"
-                ? " · Import and resume"
-                : ""}
+            {entry.kind === "archive" ? " · Import and resume" : ""}
           </span>
           {entry.kind === "saved" && entry.thread.running && (
             <span data-testid="chat-thread-running" className="sr-only">
@@ -507,57 +540,36 @@ function HistoryRow({
 
 export function ChatAgentPicker() {
   const chat = useChat();
-  const [open, setOpen] = useState(false);
-  const agents = Array.from(new Set(["codex", "claude", "gemini", "copilot", chat.config.agent]));
+  const agents = Array.from(new Set([...CHAT_AGENTS, chat.config.agent]));
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-testid="chat-agent-button"
-          aria-label={`Choose agent, current ${chat.config.agent}`}
-          disabled={!chat.ready}
-          className="inline-flex min-h-8 min-w-0 max-w-36 items-center gap-1 rounded-md px-2 text-[13px] hover:bg-surface-highest"
-        >
-          <span className="truncate">{chat.config.agent}</span>
-          <ChevronDown size={12} className="shrink-0" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        aria-label="Choose agent"
-        side="top"
-        align="start"
-        className="w-72 max-w-[calc(100vw-2rem)] space-y-3"
+    <Select
+      value={chat.config.agent}
+      disabled={!chat.ready}
+      onValueChange={(agent) => {
+        if (chat.thread || chat.streaming) chat.startAgentConversation(agent);
+        else chat.setConfig({ ...chat.config, agent, model: "" });
+      }}
+    >
+      <SelectTrigger
+        data-testid="chat-agent-button"
+        aria-label="Chat agent"
+        title={
+          chat.thread
+            ? "Changing agents starts a new session; this session stays in history"
+            : "Choose agent"
+        }
+        className="w-auto min-w-0 max-w-36"
       >
-        <h2 className="text-sm font-medium">Choose agent</h2>
-        {chat.thread && (
-          <p className="text-xs text-muted-foreground">
-            Changing agents starts a new session. This session is kept in history.
-          </p>
-        )}
-        <label className="block text-xs text-muted-foreground">
-          Agent
-          <select
-            data-testid="chat-agent-select"
-            aria-label="Chat agent"
-            value={chat.config.agent}
-            className="form-control form-control-single mt-2"
-            onChange={(event) => {
-              const agent = event.target.value;
-              if (chat.thread || chat.streaming) chat.startAgentConversation(agent);
-              else chat.setConfig({ ...chat.config, agent, model: "" });
-              setOpen(false);
-            }}
-          >
-            {agents.map((agent) => (
-              <option key={agent} value={agent}>
-                {agent}
-              </option>
-            ))}
-          </select>
-        </label>
-      </PopoverContent>
-    </Popover>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent data-testid="chat-agent-select" side="top" align="start">
+        {agents.map((agent) => (
+          <SelectItem key={agent} value={agent} data-testid={`chat-agent-option-${agent}`}>
+            {agent}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

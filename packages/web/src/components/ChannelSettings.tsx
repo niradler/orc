@@ -13,6 +13,7 @@ import {
   isChannelCatchAll,
   validChannelCondition,
 } from "@orc/core/channels";
+import { CHAT_AGENTS } from "@orc/core/chat";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import { cloneElement, type ReactElement, useId, useState } from "react";
@@ -23,6 +24,7 @@ import {
 } from "@/components/ChannelConditionBuilder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useBackends } from "@/hooks/useBackends";
 
 const conditionDefault: ChannelCondition = { field: "is_direct", op: "is", value: true };
 const defaultRouteCondition: ChannelCondition = {
@@ -399,6 +401,15 @@ function ConnectionEditor({
   const [replyTarget, setReplyTarget] = useState<string | null>(null);
   const [replyProject, setReplyProject] = useState(projects[0]?.id ?? "");
   const [replyAgent, setReplyAgent] = useState("default");
+  const { data: backends } = useBackends();
+  const replyAgents = Array.from(
+    new Set([
+      "default",
+      ...CHAT_AGENTS,
+      ...(backends?.backends.map((backend) => backend.name) ?? []),
+      replyAgent,
+    ]),
+  );
   const [replyModel, setReplyModel] = useState("");
   const [shortcut, setShortcut] = useState<{
     original: string | null;
@@ -768,11 +779,18 @@ function ConnectionEditor({
                 </select>
               </Field>
               <Field label="Reply agent">
-                <Input
+                <select
+                  className={control}
                   value={replyAgent}
                   onChange={(e) => setReplyAgent(e.target.value)}
                   data-testid="channel-replies-agent"
-                />
+                >
+                  {replyAgents.map((agent) => (
+                    <option key={agent} value={agent}>
+                      {agent === "default" ? "Default (Chat Settings)" : agent}
+                    </option>
+                  ))}
+                </select>
               </Field>
             </div>
             <Field label="Reply model (optional)">
@@ -784,10 +802,10 @@ function ConnectionEditor({
               />
             </Field>
             <p className="text-xs text-muted-foreground">
-              Use “default” for the agent to follow Chat Settings. /project, /agent and /model can
-              change this conversation's choices within recipient permissions. The project needs a
-              working directory. Existing earlier routing rules retain priority. Apply, then save
-              the connection.
+              The reply project is the default. Use “default” for the agent to follow Chat Settings.
+              /projects, /agent and /model can change this conversation's choices within recipient
+              permissions. The project needs a working directory. Existing earlier routing rules
+              retain priority. Apply, then save the connection.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button

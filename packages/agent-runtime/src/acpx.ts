@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { acpxPermissionArgs, ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   type ExecHost,
+  type HostProcess,
   hostBinary,
   hostExec,
   hostSpawn,
@@ -13,6 +14,7 @@ import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
 import { readProcessOutput } from "./io.js";
+import { type OrcMcpConfigFile, writeOrcMcpConfigFile } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -267,10 +269,13 @@ export class AcpxSession implements AgentSession {
   /** Spawn-ready prefix: either [binary] or [interpreter, cli.js]. */
   private readonly acpxCmd: string[];
   private readonly host: ExecHost;
+  private readonly opts: SessionOpts;
+  private mcpConfig: OrcMcpConfigFile | null = null;
 
   constructor(opts: SessionOpts, acpxCmd: string[], host: ExecHost) {
     this.id = ulid();
     this.host = host;
+    this.opts = opts;
     this.agent = opts.acpxAgent ?? "claude";
     this.sessionName = opts.runtimeSessionId ?? `orc-${this.id}`;
     this.cwd = opts.cwd;
@@ -286,25 +291,70 @@ export class AcpxSession implements AgentSession {
   }
 
   async ensureSession(): Promise<void> {
-    const result = await hostExec(
-      this.host,
-      [
-        ...this.acpxCmd,
-        "--format",
-        "json",
-        ...this.extraArgs,
-        this.agent,
-        "sessions",
-        "ensure",
-        "--name",
-        this.sessionName,
-      ],
-      { cwd: this.cwd, timeoutMs: 30_000 },
-    );
-    if (result.code !== 0)
-      throw new Error(
-        `ACPX could not prepare this conversation (exit ${result.code}). Check the selected agent and its authentication.`,
+    const mcpArgs = await this.prepareMcpConfig();
+    try {
+      const result = await hostExec(
+        this.host,
+        [
+          ...this.acpxCmd,
+          "--format",
+          "json",
+          ...this.extraArgs,
+          ...mcpArgs,
+          this.agent,
+          "sessions",
+          "ensure",
+          "--name",
+          this.sessionName,
+          ...(this.opts.acpxNativeSessionId
+            ? ["--resume-session", this.opts.acpxNativeSessionId]
+            : []),
+        ],
+        { cwd: this.cwd, timeoutMs: 30_000 },
       );
+      if (result.code !== 0)
+        throw new Error(
+          `ACPX could not prepare this conversation (exit ${result.code}). Check the selected agent and its authentication.`,
+        );
+      if (this.opts.acpxNativeSessionId) {
+        let resolved: unknown;
+        try {
+          resolved = JSON.parse(result.stdout);
+        } catch {
+          throw new Error(
+            "ACPX returned an invalid native session response. The original identity was preserved.",
+          );
+        }
+        if (
+          !resolved ||
+          typeof resolved !== "object" ||
+          !("acpxSessionId" in resolved) ||
+          resolved.acpxSessionId !== this.opts.acpxNativeSessionId
+        )
+          throw new Error(
+            "The agent did not resume the requested native session. Its original identity was preserved.",
+          );
+      }
+    } finally {
+      this.releaseMcpConfig();
+    }
+  }
+
+  private releaseMcpConfig(): void {
+    this.mcpConfig?.cleanup();
+    this.mcpConfig = null;
+  }
+
+  private async prepareMcpConfig(): Promise<string[]> {
+    this.releaseMcpConfig();
+    if (!this.opts.orcMcp) return [];
+    this.mcpConfig = await writeOrcMcpConfigFile(
+      this.host,
+      this.opts.orcMcpProject,
+      this.opts.orcMcpMode,
+      "acpx",
+    );
+    return ["--mcp-config", this.mcpConfig.path];
   }
 
   private push(event: AgentEvent): void {
@@ -342,6 +392,7 @@ export class AcpxSession implements AgentSession {
     logger.info("ACPX process exited", { agent: this.agent, code });
     // A follow-up send() may have replaced this process meanwhile; its turn is not ours to end.
     if (this.proc !== proc) return;
+    this.releaseMcpConfig();
     if (this.done) return;
     if (code !== 0) {
       const detail = this.stderrBuf.trim();
@@ -378,6 +429,7 @@ export class AcpxSession implements AgentSession {
       ...(this.model ? ["--model", this.model] : []),
       ...(this.autoApprove && !acpxPermissionArgs(this.extraArgs) ? ["--approve-all"] : []),
       ...this.extraArgs,
+      ...(await this.prepareMcpConfig()),
       this.agent,
       "prompt",
       "-s",
@@ -391,12 +443,18 @@ export class AcpxSession implements AgentSession {
       argumentCount: args.length - 1,
     });
 
-    const handle = await hostSpawn(this.host, args, {
-      cwd: this.cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-      stdin: "ignore",
-    });
+    let handle: HostProcess;
+    try {
+      handle = await hostSpawn(this.host, args, {
+        cwd: this.cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        stdin: "ignore",
+      });
+    } catch (error) {
+      this.releaseMcpConfig();
+      throw error;
+    }
     this.proc = handle.proc;
     this.killProc = handle.kill;
 
@@ -446,10 +504,14 @@ export class AcpxSession implements AgentSession {
   }
 
   async close(): Promise<void> {
-    if (!this.proc) return;
+    if (!this.proc) {
+      this.releaseMcpConfig();
+      return;
+    }
     this.killProc?.();
     await this.proc.exited;
     this.proc = null;
+    this.releaseMcpConfig();
     this.killProc = null;
     this.done = true;
     this.resolveNext?.();
@@ -469,13 +531,18 @@ async function acpxVersion(host: ExecHost, cmd: string[]): Promise<string | null
   }
 }
 
-function createAcpxBackend(): AgentBackend {
+function createAcpxBackend(agent?: "cursor"): AgentBackend {
   return {
-    name: "acpx",
+    name: agent ?? "acpx",
     profileCapabilities: { model: true, toolAllowlist: false },
 
     async preflight(opts = {}) {
       const host = sessionExecHost(opts);
+      if (agent && !(await hostBinary(host, "cursor-agent")))
+        return {
+          ok: false,
+          error: "Cursor Agent CLI not found on the execution host. Install Cursor CLI there.",
+        };
       let resolved: AcpxResolution | null;
       try {
         resolved = await resolveAcpx(host);
@@ -501,8 +568,9 @@ function createAcpxBackend(): AgentBackend {
       const resolved = await resolveAcpx(host).catch(() => null);
       return {
         kind: "cli",
-        requires:
-          host.kind === "ssh"
+        requires: agent
+          ? "Cursor Agent CLI and acpx on the execution host"
+          : host.kind === "ssh"
             ? `the acpx CLI on ${host.alias}`
             : "the acpx CLI (npm i -g acpx), or ORC_ACPX_PATH",
         target:
@@ -518,7 +586,11 @@ function createAcpxBackend(): AgentBackend {
       const host = sessionExecHost(opts);
       const resolved = await resolveAcpx(host);
       if (!resolved) throw new Error(acpxMissingMessage(host));
-      const session = new AcpxSession(opts, resolved.cmd, host);
+      const session = new AcpxSession(
+        agent ? { ...opts, acpxAgent: agent } : opts,
+        resolved.cmd,
+        host,
+      );
       await session.ensureSession();
       return session;
     },
@@ -527,7 +599,13 @@ function createAcpxBackend(): AgentBackend {
       const host = sessionExecHost(opts);
       const resolved = await resolveAcpx(host);
       if (!resolved) throw new Error(acpxMissingMessage(host));
-      return new AcpxSession({ ...opts, runtimeSessionId }, resolved.cmd, host);
+      const session = new AcpxSession(
+        { ...opts, ...(agent ? { acpxAgent: agent } : {}), runtimeSessionId },
+        resolved.cmd,
+        host,
+      );
+      if (opts.acpxNativeSessionId) await session.ensureSession();
+      return session;
     },
 
     async stop() {},
@@ -535,3 +613,4 @@ function createAcpxBackend(): AgentBackend {
 }
 
 registerBackend("acpx", createAcpxBackend);
+registerBackend("cursor", () => createAcpxBackend("cursor"));

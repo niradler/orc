@@ -190,8 +190,8 @@ for (const width of [390, 1440]) {
     await expect(page).toHaveURL(/\/terminals\/icon-terminal/);
     await openTerminalOptions(page);
     const toChat = page.getByTestId("terminal-continue-chat").filter({ visible: true });
-    await expect(toChat).toHaveAttribute("title", "Continue in chat");
-    await expect(toChat).toHaveText("Continue in chat");
+    await expect(toChat).toHaveAttribute("title", "Resume in chat");
+    await expect(toChat).toHaveText("Resume");
     await toChat.click();
     await expect(page).toHaveURL(/chat=open/);
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeVisible();
