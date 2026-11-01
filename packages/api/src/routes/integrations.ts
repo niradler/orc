@@ -233,11 +233,17 @@ function allows(source: SpecSource, tool: string) {
   return !source.disabledTools?.some((p) => matchFilter(p, tool));
 }
 
-/** `spec add` always stores an enabled entry; an edit keeps the connection's on/off state. */
-function save(client: SpecClient, name: string, source: SpecSource, enabled: boolean) {
-  client.specs.add(name, source);
-  if (!enabled) client.specs.disable(name);
+/**
+ * `spec add` always stores an enabled entry and drops labels it is not given; an edit keeps the
+ * connection's on/off state and the labels `spec label` manages.
+ */
+function save(client: SpecClient, name: string, source: SpecSource, stored: NamedEntry) {
+  client.specs.add(name, stored.labels?.length ? { ...source, labels: stored.labels } : source);
+  if (stored.enabled === false) client.specs.disable(name);
 }
+
+const remoteUrl = (entry: NamedEntry | SpecSource) =>
+  "url" in entry && typeof entry.url === "string" ? entry.url : undefined;
 
 /**
  * Loads every operation of a connection with its stored source. spec-cli drops filtered tools while
@@ -342,8 +348,9 @@ app.openapi(
     tags,
     summary: "Check that an unsaved connection reaches its server",
     description:
-      "Loads the source from a throwaway in-memory registry, so nothing is saved. The name lets an " +
-      "edit reuse the connection's stored OAuth tokens; servers that need a sign-in report `auth_required`.",
+      "Loads the source from a throwaway in-memory registry, so nothing is saved. An edit that keeps " +
+      "the saved server URL reuses the connection's stored OAuth tokens; any other draft is tested " +
+      "without them. Servers that need a sign-in report `auth_required`.",
     request: json(z.object({ name: SpecName, source: SourceSchema })),
     responses: ok(
       "Test result",
@@ -362,10 +369,23 @@ app.openapi(
     const { oauthClientSecret: _, ...rest } = source as typeof source & {
       oauthClientSecret?: string;
     };
+    const draft = toSource(rest as z.infer<typeof SourceSchema>);
+    // OAuth tokens are stored by name alone, so a draft borrows them only for the server they were
+    // issued for. Any other draft runs under a one-off name whose tokens and cache are removed after.
+    const stored = await withSpecs(400, (registry) =>
+      registry.specs.list({ compact: false }).find((spec) => spec.name === name),
+    );
+    const url = remoteUrl(draft);
+    const testName =
+      stored && url !== undefined && remoteUrl(stored as NamedEntry) === url
+        ? name
+        : `orc-test-${crypto.randomUUID()}`;
     const client = createSpecClient({ registry: memoryRegistryStore() });
+    let added = false;
     try {
-      client.specs.add(name, toSource(rest as z.infer<typeof SourceSchema>));
-      const { spec } = await client.operations.load(name, { refresh: true });
+      client.specs.add(testName, draft);
+      added = true;
+      const { spec } = await client.operations.load(testName, { refresh: true });
       return c.json({
         status: "connected" as const,
         count: operations(spec).length,
@@ -380,6 +400,7 @@ app.openapi(
       });
     } finally {
       await client.close();
+      if (added && testName !== name) client.specs.remove(testName);
     }
   },
 );
@@ -404,7 +425,9 @@ app.openapi(
     method: "put",
     path: "/integrations/connections/{name}",
     tags,
-    summary: "Replace a connection's configuration, keeping its enabled state and OAuth tokens",
+    summary:
+      "Replace a connection's configuration, keeping its enabled state and labels. OAuth tokens " +
+      "are kept unless the server URL changes.",
     request: { params: nameParam, ...json(z.object({ source: SourceSchema })) },
     responses: ok("Updated connection", ConnectionDetailSchema),
   }),
@@ -413,7 +436,15 @@ app.openapi(
     const { source } = c.req.valid("json");
     return c.json(
       await withSpecs(400, (client) => {
-        save(client, name, toSource(source), client.specs.get(name).enabled !== false);
+        const stored = client.specs.get(name);
+        const next = toSource(source);
+        // Tokens issued by one server must not be sent to another. spec-cli refuses to revoke a
+        // disabled spec; `save` restores the stored state after.
+        if (remoteUrl(stored) !== undefined && remoteUrl(stored) !== remoteUrl(next)) {
+          client.specs.enable(name);
+          client.specs.revoke(name);
+        }
+        save(client, name, next, stored);
         return detail(client.specs.get(name));
       }),
     );
@@ -626,7 +657,7 @@ app.openapi(
           throw new ConflictError(
             `${tool} is matched by a tool filter pattern; edit the connection's filters instead`,
           );
-        save(client, name, next, entry.enabled !== false);
+        save(client, name, next, entry);
         return { id: tool, enabled };
       }),
     );

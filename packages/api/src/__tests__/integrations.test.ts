@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSpecClient, setSpecHome } from "api-spec-cli";
@@ -78,10 +78,18 @@ test("creates, edits, disables and removes a connection, keeping secrets on the 
   expect(
     (await req(app, "PATCH", "/integrations/connections/example", { enabled: false })).status,
   ).toBe(200);
+  const client = createSpecClient();
+  client.specs.addLabels("example", ["work"]);
+  mkdirSync(join(home, "tokens"), { recursive: true });
+  writeFileSync(join(home, "tokens", "example.json"), JSON.stringify({ access_token: "old" }));
   const edited = { ...source, url: "https://mcp.example.com/v2" };
   const put = await req(app, "PUT", "/integrations/connections/example", { source: edited });
-  // An edit keeps the connection disabled; `spec add` alone would re-enable it.
+  // An edit keeps the connection disabled and its labels; `spec add` alone would drop both.
   expect(await put.json<unknown>()).toEqual({ name: "example", enabled: false, source: edited });
+  expect(client.specs.get("example").labels).toEqual(["work"]);
+  // Tokens issued for the old URL are not kept for the new one.
+  expect(existsSync(join(home, "tokens", "example.json"))).toBe(false);
+  await client.close();
   expect(
     await (await req(app, "GET", "/integrations/connections/example")).json<unknown>(),
   ).toEqual({ name: "example", enabled: false, source: edited });
@@ -135,9 +143,13 @@ test("lists, toggles, describes and invokes a connection's tools", async () => {
       ],
     });
 
+    const client = createSpecClient();
+    client.specs.addLabels("pets", ["work"]);
     expect(
       await (await req(app, "PATCH", `${base}/deletePet`, { enabled: false })).json<unknown>(),
     ).toEqual({ id: "deletePet", enabled: false });
+    expect(client.specs.get("pets").labels).toEqual(["work"]);
+    await client.close();
     const tools = await (await req(app, "GET", base)).json<{ tools: { enabled: boolean }[] }>();
     expect(tools.tools.map((tool) => tool.enabled)).toEqual([true, false]);
     const blocked = await req(app, "POST", `${base}/deletePet/invoke`, {
@@ -227,11 +239,13 @@ test("tests an unsaved connection without registering it", async () => {
 
 test("signs a remote MCP connection in through the browser redirect and out again", async () => {
   const tokenRequests: URLSearchParams[] = [];
+  const bearers: (string | null)[] = [];
   const oauth = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch: async (request) => {
       const { pathname, origin } = new URL(request.url);
+      if (pathname === "/mcp") bearers.push(request.headers.get("authorization"));
       if (pathname === "/.well-known/oauth-authorization-server")
         return Response.json({
           issuer: origin,
@@ -280,6 +294,32 @@ test("signs a remote MCP connection in through the browser redirect and out agai
     expect(tokenRequests.at(-1)?.get("redirect_uri")).toBe(redirectUrl);
     // The state is single-use.
     expect((await req(app, "POST", `${base}/callback`, { code: "c", state })).status).toBe(400);
+
+    // A test of the saved server uses the sign-in; a draft pointing elsewhere never receives it.
+    const testDraft = (url: string) =>
+      req(app, "POST", "/integrations/connections/test", {
+        name: "remote",
+        source: { type: "http", url },
+      });
+    await testDraft(source.url);
+    expect(bearers).toContain("Bearer access");
+    const otherBearers: (string | null)[] = [];
+    const other = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        otherBearers.push(request.headers.get("authorization"));
+        return new Response(null, { status: 404 });
+      },
+    });
+    try {
+      expect((await testDraft(`http://127.0.0.1:${other.port}/mcp`)).status).toBe(200);
+    } finally {
+      other.stop(true);
+    }
+    expect(otherBearers.length).toBeGreaterThan(0);
+    expect(otherBearers).not.toContain("Bearer access");
+    expect(readdirSync(join(home, "tokens"))).toEqual(["remote.json"]);
 
     expect((await req(app, "DELETE", base)).status).toBe(204);
     expect((await req(app, "POST", base, { redirectUrl: "not a url" })).status).toBe(400);

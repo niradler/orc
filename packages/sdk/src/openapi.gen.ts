@@ -4113,7 +4113,7 @@ export interface paths {
         put?: never;
         /**
          * Check that an unsaved connection reaches its server
-         * @description Loads the source from a throwaway in-memory registry, so nothing is saved. The name lets an edit reuse the connection's stored OAuth tokens; servers that need a sign-in report `auth_required`.
+         * @description Loads the source from a throwaway in-memory registry, so nothing is saved. An edit that keeps the saved server URL reuses the connection's stored OAuth tokens; any other draft is tested without them. Servers that need a sign-in report `auth_required`.
          */
         post: {
             parameters: {
@@ -4178,7 +4178,7 @@ export interface paths {
                 };
             };
         };
-        /** Replace a connection's configuration, keeping its enabled state and OAuth tokens */
+        /** Replace a connection's configuration, keeping its enabled state and labels. OAuth tokens are kept unless the server URL changes. */
         put: {
             parameters: {
                 query?: never;
