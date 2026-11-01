@@ -18,11 +18,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@orc/channels": "workspace:*",
     "@hono/swagger-ui": "^0.6.1",
     "@hono/zod-openapi": "^1.6.3",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@orc/agent-runtime": "workspace:*",
+    "@orc/channels": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/gateway": "workspace:*",
@@ -30,6 +30,7 @@
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
     "@orc/task-service": "workspace:*",
+    "api-spec-cli": "^0.6.1",
     "croner": "^11.0.0",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.14",

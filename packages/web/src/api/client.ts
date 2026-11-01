@@ -108,6 +108,21 @@ export type {
   FlowRun,
   FlowSource,
   HealthResponse,
+  IntegrationConnection,
+  IntegrationConnectionDetail,
+  IntegrationConnectionSource,
+  IntegrationPrompt,
+  IntegrationPromptList,
+  IntegrationPromptResult,
+  IntegrationRefreshResult,
+  IntegrationResource,
+  IntegrationResourceContents,
+  IntegrationResourceList,
+  IntegrationResourceTemplate,
+  IntegrationTestResult,
+  IntegrationTool,
+  IntegrationToolDetail,
+  IntegrationToolResult,
   Job,
   JobRun,
   JobRunLog,
@@ -162,6 +177,18 @@ import type {
   FlowRun,
   FlowSource,
   HealthResponse,
+  IntegrationConnection,
+  IntegrationConnectionDetail,
+  IntegrationConnectionSource,
+  IntegrationPromptList,
+  IntegrationPromptResult,
+  IntegrationRefreshResult,
+  IntegrationResourceContents,
+  IntegrationResourceList,
+  IntegrationTestResult,
+  IntegrationTool,
+  IntegrationToolDetail,
+  IntegrationToolResult,
   Job,
   JobPage,
   JobRun,
@@ -733,6 +760,61 @@ export const api = {
   health: {
     check: (signal?: AbortSignal) =>
       req<HealthResponse>("GET", "/health", undefined, undefined, { signal }),
+  },
+  integrations: {
+    connections: () =>
+      req<{ connections: IntegrationConnection[] }>("GET", "/integrations/connections"),
+    connection: (name: string) =>
+      req<IntegrationConnectionDetail>("GET", `/integrations/connections/${enc(name)}`),
+    create: (name: string, source: IntegrationConnectionSource) =>
+      req<IntegrationConnectionDetail>("POST", "/integrations/connections", { name, source }),
+    test: (name: string, source: IntegrationConnectionSource) =>
+      req<IntegrationTestResult>("POST", "/integrations/connections/test", { name, source }),
+    update: (name: string, source: IntegrationConnectionSource) =>
+      req<IntegrationConnectionDetail>("PUT", `/integrations/connections/${enc(name)}`, {
+        source,
+      }),
+    setEnabled: (name: string, enabled: boolean) =>
+      req<IntegrationConnectionDetail>("PATCH", `/integrations/connections/${enc(name)}`, {
+        enabled,
+      }),
+    remove: (name: string) => req<void>("DELETE", `/integrations/connections/${enc(name)}`),
+    refresh: (name: string) =>
+      req<IntegrationRefreshResult>("POST", `/integrations/connections/${enc(name)}/refresh`, {}),
+    tools: (name: string) =>
+      req<{ tools: IntegrationTool[] }>("GET", `/integrations/connections/${enc(name)}/tools`),
+    tool: (name: string, tool: string) =>
+      req<IntegrationToolDetail>(
+        "GET",
+        `/integrations/connections/${enc(name)}/tools/${enc(tool)}`,
+      ),
+    setToolEnabled: (name: string, tool: string, enabled: boolean) =>
+      req<Pick<IntegrationTool, "id" | "enabled">>(
+        "PATCH",
+        `/integrations/connections/${enc(name)}/tools/${enc(tool)}`,
+        { enabled },
+      ),
+    invoke: (name: string, tool: string, args: Record<string, unknown>) =>
+      req<IntegrationToolResult>(
+        "POST",
+        `/integrations/connections/${enc(name)}/tools/${enc(tool)}/invoke`,
+        { args },
+      ),
+    resources: (name: string) =>
+      req<IntegrationResourceList>("GET", `/integrations/connections/${enc(name)}/resources`),
+    readResource: (name: string, uri: string, vars: Record<string, string>) =>
+      req<IntegrationResourceContents>(
+        "POST",
+        `/integrations/connections/${enc(name)}/resources/read`,
+        { uri, vars },
+      ),
+    prompts: (name: string) =>
+      req<IntegrationPromptList>("GET", `/integrations/connections/${enc(name)}/prompts`),
+    getPrompt: (name: string, prompt: string, args: Record<string, string>) =>
+      req<IntegrationPromptResult>("POST", `/integrations/connections/${enc(name)}/prompts/get`, {
+        prompt,
+        arguments: args,
+      }),
   },
   system: {
     restart: () => req<RestartResponse>("POST", "/system/restart", {}),

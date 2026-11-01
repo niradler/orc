@@ -279,6 +279,21 @@ export type ProjectSummary = {
 };
 
 export type HealthResponse = components["schemas"]["HealthResponse"];
+export type IntegrationConnection = components["schemas"]["IntegrationConnection"];
+export type IntegrationConnectionDetail = components["schemas"]["IntegrationConnectionDetail"];
+export type IntegrationConnectionSource = components["schemas"]["IntegrationConnectionSource"];
+export type IntegrationPrompt = components["schemas"]["IntegrationPrompt"];
+export type IntegrationPromptList = components["schemas"]["IntegrationPromptList"];
+export type IntegrationPromptResult = components["schemas"]["IntegrationPromptResult"];
+export type IntegrationRefreshResult = components["schemas"]["IntegrationRefreshResult"];
+export type IntegrationTestResult = components["schemas"]["IntegrationTestResult"];
+export type IntegrationResource = components["schemas"]["IntegrationResource"];
+export type IntegrationResourceContents = components["schemas"]["IntegrationResourceContents"];
+export type IntegrationResourceList = components["schemas"]["IntegrationResourceList"];
+export type IntegrationResourceTemplate = components["schemas"]["IntegrationResourceTemplate"];
+export type IntegrationTool = components["schemas"]["IntegrationTool"];
+export type IntegrationToolDetail = components["schemas"]["IntegrationToolDetail"];
+export type IntegrationToolResult = components["schemas"]["IntegrationToolResult"];
 export type RestartResponse = components["schemas"]["RestartResponse"];
 
 export type CreateTaskInput = TaskGitLinks & {

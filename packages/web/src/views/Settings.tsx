@@ -5,6 +5,7 @@ import { api, getApiUrl } from "@/api/client";
 import { AttentionSettings } from "@/components/AttentionSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
+import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { McpSettingsForm } from "@/components/McpSettingsForm";
 import { NotificationSettings } from "@/components/NotificationSettings";
@@ -28,6 +29,7 @@ const sections = [
   "channels",
   "chat",
   "mcp",
+  "integrations",
   "knowledge",
   "terminals",
   "storage",
@@ -42,6 +44,7 @@ const sectionLabels: Record<Section, string> = {
   channels: "Channels",
   chat: "Chat",
   mcp: "MCP",
+  integrations: "Integrations",
   knowledge: "Knowledge",
   terminals: "Terminals",
   storage: "Storage",
@@ -222,6 +225,9 @@ export default function Settings() {
           </div>
           <div hidden={section !== "channels"}>
             <ChannelSettings active={section === "channels"} />
+          </div>
+          <div hidden={section !== "integrations"}>
+            <IntegrationsSettings active={section === "integrations"} />
           </div>
           <div hidden={section !== "knowledge"}>
             <KnowledgeSettings />
