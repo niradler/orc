@@ -62,22 +62,10 @@ const project = {
 const spec = {
   root: "main",
   elements: {
-    main: { type: "Stack", children: ["intro", "task", "job", "list", "table", "done"] },
-    intro: { type: "Text", props: { text: "Here is the task and its job.", muted: true } },
+    main: { type: "Stack", children: ["task", "job", "list", "done"] },
     task: { type: "Task", props: { id: "t1" } },
     job: { type: "Job", props: { id: "j1" } },
     list: { type: "TaskList", props: { projectId: "p1", limit: 5 } },
-    table: {
-      type: "Table",
-      props: {
-        columns: [
-          { key: "name", label: "Name" },
-          { key: "state", label: "State" },
-        ],
-        rows: [{ name: "Render ORC components in chat", state: "doing", href: "/tasks/t1" }],
-        linkKey: "href",
-      },
-    },
     done: {
       type: "Button",
       props: { label: "Mark done", variant: "primary" },
@@ -149,14 +137,11 @@ async function mockApi(page: Page, requests: Request[], messageContent = content
         json: {
           id: "s1",
           title: "Gallery scratchpad",
-          kind: "markdown",
+          kind: "doc",
+          content: "Example document content.",
           tags: ["demo"],
           updated_at: stamp,
         },
-      });
-    if (path === "/skills/orc-platform")
-      return route.fulfill({
-        json: { name: "orc-platform", description: "Operate ORC", source: "builtin" },
       });
     return route.fallback();
   });
@@ -196,7 +181,7 @@ async function mockApi(page: Page, requests: Request[], messageContent = content
 }
 
 for (const width of [1440, 390, 320]) {
-  test(`all 26 components render in chat at ${width}px`, async ({ page }, testInfo) => {
+  test(`all 11 components render in chat at ${width}px`, async ({ page }, testInfo) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await mockApi(
@@ -217,7 +202,6 @@ for (const width of [1440, 390, 320]) {
       "session-list",
       "memory",
       "pad",
-      "skill",
     ]) {
       await expect(block.getByTestId(`chat-ui-${id}`)).toBeAttached();
     }
@@ -245,10 +229,9 @@ for (const width of [1440, 390, 320]) {
     await expect(block.getByTestId("chat-ui-task")).toContainText("orc");
     await expect(block.getByTestId("chat-ui-job")).toContainText("0 2 * * *");
     await expect(block.getByTestId("chat-ui-task-list")).toContainText("1 of 3");
-    await expect(block.getByTestId("chat-ui-table").getByRole("link")).toHaveAttribute(
-      "href",
-      "/tasks/t1",
-    );
+    await expect(
+      block.getByTestId("chat-ui-task").getByRole("link", { name: task.title }),
+    ).toHaveAttribute("href", "/tasks/t1");
     await expect(message).toContainText("And text after it.");
     await expect(message.getByTestId("chat-ui-invalid")).toBeVisible();
     const overflow = await block.evaluate((node) => node.scrollWidth - node.clientWidth);
@@ -328,3 +311,143 @@ test("state-bound action parameters resolve on press and do not run on load", as
   expect(mutation?.url()).toContain("/api/tasks/t1");
   expect(mutation?.postDataJSON()).toEqual({ status: "done" });
 });
+
+for (const theme of ["dark", "light"] as const) {
+  for (const width of [1440, 390, 320]) {
+    test(`long content expands and enters fullscreen at ${width}px in ${theme}`, async ({
+      page,
+    }, testInfo) => {
+      const errors: string[] = [];
+      const requests: Request[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      const longText = Array.from(
+        { length: 12 },
+        (_, index) =>
+          `Paragraph ${index + 1}: current information with enough detail to need a larger reading view.`,
+      ).join("\n\n");
+      await page.addInitScript((value) => localStorage.setItem("orc_theme", value), theme);
+      const richSpec = {
+        root: "main",
+        elements: {
+          main: { type: "Stack", children: ["task", "memory", "sessions", "pad"] },
+          task: { type: "Task", props: { id: "t1" } },
+          memory: { type: "Memory", props: { projectId: "p1", name: "demo" } },
+          sessions: { type: "SessionList", props: { limit: 10 } },
+          pad: { type: "Pad", props: { id: "s1" } },
+        },
+      };
+      await mockApi(page, requests, `\`\`\`orc-ui\n${JSON.stringify(richSpec)}\n\`\`\``);
+      await page.route("**/api/tasks/t1", (route) =>
+        route.request().method() === "GET"
+          ? route.fulfill({ json: { ...task, body: longText } })
+          : route.fallback(),
+      );
+      await page.route("**/api/memories/demo**", (route) =>
+        route.fulfill({
+          json: {
+            project_id: "p1",
+            name: "demo",
+            description: "Current memory",
+            content: longText,
+            updated_at: stamp,
+          },
+        }),
+      );
+      await page.route("**/api/scratchpads/s1", (route) =>
+        route.fulfill({
+          json: {
+            id: "s1",
+            title: "Current document",
+            kind: "doc",
+            content: longText,
+            tags: [],
+            updated_at: stamp,
+          },
+        }),
+      );
+      await page.route("**/api/sessions/live**", (route) =>
+        route.fulfill({
+          json: {
+            sessions: Array.from({ length: 6 }, (_, index) => ({
+              id: `s${index}`,
+              name: `Session ${index}`,
+              summary: longText,
+              agent: "codex",
+              status: "idle",
+              last_activity_at: stamp,
+            })),
+            total: 6,
+          },
+        }),
+      );
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+
+      const memory = page.getByTestId("chat-ui-memory");
+      const text = page.getByTestId("chat-ui-memory-content");
+      await expect(text).toHaveCSS("-webkit-line-clamp", "4");
+      await memory.getByTestId("chat-ui-expand").click();
+      await expect(text).toHaveCSS("-webkit-line-clamp", "none");
+      await memory.getByTestId("chat-ui-fullscreen").click();
+      const dialog = page.getByTestId("chat-ui-fullscreen-dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText("Paragraph 12");
+      await expect(dialog.getByRole("link", { name: "demo", exact: true })).toHaveAttribute(
+        "href",
+        /memories/,
+      );
+      await expect
+        .poll(async () => Math.round((await dialog.boundingBox())?.width ?? 0))
+        .toBe(width);
+      await expect
+        .poll(async () => Math.round((await dialog.boundingBox())?.height ?? 0))
+        .toBe(900);
+      expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      if (width < 640) {
+        const scroller = dialog.getByTestId("chat-ui-fullscreen-content");
+        expect(
+          await scroller.evaluate((element) => element.scrollHeight > element.clientHeight),
+        ).toBe(true);
+        await scroller.evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+        expect(await scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+        expect(
+          (await dialog.getByRole("button", { name: "Close", exact: true }).boundingBox())?.height,
+        ).toBeGreaterThanOrEqual(44);
+      }
+      await page.screenshot({
+        path: testInfo.outputPath(`component-fullscreen-${width}-${theme}.png`),
+      });
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(memory.getByTestId("chat-ui-fullscreen")).toBeFocused();
+      await expect(memory.getByTestId("chat-ui-expand")).toHaveAttribute("aria-expanded", "true");
+
+      const sessions = page.getByTestId("chat-ui-session-list");
+      await expect(sessions.locator("li")).toHaveCount(3);
+      await sessions.getByTestId("chat-ui-expand").click();
+      await expect(sessions.locator("li")).toHaveCount(6);
+      const pad = page.getByTestId("chat-ui-pad");
+      await pad.getByTestId("chat-ui-fullscreen").click();
+      await expect(dialog).toContainText("Paragraph 12");
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      const taskPanel = page.getByTestId("chat-ui-task");
+      await taskPanel.getByTestId("chat-ui-fullscreen").click();
+      await dialog.getByTestId("chat-ui-task-status").selectOption("review");
+      await expect(dialog.getByTestId("chat-ui-action-result")).toHaveText("Task updated");
+      expect(
+        requests
+          .filter((request) => request.method() === "PATCH")
+          .at(-1)
+          ?.postDataJSON(),
+      ).toEqual({ status: "review" });
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      expect(errors).toEqual([]);
+    });
+  }
+}

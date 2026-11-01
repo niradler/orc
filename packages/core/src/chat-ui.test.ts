@@ -11,13 +11,13 @@ describe("parseChatUiSpec", () => {
       { type: "Stack", children: ["a"] },
       { type: "Stack", children: ["missing"] },
       {
-        type: "Text",
-        props: { text: "x" },
+        type: "Stack",
+        props: {},
         watch: { "/x": { action: "task.comment", params: { id: "t", content: "automatic" } } },
       },
       {
-        type: "Text",
-        props: { text: "x" },
+        type: "Stack",
+        props: {},
         on: { press: { action: "task.update", params: { id: "t" } } },
       },
     ])
@@ -66,23 +66,24 @@ describe("parseChatUiSpec", () => {
     });
   });
 
-  test("rejects script and protocol-relative links", () => {
-    for (const href of [
-      "javascript:alert(1)",
-      "//evil.example",
-      "data:text/html,x",
-      "/\\evil.example",
-      "/\t/evil.example",
+  test("rejects presentation components that Markdown already provides", () => {
+    for (const type of [
+      "Grid",
+      "Card",
+      "Heading",
+      "Text",
+      "Markdown",
+      "Badge",
+      "KeyValue",
+      "Stat",
+      "Table",
+      "Progress",
+      "Alert",
+      "Link",
+      "Divider",
+      "Code",
     ])
-      expect(
-        parse({ root: "a", elements: { a: { type: "Link", props: { label: "x", href } } } }),
-      ).toMatchObject({ ok: false });
-    expect(
-      parse({
-        root: "a",
-        elements: { a: { type: "Link", props: { label: "x", href: "/tasks/1" } } },
-      }),
-    ).toMatchObject({ ok: true });
+      expect(parse({ root: "a", elements: { a: { type, props: {} } } }).ok).toBe(false);
   });
 
   test("rejects unknown actions and invalid static params", () => {
@@ -137,8 +138,9 @@ describe("chatUiCatalogText", () => {
     const text = chatUiCatalogText();
     expect(text).toContain(`\`\`\`${CHAT_UI_FENCE}`);
     expect(text).toContain("webchat");
-    for (const name of ["Task {", "TaskList {", "Job {", "Table {", "task.update {", "job.run {"])
+    for (const name of ["Task {", "TaskList {", "Job {", "Button {", "task.update {", "job.run {"])
       expect(text).toContain(name);
-    expect(text).toContain("href?: string");
+    expect(text).toContain("Markdown");
+    expect(text).not.toContain("- Stat ");
   });
 });

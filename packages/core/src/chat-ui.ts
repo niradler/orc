@@ -8,7 +8,6 @@ export const CHAT_UI_FENCE = "orc-ui";
 export const CHAT_UI_CATALOG_URI = "orc://ui/catalog";
 export const CHAT_UI_MAX_ELEMENTS = 200;
 
-const Tone = z.enum(["neutral", "progress", "success", "warning", "error"]);
 const TaskStatus = z.enum([
   "todo",
   "queued",
@@ -21,22 +20,6 @@ const TaskStatus = z.enum([
   "cancelled",
 ]);
 const TaskPriority = z.enum(["low", "normal", "high", "critical"]);
-const Cell = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-// Dashboard paths and web links only; javascript:, data: and protocol-relative URLs are rejected.
-export function isChatUiHref(href: string): boolean {
-  if (
-    /[\s\\]/.test(href) ||
-    Array.from(href).some(
-      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
-    )
-  )
-    return false;
-  return /^\/(?!\/)/.test(href) || /^https?:\/\/[^/]+/i.test(href);
-}
-
-const Href = z.string().max(2000).refine(isChatUiHref, {
-  message: "Use a dashboard path starting with / or an http(s) URL",
-});
 const Limit = z.number().int().min(1).max(50).optional();
 const EntityId = z
   .string()
@@ -54,77 +37,6 @@ export const chatUiCatalog = defineCatalog(schema, {
       slots: ["default"],
       description: "Groups children vertically (default) or in a wrapping row.",
     },
-    Grid: {
-      props: z.object({ columns: z.number().int().min(1).max(4).optional() }),
-      slots: ["default"],
-      description: "Responsive columns (default 2); collapses to one column on phones.",
-    },
-    Card: {
-      props: z.object({ title: z.string().optional(), description: z.string().optional() }),
-      slots: ["default"],
-      description: "A bordered section with an optional title. Do not nest cards.",
-    },
-    Heading: {
-      props: z.object({
-        text: z.string(),
-        level: z.union([z.literal(2), z.literal(3)]).optional(),
-      }),
-      description: "A section heading.",
-    },
-    Text: {
-      props: z.object({ text: z.string(), muted: z.boolean().optional() }),
-      description: "A plain paragraph. Use muted for secondary details.",
-    },
-    Markdown: {
-      props: z.object({ text: z.string() }),
-      description: "Rendered Markdown (links, lists, inline code).",
-    },
-    Badge: {
-      props: z.object({ label: z.string(), tone: Tone.optional() }),
-      description: "A short status label with a colored dot.",
-    },
-    KeyValue: {
-      props: z.object({
-        items: z.array(z.object({ label: z.string(), value: Cell, href: Href.optional() })).max(40),
-      }),
-      description: "Aligned label/value pairs for entity details.",
-    },
-    Stat: {
-      props: z.object({
-        label: z.string(),
-        value: z.union([z.string(), z.number()]),
-        hint: z.string().optional(),
-      }),
-      description: "One metric. Put several in a Grid.",
-    },
-    Table: {
-      props: z.object({
-        columns: z
-          .array(z.object({ key: z.string(), label: z.string() }))
-          .min(1)
-          .max(8),
-        rows: z.array(z.record(z.string(), Cell)).max(100),
-        linkKey: z.string().optional(),
-      }),
-      description:
-        "Rows of data. linkKey names a row field holding a dashboard path; the first column links to it.",
-    },
-    Progress: {
-      props: z.object({ value: z.number().min(0).max(100), label: z.string().optional() }),
-      description: "A 0-100 progress bar.",
-    },
-    Alert: {
-      props: z.object({
-        title: z.string(),
-        text: z.string().optional(),
-        tone: z.enum(["info", "success", "warning", "error"]).optional(),
-      }),
-      description: "A notice; use error only for real failures.",
-    },
-    Link: {
-      props: z.object({ label: z.string(), href: Href }),
-      description: "A link to a dashboard path (e.g. /tasks/<id>) or an http(s) URL.",
-    },
     Button: {
       props: z.object({
         label: z.string(),
@@ -133,15 +45,10 @@ export const chatUiCatalog = defineCatalog(schema, {
       description:
         'Runs an action on press: "on": {"press": {"action": "<name>", "params": {...}}}. Use one primary button per block.',
     },
-    Divider: { props: z.object({}), description: "A quiet horizontal separator." },
-    Code: {
-      props: z.object({ code: z.string(), language: z.string().optional() }),
-      description: "A monospace code or command block.",
-    },
     Task: {
       props: z.object({ id: EntityId }),
       description:
-        "Live ORC task by id: title, status/priority/progress, project and links, with a status control. Prefer this over describing a task by hand.",
+        "Live task with status control, progress and links; use when the user wants to follow or act on it.",
     },
     TaskList: {
       props: z.object({
@@ -178,7 +85,8 @@ export const chatUiCatalog = defineCatalog(schema, {
     },
     SessionList: {
       props: z.object({ projectId: EntityId.optional(), limit: Limit }),
-      description: "Live discovered agent sessions, most recent activity first.",
+      description:
+        "Live session activity, summaries and related task links; long content expands/fullscreens.",
     },
     Memory: {
       props: z.object({ projectId: EntityId, name: z.string().min(1).max(128) }),
@@ -186,11 +94,8 @@ export const chatUiCatalog = defineCatalog(schema, {
     },
     Pad: {
       props: z.object({ id: EntityId }),
-      description: "Live scratchpad summary with a link to open it.",
-    },
-    Skill: {
-      props: z.object({ name: z.string() }),
-      description: "Live skill summary by name.",
+      description:
+        "Live scratchpad and document preview; long text expands/fullscreens, with an editor link.",
     },
   },
   actions: {
@@ -325,7 +230,7 @@ export function parseChatUiSpec(source: string): ChatUiParseResult {
     );
     if (!props.success) return { ok: false, error: issueText(`${key}.props`, props.error) };
     element.props = props.data;
-    if (element.children?.length && !["Stack", "Grid", "Card"].includes(element.type))
+    if (element.children?.length && element.type !== "Stack")
       return { ok: false, error: `${element.type} does not accept children` };
     if (
       Object.keys(element.on ?? {}).some((event) => element.type !== "Button" || event !== "press")
@@ -399,41 +304,29 @@ export function chatUiCatalogText(): string {
   const { components, actions } = chatUiCatalog.data;
   const componentLines = Object.entries(components).map(
     ([name, def]) =>
-      `- ${name} ${describe(def.props)}${"slots" in def ? " (children)" : ""} — ${def.description}`,
+      `- ${name} ${describe(def.props)}${"slots" in def ? " (children)" : ""} â€” ${def.description}`,
   );
   const actionLines = Object.entries(actions).map(
-    ([name, def]) => `- ${name} ${describe(def.params)} — ${def.description}`,
+    ([name, def]) => `- ${name} ${describe(def.params)} â€” ${def.description}`,
   );
   return `# ORC chat UI components
 
-Render ORC components inside an ORC web chat reply. Only do this when the turn's
-<orc-context> says the source is webchat; channels such as Telegram show the raw
-JSON, so answer there in plain Markdown. Prefer live entity components (Task,
-TaskList, Job, ...) over copying entity fields: they load current data as the
-signed-in user and stay up to date. Resolve ids with ORC tools first; never guess.
+Webchat only: use components only when <orc-context> says source: webchat.
+Default to Markdown. Use a component for current/live entity data, an API action,
+or contextual navigation; never just to decorate text or repeat a status.
+Entity components load as the signed-in user and stay live. Resolve ids first.
 
-Write a fenced block with the language \`${CHAT_UI_FENCE}\` containing one JSON spec.
-Text before and after the block renders as Markdown. Keep a short sentence of
-context; do not repeat what the component shows.
-
+Reply with an orc-ui fence; ordinary text outside it is Markdown:
 \`\`\`${CHAT_UI_FENCE}
-{
-  "root": "main",
-  "elements": {
-    "main": { "type": "Stack", "props": {}, "children": ["task", "open"] },
-    "task": { "type": "Task", "props": { "id": "<task-id>" } },
-    "open": { "type": "TaskList", "props": { "projectId": "<project-id>", "status": "doing", "limit": 5 } }
-  }
-}
+{"root":"task","elements":{"task":{"type":"Task","props":{"id":"<task-id>"}}}}
 \`\`\`
 
 Rules:
-- "root" names an element key; every key in "children" must exist in "elements".
-- Only components marked (children) take children. At most ${CHAT_UI_MAX_ELEMENTS} elements.
-- Buttons run actions with "on": {"press": {"action": "task.update", "params": {"id": "<id>", "status": "done"}}}.
-  Actions call the ORC API as the signed-in user; destructive ones are confirmed in the UI.
-- Links use dashboard paths (see the orc-platform web reference), e.g. /tasks/<task-id>.
-- Invalid specs are shown to the user as raw JSON, so validate ids and props.
+- root and every child key must exist; only Stack accepts children. Max ${CHAT_UI_MAX_ELEMENTS} rendered elements.
+- Button actions: "on":{"press":{"action":"task.update","params":{"id":"<id>","status":"done"}}}.
+- Actions run only on press, as the signed-in user; delete/run require confirmation.
+- Keep replies small. No galleries, duplicated entity fields, watchers or repeaters.
+- Invalid specs display raw JSON and an error. Channels use Markdown.
 
 ## Components
 ${componentLines.join("\n")}

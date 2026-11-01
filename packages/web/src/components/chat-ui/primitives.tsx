@@ -69,7 +69,7 @@ export function Dot({ tone, className }: { tone: Tone; className?: string }) {
   );
 }
 
-/** Bordered container shared by Card and the live entity components. */
+/** Bordered container for live entity components. */
 export function Panel({
   children,
   className,

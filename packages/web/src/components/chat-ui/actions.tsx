@@ -34,13 +34,31 @@ const CONFIRM_COPY: Partial<Record<ChatUiActionName, ConfirmCopy>> = {
   },
 };
 
-const ActionContext = createContext<{ run: RunAction; pending: ReadonlySet<string> } | null>(null);
+const ActionContext = createContext<{
+  run: RunAction;
+  pending: ReadonlySet<string>;
+  outcome: Outcome | null;
+} | null>(null);
 
 /** Runs catalog actions as the signed-in user. Never throws: failures render inline. */
 export function useChatUiAction() {
   const context = useContext(ActionContext);
   if (!context) throw new Error("useChatUiAction must be used inside ChatUiActionProvider");
   return context;
+}
+
+export function ChatUiActionFeedback() {
+  const { outcome } = useChatUiAction();
+  if (!outcome) return null;
+  return (
+    <p
+      role={outcome.tone === "error" ? "alert" : "status"}
+      data-testid="chat-ui-action-result"
+      className={`mt-1.5 text-xs ${outcome.tone === "error" ? "text-error" : "text-on-surface-variant"}`}
+    >
+      {outcome.text}
+    </p>
+  );
 }
 
 export function ChatUiActionProvider({ children }: { children: ReactNode }) {
@@ -133,20 +151,12 @@ export function ChatUiActionProvider({ children }: { children: ReactNode }) {
     [confirm, execute],
   );
 
-  const value = useMemo(() => ({ run, pending }), [run, pending]);
+  const value = useMemo(() => ({ run, pending, outcome }), [run, pending, outcome]);
   const copy = confirming ? CONFIRM_COPY[confirming.name] : undefined;
   return (
     <ActionContext.Provider value={value}>
       {children}
-      {outcome && (
-        <p
-          role={outcome.tone === "error" ? "alert" : "status"}
-          data-testid="chat-ui-action-result"
-          className={`mt-1.5 text-xs ${outcome.tone === "error" ? "text-error" : "text-on-surface-variant"}`}
-        >
-          {outcome.text}
-        </p>
-      )}
+      <ChatUiActionFeedback />
       <ConfirmDialog
         open={Boolean(confirming)}
         title={copy?.title ?? "Confirm action"}

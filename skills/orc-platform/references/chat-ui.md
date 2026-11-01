@@ -57,15 +57,23 @@ Here is the task and what else is in progress:
 - Entity components (Task, TaskList, Job, ...) take ids and load current data as
   the signed-in human, then stay live. Resolve ids with ORC tools first; never
   invent them, and do not copy fields that the component already shows.
-- Layout and display components (Stack, Grid, Card, Stat, Table, ...) are for data
-  that has no entity component.
+- The catalog has 11 components: Task, TaskList, Job, JobList, Project, ProjectList,
+  SessionList, Memory, Pad, Button and Stack. Markdown is the default for
+  ordinary answers, formatting, tables, facts, status summaries and links.
+  Use a component only when live state, an action or contextual navigation adds value.
+  Do not build a gallery or duplicate an entity's fields in prose. Stack only groups
+  useful components; Button performs an API action.
+- Long task descriptions, session summaries/lists, memory content and document previews offer Expand
+  and Fullscreen controls in their headers. These are built-in views of the same
+  live data; agents do not need extra JSON props. Escape or Close returns to chat.
+- Skill is deliberately absent: a static skill viewer is agent-facing. Reviewing
+  and approving a proposed skill diff is a separate workflow, not this component.
 - Buttons run catalog actions (`task.update`, ...) through the ORC API as the
   human. Destructive actions ask the human to confirm. Never run an action on load.
 - Links use dashboard paths such as `/tasks/<id>` (see [Web navigation](web.md)).
 - An invalid spec is shown to the human as raw JSON with the error, so keep
   `root` and `children` keys consistent and props within the catalog.
-- Layouts are bounded to 200 rendered elements and must be acyclic. Only Stack,
-  Grid and Card accept children. Actions are supported only on Button `press`;
+- Layouts are bounded to 200 rendered elements and must be acyclic. Only Stack accepts children. Actions are supported only on Button `press`;
   state watchers, repeaters and automatic actions are rejected.
 
 ## MCP defaults and prompts
