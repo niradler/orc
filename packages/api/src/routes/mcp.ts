@@ -28,7 +28,7 @@ app.use("/mcp", (c, next) => bearerAuth(loadConfig().api.secret)(c, next));
 app.all("/mcp", async (c) => {
   let mode: McpMode;
   try {
-    mode = parseMcpMode(c.req.query("mode"));
+    mode = parseMcpMode(c.req.query("mode") ?? loadConfig().mcp.default_mode);
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "Invalid mode" }, 400);
   }

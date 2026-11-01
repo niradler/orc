@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
+import { CHAT_UI_CATALOG_URI, chatUiCatalogText } from "@orc/core/chat-ui";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import {
@@ -608,6 +609,13 @@ export const toolDefinitions = [
       "Pass project name or explicit project_id (null selects unassigned) to scope, or omit to use activeProject from config. " +
       "Use task_get or memory_read to drill into specific items.",
     inputSchema: scopedProjectParams,
+  },
+  {
+    name: "ui_catalog",
+    description:
+      `Components and actions for live tasks, jobs, session monitoring and saved scratchpad artifacts inside an ORC web chat reply. ` +
+      `Read before answering a webchat turn with components. Same content as the ${CHAT_UI_CATALOG_URI} resource.`,
+    inputSchema: z.object({}),
   },
   {
     name: "session_event",
@@ -1766,6 +1774,9 @@ export async function executeTool(
         error: run.error_msg,
       });
     }
+
+    case "ui_catalog":
+      return chatUiCatalogText();
 
     case "context": {
       const input = scopedProjectParams.parse(args);

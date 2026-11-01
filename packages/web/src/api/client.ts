@@ -39,6 +39,7 @@ import type {
   KbUsageStats,
   KnowledgeBase,
 } from "@orc/core/kb";
+import type { McpSettings } from "@orc/core/mcp-settings";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
@@ -686,6 +687,10 @@ export const api = {
       req<ChatThread>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission-mode`, { mode }),
   },
   settings: {
+    mcp: {
+      get: () => req<McpSettings>("GET", "/settings/mcp"),
+      save: (settings: McpSettings) => req<McpSettings>("PATCH", "/settings/mcp", settings),
+    },
     get: () => req<WorkspacePreferences>("GET", "/settings"),
     save: (preferences: WorkspacePreferences) =>
       req<WorkspacePreferences>("PATCH", "/settings", preferences),

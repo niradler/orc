@@ -6,6 +6,14 @@ import { expect, test } from "@playwright/test";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
+test.beforeEach(async ({ page }) => {
+  // Upload fixtures use mock chat; installed model-discovery processes must not
+  // outlive the test and keep its temporary workspace open on Windows.
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
+});
+
 for (const width of [1440, 390]) {
   test(`file-only drafts stay reachable through session history at ${width}px`, async ({
     page,
@@ -83,6 +91,9 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("chat-message-attachments")).toContainText("report.bin");
       await apiPatch(request, "/settings", { theme: "light" });
       await page.reload();
+      // setInputFiles can bypass a disabled input while the linked thread is restoring.
+      await expect(page.getByTestId("chat-message-attachments")).toContainText("report.bin");
+      await expect(page.getByTestId("chat-input")).toBeEnabled();
       await page.getByTestId("chat-file-input").setInputFiles({
         name: "follow-up.txt",
         mimeType: "text/plain",

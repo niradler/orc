@@ -56,6 +56,60 @@ function maskCode(text: string): string {
   return chunks.join("");
 }
 
+export type UiMessagePart =
+  | { kind: "text"; text: string; offset: number }
+  | { kind: "ui"; source: string; complete: boolean; offset: number };
+
+/** Splits out ```orc-ui fences; an unclosed fence is a spec still streaming. */
+export function splitUiBlocks(text: string): UiMessagePart[] {
+  const parts: UiMessagePart[] = [];
+  let start = 0;
+  let fence: { char: string; size: number; ui: boolean; offset: number; body: number } | null =
+    null;
+  for (const line of text.matchAll(/[^\n]*(?:\n|$)/g)) {
+    if (!line[0]) continue;
+    const marker = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n?$/.exec(line[0]);
+    if (!marker) continue;
+    if (fence) {
+      if (marker[1][0] !== fence.char || marker[1].length < fence.size || marker[2].trim())
+        continue;
+      if (fence.ui) {
+        parts.push({
+          kind: "ui",
+          source: text.slice(fence.body, line.index),
+          complete: true,
+          offset: fence.offset,
+        });
+        start = line.index + line[0].replace(/\r?\n$/, "").length;
+      }
+      fence = null;
+    } else {
+      if (marker[1][0] === "`" && marker[2].includes("`")) continue;
+      const ui = marker[2].trim() === "orc-ui";
+      if (ui && line.index > start)
+        parts.push({ kind: "text", text: text.slice(start, line.index), offset: start });
+      fence = {
+        char: marker[1][0],
+        size: marker[1].length,
+        ui,
+        offset: line.index,
+        body: line.index + line[0].length,
+      };
+    }
+  }
+  if (fence?.ui) {
+    parts.push({
+      kind: "ui",
+      source: text.slice(fence.body),
+      complete: false,
+      offset: fence.offset,
+    });
+    return parts;
+  }
+  if (start < text.length) parts.push({ kind: "text", text: text.slice(start), offset: start });
+  return parts;
+}
+
 /** Display-only split: keep exact bytes and never interpret context as HTML. */
 export function splitAgentMessage(text: string): AgentMessagePart[] {
   const masked = maskCode(text);

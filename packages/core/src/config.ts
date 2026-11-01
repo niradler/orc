@@ -4,6 +4,7 @@ import { z } from "zod";
 import { ChannelConnectionSchema } from "./channels.js";
 import { ChatSettingsSchema } from "./chat.js";
 import { userHome } from "./home.js";
+import { McpSettingsSchema } from "./mcp-settings.js";
 import { decryptSecret } from "./secrets.js";
 
 const ChannelDefaultModeSchema = z
@@ -124,8 +125,9 @@ export const OrcConfigSchema = z.object({
     .object({
       transport: z.enum(["stdio", "http"]).default("stdio"),
       port: z.number().int().default(7701),
+      ...McpSettingsSchema.shape,
     })
-    .default({ transport: "stdio", port: 7701 }),
+    .prefault({}),
 
   channels: z.array(ChannelConnectionSchema).default([]),
   gateway: z

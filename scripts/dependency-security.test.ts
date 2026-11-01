@@ -1,5 +1,13 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -9,6 +17,110 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 const repo = resolve(import.meta.dir, "..");
 const runnerRequire = createRequire(join(repo, "packages/runner/package.json"));
 const chokidarRequire = createRequire(runnerRequire.resolve("chokidar"));
+
+test("should use patched minimatch while preserving SDK URL matching", async () => {
+  const sdkRequire = createRequire(
+    Bun.resolveSync("openapi-typescript", join(repo, "packages/sdk")),
+  );
+  const redoclyRequire = createRequire(sdkRequire.resolve("@redocly/openapi-core"));
+  expect(Bun.semver.satisfies(version(redoclyRequire.resolve("minimatch")), ">=11.0.1")).toBe(true);
+  const utils = redoclyRequire("./utils.js") as {
+    readFileFromUrl: (
+      url: string,
+      config: {
+        headers: { matches: string; name: string; value: string }[];
+        customFetch: (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
+      },
+    ) => Promise<{ body: string }>;
+  };
+  const result = await utils.readFileFromUrl("https://example.com/api/schema.json", {
+    headers: [
+      { matches: "example.com/api/*.json", name: "x-matched", value: "yes" },
+      { matches: "other.com/**", name: "x-unmatched", value: "no" },
+    ],
+    customFetch: async (_url, init) => new Response(JSON.stringify(init.headers)),
+  });
+  expect(JSON.parse(result.body)).toEqual({ "x-matched": "yes" });
+});
+
+test("should preserve desktop archive unpacking and directory include/exclude filters with patched minimatch", async () => {
+  const desktopRequire = createRequire(join(repo, "packages/desktop/package.json"));
+  const electronBuilderRequire = createRequire(desktopRequire.resolve("electron-builder"));
+  const builderRequire = createRequire(electronBuilderRequire.resolve("app-builder-lib"));
+  const universalRequire = createRequire(builderRequire.resolve("@electron/universal"));
+  const asarRequire = createRequire(builderRequire.resolve("@electron/asar"));
+  const dirCompareRequire = createRequire(universalRequire.resolve("dir-compare"));
+  const globRequire = createRequire(asarRequire.resolve("glob"));
+  for (const resolver of [
+    builderRequire,
+    universalRequire,
+    asarRequire,
+    dirCompareRequire,
+    globRequire,
+  ]) {
+    expect(Bun.semver.satisfies(version(resolver.resolve("minimatch")), ">=11.0.1")).toBe(true);
+  }
+  const asar = builderRequire("@electron/asar") as {
+    createPackageWithOptions: (
+      source: string,
+      archive: string,
+      options: { unpack: string; unpackDir: string },
+    ) => Promise<void>;
+    listPackage: (archive: string) => string[];
+  };
+  const compare = universalRequire("dir-compare") as {
+    compareSync: (
+      left: string,
+      right: string,
+      options: { includeFilter: string; excludeFilter: string; compareContent: boolean },
+    ) => { same: boolean };
+  };
+  const source = join(root, "minimatch-source");
+  const copy = join(root, "minimatch-copy");
+  for (const directory of [source, copy]) {
+    mkdirSync(join(directory, "native"), { recursive: true });
+    writeFileSync(join(directory, "main.js"), "console.log('packaged')");
+    writeFileSync(join(directory, "native/addon.node"), "native fixture");
+    writeFileSync(join(directory, "addon.node"), "root native fixture");
+  }
+  writeFileSync(join(source, "ignored.js"), "different");
+  writeFileSync(join(source, ".hidden.js"), "hidden");
+  const glob = asarRequire("glob") as {
+    sync: (pattern: string, options: { cwd: string }) => string[];
+  };
+  expect(glob.sync("**/*.js", { cwd: source }).sort()).toEqual(["ignored.js", "main.js"]);
+  const { FileMatcher } = builderRequire("./fileMatcher.js") as {
+    FileMatcher: new (
+      from: string,
+      to: string,
+      expand: (value: string) => string,
+      patterns: string[],
+    ) => {
+      createFilter: () => (path: string, stat: ReturnType<typeof statSync>) => boolean;
+    };
+  };
+  const filter = new FileMatcher(source, copy, (value) => value, [
+    "**/*.js",
+    "!ignored.js",
+  ]).createFilter();
+  expect(filter(join(source, "main.js"), statSync(join(source, "main.js")))).toBe(true);
+  expect(filter(join(source, "ignored.js"), statSync(join(source, "ignored.js")))).toBe(false);
+  expect(filter(join(source, "addon.node"), statSync(join(source, "addon.node")))).toBe(false);
+  expect(
+    compare.compareSync(source, copy, {
+      includeFilter: "*.js",
+      excludeFilter: "ignored.js,.hidden.js",
+      compareContent: true,
+    }).same,
+  ).toBe(true);
+  const archive = join(root, "minimatch.asar");
+  await asar.createPackageWithOptions(source, archive, { unpack: "*.node", unpackDir: "nat*" });
+  expect(asar.listPackage(archive).map((entry) => entry.replaceAll("\\", "/"))).toContain(
+    "/main.js",
+  );
+  expect(readFileSync(`${archive}.unpacked/native/addon.node`, "utf8")).toBe("native fixture");
+  expect(readFileSync(`${archive}.unpacked/addon.node`, "utf8")).toBe("root native fixture");
+});
 
 function version(entry: string): string {
   let directory = dirname(entry);

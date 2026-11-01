@@ -11,7 +11,10 @@
     "./push": "./src/push.ts",
     "./human-request-client": "./src/human-request-client.ts",
     "./chat": "./src/chat.ts",
+    "./chat-context": "./src/chat-context.ts",
     "./chat-options": "./src/chat-options.ts",
+    "./chat-ui": "./src/chat-ui.ts",
+    "./mcp-settings": "./src/mcp-settings.ts",
     "./process-supervisor": "./src/process-supervisor.ts",
     "./github-auth": "./src/github-auth.ts",
     "./job-actions": "./src/job-actions.ts",
@@ -71,6 +74,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@json-render/core": "0.21.3",
+    "@json-render/react": "0.21.3",
     "ajv": "^8.20.0",
     "skills": "1.7.4",
     "zod": "^4.6.7",

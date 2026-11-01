@@ -30,7 +30,7 @@ export type OrcHttpMcpServer = {
 export function buildOrcMcpServer(
   host: ExecHost = resolveExecHost(),
   alwaysLoad = false,
-  mode: OrcMcpMode = "meta",
+  mode: OrcMcpMode = loadConfig().mcp.default_mode,
   project?: string,
 ): OrcHttpMcpServer {
   let config: OrcConfig;
@@ -57,7 +57,7 @@ export function buildOrcMcpServer(
 export function buildOrcMcpServers(
   host: ExecHost = resolveExecHost(),
   alwaysLoad = false,
-  mode: OrcMcpMode = "meta",
+  mode: OrcMcpMode = loadConfig().mcp.default_mode,
   project?: string,
 ): Record<string, OrcHttpMcpServer> {
   return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad, mode, project) };
@@ -70,7 +70,7 @@ export type OrcMcpConfigFile = { path: string; cleanup: () => void };
 export async function writeOrcMcpConfigFile(
   host: ExecHost = resolveExecHost(),
   project?: string,
-  mode: OrcMcpMode = "meta",
+  mode: OrcMcpMode = loadConfig().mcp.default_mode,
   format: "claude" | "acpx" = "claude",
 ): Promise<OrcMcpConfigFile> {
   if (host.kind === "ssh") await ensureSshMaster(host);

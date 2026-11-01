@@ -138,7 +138,7 @@ program
 program
   .command("mcp")
   .description("Start the MCP server (stdio)")
-  .option("--mode <mode>", "tool surface: meta (default; tool_search/describe/invoke) or full")
+  .option("--mode <mode>", "override the configured tool mode: meta (discovery) or full")
   .action(async (opts: { mode?: string }) => {
     // Import the modules, not the @orc/mcp barrel: the bundled barrel does not await its
     // async children, so the tool registry would still be undefined when clients call it.
@@ -146,7 +146,7 @@ program
       import("@orc/mcp/meta-tools"),
       import("@orc/mcp/server"),
     ]);
-    await startStdioServer(parseMcpMode(opts.mode ?? "meta"));
+    await startStdioServer(opts.mode === undefined ? undefined : parseMcpMode(opts.mode));
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {

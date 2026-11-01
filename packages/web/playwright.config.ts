@@ -10,6 +10,7 @@ const PW_DB = process.env.PW_DB_PATH ?? join(tmpdir(), "orc-pw-fallback.db");
 
 // Expose to test helpers that call the API directly.
 process.env.ORC_API_PORT = PW_API_PORT;
+process.env.ORC_API_SECRET = "dev";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -56,7 +57,7 @@ export default defineConfig({
           env: {
             ORC_API_HOST: "127.0.0.1",
             ORC_API_PORT: PW_API_PORT,
-            ORC_API_SECRET: "",
+            ORC_API_SECRET: "dev",
             ORC_DB_PATH: PW_DB,
             ORC_E2E_CHAT_MOCK: "1",
           },

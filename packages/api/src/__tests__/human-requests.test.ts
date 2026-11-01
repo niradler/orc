@@ -335,7 +335,8 @@ test("should enforce a command timeout and bound/redact large output", async () 
     expect(result.response.stdout.length).toBeLessThanOrEqual(64000);
     expect(result.response.stdout).not.toContain(value);
   }
-});
+  // Two shell runs (timeout + 20k-write loop); the kill bound is asserted above.
+}, 15000);
 
 test("should stop command descendants on timeout", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-command-descendants-"));

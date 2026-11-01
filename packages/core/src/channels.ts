@@ -345,6 +345,8 @@ export type ChannelInbound = {
   event?: "reaction" | "edit";
   connection: string;
   sender: string;
+  /** Provider display name, for agent context only; `sender` stays the identity. */
+  sender_name?: string | undefined;
   chat: string;
   thread?: string | undefined;
   text: string;

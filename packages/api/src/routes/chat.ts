@@ -29,6 +29,7 @@ import {
   nativeChatAgent,
   nativeChatResumeUnavailableReason,
 } from "@orc/core/chat";
+import { ChatTurnContextSchema, withOrcContext } from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
@@ -741,6 +742,8 @@ const requestSchema = z
     autoApprove: z.boolean().optional(),
     permissionMode: ChatPermissionModeSchema.optional(),
     agentOptions: ChatAgentOptionsMapSchema.optional(),
+    // Where the user is chatting from. Sent to the agent only; the stored message stays the user's text.
+    context: ChatTurnContextSchema.optional(),
   })
   .strict()
   .refine(
@@ -997,7 +1000,7 @@ async function streamChat(
           model: thread.config.model || undefined,
           systemPromptAppend: chatSystemPrompt(thread.config.system),
           orcMcp: thread.config.mcp === "orc",
-          orcMcpMode: "meta",
+          orcMcpMode: loadConfig().mcp.default_mode,
           mcpAlwaysLoad: true,
           acpxAgent: thread.config.agent,
           acpxNativeSessionId:
@@ -1034,10 +1037,12 @@ async function streamChat(
           ? await backend.resumeSession(thread.runtimeId, opts)
           : await backend.startSession(opts);
         if (stopped) return;
+        const turn = input + uploadPrompt(attachments);
+        const sent = body.context ? withOrcContext(turn, body.context) : turn;
         const prompt =
           thread.backend === "acpx"
-            ? [thread.config.system, input + uploadPrompt(attachments)].filter(Boolean).join("\n\n")
-            : input + uploadPrompt(attachments);
+            ? [thread.config.system, sent].filter(Boolean).join("\n\n")
+            : sent;
         await run.session.send(prompt);
         let receivedResult = false;
         let outputBytes = 0;
