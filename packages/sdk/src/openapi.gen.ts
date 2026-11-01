@@ -4039,6 +4039,707 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List specs registered in spec-cli */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Registered connections */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationConnectionList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Register a spec in spec-cli */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        source: components["schemas"]["IntegrationConnectionSource"];
+                    };
+                };
+            };
+            responses: {
+                /** @description Created connection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationConnectionDetail"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check that an unsaved connection reaches its server
+         * @description Loads the source from a throwaway in-memory registry, so nothing is saved. An edit that keeps the saved server URL reuses the connection's stored OAuth tokens; any other draft is tested without them. Servers that need a sign-in report `auth_required`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        source: components["schemas"]["IntegrationConnectionSource"];
+                    };
+                };
+            };
+            responses: {
+                /** @description Test result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationTestResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a connection's full configuration */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Connection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationConnectionDetail"];
+                    };
+                };
+            };
+        };
+        /** Replace a connection's configuration, keeping its enabled state and labels. OAuth tokens are kept unless the server URL changes. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        source: components["schemas"]["IntegrationConnectionSource"];
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated connection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationConnectionDetail"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        /** Remove a connection with its cached spec and OAuth tokens */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Removed */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Enable or disable a connection */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated connection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationConnectionDetail"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetch the connection's spec or tool list again */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Refreshed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationRefreshResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start an OAuth sign-in for a remote MCP connection
+         * @description Returns `redirect` with the URL to open, or `authorized` when the server needs no sign-in or uses the client-credentials flow. The provider sends the browser back to `redirectUrl`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        redirectUrl: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Sign-in started */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationAuthorization"];
+                    };
+                };
+            };
+        };
+        /** Sign out: drop the connection's stored OAuth tokens */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Signed out */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/authorize/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish an OAuth sign-in with the code the provider returned */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        code: string;
+                        state: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Signed in */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a connection's tools, including those its filters disable */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Tools */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationToolList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/tools/{tool}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Describe a tool and its input schema */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                    tool: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Tool */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationToolDetail"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Enable or disable one tool through the connection's disabledTools filter */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                    tool: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated tool */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            enabled: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/tools/{tool}/invoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Call a tool through spec-cli's catalog, as an agent would */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                    tool: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @default {} */
+                        args?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Tool result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationToolResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an MCP connection's resources and templates, including those its filters disable */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Resources */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationResourceList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/resources/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read a resource, or expand a template and read it, through spec-cli's catalog */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        uri: string;
+                        /** @default {} */
+                        vars?: {
+                            [key: string]: string;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Resource contents */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationResourceContents"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an MCP connection's prompts, including those its filters disable */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Prompts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationPromptList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/connections/{name}/prompts/get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Render a prompt through spec-cli's catalog, as an agent would */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        prompt: string;
+                        /** @default {} */
+                        arguments?: {
+                            [key: string]: string;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Rendered prompt */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IntegrationPromptResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -13957,6 +14658,173 @@ export interface components {
             args: {
                 [key: string]: unknown;
             };
+        };
+        IntegrationConnectionList: {
+            connections: components["schemas"]["IntegrationConnection"][];
+        };
+        IntegrationConnection: {
+            name: string;
+            type: string | null;
+            description: string | null;
+            enabled: boolean;
+        };
+        IntegrationConnectionDetail: {
+            name: string;
+            enabled: boolean;
+            source: components["schemas"]["IntegrationConnectionSource"];
+        };
+        IntegrationConnectionSource: {
+            /** @enum {string} */
+            type: "openapi";
+            source: string;
+            baseUrl?: string;
+            auth?: string;
+            headers?: {
+                [key: string]: string;
+            };
+            description?: string;
+            allowedTools?: string[];
+            disabledTools?: string[];
+        } | {
+            /** @enum {string} */
+            type: "graphql";
+            source: string;
+            auth?: string;
+            headers?: {
+                [key: string]: string;
+            };
+            description?: string;
+            allowedTools?: string[];
+            disabledTools?: string[];
+        } | {
+            /** @enum {string} */
+            type: "http";
+            url: string;
+            auth?: string;
+            headers?: {
+                [key: string]: string;
+            };
+            /** @enum {string} */
+            oauthFlow?: "browser" | "device" | "client_credentials";
+            oauthClientId?: string;
+            oauthClientSecret?: string;
+            oauthCallbackPort?: number;
+            description?: string;
+            allowedTools?: string[];
+            disabledTools?: string[];
+        } | {
+            /** @enum {string} */
+            type: "sse";
+            url: string;
+            auth?: string;
+            headers?: {
+                [key: string]: string;
+            };
+            /** @enum {string} */
+            oauthFlow?: "browser" | "device" | "client_credentials";
+            oauthClientId?: string;
+            oauthClientSecret?: string;
+            oauthCallbackPort?: number;
+            description?: string;
+            allowedTools?: string[];
+            disabledTools?: string[];
+        } | {
+            /** @enum {string} */
+            type: "stdio";
+            command: string;
+            args?: string[];
+            cwd?: string;
+            env?: {
+                [key: string]: string;
+            };
+            description?: string;
+            allowedTools?: string[];
+            disabledTools?: string[];
+        };
+        IntegrationTestResult: {
+            /** @enum {string} */
+            status: "connected" | "auth_required" | "failed";
+            count: number | null;
+            message: string | null;
+        };
+        IntegrationRefreshResult: {
+            name: string;
+            type: string;
+            count: number;
+        };
+        IntegrationAuthorization: {
+            /** @enum {string} */
+            status: "authorized" | "redirect";
+            authorizationUrl: string | null;
+        };
+        IntegrationToolList: {
+            tools: components["schemas"]["IntegrationTool"][];
+        };
+        IntegrationTool: {
+            id: string;
+            description: string;
+            enabled: boolean;
+        };
+        IntegrationToolDetail: {
+            id: string;
+            description: string;
+            enabled: boolean;
+            inputSchema: {
+                [key: string]: unknown;
+            };
+        };
+        IntegrationToolResult: {
+            content: {
+                [key: string]: unknown;
+            }[];
+            isError?: boolean;
+            structuredContent?: {
+                [key: string]: unknown;
+            };
+        };
+        IntegrationResourceList: {
+            resources: components["schemas"]["IntegrationResource"][];
+            templates: components["schemas"]["IntegrationResourceTemplate"][];
+            error: string | null;
+        };
+        IntegrationResource: {
+            uri: string;
+            name: string;
+            description: string | null;
+            mimeType: string | null;
+            enabled: boolean;
+        };
+        IntegrationResourceTemplate: {
+            name: string;
+            description: string | null;
+            mimeType: string | null;
+            enabled: boolean;
+            uriTemplate: string;
+        };
+        IntegrationResourceContents: {
+            contents: {
+                [key: string]: unknown;
+            }[];
+        };
+        IntegrationPromptList: {
+            prompts: components["schemas"]["IntegrationPrompt"][];
+            error: string | null;
+        };
+        IntegrationPrompt: {
+            name: string;
+            description: string | null;
+            arguments: {
+                name: string;
+                description: string | null;
+                required: boolean;
+            }[];
+            enabled: boolean;
+        };
+        IntegrationPromptResult: {
+            description?: string;
+            messages: {
+                [key: string]: unknown;
+            }[];
         };
         ProjectPage: {
             projects: components["schemas"]["Project"][];

@@ -41,6 +41,7 @@ const Audit = lazy(() => import("@/views/Audit"));
 const Attention = lazy(() => import("@/views/Attention"));
 
 const Settings = lazy(() => import("@/views/Settings"));
+const IntegrationCallback = lazy(() => import("@/views/IntegrationCallback"));
 
 const Skills = lazy(() => import("@/views/Skills"));
 
@@ -270,6 +271,10 @@ export default function App() {
                       <Route path="/packages/agents" element={<Agents />} />
                       <Route path="/packages/agents/:agentId" element={<Agents />} />
                       <Route path="/settings" element={<Settings />} />
+                      <Route
+                        path="/integrations/oauth/:name/callback"
+                        element={<IntegrationCallback />}
+                      />
                       <Route path="/rules" element={<Rules />} />
                       <Route path="/scratchpad" element={<Scratchpads projectId={projectId} />} />
                       <Route
