@@ -56,6 +56,39 @@ function maskCode(text: string): string {
   return chunks.join("");
 }
 
+export type UiMessagePart =
+  | { kind: "text"; text: string; offset: number }
+  | { kind: "ui"; source: string; complete: boolean; offset: number };
+
+/** Splits out ```orc-ui fences; an unclosed fence is a spec still streaming. */
+export function splitUiBlocks(text: string): UiMessagePart[] {
+  const parts: UiMessagePart[] = [];
+  const open = /^ {0,3}(`{3,})orc-ui[ \t]*$/gm;
+  let start = 0;
+  for (let match = open.exec(text); match; match = open.exec(text)) {
+    const bodyStart = match.index + match[0].length + 1;
+    const close = new RegExp(`^ {0,3}${match[1]}\`*[ \\t]*$`, "m");
+    const rest = text.slice(bodyStart);
+    const end = close.exec(rest);
+    if (match.index > start)
+      parts.push({ kind: "text", text: text.slice(start, match.index), offset: start });
+    if (!end) {
+      parts.push({ kind: "ui", source: rest, complete: false, offset: match.index });
+      return parts;
+    }
+    parts.push({
+      kind: "ui",
+      source: rest.slice(0, end.index),
+      complete: true,
+      offset: match.index,
+    });
+    start = bodyStart + end.index + end[0].length;
+    open.lastIndex = start;
+  }
+  if (start < text.length) parts.push({ kind: "text", text: text.slice(start), offset: start });
+  return parts;
+}
+
 /** Display-only split: keep exact bytes and never interpret context as HTML. */
 export function splitAgentMessage(text: string): AgentMessagePart[] {
   const masked = maskCode(text);

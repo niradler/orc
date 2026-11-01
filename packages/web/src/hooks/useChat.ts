@@ -49,6 +49,17 @@ export type { ChatMessage } from "@orc/core/chat";
 /** URL parameter naming the open conversation, so a chat link can be shared. */
 export const CHAT_THREAD_PARAM = "chatThread";
 
+/** The dashboard page the user is chatting from, without the chat's own URL state. */
+export function currentRoute(): string {
+  const params = new URLSearchParams(window.location.search);
+  params.delete("chat");
+  params.delete(CHAT_THREAD_PARAM);
+  const query = params.toString();
+  const route = `${window.location.pathname}${query ? `?${query}` : ""}`;
+  // The server caps the route; a page path alone still says where the user is.
+  return route.length <= 2000 ? route : window.location.pathname.slice(0, 2000);
+}
+
 interface PendingPermission {
   requestId: string;
   tool: string;
@@ -740,6 +751,7 @@ function useChatController() {
               ? { permissionMode: config.permissionMode }
               : {}),
             ...(thread ? { threadId: thread.id } : { workspace }),
+            context: { source: "webchat", route: currentRoute() },
           };
           const files = current.queuedFiles[userMessage.id] ?? [];
           let form: FormData | undefined;

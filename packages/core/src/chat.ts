@@ -25,8 +25,13 @@ ${ORC_TASK_GUIDANCE}
 Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
 Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
 Manage longer work through ORC tasks, progress updates, and handoffs.`;
+/** Kept out of the editable prompt so custom prompts still get it; details live in ui_catalog. */
+export const ORC_CHAT_CONTEXT_GUIDANCE = `Turns may start with an <orc-context> block that ORC adds: where the user is chatting from (source, dashboard route, or channel sender). The user does not see it; use it, do not quote it. When the source is webchat, you can answer with live ORC components; read the ui_catalog tool first.`;
+
 export function chatSystemPrompt(system = CHAT_SYSTEM_PROMPT): string {
-  return system.includes(ORC_TASK_GUIDANCE) ? system : `${system}\n\n${ORC_TASK_GUIDANCE}`;
+  return [system, ORC_TASK_GUIDANCE, ORC_CHAT_CONTEXT_GUIDANCE]
+    .filter((part, index) => index === 0 || !system.includes(part))
+    .join("\n\n");
 }
 
 export const ChatModelSchema = z

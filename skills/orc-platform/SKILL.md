@@ -41,6 +41,7 @@ verify the returned hash/size without loading the script body into context.
 | Projects, tasks/flows, jobs, gateway, status, tags and audit | [Work and operations](references/work.md) |
 | Channel setup, Telegram/Slack, inbound agent routing, outbound API/MCP, Markdown/native payloads | [Channels](references/channels.md) |
 | Session continuity/handoff, terminals, chat, SSH execution, Git/GitHub | [Sessions and execution](references/execution.md) |
+| Live ORC components in web chat replies, the `<orc-context>` turn block, UI catalog | [Chat UI components](references/chat-ui.md) |
 | Archive local coding sessions on remote ORC, incremental sync/deduplication, session retrieval design | [Session archive and search](references/session-archive.md) |
 | Deterministic rules, hooks and enforcement capabilities | [Rules](references/rules.md) |
 | Author/import/edit skills, agent profiles and packages | [Reusable definitions](references/packages.md) |

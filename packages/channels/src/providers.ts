@@ -375,6 +375,9 @@ export const createChannelTransport: TransportFactory = (connection, credentials
                   receive({
                     connection: connection.id,
                     sender: String(from.id),
+                    sender_name:
+                      [from.first_name, from.last_name].filter(Boolean).join(" ") ||
+                      (from.username ? String(from.username) : undefined),
                     chat: String(chat.id),
                     ...(msg.message_thread_id ? { thread: String(msg.message_thread_id) } : {}),
                     text: String(callback?.data ?? msg.text ?? msg.caption ?? ""),
@@ -465,6 +468,7 @@ export const createChannelTransport: TransportFactory = (connection, credentials
               receive({
                 connection: connection.id,
                 sender,
+                sender_name: payload.user?.username ?? payload.user?.name ?? payload.user_name,
                 chat,
                 ...(thread ? { thread: String(thread) } : {}),
                 text: slash

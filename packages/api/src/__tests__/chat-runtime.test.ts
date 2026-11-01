@@ -399,6 +399,31 @@ describe("native chat runtime", () => {
     ).toHaveLength(4);
     expect(closed).toBeGreaterThanOrEqual(2);
   });
+  test("web chat context reaches the agent but is not stored in the conversation", async () => {
+    const result = await turn({
+      messages: [{ role: "user", content: "what am I looking at?" }],
+      context: { source: "webchat", route: "/tasks/t1?tab=log" },
+    });
+    const opened = result.events[0];
+    if (opened?.type !== "thread") throw new Error("No conversation");
+    expect(calls.at(-1)?.prompt).toBe(
+      "<orc-context>\nsource: webchat\nroute: /tasks/t1?tab=log\n</orc-context>\n\nwhat am I looking at?",
+    );
+    const stored = (await (
+      await request(`/chat/threads/${opened.thread.id}`)
+    ).json()) as ChatThread;
+    expect(stored.messages[0]?.content).toBe("what am I looking at?");
+    expect(stored.title).toBe("what am I looking at?");
+    for (const context of [
+      { source: "telegram" },
+      { source: "webchat", route: "//evil.example" },
+      { source: "webchat", route: "/x", user: "spoofed" },
+    ])
+      expect(
+        (await request("/chat/stream", { messages: [{ role: "user", content: "x" }], context }))
+          .status,
+      ).toBe(400);
+  });
   test("should save validated per-agent launch options and pass them on resume", async () => {
     const first = await turn({
       messages: [{ role: "user", content: "configure this conversation" }],

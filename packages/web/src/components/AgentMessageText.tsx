@@ -1,7 +1,9 @@
+import { ORC_CONTEXT_TAG } from "@orc/core/chat-context";
 import { ChevronRight } from "lucide-react";
 import { useMemo } from "react";
+import { ChatUiBlock } from "@/components/chat-ui/ChatUiBlock";
 import { Markdown } from "@/components/Markdown";
-import { splitAgentMessage } from "@/lib/agent-message";
+import { splitAgentMessage, splitUiBlocks } from "@/lib/agent-message";
 
 export function AgentMessageText({
   children,
@@ -12,9 +14,38 @@ export function AgentMessageText({
   plain?: boolean;
   revealContext?: boolean;
 }) {
+  const parts = useMemo(() => (plain ? null : splitUiBlocks(children)), [children, plain]);
+  if (!parts?.some((part) => part.kind === "ui"))
+    return (
+      <AgentText plain={plain} revealContext={revealContext}>
+        {children}
+      </AgentText>
+    );
+  return parts.map((part) =>
+    part.kind === "ui" ? (
+      <ChatUiBlock key={part.offset} source={part.source} complete={part.complete} />
+    ) : (
+      <AgentText key={part.offset} revealContext={revealContext}>
+        {part.text}
+      </AgentText>
+    ),
+  );
+}
+
+function AgentText({
+  children,
+  plain = false,
+  revealContext = false,
+}: {
+  children: string;
+  plain?: boolean;
+  revealContext?: boolean;
+}) {
   const parts = useMemo(() => splitAgentMessage(children), [children]);
   return parts.map((part) =>
-    part.kind === "context" ? (
+    // ORC's own turn context is for the agent; show it only when a search matched inside it.
+    part.kind === "context" && part.tag === ORC_CONTEXT_TAG && !revealContext ? null : part.kind ===
+      "context" ? (
       <details
         key={part.offset}
         open={revealContext || undefined}

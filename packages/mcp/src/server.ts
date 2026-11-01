@@ -1,6 +1,12 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { CHAT_UI_CATALOG_URI, chatUiCatalogText } from "@orc/core/chat-ui";
 import { createLogger } from "@orc/core/logger";
 import { z } from "zod";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
@@ -57,7 +63,10 @@ export function createMcpServer({
     throw new Error("Use project or projects, not both");
   const names = projects ? normalizeMcpProjects(projects) : parseMcpProjects(project);
   const selected = names ? resolveMcpProjects(names) : undefined;
-  const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
+  const server = new Server(
+    { name: "orc", version: "0.0.1" },
+    { capabilities: { tools: {}, resources: {} } },
+  );
 
   // The set of tools this connection serves. Every lookup, listing and meta
   // search goes through it, so a future subset filter only changes this line.
@@ -164,6 +173,28 @@ export function createMcpServer({
       return runMetaTool(served, name, args, callTool);
     }
     return callTool(name, args);
+  });
+
+  // Static references. Each is mirrored by a tool for clients that cannot read resources.
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: [
+      {
+        uri: CHAT_UI_CATALOG_URI,
+        name: "ui_catalog",
+        title: "ORC chat UI components",
+        description: "Components and actions for live ORC UI in web chat replies",
+        mimeType: "text/markdown",
+      },
+    ],
+  }));
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    if (request.params.uri !== CHAT_UI_CATALOG_URI)
+      throw new Error(`Unknown resource: ${request.params.uri}`);
+    return {
+      contents: [
+        { uri: CHAT_UI_CATALOG_URI, mimeType: "text/markdown", text: chatUiCatalogText() },
+      ],
+    };
   });
 
   return server;

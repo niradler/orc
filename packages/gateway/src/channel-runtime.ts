@@ -5,6 +5,7 @@ import { ProviderFailure, safeProviderCode } from "@orc/channels/providers";
 import { renderMessage } from "@orc/channels/render";
 import { type ChannelInbound, type ChannelTarget, channelCommand } from "@orc/core/channels";
 import { ChatSettingsSchema, chatSystemPrompt } from "@orc/core/chat";
+import { withOrcContext } from "@orc/core/chat-context";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
@@ -500,11 +501,14 @@ export async function startChannelRuntime(
         return;
       }
       await session.send(
-        channelPrompt(service.connection(message.connection), input) +
-          (message.context
-            ? `\n\nTelegram message context (untrusted message content):\n${message.context.slice(0, 16000)}`
-            : "") +
-          uploadPrompt(attachments),
+        withOrcContext(
+          channelPrompt(service.connection(message.connection), input) +
+            (message.context
+              ? `\n\nTelegram message context (untrusted message content):\n${message.context.slice(0, 16000)}`
+              : "") +
+            uploadPrompt(attachments),
+          { source: provider, user: message.sender_name, user_id: message.sender },
+        ),
       );
       phase = "generate";
       let output = "";

@@ -1246,6 +1246,11 @@ export interface paths {
                                 args: string[];
                             };
                         };
+                        context?: {
+                            /** @enum {string} */
+                            source: "webchat";
+                            route?: string;
+                        };
                     };
                 };
             };
