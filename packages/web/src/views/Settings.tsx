@@ -9,6 +9,7 @@ import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { McpSettingsForm } from "@/components/McpSettingsForm";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { SecuritySettings } from "@/components/SecuritySettings";
 import { ServerSettings } from "@/components/ServerSettings";
 import { SshHostSettings } from "@/components/SshHostSettings";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { useViewParam } from "@/lib/view-params";
 
 const sections = [
   "connection",
+  "security",
   "appearance",
   "execution",
   "server",
@@ -37,6 +39,7 @@ const sections = [
 type Section = (typeof sections)[number];
 const sectionLabels: Record<Section, string> = {
   connection: "Connection",
+  security: "Security",
   appearance: "Appearance",
   execution: "Execution host",
   server: "Server",
@@ -207,6 +210,9 @@ export default function Settings() {
               ))}
             </fieldset>
           </section>
+          <div hidden={section !== "security"}>
+            <SecuritySettings active={section === "security"} />
+          </div>
           <div hidden={section !== "execution"}>
             <SshHostSettings />
           </div>
@@ -259,8 +265,8 @@ export default function Settings() {
             <h2 className="mb-3 text-base font-medium">Storage</h2>
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
               Workspace preferences and SSH selection are saved in the server's{" "}
-              <code>~/.orc/config.json</code>. The API address and optionally remembered login are
-              stored in this browser.
+              <code>~/.orc/config.json</code>. The API address is stored in this browser; sign-in
+              uses an HttpOnly cookie, never the API secret.
             </p>
           </section>
           {error && (

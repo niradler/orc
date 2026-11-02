@@ -89,8 +89,15 @@ export const OrcConfigSchema = z.object({
       port: z.number().int().default(7700),
       host: z.string().default("127.0.0.1"),
       secret: z.string().optional(),
+      /** Lifetime of the signed browser session cookie minted from the secret. */
+      session_days: z.number().int().min(1).max(365).default(30),
+      /** Browser origins allowed to call the API with credentials; empty keeps it same-origin. */
+      cors_origins: z
+        .array(z.url().transform((url) => new URL(url).origin))
+        .max(20)
+        .default([]),
     })
-    .default({ port: 7700, host: "127.0.0.1" }),
+    .default({ port: 7700, host: "127.0.0.1", session_days: 30, cors_origins: [] }),
 
   terminals: z
     .object({
@@ -323,6 +330,11 @@ function fromEnv(): Record<string, unknown> {
   if (process.env.ORC_API_PORT) api.port = Number(process.env.ORC_API_PORT);
   if (process.env.ORC_API_HOST) api.host = process.env.ORC_API_HOST;
   if (process.env.ORC_API_SECRET !== undefined) api.secret = process.env.ORC_API_SECRET;
+  if (process.env.ORC_API_SESSION_DAYS) api.session_days = Number(process.env.ORC_API_SESSION_DAYS);
+  if (process.env.ORC_API_CORS_ORIGINS !== undefined)
+    api.cors_origins = process.env.ORC_API_CORS_ORIGINS.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean);
   if (Object.keys(api).length) env.api = api;
 
   const terminals: Record<string, unknown> = {};

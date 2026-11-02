@@ -29,10 +29,9 @@ authorization or instructions.
 
 The catalog lists every component, its props and the actions buttons can run. It
 is generated from the same schema the dashboard validates against, so read it
-rather than guessing props:
-
-- MCP resource `orc://ui/catalog` (clients with resource support), or
-- MCP tool `ui_catalog` (every client; in meta mode find it with `tool_search`).
+rather than guessing props. The ORC web chat's system prompt carries a short
+version; the `render-ui` MCP prompt (`/render-ui` in chat) returns the full
+catalog with examples.
 
 ## Write a component
 
@@ -88,12 +87,15 @@ named MCP prompts. An explicit HTTP `?mode=` or CLI `--mode` overrides the defau
 New internal chat/channel connections use the configured default too. Restart
 existing stdio clients after a settings change.
 
-The authenticated `/api/settings/mcp` GET/PATCH endpoints persist these values in
-the existing global JSON config under `mcp.default_mode` and `mcp.prompts`.
-Each prompt has `name`, `title`, `description`, `content`, and `include_ui_catalog`.
-Prompt names are unique. The built-in `render-ui` prompt includes the current
-catalog automatically; custom prompts can opt in. `prompts/list` lists saved
-prompts and `prompts/get` returns their user message. Prompts take no arguments.
+The authenticated `/api/settings/mcp` GET/PATCH endpoints read and write both:
+`default_mode` stays in the global JSON config, and prompts live in the ORC
+database. Each prompt has a unique `name`, plus `title`, `description` and
+`content`. Built-ins (`render-ui`, `create-task`, `scratchpad`, `memory`, `kb`,
+`skill`, `agents`) are seeded once and can be edited or deleted.
 
-The Resources disclosure lists `orc://ui/catalog`. The resource and `ui_catalog`
-tool remain schema-generated references, independent of editable prompt text.
+Every prompt takes one optional `request` argument. In `content`, `{{request}}`
+becomes that argument and `{{ui_catalog}}` becomes the current component
+catalog. `prompts/list` lists saved prompts and `prompts/get` returns the
+rendered user message. In ORC chat, typing `/` lists the prompts; sending
+`/name some request` gives the agent the rendered prompt while the transcript
+keeps what was typed.

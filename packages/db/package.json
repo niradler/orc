@@ -18,6 +18,7 @@
     "./kb-digest": "./src/kb-digest.ts",
     "./memories": "./src/memories.ts",
     "./scratchpads": "./src/scratchpads.ts",
+    "./mcp-prompts": "./src/mcp-prompts.ts",
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",
     "./agent-memory": "./src/agent-memory.ts"

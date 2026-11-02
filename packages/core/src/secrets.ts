@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { userHome } from "./home.js";
@@ -32,6 +32,11 @@ function secretKey(): Buffer {
   if (key.length !== KEY_BYTES) throw new Error(`${path} is not a valid ORC secret key`);
   cached = { path, key };
   return key;
+}
+
+/** A purpose-bound key derived from the machine key, so the raw key never leaves this module. */
+export function deriveSecretKey(purpose: string): Buffer {
+  return createHmac("sha256", secretKey()).update(purpose).digest();
 }
 
 export const isEncryptedSecret = (value: string) => value.startsWith(PREFIX);
