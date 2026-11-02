@@ -14,9 +14,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path";
 import { configuredApiSecret, loadConfig, type OrcConfig } from "./config.js";
-import { OrcError, ValidationError } from "./errors.js";
+import { ConflictError, OrcError, ValidationError } from "./errors.js";
 import { ulid } from "./ids.js";
 import { createLogger } from "./logger.js";
 
@@ -1231,6 +1231,38 @@ export async function hostMakeDirectory(host: ExecHost, path: string): Promise<v
     login: false,
   });
   if (result.code !== 0) throw new ValidationError(result.stderr.trim() || `mkdir ${path} failed`);
+}
+
+/** Creates one new folder named `name` inside the existing folder `parent`; returns its path. */
+export async function createHostFolder(
+  host: ExecHost,
+  parent: string,
+  name: string,
+): Promise<string> {
+  const folder = name.trim();
+  if (!folder || folder === "." || folder === ".." || /[/\\\0]/.test(folder))
+    throw new ValidationError("Folder name cannot be empty or contain slashes");
+  const base = await expandHostPath(host, parent);
+  if (!isAbsolute(base)) throw new ValidationError("Choose an absolute folder path");
+  if (host.kind === "local") {
+    const path = join(base, folder);
+    try {
+      mkdirSync(path);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") throw new ConflictError(`Folder already exists: ${path}`);
+      throw new ValidationError(`Could not create ${path}: ${(error as Error).message}`);
+    }
+    return path;
+  }
+  const path = posix.join(base, folder);
+  const result = await hostExec(host, ["mkdir", "--", path], { login: false });
+  if (result.code !== 0) {
+    const message = result.stderr.trim() || `mkdir ${path} failed`;
+    if (/exists/i.test(message)) throw new ConflictError(`Folder already exists: ${path}`);
+    throw new ValidationError(message);
+  }
+  return path;
 }
 
 export interface DirectoryListing {

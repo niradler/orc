@@ -1,15 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
   ChevronRight,
   Folder,
+  FolderPlus,
   LoaderCircle,
   Pencil,
   RotateCw,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { type FolderPickerSession, useFolderPickerSession } from "@/hooks/useFolderPickerSession";
@@ -48,6 +49,26 @@ function FolderBrowserSession({
   const setRequest = (request: { path: string; historyIndex?: number }) =>
     setState((previous) => ({ ...previous, request }));
   const listRef = useRef<HTMLUListElement>(null);
+  const queryClient = useQueryClient();
+  const [newFolder, setNewFolder] = useState<string | null>(null);
+  const createFolder = useMutation({
+    mutationFn: ({ parent, name }: { parent: string; name: string }) =>
+      api.terminals.createFolder(host, parent, name),
+    onSuccess: async (_created, { name }) => {
+      setNewFolder(null);
+      setSelected(name);
+      await queryClient.invalidateQueries({ queryKey: ["terminals", "browse", host] });
+    },
+  });
+  const submitNewFolder = () => {
+    const name = newFolder?.trim();
+    if (!name || !listing || createFolder.isPending) return;
+    createFolder.mutate({ parent: listing.path, name });
+  };
+  const cancelNewFolder = () => {
+    setNewFolder(null);
+    createFolder.reset();
+  };
   const addressRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (editingAddress) {
@@ -95,12 +116,14 @@ function FolderBrowserSession({
       : listing.path
     : "";
   const navigate = (path: string, historyIndex?: number) => {
+    cancelNewFolder();
     setSelected(null);
     setAddress(path);
     setEditingAddress(false);
     setRequest({ path, historyIndex });
   };
   const go = () => {
+    cancelNewFolder();
     setSelected(null);
     setRequest({ path: address.trim() });
   };
@@ -142,6 +165,21 @@ function FolderBrowserSession({
             onClick={() => listing?.parent && navigate(listing.parent)}
           >
             <ArrowUp size={16} />
+          </button>
+        </ActionHelp>
+        <ActionHelp label="New folder">
+          <button
+            type="button"
+            data-testid="remote-folder-new"
+            aria-label="New folder"
+            className={iconButton}
+            disabled={blocked || newFolder !== null}
+            onClick={() => {
+              createFolder.reset();
+              setNewFolder("");
+            }}
+          >
+            <FolderPlus size={16} />
           </button>
         </ActionHelp>
         <div className="flex min-w-0 flex-1 basis-full items-center rounded-md border border-control-border bg-surface sm:ml-1 sm:basis-auto">
@@ -260,6 +298,64 @@ function FolderBrowserSession({
         aria-busy={isFetching}
         className="min-h-32 max-h-[min(40dvh,24rem)] flex-1 overflow-y-auto p-2"
       >
+        {newFolder !== null && listing && (
+          <li className="flex min-w-0 flex-col gap-1 rounded-md px-2 py-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <FolderPlus size={18} className="shrink-0 text-warning" />
+              <input
+                // biome-ignore lint/a11y/noAutofocus: the row exists only to type the new name
+                autoFocus
+                name="new-folder-name"
+                data-testid="remote-folder-new-name"
+                aria-label="New folder name"
+                placeholder="New folder name"
+                value={newFolder}
+                maxLength={255}
+                disabled={createFolder.isPending}
+                onChange={(event) => {
+                  createFolder.reset();
+                  setNewFolder(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitNewFolder();
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    cancelNewFolder();
+                  }
+                }}
+                className="min-h-11 min-w-0 flex-1 rounded border border-control-border bg-surface px-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-focus sm:min-h-8 sm:text-sm"
+              />
+              <button
+                type="button"
+                data-testid="remote-folder-new-create"
+                disabled={!newFolder.trim() || createFolder.isPending}
+                onClick={submitNewFolder}
+                className="min-h-11 shrink-0 rounded-md bg-primary px-3 text-sm text-primary-foreground focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 sm:min-h-8"
+              >
+                {createFolder.isPending ? "Creating…" : "Create"}
+              </button>
+              <button
+                type="button"
+                data-testid="remote-folder-new-cancel"
+                onClick={cancelNewFolder}
+                className="min-h-11 shrink-0 rounded-md px-2 text-sm text-muted-foreground hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus sm:min-h-8"
+              >
+                Cancel
+              </button>
+            </div>
+            {createFolder.error && (
+              <p role="alert" data-testid="remote-folder-new-error" className="text-xs text-error">
+                {createFolder.error instanceof Error
+                  ? createFolder.error.message
+                  : "Could not create the folder."}
+              </p>
+            )}
+          </li>
+        )}
         {listing?.directories.map((name, index) => (
           <li
             key={name}

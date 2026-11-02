@@ -31,7 +31,10 @@ export function FolderPickerDialog({
         data-testid="folder-picker-dialog"
         className="flex w-[calc(100vw-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 [&>button:last-child]:size-11 sm:[&>button:last-child]:size-8 [@media(pointer:coarse)]:[&>button:last-child]:size-11"
         onEscapeKeyDown={(event) => {
-          if (event.target instanceof HTMLInputElement && event.target.name === "folder-address") {
+          if (
+            event.target instanceof HTMLInputElement &&
+            ["folder-address", "new-folder-name"].includes(event.target.name)
+          ) {
             event.preventDefault();
             return;
           }

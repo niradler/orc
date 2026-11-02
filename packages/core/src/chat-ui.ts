@@ -70,7 +70,7 @@ export const chatUiCatalog = defineCatalog(schema, {
     Scratchpad: {
       props: z.object({ id: EntityId }),
       description:
-        "Saved HTML dashboards, Excalidraw diagrams and documents by id; inline preview, expand/fullscreen and editor. HTML must be self-contained: embed data, inline chart code/SVG; no network or ORC API access.",
+        "Saved HTML dashboards, Excalidraw diagrams and documents by id; inline preview, expand/fullscreen and editor. HTML must be self-contained: embed data, inline chart code/SVG; window.orc.fetch works only when the human opts in, so fall back to the embedded data.",
     },
   },
   actions: {
@@ -335,7 +335,7 @@ A task with a one-press completion:
 \`\`\`${CHAT_UI_FENCE}
 {"root":"s","elements":{"s":{"type":"Stack","children":["t","b"]},"t":{"type":"Task","props":{"id":"<task-id>"}},"b":{"type":"Button","props":{"label":"Mark done","variant":"primary"},"on":{"press":{"action":"task.update","params":{"id":"<task-id>","status":"done"}}}}}}
 \`\`\`
-Open work for a project next to its recent sessions:
+In-progress tasks for a project next to its recent sessions:
 \`\`\`${CHAT_UI_FENCE}
 {"root":"s","elements":{"s":{"type":"Stack","props":{"direction":"horizontal"},"children":["tasks","sessions"]},"tasks":{"type":"TaskList","props":{"projectId":"<project-id>","status":"doing","limit":5}},"sessions":{"type":"SessionList","props":{"projectId":"<project-id>","limit":5}}}}
 \`\`\`

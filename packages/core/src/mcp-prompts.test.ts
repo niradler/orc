@@ -10,8 +10,14 @@ const prompt = { name: "x", title: "X", description: "", content: "Do it.\nReque
 
 describe("MCP prompts", () => {
   test("built-ins validate and every one takes the request", () => {
-    expect(McpPromptListSchema.parse(DEFAULT_MCP_PROMPTS)).toHaveLength(7);
+    expect(McpPromptListSchema.parse(DEFAULT_MCP_PROMPTS)).toHaveLength(8);
     for (const p of DEFAULT_MCP_PROMPTS) expect(p.content).toContain("{{request}}");
+  });
+
+  test("the skill prompt covers search, supporting refs and verified script downloads", () => {
+    const skill = DEFAULT_MCP_PROMPTS.find((p) => p.name === "skill")?.content ?? "";
+    for (const step of ["skill_list with q", "ref set to its path", "download:true", "sha256"])
+      expect(skill).toContain(step);
   });
 
   test("render fills the request slot, or asks when it is empty", () => {

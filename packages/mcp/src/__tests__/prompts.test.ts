@@ -5,7 +5,9 @@ import { loadConfig, resetConfig } from "@orc/core/config";
 import { DEFAULT_MCP_PROMPTS } from "@orc/core/mcp-prompts";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
+import { z } from "zod";
 import { createMcpServer } from "../server.js";
+import { toolDefinitions } from "../tools.js";
 
 beforeAll(() => {
   process.env.ORC_DB_PATH = ":memory:";
@@ -62,6 +64,7 @@ test("built-in prompts are seeded into the DB and served with a request argument
       "memory",
       "kb",
       "skill",
+      "need-attention",
       "agents",
     ]),
   );
@@ -79,7 +82,33 @@ test("built-in prompts are seeded into the DB and served with a request argument
   await expect(
     client.getPrompt({ name: "create-task", arguments: { other: "x" } }),
   ).rejects.toThrow('only the "request" argument');
+  const attention = JSON.stringify(
+    await client.getPrompt({ name: "need-attention", arguments: { request: "sudo apt upgrade" } }),
+  );
+  expect(attention).toContain("command_request");
+  expect(attention).toContain("human_request_get");
+  expect(attention).toContain("sudo apt upgrade");
   await client.close();
+});
+
+test("built-in prompts only name real tools, arguments and argument values", () => {
+  const known = new Set(
+    toolDefinitions.flatMap((tool) => [
+      tool.name,
+      ...[
+        ...JSON.stringify(
+          z.toJSONSchema(tool.inputSchema, { io: "input", unrepresentable: "any" }),
+        ).matchAll(/"(\w+)"/g),
+      ].map((match) => match[1]),
+    ]),
+  );
+  for (const prompt of DEFAULT_MCP_PROMPTS) {
+    const names = prompt.content.replace(/\{\{\w+\}\}/g, "").match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? [];
+    expect({ prompt: prompt.name, unknown: names.filter((name) => !known.has(name)) }).toEqual({
+      prompt: prompt.name,
+      unknown: [],
+    });
+  }
 });
 
 test("edited prompts are served from the store and deletions stick", async () => {

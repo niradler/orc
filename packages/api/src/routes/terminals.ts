@@ -2,7 +2,12 @@ import { basename, dirname } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
-import { execHostFor, LOCAL_HOST, listHostDirectories } from "@orc/core/exec-host";
+import {
+  createHostFolder,
+  execHostFor,
+  LOCAL_HOST,
+  listHostDirectories,
+} from "@orc/core/exec-host";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
@@ -164,6 +169,34 @@ const browseRoute = createRoute({
             directories: z.array(z.string()),
           }),
         },
+      },
+    },
+  },
+});
+
+const createFolderRoute = createRoute({
+  method: "post",
+  path: "/terminals/browse/folders",
+  tags: ["Terminals"],
+  summary: "Create a folder inside a folder on the machine where terminals run",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            host: TerminalHostSchema,
+            parent: z.string().min(1).max(4096),
+            name: z.string().trim().min(1).max(255),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Created folder",
+      content: {
+        "application/json": { schema: z.object({ path: z.string() }) },
       },
     },
   },
@@ -412,6 +445,14 @@ app.openapi(browseRoute, async (c) => {
   const host = selectedTerminalHost(config, requested === "" ? null : requested);
   const listing = await listHostDirectories(host, c.req.valid("query").path);
   return c.json({ host: host.kind === "ssh" ? host.alias : null, ...listing }, 200);
+});
+
+app.openapi(createFolderRoute, async (c) => {
+  const config = loadConfig();
+  requireTerminals(config);
+  const { host, parent, name } = c.req.valid("json");
+  const path = await createHostFolder(selectedTerminalHost(config, host), parent, name);
+  return c.json({ path }, 201);
 });
 
 app.openapi(getTerminalRoute, (c) => {

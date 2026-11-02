@@ -298,3 +298,47 @@ for (const entry of ["chat", "terminal"] as const) {
     expect(childRequests).toBe(2);
   });
 }
+
+test("creates a new folder on the browsed host and selects it", async ({ page }) => {
+  await installFixture(page);
+  const created: { host: string | null; parent: string; name: string }[] = [];
+  await page.route("**/api/terminals/browse?**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const path = params.get("path") || ROOT;
+    const base = listing(path, params.get("host"));
+    const added = created.filter((item) => item.parent === path).map((item) => item.name);
+    return route.fulfill({ json: { ...base, directories: [...added, ...base.directories] } });
+  });
+  await page.route("**/api/terminals/browse/folders", (route) => {
+    const body = route.request().postDataJSON() as (typeof created)[number];
+    if (body.name === "application")
+      return route.fulfill({
+        status: 409,
+        json: { error: `Folder already exists: ${ROOT}/application` },
+      });
+    created.push(body);
+    return route.fulfill({ status: 201, json: { path: `${body.parent}/${body.name}` } });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openEntry(page, "terminal");
+  await browse(page, "terminal");
+  const dialog = page.getByTestId("folder-picker-dialog");
+
+  await page.getByTestId("remote-folder-new").click();
+  await page.getByTestId("remote-folder-new-name").fill("application");
+  await page.getByTestId("remote-folder-new-create").click();
+  await expect(page.getByTestId("remote-folder-new-error")).toContainText("already exists");
+  await page.getByTestId("remote-folder-new-name").press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("remote-folder-new-name")).toHaveCount(0);
+
+  await page.getByTestId("remote-folder-new").click();
+  await page.getByTestId("remote-folder-new-name").fill("reports");
+  await page.getByTestId("remote-folder-new-name").press("Enter");
+  await expect.poll(() => created).toEqual([{ host: "build-box", parent: ROOT, name: "reports" }]);
+  const reports = page.getByTestId("remote-folder-entry").filter({ hasText: /^reports$/ });
+  await expect(reports).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("remote-folder-selection")).toHaveValue(`${ROOT}/reports`);
+  await page.getByTestId("remote-folder-pick").click();
+  await expectSelection(page, "terminal", `${ROOT}/reports`);
+});

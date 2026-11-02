@@ -139,7 +139,11 @@ test("forcing before a run is named waits for cancellation before dispatching", 
     await route.continue();
   });
   const panel = page.getByTestId("chat-panel");
+  const streamed = page.waitForRequest(
+    (request) => request.method() === "POST" && request.url().endsWith("/api/chat/stream"),
+  );
   await send(panel, "Respond after 10000ms. Reply with exactly: DELAYED.");
+  await streamed;
   await send(panel, "Reply with exactly: FORCED.");
   await expandQueue(panel);
   await panel.getByTestId("chat-queued-force").click();

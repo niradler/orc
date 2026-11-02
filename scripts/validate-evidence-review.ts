@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createApp } from "../packages/api/src/server.js";
-import { loadConfig } from "../packages/core/src/config.js";
+import { loadConfig, OrcConfigSchema } from "../packages/core/src/config.js";
 import { closeDb, getSqlite } from "../packages/db/src/client.js";
 import {
   closeLiveSession,
@@ -23,7 +23,7 @@ const initial = loadConfig();
 loadConfig({
   activeProject: "",
   db: { path: join(directory, "orc.db") },
-  api: { host: "127.0.0.1", port: 7711, secret },
+  api: { ...OrcConfigSchema.parse({}).api, host: "127.0.0.1", port: 7711, secret },
   rules: { enabled: true },
   knowledge: {
     ...initial.knowledge,
