@@ -19,8 +19,11 @@ export function selectedTerminalHost(
   alias: string | null | undefined,
 ): ExecHost {
   if (alias === undefined) return resolveExecHost(config);
-  if (alias && alias !== config.ssh.host && !listSshConfigHosts().includes(alias)) {
-    throw new ValidationError("Choose an SSH host configured in ~/.ssh/config");
+  const hosts = [...new Set([config.ssh.host, ...listSshConfigHosts()].filter(Boolean))];
+  if (alias && !hosts.includes(alias)) {
+    throw new ValidationError(
+      `Unknown SSH host "${alias}". Choose one configured in ~/.ssh/config: ${hosts.join(", ") || "none"}`,
+    );
   }
   return execHostFor(alias, config);
 }

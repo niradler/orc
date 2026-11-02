@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
+import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
@@ -70,6 +71,24 @@ test("should reject credentials and incomplete approvals at the boundary", async
   expect(
     (await req(app, "POST", "/human-requests", { ...input, kind: "approval", choices: [] })).status,
   ).toBe(400);
+});
+
+test("should pin command hosts at creation to the default or a configured alias", async () => {
+  const command = (request_id: string, host?: string | null) => ({
+    kind: "command",
+    prompt: "Host selection",
+    origin: { backend: "external", session_id: "host-selection", request_id },
+    command: { cwd: "/srv", script: "true", ...(host === undefined ? {} : { host }) },
+  });
+  const unknown = await req(app, "POST", "/human-requests", command("unknown", "machine-hostname"));
+  expect(unknown.status).toBe(400);
+  expect((await unknown.json<{ error: string }>()).error).toContain(
+    'Unknown SSH host "machine-hostname"',
+  );
+  const defaulted = await (
+    await req(app, "POST", "/human-requests", command("default"))
+  ).json<HumanRequest>();
+  expect(defaulted.input.command?.host).toBe(hostAlias(resolveExecHost()));
 });
 
 test("should reject stale and running commands before checking their execution host", async () => {

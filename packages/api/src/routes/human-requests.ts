@@ -1,5 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { changes } from "@orc/core/changes";
+import { loadConfig } from "@orc/core/config";
+import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import {
   CommandRunSchema,
   HumanRequestInputSchema,
@@ -11,6 +13,7 @@ import { currentHumanRequest, HumanRequestStore } from "@orc/db/human-requests";
 import { bodyLimit } from "hono/body-limit";
 import { prepareCommand } from "../lib/command-request.js";
 import { createRouter } from "../lib/router.js";
+import { selectedTerminalHost } from "../terminals/host.js";
 
 const app = createRouter();
 app.use("/human-requests/*", bodyLimit({ maxSize: 80000 }));
@@ -63,7 +66,19 @@ app.openapi(
     request: { body: { content: { "application/json": { schema: HumanRequestInputSchema } } } },
     responses: response,
   }),
-  (c) => c.json(store().create(c.req.valid("json")), 200),
+  (c) => {
+    const input = c.req.valid("json");
+    const command = input.command;
+    // Pin the host at creation: omitted means the global default, and unknown aliases never queue.
+    if (input.kind === "command" && command) {
+      const config = loadConfig();
+      command.host =
+        command.host === undefined
+          ? hostAlias(resolveExecHost(config))
+          : hostAlias(selectedTerminalHost(config, command.host));
+    }
+    return c.json(store().create(input), 200);
+  },
 );
 
 app.openapi(

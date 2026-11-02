@@ -1,7 +1,7 @@
 import type { HumanRequest } from "@orc/core/human-requests";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
-import { api } from "@/api/client";
+import { ApiError, api } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,7 +170,11 @@ export function CommandRequestForm({
           </div>
         )}
         {run.error && (
-          <p role="alert">Could not confirm completion. Refresh the request before trying again.</p>
+          <p role="alert">
+            {run.error instanceof ApiError && run.error.status < 500
+              ? run.error.message
+              : `${run.error.message}. Could not confirm completion. Refresh the request before trying again.`}
+          </p>
         )}
       </form>
       {request.response?.kind === "command" && (
