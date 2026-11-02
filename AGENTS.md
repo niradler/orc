@@ -29,6 +29,15 @@ extra agents, production changes, publication, or imply hook enforcement.
   repo, under `.worktrees/`, or under `.claude/checkouts/`. The
   `.orc/rules/worktree-location.ts` rule enforces allowed locations. Remove a
   worktree you created once merged, subject to the user's deletion rules.
+- Keep disk usage bounded. Reuse the active checkout and existing operational
+  scripts; do not create another worktree, copied dependency tree, per-attempt
+  helper, browser profile or artifact set for a retry, and always clean up the
+  ones you created. Check available space before large builds. Tests must clean their owned temporary directories and
+  compiled binaries in teardown, including failure paths, after children exit.
+  After verified publication, retire redundant generated outputs within Nir's
+  cleanup authorization. Preserve active checkpoints and the bounded recovery
+  points required by the release protocol; keep concise evidence instead of
+  duplicate build trees, archives and logs.
 - Use source dev servers, not the global daemon, for development. Canonical dev
   ports are API 7701 and web 3077; inspect existing listeners before starting.
   Bind every local development, test, fixture and preview server explicitly to
