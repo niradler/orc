@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type AgentEvent, createBackend } from "../packages/agent-runtime/src/index.js";
-import { loadConfig } from "../packages/core/src/config.js";
+import { loadConfig, OrcConfigSchema } from "../packages/core/src/config.js";
 import { closeDb, getSqlite } from "../packages/db/src/client.js";
 import { RuleStore } from "../packages/db/src/rules.js";
 import { drainRuleActions } from "../packages/runner/src/rule-actions.js";
@@ -15,7 +15,7 @@ loadConfig({
   db: { path: join(directory, "orc.db") },
   rules: { enabled: true },
   activeProject: "",
-  api: { host: "127.0.0.1", port: 7711, secret: randomUUID() },
+  api: { ...OrcConfigSchema.parse({}).api, host: "127.0.0.1", port: 7711, secret: randomUUID() },
 });
 const db = getSqlite();
 const store = new RuleStore(db);

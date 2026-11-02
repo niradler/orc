@@ -8,7 +8,7 @@ import { closeDb } from "../packages/db/src/client.js";
 const secret = randomUUID();
 loadConfig({
   activeProject: "",
-  api: { host: "127.0.0.1", port: 7700, secret },
+  api: { ...OrcConfigSchema.parse({}).api, host: "127.0.0.1", port: 7700, secret },
   db: { path: "/tmp/orc-container-probe.db" },
   knowledge: {
     ...OrcConfigSchema.parse({}).knowledge,
