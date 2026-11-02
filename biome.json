@@ -42,6 +42,7 @@
       "!**/test-results",
       "!**/playwright-report",
       "!packages/desktop/release",
+      "!packages/cli/README.md",
       "!**/node_modules",
       "!**/*.gen.ts",
       "!**/*.generated.ts",

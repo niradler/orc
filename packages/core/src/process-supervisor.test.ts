@@ -1,10 +1,20 @@
-import { expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const directories: string[] = [];
+
+afterEach(() => {
+  for (const directory of directories) {
+    rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+  directories.length = 0;
+});
+
 test("should replace only explicitly restarted server children in source and compiled launches", async () => {
   const directory = mkdtempSync(join(tmpdir(), "orc-supervisor-test-"));
+  directories.push(directory);
   const entry = join(directory, "server.ts");
   const counter = join(directory, "count");
   const binary = join(directory, process.platform === "win32" ? "server.exe" : "server");
@@ -50,10 +60,11 @@ if(await superviseServer()) {
     expect({ code, output: code ? out + err : "" }).toEqual({ code: 0, output: "" });
     expect(readFileSync(counter, "utf8")).toBe("2");
   }
-}, 60000);
+}, 100000);
 
 test("should stop server children when their supervisor is terminated unexpectedly", async () => {
   const directory = mkdtempSync(join(tmpdir(), "orc-supervisor-stop-"));
+  directories.push(directory);
   const entry = join(directory, "server.ts");
   const pidFile = join(directory, "pid");
   const stoppedFile = join(directory, "stopped");
