@@ -8,8 +8,9 @@ import {
   deliverIdleAnswers,
   deliveryMessage,
   type PushTarget,
+  queuedAnswers,
 } from "../human-request-delivery.js";
-import { activeTurns } from "../sessions/turns.js";
+import { activeTurns, deliveries } from "../sessions/turns.js";
 
 const target: PushTarget = {
   sourceId: "live-1",
@@ -162,6 +163,37 @@ test("should combine a session's answers into one turn and record it in chats sh
     expect(thread?.pushedAt).toBeGreaterThan(1);
     expect(thread?.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(thread?.messages[1]?.content).toBe("Thanks, continuing.");
+  } finally {
+    db.close();
+  }
+});
+
+test("should hold a chat send to the session until the pushed answer's turn ends", async () => {
+  const { db, deps, sent, answered, advance } = fixture();
+  try {
+    answered("a");
+    answered("b", "elsewhere");
+    advance(15000);
+    expect((await queuedAnswers("local:codex-cli:native-1", deps)).map((r) => r.status)).toEqual([
+      "answered",
+    ]);
+    const order: string[] = [];
+    let chat: Promise<unknown> | undefined;
+    await deliverIdleAnswers({
+      ...deps,
+      idle: async () => {
+        chat = deliveries.get("local:codex-cli:native-1")?.then(() => order.push("chat"));
+        return true;
+      },
+    });
+    order.push("delivered");
+    await chat;
+    expect(chat).toBeDefined();
+    expect(sent).toHaveLength(1);
+    expect(order).toEqual(["chat", "delivered"]);
+    expect(deliveries.size).toBe(0);
+    expect(activeTurns.size).toBe(0);
+    expect(await queuedAnswers("local:codex-cli:native-1", deps)).toEqual([]);
   } finally {
     db.close();
   }

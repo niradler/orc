@@ -55,6 +55,7 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
+import { queuedAnswers } from "../human-request-delivery.js";
 import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
 import { notify, truncate } from "../push/service.js";
@@ -62,7 +63,7 @@ import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
-import { activeTurns } from "../sessions/turns.js";
+import { activeTurns, deliveries, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
@@ -412,21 +413,38 @@ app.openapi(
 app.openapi(
   createRoute({
     method: "get",
-    path: "/chat/threads/{id}/pushed",
+    path: "/chat/threads/{id}/delivery",
     tags: ["Chat"],
     description:
-      "When ORC last delivered a turn into this conversation's session outside the chat, so open views know to refresh.",
+      "Human answers ORC queued for this conversation's session, and when it last delivered one outside the chat so open views know to refresh.",
     request: { params },
     responses: {
       200: {
-        description: "Last delivered turn time",
+        description: "Queued answers and last delivered turn time",
         content: {
-          "application/json": { schema: z.object({ pushedAt: z.number().nullable() }) },
+          "application/json": {
+            schema: z.object({
+              pushedAt: z.number().nullable(),
+              queued: z.array(z.object({ id: z.string(), title: z.string() })),
+            }),
+          },
         },
       },
     },
   }),
-  (c) => c.json({ pushedAt: requireThread(c.req.valid("param").id).pushedAt ?? null }),
+  async (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    const queued = thread.runtimeId
+      ? await queuedAnswers(turnKey(thread.host, thread.backend, thread.runtimeId))
+      : [];
+    return c.json({
+      pushedAt: thread.pushedAt ?? null,
+      queued: queued.map((request) => ({
+        id: request.id,
+        title: request.input.title ?? request.input.prompt.slice(0, 120),
+      })),
+    });
+  },
 );
 app.openapi(
   createRoute({
@@ -858,6 +876,12 @@ async function streamChat(
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],
 ) {
+  if (body.threadId) {
+    // A send that arrives while ORC delivers a human answer into this session runs right after it.
+    const queued = requireThread(body.threadId);
+    if (queued.runtimeId)
+      await deliveries.get(turnKey(queued.host, queued.backend, queued.runtimeId));
+  }
   const thread = body.threadId
     ? requireThread(body.threadId)
     : await newThread(body.agent, body.model, undefined, body.workspace);

@@ -13,7 +13,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { getHandoffService } from "./handoffs/service.js";
 import { LIVE_CHAT_ID } from "./session-watcher.js";
 import { codexWriterOwned } from "./sessions/ownership.js";
-import { activeTurns, turnKey } from "./sessions/turns.js";
+import { activeTurns, deliveries, turnKey } from "./sessions/turns.js";
 
 const logger = createLogger("human-request-delivery");
 /** An agent that polled within this window is still waiting and reads the answer itself. */
@@ -265,6 +265,13 @@ async function deliver(
 ): Promise<void> {
   if (activeTurns.has(key)) return;
   activeTurns.add(key);
+  let release = () => {};
+  deliveries.set(
+    key,
+    new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
   const delivered: HumanRequest[] = [];
   try {
     if (!(await deps.idle(target))) return;
@@ -293,8 +300,24 @@ async function deliver(
       deps.store.pushFailed(request.id, `ORC could not deliver this answer: ${message}`);
   } finally {
     activeTurns.delete(key);
+    deliveries.delete(key);
+    release();
     if (delivered.length) changes.publish("human-requests");
   }
+}
+
+/** Answers ORC will push into this native session once it is free, oldest first. */
+export async function queuedAnswers(
+  key: string,
+  deps: Pick<DeliveryDeps, "store" | "target"> = defaultDeps(),
+): Promise<HumanRequest[]> {
+  const queued: HumanRequest[] = [];
+  for (const request of deps.store.pushCandidates(0)) {
+    const target = await deps.target(request).catch(() => null);
+    if (target && turnKey(target.host, target.backend, target.runtimeId) === key)
+      queued.push(request);
+  }
+  return queued;
 }
 
 /**

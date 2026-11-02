@@ -114,13 +114,15 @@ export function ChatPanel({
     cancel,
   } = useChat();
   // "chat-threads" refetches whenever ORC delivers an answer into a session.
-  const pushed = useQuery({
-    queryKey: ["chat-threads", "pushed", thread?.id],
-    queryFn: () => api.chat.pushed(thread?.id ?? ""),
+  const delivery = useQuery({
+    queryKey: ["chat-threads", "delivery", thread?.id, thread?.pushedAt],
+    queryFn: () => api.chat.delivery(thread?.id ?? ""),
     enabled: !!thread?.runtimeId,
   });
+  // Human answers ORC sends into this session as soon as it is free.
+  const answers = delivery.data?.queued ?? [];
   const sessionChanged =
-    !!thread && !refreshing && (pushed.data?.pushedAt ?? 0) > (thread.pushedAt ?? 0);
+    !!thread && !refreshing && (delivery.data?.pushedAt ?? 0) > (thread.pushedAt ?? 0);
   const terminalControl = useChatContinueInTerminal();
   const promptMenu = useChatPromptMenu(draft, setDraft);
   const desktop = useBreakpoint("xl");
@@ -517,7 +519,7 @@ export function ChatPanel({
             )}
           </div>
         )}
-        {queued.length > 0 && (
+        {queued.length + answers.length > 0 && (
           <details
             key={activeKey}
             ref={queueDetails}
@@ -534,10 +536,20 @@ export function ChatPanel({
                 className="shrink-0 transition-transform group-open:rotate-180"
               />
               <span role="status" data-testid="chat-pending-count">
-                {queued.length} pending{queuePaused ? " · Paused" : ""}
+                {queued.length + answers.length} pending{queuePaused ? " · Paused" : ""}
               </span>
             </summary>
             <ol className="max-h-[min(30vh,14rem)] overflow-y-auto pb-1">
+              {answers.map((answer) => (
+                <li
+                  key={answer.id}
+                  data-testid="chat-queued-answer"
+                  className="flex min-h-11 items-center gap-2 border-t border-outline-variant text-sm sm:min-h-9"
+                >
+                  <span className="shrink-0 text-xs text-on-surface-variant">ORC answer</span>
+                  <span className="min-w-0 truncate">{answer.title}</span>
+                </li>
+              ))}
               {queued.map((entry) => (
                 <QueuedMessage
                   key={entry.id}

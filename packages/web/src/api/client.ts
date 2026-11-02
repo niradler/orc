@@ -691,8 +691,11 @@ export const api = {
     cancel: (runId: string) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),
-    pushed: (id: string) =>
-      req<{ pushedAt: number | null }>("GET", `/chat/threads/${encodeURIComponent(id)}/pushed`),
+    delivery: (id: string) =>
+      req<{ pushedAt: number | null; queued: { id: string; title: string }[] }>(
+        "GET",
+        `/chat/threads/${encodeURIComponent(id)}/delivery`,
+      ),
     configure: (id: string, agentOptions: ChatThread["config"]["agentOptions"]) =>
       req<ChatThread>("PATCH", `/chat/threads/${encodeURIComponent(id)}/config`, { agentOptions }),
     history: (id: string, before: number) =>
