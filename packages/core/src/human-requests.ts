@@ -8,7 +8,8 @@ export const CommandSpecSchema = z
       .string()
       .max(255)
       .regex(/^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/)
-      .nullable(),
+      .nullable()
+      .optional(),
     arguments: z
       .array(
         z
