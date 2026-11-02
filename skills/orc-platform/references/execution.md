@@ -132,6 +132,36 @@ then a harmless intended command/session in the remote project. Existing termina
 keep their host; new work uses the new selection. Selecting local clears the SSH
 host through the supported settings/API, not by editing live DB rows.
 
+## Ask the user to answer, approve or run something
+
+When you lack permission, a command needs privileges or credentials you do not
+have, or the user or project said not to run something yourself, do not work
+around it and do not stop silently: create a request in **Activity → Attention
+needed** and wait for it.
+
+- `command_request` asks the user to run a command: exact `host` (null for the
+  API host), `cwd`, a `script` for that host's default shell, `title`, a `prompt`
+  saying why, and `arguments` for any value only the user should type (secrets,
+  passwords, OTPs). Reference those as quoted `$ORC_INPUT_NAME` (bash/zsh) or
+  `$env:ORC_INPUT_NAME` (PowerShell); never ask for secrets in chat. The user
+  reviews, may edit, and runs it; the redacted result returns to you.
+  Feed secrets on stdin (for example `sudo -S`); interactive prompts hang.
+- `human_request` with `kind: "question"` (optional `choices`) or
+  `kind: "approval"` with `action: {tool, input, cwd, host}` for the exact call
+  (no choices; the user approves or denies). Use `command_request`, not
+  `kind: "command"`, for commands.
+- Every request needs a stable `origin`: your session ID (the ORC session ID when
+  supplied, otherwise your native one), your `backend` name and a `request_id`
+  unique to this ask. Reusing an origin with changed content is rejected.
+
+Poll `human_request_get` with `wait_seconds: 30` while pending or running, use the
+answer only in this workflow, then `human_request_acknowledge` with the version
+from the last get, including after a denial. Denied, cancelled, expired or
+unavailable never authorizes a retry or a workaround, and a failed command is a
+result to report; report it. Creating a request runs nothing and grants no privileges.
+CLI equivalents are `orc attention request|get|acknowledge`. Details:
+[Agent questions and approvals](https://github.com/niradler/orc/blob/master/docs/human-requests.md).
+
 ## Git, GitHub and worktrees
 
 Use the Git workspace/registry or `GET /api/git/worktrees?cwd=<folder>` to inspect

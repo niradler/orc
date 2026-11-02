@@ -1418,6 +1418,8 @@ export const api = {
         path,
         host: host === null ? "" : host,
       }),
+    createFolder: (host: string | null, parent: string, name: string) =>
+      req<{ path: string }>("POST", "/terminals/browse/folders", { host, parent, name }),
   },
 
   ssh: {

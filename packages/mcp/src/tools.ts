@@ -579,7 +579,7 @@ export const toolDefinitions = [
   ...kbToolDefinitions,
   {
     name: "job_list",
-    description: "List all jobs with last run status.",
+    description: "List all jobs with their enabled state, trigger, run count and id.",
     inputSchema: z.object({
       limit: z.number().int().optional().default(20),
       project: projectParam,
@@ -664,7 +664,7 @@ export const toolDefinitions = [
   },
   {
     name: "project_list",
-    description: "List all projects. Returns name, status, and description for each.",
+    description: "List all projects. Returns name, status, id and description for each.",
     inputSchema: z.object({
       status: z.enum(["active", "archived", "paused"]).optional(),
     }),
@@ -723,7 +723,7 @@ export const toolDefinitions = [
         .string()
         .optional()
         .describe(
-          "Skill-relative file path, e.g. scripts/check.py or references/guide.md. Bare filenames read references/.",
+          "Skill-relative file path, e.g. scripts/check.py or references/guide.md. Bare filenames read references/; SKILL.md reads the raw root SKILL.md.",
         ),
     }),
   },
@@ -1715,7 +1715,7 @@ export async function executeTool(
       return rows
         .map(
           (j) =>
-            `${j.enabled ? "●" : "○"} ${j.name.padEnd(24)} ${j.trigger_type.padEnd(12)} runs:${j.run_count}` +
+            `${j.enabled ? "●" : "○"} ${j.name.padEnd(24)} ${j.trigger_type.padEnd(12)} runs:${j.run_count} [id: ${j.id}]` +
             (options.projectScopes && options.projectScopes.length > 1
               ? ` [project: ${options.projectScopes.find((p) => p.id === j.project_id)?.name}]`
               : ""),
@@ -1815,7 +1815,7 @@ export async function executeTool(
       if (options.projectScopes && options.projectScopes.length > 1) {
         lines.push(`## Projects: ${options.projectScopes.map((p) => p.name).join(", ")}`);
       } else if (resolved) {
-        lines.push(`## Project: ${resolved.name}`);
+        lines.push(`## Project: ${resolved.name} [id: ${resolved.id}]`);
       } else if (explicitScope) {
         lines.push("## Project: Unassigned");
       }
@@ -2042,7 +2042,7 @@ export async function executeTool(
       return rows
         .map((p) => {
           const desc = p.description ? `  ${p.description.slice(0, 60)}` : "";
-          return `${p.name.padEnd(24)} ${p.status}${desc}`;
+          return `${p.name.padEnd(24)} ${p.status} [id: ${p.id}]${desc}`;
         })
         .join("\n");
     }

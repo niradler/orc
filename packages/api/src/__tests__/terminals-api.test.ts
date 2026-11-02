@@ -213,6 +213,30 @@ describe("per-terminal hosts", () => {
     expect(ptys).toHaveLength(before);
   });
 
+  test("should create one new folder in the browsed folder and reject bad names and duplicates", async () => {
+    const parent = join(root, "new-folder-parent");
+    mkdirSync(parent, { recursive: true });
+    const created = await req(app, "POST", "/terminals/browse/folders", {
+      host: null,
+      parent,
+      name: " reports ",
+    });
+    expect(created.status).toBe(201);
+    expect(await created.json()).toEqual({ path: join(parent, "reports") });
+    expect(existsSync(join(parent, "reports"))).toBe(true);
+    const listed = await req(
+      app,
+      "GET",
+      `/terminals/browse?host=&path=${encodeURIComponent(parent)}`,
+    );
+    expect((await listed.json<{ directories: string[] }>()).directories).toContain("reports");
+    const create = (name: string) =>
+      req(app, "POST", "/terminals/browse/folders", { host: null, parent, name });
+    expect((await create("reports")).status).toBe(409);
+    for (const name of ["..", "a/b", "a\\b"]) expect((await create(name)).status).toBe(400);
+    expect(existsSync(join(root, "b"))).toBe(false);
+  });
+
   test("should reject overriding a resumed session's saved host", async () => {
     const response = await req(app, "POST", "/terminals", {
       kind: "claude",

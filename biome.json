@@ -19,6 +19,16 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.e2e.ts"],
+      "linter": { "rules": { "performance": { "useDomNodeTextContent": "off" } } }
+    },
+    {
+      "includes": ["packages/web/src/**/*.css"],
+      "linter": { "rules": { "style": { "noDescendingSpecificity": "off" } } }
+    }
+  ],
   "formatter": {
     "enabled": true,
     "formatWithErrors": false,
