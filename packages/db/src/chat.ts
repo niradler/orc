@@ -46,6 +46,16 @@ export class ChatStore {
       )
       .all();
   }
+  byRuntime(backend: string, host: string | null, runtimeId: string): ChatThread[] {
+    return this.db
+      .query<{ id: string }, [string, string, string]>(
+        `SELECT id FROM chat_threads WHERE json_valid(data)
+          AND json_extract(data, '$.runtimeId')=? AND json_extract(data, '$.backend')=?
+          AND coalesce(json_extract(data, '$.host'), '')=?`,
+      )
+      .all(runtimeId, backend, host ?? "")
+      .flatMap((row) => this.get(row.id) ?? []);
+  }
   save(thread: ChatThread): void {
     this.db
       .query(

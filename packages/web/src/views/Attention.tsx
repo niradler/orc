@@ -126,7 +126,7 @@ function RequestCard({
           <MessageSquare size={14} /> Open chat
         </Button>
       )}
-      {(pending || request.status === "unavailable") && (
+      {(pending || request.status === "answered" || request.status === "unavailable") && (
         <Button
           data-testid="attention-cancel"
           size="sm"

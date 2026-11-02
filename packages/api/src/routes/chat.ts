@@ -62,6 +62,7 @@ import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
+import { activeTurns } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
@@ -183,7 +184,7 @@ function follow(c: Context, run: ChatRun) {
 function threadRun(threadId: string): [string, ChatRun] | undefined {
   return [...runs].find(([, run]) => run.threadId === threadId);
 }
-const active = new Set<string>();
+const active = activeTurns;
 const params = z.object({ id });
 const modelCatalogs = new Map<string, { at: number; result: Promise<ChatModels> }>();
 let modelRequests = 0;
@@ -407,6 +408,25 @@ app.openapi(
     responses: response,
   }),
   (c) => c.json(requireThread(c.req.valid("param").id)),
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads/{id}/pushed",
+    tags: ["Chat"],
+    description:
+      "When ORC last delivered a turn into this conversation's session outside the chat, so open views know to refresh.",
+    request: { params },
+    responses: {
+      200: {
+        description: "Last delivered turn time",
+        content: {
+          "application/json": { schema: z.object({ pushedAt: z.number().nullable() }) },
+        },
+      },
+    },
+  }),
+  (c) => c.json({ pushedAt: requireThread(c.req.valid("param").id).pushedAt ?? null }),
 );
 app.openapi(
   createRoute({

@@ -1,4 +1,5 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
@@ -16,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
@@ -111,6 +113,14 @@ export function ChatPanel({
     send,
     cancel,
   } = useChat();
+  // "chat-threads" refetches whenever ORC delivers an answer into a session.
+  const pushed = useQuery({
+    queryKey: ["chat-threads", "pushed", thread?.id],
+    queryFn: () => api.chat.pushed(thread?.id ?? ""),
+    enabled: !!thread?.runtimeId,
+  });
+  const sessionChanged =
+    !!thread && !refreshing && (pushed.data?.pushedAt ?? 0) > (thread.pushedAt ?? 0);
   const terminalControl = useChatContinueInTerminal();
   const promptMenu = useChatPromptMenu(draft, setDraft);
   const desktop = useBreakpoint("xl");
@@ -243,8 +253,13 @@ export function ChatPanel({
                   data-testid="chat-refresh-button"
                   onClick={() => void refresh()}
                   disabled={!thread || refreshing}
-                  className={iconButton}
-                  aria-label="Refresh session"
+                  className={cn(iconButton, sessionChanged && "text-warning")}
+                  data-stale={sessionChanged || undefined}
+                  aria-label={
+                    sessionChanged
+                      ? "Refresh session: it changed outside this chat"
+                      : "Refresh session"
+                  }
                 >
                   <RefreshCw
                     size={17}
@@ -290,8 +305,13 @@ export function ChatPanel({
                     data-testid="chat-refresh-button"
                     onClick={() => void refresh()}
                     disabled={!thread || refreshing}
-                    className={iconButton}
-                    aria-label="Refresh session"
+                    className={cn(iconButton, sessionChanged && "text-warning")}
+                    data-stale={sessionChanged || undefined}
+                    aria-label={
+                      sessionChanged
+                        ? "Refresh session: it changed outside this chat"
+                        : "Refresh session"
+                    }
                   >
                     <RefreshCw
                       size={17}

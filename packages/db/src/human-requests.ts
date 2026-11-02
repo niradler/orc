@@ -28,6 +28,8 @@ export class HumanRequestStore {
       ["delivery_error", "TEXT"],
       ["owner_id", "TEXT"],
       ["owner_heartbeat_at", "INTEGER"],
+      ["answered_at", "INTEGER"],
+      ["last_fetched_at", "INTEGER"],
     ])
       if (!columns.some((column) => column.name === name))
         db.exec(`ALTER TABLE human_requests ADD COLUMN ${name} ${type}`);
@@ -190,6 +192,35 @@ export class HumanRequestStore {
       .run(id, ownerId);
   }
 
+  fetched(id: string): void {
+    this.db.query("UPDATE human_requests SET last_fetched_at=? WHERE id=?").run(this.now(), id);
+  }
+
+  pushCandidates(graceMs: number): HumanRequest[] {
+    // Answers an agent is not polling for. Runtime-owned and native tool-call requests
+    // have their own delivery paths.
+    this.expire();
+    const cutoff = this.now() - graceMs;
+    return this.db
+      .query<{ id: string }, [number, number]>(
+        `SELECT id FROM human_requests WHERE status='answered' AND owner_id IS NULL
+         AND json_extract(payload,'$.origin.tool_call_id') IS NULL
+         AND answered_at<=? AND (last_fetched_at IS NULL OR last_fetched_at<=?)
+         ORDER BY answered_at LIMIT 20`,
+      )
+      .all(cutoff, cutoff)
+      .map((row) => this.get(row.id));
+  }
+
+  pushFailed(id: string, error: string): HumanRequest {
+    this.db
+      .query(
+        "UPDATE human_requests SET status='unavailable',delivery_error=?,delivered_at=NULL,version=version+1 WHERE id=? AND status='delivered'",
+      )
+      .run(error.slice(0, 1000), id);
+    return this.get(id);
+  }
+
   list(): HumanRequest[] {
     this.expire();
     return this.db
@@ -221,9 +252,9 @@ export class HumanRequestStore {
           throw new ValidationError("Selected choices do not match this question");
         this.db
           .query(
-            "UPDATE human_requests SET status='answered',response=?,responded_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+            "UPDATE human_requests SET status='answered',response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
           )
-          .run(JSON.stringify(response), this.now(), id, version);
+          .run(JSON.stringify(response), this.now(), this.now(), id, version);
         return this.get(id);
       })
       .immediate();
@@ -251,9 +282,9 @@ export class HumanRequestStore {
     const result = CommandResultSchema.parse(raw);
     const changed = this.db
       .query(
-        "UPDATE human_requests SET status='answered',response=?,version=version+1 WHERE id=? AND status='running' AND version=?",
+        "UPDATE human_requests SET status='answered',response=?,answered_at=?,version=version+1 WHERE id=? AND status='running' AND version=?",
       )
-      .run(JSON.stringify(result), id, version);
+      .run(JSON.stringify(result), this.now(), id, version);
     if (!changed.changes) throw new ConflictError("Command execution no longer owns this request");
     return this.get(id);
   }
@@ -336,7 +367,12 @@ export class HumanRequestStore {
     return this.db
       .transaction(() => {
         const request = this.get(id);
-        if (!["pending", "unavailable"].includes(request.status) || request.version !== version)
+        // An undelivered answer can be dismissed when its agent never returns; the agent then
+        // sees a cancellation, which never authorizes anything.
+        if (
+          !["pending", "answered", "unavailable"].includes(request.status) ||
+          request.version !== version
+        )
           throw new ConflictError("Request is stale or no longer pending");
         this.db
           .query(

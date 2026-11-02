@@ -198,6 +198,13 @@ test("should expire or cancel pending requests without granting approval", () =>
     const next = store.create({ ...question, origin: { ...question.origin, request_id: "next" } });
     expect(store.cancel(next.id, 1).status).toBe("cancelled");
     expect(() => store.respond(next.id, 1, { kind: "question", answer: "Blue" })).toThrow("stale");
+    const undelivered = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "undelivered" },
+    });
+    const answered = store.respond(undelivered.id, 1, { kind: "question", answer: "Blue" });
+    expect(store.cancel(undelivered.id, answered.version).status).toBe("cancelled");
+    expect(() => store.acknowledge(undelivered.id, answered.version)).toThrow("already delivered");
   } finally {
     db.close();
   }

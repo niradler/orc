@@ -263,6 +263,27 @@ test("should preserve multiple selections and cancel a pending request", async (
   );
 });
 
+test("should allow dismissing an answer its agent never collects", async ({ page, request }) => {
+  const entry = await apiPost<HumanRequest>(request, "/human-requests", {
+    kind: "question",
+    prompt: "Answered for an agent that never returns?",
+    origin: { backend: "codex", session_id: tid("delivering"), request_id: "delivering" },
+  });
+  await apiPost<HumanRequest>(request, `/human-requests/${entry.id}/respond`, {
+    version: entry.version,
+    response: { kind: "question", answer: "Yes" },
+  });
+  await gotoView(page, "attention");
+  const card = page.getByTestId(`attention-request-${entry.id}`);
+  await reviewAttentionRequest(card);
+  await expect(card).toContainText("Waiting for delivery");
+  await card.getByTestId("attention-cancel").click();
+  await expect(card).toHaveCount(0);
+  expect((await apiGet<HumanRequest>(request, `/human-requests/${entry.id}`)).status).toBe(
+    "cancelled",
+  );
+});
+
 test("should preserve Ask user expiry and notification settings when editing its prompt", async ({
   page,
   request,
