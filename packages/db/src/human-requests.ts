@@ -212,6 +212,19 @@ export class HumanRequestStore {
       .map((row) => this.get(row.id));
   }
 
+  /** When the next unpolled answer leaves its grace period, if one is still waiting for it. */
+  nextPushAt(graceMs: number): number | null {
+    const row = this.db
+      .query<{ due: number | null }, [number, number, number]>(
+        `SELECT min(max(answered_at, coalesce(last_fetched_at, 0)) + ?) AS due FROM human_requests
+         WHERE status='answered' AND owner_id IS NULL AND answered_at IS NOT NULL
+         AND json_extract(payload,'$.origin.tool_call_id') IS NULL
+         AND max(answered_at, coalesce(last_fetched_at, 0)) + ? > ?`,
+      )
+      .get(graceMs, graceMs, this.now());
+    return row?.due ?? null;
+  }
+
   pushFailed(id: string, error: string): HumanRequest {
     this.db
       .query(

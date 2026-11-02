@@ -44,6 +44,25 @@ test("should expire unavailable and undelivered requests after 72 hours while re
   }
 });
 
+test("should report when the next unpolled answer leaves its push grace period", () => {
+  const { db, store, now, advance } = fixture();
+  try {
+    expect(store.nextPushAt(15000)).toBeNull();
+    const request = store.create(question);
+    store.respond(request.id, 1, { kind: "question", answer: "Blue" });
+    const answeredAt = now();
+    expect(store.nextPushAt(15000)).toBe(answeredAt + 15000);
+    advance(5000);
+    store.fetched(request.id);
+    expect(store.nextPushAt(15000)).toBe(now() + 15000);
+    advance(15000);
+    expect(store.nextPushAt(15000)).toBeNull();
+    expect(store.pushCandidates(15000).map((candidate) => candidate.id)).toEqual([request.id]);
+  } finally {
+    db.close();
+  }
+});
+
 test("should apply changed retention to existing requests without expiring fresh ones", () => {
   const { db, store, advance } = fixture();
   try {

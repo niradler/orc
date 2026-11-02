@@ -18,7 +18,6 @@ import { activeTurns, turnKey } from "./sessions/turns.js";
 const logger = createLogger("human-request-delivery");
 /** An agent that polled within this window is still waiting and reads the answer itself. */
 export const PUSH_GRACE_MS = 15000;
-const SCAN_MS = 5000;
 const TURN_TIMEOUT_MS = 15 * 60000;
 
 export type PushTarget = {
@@ -298,14 +297,36 @@ async function deliver(
   }
 }
 
+/**
+ * Event-driven: checks when answers or sessions change, and once when the next grace period ends.
+ * An answer whose session is still held waits for that session's next change.
+ */
 export function startHumanRequestDelivery(): () => void {
   const deps = defaultDeps();
-  // Scans may overlap while a delivered turn runs; the per-session turn lock keeps them apart.
-  const timer = setInterval(() => {
-    deliverIdleAnswers(deps).catch((err) =>
-      logger.error("Human request delivery scan failed", err),
-    );
-  }, SCAN_MS);
-  timer.unref?.();
-  return () => clearInterval(timer);
+  let check: ReturnType<typeof setTimeout> | undefined;
+  let due: ReturnType<typeof setTimeout> | undefined;
+  const run = () => {
+    // Runs may overlap while a delivered turn is in flight; the per-session turn lock keeps them apart.
+    deliverIdleAnswers(deps)
+      .catch((err) => logger.error("Human request delivery failed", err))
+      .finally(() => {
+        clearTimeout(due);
+        const next = deps.store.nextPushAt(PUSH_GRACE_MS);
+        if (next !== null) due = setTimeout(schedule, Math.max(0, next - Date.now()) + 50);
+      });
+  };
+  // Coalesce bursts of change events into one check.
+  const schedule = () => {
+    clearTimeout(check);
+    check = setTimeout(run, 250);
+  };
+  const unsubscribe = changes.subscribe(({ resources }) => {
+    if (resources.includes("human-requests") || resources.includes("sessions")) schedule();
+  });
+  schedule();
+  return () => {
+    unsubscribe();
+    clearTimeout(check);
+    clearTimeout(due);
+  };
 }
