@@ -1,7 +1,8 @@
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { RESTART_EXIT_CODE } from "@orc/core/process-supervisor";
-import { closeDb } from "@orc/db/client";
+import { closeDb, getSqlite } from "@orc/db/client";
+import { importConfigMcpPrompts } from "@orc/db/mcp-prompts";
 import { startChannelRuntime } from "@orc/gateway/channel-runtime";
 import {
   closeKnowledgeService,
@@ -23,6 +24,11 @@ import {
 
 const logger = createLogger("api");
 const config = loadConfig();
+try {
+  importConfigMcpPrompts(getSqlite());
+} catch (err) {
+  logger.error("Could not move MCP prompts from config.json into the database", err);
+}
 const app = createApp();
 
 const server = Bun.serve<TerminalSocketData>({

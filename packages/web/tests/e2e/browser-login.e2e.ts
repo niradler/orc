@@ -9,13 +9,14 @@ test.afterEach(async ({ request }) => {
   });
 });
 
-test("401 prompts, rejects wrong secrets, and unchecked login stays in memory", async ({
+test("401 prompts, rejects wrong secrets, and signs in with an HttpOnly cookie", async ({
   page,
+  context,
 }) => {
   await page.goto("/settings");
   await expect(page.getByTestId("api-login")).toBeVisible();
   await page.screenshot({ path: "../../.claude/docs/browser-login-modal.png" });
-  await expect(page.getByTestId("api-login-remember")).not.toBeChecked();
+  await expect(page.getByTestId("api-login-valid-until")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
   await page.getByTestId("api-login-secret").fill("wrong-secret");
   await page.getByTestId("api-login-submit").click();
   await expect(page.getByTestId("api-login-error")).toBeVisible();
@@ -28,17 +29,61 @@ test("401 prompts, rejects wrong secrets, and unchecked login stays in memory", 
       Object.keys(localStorage).filter((key) => key.startsWith("orc_api_secret")),
     ),
   ).toEqual([]);
+  const cookie = (await context.cookies()).find((entry) => entry.name === "orc_session");
+  expect(cookie?.httpOnly).toBe(true);
+  expect(cookie?.value).not.toContain(API_SECRET);
   await page.reload();
+  await expect(page.getByTestId("settings-save")).toBeVisible();
+  await expect(page.getByTestId("api-login")).toHaveCount(0);
+});
+
+test("the chosen valid-until date sets the session expiry", async ({ page, context }) => {
+  await page.goto("/settings");
+  const validUntil = new Date(Date.now() + 3 * 86_400_000);
+  const value = `${validUntil.getFullYear()}-${String(validUntil.getMonth() + 1).padStart(2, "0")}-${String(validUntil.getDate()).padStart(2, "0")}`;
+  await page.getByTestId("api-login-secret").fill(API_SECRET);
+  await page.getByTestId("api-login-valid-until").fill(value);
+  await page.getByTestId("api-login-submit").click();
+  await expect(page.getByTestId("settings-save")).toBeVisible();
+  const cookie = (await context.cookies()).find((entry) => entry.name === "orc_session");
+  const endOfDay = new Date(`${value}T23:59:59`).getTime() / 1000;
+  expect(Math.abs((cookie?.expires ?? 0) - endOfDay)).toBeLessThan(5);
+});
+
+test("Security creates an API token and signs the browser out", async ({
+  page,
+  request,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/settings");
+  await expect(page.getByTestId("api-login")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("login-390.png") });
+  await page.getByTestId("api-login-secret").fill(API_SECRET);
+  await page.getByTestId("api-login-submit").click();
+  await settingsSection(page, "security");
+  await expect(page.getByTestId("security-session")).toContainText("signed in until");
+  await expect(page.getByTestId("security-session-days")).toHaveValue("30");
+  await page.getByTestId("security-token-secret").fill(API_SECRET);
+  await page.getByTestId("security-token-create").click();
+  const token = await page.getByTestId("security-token-value").inputValue();
+  await page.screenshot({ path: testInfo.outputPath("security-390.png"), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: testInfo.outputPath("security-1440.png"), fullPage: true });
+  expect(token).not.toBe(API_SECRET);
+  const projects = await request.get(`${API_BASE}/projects`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(projects.status()).toBe(200);
+  await page.getByTestId("security-sign-out").click();
   await expect(page.getByTestId("api-login")).toBeVisible();
 });
 
-test("remembered login survives reload and preferences survive a fresh browser context", async ({
+test("login survives reload and preferences survive a fresh browser context", async ({
   page,
   browser,
 }) => {
   await page.goto("/settings");
   await page.getByTestId("api-login-secret").fill(API_SECRET);
-  await page.getByTestId("api-login-remember").check();
   await page.getByTestId("api-login-submit").click();
   await settingsSection(page, "appearance");
   await page.getByTestId("settings-theme-light").click();
@@ -63,7 +108,7 @@ test("remembered login survives reload and preferences survive a fresh browser c
   }
 });
 
-test("stale remembered credentials prompt again and a runtime 401 reopens login", async ({
+test("a stale secret from an older build prompts again and a runtime 401 reopens login", async ({
   page,
 }) => {
   await page.addInitScript(() =>
@@ -100,7 +145,6 @@ test("changing the API address does not forward credentials from the previous se
 }) => {
   await page.goto("/settings");
   await page.getByTestId("api-login-secret").fill(API_SECRET);
-  await page.getByTestId("api-login-remember").check();
   await page.getByTestId("api-login-submit").click();
   let forwardedSecret: string | undefined;
   await page.route("**/other-api/settings", (route) => {

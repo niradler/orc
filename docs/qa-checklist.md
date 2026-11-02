@@ -376,7 +376,7 @@ All views scope to the sidebar project selector. `"All Projects"` → no filter,
 - [x] **Sessions** - session log viewer with detail sheet
 - [x] **Knowledge** - collections + search
 - [x] **Skills** - skill library browser
-- [x] **Settings** - bearer secret config in `localStorage.orc_api_secret`
+- [x] **Settings** - sign-in sets an HttpOnly `orc_session` cookie; Security creates API access tokens
 
 ### 14.3 Chat Panel
 

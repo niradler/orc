@@ -4,8 +4,6 @@ import { z } from "zod";
 
 /** Fence language for a json-render spec inside a chat message. */
 export const CHAT_UI_FENCE = "orc-ui";
-/** MCP resource holding the agent-facing catalog reference. */
-export const CHAT_UI_CATALOG_URI = "orc://ui/catalog";
 export const CHAT_UI_MAX_ELEMENTS = 200;
 
 const TaskStatus = z.enum([
@@ -276,16 +274,39 @@ function typeLabel(node: JsonNode): string {
   return [node.type ?? "any"].flat().join("|");
 }
 
-/** Agent-facing reference served as an MCP resource and tool. */
-export function chatUiCatalogText(): string {
+/**
+ * Agent-facing component reference. "lean" rides in every webchat system prompt; "full" adds
+ * composition examples for the render-ui MCP prompt.
+ */
+export function chatUiCatalogText(detail: "lean" | "full" = "full"): string {
   const { components, actions } = chatUiCatalog.data;
-  const componentLines = Object.entries(components).map(
-    ([name, def]) =>
-      `- ${name} ${describe(def.props)}${"slots" in def ? " (children)" : ""} â€” ${def.description}`,
+  const componentLines = Object.entries(components).map(([name, def]) =>
+    detail === "lean"
+      ? `- ${name} ${describe(def.props)}${"slots" in def ? " (children)" : ""}`
+      : `- ${name} ${describe(def.props)}${"slots" in def ? " (children)" : ""} — ${def.description}`,
   );
-  const actionLines = Object.entries(actions).map(
-    ([name, def]) => `- ${name} ${describe(def.params)} â€” ${def.description}`,
+  const actionLines = Object.entries(actions).map(([name, def]) =>
+    detail === "lean"
+      ? `- ${name} ${describe(def.params)}`
+      : `- ${name} ${describe(def.params)} — ${def.description}`,
   );
+  const example = `\`\`\`${CHAT_UI_FENCE}
+{"root":"task","elements":{"task":{"type":"Task","props":{"id":"<task-id>"}}}}
+\`\`\``;
+  if (detail === "lean")
+    return `# ORC chat UI components (webchat only)
+
+Use only when <orc-context> says source: webchat and live monitoring, direct interaction or a saved
+scratchpad artifact adds value; otherwise Markdown. Resolve real ids with ORC tools first. Reply with
+an orc-ui fence; text outside it is Markdown. Only Stack takes children; actions need a Button press.
+${example}
+
+Components:
+${componentLines.join("\n")}
+
+Actions:
+${actionLines.join("\n")}
+`;
   return `# ORC chat UI components
 
 Webchat only: use components only when <orc-context> says source: webchat.
@@ -294,9 +315,7 @@ for live monitoring, direct API interaction or rendering saved scratchpad artifa
 Entity components load as the signed-in user and stay live. Resolve ids first.
 
 Reply with an orc-ui fence; ordinary text outside it is Markdown:
-\`\`\`${CHAT_UI_FENCE}
-{"root":"task","elements":{"task":{"type":"Task","props":{"id":"<task-id>"}}}}
-\`\`\`
+${example}
 
 Rules:
 - root and every child key must exist; only Stack accepts children. Max ${CHAT_UI_MAX_ELEMENTS} rendered elements.
@@ -310,5 +329,17 @@ ${componentLines.join("\n")}
 
 ## Actions
 ${actionLines.join("\n")}
+
+## Examples
+A task with a one-press completion:
+\`\`\`${CHAT_UI_FENCE}
+{"root":"s","elements":{"s":{"type":"Stack","children":["t","b"]},"t":{"type":"Task","props":{"id":"<task-id>"}},"b":{"type":"Button","props":{"label":"Mark done","variant":"primary"},"on":{"press":{"action":"task.update","params":{"id":"<task-id>","status":"done"}}}}}}
+\`\`\`
+Open work for a project next to its recent sessions:
+\`\`\`${CHAT_UI_FENCE}
+{"root":"s","elements":{"s":{"type":"Stack","props":{"direction":"horizontal"},"children":["tasks","sessions"]},"tasks":{"type":"TaskList","props":{"projectId":"<project-id>","status":"doing","limit":5}},"sessions":{"type":"SessionList","props":{"projectId":"<project-id>","limit":5}}}}
+\`\`\`
+A saved HTML dashboard: create or update it with pad_create/pad_update, then render
+{"type":"Scratchpad","props":{"id":"<pad-id>"}}.
 `;
 }

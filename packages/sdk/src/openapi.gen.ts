@@ -1664,6 +1664,169 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the web UI session
+         * @description Public: tells the web UI whether it must sign in and when its cookie expires.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session state */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrowserSession"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Sign the web UI in with the API secret
+         * @description Verifies the API secret and sets an HttpOnly signed session cookie that lasts until expires_at, so the browser never stores the secret.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        secret: string;
+                        /** @description Unix seconds; defaults to api.session_days from now, at most 365 days */
+                        expires_at?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Signed in */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrowserSession"];
+                    };
+                };
+                /** @description Expiry outside the allowed range */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Incorrect secret */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /** Sign the web UI out */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session cookie cleared */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an API access token
+         * @description Exchanges the API secret for a signed token that works as a Bearer credential until expires_at. Rotating the API secret revokes every token.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        secret: string;
+                        /** @description Unix seconds; defaults to api.session_days from now, at most 365 days */
+                        expires_at?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Token created */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccessToken"];
+                    };
+                };
+                /** @description No API secret configured, or expiry outside the allowed range */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Incorrect secret */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/human-requests": {
         parameters: {
             query?: never;
@@ -2760,25 +2923,12 @@ export interface paths {
                              * @enum {string}
                              */
                             default_mode: "meta" | "full";
-                            /**
-                             * @default [
-                             *       {
-                             *         "name": "render-ui",
-                             *         "title": "Render ORC components",
-                             *         "description": "Answer a web chat request using the current ORC UI catalog.",
-                             *         "content": "For a webchat turn, answer with an orc-ui JSON block using the catalog below. Resolve real entity ids with ORC tools first. For other sources, answer in Markdown.",
-                             *         "include_ui_catalog": true
-                             *       }
-                             *     ]
-                             */
                             prompts: {
                                 name: string;
                                 title: string;
                                 /** @default  */
                                 description: string;
                                 content: string;
-                                /** @default false */
-                                include_ui_catalog: boolean;
                             }[];
                         };
                     };
@@ -2806,25 +2956,12 @@ export interface paths {
                          * @enum {string}
                          */
                         default_mode?: "meta" | "full";
-                        /**
-                         * @default [
-                         *       {
-                         *         "name": "render-ui",
-                         *         "title": "Render ORC components",
-                         *         "description": "Answer a web chat request using the current ORC UI catalog.",
-                         *         "content": "For a webchat turn, answer with an orc-ui JSON block using the catalog below. Resolve real entity ids with ORC tools first. For other sources, answer in Markdown.",
-                         *         "include_ui_catalog": true
-                         *       }
-                         *     ]
-                         */
                         prompts?: {
                             name: string;
                             title: string;
                             /** @default  */
                             description?: string;
                             content: string;
-                            /** @default false */
-                            include_ui_catalog?: boolean;
                         }[];
                     };
                 };
@@ -2842,26 +2979,91 @@ export interface paths {
                              * @enum {string}
                              */
                             default_mode: "meta" | "full";
-                            /**
-                             * @default [
-                             *       {
-                             *         "name": "render-ui",
-                             *         "title": "Render ORC components",
-                             *         "description": "Answer a web chat request using the current ORC UI catalog.",
-                             *         "content": "For a webchat turn, answer with an orc-ui JSON block using the catalog below. Resolve real entity ids with ORC tools first. For other sources, answer in Markdown.",
-                             *         "include_ui_catalog": true
-                             *       }
-                             *     ]
-                             */
                             prompts: {
                                 name: string;
                                 title: string;
                                 /** @default  */
                                 description: string;
                                 content: string;
-                                /** @default false */
-                                include_ui_catalog: boolean;
                             }[];
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/settings/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read browser session and cross-origin settings */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Browser session and cross-origin settings; the API secret is never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @default 30 */
+                            session_days: number;
+                            /** @default [] */
+                            cors_origins: string[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Persist browser session and cross-origin settings
+         * @description Environment variables ORC_API_SESSION_DAYS and ORC_API_CORS_ORIGINS take precedence over saved values.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @default 30 */
+                        session_days?: number;
+                        /** @default [] */
+                        cors_origins?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Browser session and cross-origin settings; the API secret is never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @default 30 */
+                            session_days: number;
+                            /** @default [] */
+                            cors_origins: string[];
                         };
                     };
                 };
@@ -14643,6 +14845,20 @@ export interface components {
                 poll_interval_minutes: number;
                 max_workers: number;
             };
+        };
+        BrowserSession: {
+            /** @description False when the server has no API secret configured */
+            required: boolean;
+            /** @description True when no secret is required or the cookie is valid */
+            signed_in: boolean;
+            /** @description Unix seconds when the session expires */
+            expires_at: number | null;
+            /** @description Expiry a sign-in gets without expires_at, from api.session_days */
+            default_expires_at: number;
+        };
+        AccessToken: {
+            token: string;
+            expires_at: number;
         };
         RestartResponse: {
             instance_id: string;

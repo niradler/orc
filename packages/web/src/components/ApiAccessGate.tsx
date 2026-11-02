@@ -1,15 +1,18 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useState } from "react";
-import { getApiSecret, getApiUrl } from "@/api/client";
+import { getApiUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   API_ACCESS_CHANGED,
   checkApiAccess,
-  forgetApiSecret,
-  saveApiSecret,
+  endOfDateInput,
+  migrateStoredSecret,
+  readBrowserSession,
+  signIn,
+  toDateInput,
   type WorkspacePreferences,
 } from "@/lib/api-credentials";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
@@ -29,7 +32,7 @@ function applyPreferences(preferences: WorkspacePreferences): void {
 export function ApiAccessGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<"checking" | "login" | "ready" | "error">("checking");
   const [secret, setSecret] = useState("");
-  const [remember, setRemember] = useState(false);
+  const [validUntil, setValidUntil] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [connection, setConnection] = useState(() => ({ url: getApiUrl() }));
@@ -41,12 +44,15 @@ export function ApiAccessGate({ children }: { children: ReactNode }) {
     setState("checking");
     setError("");
     const url = connection.url;
-    checkApiAccess(url, getApiSecret(), controller.signal)
-      .then((preferences) => {
+    migrateStoredSecret(url)
+      .then(() => checkApiAccess(url, controller.signal))
+      .then(async (preferences) => {
         if (controller.signal.aborted) return;
         if (preferences === null) {
-          forgetApiSecret(url);
-          setRemember(false);
+          // The 401 already means sign-in is needed; the session read only suggests a date, and
+          // without one the server applies its default lifetime.
+          const session = await readBrowserSession(url, controller.signal).catch(() => null);
+          setValidUntil(session ? toDateInput(session.default_expires_at) : "");
           setState("login");
         } else {
           applyPreferences(preferences);
@@ -81,18 +87,23 @@ export function ApiAccessGate({ children }: { children: ReactNode }) {
     setError("");
     try {
       const url = getApiUrl();
-      const preferences = await checkApiAccess(url, secret);
-      if (preferences === null) {
+      if (!(await signIn(url, secret, validUntil ? endOfDateInput(validUntil) : undefined))) {
         setError("Incorrect API secret. Try again.");
         return;
       }
-      saveApiSecret(url, secret, remember);
+      const preferences = await checkApiAccess(url);
+      if (preferences === null) {
+        setError(
+          "Signed in, but the browser did not keep the session cookie. Check cookie settings.",
+        );
+        return;
+      }
       setSecret("");
       applyPreferences(preferences);
       queryClient.clear();
       setState("ready");
-    } catch {
-      setError("Could not sign in or save your choice. Try again, or leave Remember unchecked.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not sign in. Try again.");
     } finally {
       setPending(false);
     }
@@ -155,16 +166,22 @@ export function ApiAccessGate({ children }: { children: ReactNode }) {
                 disabled={pending}
               />
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                data-testid="api-login-remember"
-                type="checkbox"
-                checked={remember}
-                onChange={(event) => setRemember(event.target.checked)}
+            <div className="space-y-2">
+              <Label htmlFor="api-login-valid-until">Valid until</Label>
+              <Input
+                id="api-login-valid-until"
+                data-testid="api-login-valid-until"
+                type="date"
+                min={toDateInput(Date.now() / 1000)}
+                max={toDateInput(Date.now() / 1000 + 364 * 86_400)}
+                value={validUntil}
+                onChange={(event) => setValidUntil(event.target.value)}
                 disabled={pending}
               />
-              Remember in this browser
-            </label>
+              <p className="text-xs text-muted-foreground">
+                The browser keeps a signed session cookie until then, never the secret.
+              </p>
+            </div>
             {error && (
               <p role="alert" data-testid="api-login-error" className="text-sm text-error">
                 {error}

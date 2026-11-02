@@ -30,6 +30,7 @@ import {
   ChatModelPicker,
   ChatSessionPicker,
 } from "@/components/ChatControls";
+import { ChatPromptMenu, useChatPromptMenu } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -111,6 +112,7 @@ export function ChatPanel({
     cancel,
   } = useChat();
   const terminalControl = useChatContinueInTerminal();
+  const promptMenu = useChatPromptMenu(draft, setDraft);
   const desktop = useBreakpoint("xl");
   const [historyVisible, setHistoryVisible] = useState(true);
   const docked = fullscreen && desktop && historyVisible;
@@ -583,11 +585,18 @@ export function ChatPanel({
                 ))}
               </ul>
             )}
+            <ChatPromptMenu {...promptMenu} />
             <textarea
               ref={input}
               data-testid="chat-input"
               aria-label="Message your agent"
-              placeholder="Message your agent…"
+              aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
+              aria-activedescendant={
+                promptMenu.matches[promptMenu.index]
+                  ? `chat-prompt-${promptMenu.matches[promptMenu.index]?.name}`
+                  : undefined
+              }
+              placeholder="Message your agent… (/ for prompts)"
               disabled={!ready}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -598,6 +607,7 @@ export function ChatPanel({
                 }
               }}
               onKeyDown={(event) => {
+                if (promptMenu.onKeyDown(event)) return;
                 if (
                   event.key === "Enter" &&
                   !event.shiftKey &&

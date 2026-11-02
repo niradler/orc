@@ -1,14 +1,21 @@
 import { configuredApiSecret } from "@orc/core/config";
-import { UnauthorizedError } from "@orc/core/errors";
+import { ForbiddenError, UnauthorizedError } from "@orc/core/errors";
 import { SCRATCHPAD_CONTENT_PATH_PATTERN } from "@orc/core/scratchpad";
 import { SESSION_SYNC_PATH_PATTERN } from "@orc/core/session-archive";
 import { HANDOFF_UPLOAD_PATH_PATTERN } from "@orc/core/session-handoff";
 import { SKILL_DOWNLOAD_PATH_PATTERN } from "@orc/core/skill-download";
 import type { MiddlewareHandler } from "hono";
+import {
+  accessTokenExpiry,
+  browserSessionExpiry,
+  cookieWriteAllowed,
+  secretMatches,
+} from "../lib/access-tokens.js";
 
 // Health checks must work without credentials so container/orchestrator probes
 // (e.g. the Docker HEALTHCHECK) don't break when a secret is configured.
-const PUBLIC_PATHS = new Set(["/health", "/api/health"]);
+// The sign-in routes verify the secret themselves (or only clear a cookie).
+const PUBLIC_PATHS = new Set(["/health", "/api/health", "/api/auth/session", "/api/auth/token"]);
 
 export function bearerAuth(secret: string | undefined): MiddlewareHandler {
   return async (c, next) => {
@@ -34,9 +41,16 @@ export function bearerAuth(secret: string | undefined): MiddlewareHandler {
     )
       return next();
     const auth = c.req.header("Authorization");
-    if (!auth?.startsWith("Bearer ") || auth.slice(7) !== required) {
-      throw new UnauthorizedError();
+    const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : "";
+    if (
+      bearer &&
+      (secretMatches(bearer, required) || (await accessTokenExpiry(bearer, required)) !== null)
+    )
+      return next();
+    if ((await browserSessionExpiry(c, required)) !== null) {
+      if (!cookieWriteAllowed(c)) throw new ForbiddenError("Cross-site request refused");
+      return next();
     }
-    return next();
+    throw new UnauthorizedError();
   };
 }

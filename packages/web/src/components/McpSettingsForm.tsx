@@ -1,5 +1,4 @@
-import { CHAT_UI_CATALOG_URI } from "@orc/core/chat-ui";
-import { type McpSettings, McpSettingsSchema } from "@orc/core/mcp-settings";
+import { type McpServerSettings, McpServerSettingsSchema } from "@orc/core/mcp-prompts";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -8,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 export function McpSettingsForm() {
-  const [config, setConfig] = useState<McpSettings | null>(null);
+  const [config, setConfig] = useState<McpServerSettings | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -18,7 +17,7 @@ export function McpSettingsForm() {
     void api.settings.mcp
       .get()
       .then((saved) => {
-        if (!disposed) setConfig(McpSettingsSchema.parse(saved));
+        if (!disposed) setConfig(McpServerSettingsSchema.parse(saved));
       })
       .catch((error) => {
         if (!disposed) {
@@ -36,7 +35,7 @@ export function McpSettingsForm() {
     setFeedback("");
     setFailed(false);
     try {
-      const saved = await api.settings.mcp.save(McpSettingsSchema.parse(config));
+      const saved = await api.settings.mcp.save(McpServerSettingsSchema.parse(config));
       setConfig(saved);
       setFeedback("MCP settings saved. New connections use these defaults.");
     } catch (error) {
@@ -47,7 +46,7 @@ export function McpSettingsForm() {
     }
   }
 
-  function patchPrompt(index: number, patch: Partial<McpSettings["prompts"][number]>) {
+  function patchPrompt(index: number, patch: Partial<McpServerSettings["prompts"][number]>) {
     if (!config) return;
     setConfig({
       ...config,
@@ -77,7 +76,7 @@ export function McpSettingsForm() {
               onChange={(event) =>
                 setConfig({
                   ...config,
-                  default_mode: event.target.value as McpSettings["default_mode"],
+                  default_mode: event.target.value as McpServerSettings["default_mode"],
                 })
               }
             >
@@ -109,8 +108,7 @@ export function McpSettingsForm() {
                         name: `prompt-${suffix}`,
                         title: "New prompt",
                         description: "",
-                        content: "Answer the user's request.",
-                        include_ui_catalog: false,
+                        content: "Answer the user's request.\n\nRequest: {{request}}",
                       },
                     ],
                   });
@@ -120,8 +118,9 @@ export function McpSettingsForm() {
               </Button>
             </div>
             <p className="my-2 text-xs text-muted-foreground">
-              Agents select these through MCP prompts. Catalog content is generated from the current
-              schema.
+              Agents select these through MCP prompts; in chat, type <code>/name</code>. Use{" "}
+              <code>{"{{request}}"}</code> for the user's words and <code>{"{{ui_catalog}}"}</code>{" "}
+              for the current component catalog.
             </p>
             <ul className="divide-y divide-border">
               {config.prompts.map((prompt, index) => (
@@ -193,16 +192,6 @@ export function McpSettingsForm() {
                           onChange={(event) => patchPrompt(index, { content: event.target.value })}
                         />
                       </label>
-                      <label className="flex min-h-11 items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={prompt.include_ui_catalog}
-                          onChange={(event) =>
-                            patchPrompt(index, { include_ui_catalog: event.target.checked })
-                          }
-                        />
-                        Include current UI catalog
-                      </label>
                       <Button
                         variant="ghost"
                         onClick={() => {
@@ -221,13 +210,6 @@ export function McpSettingsForm() {
               ))}
             </ul>
           </div>
-          <details className="text-sm">
-            <summary className="min-h-11 cursor-pointer py-3">Resources · 1</summary>
-            <p className="break-all font-mono text-xs">{CHAT_UI_CATALOG_URI}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              The current component and action catalog. Also available through the ui_catalog tool.
-            </p>
-          </details>
           <Button data-testid="mcp-save" disabled={pending} onClick={() => void save()}>
             Save changes
           </Button>

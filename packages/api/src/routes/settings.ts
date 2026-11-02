@@ -1,16 +1,23 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { ChatSettingsSchema } from "@orc/core/chat";
-import { loadConfig, updateGlobalConfig } from "@orc/core/config";
-import { McpSettingsSchema } from "@orc/core/mcp-settings";
+import { loadConfig, OrcConfigSchema, updateGlobalConfig } from "@orc/core/config";
+import { McpServerSettingsSchema } from "@orc/core/mcp-prompts";
+import { getSqlite } from "@orc/db/client";
+import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
 const mcpResponse = {
   200: {
     description: "MCP defaults and prompts; no credentials",
-    content: { "application/json": { schema: McpSettingsSchema } },
+    content: { "application/json": { schema: McpServerSettingsSchema } },
   },
 };
+const mcpSettings = () =>
+  McpServerSettingsSchema.parse({
+    default_mode: loadConfig().mcp.default_mode,
+    prompts: new McpPromptStore(getSqlite()).list(),
+  });
 
 app.openapi(
   createRoute({
@@ -20,13 +27,7 @@ app.openapi(
     summary: "Read MCP connection defaults and prompts",
     responses: mcpResponse,
   }),
-  (c) =>
-    c.json(
-      McpSettingsSchema.parse({
-        default_mode: loadConfig().mcp.default_mode,
-        prompts: loadConfig().mcp.prompts,
-      }),
-    ),
+  (c) => c.json(mcpSettings()),
 );
 
 app.openapi(
@@ -35,22 +36,70 @@ app.openapi(
     path: "/settings/mcp",
     tags: ["System"],
     summary: "Persist MCP connection defaults and prompts",
-    request: { body: { content: { "application/json": { schema: McpSettingsSchema.partial() } } } },
+    request: {
+      body: { content: { "application/json": { schema: McpServerSettingsSchema.partial() } } },
+    },
     responses: mcpResponse,
   }),
   (c) => {
-    const settings = c.req.valid("json");
-    const config = updateGlobalConfig((raw) => {
-      raw.mcp = { ...loadConfig().mcp, ...settings };
-    });
-    return c.json(
-      McpSettingsSchema.parse({
-        default_mode: config.mcp.default_mode,
-        prompts: config.mcp.prompts,
-      }),
-    );
+    const { prompts, ...settings } = c.req.valid("json");
+    if (Object.keys(settings).length)
+      updateGlobalConfig((raw) => {
+        raw.mcp = { ...(raw.mcp as Record<string, unknown> | undefined), ...settings };
+      });
+    if (prompts) new McpPromptStore(getSqlite()).replace(prompts);
+    return c.json(mcpSettings());
   },
 );
+
+const SecuritySettingsSchema = OrcConfigSchema.shape.api
+  .unwrap()
+  .pick({ session_days: true, cors_origins: true })
+  .strict();
+const securityResponse = {
+  200: {
+    description: "Browser session and cross-origin settings; the API secret is never returned",
+    content: { "application/json": { schema: SecuritySettingsSchema } },
+  },
+};
+const securitySettings = () => {
+  const { session_days, cors_origins } = loadConfig().api;
+  return { session_days, cors_origins };
+};
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/settings/security",
+    tags: ["System"],
+    summary: "Read browser session and cross-origin settings",
+    responses: securityResponse,
+  }),
+  (c) => c.json(securitySettings()),
+);
+
+app.openapi(
+  createRoute({
+    method: "patch",
+    path: "/settings/security",
+    tags: ["System"],
+    summary: "Persist browser session and cross-origin settings",
+    description:
+      "Environment variables ORC_API_SESSION_DAYS and ORC_API_CORS_ORIGINS take precedence over saved values.",
+    request: {
+      body: { content: { "application/json": { schema: SecuritySettingsSchema.partial() } } },
+    },
+    responses: securityResponse,
+  }),
+  (c) => {
+    const settings = c.req.valid("json");
+    updateGlobalConfig((raw) => {
+      raw.api = { ...(raw.api as Record<string, unknown> | undefined), ...settings };
+    });
+    return c.json(securitySettings());
+  },
+);
+
 const PreferencesSchema = z
   .object({
     theme: z.enum(["dark", "light"]).optional(),

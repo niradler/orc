@@ -4,12 +4,14 @@ import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
+import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { ZodError, z } from "zod";
 import { createRouter } from "./lib/router.js";
 import { constraintFailure } from "./lib/sqlite-errors.js";
 import { bearerAuth } from "./middleware/auth.js";
 import { auditRouter } from "./routes/audit.js";
+import { authRouter } from "./routes/auth.js";
 import { backendsRouter } from "./routes/backends.js";
 import { channelsRouter } from "./routes/channels.js";
 import { chatRouter } from "./routes/chat.js";
@@ -63,6 +65,15 @@ export function createApp() {
     );
   }
 
+  // Read per request so a Settings change applies without a restart; unlisted origins get no
+  // CORS headers, so the browser keeps them same-origin.
+  app.use(
+    "/api/*",
+    cors({
+      origin: (origin) => (loadConfig().api.cors_origins.includes(origin) ? origin : null),
+      credentials: true,
+    }),
+  );
   const auth = bearerAuth(configuredApiSecret(config.api.secret));
   for (const path of ["/api/*", "/openapi.json", "/docs"]) app.use(path, auth);
 
@@ -118,6 +129,7 @@ export function createApp() {
   app.route("/api", chatRouter);
   app.route("/api", pushRouter);
   app.route("/api", healthRouter);
+  app.route("/api", authRouter);
   app.route("/api", humanRequestsRouter);
   app.route("/api", settingsRouter);
   app.route("/api", channelsRouter);

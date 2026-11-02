@@ -142,5 +142,14 @@ describe("chatUiCatalogText", () => {
       expect(text).toContain(name);
     expect(text).toContain("Markdown");
     expect(text).not.toContain("- Stat ");
+    expect(text).toContain("## Examples");
+  });
+
+  test("lean variant keeps every name but drops descriptions and examples", () => {
+    const lean = chatUiCatalogText("lean");
+    for (const name of ["Task {", "Scratchpad {", "Stack {", "task.update {", "job.setEnabled {"])
+      expect(lean).toContain(name);
+    expect(lean).not.toContain("## Examples");
+    expect(lean.length).toBeLessThan(chatUiCatalogText().length / 2);
   });
 });

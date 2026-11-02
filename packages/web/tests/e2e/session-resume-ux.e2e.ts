@@ -39,6 +39,9 @@ test("history sidebar resizes by dragging and keyboard, persists and resets", as
   await expect(sidebar).toHaveCSS("width", "432px");
   await page.screenshot({ path: testInfo.outputPath("history-expanded-desktop.png") });
   await page.reload();
+  await expect(
+    page.getByTestId("chat-panel").or(page.getByTestId("chat-open-button")).first(),
+  ).toBeVisible();
   if (!(await page.getByTestId("chat-panel").isVisible()))
     await page.getByTestId("chat-open-button").click();
   if (!(await handle.isVisible())) await page.getByTestId("chat-fullscreen-button").click();

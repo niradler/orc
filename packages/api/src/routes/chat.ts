@@ -46,6 +46,7 @@ import {
 import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
+import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -998,7 +999,7 @@ async function streamChat(
             ? thread.config.permissionMode
             : undefined,
           model: thread.config.model || undefined,
-          systemPromptAppend: chatSystemPrompt(thread.config.system),
+          systemPromptAppend: chatSystemPrompt(thread.config.system, { webchat: true }),
           orcMcp: thread.config.mcp === "orc",
           orcMcpMode: loadConfig().mcp.default_mode,
           mcpAlwaysLoad: true,
@@ -1037,7 +1038,8 @@ async function streamChat(
           ? await backend.resumeSession(thread.runtimeId, opts)
           : await backend.startSession(opts);
         if (stopped) return;
-        const turn = input + uploadPrompt(attachments);
+        // The transcript keeps the typed "/name request"; the agent receives the saved prompt.
+        const turn = new McpPromptStore(getSqlite()).expand(input) + uploadPrompt(attachments);
         const sent = body.context ? withOrcContext(turn, body.context) : turn;
         const prompt =
           thread.backend === "acpx"

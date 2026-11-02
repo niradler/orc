@@ -29,9 +29,13 @@ export async function openChatSettings(page: Page): Promise<void> {
 }
 
 export async function openChatHistory(page: Page): Promise<void> {
-  if (await page.getByTestId("chat-session-sidebar").isVisible()) return;
-  if (!(await page.getByTestId("chat-sessions-dialog").isVisible()))
-    await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+  const sidebar = page.getByTestId("chat-session-sidebar");
+  const dialog = page.getByTestId("chat-sessions-dialog");
+  const button = page.getByTestId("chat-sessions-button");
+  // Wait for the chat to render before choosing a branch; sign-in may still be in progress.
+  await expect(sidebar.or(dialog).or(button).filter({ visible: true }).first()).toBeVisible();
+  if (await sidebar.isVisible()) return;
+  if (!(await dialog.isVisible())) await button.filter({ visible: true }).click();
   await expect(page.getByTestId("chat-session-list")).toBeVisible();
 }
 

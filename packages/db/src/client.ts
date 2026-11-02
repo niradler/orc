@@ -8,6 +8,7 @@ import { installChangeTracking, stopChangeTracking } from "./changes.js";
 import { installChat } from "./chat.js";
 import { HumanRequestStore } from "./human-requests.js";
 import { installKnowledgeBases } from "./kb.js";
+import { installMcpPrompts } from "./mcp-prompts.js";
 import { installMemories } from "./memories.js";
 import { installReusableWebhooks } from "./reusable-webhooks.js";
 import { installRules } from "./rules.js";
@@ -584,6 +585,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installMemories(sqlite);
   installRules(sqlite);
   installScratchpads(sqlite);
+  installMcpPrompts(sqlite);
   new HumanRequestStore(sqlite);
 
   installChangeTracking(sqlite, path);

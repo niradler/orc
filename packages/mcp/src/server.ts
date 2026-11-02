@@ -4,13 +4,13 @@ import {
   CallToolRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
-  ListResourcesRequestSchema,
   ListToolsRequestSchema,
-  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { CHAT_UI_CATALOG_URI, chatUiCatalogText } from "@orc/core/chat-ui";
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
+import { MCP_PROMPT_REQUEST_ARG, renderMcpPrompt } from "@orc/core/mcp-prompts";
+import { getSqlite } from "@orc/db/client";
+import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { z } from "zod";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
@@ -64,7 +64,7 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
   const selectedMode = mode ?? loadConfig().mcp.default_mode;
   const server = new Server(
     { name: "orc", version: "0.0.1" },
-    { capabilities: { tools: {}, resources: {}, prompts: {} } },
+    { capabilities: { tools: {}, prompts: {} } },
   );
 
   // The set of tools this connection serves. Every lookup, listing and meta
@@ -175,52 +175,32 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
   });
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-    prompts: loadConfig().mcp.prompts.map(({ name, title, description }) => ({
+    prompts: new McpPromptStore(getSqlite()).list().map(({ name, title, description }) => ({
       name,
       title,
       description,
+      arguments: [
+        {
+          name: MCP_PROMPT_REQUEST_ARG,
+          description: "What you need, in your own words",
+          required: false,
+        },
+      ],
     })),
   }));
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const prompt = loadConfig().mcp.prompts.find((item) => item.name === request.params.name);
+    const prompt = new McpPromptStore(getSqlite()).get(request.params.name);
     if (!prompt) throw new Error(`Unknown prompt: ${request.params.name}`);
-    if (Object.keys(request.params.arguments ?? {}).length)
-      throw new Error("This prompt does not accept arguments");
+    const { [MCP_PROMPT_REQUEST_ARG]: input, ...unknown } = request.params.arguments ?? {};
+    if (Object.keys(unknown).length)
+      throw new Error(`Prompts accept only the "${MCP_PROMPT_REQUEST_ARG}" argument`);
     return {
       description: prompt.description,
       messages: [
         {
           role: "user" as const,
-          content: {
-            type: "text" as const,
-            text: [
-              prompt.content,
-              ...(prompt.include_ui_catalog ? [chatUiCatalogText()] : []),
-            ].join("\n\n"),
-          },
+          content: { type: "text" as const, text: renderMcpPrompt(prompt, input) },
         },
-      ],
-    };
-  });
-
-  // Static references. Each is mirrored by a tool for clients that cannot read resources.
-  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [
-      {
-        uri: CHAT_UI_CATALOG_URI,
-        name: "ui_catalog",
-        title: "ORC chat UI components",
-        description: "Components and actions for live ORC UI in web chat replies",
-        mimeType: "text/markdown",
-      },
-    ],
-  }));
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    if (request.params.uri !== CHAT_UI_CATALOG_URI)
-      throw new Error(`Unknown resource: ${request.params.uri}`);
-    return {
-      contents: [
-        { uri: CHAT_UI_CATALOG_URI, mimeType: "text/markdown", text: chatUiCatalogText() },
       ],
     };
   });

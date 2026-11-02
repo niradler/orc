@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { getApiSecret, getApiUrl } from "@/api/client";
+import { getApiUrl } from "@/api/client";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import {
   consumeResourceEvents,
@@ -36,12 +36,9 @@ export function ResourceEvents(): null {
       };
       try {
         keepAlive();
-        const secret = getApiSecret();
         const response = await fetch(`${getApiUrl().replace(/\/+$/, "")}/events`, {
-          headers: {
-            Accept: "text/event-stream",
-            ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
-          },
+          headers: { Accept: "text/event-stream" },
+          credentials: "include",
           signal: attemptController.signal,
           cache: "no-store",
         });

@@ -28,7 +28,7 @@ import {
   useState,
 } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ApiError, api, getApiSecret, getApiUrl } from "@/api/client";
+import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
@@ -163,10 +163,6 @@ function savePreferences(config: ChatConfig): void {
       ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}),
     }),
   );
-}
-function authHeaders(): Record<string, string> {
-  const secret = getApiSecret();
-  return secret ? { Authorization: `Bearer ${secret}` } : {};
 }
 const message = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
@@ -466,7 +462,7 @@ function useChatController() {
             // Never repeat POST /chat/stream: it may already have started a turn.
             connect = (signal) =>
               fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(threadId)}/live`, {
-                headers: authHeaders(),
+                credentials: "include",
                 signal,
               });
           } finally {
@@ -508,7 +504,7 @@ function useChatController() {
         key,
         (signal) =>
           fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(threadId)}/live`, {
-            headers: authHeaders(),
+            credentials: "include",
             signal,
           }),
         () =>
@@ -762,7 +758,11 @@ function useChatController() {
           }
           return fetch(`${getApiUrl()}/chat/${form ? "uploads" : "stream"}`, {
             method: "POST",
-            headers: { ...(!form ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
+            headers: {
+              "X-Orc-Source": "ui",
+              ...(!form ? { "Content-Type": "application/json" } : {}),
+            },
+            credentials: "include",
             body: form ?? JSON.stringify(payload),
             signal,
           });

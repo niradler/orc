@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
-import { API_SECRET, AUTH_HEADERS } from "./_helpers";
+import { API_SECRET, AUTH_HEADERS, gotoView } from "./_helpers";
 
 for (const width of [1440, 390]) {
   test(`MCP settings persist and edit prompts at ${width}px`, async ({
@@ -37,8 +37,8 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("mcp-default-mode")).toHaveValue("full");
       await expect(section).toContainText("Browser example");
       await expect(page.getByTestId("mcp-prompt-editor")).toHaveCount(0);
-      await section.getByText("Resources · 1").click();
-      await expect(section).toContainText("orc://ui/catalog");
+      await expect(section).not.toContainText("Resources");
+      await expect(section).toContainText("{{request}}");
       expect(await section.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await section.screenshot({ path: testInfo.outputPath(`mcp-settings-${width}.png`) });
       const saved = await (
@@ -47,6 +47,24 @@ for (const width of [1440, 390]) {
       expect(
         saved.prompts.find((prompt: { name: string }) => prompt.name === "browser-example").content,
       ).toBe("Answer with current ORC data.");
+      await gotoView(page, "tasks");
+      await page.getByTestId("chat-open-button").click();
+      const input = page
+        .getByTestId("chat-panel")
+        .filter({ visible: true })
+        .getByTestId("chat-input");
+      await input.fill("/browser");
+      const menu = page.getByTestId("chat-prompt-menu");
+      await expect(menu.getByTestId("chat-prompt-option")).toHaveCount(1);
+      await expect(menu).toContainText("Browser example");
+      await input.press("Enter");
+      await expect(input).toHaveValue("/browser-example ");
+      await expect(menu).toHaveCount(0);
+      await input.fill("/");
+      await expect(menu).toContainText("/render-ui");
+      await page.screenshot({ path: testInfo.outputPath(`chat-prompt-menu-${width}.png`) });
+      await input.press("Escape");
+      await expect(menu).toHaveCount(0);
       expect(errors).toEqual([]);
     } finally {
       expect(

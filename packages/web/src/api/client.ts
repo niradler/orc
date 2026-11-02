@@ -39,18 +39,14 @@ import type {
   KbUsageStats,
   KnowledgeBase,
 } from "@orc/core/kb";
-import type { McpSettings } from "@orc/core/mcp-settings";
+import type { McpServerSettings } from "@orc/core/mcp-prompts";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
-import {
-  API_ACCESS_CHANGED,
-  readApiSecret,
-  type WorkspacePreferences,
-} from "../lib/api-credentials";
+import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
 
@@ -88,7 +84,7 @@ import type { RulePolicy, RuleRevision } from "@orc/core/rule-types";
 // Browser-compatible ORC API client.
 // Types imported from @orc/sdk for end-to-end type safety.
 // Dev: Vite proxies /api/* → http://localhost:7701/api/*
-// Override via localStorage: orc_api_url, orc_api_secret
+// Override via localStorage: orc_api_url. Auth is the HttpOnly session cookie from sign-in.
 
 export type {
   AgentBackendInfo,
@@ -218,9 +214,9 @@ import type {
   UpdateTaskInput,
 } from "@orc/sdk/types";
 
-export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
+export type SecuritySettings = { session_days: number; cors_origins: string[] };
 
-export const getApiSecret = (): string => readApiSecret(getApiUrl());
+export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
 
 export type TerminalKind = "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
 export type AgentSetup = {
@@ -517,12 +513,9 @@ export function terminalSocketUrl(
 
 const enc = encodeURIComponent;
 
-/** Auth plus the read source, so knowledge usage stats attribute browser reads to the UI. */
+/** The read source, so knowledge usage stats attribute browser reads to the UI. */
 function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { "X-Orc-Source": "ui" };
-  const secret = getApiSecret();
-  if (secret) headers.Authorization = `Bearer ${secret}`;
-  return headers;
+  return { "X-Orc-Source": "ui" };
 }
 
 /** A raw request to the ORC API with the dashboard's credentials; `path` is relative to the API root. */
@@ -530,7 +523,11 @@ export function apiFetch(path: string, init: RequestInit = {}): Promise<Response
   const headers = new Headers(init.headers);
   for (const [name, value] of Object.entries(authHeaders()))
     if (!headers.has(name)) headers.set(name, value);
-  return fetch(`${getApiUrl()}${path.startsWith("/") ? path : `/${path}`}`, { ...init, headers });
+  return fetch(`${getApiUrl()}${path.startsWith("/") ? path : `/${path}`}`, {
+    credentials: "include",
+    ...init,
+    headers,
+  });
 }
 
 async function req<T>(
@@ -556,6 +553,7 @@ async function req<T>(
   const res = await fetch(url, {
     method,
     headers,
+    credentials: "include",
     signal: opts?.signal,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
@@ -717,8 +715,14 @@ export const api = {
   },
   settings: {
     mcp: {
-      get: () => req<McpSettings>("GET", "/settings/mcp"),
-      save: (settings: McpSettings) => req<McpSettings>("PATCH", "/settings/mcp", settings),
+      get: () => req<McpServerSettings>("GET", "/settings/mcp"),
+      save: (settings: McpServerSettings) =>
+        req<McpServerSettings>("PATCH", "/settings/mcp", settings),
+    },
+    security: {
+      get: () => req<SecuritySettings>("GET", "/settings/security"),
+      save: (settings: Partial<SecuritySettings>) =>
+        req<SecuritySettings>("PATCH", "/settings/security", settings),
     },
     get: () => req<WorkspacePreferences>("GET", "/settings"),
     save: (preferences: WorkspacePreferences) =>
@@ -1286,6 +1290,7 @@ export const api = {
       return new Promise<KbDocument>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${getApiUrl()}/kb/bases/${enc(kbId)}/upload`);
+        xhr.withCredentials = true;
         for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress?.(e.loaded / e.total);
@@ -1323,11 +1328,9 @@ export const api = {
         "GET",
         `/kb/documents/${enc(id)}/revisions/${revision}`,
       ),
-    /** The original upload as a Blob (the endpoint needs the Authorization header). */
+    /** The original upload as a Blob (fetched, not linked, so it carries the session). */
     original: async (id: string) => {
-      const res = await fetch(`${getApiUrl()}/kb/documents/${enc(id)}/original`, {
-        headers: authHeaders(),
-      });
+      const res = await apiFetch(`/kb/documents/${enc(id)}/original`);
       if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status, null);
       return res.blob();
     },

@@ -1,10 +1,11 @@
 import { CheckCircle, Copy } from "lucide-react";
-import { useMemo, useState } from "react";
-import { getApiSecret, getApiUrl } from "@/api/client";
+import { useEffect, useMemo, useState } from "react";
+import { getApiUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useProjects } from "@/hooks/useProjects";
+import { readBrowserSession } from "@/lib/api-credentials";
 import {
   ENV_NAME,
   MCP_CLIENT_LABELS,
@@ -24,9 +25,15 @@ export function McpServerSettings() {
   const [selected, setSelected] = useState<string[]>([]);
   const [client, setClient] = useState<McpClient>("claude-json");
   const [name, setName] = useState("orc");
-  const [useSecret, setUseSecret] = useState(() => Boolean(getApiSecret()));
+  const [useSecret, setUseSecret] = useState(true);
   const [secretEnv, setSecretEnv] = useState("ORC_API_SECRET");
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    readBrowserSession(getApiUrl())
+      .then((session) => setUseSecret(session.required))
+      .catch(() => {});
+  }, []);
 
   const error = useMemo(() => {
     try {
@@ -149,7 +156,8 @@ export function McpServerSettings() {
         <div>
           <span className="text-sm font-medium">Authentication</span>
           <p className="mt-1 text-xs text-muted-foreground">
-            The snippet names an environment variable; the secret itself is never shown.
+            The snippet names an environment variable holding the API secret or an access token from
+            Security; the value itself is never shown.
           </p>
         </div>
         <div className="space-y-2">
@@ -161,7 +169,7 @@ export function McpServerSettings() {
               onChange={(event) => edit(setUseSecret)(event.target.checked)}
               className="size-4 accent-primary"
             />
-            Send the API secret as a bearer token
+            Send a bearer token
           </label>
           {useSecret && (
             <Input

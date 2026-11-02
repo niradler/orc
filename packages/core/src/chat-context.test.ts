@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { chatSystemPrompt, ORC_CHAT_CONTEXT_GUIDANCE, ORC_TASK_GUIDANCE } from "./chat";
 import { ChatTurnContextSchema, formatOrcContext, withOrcContext } from "./chat-context";
+import { chatUiCatalogText } from "./chat-ui";
 
 describe("orc-context", () => {
   test("formats fields as one line each and skips empty values", () => {
@@ -27,6 +28,14 @@ describe("orc-context", () => {
     expect(custom).toContain(ORC_CHAT_CONTEXT_GUIDANCE);
     expect(chatSystemPrompt(custom)).toBe(custom);
     expect(chatSystemPrompt().split(ORC_TASK_GUIDANCE)).toHaveLength(2);
+  });
+
+  test("only webchat threads carry the lean UI catalog", () => {
+    const lean = chatUiCatalogText("lean");
+    expect(chatSystemPrompt(undefined, { webchat: true })).toEndWith(lean);
+    expect(chatSystemPrompt()).not.toContain(lean);
+    const custom = chatSystemPrompt("Operator", { webchat: true });
+    expect(chatSystemPrompt(custom, { webchat: true })).toBe(custom);
   });
 
   test("turn context accepts dashboard paths only", () => {
