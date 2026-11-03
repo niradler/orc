@@ -24,6 +24,7 @@ import {
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { inheritLoginShellPath } from "../login-path.js";
+import { listAllJobs } from "./job.js";
 
 export const ORC_HOME = process.env.ORC_HOME ?? join(homedir(), ".orc");
 export const ORC_LOG = join(ORC_HOME, "daemon.log");
@@ -354,10 +355,10 @@ export function daemonCommand() {
     .description("Show scheduler state and next run times for all active jobs")
     .action(async () => {
       const client = createOrcClient();
-      const { data, error } = await client.jobs.list();
+      const { jobs, error } = await listAllJobs(client);
       if (error) return console.error("Error:", error);
 
-      const scheduled = (data?.jobs ?? []).filter(
+      const scheduled = jobs.filter(
         (j) => j.enabled && (j.trigger_type === "cron" || j.trigger_type === "watch"),
       );
 

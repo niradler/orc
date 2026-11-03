@@ -856,7 +856,7 @@ The same profile instructions and relative file locations reach every backend. P
 
 The dashboard's **Packages** page imports OpenAPM and portable Agent Plugins v1.0.0 folders, inspects/exports their files, and saves reusable agent setups. **Run with → Open in ORC terminal** prepares the selected packages through Microsoft APM or Vercel skills, then opens the coding agent. Deployment persists in the chosen project; normal upstream trust and authentication prompts remain. Whole portable plugins activate through APM/Copilot; skills-only plugins can use Vercel with Claude, Codex or Copilot. See [Reusable agent packages](docs/agent-packages.md) for requirements and supported combinations.
 
-The **Agents** page creates/reads specialist profiles. API `/api/agents` and `/api/agent-packages`, SDK clients, CLI, and MCP all access the same files. MCP tools are `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, and `agent_package_import`. Package agent IDs are namespaced as `<package>/<file-stem>`.
+The **Agents** page creates/reads specialist profiles. API `/api/agents` and `/api/agent-packages`, SDK clients, CLI, and MCP all access the same files. MCP tools are `agent_list`, `agent_read`, `agent_create`, `agent_update`, `agent_delete`, `agent_package_list`, `agent_package_read`, `agent_package_import`, `agent_package_update`, and `agent_package_delete`; updates and deletes require the raw content or package revision you last read. Package agent IDs are namespaced as `<package>/<file-stem>`.
 
 ## MCP tools
 
@@ -875,9 +875,9 @@ Tools are available to any connected agent. Start every session with `context`.
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Project**   | `project_list`                                                                                                                              |
 | **Memory**    | `context`, `memory_list`, `memory_read`, `memory_create`, `memory_update`, `memory_delete`, `memory_history`, `memory_revert`                |
-| **Task**      | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`                                                                  |
+| **Task**      | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`, `task_link`                                                     |
 | **Skill**     | `skill_list`, `skill_read`, `skill_create`                                                                                                  |
-| **Agent**     | `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, `agent_package_import`                               |
+| **Agent**     | `agent_list`, `agent_read`, `agent_create`, `agent_update`, `agent_delete`, `agent_package_list`, `agent_package_read`, `agent_package_import`, `agent_package_update`, `agent_package_delete` |
 | **Flow**      | `flow_report`, `flow_status`, `flow_list`, `flow_read`, `flow_create`, `flow_attach`                                                        |
 | **Knowledge** | `kb_list`, `kb_search`, `kb_evidence`, `kb_read`, `kb_documents`, `kb_write`, `kb_maintenance`                                               |
 | **Search**    | `search`                                                                                                                                    |

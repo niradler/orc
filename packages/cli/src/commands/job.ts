@@ -1,9 +1,44 @@
 import { shortId } from "@orc/core/ids";
 import { JobActionSchema } from "@orc/core/job-actions";
 import { createOrcClient } from "@orc/sdk/client";
+import type { Job } from "@orc/sdk/types";
 import { Command } from "commander";
 import { isJson, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
+
+type OrcClient = ReturnType<typeof createOrcClient>;
+
+export async function listAllJobs(
+  client: OrcClient,
+  params: { project_id?: string } = {},
+): Promise<{ jobs: Job[]; error: unknown }> {
+  const jobs: Job[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const { data, error } = await client.jobs.list({ ...params, limit: 100, offset });
+    if (error || !data) return { jobs, error: error ?? "Empty response" };
+    jobs.push(...data.jobs);
+    offset = data.next_offset;
+  }
+  return { jobs, error: null };
+}
+
+async function findJob(client: OrcClient, nameOrId: string): Promise<Job | null> {
+  const byId = await client.jobs.get(nameOrId);
+  if (byId.data) return byId.data;
+  const { jobs, error } = await listAllJobs(client);
+  if (error) {
+    console.error("Error:", error);
+    process.exitCode = 1;
+    return null;
+  }
+  const job = jobs.find((j) => j.name === nameOrId);
+  if (!job) {
+    console.error(`Job not found: ${nameOrId}`);
+    process.exitCode = 1;
+  }
+  return job ?? null;
+}
 
 export function jobCommand() {
   const cmd = new Command("job").description("Manage jobs");
@@ -19,9 +54,11 @@ export function jobCommand() {
       const project = noProject
         ? null
         : await resolveProject(client, { project: opts.project, noProject });
-      const { data, error } = await client.jobs.list(project ? { project_id: project.id } : {});
+      const { jobs: rows, error } = await listAllJobs(
+        client,
+        project ? { project_id: project.id } : {},
+      );
       if (error) return console.error("Error:", error);
-      const rows = data?.jobs ?? [];
       if (isJson()) return jsonOut({ jobs: rows });
       if (rows.length === 0) return console.log("No jobs found.");
       for (const j of rows) {
@@ -83,10 +120,8 @@ export function jobCommand() {
     .description("Manually trigger a job")
     .action(async (nameOrId: string) => {
       const client = createOrcClient();
-      const { data: list, error: listErr } = await client.jobs.list();
-      if (listErr) return console.error("Error:", listErr);
-      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
-      if (!job) return console.error(`Job not found: ${nameOrId}`);
+      const job = await findJob(client, nameOrId);
+      if (!job) return;
 
       const { data, error } = await client.jobs.trigger(job.id);
       if (error || !data) return console.error("Error:", error);
@@ -99,10 +134,8 @@ export function jobCommand() {
     .description("Show job details")
     .action(async (nameOrId: string) => {
       const client = createOrcClient();
-      const { data: list, error: listErr } = await client.jobs.list();
-      if (listErr) return console.error("Error:", listErr);
-      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
-      if (!job) return console.error(`Job not found: ${nameOrId}`);
+      const job = await findJob(client, nameOrId);
+      if (!job) return;
 
       const { data, error } = await client.jobs.get(job.id);
       if (error || !data) return console.error("Error:", error);
@@ -138,10 +171,8 @@ export function jobCommand() {
     .description("Delete a job")
     .action(async (nameOrId: string) => {
       const client = createOrcClient();
-      const { data: list, error: listErr } = await client.jobs.list();
-      if (listErr) return console.error("Error:", listErr);
-      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
-      if (!job) return console.error(`Job not found: ${nameOrId}`);
+      const job = await findJob(client, nameOrId);
+      if (!job) return;
 
       const { error } = await client.jobs.delete(job.id);
       if (error) return console.error("Error:", error);
@@ -164,10 +195,8 @@ export function jobCommand() {
     .option("--disabled", "Disable the job")
     .action(async (nameOrId: string, opts) => {
       const client = createOrcClient();
-      const { data: list, error: listErr } = await client.jobs.list();
-      if (listErr) return console.error("Error:", listErr);
-      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
-      if (!job) return console.error(`Job not found: ${nameOrId}`);
+      const job = await findJob(client, nameOrId);
+      if (!job) return;
 
       const input: Record<string, unknown> = {};
       if (opts.name) input.name = opts.name;
@@ -195,10 +224,8 @@ export function jobCommand() {
     .option("--logs", "Show stdout/stderr logs for each run")
     .action(async (nameOrId: string, opts) => {
       const client = createOrcClient();
-      const { data: list, error: listErr } = await client.jobs.list();
-      if (listErr) return console.error("Error:", listErr);
-      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
-      if (!job) return console.error(`Job not found: ${nameOrId}`);
+      const job = await findJob(client, nameOrId);
+      if (!job) return;
 
       const { data, error } = await client.jobs.runs(job.id, Number(opts.limit));
       if (error) return console.error("Error:", error);

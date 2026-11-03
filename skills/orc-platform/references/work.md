@@ -68,7 +68,7 @@ blocker causes and the next decision/action. Avoid an arbitrary universal stall 
 ## Jobs and gateway
 
 Jobs execute configured commands: inspect command, cwd, environment, trigger and
-timeout before running. `job_list`, `job_run`, `job_status` cover agent operations;
+timeout before running. `job_list`, `job_run`, `job_status` (pass `logs: true` for output) cover agent operations;
 use CLI/API help for creation and schedules. `cron` replaces the old `repeat` trigger.
 Verify a run's exit code and bounded log output; scheduler presence is not success.
 

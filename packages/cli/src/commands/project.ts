@@ -81,17 +81,20 @@ export function projectCommand() {
     .description("List projects")
     .option("--status <s>", "Filter by status")
     .option("-t, --tag <tag>", "Filter by tag")
-    .option("-l, --limit <n>", "Max results", "20")
+    .option("-l, --limit <n>", "Max results (1-100)", "20")
+    .option("--offset <n>", "Skip this many projects", "0")
     .action(async (opts) => {
       const client = createOrcClient();
       const { data, error } = await client.projects.list({
         status: opts.status,
         tag: opts.tag,
         limit: Number(opts.limit),
+        offset: Number(opts.offset),
       });
       if (error) return console.error("Error:", error);
       const projects = data?.projects ?? [];
-      if (isJson()) return jsonOut({ projects });
+      const nextOffset = data?.next_offset ?? null;
+      if (isJson()) return jsonOut({ projects, next_offset: nextOffset });
       if (projects.length === 0) return console.log("No projects found.");
 
       for (const p of projects) {
@@ -107,6 +110,7 @@ export function projectCommand() {
         }
         console.log(line);
       }
+      if (nextOffset !== null) console.log(`More projects: --offset ${nextOffset}`);
     });
 
   cmd

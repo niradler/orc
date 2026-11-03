@@ -75,13 +75,17 @@ export function taskCommand() {
         }
       } else {
         // Group by status
-        const statusOrder = ["review", "changes_requested", "doing", "blocked", "todo"];
+        const preferred = ["review", "changes_requested", "doing", "blocked", "todo"];
         const groups = new Map<string, typeof tasks>();
         for (const t of tasks) {
           const list = groups.get(t.status) ?? [];
           list.push(t);
           groups.set(t.status, list);
         }
+        const statusOrder = [
+          ...preferred,
+          ...[...groups.keys()].filter((s) => !preferred.includes(s)),
+        ];
 
         for (const status of statusOrder) {
           const group = groups.get(status);

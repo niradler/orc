@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
-import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
+import {
+  createAgent,
+  deleteAgent,
+  discoverAgents,
+  readAgent,
+  updateAgent,
+} from "@orc/core/agent-service";
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
-import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
   CommandSpecSchema,
   HumanRequestInputSchema,
@@ -12,9 +18,12 @@ import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import {
   createPackage,
+  deletePackage,
   listPackages,
+  packageRevision,
   readPackage,
   readPackageFile,
+  updatePackage,
 } from "@orc/core/package-service";
 import {
   SCRATCHPAD_KINDS,
@@ -37,7 +46,7 @@ import {
 } from "@orc/core/skill-service";
 import { SkillUpdateSchema } from "@orc/core/skill-update";
 import type { TaskStatus } from "@orc/core/types";
-import { AgentBackendSchema } from "@orc/core/types";
+import { AgentBackendSchema, TaskLinkTypeSchema, TaskStatusSchema } from "@orc/core/types";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
 import { KbDigestStore } from "@orc/db/kb-digest";
@@ -48,7 +57,16 @@ import {
   type MemoryListSort,
   MemoryStore,
 } from "@orc/db/memories";
-import { job_runs, jobs, projects, sessions, tasks } from "@orc/db/schema";
+import {
+  comments,
+  job_run_logs,
+  job_runs,
+  jobs,
+  projects,
+  sessions,
+  task_links,
+  tasks,
+} from "@orc/db/schema";
 import { ScratchpadStore } from "@orc/db/scratchpads";
 import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
 import { executeJob } from "@orc/runner/executor";
@@ -468,15 +486,17 @@ export const toolDefinitions = [
     description: "List active tasks - compact layer-1 index. Does NOT include body/comments.",
     inputSchema: z.object({
       project: projectParam,
-      status: z
-        .enum(["todo", "queued", "doing", "review", "changes_requested", "blocked", "paused"])
-        .optional(),
-      limit: z.number().int().min(1).max(50).optional().default(20),
+      status: TaskStatusSchema.optional().describe(
+        "Filter by status; omit for active tasks (excludes done and cancelled)",
+      ),
+      tag: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional().default(20),
     }),
   },
   {
     name: "task_get",
-    description: "Fetch current task details by IDs (title, status, progress and body).",
+    description:
+      "Fetch current task details by IDs (title, status, progress, git links, body and the latest comments).",
     inputSchema: z.object({
       project: projectParam,
       ids: z.array(z.string()).min(1).max(10),
@@ -520,24 +540,30 @@ export const toolDefinitions = [
   {
     name: "task_update",
     description:
-      "Update task status, priority, body, or add a comment. Status transitions are validated.",
+      "Update task status, fields or git links, or add a comment. Status transitions are validated; null clears a nullable field.",
     inputSchema: z.object({
       project: projectParam,
       id: z.string(),
-      status: z
-        .enum([
-          "todo",
-          "queued",
-          "doing",
-          "review",
-          "changes_requested",
-          "blocked",
-          "done",
-          "paused",
-          "cancelled",
-        ])
-        .optional(),
+      status: TaskStatusSchema.optional(),
+      title: z.string().min(1).max(500).optional(),
       body: z.string().optional(),
+      tags: z.array(z.string()).nullable().optional(),
+      due_at: z.string().datetime().nullable().optional(),
+      skill_name: z.string().nullable().optional(),
+      required_review: z.boolean().optional(),
+      max_review_rounds: z.number().int().min(1).optional(),
+      git_branch: z.string().min(1).max(1024).nullable().optional(),
+      github_issue: z
+        .string()
+        .regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/[1-9]\d*$/)
+        .nullable()
+        .optional(),
+      github_pr: z
+        .string()
+        .regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/[1-9]\d*$/)
+        .nullable()
+        .optional()
+        .describe("Pull request URL, e.g. https://github.com/owner/repo/pull/12"),
       priority: z.enum(["low", "normal", "high", "critical"]).optional(),
       comment: z.string().optional().describe("Add a comment to the task"),
       progress: z
@@ -621,10 +647,27 @@ export const toolDefinitions = [
   },
   {
     name: "job_status",
-    description: "Get run status + exit code + error for a specific run ID.",
+    description:
+      "Get run status + exit code + error for a specific run ID; pass logs:true to include output lines.",
     inputSchema: z.object({
       project: projectParam,
       run_id: z.string(),
+      logs: z.boolean().optional().default(false),
+      stream: z.enum(["stdout", "stderr"]).optional(),
+      log_limit: z.number().int().min(1).max(2000).optional().default(200),
+    }),
+  },
+  {
+    name: "task_link",
+    description:
+      "List, add or remove links between existing tasks (blocks, blocked_by, relates_to, duplicates, clones, subtask_of, parent_of). Blocker links gate when a task may start.",
+    inputSchema: z.object({
+      project: projectParam,
+      id: z.string().describe("Task ID"),
+      action: z.enum(["list", "add", "remove"]).default("list"),
+      to_task_id: z.string().optional().describe("Target task for add"),
+      link_type: TaskLinkTypeSchema.optional().describe("Link type for add"),
+      link_id: z.string().optional().describe("Link ID for remove"),
     }),
   },
   {
@@ -798,6 +841,31 @@ export const toolDefinitions = [
     }),
   },
   {
+    name: "agent_update",
+    description:
+      "Replace an agent definition. Read it with agent_read first and pass its raw and path; a changed agent is rejected.",
+    inputSchema: z
+      .object({
+        id: z.string().min(1).max(1024),
+        content: z
+          .string()
+          .min(1)
+          .max(8 * 1024 * 1024)
+          .describe("Complete new .agent.md"),
+        expected_raw: z.string().max(8 * 1024 * 1024),
+        expected_path: z.string().min(1).max(4096),
+      })
+      .strict(),
+  },
+  {
+    name: "agent_delete",
+    description:
+      "Delete an agent definition (package resources are kept). Pass the raw content from agent_read to confirm the version being deleted.",
+    inputSchema: z
+      .object({ id: z.string().min(1).max(1024), expected_raw: z.string().max(8 * 1024 * 1024) })
+      .strict(),
+  },
+  {
     name: "agent_package_list",
     description: "List shared OpenAPM and Agent Plugins packages and their source formats.",
     inputSchema: z.object({}),
@@ -826,6 +894,43 @@ export const toolDefinitions = [
         )
         .max(512),
     }),
+  },
+  {
+    name: "agent_package_update",
+    description:
+      "Replace a package's manifest and complete file set (add, edit or drop files). Read it with agent_package_read first and pass its revision; the previous version is archived.",
+    inputSchema: z
+      .object({
+        name: z.string().min(1).max(200),
+        content: z
+          .string()
+          .min(1)
+          .max(8 * 1024 * 1024)
+          .describe("Complete apm.yml or plugin.json"),
+        files: z
+          .array(
+            z.object({
+              path: z.string().min(1).max(1024),
+              content: z.string().max(12 * 1024 * 1024),
+              encoding: z.enum(["utf8", "base64"]).optional(),
+            }),
+          )
+          .max(512)
+          .describe("Every file the package keeps; omitted files are removed"),
+        expected_revision: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+  },
+  {
+    name: "agent_package_delete",
+    description:
+      "Remove a package from the shared catalog (archived; installed project copies are kept). Pass the revision from agent_package_read.",
+    inputSchema: z
+      .object({
+        name: z.string().min(1).max(200),
+        expected_revision: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
   },
   {
     name: "flow_report",
@@ -1002,6 +1107,11 @@ function scopedPad(store: ScratchpadStore, id: string, options: ToolOptions): Sc
   if (scopes && pad.project_id && !scopes.some((p) => p.id === pad.project_id))
     throw new NotFoundError("Scratchpad", id);
   return pad;
+}
+
+function assertTaskInScope(projectId: string | null, options: ToolOptions): void {
+  if (options.projectScopes && !options.projectScopes.some((p) => p.id === projectId))
+    throw new ValidationError("Task is outside the selected MCP projects");
 }
 
 /** Resolves a pad's project by name; a scoped connection may only use its own projects. */
@@ -1219,6 +1329,14 @@ export async function executeTool(
       .parse(args);
     if (input.ordinal !== undefined && input.revision === undefined)
       throw new ValidationError("Passage reads require the cited revision");
+    if (options.projectScopes) {
+      const { session } = await orcApi<{ session: { project_id: string | null } }>(
+        "GET",
+        `/sessions/archive/${input.id}`,
+      );
+      if (!options.projectScopes.some((p) => p.id === session.project_id))
+        throw new ValidationError("Session is outside the selected MCP projects");
+    }
     const params = new URLSearchParams({
       ...(input.revision ? { revision: String(input.revision) } : {}),
       ...(input.ordinal !== undefined
@@ -1578,18 +1696,23 @@ export async function executeTool(
     }
 
     case "task_list": {
-      const { project, status, limit } = args as {
+      const { project, status, tag, limit } = args as {
         project?: string;
-        status?: string;
+        status?: TaskStatus;
+        tag?: string;
         limit?: number;
       };
       const projectIds = selectedProjectIds(project, options);
       const conditions = [];
       if (status) {
-        conditions.push(eq(tasks.status, status as "todo"));
+        conditions.push(eq(tasks.status, status));
       }
       if (projectIds) conditions.push(inArray(tasks.project_id, projectIds));
       if (!status) conditions.push(notInArray(tasks.status, ["done", "cancelled"]));
+      if (tag)
+        conditions.push(
+          sql`EXISTS (SELECT 1 FROM json_each(${tasks.tags}) WHERE json_each.value = ${tag})`,
+        );
       const rows = await db.query.tasks.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         limit: limit ?? 20,
@@ -1598,7 +1721,7 @@ export async function executeTool(
       const filtered = status
         ? rows
         : rows.filter((t) => !["done", "cancelled"].includes(t.status));
-      if (filtered.length === 0) return "No active tasks.";
+      if (filtered.length === 0) return status ? `No ${status} tasks.` : "No active tasks.";
       return filtered
         .map(
           (t) =>
@@ -1627,13 +1750,33 @@ export async function executeTool(
           }),
         ),
       );
-      return rows
-        .filter(Boolean)
-        .map(
-          (t) =>
-            `[${t?.id}] ${t?.status} - ${t?.title}\nProgress: ${t?.progress}%\n${t?.body ?? ""}`,
-        )
-        .join("\n\n");
+      const found = rows.filter((t): t is NonNullable<typeof t> => Boolean(t));
+      if (found.length === 0) return `Task not found: ${ids.join(", ")}`;
+      const sections = await Promise.all(
+        found.map(async (t) => {
+          const recent = await db.query.comments.findMany({
+            where: and(eq(comments.resource_type, "task"), eq(comments.resource_id, t.id)),
+            orderBy: [desc(comments.created_at)],
+            limit: 20,
+          });
+          const links = [
+            t.git_branch && `Branch: ${t.git_branch}`,
+            t.github_pr && `PR: ${t.github_pr}`,
+            t.github_issue && `Issue: ${t.github_issue}`,
+          ].filter(Boolean);
+          const thread = recent
+            .reverse()
+            .map((c) => `- ${c.created_at.toISOString()} ${c.author}: ${c.content}`);
+          return [
+            `[${t.id}] ${t.status} - ${t.title}`,
+            `Progress: ${t.progress}%`,
+            ...links,
+            t.body ?? "",
+            ...(thread.length > 0 ? ["", `Comments (latest ${thread.length}):`, ...thread] : []),
+          ].join("\n");
+        }),
+      );
+      return sections.join("\n\n");
     }
 
     case "task_create": {
@@ -1690,31 +1833,37 @@ export async function executeTool(
     }
 
     case "task_update": {
-      if (options.projectScopes) {
-        const input = args as { id: string };
-        const row = await db.query.tasks.findFirst({
-          where: and(
-            eq(tasks.id, input.id),
-            inArray(
-              tasks.project_id,
-              options.projectScopes.map((p) => p.id),
-            ),
-          ),
-        });
-        if (!row) throw new NotFoundError("Task", input.id);
-      }
-      const { id, status, body, priority, comment, progress, agent_backend, agent_model } =
-        args as {
-          id: string;
-          status?: string;
-          body?: string;
-          priority?: string;
-          comment?: string;
-          progress?: number;
-          agent_backend?: string;
-          agent_model?: string;
-        };
-      if (status) {
+      const {
+        id,
+        status,
+        comment,
+        project: _project,
+        ...fields
+      } = args as {
+        id: string;
+        project?: string;
+        status?: TaskStatus;
+        comment?: string;
+        title?: string;
+        body?: string;
+        priority?: "low" | "normal" | "high" | "critical";
+        progress?: number;
+        tags?: string[] | null;
+        due_at?: string | null;
+        skill_name?: string | null;
+        required_review?: boolean;
+        max_review_rounds?: number;
+        git_branch?: string | null;
+        github_issue?: string | null;
+        github_pr?: string | null;
+        agent_backend?: string;
+        agent_model?: string;
+      };
+      const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+      if (!existing) throw new NotFoundError("Task", id);
+      if (options.projectScopes && !options.projectScopes.some((p) => p.id === existing.project_id))
+        throw new NotFoundError("Task", id);
+      if (status && status !== existing.status) {
         const result = await updateTaskStatus({
           taskId: id,
           status: status as TaskStatus,
@@ -1725,25 +1874,39 @@ export async function executeTool(
       } else if (comment) {
         await addTaskComment(id, comment, "agent");
       }
-      if (
-        body !== undefined ||
-        progress !== undefined ||
-        priority ||
-        agent_backend !== undefined ||
-        agent_model !== undefined
-      ) {
+      const editable = [
+        "title",
+        "body",
+        "priority",
+        "progress",
+        "tags",
+        "due_at",
+        "skill_name",
+        "required_review",
+        "max_review_rounds",
+        "git_branch",
+        "github_issue",
+        "github_pr",
+        "agent_backend",
+        "agent_model",
+      ] as const;
+      const changes = Object.fromEntries(
+        editable.filter((key) => fields[key] !== undefined).map((key) => [key, fields[key]]),
+      );
+      if (Object.keys(changes).length > 0) {
+        const { due_at, ...rest } = changes as typeof fields;
         await db
           .update(tasks)
           .set({
-            ...(body !== undefined ? { body } : {}),
-            ...(progress !== undefined ? { progress } : {}),
-            ...(priority ? { priority: priority as "low" } : {}),
-            ...(agent_backend !== undefined ? { agent_backend } : {}),
-            ...(agent_model !== undefined ? { agent_model } : {}),
+            ...rest,
+            ...(due_at !== undefined ? { due_at: due_at ? new Date(due_at) : null } : {}),
             updated_at: new Date(),
           })
           .where(eq(tasks.id, id));
       }
+      import("@orc/runner/task-loop")
+        .then((m) => m.triggerTaskCheck())
+        .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
       return `Updated: ${id}`;
     }
 
@@ -1787,7 +1950,12 @@ export async function executeTool(
     }
 
     case "job_status": {
-      const { run_id } = args as { run_id: string };
+      const { run_id, logs, stream, log_limit } = args as {
+        run_id: string;
+        logs?: boolean;
+        stream?: "stdout" | "stderr";
+        log_limit?: number;
+      };
       const run = await db.query.job_runs.findFirst({
         where: eq(job_runs.id, run_id),
       });
@@ -1804,11 +1972,76 @@ export async function executeTool(
         });
         if (!job) return `Run not found: ${run_id}`;
       }
+      const lines = logs
+        ? await db.query.job_run_logs.findMany({
+            where: stream
+              ? and(eq(job_run_logs.run_id, run_id), eq(job_run_logs.stream, stream))
+              : eq(job_run_logs.run_id, run_id),
+            orderBy: [desc(job_run_logs.ts)],
+            limit: log_limit ?? 200,
+          })
+        : [];
       return JSON.stringify({
         status: run.status,
         exit_code: run.exit_code,
         error: run.error_msg,
+        ...(logs ? { logs: lines.reverse().map((l) => ({ stream: l.stream, line: l.line })) } : {}),
       });
+    }
+
+    case "task_link": {
+      const { id, action, to_task_id, link_type, link_id } = args as {
+        id: string;
+        action?: "list" | "add" | "remove";
+        to_task_id?: string;
+        link_type?: z.infer<typeof TaskLinkTypeSchema>;
+        link_id?: string;
+      };
+      const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+      if (!task) throw new NotFoundError("Task", id);
+      assertTaskInScope(task.project_id, options);
+      if (action === "add") {
+        if (!to_task_id || !link_type)
+          throw new ValidationError("Adding a link requires to_task_id and link_type");
+        if (to_task_id === id) throw new ValidationError("Cannot link a task to itself");
+        const target = await db.query.tasks.findFirst({ where: eq(tasks.id, to_task_id) });
+        if (!target) throw new NotFoundError("Task", to_task_id);
+        assertTaskInScope(target.project_id, options);
+        const existing = await db.query.task_links.findFirst({
+          where: and(eq(task_links.from_task_id, id), eq(task_links.to_task_id, to_task_id)),
+        });
+        if (existing) throw new ValidationError("Link already exists between these tasks");
+        const linkId = ulid();
+        await db.insert(task_links).values({
+          id: linkId,
+          from_task_id: id,
+          to_task_id,
+          link_type,
+          created_at: new Date(),
+        });
+        import("@orc/runner/task-loop")
+          .then((m) => m.triggerTaskCheck())
+          .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
+        return `Linked ${id} ${link_type} ${to_task_id} [link: ${linkId}]`;
+      }
+      if (action === "remove") {
+        if (!link_id) throw new ValidationError("Removing a link requires link_id");
+        const link = await db.query.task_links.findFirst({ where: eq(task_links.id, link_id) });
+        if (!link || (link.from_task_id !== id && link.to_task_id !== id))
+          throw new NotFoundError("TaskLink", link_id);
+        await db.delete(task_links).where(eq(task_links.id, link_id));
+        import("@orc/runner/task-loop")
+          .then((m) => m.triggerTaskCheck())
+          .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
+        return `Removed link ${link_id}`;
+      }
+      const rows = await db.query.task_links.findMany({
+        where: sql`${task_links.from_task_id} = ${id} OR ${task_links.to_task_id} = ${id}`,
+      });
+      if (rows.length === 0) return `No links for task ${id}.`;
+      return rows
+        .map((l) => `[link: ${l.id}] ${l.from_task_id} ${l.link_type} ${l.to_task_id}`)
+        .join("\n");
     }
 
     case "context": {
@@ -2406,11 +2639,52 @@ export async function executeTool(
       const { id, content } = args as { id: string; content: string };
       return JSON.stringify(createAgent(id, content));
     }
+    case "agent_update": {
+      const input = args as {
+        id: string;
+        content: string;
+        expected_raw: string;
+        expected_path: string;
+      };
+      return JSON.stringify(
+        updateAgent(input.id, {
+          content: input.content,
+          expectedRaw: input.expected_raw,
+          expectedPath: input.expected_path,
+        }),
+      );
+    }
+    case "agent_delete": {
+      const { id, expected_raw } = args as { id: string; expected_raw: string };
+      const agent = readAgent(id);
+      if (!agent) throw new NotFoundError("Agent", id);
+      if (agent.raw !== expected_raw)
+        throw new ConflictError("This agent changed since you read it. Reread it before deleting.");
+      deleteAgent(id);
+      return `Deleted agent ${id}`;
+    }
     case "agent_package_list":
       return JSON.stringify(listPackages());
     case "agent_package_read": {
       const { name, ref } = args as { name: string; ref?: string };
-      return JSON.stringify(ref ? readPackageFile(name, ref) : readPackage(name));
+      if (ref) return JSON.stringify(readPackageFile(name, ref));
+      const pkg = readPackage(name);
+      return JSON.stringify(pkg ? { ...pkg, revision: packageRevision(pkg) } : pkg);
+    }
+    case "agent_package_update": {
+      const { name, content, files, expected_revision } = args as {
+        name: string;
+        content: string;
+        files: SkillFileInput[];
+        expected_revision: string;
+      };
+      const pkg = updatePackage(name, { content, files, expectedRevision: expected_revision });
+      return JSON.stringify({ ...pkg, revision: packageRevision(pkg) });
+    }
+    case "agent_package_delete": {
+      const { name, expected_revision } = args as { name: string; expected_revision: string };
+      deletePackage(name, expected_revision);
+      return `Deleted package ${name}`;
     }
     case "agent_package_import": {
       const { name, content, files, format } = args as {
@@ -2435,6 +2709,11 @@ export async function executeTool(
         summary?: string;
         vars?: Record<string, unknown>;
       };
+      if (options.projectScopes) {
+        const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+        if (!owner) return `Task not found: ${taskId}`;
+        assertTaskInScope(owner.project_id, options);
+      }
       const { reportNodeOutcome } = await import("@orc/runner/flow-runner");
       const result = await reportNodeOutcome({
         taskId,
@@ -2454,6 +2733,9 @@ export async function executeTool(
 
     case "flow_status": {
       const { task: taskId } = args as { task: string };
+      const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+      if (!owner) return `Task not found: ${taskId}`;
+      assertTaskInScope(owner.project_id, options);
       const { getLatestFlowRunForTask } = await import("@orc/runner/flow-runner");
       const run = getLatestFlowRunForTask(taskId);
       if (!run) return `No flow run for task ${taskId}.`;
@@ -2565,6 +2847,9 @@ export async function executeTool(
         where: eq(tasks.id, taskId),
       });
       if (!target) return `Task not found: ${taskId}`;
+      assertTaskInScope(target.project_id, options);
+      if (start && ["done", "cancelled"].includes(target.status))
+        return `Error: task is ${target.status}; move it back to todo before starting a flow on it.`;
 
       if (definition) {
         const { parseFlowDefinition } = await import("@orc/core/flow");
