@@ -1,7 +1,17 @@
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { Command } from "commander";
 
-const RESOURCES = ["task", "memory", "job", "project", "prompt", "session"] as const;
+const RESOURCES = [
+  "task",
+  "memory",
+  "job",
+  "project",
+  "session",
+  "skill",
+  "flow",
+  "agent",
+  "package",
+] as const;
 
 function apiBase(): string {
   try {
@@ -28,11 +38,14 @@ function authHeaders(): Record<string, string> {
 
 const SCHEMA_MAP: Record<string, string[]> = {
   task: ["Task", "CreateTask", "UpdateTask", "Comment", "TaskLink"],
-  memory: ["Memory", "CreateMemory"],
-  job: ["Job", "CreateJob", "UpdateJob", "JobRun"],
-  project: ["Project", "CreateProject", "UpdateProject"],
-  prompt: ["Prompt", "CreatePrompt", "UpdatePrompt"],
-  session: ["Session"],
+  memory: ["Memory", "CreateMemory", "UpdateMemory"],
+  job: ["Job", "CreateJob", "UpdateJob", "JobRun", "JobRunLog"],
+  project: ["Project", "CreateProject", "UpdateProject", "ProjectComment"],
+  session: ["Session", "SessionDetail"],
+  skill: ["SkillFull", "SkillMeta", "CreateSkill"],
+  flow: ["FlowFull", "FlowMeta", "CreateFlow", "FlowRun"],
+  agent: ["AgentFull", "AgentProfile"],
+  package: ["ApmPackage", "ApmPackageFull"],
 };
 
 export function schemaCommand() {
