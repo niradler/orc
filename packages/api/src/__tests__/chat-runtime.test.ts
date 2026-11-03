@@ -34,6 +34,7 @@ let secretQuestion = false;
 let manyOptions = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
+let failedTurn = false;
 let resultIdentity: string | undefined;
 let closed = 0;
 let decision: string | undefined;
@@ -71,6 +72,11 @@ function session(call: (typeof calls)[number]): AgentSession {
       resolve?.();
     },
     async *events(): AsyncIterable<AgentEvent> {
+      if (failedTurn) {
+        yield { type: "error", data: "usage limit reached" };
+        yield { type: "result", data: { runtimeSessionId: call.id ?? "native-fixture" } };
+        return;
+      }
       yield { type: "thinking", data: "Visible provider reasoning summary" };
       yield {
         type: "tool_use",
@@ -616,6 +622,16 @@ describe("native chat runtime", () => {
       "ORC delivered the human answer",
     );
     expect(runChatTurn({ ...native, runtimeId: "no-chat-shows-this" }, "x")).toBeNull();
+    failedTurn = true;
+    activeTurns.add(turnKey(native.host, native.backend, native.runtimeId));
+    try {
+      await expect(runChatTurn(native, "ORC answer the agent never got") ?? null).rejects.toThrow(
+        "usage limit reached",
+      );
+    } finally {
+      failedTurn = false;
+      activeTurns.clear();
+    }
     appendFileSync(
       transcript,
       line("user", "asked in the terminal") + line("assistant", "answered in the terminal"),

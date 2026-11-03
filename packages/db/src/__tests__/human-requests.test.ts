@@ -311,6 +311,26 @@ test("should expire or cancel pending requests without granting approval", () =>
   }
 });
 
+test("should refuse to dismiss an answer that is being pushed or the agent already has", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const pushing = answer(store, "a");
+    const read = answer(store, "b");
+    const failed = answer(store, "c");
+    advance(15000);
+    store.claimPush([pushing.id, failed.id]);
+    store.pushFailed(failed.id, "agent unavailable");
+    store.seen(read.id);
+    expect(() => store.cancel(pushing.id, pushing.version)).toThrow("can no longer be dismissed");
+    expect(() => store.cancel(read.id, read.version)).toThrow("can no longer be dismissed");
+    store.pushed(pushing.id);
+    expect(store.get(pushing.id).status).toBe("delivered");
+    expect(store.cancel(failed.id, failed.version).status).toBe("cancelled");
+  } finally {
+    db.close();
+  }
+});
+
 test("should require the exact proposed action for approval and retain denial", () => {
   const { db, store } = fixture();
   try {

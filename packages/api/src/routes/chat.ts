@@ -1278,7 +1278,7 @@ async function beginTurn(
         publish(run, { type: "done" });
         for (const listener of run.listeners) listener(null);
         finish(
-          completed || responded
+          (completed && failure === null) || responded
             ? null
             : stopped
               ? "The response was stopped."

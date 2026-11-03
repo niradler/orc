@@ -428,6 +428,14 @@ export class HumanRequestStore {
           request.version !== version
         )
           throw new ConflictError("Request is stale or no longer pending");
+        const reached =
+          request.seen_at !== null ||
+          request.push_state === "pushing" ||
+          request.push_state === "pushed";
+        if (request.status === "answered" && reached)
+          throw new ConflictError(
+            "The agent may already have this answer; it can no longer be dismissed",
+          );
         this.db
           .query(
             "UPDATE human_requests SET status='cancelled',version=version+1 WHERE id=? AND version=?",
