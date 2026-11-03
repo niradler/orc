@@ -44,20 +44,102 @@ test("should expire unavailable and undelivered requests after 72 hours while re
   }
 });
 
-test("should report when the next unpolled answer leaves its push grace period", () => {
+function answer(store: HumanRequestStore, requestId: string) {
+  const request = store.create({
+    ...question,
+    origin: { ...question.origin, request_id: requestId },
+  });
+  return store.respond(request.id, 1, { kind: "question", answer: "Blue" });
+}
+
+test("should report when the next unread answer leaves its push grace period", () => {
   const { db, store, now, advance } = fixture();
   try {
     expect(store.nextPushAt(15000)).toBeNull();
-    const request = store.create(question);
-    store.respond(request.id, 1, { kind: "question", answer: "Blue" });
-    const answeredAt = now();
-    expect(store.nextPushAt(15000)).toBe(answeredAt + 15000);
-    advance(5000);
-    store.fetched(request.id);
+    const request = answer(store, "a");
     expect(store.nextPushAt(15000)).toBe(now() + 15000);
+    expect(store.pushCandidates(15000)).toEqual([]);
     advance(15000);
     expect(store.nextPushAt(15000)).toBeNull();
     expect(store.pushCandidates(15000).map((candidate) => candidate.id)).toEqual([request.id]);
+    const read = answer(store, "b");
+    expect(store.seen(read.id)).toBe(true);
+    expect(store.get(read.id).seen_at).toBe(now());
+    expect(store.nextPushAt(15000)).toBeNull();
+    advance(15000);
+    expect(store.pushCandidates(15000).map((candidate) => candidate.id)).toEqual([request.id]);
+  } finally {
+    db.close();
+  }
+});
+
+test("should claim a push once and record its outcome", () => {
+  const { db, store, now, advance } = fixture();
+  try {
+    const delivered = answer(store, "a");
+    const failed = answer(store, "b");
+    advance(15000);
+    expect(store.claimPush([delivered.id, failed.id]).map((request) => request.id)).toEqual([
+      delivered.id,
+      failed.id,
+    ]);
+    expect(store.claimPush([delivered.id])).toEqual([]);
+    expect(store.pushCandidates(0)).toEqual([]);
+    store.dismissObsolete("session-a", "codex");
+    expect(store.get(delivered.id).status).toBe("answered");
+    store.pushed(delivered.id);
+    store.pushFailed(failed.id, "x".repeat(2000));
+    expect(store.get(delivered.id)).toMatchObject({
+      status: "delivered",
+      push_state: "pushed",
+      delivered_at: now(),
+    });
+    expect(store.get(failed.id)).toMatchObject({ status: "answered", push_state: "failed" });
+    expect(store.get(failed.id).push_error).toHaveLength(1000);
+    expect(store.claimPush([failed.id])).toEqual([]);
+    expect(store.seen(failed.id)).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
+test("should fail pushes interrupted by a restart", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const request = answer(store, "a");
+    advance(15000);
+    store.claimPush([request.id]);
+    expect(store.interruptedPushes()).toBe(1);
+    expect(store.get(request.id)).toMatchObject({
+      status: "answered",
+      push_state: "failed",
+      push_error: "ORC restarted before the push finished.",
+    });
+    expect(store.interruptedPushes()).toBe(0);
+  } finally {
+    db.close();
+  }
+});
+
+test("should offer the newest answers first so stuck ones never starve new ones", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const ids: string[] = [];
+    for (let index = 0; index < 101; index++) {
+      ids.push(answer(store, `r${index}`).id);
+      advance(1);
+    }
+    const tool = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "tool", tool_call_id: "call" },
+    });
+    store.respond(tool.id, 1, { kind: "question", answer: "Blue" });
+    advance(15000);
+    const candidates = store.pushCandidates(15000).map((request) => request.id);
+    expect(candidates).toHaveLength(100);
+    expect(candidates[0]).toBe(ids[100]);
+    expect(candidates).not.toContain(ids[0]);
+    expect(candidates).not.toContain(tool.id);
   } finally {
     db.close();
   }

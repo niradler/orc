@@ -5,7 +5,6 @@ import { loadConfig } from "@orc/core/config";
 import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { createLogger } from "@orc/core/logger";
-import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { gateway_sessions } from "@orc/db/schema";
@@ -13,10 +12,9 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { getHandoffService } from "./handoffs/service.js";
 import { LIVE_CHAT_ID } from "./session-watcher.js";
 import { codexWriterOwned } from "./sessions/ownership.js";
-import { activeTurns, deliveries, turnKey } from "./sessions/turns.js";
+import { activeTurns, runChatTurn, turnKey } from "./sessions/turns.js";
 
 const logger = createLogger("human-request-delivery");
-/** An agent that polled within this window is still waiting and reads the answer itself. */
 export const PUSH_GRACE_MS = 15000;
 const TURN_TIMEOUT_MS = 15 * 60000;
 
@@ -28,17 +26,16 @@ export type PushTarget = {
   host: string | null;
   cwd: string;
   model: string | null;
+  fingerprint: string;
 };
 
 export type DeliveryDeps = {
   store: HumanRequestStore;
-  chats: ChatStore;
-  /** The one live-session row the request came from, or null when it is unknown or ambiguous. */
   target(request: HumanRequest): Promise<PushTarget | null>;
-  /** True when no agent process holds the session, so ORC may resume it. */
   idle(target: PushTarget): Promise<boolean>;
   resumed(target: PushTarget): Promise<void>;
   backend(name: string): AgentBackend;
+  chatTurn(target: PushTarget, prompt: string): Promise<void> | null;
 };
 
 function nativeBackend(name: string): string {
@@ -84,11 +81,11 @@ async function findTarget(request: HumanRequest): Promise<PushTarget | null> {
     host: row.execution_host ?? null,
     cwd: row.cwd,
     model: row.model ?? null,
+    fingerprint: `${row.status}:${row.pid ?? ""}:${row.updated_at?.getTime() ?? ""}`,
   };
 }
 
 async function sessionIdle(target: PushTarget): Promise<boolean> {
-  // Same ownership guards as resuming a live session in chat.
   await getHandoffService().verifyResume(target.sourceId);
   const runtime = hostRuntime(execHostFor(target.host));
   if (target.agent === "codex") {
@@ -107,7 +104,6 @@ async function sessionIdle(target: PushTarget): Promise<boolean> {
   return runtime.isDirectory(target.cwd);
 }
 
-/** E2E runs never start real agents; the resumed turn just confirms receipt. */
 function mockBackend(): AgentBackend {
   let prompt = "";
   return {
@@ -136,11 +132,11 @@ function mockBackend(): AgentBackend {
 function defaultDeps(): DeliveryDeps {
   return {
     store: new HumanRequestStore(getSqlite()),
-    chats: new ChatStore(getSqlite()),
     target: findTarget,
     idle: sessionIdle,
     resumed: (target) => getHandoffService().markResumed(target.sourceId),
     backend: process.env.ORC_E2E_CHAT_MOCK === "1" ? mockBackend : createBackend,
+    chatTurn: (target, prompt) => runChatTurn(target, prompt),
   };
 }
 
@@ -149,7 +145,6 @@ function fence(text: string): string {
   return `${ticks}\n${text.replace(/\n$/, "")}\n${ticks}`;
 }
 
-/** The answer as the agent would read it from human_request_get; command output is already redacted. */
 export function deliveryMessage(requests: HumanRequest[]): string {
   const parts = requests.map((request) => {
     const lines = [
@@ -174,12 +169,12 @@ export function deliveryMessage(requests: HumanRequest[]): string {
     return lines.join("\n");
   });
   return [
-    "ORC is delivering the human response to your pending request while this session was idle. It is already acknowledged; do not poll or acknowledge it again. Continue the task with this result.",
+    "ORC is delivering the human response to your pending request while this session was idle. ORC marks it delivered; do not poll or acknowledge it. Continue the task with this result.",
     ...parts,
   ].join("\n\n");
 }
 
-async function runTurn(deps: DeliveryDeps, target: PushTarget, prompt: string): Promise<string> {
+async function runTurn(deps: DeliveryDeps, target: PushTarget, prompt: string): Promise<void> {
   const backend = deps.backend(target.backend);
   const check = await backend.preflight({ executionHost: target.host });
   if (!check.ok) throw new Error(check.error ?? "The agent is unavailable.");
@@ -194,52 +189,29 @@ async function runTurn(deps: DeliveryDeps, target: PushTarget, prompt: string): 
     acpxNativeSessionId: target.backend === "acpx" ? target.runtimeId : undefined,
   });
   const timer = setTimeout(() => void session.close().catch(() => {}), TURN_TIMEOUT_MS);
-  let text = "";
   let failure = "The agent ended before completing the delivered turn.";
+  let responded = false;
   try {
     await session.send(prompt);
     for await (const event of session.events()) {
-      if (event.type === "text") text = (text + event.data).slice(-200000);
-      else if (event.type === "error") failure = event.data;
+      if (event.type === "error") failure = event.data;
       else if (event.type === "result") {
         if (event.data.runtimeSessionId && event.data.runtimeSessionId !== target.runtimeId)
           throw new Error("The agent resumed a different session.");
-        return text;
-      }
+        return;
+      } else responded = true;
     }
-    throw new Error(failure);
+    if (!responded) throw new Error(failure);
   } finally {
     clearTimeout(timer);
     await session.close().catch(() => {});
   }
 }
 
-function recordInChats(
-  deps: DeliveryDeps,
-  target: PushTarget,
-  prompt: string,
-  reply: string,
-  at: number,
-) {
-  // Chats showing this session learn it changed; their refresh then shows the delivered turn.
-  for (const thread of deps.chats.byRuntime(target.backend, target.host, target.runtimeId)) {
-    thread.messages.push({ id: crypto.randomUUID(), role: "user", content: prompt, timestamp: at });
-    if (reply)
-      thread.messages.push({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: reply,
-        timestamp: Date.now(),
-        agent: target.agent,
-      });
-    thread.pushedAt = Date.now();
-    thread.updatedAt = thread.pushedAt;
-    deps.chats.save(thread);
-  }
-}
-
-/** Push answered requests nobody is polling for into their idle originating sessions. */
-export async function deliverIdleAnswers(deps: DeliveryDeps = defaultDeps()): Promise<void> {
+export async function deliverIdleAnswers(
+  deps: DeliveryDeps = defaultDeps(),
+  busy = new Map<string, string>(),
+): Promise<void> {
   const groups = new Map<string, { target: PushTarget; requests: HumanRequest[] }>();
   for (const request of deps.store.pushCandidates(PUSH_GRACE_MS)) {
     const target = await deps.target(request).catch(() => null);
@@ -249,11 +221,11 @@ export async function deliverIdleAnswers(deps: DeliveryDeps = defaultDeps()): Pr
     group.requests.push(request);
     groups.set(key, group);
   }
-  // Sessions are independent; one long delivered turn must not hold back the others.
+  // A held session is rechecked only once the watcher records a change to it.
   await Promise.all(
     [...groups]
-      .filter(([key]) => !activeTurns.has(key))
-      .map(([key, { target, requests }]) => deliver(deps, key, target, requests)),
+      .filter(([key, { target }]) => !activeTurns.has(key) && busy.get(key) !== target.fingerprint)
+      .map(([key, { target, requests }]) => deliver(deps, key, target, requests, busy)),
   );
 }
 
@@ -262,51 +234,41 @@ async function deliver(
   key: string,
   target: PushTarget,
   requests: HumanRequest[],
+  busy: Map<string, string>,
 ): Promise<void> {
   if (activeTurns.has(key)) return;
   activeTurns.add(key);
-  let release = () => {};
-  deliveries.set(
-    key,
-    new Promise<void>((resolve) => {
-      release = resolve;
-    }),
-  );
-  const delivered: HumanRequest[] = [];
+  let claimed: HumanRequest[] = [];
   try {
-    if (!(await deps.idle(target))) return;
-    // Acknowledge first: the resumed turn's own hooks dismiss whatever is still answered.
-    for (const request of requests) {
-      try {
-        delivered.push(deps.store.acknowledge(request.id, request.version));
-      } catch {
-        // The agent read or the human dismissed it meanwhile; it is no longer ours to push.
-      }
+    if (!(await deps.idle(target).catch(() => false))) {
+      busy.set(key, target.fingerprint);
+      return;
     }
-    if (!delivered.length) return;
+    busy.delete(key);
+    claimed = deps.store.claimPush(requests.map((request) => request.id).reverse());
+    if (!claimed.length) return;
     changes.publish("human-requests");
-    const prompt = deliveryMessage(delivered);
-    const at = Date.now();
-    const reply = await runTurn(deps, target, prompt);
-    await deps.resumed(target);
-    recordInChats(deps, target, prompt, reply, at);
+    const prompt = deliveryMessage(claimed);
+    const inChat = deps.chatTurn(target, prompt);
+    if (inChat) await inChat;
+    else {
+      await runTurn(deps, target, prompt);
+      await deps.resumed(target);
+    }
+    for (const request of claimed) deps.store.pushed(request.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn("Could not deliver human answers to idle session", {
+    logger.warn("Could not push human answers into idle session", {
       session: target.sourceId,
       error: message,
     });
-    for (const request of delivered)
-      deps.store.pushFailed(request.id, `ORC could not deliver this answer: ${message}`);
+    for (const request of claimed) deps.store.pushFailed(request.id, message);
   } finally {
     activeTurns.delete(key);
-    deliveries.delete(key);
-    release();
-    if (delivered.length) changes.publish("human-requests");
+    if (claimed.length) changes.publish("human-requests");
   }
 }
 
-/** Answers ORC will push into this native session once it is free, oldest first. */
 export async function queuedAnswers(
   key: string,
   deps: Pick<DeliveryDeps, "store" | "target"> = defaultDeps(),
@@ -315,30 +277,30 @@ export async function queuedAnswers(
   for (const request of deps.store.pushCandidates(0)) {
     const target = await deps.target(request).catch(() => null);
     if (target && turnKey(target.host, target.backend, target.runtimeId) === key)
-      queued.push(request);
+      queued.unshift(request);
   }
   return queued;
 }
 
-/**
- * Event-driven: checks when answers or sessions change, and once when the next grace period ends.
- * An answer whose session is still held waits for that session's next change.
- */
 export function startHumanRequestDelivery(): () => void {
   const deps = defaultDeps();
+  const busy = new Map<string, string>();
+  if (deps.store.interruptedPushes()) changes.publish("human-requests");
   let check: ReturnType<typeof setTimeout> | undefined;
   let due: ReturnType<typeof setTimeout> | undefined;
   const run = () => {
-    // Runs may overlap while a delivered turn is in flight; the per-session turn lock keeps them apart.
-    deliverIdleAnswers(deps)
+    deliverIdleAnswers(deps, busy)
       .catch((err) => logger.error("Human request delivery failed", err))
       .finally(() => {
         clearTimeout(due);
-        const next = deps.store.nextPushAt(PUSH_GRACE_MS);
-        if (next !== null) due = setTimeout(schedule, Math.max(0, next - Date.now()) + 50);
+        try {
+          const next = deps.store.nextPushAt(PUSH_GRACE_MS);
+          if (next !== null) due = setTimeout(schedule, Math.max(0, next - Date.now()) + 50);
+        } catch (err) {
+          logger.error("Human request delivery could not schedule its next check", err);
+        }
       });
   };
-  // Coalesce bursts of change events into one check.
   const schedule = () => {
     clearTimeout(check);
     check = setTimeout(run, 250);

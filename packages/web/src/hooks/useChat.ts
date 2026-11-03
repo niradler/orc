@@ -521,37 +521,40 @@ function useChatController() {
     [follow, update],
   );
 
-  const refresh = useCallback(async () => {
-    const key = activeRef.current;
-    const tab = find(key);
-    if (!tab?.thread || tab.refreshing) return;
-    update(key, () => ({ refreshing: true, error: null }));
-    try {
-      const fresh = await api.chat.get(tab.thread.id);
-      if (!find(key)) return;
-      // Detach only this browser's reader; the server keeps the existing turn alive.
-      const previous = streams.current.get(key);
-      streams.current.delete(key);
-      previous?.controller.abort();
-      update(key, () => ({
-        thread: fresh,
-        config: fresh.config,
-        messages: fresh.messages,
-        historyBefore: fresh.historyBefore ?? null,
-        streaming: true,
-        streamText: "",
-        activity: [],
-        permissions: [],
-        questions: [],
-        reconnecting: false,
-      }));
-      void attach(key, fresh.id);
-    } catch (cause) {
-      update(key, () => ({ error: message(cause, "Chat could not be refreshed.") }));
-    } finally {
-      update(key, () => ({ refreshing: false }));
-    }
-  }, [attach, find, update]);
+  const refresh = useCallback(
+    async (rebuild = false) => {
+      const key = activeRef.current;
+      const tab = find(key);
+      if (!tab?.thread || tab.refreshing) return;
+      update(key, () => ({ refreshing: true, error: null }));
+      try {
+        const fresh = await (rebuild ? api.chat.refresh : api.chat.get)(tab.thread.id);
+        if (!find(key)) return;
+        // Detach only this browser's reader; the server keeps the existing turn alive.
+        const previous = streams.current.get(key);
+        streams.current.delete(key);
+        previous?.controller.abort();
+        update(key, () => ({
+          thread: fresh,
+          config: fresh.config,
+          messages: fresh.messages,
+          historyBefore: fresh.historyBefore ?? null,
+          streaming: true,
+          streamText: "",
+          activity: [],
+          permissions: [],
+          questions: [],
+          reconnecting: false,
+        }));
+        void attach(key, fresh.id);
+      } catch (cause) {
+        update(key, () => ({ error: message(cause, "Chat could not be refreshed.") }));
+      } finally {
+        update(key, () => ({ refreshing: false }));
+      }
+    },
+    [attach, find, update],
+  );
 
   const openThread = useCallback(
     (

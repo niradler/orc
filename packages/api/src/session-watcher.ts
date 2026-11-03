@@ -292,9 +292,10 @@ export function startSessionWatcher(
       const notify = changedFiles;
       changedFiles = false;
       syncing = true;
-      void runSync(currentAdapters, { force: true })
-        .then(() => {
-          if (notify) changes.publish("sessions");
+      void liveState()
+        .then(async (before) => {
+          await runSync(currentAdapters, { force: true });
+          if (notify || before !== (await liveState())) changes.publish("sessions");
         })
         .catch((error) => logger.error("Session change sync failed", error))
         .finally(() => {
@@ -304,6 +305,23 @@ export function startSessionWatcher(
     }, 100);
     debounce.unref();
   };
+  const liveState = async () =>
+    (
+      await getDb()
+        .select({
+          id: gateway_sessions.id,
+          status: gateway_sessions.status,
+          pid: gateway_sessions.pid,
+          updated: gateway_sessions.updated_at,
+        })
+        .from(gateway_sessions)
+        .where(
+          and(eq(gateway_sessions.chat_id, LIVE_CHAT_ID), ne(gateway_sessions.status, "stopped")),
+        )
+    )
+      .map((row) => `${row.id}:${row.status}:${row.pid}:${row.updated?.getTime()}`)
+      .sort()
+      .join("|");
   synchronized = async () => {
     if (stopped || opts.adapters) return;
     const rows = await getDb().query.gateway_sessions.findMany({

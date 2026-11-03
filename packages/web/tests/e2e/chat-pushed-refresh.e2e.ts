@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { closeChatHistory, openChatHistory } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
-test("should show queued ORC answers and mark refresh once one is delivered into the open session", async ({
+test("should show queued ORC answers and rebuild the chat when its session changed on disk", async ({
   page,
 }) => {
   const now = Date.now();
@@ -21,7 +21,6 @@ test("should show queued ORC answers and mark refresh once one is delivered into
   };
   const delivered: ChatThread = {
     ...thread,
-    pushedAt: now,
     updatedAt: now,
     messages: [
       ...thread.messages,
@@ -53,10 +52,19 @@ test("should show queued ORC answers and mark refresh once one is delivered into
     }),
   );
   await page.route(`**/api/chat/threads/${thread.id}`, (route) => route.fulfill({ json: thread }));
+  let changed = true;
   let queued = [{ id: "hr-1", title: "IBKR positions check" }];
-  await page.route(`**/api/chat/threads/${thread.id}/delivery`, (route) =>
-    route.fulfill({ json: { pushedAt: delivered.pushedAt, queued } }),
+  await page.route(`**/api/chat/threads/${thread.id}/session`, (route) =>
+    route.fulfill({ json: { changed, running: false, queued } }),
   );
+  let rebuilt = 0;
+  await page.route(`**/api/chat/threads/${thread.id}/refresh`, (route) => {
+    rebuilt++;
+    thread = delivered;
+    changed = false;
+    queued = [];
+    return route.fulfill({ json: thread });
+  });
   await page.route("**/api/chat/threads/*/live", (route) =>
     route.fulfill({ status: 204, body: "" }),
   );
@@ -82,10 +90,9 @@ test("should show queued ORC answers and mark refresh once one is delivered into
   await expect(refresh).toHaveAttribute("data-stale", "true");
   await expect(refresh).toHaveClass(/text-warning/);
   await expect(refresh).toHaveAccessibleName("Refresh session: it changed outside this chat");
-  thread = delivered;
-  queued = [];
   await refresh.click();
   await expect(page.getByText("Token expired; renew it.")).toBeVisible();
+  expect(rebuilt).toBe(1);
   await expect(refresh).not.toHaveAttribute("data-stale", "true");
   await expect(refresh).toHaveAccessibleName("Refresh session");
   await expect(page.getByTestId("chat-message-queue")).toHaveCount(0);

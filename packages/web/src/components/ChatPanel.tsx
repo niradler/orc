@@ -113,16 +113,21 @@ export function ChatPanel({
     send,
     cancel,
   } = useChat();
-  // "chat-threads" refetches whenever ORC delivers an answer into a session.
-  const delivery = useQuery({
-    queryKey: ["chat-threads", "delivery", thread?.id, thread?.pushedAt],
-    queryFn: () => api.chat.delivery(thread?.id ?? ""),
+  const session = useQuery({
+    queryKey: ["chat-threads", "session", thread?.id],
+    queryFn: () => api.chat.session(thread?.id ?? ""),
     enabled: !!thread?.runtimeId,
   });
-  // Human answers ORC sends into this session as soon as it is free.
-  const answers = delivery.data?.queued ?? [];
-  const sessionChanged =
-    !!thread && !refreshing && (delivery.data?.pushedAt ?? 0) > (thread.pushedAt ?? 0);
+  const answers = session.data?.queued ?? [];
+  const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
+  const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  useEffect(() => {
+    if (turnElsewhere) void refresh();
+  }, [turnElsewhere, refresh]);
+  const reload = async () => {
+    await refresh(sessionChanged);
+    void session.refetch();
+  };
   const terminalControl = useChatContinueInTerminal();
   const promptMenu = useChatPromptMenu(draft, setDraft);
   const desktop = useBreakpoint("xl");
@@ -253,7 +258,7 @@ export function ChatPanel({
                 <button
                   type="button"
                   data-testid="chat-refresh-button"
-                  onClick={() => void refresh()}
+                  onClick={() => void reload()}
                   disabled={!thread || refreshing}
                   className={cn(iconButton, sessionChanged && "text-warning")}
                   data-stale={sessionChanged || undefined}
@@ -289,7 +294,7 @@ export function ChatPanel({
                   type="button"
                   aria-label="Session actions"
                   data-testid="chat-options-button"
-                  className={iconButton}
+                  className={cn(iconButton, sessionChanged && "text-warning")}
                 >
                   <MoreHorizontal size={17} />
                 </button>
@@ -305,7 +310,7 @@ export function ChatPanel({
                   <button
                     type="button"
                     data-testid="chat-refresh-button"
-                    onClick={() => void refresh()}
+                    onClick={() => void reload()}
                     disabled={!thread || refreshing}
                     className={cn(iconButton, sessionChanged && "text-warning")}
                     data-stale={sessionChanged || undefined}

@@ -29,7 +29,9 @@ export class HumanRequestStore {
       ["owner_id", "TEXT"],
       ["owner_heartbeat_at", "INTEGER"],
       ["answered_at", "INTEGER"],
-      ["last_fetched_at", "INTEGER"],
+      ["seen_at", "INTEGER"],
+      ["push_state", "TEXT"],
+      ["push_error", "TEXT"],
     ])
       if (!columns.some((column) => column.name === name))
         db.exec(`ALTER TABLE human_requests ADD COLUMN ${name} ${type}`);
@@ -183,8 +185,7 @@ export class HumanRequestStore {
   }
 
   responseFetched(id: string, ownerId: string): void {
-    // A command may run for hours after its approval is returned. Its real tool-result
-    // hook acknowledges consumption; the short waiting-owner lease no longer applies.
+    // A returned command can run for hours; its tool-result hook acknowledges it, not the owner lease.
     this.db
       .query(
         "UPDATE human_requests SET owner_heartbeat_at=NULL WHERE id=? AND owner_id=? AND status='answered'",
@@ -192,46 +193,86 @@ export class HumanRequestStore {
       .run(id, ownerId);
   }
 
-  fetched(id: string): void {
-    this.db.query("UPDATE human_requests SET last_fetched_at=? WHERE id=?").run(this.now(), id);
+  seen(id: string): boolean {
+    return (
+      this.db
+        .query(
+          "UPDATE human_requests SET seen_at=? WHERE id=? AND status='answered' AND seen_at IS NULL",
+        )
+        .run(this.now(), id).changes > 0
+    );
   }
 
+  // Runtime-owned and native tool-call requests have their own delivery paths.
+  private static readonly PUSHABLE = `status='answered' AND owner_id IS NULL AND seen_at IS NULL
+    AND push_state IS NULL AND answered_at IS NOT NULL
+    AND json_extract(payload,'$.origin.tool_call_id') IS NULL`;
+
+  // Newest first so stuck answers never crowd out new ones.
   pushCandidates(graceMs: number): HumanRequest[] {
-    // Answers an agent is not polling for. Runtime-owned and native tool-call requests
-    // have their own delivery paths.
     this.expire();
-    const cutoff = this.now() - graceMs;
     return this.db
-      .query<{ id: string }, [number, number]>(
-        `SELECT id FROM human_requests WHERE status='answered' AND owner_id IS NULL
-         AND json_extract(payload,'$.origin.tool_call_id') IS NULL
-         AND answered_at<=? AND (last_fetched_at IS NULL OR last_fetched_at<=?)
-         ORDER BY answered_at LIMIT 20`,
+      .query<{ id: string }, [number]>(
+        `SELECT id FROM human_requests WHERE ${HumanRequestStore.PUSHABLE} AND answered_at<=?
+         ORDER BY answered_at DESC LIMIT 100`,
       )
-      .all(cutoff, cutoff)
+      .all(this.now() - graceMs)
       .map((row) => this.get(row.id));
   }
 
-  /** When the next unpolled answer leaves its grace period, if one is still waiting for it. */
   nextPushAt(graceMs: number): number | null {
     const row = this.db
       .query<{ due: number | null }, [number, number, number]>(
-        `SELECT min(max(answered_at, coalesce(last_fetched_at, 0)) + ?) AS due FROM human_requests
-         WHERE status='answered' AND owner_id IS NULL AND answered_at IS NOT NULL
-         AND json_extract(payload,'$.origin.tool_call_id') IS NULL
-         AND max(answered_at, coalesce(last_fetched_at, 0)) + ? > ?`,
+        `SELECT min(answered_at + ?) AS due FROM human_requests
+         WHERE ${HumanRequestStore.PUSHABLE} AND answered_at + ? > ?`,
       )
       .get(graceMs, graceMs, this.now());
     return row?.due ?? null;
   }
 
-  pushFailed(id: string, error: string): HumanRequest {
+  claimPush(ids: string[]): HumanRequest[] {
+    return this.db
+      .transaction(() =>
+        ids.flatMap((id) =>
+          this.db
+            .query(
+              `UPDATE human_requests SET push_state='pushing',push_error=NULL
+               WHERE id=? AND ${HumanRequestStore.PUSHABLE}`,
+            )
+            .run(id).changes
+            ? [this.get(id)]
+            : [],
+        ),
+      )
+      .immediate();
+  }
+
+  pushed(id: string): void {
     this.db
       .query(
-        "UPDATE human_requests SET status='unavailable',delivery_error=?,delivered_at=NULL,version=version+1 WHERE id=? AND status='delivered'",
+        `UPDATE human_requests SET push_state='pushed',
+         status=CASE status WHEN 'answered' THEN 'delivered' ELSE status END,
+         delivered_at=CASE status WHEN 'answered' THEN ? ELSE delivered_at END,
+         version=version+1 WHERE id=? AND push_state='pushing'`,
+      )
+      .run(this.now(), id);
+  }
+
+  // The answer stays answered so the agent can still read it.
+  pushFailed(id: string, error: string): void {
+    this.db
+      .query(
+        "UPDATE human_requests SET push_state='failed',push_error=? WHERE id=? AND push_state='pushing'",
       )
       .run(error.slice(0, 1000), id);
-    return this.get(id);
+  }
+
+  interruptedPushes(): number {
+    return this.db
+      .query(
+        "UPDATE human_requests SET push_state='failed',push_error='ORC restarted before the push finished.' WHERE push_state='pushing'",
+      )
+      .run().changes;
   }
 
   list(): HumanRequest[] {
@@ -341,6 +382,7 @@ export class HumanRequestStore {
          AND json_extract(payload,'$.origin.session_id')=?
          AND json_extract(payload,'$.origin.backend')=?
          AND json_extract(payload,'$.origin.chat_thread_id') IS NULL
+         AND push_state IS NOT 'pushing'
          ${toolCallId === undefined ? "" : "AND json_extract(payload,'$.origin.tool_call_id')=?"}`,
       )
       .run(...(toolCallId === undefined ? [sessionId, backend] : [sessionId, backend, toolCallId]));
@@ -380,8 +422,7 @@ export class HumanRequestStore {
     return this.db
       .transaction(() => {
         const request = this.get(id);
-        // An undelivered answer can be dismissed when its agent never returns; the agent then
-        // sees a cancellation, which never authorizes anything.
+        // A dismissed undelivered answer reads as a cancellation, which never authorizes anything.
         if (
           !["pending", "answered", "unavailable"].includes(request.status) ||
           request.version !== version

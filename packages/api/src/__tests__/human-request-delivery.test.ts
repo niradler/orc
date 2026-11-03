@@ -1,7 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import type { AgentBackend, AgentEvent, SessionOpts } from "@orc/agent-runtime";
-import { ChatStore, installChat } from "@orc/db/chat";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import {
   type DeliveryDeps,
@@ -10,8 +9,9 @@ import {
   type PushTarget,
   queuedAnswers,
 } from "../human-request-delivery.js";
-import { activeTurns, deliveries } from "../sessions/turns.js";
+import { activeTurns } from "../sessions/turns.js";
 
+const KEY = "local:codex-cli:native-1";
 const target: PushTarget = {
   sourceId: "live-1",
   agent: "codex",
@@ -20,15 +20,14 @@ const target: PushTarget = {
   host: null,
   cwd: "/work",
   model: null,
+  fingerprint: "idle::1",
 };
 
-function fixture(options: { idle?: boolean; fail?: boolean } = {}) {
+function fixture(options: { idle?: boolean; fail?: boolean; partial?: boolean } = {}) {
   const db = new Database(":memory:");
-  installChat(db);
   let time = 100000;
   const store = new HumanRequestStore(db, () => time);
-  const chats = new ChatStore(db);
-  const sent: { prompt: string; opts: SessionOpts; statusAtSend: string[] }[] = [];
+  const sent: { prompt: string; opts: SessionOpts; states: (string | null)[] }[] = [];
   const backend = {
     name: "fake",
     preflight: async () => ({ ok: true }),
@@ -39,7 +38,7 @@ function fixture(options: { idle?: boolean; fail?: boolean } = {}) {
     resumeSession: async (runtimeSessionId: string, opts: SessionOpts) => ({
       id: runtimeSessionId,
       send: async (prompt: string) => {
-        sent.push({ prompt, opts, statusAtSend: store.list().map((request) => request.status) });
+        sent.push({ prompt, opts, states: store.list().map((request) => request.push_state) });
       },
       respondPermission: () => {},
       alive: () => true,
@@ -50,17 +49,22 @@ function fixture(options: { idle?: boolean; fail?: boolean } = {}) {
           return;
         }
         yield { type: "text", data: "Thanks, continuing." };
+        if (options.partial) return;
         yield { type: "result", data: { runtimeSessionId } };
       },
     }),
   } satisfies AgentBackend;
+  let idleChecks = 0;
   const deps: DeliveryDeps = {
     store,
-    chats,
     target: async (request) => (request.input.origin.session_id === "live-1" ? target : null),
-    idle: async () => options.idle ?? true,
+    idle: async () => {
+      idleChecks++;
+      return options.idle ?? true;
+    },
     resumed: async () => {},
     backend: () => backend,
+    chatTurn: () => null,
   };
   const answered = (requestId: string, sessionId = "live-1") => {
     const request = store.create({
@@ -82,17 +86,17 @@ function fixture(options: { idle?: boolean; fail?: boolean } = {}) {
   return {
     db,
     store,
-    chats,
     deps,
     sent,
     answered,
+    idleChecks: () => idleChecks,
     advance: (ms: number) => {
       time += ms;
     },
   };
 }
 
-test("should push an unpolled answer into its idle session after acknowledging it", async () => {
+test("should push an unread answer into its idle session once the grace ends", async () => {
   const { db, store, deps, sent, answered, advance } = fixture();
   try {
     const request = answered("a");
@@ -101,115 +105,167 @@ test("should push an unpolled answer into its idle session after acknowledging i
     advance(15000);
     await deliverIdleAnswers(deps);
     expect(sent).toHaveLength(1);
-    expect(sent[0]?.statusAtSend).toEqual([]);
+    expect(sent[0]?.states).toEqual(["pushing"]);
     expect(sent[0]?.opts).toMatchObject({ cwd: "/work", interactive: false, executionHost: null });
     expect(sent[0]?.prompt).toContain("python ibkr.py positions");
     expect(sent[0]?.prompt).toContain("Exit code: 1");
     expect(sent[0]?.prompt).toContain("token [REDACTED] expired");
-    expect(store.get(request.id).status).toBe("delivered");
+    expect(store.get(request.id)).toMatchObject({ status: "delivered", push_state: "pushed" });
     await deliverIdleAnswers(deps);
     expect(sent).toHaveLength(1);
+    expect(activeTurns.size).toBe(0);
   } finally {
     db.close();
   }
 });
 
-test("should leave answers alone while the agent polls, holds the session or is unknown", async () => {
+test("should never push answers the agent read, unknown sessions or held turns", async () => {
+  const { db, store, deps, sent, answered, advance } = fixture();
+  try {
+    const read = answered("a");
+    const unknown = answered("b", "elsewhere");
+    expect(store.seen(read.id)).toBe(true);
+    expect(store.seen(read.id)).toBe(false);
+    advance(20000);
+    await deliverIdleAnswers(deps);
+    expect(sent).toHaveLength(0);
+    expect(store.get(read.id)).toMatchObject({ status: "answered", push_state: null });
+    expect(store.get(unknown.id)).toMatchObject({ status: "answered", push_state: null });
+    const held = answered("c");
+    advance(20000);
+    activeTurns.add(KEY);
+    await deliverIdleAnswers(deps);
+    expect(sent).toHaveLength(0);
+    expect(store.get(held.id).push_state).toBeNull();
+  } finally {
+    activeTurns.clear();
+    db.close();
+  }
+});
+
+test("should recheck a busy session only after its recorded state changes", async () => {
   const busy = fixture({ idle: false });
   try {
     const request = busy.answered("a");
-    const unknown = busy.answered("b", "elsewhere");
-    busy.advance(20000);
-    const polled = busy.answered("c");
-    busy.advance(20000);
-    busy.store.fetched(polled.id);
-    busy.advance(5000);
-    await deliverIdleAnswers(busy.deps);
+    busy.advance(15000);
+    const held = new Map<string, string>();
+    await deliverIdleAnswers(busy.deps, held);
+    await deliverIdleAnswers(busy.deps, held);
+    expect(busy.idleChecks()).toBe(1);
+    expect(held.get(KEY)).toBe(target.fingerprint);
+    const changed = { ...target, fingerprint: "idle::2" };
+    await deliverIdleAnswers({ ...busy.deps, target: async () => changed }, held);
+    expect(busy.idleChecks()).toBe(2);
     expect(busy.sent).toHaveLength(0);
-    expect(busy.store.get(request.id).status).toBe("answered");
-    expect(busy.store.get(unknown.id).status).toBe("answered");
-    expect(busy.store.get(polled.id).status).toBe("answered");
-    activeTurns.add("local:codex-cli:native-1");
-    await deliverIdleAnswers({ ...busy.deps, idle: async () => true });
-    expect(busy.sent).toHaveLength(0);
+    expect(busy.store.get(request.id)).toMatchObject({ status: "answered", push_state: null });
   } finally {
-    activeTurns.clear();
     busy.db.close();
   }
 });
 
-test("should combine a session's answers into one turn and record it in chats showing it", async () => {
-  const { db, chats, deps, sent, answered, advance } = fixture();
+test("should combine a session's answers into one turn, oldest first", async () => {
+  const { db, deps, sent, answered, advance } = fixture();
   try {
-    chats.save({
-      id: crypto.randomUUID(),
-      title: "Live",
-      config: { agent: "codex", model: "", system: "", mcp: "orc", autoApprove: false } as never,
-      cwd: "/work",
-      host: null,
-      runtimeId: "native-1",
-      backend: "codex-cli",
-      sourceId: "live-1",
-      messages: [],
-      updatedAt: 1,
-    });
-    answered("a");
-    answered("b");
+    const first = answered("a");
+    advance(1000);
+    const second = answered("b");
     advance(15000);
     await deliverIdleAnswers(deps);
     expect(sent).toHaveLength(1);
-    expect(sent[0]?.prompt.match(/### IBKR check/g)).toHaveLength(2);
-    const [thread] = chats.byRuntime("codex-cli", null, "native-1");
-    expect(thread?.pushedAt).toBeGreaterThan(1);
-    expect(thread?.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-    expect(thread?.messages[1]?.content).toBe("Thanks, continuing.");
+    const prompt = sent[0]?.prompt ?? "";
+    expect(prompt.match(/### IBKR check/g)).toHaveLength(2);
+    expect(prompt.indexOf(first.id)).toBeLessThan(prompt.indexOf(second.id));
   } finally {
     db.close();
   }
 });
 
-test("should hold a chat send to the session until the pushed answer's turn ends", async () => {
-  const { db, deps, sent, answered, advance } = fixture();
+test("should run the push as a chat turn when a chat shows the session", async () => {
+  const { db, store, deps, sent, answered, advance } = fixture();
   try {
-    answered("a");
-    answered("b", "elsewhere");
+    const request = answered("a");
     advance(15000);
-    expect((await queuedAnswers("local:codex-cli:native-1", deps)).map((r) => r.status)).toEqual([
-      "answered",
-    ]);
-    const order: string[] = [];
-    let chat: Promise<unknown> | undefined;
+    const turns: { session: PushTarget; prompt: string; held: boolean; state: string | null }[] =
+      [];
     await deliverIdleAnswers({
       ...deps,
-      idle: async () => {
-        chat = deliveries.get("local:codex-cli:native-1")?.then(() => order.push("chat"));
-        return true;
+      chatTurn: (session, prompt) => {
+        turns.push({
+          session,
+          prompt,
+          held: activeTurns.has(KEY),
+          state: store.get(request.id).push_state,
+        });
+        return Promise.resolve();
       },
     });
-    order.push("delivered");
-    await chat;
-    expect(chat).toBeDefined();
-    expect(sent).toHaveLength(1);
-    expect(order).toEqual(["chat", "delivered"]);
-    expect(deliveries.size).toBe(0);
+    expect(sent).toHaveLength(0);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ held: true, state: "pushing", session: target });
+    expect(turns[0]?.prompt).toContain("python ibkr.py positions");
+    expect(store.get(request.id)).toMatchObject({ status: "delivered", push_state: "pushed" });
     expect(activeTurns.size).toBe(0);
-    expect(await queuedAnswers("local:codex-cli:native-1", deps)).toEqual([]);
   } finally {
     db.close();
   }
 });
 
-test("should report an undeliverable answer instead of claiming delivery", async () => {
-  const { db, store, deps, answered, advance } = fixture({ fail: true });
+test("should try once and keep a failed push answered so the agent can still read it", async () => {
+  const { db, store, deps, sent, answered, advance } = fixture({ fail: true });
   try {
     const request = answered("a");
     advance(15000);
     await deliverIdleAnswers(deps);
-    const failed = store.get(request.id);
-    expect(failed.status).toBe("unavailable");
-    expect(failed.delivery_error).toContain("resume refused");
-    expect(failed.delivered_at).toBeNull();
-    expect(failed.response).toMatchObject({ exit_code: 1 });
+    expect(store.get(request.id)).toMatchObject({
+      status: "answered",
+      push_state: "failed",
+      delivered_at: null,
+      response: { exit_code: 1 },
+    });
+    expect(store.get(request.id).push_error).toContain("resume refused");
+    const chatFailed = answered("b");
+    advance(15000);
+    await deliverIdleAnswers({
+      ...deps,
+      chatTurn: () => Promise.reject(new Error("The response was stopped.")),
+    });
+    expect(store.get(chatFailed.id)).toMatchObject({
+      status: "answered",
+      push_state: "failed",
+      push_error: "The response was stopped.",
+    });
+    await deliverIdleAnswers(deps);
+    expect(sent).toHaveLength(1);
+  } finally {
+    db.close();
+  }
+});
+
+test("should count a push as delivered once the agent responded to it", async () => {
+  const { db, store, deps, answered, advance } = fixture({ partial: true });
+  try {
+    const request = answered("a");
+    advance(15000);
+    await deliverIdleAnswers(deps);
+    expect(store.get(request.id)).toMatchObject({ status: "delivered", push_state: "pushed" });
+  } finally {
+    db.close();
+  }
+});
+
+test("should list a session's queued answers oldest first", async () => {
+  const { db, store, deps, answered, advance } = fixture();
+  try {
+    const first = answered("a");
+    advance(10);
+    const second = answered("b");
+    answered("c", "elsewhere");
+    expect((await queuedAnswers(KEY, deps)).map((request) => request.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+    store.seen(first.id);
+    expect((await queuedAnswers(KEY, deps)).map((request) => request.id)).toEqual([second.id]);
   } finally {
     db.close();
   }
@@ -225,6 +281,9 @@ test("should describe question and approval answers for the agent", () => {
     expires_at: 1,
     responded_at: 0,
     delivered_at: null,
+    seen_at: null,
+    push_state: null,
+    push_error: null,
   };
   const input = {
     origin: { session_id: "s", backend: "codex", request_id: "q" },

@@ -92,11 +92,12 @@ app.openapi(
   (c) => {
     const owner = c.req.header("X-ORC-Human-Owner");
     if (owner) store().heartbeat(c.req.valid("param").id, z.string().uuid().parse(owner));
-    const request = current(c.req.valid("param").id);
-    // A recent poll means the agent is waiting for this answer itself; ORC does not push it.
-    store().fetched(request.id);
-    if (owner && request.status === "answered") store().responseFetched(request.id, owner);
-    return c.json(request, 200);
+    const { id } = c.req.valid("param");
+    const request = current(id);
+    if (request.status !== "answered") return c.json(request, 200);
+    if (store().seen(id)) changes.publish("human-requests");
+    if (owner) store().responseFetched(id, owner);
+    return c.json(current(id), 200);
   },
 );
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,6 +17,7 @@ import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import type { createApp } from "../server";
 import { LIVE_CHAT_ID } from "../session-watcher";
+import { activeTurns, runChatTurn, turnKey } from "../sessions/turns";
 import { setupTestApp, teardownTestApp } from "./helpers";
 
 let app: ReturnType<typeof createApp>;
@@ -547,6 +548,95 @@ describe("native chat runtime", () => {
     const saved = (await (await request(`/chat/threads/${prepared.id}`)).json()) as ChatThread;
     expect(saved.messages).toHaveLength(502);
     expect(saved.historyBefore).toBe(605);
+  });
+
+  test("should flag a native session that changed on disk and rebuild the chat from it", async () => {
+    getDb()
+      .insert(bridge_chats)
+      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+      .onConflictDoNothing()
+      .run();
+    const transcript = join(home, "changed-native.jsonl");
+    const line = (role: "user" | "assistant", text: string) =>
+      `${JSON.stringify({
+        type: "response_item",
+        payload: {
+          type: "message",
+          role,
+          content: [{ type: role === "user" ? "input_text" : "output_text", text }],
+        },
+      })}
+`;
+    writeFileSync(transcript, line("user", "first question") + line("assistant", "first answer"));
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-changed",
+        backend: "codex",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "changed-native",
+        cwd: home,
+        transcript_path: transcript,
+      })
+      .run();
+    const thread = (await (
+      await request("/chat/threads", { sourceSessionId: "source-changed" })
+    ).json()) as ChatThread;
+    expect(thread.transcriptMark).toBeString();
+    const state = async () =>
+      (await (await request(`/chat/threads/${thread.id}/session`)).json()) as {
+        changed: boolean;
+        running: boolean;
+        queued: unknown[];
+      };
+    expect((await request(`/chat/threads/${thread.id}/session`, undefined, false)).status).toBe(
+      401,
+    );
+    expect(await state()).toEqual({ changed: false, running: false, queued: [] });
+    const synced = await turn({
+      threadId: thread.id,
+      messages: [{ role: "user", content: "a turn from this chat" }],
+    });
+    expect(synced.response.status).toBe(200);
+    expect((await state()).changed).toBe(false);
+    const native = { host: null, backend: thread.backend ?? "", runtimeId: "changed-native" };
+    activeTurns.add(turnKey(native.host, native.backend, native.runtimeId));
+    const pushed = runChatTurn(native, "ORC delivered the human answer");
+    expect(pushed).not.toBeNull();
+    await pushed;
+    activeTurns.clear();
+    expect(calls.at(-1)).toMatchObject({
+      id: "changed-native",
+      prompt: "ORC delivered the human answer",
+    });
+    const afterPush = (await (await request(`/chat/threads/${thread.id}`)).json()) as ChatThread;
+    expect(afterPush.messages.map((message) => message.content)).toContain(
+      "ORC delivered the human answer",
+    );
+    expect(runChatTurn({ ...native, runtimeId: "no-chat-shows-this" }, "x")).toBeNull();
+    appendFileSync(
+      transcript,
+      line("user", "asked in the terminal") + line("assistant", "answered in the terminal"),
+    );
+    expect((await state()).changed).toBe(true);
+    const continued = await turn({
+      threadId: thread.id,
+      messages: [{ role: "user", content: "continue from chat" }],
+    });
+    expect(continued.response.status).toBe(200);
+    expect((await state()).changed).toBe(true);
+    const refreshed = await request(`/chat/threads/${thread.id}/refresh`, {});
+    expect(refreshed.status).toBe(200);
+    const rebuilt = (await refreshed.json()) as ChatThread;
+    expect(rebuilt.messages.map((message) => message.content)).toContain(
+      "answered in the terminal",
+    );
+    expect(rebuilt.importedMessages).toBe(rebuilt.messages.length);
+    expect((await state()).changed).toBe(false);
+    rmSync(transcript);
+    expect((await request(`/chat/threads/${thread.id}/refresh`, {})).status).toBe(404);
   });
 
   test("resumes native identity and stale status while rejecting real owners, unsupported and missing sources", async () => {
