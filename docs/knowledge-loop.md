@@ -44,7 +44,7 @@ What the digest changes is the agent's responsibility; deterministic storage and
 
 ## Edited skills and manual revert
 
-`skill_update` / `PUT /api/skills/{name}/instructions` edit the effective SKILL.md. Supply its full current raw content as `expected_content` to reject stale saves, plus the new content and reason. The frontmatter name must stay unchanged. Edits activate immediately with no evaluation gate or automatic revert.
+`skill_update` / `PUT /api/skills/{name}/instructions` / `orc skill update <name> -f SKILL.md --reason "..."` edit the effective SKILL.md. Supply its full current raw content as `expected_content` to reject stale saves, plus the new content and reason. The frontmatter name must stay unchanged. Edits activate immediately with no evaluation gate or automatic revert.
 
 Instructions are scoped SQLite overlays: original installed SKILL.md, scripts, references and assets stay intact. Native tools reading those original files directly do not receive overlays; ORC API/MCP/SDK/runner skill reads do. Normal upstream file edits do not silently discard a learned instruction overlay.
 

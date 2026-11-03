@@ -3,7 +3,6 @@ import { skillVisibility, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ScopeQuerySchema } from "@orc/core/scope";
 import { MAX_SKILL_DOWNLOAD_TOKEN_CHARS, SkillDownloadSchema } from "@orc/core/skill-download";
-import { editSkillFile } from "@orc/core/skill-edit";
 import {
   discoverRepositorySkills,
   getSkillImportOrigin,
@@ -730,7 +729,7 @@ app.openapi(
     method: "put",
     path: "/skills/{name}/file",
     tags: ["Skills"],
-    summary: "Edit an existing user skill text file",
+    summary: "Edit a user skill text file, or add one with expectedContent null",
     request: {
       params: z.object({ name: z.string() }),
       body: {
@@ -740,7 +739,12 @@ app.openapi(
               .object({
                 path: z.string().min(1).max(1024),
                 content: z.string().max(8 * 1024 * 1024),
-                expectedContent: z.string().max(8 * 1024 * 1024),
+                expectedContent: z
+                  .string()
+                  .max(8 * 1024 * 1024)
+                  .nullable()
+                  .describe("Current file text; null creates a new file"),
+                reason: z.string().trim().min(1).max(2000).optional(),
               })
               .strict(),
           },
@@ -754,12 +758,18 @@ app.openapi(
       },
       400: { description: "Invalid skill edit" },
       404: { description: "Skill or file missing" },
-      409: { description: "File changed since opening" },
+      409: { description: "File changed since opening, or already exists" },
     },
   }),
   (c) => {
-    const { path, content, expectedContent } = c.req.valid("json");
-    return c.json(editSkillFile(c.req.valid("param").name, path, content, expectedContent));
+    const input = c.req.valid("json");
+    return c.json(
+      new SkillHistory(getSqlite()).writeFile({
+        ...input,
+        name: c.req.valid("param").name,
+        author: readSourceFromHeader(c.req.header(ORC_SOURCE_HEADER)),
+      }),
+    );
   },
 );
 

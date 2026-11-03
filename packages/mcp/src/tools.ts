@@ -114,6 +114,26 @@ const skillUpdateParams = SkillUpdateSchema.omit({ project_id: true })
   .extend(scopeParams.shape)
   .strict();
 const skillHistoryParams = scopeParams.extend({ name: z.string().min(1).max(200) });
+const skillFileWriteParams = skillHistoryParams
+  .extend({
+    path: z
+      .string()
+      .min(1)
+      .max(1024)
+      .describe("Skill-relative path, e.g. scripts/summary.py; not SKILL.md"),
+    content: z
+      .string()
+      .max(8 * 1024 * 1024)
+      .describe("Full new file text"),
+    expected_content: z
+      .string()
+      .max(8 * 1024 * 1024)
+      .nullable()
+      .describe("Current file text from skill_read with this ref; null adds a new file"),
+    reason: z.string().trim().min(1).max(2000),
+    session_id: z.string().min(1).max(200).optional(),
+  })
+  .strict();
 const skillRevertParams = skillHistoryParams.extend({
   change_id: z.string().min(1),
   expected_change_id: z.string().min(1),
@@ -209,6 +229,12 @@ export const toolDefinitions = [
     description:
       "Update effective SKILL.md instructions from verified lessons. Read current raw SKILL.md first and pass expected_content. Changes are audited with history; supporting authored files stay intact. Normal skill_read returns the edited version in scope.",
     inputSchema: skillUpdateParams,
+  },
+  {
+    name: "skill_file_write",
+    description:
+      "Edit or add a supporting text file (script, reference, asset) of a user skill. To edit, read it with skill_read ref first and pass that text as expected_content; pass null to add a new file. Writes the installed file for every scope and is audited; SKILL.md goes through skill_update. Built-in and package skills are read-only.",
+    inputSchema: skillFileWriteParams,
   },
   {
     name: "skill_history",
@@ -1256,6 +1282,24 @@ export async function executeTool(
           session_id: input.session_id ?? process.env.ORC_SESSION_ID,
         }),
       );
+    }
+    case "skill_file_write": {
+      const { name: skillName, project, scope, ...input } = skillFileWriteParams.parse(args);
+      if (input.path === "SKILL.md")
+        throw new ValidationError("Edit SKILL.md with skill_update so the change stays scoped");
+      const history = new SkillHistory(getSqlite(db));
+      if (!history.visible(skillName, resolveSkillScope({ project, scope }, options, skillName)))
+        throw new NotFoundError("Skill", skillName);
+      const skill = history.writeFile({
+        name: skillName,
+        path: input.path,
+        content: input.content,
+        expectedContent: input.expected_content,
+        reason: input.reason,
+        author: process.env.ORC_AGENT ?? "agent",
+        sessionId: input.session_id ?? process.env.ORC_SESSION_ID,
+      });
+      return `${input.expected_content === null ? "Added" : "Updated"} ${input.path} in ${skill.name}`;
     }
     case "skill_history": {
       const input = skillHistoryParams.parse(args);

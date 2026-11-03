@@ -586,8 +586,16 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
       sync: (name: string, input: SkillSyncInput = {}) =>
         c<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
-      editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>
-        c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/file`, input),
+      editFile: (
+        name: string,
+        input: {
+          path: string;
+          content: string;
+          expectedContent: string | null;
+          reason?: string;
+        },
+      ) => c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/file`, input),
+      delete: (name: string) => c<null>("DELETE", `/skills/${encodeURIComponent(name)}`),
       list: (params?: {
         q?: string;
         source?: SkillSource;

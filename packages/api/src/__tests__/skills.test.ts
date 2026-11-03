@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { globalConfigPath } from "@orc/core/config";
 import { getUserSkillsDir, readSkill, reloadCache, type SkillFull } from "@orc/core/skill-service";
+import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -316,5 +317,33 @@ describe("multi-file skills API", () => {
         })
       ).status,
     ).toBe(401);
+  });
+});
+
+describe("PUT /skills/{name}/file", () => {
+  const name = `api-file-write-${process.pid}`;
+  afterAll(() => {
+    rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
+    reloadCache();
+  });
+
+  test("should add a new supporting file only when expectedContent is null", async () => {
+    const content = `---\nname: ${name}\ndescription: API file writes\n---\nBody`;
+    expect((await req(app, "POST", "/skills", { name, content })).status).toBe(201);
+    const body = { path: "scripts/new.py", content: "print(1)", expectedContent: null };
+    const created = await req(app, "PUT", `/skills/${name}/file`, body, {
+      "X-Orc-Source": "cli",
+    });
+    expect(created.status).toBe(200);
+    expect((await created.json()).files.map((f: { name: string }) => f.name)).toContain(
+      "scripts/new.py",
+    );
+    expect((await req(app, "PUT", `/skills/${name}/file`, body)).status).toBe(409);
+    const audit = getSqlite()
+      .query<{ action: string; actor: string }, [string]>(
+        "SELECT action, actor FROM audit_log WHERE subject_ids=?",
+      )
+      .all(JSON.stringify([name]));
+    expect(audit).toEqual([{ action: "skill.file_created", actor: "cli" }]);
   });
 });
