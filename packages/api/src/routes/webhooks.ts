@@ -347,6 +347,51 @@ export function createWebhooksRouter() {
 export function createWebhookPublicRouter() {
   const app = createRouter();
   app.use("/webhooks/*", bodyLimit({ maxSize: MAX_BYTES }));
+  // Documented only: a validated body would be re-serialized and break HMAC verification.
+  app.openAPIRegistry.registerPath({
+    method: "post",
+    path: "/webhooks/{token}",
+    tags: ["Webhooks"],
+    summary: "Receive a signed webhook delivery",
+    description:
+      "Public endpoint authenticated by an HMAC-SHA256 signature of the raw body. GitHub webhooks send X-Hub-Signature-256, X-GitHub-Event and X-GitHub-Delivery; generic webhooks send X-Orc-Signature-256 and optionally X-Orc-Event and X-Orc-Delivery or Idempotency-Key.",
+    request: {
+      params: z.object({ token: z.string() }),
+      headers: z.object({
+        "x-hub-signature-256": z.string().optional(),
+        "x-github-event": z.string().optional(),
+        "x-github-delivery": z.string().optional(),
+        "x-orc-signature-256": z.string().optional(),
+        "x-orc-event": z.string().optional(),
+        "x-orc-delivery": z.string().optional(),
+        "idempotency-key": z.string().optional(),
+      }),
+      body: {
+        required: true,
+        content: { "application/json": { schema: z.record(z.string(), z.unknown()) } },
+      },
+    },
+    responses: {
+      202: {
+        description: "Delivery recorded; matching jobs started when accepted",
+        content: {
+          "application/json": {
+            schema: z.object({
+              accepted: z.boolean(),
+              delivery_id: z.string(),
+              run_id: z.string().optional(),
+              run_ids: z.array(z.string()).optional(),
+            }),
+          },
+        },
+      },
+      400: { description: "Invalid payload, event or missing delivery ID" },
+      401: { description: "Invalid webhook signature" },
+      404: { description: "Unknown or disabled webhook" },
+      409: { description: "Delivery already received" },
+      413: { description: "Payload too large" },
+    },
+  });
   app.post("/webhooks/:token", async (c) => {
     const hook = await getDb().query.webhooks.findFirst({
       where: and(eq(webhooks.token, c.req.param("token")), eq(webhooks.enabled, true)),

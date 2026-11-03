@@ -664,7 +664,14 @@ app.openapi(
       params: idParam,
       query: z.object({ revision: z.coerce.number().int().min(1).optional() }),
     },
-    responses: { 200: { description: "File bytes" } },
+    responses: {
+      200: {
+        description: "File bytes in the uploaded media type",
+        content: {
+          "application/octet-stream": { schema: z.string().openapi({ format: "binary" }) },
+        },
+      },
+    },
   }),
   async (c) => {
     const original = (await svc()).original(
