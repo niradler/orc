@@ -1,4 +1,5 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
@@ -16,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
@@ -111,6 +113,21 @@ export function ChatPanel({
     send,
     cancel,
   } = useChat();
+  const session = useQuery({
+    queryKey: ["chat-threads", "session", thread?.id],
+    queryFn: () => api.chat.session(thread?.id ?? ""),
+    enabled: !!thread?.runtimeId,
+  });
+  const answers = session.data?.queued ?? [];
+  const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
+  const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  useEffect(() => {
+    if (turnElsewhere) void refresh();
+  }, [turnElsewhere, refresh]);
+  const reload = async () => {
+    await refresh(sessionChanged);
+    void session.refetch();
+  };
   const terminalControl = useChatContinueInTerminal();
   const promptMenu = useChatPromptMenu(draft, setDraft);
   const desktop = useBreakpoint("xl");
@@ -241,10 +258,15 @@ export function ChatPanel({
                 <button
                   type="button"
                   data-testid="chat-refresh-button"
-                  onClick={() => void refresh()}
+                  onClick={() => void reload()}
                   disabled={!thread || refreshing}
-                  className={iconButton}
-                  aria-label="Refresh session"
+                  className={cn(iconButton, sessionChanged && "text-warning")}
+                  data-stale={sessionChanged || undefined}
+                  aria-label={
+                    sessionChanged
+                      ? "Refresh session: it changed outside this chat"
+                      : "Refresh session"
+                  }
                 >
                   <RefreshCw
                     size={17}
@@ -272,7 +294,7 @@ export function ChatPanel({
                   type="button"
                   aria-label="Session actions"
                   data-testid="chat-options-button"
-                  className={iconButton}
+                  className={cn(iconButton, sessionChanged && "text-warning")}
                 >
                   <MoreHorizontal size={17} />
                 </button>
@@ -288,10 +310,15 @@ export function ChatPanel({
                   <button
                     type="button"
                     data-testid="chat-refresh-button"
-                    onClick={() => void refresh()}
+                    onClick={() => void reload()}
                     disabled={!thread || refreshing}
-                    className={iconButton}
-                    aria-label="Refresh session"
+                    className={cn(iconButton, sessionChanged && "text-warning")}
+                    data-stale={sessionChanged || undefined}
+                    aria-label={
+                      sessionChanged
+                        ? "Refresh session: it changed outside this chat"
+                        : "Refresh session"
+                    }
                   >
                     <RefreshCw
                       size={17}
@@ -497,7 +524,7 @@ export function ChatPanel({
             )}
           </div>
         )}
-        {queued.length > 0 && (
+        {queued.length + answers.length > 0 && (
           <details
             key={activeKey}
             ref={queueDetails}
@@ -514,10 +541,20 @@ export function ChatPanel({
                 className="shrink-0 transition-transform group-open:rotate-180"
               />
               <span role="status" data-testid="chat-pending-count">
-                {queued.length} pending{queuePaused ? " · Paused" : ""}
+                {queued.length + answers.length} pending{queuePaused ? " · Paused" : ""}
               </span>
             </summary>
             <ol className="max-h-[min(30vh,14rem)] overflow-y-auto pb-1">
+              {answers.map((answer) => (
+                <li
+                  key={answer.id}
+                  data-testid="chat-queued-answer"
+                  className="flex min-h-11 items-center gap-2 border-t border-outline-variant text-sm sm:min-h-9"
+                >
+                  <span className="shrink-0 text-xs text-on-surface-variant">ORC answer</span>
+                  <span className="min-w-0 truncate">{answer.title}</span>
+                </li>
+              ))}
               {queued.map((entry) => (
                 <QueuedMessage
                   key={entry.id}

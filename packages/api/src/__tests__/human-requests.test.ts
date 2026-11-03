@@ -63,6 +63,24 @@ test("should retain a disconnected question, accept one answer, and require deli
   ).toBe(409);
 });
 
+test("should record when the agent reads an answer so ORC never pushes it", async () => {
+  const created = await (
+    await req(app, "POST", "/human-requests", {
+      ...input,
+      origin: { ...input.origin, request_id: "request-seen" },
+    })
+  ).json<HumanRequest>();
+  await req(app, "POST", `/human-requests/${created.id}/respond`, {
+    version: created.version,
+    response: { kind: "question", answer: "Green" },
+  });
+  const read = await (await req(app, "GET", `/human-requests/${created.id}`)).json<HumanRequest>();
+  expect(read.seen_at).toBeNumber();
+  expect(read.push_state).toBeNull();
+  const again = await (await req(app, "GET", `/human-requests/${created.id}`)).json<HumanRequest>();
+  expect(again.seen_at).toBe(read.seen_at);
+});
+
 test("should reject credentials and incomplete approvals at the boundary", async () => {
   expect(
     (await req(app, "POST", "/human-requests", { ...input, password: "must-not-be-accepted" }))

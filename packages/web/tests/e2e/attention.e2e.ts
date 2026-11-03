@@ -263,6 +263,69 @@ test("should preserve multiple selections and cancel a pending request", async (
   );
 });
 
+test("should allow dismissing an answer its agent never collects", async ({ page, request }) => {
+  const entry = await apiPost<HumanRequest>(request, "/human-requests", {
+    kind: "question",
+    prompt: "Answered for an agent that never returns?",
+    origin: { backend: "codex", session_id: tid("delivering"), request_id: "delivering" },
+  });
+  await apiPost<HumanRequest>(request, `/human-requests/${entry.id}/respond`, {
+    version: entry.version,
+    response: { kind: "question", answer: "Yes" },
+  });
+  await gotoView(page, "attention");
+  const card = page.getByTestId(`attention-request-${entry.id}`);
+  await reviewAttentionRequest(card);
+  await expect(card.getByTestId("attention-state")).toHaveText(
+    "Answered · agent hasn't picked it up",
+  );
+  await card.getByTestId("attention-cancel").click();
+  await expect(card).toHaveCount(0);
+  expect((await apiGet<HumanRequest>(request, `/human-requests/${entry.id}`)).status).toBe(
+    "cancelled",
+  );
+});
+
+test("should show whether ORC pushed an answer or the agent read it", async ({ page, request }) => {
+  const answered = async (name: string) => {
+    const entry = await apiPost<HumanRequest>(request, "/human-requests", {
+      kind: "question",
+      prompt: `Push state ${name}?`,
+      origin: { backend: "codex", session_id: tid(name), request_id: name },
+    });
+    return apiPost<HumanRequest>(request, `/human-requests/${entry.id}/respond`, {
+      version: entry.version,
+      response: { kind: "question", answer: "Yes" },
+    });
+  };
+  const read = await answered("read");
+  const pushing = await answered("pushing");
+  const failed = await answered("failed");
+  await page.route("**/api/human-requests", async (route) => {
+    const list = (await (await route.fetch()).json()) as HumanRequest[];
+    await route.fulfill({
+      json: list.map((entry) =>
+        entry.id === pushing.id
+          ? { ...entry, push_state: "pushing" }
+          : entry.id === failed.id
+            ? { ...entry, push_state: "failed", push_error: "The agent is unavailable." }
+            : entry,
+      ),
+    });
+  });
+  await gotoView(page, "attention");
+  const state = (id: string) =>
+    page.getByTestId(`attention-request-${id}`).getByTestId("attention-state");
+  await expect(state(read.id)).toHaveText("Answered · agent hasn't picked it up");
+  await expect(state(pushing.id)).toHaveText("Pushing to session…");
+  await expect(state(failed.id)).toHaveText("Couldn't push · agent can still read it");
+  await expect(
+    page.getByTestId(`attention-request-${failed.id}`).getByTestId("attention-push-error"),
+  ).toHaveText("The agent is unavailable.");
+  await apiGet<HumanRequest>(request, `/human-requests/${read.id}`);
+  await expect(state(read.id)).toHaveText("Delivered · agent read it");
+});
+
 test("should preserve Ask user expiry and notification settings when editing its prompt", async ({
   page,
   request,

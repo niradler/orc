@@ -9,6 +9,7 @@ import {
   getKnowledgeService,
   startKnowledgeMaintenance,
 } from "@orc/knowledge";
+import { startHumanRequestDelivery } from "./human-request-delivery.js";
 import { withKbJobHooks } from "./kb-jobs.js";
 import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
 import { startAttentionPush } from "./push/service.js";
@@ -53,6 +54,7 @@ const server = Bun.serve<TerminalSocketData>({
 
 const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
+const stopHumanRequestDelivery = startHumanRequestDelivery();
 const channels = startChannelRuntime().catch(() => {
   logger.error("Channels failed to start; inspect Channels in Settings");
   return async () => {};
@@ -78,6 +80,7 @@ async function shutdown(signal: string, exitCode = 0) {
   forceExit.unref();
   stopSessionWatcher();
   stopAttentionPush();
+  stopHumanRequestDelivery();
   await (await channels)();
   shutdownTerminals();
   await runShutdownHooks();

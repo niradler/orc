@@ -161,6 +161,7 @@ export const ChatThreadSchema = z.object({
   historyBefore: z.number().int().nonnegative().nullable().optional(),
   importedMessages: z.number().int().nonnegative().optional(),
   projectId: z.string().optional(),
+  transcriptMark: z.string().max(100).optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

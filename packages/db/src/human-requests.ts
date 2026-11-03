@@ -28,6 +28,10 @@ export class HumanRequestStore {
       ["delivery_error", "TEXT"],
       ["owner_id", "TEXT"],
       ["owner_heartbeat_at", "INTEGER"],
+      ["answered_at", "INTEGER"],
+      ["seen_at", "INTEGER"],
+      ["push_state", "TEXT"],
+      ["push_error", "TEXT"],
     ])
       if (!columns.some((column) => column.name === name))
         db.exec(`ALTER TABLE human_requests ADD COLUMN ${name} ${type}`);
@@ -181,13 +185,94 @@ export class HumanRequestStore {
   }
 
   responseFetched(id: string, ownerId: string): void {
-    // A command may run for hours after its approval is returned. Its real tool-result
-    // hook acknowledges consumption; the short waiting-owner lease no longer applies.
+    // A returned command can run for hours; its tool-result hook acknowledges it, not the owner lease.
     this.db
       .query(
         "UPDATE human_requests SET owner_heartbeat_at=NULL WHERE id=? AND owner_id=? AND status='answered'",
       )
       .run(id, ownerId);
+  }
+
+  seen(id: string): boolean {
+    return (
+      this.db
+        .query(
+          "UPDATE human_requests SET seen_at=? WHERE id=? AND status='answered' AND seen_at IS NULL",
+        )
+        .run(this.now(), id).changes > 0
+    );
+  }
+
+  // Runtime-owned and native tool-call requests have their own delivery paths.
+  private static readonly PUSHABLE = `status='answered' AND owner_id IS NULL AND seen_at IS NULL
+    AND push_state IS NULL AND answered_at IS NOT NULL
+    AND json_extract(payload,'$.origin.tool_call_id') IS NULL`;
+
+  // Newest first so stuck answers never crowd out new ones.
+  pushCandidates(graceMs: number): HumanRequest[] {
+    this.expire();
+    return this.db
+      .query<{ id: string }, [number]>(
+        `SELECT id FROM human_requests WHERE ${HumanRequestStore.PUSHABLE} AND answered_at<=?
+         ORDER BY answered_at DESC LIMIT 100`,
+      )
+      .all(this.now() - graceMs)
+      .map((row) => this.get(row.id));
+  }
+
+  nextPushAt(graceMs: number): number | null {
+    const row = this.db
+      .query<{ due: number | null }, [number, number, number]>(
+        `SELECT min(answered_at + ?) AS due FROM human_requests
+         WHERE ${HumanRequestStore.PUSHABLE} AND answered_at + ? > ?`,
+      )
+      .get(graceMs, graceMs, this.now());
+    return row?.due ?? null;
+  }
+
+  claimPush(ids: string[]): HumanRequest[] {
+    return this.db
+      .transaction(() =>
+        ids.flatMap((id) =>
+          this.db
+            .query(
+              `UPDATE human_requests SET push_state='pushing',push_error=NULL
+               WHERE id=? AND ${HumanRequestStore.PUSHABLE}`,
+            )
+            .run(id).changes
+            ? [this.get(id)]
+            : [],
+        ),
+      )
+      .immediate();
+  }
+
+  pushed(id: string): void {
+    this.db
+      .query(
+        `UPDATE human_requests SET push_state='pushed',
+         status=CASE status WHEN 'answered' THEN 'delivered' ELSE status END,
+         delivered_at=CASE status WHEN 'answered' THEN ? ELSE delivered_at END,
+         version=version+1 WHERE id=? AND push_state='pushing'`,
+      )
+      .run(this.now(), id);
+  }
+
+  // The answer stays answered so the agent can still read it.
+  pushFailed(id: string, error: string): void {
+    this.db
+      .query(
+        "UPDATE human_requests SET push_state='failed',push_error=? WHERE id=? AND push_state='pushing'",
+      )
+      .run(error.slice(0, 1000), id);
+  }
+
+  interruptedPushes(): number {
+    return this.db
+      .query(
+        "UPDATE human_requests SET push_state='interrupted',push_error='ORC restarted mid-push; the agent may already have this answer.' WHERE push_state='pushing'",
+      )
+      .run().changes;
   }
 
   list(): HumanRequest[] {
@@ -221,9 +306,9 @@ export class HumanRequestStore {
           throw new ValidationError("Selected choices do not match this question");
         this.db
           .query(
-            "UPDATE human_requests SET status='answered',response=?,responded_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+            "UPDATE human_requests SET status='answered',response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
           )
-          .run(JSON.stringify(response), this.now(), id, version);
+          .run(JSON.stringify(response), this.now(), this.now(), id, version);
         return this.get(id);
       })
       .immediate();
@@ -251,9 +336,9 @@ export class HumanRequestStore {
     const result = CommandResultSchema.parse(raw);
     const changed = this.db
       .query(
-        "UPDATE human_requests SET status='answered',response=?,version=version+1 WHERE id=? AND status='running' AND version=?",
+        "UPDATE human_requests SET status='answered',response=?,answered_at=?,version=version+1 WHERE id=? AND status='running' AND version=?",
       )
-      .run(JSON.stringify(result), id, version);
+      .run(JSON.stringify(result), this.now(), id, version);
     if (!changed.changes) throw new ConflictError("Command execution no longer owns this request");
     return this.get(id);
   }
@@ -297,6 +382,8 @@ export class HumanRequestStore {
          AND json_extract(payload,'$.origin.session_id')=?
          AND json_extract(payload,'$.origin.backend')=?
          AND json_extract(payload,'$.origin.chat_thread_id') IS NULL
+         AND push_state IS NOT 'pushing' AND push_state IS NOT 'interrupted'
+         AND NOT (status='answered' AND seen_at IS NOT NULL)
          ${toolCallId === undefined ? "" : "AND json_extract(payload,'$.origin.tool_call_id')=?"}`,
       )
       .run(...(toolCallId === undefined ? [sessionId, backend] : [sessionId, backend, toolCallId]));
@@ -336,8 +423,19 @@ export class HumanRequestStore {
     return this.db
       .transaction(() => {
         const request = this.get(id);
-        if (!["pending", "unavailable"].includes(request.status) || request.version !== version)
+        // A dismissed undelivered answer reads as a cancellation, which never authorizes anything.
+        if (
+          !["pending", "answered", "unavailable"].includes(request.status) ||
+          request.version !== version
+        )
           throw new ConflictError("Request is stale or no longer pending");
+        const reached =
+          request.seen_at !== null ||
+          (request.push_state !== null && request.push_state !== "failed");
+        if (request.status === "answered" && reached)
+          throw new ConflictError(
+            "The agent may already have this answer; it can no longer be dismissed",
+          );
         this.db
           .query(
             "UPDATE human_requests SET status='cancelled',version=version+1 WHERE id=? AND version=?",

@@ -29,7 +29,11 @@ import {
   nativeChatAgent,
   nativeChatResumeUnavailableReason,
 } from "@orc/core/chat";
-import { ChatTurnContextSchema, withOrcContext } from "@orc/core/chat-context";
+import {
+  type ChatTurnContext,
+  ChatTurnContextSchema,
+  withOrcContext,
+} from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
@@ -55,6 +59,7 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
+import { queuedAnswers } from "../human-request-delivery.js";
 import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
 import { notify, truncate } from "../push/service.js";
@@ -62,6 +67,7 @@ import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
+import { activeTurns, registerChatTurns, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
@@ -81,12 +87,9 @@ interface ChatRun {
   permissions: Set<string>;
   questions: Map<string, ChatQuestion>;
   threadId: string;
-  /** The streaming turn saves this object when it ends, so live changes must land on it. */
   thread: ChatThread;
   key: string;
-  /** Serialized events of this turn, replayed to every client that attaches. */
   events: string[];
-  /** Attached clients; `null` marks the end of the turn. */
   listeners: Set<(data: string | null) => void>;
   stop: () => void;
 }
@@ -183,7 +186,7 @@ function follow(c: Context, run: ChatRun) {
 function threadRun(threadId: string): [string, ChatRun] | undefined {
   return [...runs].find(([, run]) => run.threadId === threadId);
 }
-const active = new Set<string>();
+const active = activeTurns;
 const params = z.object({ id });
 const modelCatalogs = new Map<string, { at: number; result: Promise<ChatModels> }>();
 let modelRequests = 0;
@@ -339,27 +342,61 @@ async function newThread(
     thread.cwd = source.cwd;
     thread.host = source.execution_host ?? null;
     thread.title = source.title ?? "Resumed session";
-    if (source.transcript_path && (await runtime.isFile(source.transcript_path))) {
-      const bytes = await runtime.readFile(source.transcript_path, MAX_TRANSCRIPT_BYTES);
-      let transcript = await readTranscriptBytes(
-        bytes,
-        source.backend,
-        `${thread.host ?? "local"}:${source.transcript_path}`,
-        { offset: 0, limit: CHAT_HISTORY_PAGE_SIZE },
-      );
-      if (transcript.total > CHAT_HISTORY_PAGE_SIZE)
-        transcript = await readTranscriptBytes(
-          bytes,
-          source.backend,
-          `${thread.host ?? "local"}:${source.transcript_path}`,
-          { offset: transcript.total - CHAT_HISTORY_PAGE_SIZE, limit: CHAT_HISTORY_PAGE_SIZE },
-        );
-      thread.messages = chatHistory(transcript.turns, source.backend);
-      thread.importedMessages = thread.messages.length;
-      thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
-    }
+    await importTranscript(thread, source);
   }
   return thread;
+}
+
+type NativeSource = typeof gateway_sessions.$inferSelect;
+
+async function nativeSource(thread: ChatThread): Promise<NativeSource | null> {
+  if (!thread.runtimeId) return null;
+  const rows = await getDb().query.gateway_sessions.findMany({
+    where: and(
+      eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+      eq(gateway_sessions.runtime_session_id, thread.runtimeId),
+    ),
+  });
+  return (
+    rows.find((row) => row.id === thread.sourceId) ??
+    rows.find(
+      (row) =>
+        (row.execution_host ?? null) === thread.host &&
+        nativeChatAgent(row.backend) === thread.config.agent,
+    ) ??
+    null
+  );
+}
+
+async function transcriptMark(thread: ChatThread, source?: NativeSource | null) {
+  const row = source === undefined ? await nativeSource(thread) : source;
+  if (!row?.transcript_path) return null;
+  const info = await hostRuntime(execHostFor(thread.host))
+    .stat(row.transcript_path)
+    .catch(() => null);
+  return info ? `${info.size}:${info.mtimeMs}` : null;
+}
+
+async function importTranscript(thread: ChatThread, source: NativeSource): Promise<boolean> {
+  const runtime = hostRuntime(execHostFor(thread.host));
+  if (!source.transcript_path || !(await runtime.isFile(source.transcript_path))) return false;
+  const mark = await transcriptMark(thread, source);
+  const bytes = await runtime.readFile(source.transcript_path, MAX_TRANSCRIPT_BYTES);
+  const cacheKey = `${thread.host ?? "local"}:${source.transcript_path}`;
+  let transcript = await readTranscriptBytes(bytes, source.backend, cacheKey, {
+    offset: 0,
+    limit: CHAT_HISTORY_PAGE_SIZE,
+  });
+  if (transcript.total > CHAT_HISTORY_PAGE_SIZE)
+    transcript = await readTranscriptBytes(bytes, source.backend, cacheKey, {
+      offset: transcript.total - CHAT_HISTORY_PAGE_SIZE,
+      limit: CHAT_HISTORY_PAGE_SIZE,
+    });
+  thread.messages = chatHistory(transcript.turns, source.backend);
+  thread.importedMessages = thread.messages.length;
+  thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
+  if (mark) thread.transcriptMark = mark;
+  return true;
 }
 
 app.openapi(
@@ -407,6 +444,77 @@ app.openapi(
     responses: response,
   }),
   (c) => c.json(requireThread(c.req.valid("param").id)),
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads/{id}/session",
+    tags: ["Chat"],
+    description:
+      "Whether the native session changed on disk since this conversation last showed it, whether a turn is running, and the human answers queued for it.",
+    request: { params },
+    responses: {
+      200: {
+        description: "Native session state",
+        content: {
+          "application/json": {
+            schema: z.object({
+              changed: z.boolean(),
+              running: z.boolean(),
+              queued: z.array(z.object({ id: z.string(), title: z.string() })),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    const running = !!threadRun(thread.id);
+    let changed = false;
+    if (!running && thread.runtimeId) {
+      const mark = await transcriptMark(thread);
+      const latest = requireThread(thread.id);
+      if (mark && !latest.transcriptMark && !threadRun(thread.id)) {
+        latest.transcriptMark = mark;
+        store().save(latest);
+      } else changed = !!mark && !!latest.transcriptMark && mark !== latest.transcriptMark;
+    }
+    const queued = thread.runtimeId
+      ? await queuedAnswers(turnKey(thread.host, thread.backend, thread.runtimeId))
+      : [];
+    return c.json({
+      changed,
+      running,
+      queued: queued.map((request) => ({
+        id: request.id,
+        title: request.input.title ?? request.input.prompt.slice(0, 120),
+      })),
+    });
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/threads/{id}/refresh",
+    tags: ["Chat"],
+    description: "Rebuild the conversation from its native session transcript.",
+    request: { params },
+    responses: response,
+  }),
+  async (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    if (
+      threadRun(thread.id) ||
+      (thread.runtimeId && active.has(turnKey(thread.host, thread.backend, thread.runtimeId)))
+    )
+      throw new ConflictError("Wait for the agent to finish before refreshing.");
+    const source = await nativeSource(thread);
+    if (!source || !(await importTranscript(thread, source)))
+      throw new NotFoundError("Native transcript", thread.id);
+    store().save(thread);
+    return c.json(thread);
+  },
 );
 app.openapi(
   createRoute({
@@ -458,24 +566,18 @@ app.openapi(
   async (c) => {
     const thread = requireThread(c.req.valid("param").id);
     const { before } = c.req.valid("query");
-    if (!thread.sourceId || before > (thread.historyBefore ?? 0))
+    if (before > (thread.historyBefore ?? 0))
       throw new ValidationError("No older history is available at this position.");
-    const source = await getDb().query.gateway_sessions.findFirst({
-      where: and(
-        eq(gateway_sessions.id, thread.sourceId),
-        eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
-      ),
-    });
+    const source = await nativeSource(thread);
     if (
       !source?.transcript_path ||
-      source.backend !== thread.config.agent ||
-      source.runtime_session_id !== thread.runtimeId ||
+      nativeChatAgent(source.backend) !== thread.config.agent ||
       (source.execution_host ?? null) !== thread.host
     )
-      throw new NotFoundError("Native transcript", thread.sourceId);
+      throw new NotFoundError("Native transcript", thread.id);
     const runtime = hostRuntime(execHostFor(thread.host));
     if (!(await runtime.isFile(source.transcript_path)))
-      throw new NotFoundError("Native transcript", thread.sourceId);
+      throw new NotFoundError("Native transcript", thread.id);
     const bytes = await runtime.readFile(source.transcript_path, MAX_TRANSCRIPT_BYTES);
     const offset = Math.max(0, before - CHAT_HISTORY_PAGE_SIZE);
     const page = await readTranscriptBytes(
@@ -869,19 +971,56 @@ async function streamChat(
     .find((message) => message.role === "user")
     ?.content.trim();
   if (!input) throw new ValidationError("A user message is required.");
-  if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
-    throw new ValidationError("This chat reached its history size limit. Start a new chat.");
-  const key = thread.runtimeId
-    ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
-    : thread.id;
-  if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
-    throw new ConflictError("This session is already responding.");
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   if (body.permissionMode !== undefined) {
     if (!["codex", "claude"].includes(thread.config.agent))
       throw new ValidationError("Permission modes are supported by Claude and Codex.");
     thread.config.permissionMode = body.permissionMode;
   }
+  const { run } = await beginTurn(thread, input, {
+    context: body.context,
+    prepare: async () => {
+      if (!body.threadId && body.workspace?.worktree) {
+        const host = selectedTerminalHost(loadConfig(), thread.host);
+        const cwd = await prepareSessionDirectory(
+          { cwd: thread.cwd, worktree: true },
+          {
+            ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
+            validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
+          },
+        );
+        if (cwd === thread.cwd)
+          throw new ValidationError("Choose a Git repository folder to create a worktree.");
+        thread.cwd = cwd;
+      }
+      return storeSessionFiles({
+        host: execHostFor(thread.host),
+        cwd: thread.cwd,
+        sessionId: thread.id,
+        directory: project?.upload_directory ?? null,
+        files: uploads,
+      });
+    },
+  });
+  return follow(c, run);
+}
+
+type TurnSetup = {
+  context?: ChatTurnContext | undefined;
+  reserved?: boolean;
+  prepare?: () => Promise<SessionFile[]>;
+};
+
+async function beginTurn(
+  thread: ChatThread,
+  input: string,
+  setup: TurnSetup = {},
+): Promise<{ run: ChatRun; done: Promise<void> }> {
+  if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
+    throw new ValidationError("This chat reached its history size limit. Start a new chat.");
+  const key = thread.runtimeId ? turnKey(thread.host, thread.backend, thread.runtimeId) : thread.id;
+  if (!setup.reserved && (active.has(key) || threadRun(thread.id)))
+    throw new ConflictError("This session is already responding.");
   if (runs.size >= 4)
     throw new ConflictError("All chat workers are busy. Try again when a response finishes.");
   const mock = process.env.ORC_E2E_CHAT_MOCK === "1";
@@ -893,6 +1032,11 @@ async function streamChat(
   const halted = new Promise<void>((resolve) => {
     halt = resolve;
   });
+  let finish: (failure: string | null) => void = () => {};
+  const done = new Promise<void>((resolve, reject) => {
+    finish = (failure) => (failure ? reject(new Error(failure)) : resolve());
+  });
+  done.catch(() => {});
   const run: ChatRun = {
     session: null,
     permissions: new Set(),
@@ -910,31 +1054,15 @@ async function streamChat(
   };
   runs.set(runId, run);
   let attachments: SessionFile[] = [];
+  let synced = true;
   try {
     if (!mock) {
       const check = await backend.preflight({ executionHost: thread.host });
       if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
     }
-    if (!body.threadId && body.workspace?.worktree) {
-      const host = selectedTerminalHost(loadConfig(), thread.host);
-      const cwd = await prepareSessionDirectory(
-        { cwd: thread.cwd, worktree: true },
-        {
-          ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
-          validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
-        },
-      );
-      if (cwd === thread.cwd)
-        throw new ValidationError("Choose a Git repository folder to create a worktree.");
-      thread.cwd = cwd;
-    }
-    attachments = await storeSessionFiles({
-      host: execHostFor(thread.host),
-      cwd: thread.cwd,
-      sessionId: thread.id,
-      directory: project?.upload_directory ?? null,
-      files: uploads,
-    });
+    attachments = (await setup.prepare?.()) ?? [];
+    if (thread.transcriptMark)
+      synced = (await transcriptMark(thread).catch(() => null)) === thread.transcriptMark;
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
@@ -964,17 +1092,21 @@ async function streamChat(
     runs.delete(runId);
     throw error;
   }
+  let failure: string | null = null;
+  let completed = false;
+  let responded = false;
   const execute = async () => {
     const timer = setTimeout(run.stop, 15 * 60000);
     const emit = async (event: ChatEvent) => {
+      if (event.type !== "thread" && event.type !== "error") responded = true;
       if (event.type === "text") assistant.content += event.text;
+      if (event.type === "error") failure ??= event.message;
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
       publish(run, event);
     };
     try {
       await emit({ type: "thread", thread, runId });
       if (mock) {
-        // "Respond after 2000ms" holds the mock turn open for background-run tests.
         await Promise.race([
           Bun.sleep(Math.min(Number(input.match(/after (\d+)ms/i)?.[1] ?? 75), 10000)),
           halted,
@@ -986,6 +1118,7 @@ async function streamChat(
           });
         await Bun.sleep(75);
         thread.runtimeId ??= `mock-${thread.id}`;
+        completed = !stopped;
       } else {
         const opts: SessionOpts = {
           toolAllowlist: thread.toolAllowlist,
@@ -1040,7 +1173,7 @@ async function streamChat(
         if (stopped) return;
         // The transcript keeps the typed "/name request"; the agent receives the saved prompt.
         const turn = new McpPromptStore(getSqlite()).expand(input) + uploadPrompt(attachments);
-        const sent = body.context ? withOrcContext(turn, body.context) : turn;
+        const sent = setup.context ? withOrcContext(turn, setup.context) : turn;
         const prompt =
           thread.backend === "acpx"
             ? [thread.config.system, sent].filter(Boolean).join("\n\n")
@@ -1100,6 +1233,7 @@ async function streamChat(
             message:
               "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
           });
+        completed = receivedResult && !!thread.runtimeId && !stopped;
         if (receivedResult && !thread.runtimeId)
           await emit({
             type: "error",
@@ -1109,12 +1243,10 @@ async function streamChat(
       }
     } catch (error) {
       logger.error("Chat turn failed", { error, runId });
-      if (!stopped)
-        await emit({
-          type: "error",
-          message:
-            error instanceof Error ? error.message : "The agent could not complete the response.",
-        }).catch(() => {});
+      const message =
+        error instanceof Error ? error.message : "The agent could not complete the response.";
+      failure ??= message;
+      if (!stopped) await emit({ type: "error", message }).catch(() => {});
     } finally {
       clearTimeout(timer);
       const nativeId = run.session?.getRuntimeSessionId?.();
@@ -1122,6 +1254,10 @@ async function streamChat(
         thread.runtimeId = nativeId;
       await run.session?.close().catch(() => {});
       if (assistant.content || assistant.activity?.length) thread.messages.push(assistant);
+      if (synced) {
+        const mark = await transcriptMark(thread).catch(() => null);
+        if (mark) thread.transcriptMark = mark;
+      }
       thread.updatedAt = Date.now();
       try {
         store().save(thread);
@@ -1141,12 +1277,27 @@ async function streamChat(
         changes.publish("human-requests");
         publish(run, { type: "done" });
         for (const listener of run.listeners) listener(null);
+        finish(
+          (completed && failure === null) || responded
+            ? null
+            : stopped
+              ? "The response was stopped."
+              : (failure ?? "The agent ended before completing the turn."),
+        );
       }
     }
   };
   void execute();
-  return follow(c, run);
+  return { run, done };
 }
+
+registerChatTurns((session, prompt) => {
+  const [thread] = store()
+    .byRuntime(session.backend, session.host, session.runtimeId)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  if (!thread || threadRun(thread.id) || runs.size >= 4) return null;
+  return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
+});
 
 app.openapi(
   createRoute({

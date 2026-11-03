@@ -44,6 +44,111 @@ test("should expire unavailable and undelivered requests after 72 hours while re
   }
 });
 
+function answer(store: HumanRequestStore, requestId: string) {
+  const request = store.create({
+    ...question,
+    origin: { ...question.origin, request_id: requestId },
+  });
+  return store.respond(request.id, 1, { kind: "question", answer: "Blue" });
+}
+
+test("should report when the next unread answer leaves its push grace period", () => {
+  const { db, store, now, advance } = fixture();
+  try {
+    expect(store.nextPushAt(15000)).toBeNull();
+    const request = answer(store, "a");
+    expect(store.nextPushAt(15000)).toBe(now() + 15000);
+    expect(store.pushCandidates(15000)).toEqual([]);
+    advance(15000);
+    expect(store.nextPushAt(15000)).toBeNull();
+    expect(store.pushCandidates(15000).map((candidate) => candidate.id)).toEqual([request.id]);
+    const read = answer(store, "b");
+    expect(store.seen(read.id)).toBe(true);
+    expect(store.get(read.id).seen_at).toBe(now());
+    expect(store.nextPushAt(15000)).toBeNull();
+    advance(15000);
+    expect(store.pushCandidates(15000).map((candidate) => candidate.id)).toEqual([request.id]);
+  } finally {
+    db.close();
+  }
+});
+
+test("should claim a push once and record its outcome", () => {
+  const { db, store, now, advance } = fixture();
+  try {
+    const delivered = answer(store, "a");
+    const failed = answer(store, "b");
+    advance(15000);
+    expect(store.claimPush([delivered.id, failed.id]).map((request) => request.id)).toEqual([
+      delivered.id,
+      failed.id,
+    ]);
+    expect(store.claimPush([delivered.id])).toEqual([]);
+    expect(store.pushCandidates(0)).toEqual([]);
+    store.dismissObsolete("session-a", "codex");
+    expect(store.get(delivered.id).status).toBe("answered");
+    store.pushed(delivered.id);
+    store.pushFailed(failed.id, "x".repeat(2000));
+    expect(store.get(delivered.id)).toMatchObject({
+      status: "delivered",
+      push_state: "pushed",
+      delivered_at: now(),
+    });
+    expect(store.get(failed.id)).toMatchObject({ status: "answered", push_state: "failed" });
+    expect(store.get(failed.id).push_error).toHaveLength(1000);
+    expect(store.claimPush([failed.id])).toEqual([]);
+    expect(store.seen(failed.id)).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
+test("should keep pushes interrupted by a restart out of retries and dismissal", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const request = answer(store, "a");
+    advance(15000);
+    store.claimPush([request.id]);
+    expect(store.interruptedPushes()).toBe(1);
+    expect(store.get(request.id)).toMatchObject({
+      status: "answered",
+      push_state: "interrupted",
+      push_error: "ORC restarted mid-push; the agent may already have this answer.",
+    });
+    expect(store.interruptedPushes()).toBe(0);
+    expect(store.pushCandidates(0)).toEqual([]);
+    expect(() => store.cancel(request.id, request.version)).toThrow("can no longer be dismissed");
+    store.dismissObsolete("session-a", "codex");
+    expect(store.get(request.id).status).toBe("answered");
+  } finally {
+    db.close();
+  }
+});
+
+test("should offer the newest answers first so stuck ones never starve new ones", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const ids: string[] = [];
+    for (let index = 0; index < 101; index++) {
+      ids.push(answer(store, `r${index}`).id);
+      advance(1);
+    }
+    const tool = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "tool", tool_call_id: "call" },
+    });
+    store.respond(tool.id, 1, { kind: "question", answer: "Blue" });
+    advance(15000);
+    const candidates = store.pushCandidates(15000).map((request) => request.id);
+    expect(candidates).toHaveLength(100);
+    expect(candidates[0]).toBe(ids[100]);
+    expect(candidates).not.toContain(ids[0]);
+    expect(candidates).not.toContain(tool.id);
+  } finally {
+    db.close();
+  }
+});
+
 test("should apply changed retention to existing requests without expiring fresh ones", () => {
   const { db, store, advance } = fixture();
   try {
@@ -198,6 +303,47 @@ test("should expire or cancel pending requests without granting approval", () =>
     const next = store.create({ ...question, origin: { ...question.origin, request_id: "next" } });
     expect(store.cancel(next.id, 1).status).toBe("cancelled");
     expect(() => store.respond(next.id, 1, { kind: "question", answer: "Blue" })).toThrow("stale");
+    const undelivered = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "undelivered" },
+    });
+    const answered = store.respond(undelivered.id, 1, { kind: "question", answer: "Blue" });
+    expect(store.cancel(undelivered.id, answered.version).status).toBe("cancelled");
+    expect(() => store.acknowledge(undelivered.id, answered.version)).toThrow("already delivered");
+  } finally {
+    db.close();
+  }
+});
+
+test("should never cancel an answer the agent read when its turn ends", () => {
+  const { db, store } = fixture();
+  try {
+    const read = answer(store, "read");
+    const unread = answer(store, "unread");
+    store.seen(read.id);
+    store.dismissObsolete("session-a", "codex");
+    expect(store.get(read.id).status).toBe("answered");
+    expect(store.get(unread.id).status).toBe("cancelled");
+  } finally {
+    db.close();
+  }
+});
+
+test("should refuse to dismiss an answer that is being pushed or the agent already has", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const pushing = answer(store, "a");
+    const read = answer(store, "b");
+    const failed = answer(store, "c");
+    advance(15000);
+    store.claimPush([pushing.id, failed.id]);
+    store.pushFailed(failed.id, "agent unavailable");
+    store.seen(read.id);
+    expect(() => store.cancel(pushing.id, pushing.version)).toThrow("can no longer be dismissed");
+    expect(() => store.cancel(read.id, read.version)).toThrow("can no longer be dismissed");
+    store.pushed(pushing.id);
+    expect(store.get(pushing.id).status).toBe("delivered");
+    expect(store.cancel(failed.id, failed.version).status).toBe("cancelled");
   } finally {
     db.close();
   }

@@ -1,6 +1,16 @@
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, MessageSquare, Pencil } from "lucide-react";
+import {
+  CheckCheck,
+  ChevronRight,
+  CircleAlert,
+  Clock,
+  Inbox,
+  LoaderCircle,
+  type LucideIcon,
+  MessageSquare,
+  Pencil,
+} from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type LiveSession } from "@/api/client";
@@ -16,15 +26,42 @@ import { scopedSessionPath } from "@/lib/live-sessions";
 import { runningTerminalForSession, terminalPath } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 
-const REQUEST_STATUS: Record<HumanRequest["status"], string> = {
-  pending: "Needs reply",
-  running: "Running",
-  unavailable: "Agent unavailable",
-  answered: "Waiting for delivery",
-  delivered: "Delivered",
-  cancelled: "Cancelled",
-  expired: "Expired",
+type RequestState = { label: string; tone: string; Icon: LucideIcon; spin?: boolean };
+
+const REQUEST_STATUS: Record<HumanRequest["status"], RequestState> = {
+  pending: { label: "Waiting for you", tone: "text-warning", Icon: Clock },
+  running: { label: "Running", tone: "text-muted-foreground", Icon: LoaderCircle, spin: true },
+  unavailable: { label: "Agent unavailable", tone: "text-error", Icon: CircleAlert },
+  answered: {
+    label: "Answered · agent hasn't picked it up",
+    tone: "text-muted-foreground",
+    Icon: Inbox,
+  },
+  delivered: { label: "Delivered", tone: "text-secondary", Icon: CheckCheck },
+  cancelled: { label: "Cancelled", tone: "text-muted-foreground", Icon: CircleAlert },
+  expired: { label: "Expired", tone: "text-muted-foreground", Icon: Clock },
 };
+
+function requestState(request: HumanRequest): RequestState {
+  if (request.status !== "answered") return REQUEST_STATUS[request.status];
+  if (request.push_state === "pushing")
+    return { label: "Pushing to session…", tone: "text-primary", Icon: LoaderCircle, spin: true };
+  if (request.seen_at)
+    return { label: "Delivered · agent read it", tone: "text-secondary", Icon: CheckCheck };
+  if (request.push_state === "interrupted")
+    return {
+      label: "Push interrupted · agent may have it",
+      tone: "text-warning",
+      Icon: CircleAlert,
+    };
+  if (request.push_state === "failed")
+    return {
+      label: "Couldn't push · agent can still read it",
+      tone: "text-error",
+      Icon: CircleAlert,
+    };
+  return REQUEST_STATUS.answered;
+}
 
 function requestHostLabel(request: HumanRequest): string | null {
   if (request.input.kind === "command") return request.input.command?.host ?? "Local";
@@ -105,7 +142,7 @@ function RequestCard({
     onSettled: () => client.invalidateQueries({ queryKey: ["human-requests"] }),
   });
   const pending = request.status === "pending";
-  const status = REQUEST_STATUS[request.status];
+  const status = requestState(request);
   const hostLabel = requestHostLabel(request);
   const busy = respond.isPending || cancel.isPending;
   const secondaryActions = (
@@ -126,7 +163,11 @@ function RequestCard({
           <MessageSquare size={14} /> Open chat
         </Button>
       )}
-      {(pending || request.status === "unavailable") && (
+      {(pending ||
+        request.status === "unavailable" ||
+        (request.status === "answered" &&
+          !request.seen_at &&
+          (!request.push_state || request.push_state === "failed"))) && (
         <Button
           data-testid="attention-cancel"
           size="sm"
@@ -206,8 +247,12 @@ function RequestCard({
             </span>
           </button>
         </h2>
-        <span className={`shrink-0 text-xs ${pending ? "text-warning" : "text-muted-foreground"}`}>
-          {status}
+        <span
+          data-testid="attention-state"
+          className={`flex shrink-0 items-center gap-1 text-xs ${status.tone}`}
+        >
+          <status.Icon aria-hidden="true" size={13} className={status.spin ? "animate-spin" : ""} />
+          {status.label}
         </span>
       </div>
       <div
@@ -471,9 +516,13 @@ function RequestCard({
           {!pending && <div className="flex flex-wrap items-center gap-1">{secondaryActions}</div>}
         </div>
       </div>
-      {request.delivery_error && (
-        <p role="status" className="pb-2 pl-6 text-sm text-error">
-          {request.delivery_error}
+      {(request.delivery_error || (request.push_state && request.push_error)) && (
+        <p
+          data-testid="attention-push-error"
+          role="status"
+          className="pb-2 pl-6 text-sm text-error"
+        >
+          {request.delivery_error ?? request.push_error}
         </p>
       )}
       {cancel.error && <p role="alert">{cancel.error.message}</p>}
