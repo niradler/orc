@@ -137,6 +137,78 @@ MCP test body.`;
   });
 });
 
+describe("skill_file_write", () => {
+  const name = `mcp-file-write-${process.pid}`;
+  afterAll(() => {
+    rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
+    reloadCache();
+  });
+
+  test("should edit and add supporting files of an existing skill with audit", async () => {
+    await executeTool("skill_create", {
+      name,
+      scope: "global",
+      content: `---\nname: ${name}\ndescription: File writes\n---\nRun scripts/run.py`,
+      files: [{ path: "scripts/run.py", content: "print('old')" }],
+    });
+    expect(
+      await executeTool("skill_file_write", {
+        name,
+        path: "scripts/run.py",
+        content: "print('new')",
+        expected_content: "print('old')",
+        reason: "fix output",
+      }),
+    ).toContain("Updated scripts/run.py");
+    expect(await executeTool("skill_read", { name, ref: "scripts/run.py" })).toContain(
+      "print('new')",
+    );
+    expect(
+      await executeTool("skill_file_write", {
+        name,
+        path: "references/notes.md",
+        content: "Notes",
+        expected_content: null,
+        reason: "add notes",
+      }),
+    ).toContain("Added references/notes.md");
+    expect(await executeTool("skill_read", { name })).toContain("references/notes.md");
+    const actions = getSqlite()
+      .query<{ action: string; note: string }, [string]>(
+        "SELECT action, note FROM audit_log WHERE subject_ids=? ORDER BY rowid",
+      )
+      .all(JSON.stringify([name]))
+      .map((row) => `${row.action}:${row.note}`);
+    expect(actions).toEqual(["skill.file_updated:fix output", "skill.file_created:add notes"]);
+  });
+
+  test("should reject stale, duplicate, SKILL.md and built-in writes", async () => {
+    const write = (args: Record<string, unknown>) =>
+      executeTool("skill_file_write", { name, reason: "test", ...args });
+    await expect(
+      write({ path: "scripts/run.py", content: "x", expected_content: "print('old')" }),
+    ).rejects.toThrow("changed since it was opened");
+    await expect(
+      write({ path: "scripts/run.py", content: "x", expected_content: null }),
+    ).rejects.toThrow("already exists");
+    await expect(write({ path: "SKILL.md", content: "x", expected_content: "" })).rejects.toThrow(
+      "skill_update",
+    );
+    await expect(
+      write({ path: "../escape.py", content: "x", expected_content: null }),
+    ).rejects.toThrow("Invalid");
+    await expect(
+      executeTool("skill_file_write", {
+        name: "orc-sdlc",
+        path: "references/x.md",
+        content: "x",
+        expected_content: null,
+        reason: "test",
+      }),
+    ).rejects.toThrow("Built-in skills cannot be edited");
+  });
+});
+
 describe("multi-file skills MCP", () => {
   const name = `mcp-bundle-${process.pid}`;
   afterAll(() => {

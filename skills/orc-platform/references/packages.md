@@ -72,8 +72,11 @@ lifecycle rules and exhaustive API/CLI manuals.
 
 For audited instruction edits, read raw `SKILL.md`, then `skill_update` with
 `expected_content`, scope, reason and session ID when available. Reconcile conflicts
-against the current version. This edits entry instructions, not supporting files;
-use the dashboard/file APIs for authored supporting text. Preserve original assets
+against the current version. This edits entry instructions, not supporting files.
+For a script, reference or other text file of a user skill, read it with `skill_read`
+and `ref`, then `skill_file_write` with the full new text, that read text as
+`expected_content` (null adds a new file) and a reason. File writes apply to every
+scope; built-in and package skills are read-only. Preserve original assets
 and local edits. Verify save/reopen and effective reads in the intended scope.
 
 Folder import/export preserves supporting content:

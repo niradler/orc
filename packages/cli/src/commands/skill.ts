@@ -11,6 +11,22 @@ function color(text: string, code: string) {
   return `\x1b[${code}m${text}\x1b[0m`;
 }
 
+async function readContent(opts: { content?: string; file?: string }): Promise<string> {
+  if (opts.file) return readFileSync(opts.file, "utf-8");
+  if (opts.content) return opts.content;
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
+async function currentText(name: string, ref: string, projectId?: string): Promise<string> {
+  const result = await createOrcClient({ source: "cli" }).skills.read(name, ref, projectId);
+  if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+  const file = result.data as SkillRefContent;
+  if (file.encoding !== "utf8") throw new Error("Binary files cannot be edited as text");
+  return file.content;
+}
+
 export function skillCommand() {
   const cmd = new Command("skill").description("Manage skills");
   cmd
@@ -280,20 +296,9 @@ export function skillCommand() {
       "Import a skill folder including SKILL.md and supporting files",
     )
     .action(async (name: string, opts) => {
-      let content: string;
-      if (opts.directory) {
-        content = readFileSync(join(opts.directory, "SKILL.md"), "utf-8");
-      } else if (opts.file) {
-        content = readFileSync(opts.file, "utf-8");
-      } else if (opts.content) {
-        content = opts.content;
-      } else {
-        const chunks: Buffer[] = [];
-        for await (const chunk of process.stdin) {
-          chunks.push(chunk);
-        }
-        content = Buffer.concat(chunks).toString("utf-8");
-      }
+      const content = opts.directory
+        ? readFileSync(join(opts.directory, "SKILL.md"), "utf-8")
+        : await readContent(opts);
 
       if (!content.trim()) {
         return console.error(
@@ -317,6 +322,94 @@ export function skillCommand() {
       if (!data) return console.error("Failed to create skill.");
       if (isJson()) return jsonOut(data);
       console.log(`Created skill: ${data.name} at ${data.path}`);
+    });
+
+  cmd
+    .command("update <name>")
+    .description("Apply an audited, scoped SKILL.md instruction edit")
+    .requiredOption("--reason <text>", "Why the instructions change")
+    .option("-c, --content <content>", "Full new SKILL.md (or pipe via stdin)")
+    .option("-f, --file <path>", "Read the full new SKILL.md from a file")
+    .option("--project-id <id>", "Project scope; omitted means global")
+    .action(async (name: string, opts) => {
+      const content = await readContent(opts);
+      if (!content.trim()) throw new Error("No content provided");
+      const expected = await currentText(name, "SKILL.md", opts.projectId);
+      const result = await createOrcClient({ source: "cli" }).skills.updateInstructions(name, {
+        project_id: opts.projectId ?? null,
+        content,
+        expected_content: expected,
+        reason: opts.reason,
+        author: "cli",
+      });
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      console.log(`Updated ${name} instructions`);
+    });
+
+  cmd
+    .command("file <name> <path>")
+    .description("Edit or add a supporting text file of a user skill (all scopes)")
+    .option("-c, --content <content>", "Full new file text (or pipe via stdin)")
+    .option("-f, --file <path>", "Read the full new file text from a local file")
+    .option("--new", "Add a file that does not exist yet")
+    .option("--reason <text>", "Why the file changes")
+    .option("--project-id <id>", "Project the skill is assigned to, for reading it")
+    .action(async (name: string, path: string, opts) => {
+      validateSkillPath(path);
+      if (path === "SKILL.md") throw new Error("Edit SKILL.md with orc skill update");
+      const content = await readContent(opts);
+      const result = await createOrcClient({ source: "cli" }).skills.editFile(name, {
+        path,
+        content,
+        expectedContent: opts.new ? null : await currentText(name, path, opts.projectId),
+        ...(opts.reason ? { reason: opts.reason } : {}),
+      });
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      console.log(`${opts.new ? "Added" : "Updated"} ${path} in ${name}`);
+    });
+
+  cmd
+    .command("origin <name>")
+    .description("Show where an imported skill came from")
+    .action(async (name: string) => {
+      const result = await createOrcClient({ source: "cli" }).skills.origin(name);
+      if (result.error) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      console.log(result.data ? JSON.stringify(result.data, null, 2) : "Not imported");
+    });
+
+  cmd
+    .command("visibility")
+    .description("Show or replace installation-wide skill discovery visibility")
+    .option("--hidden-skills <names...>", "Replace hidden skills")
+    .option("--hidden-builtins <names...>", "Replace hidden built-in skills")
+    .action(async (opts: { hiddenSkills?: string[]; hiddenBuiltins?: string[] }) => {
+      const client = createOrcClient({ source: "cli" });
+      const result =
+        opts.hiddenSkills || opts.hiddenBuiltins
+          ? await client.skills.setVisibility({
+              ...(opts.hiddenSkills ? { hidden_skills: opts.hiddenSkills } : {}),
+              ...(opts.hiddenBuiltins ? { hidden_builtins: opts.hiddenBuiltins } : {}),
+            })
+          : await client.skills.visibility();
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      console.log(`hidden skills:   ${result.data.hidden_skills.join(", ") || "none"}`);
+      console.log(`hidden builtins: ${result.data.hidden_builtins.join(", ") || "none"}`);
+    });
+
+  cmd
+    .command("delete <name>")
+    .description("Delete a user skill folder and its scoped state (cannot be undone)")
+    .option("--yes", "Confirm the deletion")
+    .action(async (name: string, opts: { yes?: boolean }) => {
+      if (!opts.yes) throw new Error(`This permanently deletes ${name}; rerun with --yes`);
+      const result = await createOrcClient({ source: "cli" }).skills.delete(name);
+      if (result.error) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut({ deleted: name });
+      console.log(`Deleted skill ${name}`);
     });
 
   return cmd;

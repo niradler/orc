@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import { skillVisibility } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { editSkillFile } from "@orc/core/skill-edit";
 import {
   type ListSkillsOpts,
   legacySkillNames,
@@ -353,6 +354,26 @@ export class SkillHistory {
       );
       return this.read(page.skill_name, page.project_id) as EffectiveSkill;
     })();
+  }
+  writeFile(input: {
+    name: string;
+    path: string;
+    content: string;
+    expectedContent: string | null;
+    reason?: string | undefined;
+    author?: string | undefined;
+    sessionId?: string | undefined;
+  }): SkillFull {
+    const skill = editSkillFile(input.name, input.path, input.content, input.expectedContent);
+    new AuditLog(this.sqlite).record({
+      action: input.expectedContent === null ? "skill.file_created" : "skill.file_updated",
+      actor: input.author ?? "human",
+      session_id: input.sessionId ?? null,
+      subject_ids: [input.name],
+      note: input.reason ?? null,
+      snapshot: { path: input.path, previous_content: input.expectedContent },
+    });
+    return skill;
   }
   revert(
     name: string,
