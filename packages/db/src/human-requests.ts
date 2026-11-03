@@ -270,7 +270,7 @@ export class HumanRequestStore {
   interruptedPushes(): number {
     return this.db
       .query(
-        "UPDATE human_requests SET push_state='failed',push_error='ORC restarted before the push finished.' WHERE push_state='pushing'",
+        "UPDATE human_requests SET push_state='interrupted',push_error='ORC restarted mid-push; the agent may already have this answer.' WHERE push_state='pushing'",
       )
       .run().changes;
   }
@@ -382,7 +382,8 @@ export class HumanRequestStore {
          AND json_extract(payload,'$.origin.session_id')=?
          AND json_extract(payload,'$.origin.backend')=?
          AND json_extract(payload,'$.origin.chat_thread_id') IS NULL
-         AND push_state IS NOT 'pushing'
+         AND push_state IS NOT 'pushing' AND push_state IS NOT 'interrupted'
+         AND NOT (status='answered' AND seen_at IS NOT NULL)
          ${toolCallId === undefined ? "" : "AND json_extract(payload,'$.origin.tool_call_id')=?"}`,
       )
       .run(...(toolCallId === undefined ? [sessionId, backend] : [sessionId, backend, toolCallId]));
@@ -430,8 +431,7 @@ export class HumanRequestStore {
           throw new ConflictError("Request is stale or no longer pending");
         const reached =
           request.seen_at !== null ||
-          request.push_state === "pushing" ||
-          request.push_state === "pushed";
+          (request.push_state !== null && request.push_state !== "failed");
         if (request.status === "answered" && reached)
           throw new ConflictError(
             "The agent may already have this answer; it can no longer be dismissed",

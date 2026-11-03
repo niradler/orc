@@ -163,7 +163,7 @@ export const HumanRequestSchema = z.object({
   responded_at: z.number().nullable(),
   delivered_at: z.number().nullable(),
   seen_at: z.number().nullable().default(null),
-  push_state: z.enum(["pushing", "pushed", "failed"]).nullable().default(null),
+  push_state: z.enum(["pushing", "pushed", "failed", "interrupted"]).nullable().default(null),
   push_error: z.string().nullable().default(null),
 });
 export type HumanRequestInput = z.infer<typeof HumanRequestInputSchema>;

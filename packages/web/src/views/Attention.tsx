@@ -48,6 +48,12 @@ function requestState(request: HumanRequest): RequestState {
     return { label: "Pushing to session…", tone: "text-primary", Icon: LoaderCircle, spin: true };
   if (request.seen_at)
     return { label: "Delivered · agent read it", tone: "text-secondary", Icon: CheckCheck };
+  if (request.push_state === "interrupted")
+    return {
+      label: "Push interrupted · agent may have it",
+      tone: "text-warning",
+      Icon: CircleAlert,
+    };
   if (request.push_state === "failed")
     return {
       label: "Couldn't push · agent can still read it",
@@ -161,8 +167,7 @@ function RequestCard({
         request.status === "unavailable" ||
         (request.status === "answered" &&
           !request.seen_at &&
-          request.push_state !== "pushing" &&
-          request.push_state !== "pushed")) && (
+          (!request.push_state || request.push_state === "failed"))) && (
         <Button
           data-testid="attention-cancel"
           size="sm"
@@ -511,7 +516,7 @@ function RequestCard({
           {!pending && <div className="flex flex-wrap items-center gap-1">{secondaryActions}</div>}
         </div>
       </div>
-      {(request.delivery_error || (request.push_state === "failed" && request.push_error)) && (
+      {(request.delivery_error || (request.push_state && request.push_error)) && (
         <p
           data-testid="attention-push-error"
           role="status"

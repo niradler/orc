@@ -103,7 +103,7 @@ test("should claim a push once and record its outcome", () => {
   }
 });
 
-test("should fail pushes interrupted by a restart", () => {
+test("should keep pushes interrupted by a restart out of retries and dismissal", () => {
   const { db, store, advance } = fixture();
   try {
     const request = answer(store, "a");
@@ -112,10 +112,14 @@ test("should fail pushes interrupted by a restart", () => {
     expect(store.interruptedPushes()).toBe(1);
     expect(store.get(request.id)).toMatchObject({
       status: "answered",
-      push_state: "failed",
-      push_error: "ORC restarted before the push finished.",
+      push_state: "interrupted",
+      push_error: "ORC restarted mid-push; the agent may already have this answer.",
     });
     expect(store.interruptedPushes()).toBe(0);
+    expect(store.pushCandidates(0)).toEqual([]);
+    expect(() => store.cancel(request.id, request.version)).toThrow("can no longer be dismissed");
+    store.dismissObsolete("session-a", "codex");
+    expect(store.get(request.id).status).toBe("answered");
   } finally {
     db.close();
   }
@@ -306,6 +310,20 @@ test("should expire or cancel pending requests without granting approval", () =>
     const answered = store.respond(undelivered.id, 1, { kind: "question", answer: "Blue" });
     expect(store.cancel(undelivered.id, answered.version).status).toBe("cancelled");
     expect(() => store.acknowledge(undelivered.id, answered.version)).toThrow("already delivered");
+  } finally {
+    db.close();
+  }
+});
+
+test("should never cancel an answer the agent read when its turn ends", () => {
+  const { db, store } = fixture();
+  try {
+    const read = answer(store, "read");
+    const unread = answer(store, "unread");
+    store.seen(read.id);
+    store.dismissObsolete("session-a", "codex");
+    expect(store.get(read.id).status).toBe("answered");
+    expect(store.get(unread.id).status).toBe("cancelled");
   } finally {
     db.close();
   }
