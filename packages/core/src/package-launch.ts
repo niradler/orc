@@ -143,6 +143,7 @@ export function qualifyPackageCommand(argv: string[], minimum: string): void {
     stdout: "pipe",
     stderr: "pipe",
     timeout: 10000,
+    windowsHide: true,
   });
   const version = new TextDecoder().decode(result.stdout).match(/\b(\d+\.\d+\.\d+)\b/)?.[1];
   if (result.exitCode !== 0 || !version || !Bun.semver.satisfies(version, `>=${minimum}`))
@@ -208,6 +209,7 @@ export function buildPackagePlan(
       stdout: "pipe",
       stderr: "pipe",
       timeout: 10000,
+      windowsHide: true,
     });
     const root = new TextDecoder().decode(result.stdout).trim();
     const normalize = (path: string) =>
@@ -432,7 +434,7 @@ export function packagePlanArgv(plan: PackagePlan, bun: string): string[] {
 import {join,dirname} from "node:path";
 const steps=JSON.parse(${data});
 async function verifyCodexPlugins(step){
- const proc=Bun.spawn([step.argv[0],"app-server","--listen","stdio://"],{cwd:step.cwd,stdin:"pipe",stdout:"pipe",stderr:"ignore",timeout:30000});
+ const proc=Bun.spawn([step.argv[0],"app-server","--listen","stdio://"],{cwd:step.cwd,stdin:"pipe",stdout:"pipe",stderr:"ignore",timeout:30000,windowsHide:true});
  const calls=new Map();let seq=0;
  const request=(method,params)=>new Promise((resolve,reject)=>{const id=++seq;const timer=setTimeout(()=>{calls.delete(id);reject(Error("Codex plugin verification timed out"));},10000);calls.set(id,{resolve,reject,timer});proc.stdin.write(JSON.stringify({id,method,params})+"\\n");});
  void(async()=>{let buffer="";for await(const chunk of proc.stdout){buffer+=new TextDecoder().decode(chunk);if(buffer.length>2000000)throw Error("Codex plugin metadata exceeded limit");let at;while((at=buffer.indexOf("\\n"))>=0){const value=JSON.parse(buffer.slice(0,at));buffer=buffer.slice(at+1);const call=calls.get(value.id);if(call){calls.delete(value.id);clearTimeout(call.timer);if(value.error)call.reject(Error("Codex could not read selected plugin metadata"));else call.resolve(value.result);}}}for(const call of calls.values()){clearTimeout(call.timer);call.reject(Error("Codex plugin verification ended early"));}})().catch(()=>{for(const call of calls.values()){clearTimeout(call.timer);call.reject(Error("Invalid Codex plugin metadata"));}});

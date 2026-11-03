@@ -149,15 +149,15 @@ describe("per-terminal hosts", () => {
       const listed = await req(app, "GET", "/terminals?host=");
       expect(listed.status).toBe(200);
       expect(await listed.json()).toMatchObject({ ready: true, host: null });
-      if (process.platform === "win32") {
-        const remote = await req(app, "GET", "/terminals?host=unreachable-default-for-host-test");
-        expect(remote.status).toBe(200);
-        expect(await remote.json()).toMatchObject({
-          ready: false,
-          reason: expect.stringContaining("Windows does not support"),
-          launchers: [],
-        });
-      }
+      const remote = await req(app, "GET", "/terminals?host=unreachable-default-for-host-test");
+      expect(remote.status).toBe(200);
+      const unreachable = await remote.json();
+      expect(unreachable).toMatchObject({
+        ready: false,
+        host: "unreachable-default-for-host-test",
+        launchers: [],
+      });
+      expect(unreachable.reason).not.toContain("Windows does not support");
       const browsed = await req(
         app,
         "GET",

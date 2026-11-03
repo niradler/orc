@@ -22,6 +22,8 @@ const original = {
   HOME: process.env.HOME,
   USERPROFILE: process.env.USERPROFILE,
   ORC_DB_PATH: process.env.ORC_DB_PATH,
+  ORC_LOG_DIR: process.env.ORC_LOG_DIR,
+  ORC_LOG_FILE: process.env.ORC_LOG_FILE,
 };
 const home = mkdtempSync(join(tmpdir(), "orc-channel-runtime-"));
 let service: ChannelService;
@@ -117,6 +119,8 @@ beforeAll(async () => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
   process.env.ORC_DB_PATH = ":memory:";
+  process.env.ORC_LOG_DIR = home;
+  process.env.ORC_LOG_FILE = "1";
   resetConfig();
   createTestDb();
   getSqlite()

@@ -220,6 +220,7 @@ export async function runApm(args: string[], cwd: string): Promise<void> {
       stdout: "pipe",
       stderr: "pipe",
       timeout: 120000,
+      windowsHide: true,
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     });
     const [code, out, err] = await Promise.all([

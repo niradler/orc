@@ -4523,6 +4523,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/about": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Describe the running ORC server, its runtime and data folder */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Server build and environment */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemAbout"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/restart": {
         parameters: {
             query?: never;
@@ -15747,6 +15783,16 @@ export interface components {
         AccessToken: {
             token: string;
             expires_at: number;
+        };
+        SystemAbout: {
+            version: string;
+            platform: string;
+            arch: string;
+            os_release: string;
+            runtime: string;
+            data_dir: string;
+            started_at: string;
+            instance_id: string;
         };
         RestartResponse: {
             instance_id: string;

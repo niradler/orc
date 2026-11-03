@@ -32,6 +32,8 @@ import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
+import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
+import { getResourceConnection, subscribeResourceConnection } from "@/lib/resource-events";
 import {
   CHAT_PREFERENCES_KEY,
   CHAT_TABS_KEY,
@@ -45,6 +47,22 @@ import {
 } from "./chat-contract";
 
 export type { ChatMessage } from "@orc/core/chat";
+
+function wakeOnConnectivity(wake: () => void): () => void {
+  const visible = () => {
+    if (document.visibilityState === "visible") wake();
+  };
+  const unsubscribe = subscribeResourceConnection(() => {
+    if (getResourceConnection() === "connected") wake();
+  });
+  window.addEventListener("online", wake);
+  document.addEventListener("visibilitychange", visible);
+  return () => {
+    unsubscribe();
+    window.removeEventListener("online", wake);
+    document.removeEventListener("visibilitychange", visible);
+  };
+}
 
 /** URL parameter naming the open conversation, so a chat link can be shared. */
 export const CHAT_THREAD_PARAM = "chatThread";
@@ -376,7 +394,8 @@ function useChatController() {
       streams.current.set(key, stream);
       const current = () => streams.current.get(key) === stream;
       let connect = open;
-      let retries = 0;
+      let retried = false;
+      let failures = 0;
       try {
         while (current() && !stream.controller.signal.aborted) {
           const connection = new AbortController();
@@ -394,7 +413,7 @@ function useChatController() {
               // A snapshot with an unanswered message may predate a just-finished turn.
               if (
                 threadId &&
-                (retries || tab?.messages[tab.messages.length - 1]?.role === "user")
+                (retried || tab?.messages[tab.messages.length - 1]?.role === "user")
               ) {
                 const fresh = await api.chat.get(threadId);
                 if (current())
@@ -424,9 +443,10 @@ function useChatController() {
             }
             if (!response.body) throw new Error("The agent returned no response stream.");
             onOpen?.();
+            failures = 0;
             update(key, () => ({
               reconnecting: false,
-              ...(retries
+              ...(retried
                 ? { streamText: "", activity: [], permissions: [], questions: [], error: null }
                 : {}),
             }));
@@ -455,9 +475,9 @@ function useChatController() {
           } catch (cause) {
             if (!current() || stream.controller.signal.aborted) return true;
             const threadId = find(key)?.thread?.id;
-            if (!threadId || retries >= 3 || (cause instanceof ApiError && cause.status < 500))
-              throw cause;
-            retries++;
+            if (!threadId || (cause instanceof ApiError && cause.status < 500)) throw cause;
+            retried = true;
+            failures++;
             update(key, () => ({ reconnecting: true }));
             // Never repeat POST /chat/stream: it may already have started a turn.
             connect = (signal) =>
@@ -471,16 +491,11 @@ function useChatController() {
             void reader?.cancel().catch(() => {});
             reader?.releaseLock();
           }
-          await new Promise<void>((resolve) => {
-            const done = () => {
-              clearTimeout(timer);
-              stream.controller.signal.removeEventListener("abort", done);
-              resolve();
-            };
-            const timer = setTimeout(done, retries * 1000);
-            stream.controller.signal.addEventListener("abort", done, { once: true });
-            if (stream.controller.signal.aborted) done();
-          });
+          await waitToReconnect(
+            reconnectDelay(failures),
+            stream.controller.signal,
+            wakeOnConnectivity,
+          );
         }
         return true;
       } catch (cause) {

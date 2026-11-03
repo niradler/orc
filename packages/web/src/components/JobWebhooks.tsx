@@ -140,6 +140,7 @@ export function WebhookPicker({
     (hook) => hook.project_id === null || hook.project_id === projectId,
   );
   const [creating, setCreating] = useState(false);
+  const fieldId = useId();
   function connect(id: string): void {
     if (!value.some((item) => item.webhook_id === id))
       onChange([...value, { webhook_id: id, events: [], actions: [] }]);
@@ -158,9 +159,9 @@ export function WebhookPicker({
         <ErrorState message={error.message} onRetry={() => refetch()} />
       ) : (
         <>
-          <Label htmlFor="job-webhook-source">Configured webhooks</Label>
+          <Label htmlFor={`${fieldId}-source`}>Configured webhooks</Label>
           <select
-            id="job-webhook-source"
+            id={`${fieldId}-source`}
             data-testid="job-webhook-select"
             className="w-full min-h-8 rounded-md border border-control-border bg-background px-3 text-sm"
             value=""
@@ -211,17 +212,19 @@ export function WebhookPicker({
               Disconnect
             </Button>
           </div>
-          <Label htmlFor={`events-${binding.webhook_id}`}>Events for this job</Label>
+          <Label htmlFor={`${fieldId}-events-${binding.webhook_id}`}>Events for this job</Label>
           <FilterInput
-            id={`events-${binding.webhook_id}`}
+            id={`${fieldId}-events-${binding.webhook_id}`}
             testId="webhook-events"
             value={binding.events}
             onChange={(text) => edit(binding.webhook_id, "events", text)}
             placeholder="pull_request, push (blank accepts all)"
           />
-          <Label htmlFor={`actions-${binding.webhook_id}`}>Actions for this job (optional)</Label>
+          <Label htmlFor={`${fieldId}-actions-${binding.webhook_id}`}>
+            Actions for this job (optional)
+          </Label>
           <FilterInput
-            id={`actions-${binding.webhook_id}`}
+            id={`${fieldId}-actions-${binding.webhook_id}`}
             testId="webhook-actions"
             value={binding.actions}
             onChange={(text) => edit(binding.webhook_id, "actions", text)}

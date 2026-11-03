@@ -27,6 +27,7 @@ function killProcessTree(pid: number): void {
       stdout: "ignore",
       stderr: "ignore",
       timeout: TASKKILL_TIMEOUT_MS,
+      windowsHide: true,
     });
     return;
   }
