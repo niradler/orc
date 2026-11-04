@@ -338,6 +338,86 @@ describe("Jobs CRUD", () => {
       const res = await req(app, "POST", "/jobs/nonexistent-id/trigger");
       expect(res.status).toBe(404);
     });
+
+    const syncJob = async (command: string) =>
+      (await (
+        await req(app, "POST", "/jobs", { name: `sync-${ulid()}`, command, trigger_type: "manual" })
+      ).json()) as { id: string };
+
+    test("sync=true waits for the run and returns stdout parsed as JSON", async () => {
+      const job = await syncJob(`echo '{"ok":true,"items":[1,2]}'`);
+      const res = await req(app, "POST", `/jobs/${job.id}/trigger?sync=true`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({
+        status: "success",
+        exit_code: 0,
+        result: { ok: true, items: [1, 2] },
+      });
+      expect(body.run_id).toBeTruthy();
+    });
+
+    test("sync=true returns plain output with a null result and reports failures", async () => {
+      const plain = await req(
+        app,
+        "POST",
+        `/jobs/${(await syncJob("echo not json")).id}/trigger?sync=true`,
+      );
+      expect(plain.status).toBe(200);
+      expect(await plain.json()).toMatchObject({
+        status: "success",
+        stdout: "not json",
+        result: null,
+      });
+
+      const failing = await req(
+        app,
+        "POST",
+        `/jobs/${(await syncJob("echo boom >&2; exit 3")).id}/trigger?sync=true`,
+      );
+      expect(failing.status).toBe(200);
+      expect(await failing.json()).toMatchObject({
+        status: "failed",
+        exit_code: 3,
+        stderr: "boom",
+        result: null,
+      });
+    });
+
+    test("sync=true returns 202 while the run outlasts wait_secs and the run keeps going", async () => {
+      const job = await syncJob("sleep 2; echo late");
+      const res = await req(app, "POST", `/jobs/${job.id}/trigger?sync=true&wait_secs=1`);
+      expect(res.status).toBe(202);
+      const body = await res.json();
+      expect(body.status).toBe("running");
+      const run = () => getDb().select().from(job_runs).where(eq(job_runs.id, body.run_id)).get();
+      for (let i = 0; i < 50 && run()?.status === "running"; i++) await Bun.sleep(100);
+      expect(run()).toMatchObject({ status: "success", stdout: "late" });
+    });
+
+    test("saves log lines while the run is still going", async () => {
+      const job = await syncJob("echo first; sleep 2; echo second");
+      const { run_id } = await (await req(app, "POST", `/jobs/${job.id}/trigger`)).json();
+      const lines = async () =>
+        (
+          (await (await req(app, "GET", `/jobs/${job.id}/runs/${run_id}/logs`)).json()) as {
+            logs: { line: string }[];
+          }
+        ).logs.map((log) => log.line);
+      const status = () =>
+        getDb().select().from(job_runs).where(eq(job_runs.id, run_id)).get()?.status;
+      for (let i = 0; i < 30 && !(await lines()).length; i++) await Bun.sleep(50);
+      expect(await lines()).toEqual(["first"]);
+      expect(status()).toBe("running");
+      for (let i = 0; i < 60 && status() === "running"; i++) await Bun.sleep(100);
+      expect(status()).toBe("success");
+      expect(await lines()).toEqual(["first", "second"]);
+    });
+
+    test("rejects wait_secs beyond the server's idle limit", async () => {
+      const res = await req(app, "POST", `/jobs/${jobId}/trigger?sync=true&wait_secs=600`);
+      expect(res.status).toBe(400);
+    });
   });
 
   describe("GET /jobs/:id/runs", () => {

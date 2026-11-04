@@ -943,7 +943,7 @@ and selectable.
 | `POST`                  | `/knowledge/update`            | Re-index collections           |
 | `GET`                   | `/knowledge/status`            | Index status                   |
 | `GET/POST`              | `/jobs`                        | CRUD jobs                      |
-| `POST`                  | `/jobs/{id}/trigger`           | Trigger a job                  |
+| `POST`                  | `/jobs/{id}/trigger`           | Trigger a job; `?sync=true` waits and returns output |
 | `GET`                   | `/jobs/{id}/runs`              | Run history                    |
 | `GET`                   | `/jobs/{id}/runs/{runId}/logs` | Run logs                       |
 | `GET`                   | `/skills`                      | Skill templates                |

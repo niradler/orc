@@ -13892,10 +13892,16 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually trigger a job */
+        /**
+         * Manually trigger a job
+         * @description Starts a run and returns 202 with its id. With sync=true the request waits for the run and returns 200 with its output; stdout that is a JSON document is also returned parsed as result. A run still going after wait_secs returns 202 and keeps running.
+         */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    sync?: "true" | "false";
+                    wait_secs?: number;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -13904,7 +13910,16 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Triggered */
+                /** @description Finished (sync=true) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobRunResult"];
+                    };
+                };
+                /** @description Triggered, or still running when the sync wait ended */
                 202: {
                     headers: {
                         [name: string]: unknown;
@@ -13912,6 +13927,8 @@ export interface paths {
                     content: {
                         "application/json": {
                             run_id: string;
+                            /** @enum {string} */
+                            status?: "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
                         };
                     };
                 };
@@ -16787,6 +16804,17 @@ export interface components {
             };
             working_dir?: string;
             project_id?: string;
+        };
+        JobRunResult: {
+            run_id: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
+            exit_code: number | null;
+            error_msg: string | null;
+            stdout: string | null;
+            stderr: string | null;
+            /** @description stdout parsed as JSON, or null when it is not JSON */
+            result?: unknown;
         };
         JobRun: {
             id: string;

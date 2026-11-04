@@ -9,6 +9,8 @@ import { runJobAction } from "./job-actions.js";
 import { runKbDigest } from "./kb-digest.js";
 
 const logger = createLogger("runner:executor");
+const LOG_FLUSH_MS = 250;
+const LOG_FLUSH_LINES = 200;
 
 export type RunOptions = {
   jobId: string;
@@ -139,12 +141,36 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     let stderrBytes = 0;
     let stdoutCapped = false;
     let stderrCapped = false;
-    const logEntries: Array<{
-      run_id: string;
-      ts: Date;
-      stream: "stdout" | "stderr";
-      line: string;
-    }> = [];
+    type LogEntry = typeof job_run_logs.$inferInsert;
+    // Lines are saved while the job runs so readers see output live, batched to bound the
+    // write and change-event rate of a chatty job.
+    let pendingLogs: LogEntry[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | undefined;
+    let flushing: Promise<void> = Promise.resolve();
+    let runGone = false;
+    const flushLogs = (): Promise<void> => {
+      clearTimeout(flushTimer);
+      flushTimer = undefined;
+      const batch = pendingLogs;
+      pendingLogs = [];
+      if (!batch.length || runGone) return flushing;
+      flushing = flushing.then(async () => {
+        try {
+          await db.insert(job_run_logs).values(batch);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes("FOREIGN KEY")) throw err;
+          runGone = true;
+        }
+      });
+      return flushing;
+    };
+    const recordLog = (entry: LogEntry): void => {
+      pendingLogs.push(entry);
+      if (pendingLogs.length >= LOG_FLUSH_LINES) void flushLogs().catch(() => {});
+      else if (!flushTimer)
+        flushTimer = setTimeout(() => void flushLogs().catch(() => {}), LOG_FLUSH_MS);
+    };
 
     const timeoutHandle = setTimeout(() => handle.kill(), timeout);
 
@@ -164,7 +190,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
             if (stdoutBytes < MAX_STREAM_BYTES) {
               stdoutLines.push(line);
               stdoutBytes += line.length;
-              logEntries.push({ run_id: runId, ts: new Date(), stream, line });
+              recordLog({ run_id: runId, ts: new Date(), stream, line });
             } else if (!stdoutCapped) {
               stdoutCapped = true;
               logger.warn(
@@ -175,7 +201,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
             if (stderrBytes < MAX_STREAM_BYTES) {
               stderrLines.push(line);
               stderrBytes += line.length;
-              logEntries.push({ run_id: runId, ts: new Date(), stream, line });
+              recordLog({ run_id: runId, ts: new Date(), stream, line });
             } else if (!stderrCapped) {
               stderrCapped = true;
               logger.warn(
@@ -193,7 +219,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         );
         if (stream === "stdout") stdoutLines.push(line);
         else stderrLines.push(line);
-        if (line) logEntries.push({ run_id: runId, ts: new Date(), stream, line });
+        if (line) recordLog({ run_id: runId, ts: new Date(), stream, line });
       }
     };
 
@@ -210,8 +236,10 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     const success = exitCode === 0;
 
     try {
-      if (logEntries.length > 0) {
-        await db.insert(job_run_logs).values(logEntries);
+      await flushLogs();
+      if (runGone) {
+        logger.warn(`Job run ${runId} was deleted during execution, skipping write-back`);
+        return runId;
       }
 
       await db

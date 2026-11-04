@@ -48,6 +48,26 @@ afterAll(() => {
   resetConfig();
 });
 
+describe("CLI - job run --wait", () => {
+  test("waits for the run, returns JSON output as result and fails on a failed run", async () => {
+    const add = (name: string, command: string) =>
+      cli("--json", "job", "add", name, "--command", command, "--no-project");
+    expect((await add("cli-wait-json", `echo '{"answer":42}'`)).exitCode).toBe(0);
+    const json = await cli("--json", "job", "run", "cli-wait-json", "--wait");
+    expect(json.exitCode).toBe(0);
+    expect(JSON.parse(json.stdout)).toMatchObject({ status: "success", result: { answer: 42 } });
+
+    const text = await cli("job", "run", "cli-wait-json", "--wait");
+    expect(text.stdout.trim()).toBe('{"answer":42}');
+
+    expect((await add("cli-wait-fail", "echo nope >&2; exit 4")).exitCode).toBe(0);
+    const failed = await cli("job", "run", "cli-wait-fail", "--wait");
+    expect(failed.exitCode).toBe(1);
+    expect(failed.stderr).toContain("nope");
+    expect(failed.stderr).toContain("failed (exit 4)");
+  });
+});
+
 describe("CLI - optional project Git remote", () => {
   test("should create, show, update and explicitly clear the remote URL", async () => {
     const name = "cli-git-remote-project";
