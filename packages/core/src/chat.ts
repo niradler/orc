@@ -18,7 +18,7 @@ export function nativeChatResumeUnavailableReason(agent: string): string | null 
 
 export { ChatPermissionModeSchema } from "./chat-options.js";
 
-export const ORC_TASK_GUIDANCE = `When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.`;
+export const ORC_TASK_GUIDANCE = `When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.`;
 
 export const CHAT_SYSTEM_PROMPT = `You are the ORC platform chat assistant.
 

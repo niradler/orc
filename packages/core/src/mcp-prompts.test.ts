@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  DEFAULT_MCP_PROMPTS,
-  McpPromptListSchema,
-  parsePromptCommand,
-  renderMcpPrompt,
-} from "./mcp-prompts";
+import { DEFAULT_MCP_PROMPTS, McpPromptListSchema, renderMcpPrompt } from "./mcp-prompts";
 
 const prompt = { name: "x", title: "X", description: "", content: "Do it.\nRequest: {{request}}" };
 
@@ -31,15 +26,5 @@ describe("MCP prompts", () => {
     expect(renderMcpPrompt(plain, "more")).toBe("Plain\n\nRequest: more");
     const ui = DEFAULT_MCP_PROMPTS.find((p) => p.name === "render-ui");
     expect(ui && renderMcpPrompt(ui, "a")).toContain("## Examples");
-  });
-
-  test("slash commands parse a name and an optional multi-line request", () => {
-    expect(parsePromptCommand("/create-task fix login\nand logout")).toEqual({
-      name: "create-task",
-      request: "fix login\nand logout",
-    });
-    expect(parsePromptCommand("/kb")).toEqual({ name: "kb", request: "" });
-    for (const text of ["hello /kb", "/", "/Bad", "//kb", "/tmp/file.txt"])
-      expect(parsePromptCommand(text)).toBeNull();
   });
 });

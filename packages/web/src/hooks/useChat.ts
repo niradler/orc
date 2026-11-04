@@ -1007,6 +1007,7 @@ function useChatController() {
   );
   return {
     projectScope: selectedProject ?? "all",
+    projectId: tab.projectId ?? null,
     tabs,
     activeKey,
     selectTab: activate,

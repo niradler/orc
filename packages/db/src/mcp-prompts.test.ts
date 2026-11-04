@@ -58,15 +58,6 @@ describe("MCP prompt store", () => {
     expect(store.list()).toHaveLength(2);
   });
 
-  test("expands a known /prompt and leaves other messages alone", () => {
-    const store = new McpPromptStore(freshDb());
-    const expanded = store.expand("/create-task fix the login redirect");
-    expect(expanded).toContain("task_create");
-    expect(expanded).toContain("Request: fix the login redirect");
-    for (const message of ["/unknown thing", "plain text", "/tmp/a.txt"])
-      expect(store.expand(message)).toBe(message);
-  });
-
   test("imports legacy config prompts once and removes the key", () => {
     writeFileSync(
       globalConfigPath(),

@@ -1,32 +1,84 @@
 import { useQuery } from "@tanstack/react-query";
-import type { KeyboardEvent } from "react";
-import { useState } from "react";
+import type { KeyboardEvent, RefObject } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
+import { activeCommand, type CommandOption, rankCommands } from "@/lib/chat-commands";
 import { cn } from "@/lib/utils";
 
-type PromptOption = { name: string; title: string; description: string };
-
-/** Typing "/" at the start of an empty composer lists saved MCP prompts, like a native agent. */
-export function useChatPromptMenu(draft: string, setDraft: (value: string) => void) {
-  const query = draft.match(/^\/(\S*)$/)?.[1];
+/**
+ * Typing "/" anywhere in the composer lists saved prompts and ORC skills, like a native agent.
+ * Several commands can be combined; the server expands each one when the message is sent.
+ */
+export function useChatPromptMenu(
+  draft: string,
+  setDraft: (value: string) => void,
+  input: RefObject<HTMLTextAreaElement | null>,
+  projectId: string | null,
+) {
+  const [caret, setCaret] = useState(0);
+  const command = activeCommand(draft, Math.min(caret, draft.length));
+  const wanted = draft.includes("/");
   const prompts = useQuery({
     queryKey: ["mcp-settings"],
     queryFn: api.settings.mcp.get,
-    enabled: query !== undefined,
+    enabled: wanted,
+  });
+  const skills = useQuery({
+    queryKey: ["chat-command-skills", projectId],
+    queryFn: () => api.skills.list({ limit: 500, ...(projectId ? { project_id: projectId } : {}) }),
+    enabled: wanted,
+    staleTime: 60_000,
   });
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const matches: PromptOption[] =
-    query === undefined || dismissed === draft
+  const dismissKey = command ? `${command.start}:${draft}` : null;
+  const promptOptions: CommandOption[] = (prompts.data?.prompts ?? []).map((prompt) => ({
+    name: prompt.name,
+    kind: "prompt",
+    title: prompt.title,
+    description: prompt.description,
+  }));
+  const promptNames = new Set(promptOptions.map((option) => option.name));
+  const skillOptions: CommandOption[] = (skills.data?.skills ?? [])
+    .filter((skill) => !promptNames.has(skill.name))
+    .map((skill) => ({
+      name: skill.name,
+      kind: "skill",
+      title: "",
+      description: skill.description,
+    }));
+  const matches =
+    !command || dismissed === dismissKey
       ? []
-      : (prompts.data?.prompts ?? []).filter((prompt) =>
-          prompt.name.toLowerCase().startsWith(query.toLowerCase()),
-        );
+      : rankCommands([...promptOptions, ...skillOptions], command.query);
   const index = Math.min(active, Math.max(matches.length - 1, 0));
+  const commandNames = useMemo(
+    () =>
+      new Set([
+        ...(prompts.data?.prompts ?? []).map((prompt) => prompt.name),
+        ...(skills.data?.skills ?? []).map((skill) => skill.name),
+      ]),
+    [prompts.data, skills.data],
+  );
 
-  function choose(prompt: PromptOption) {
-    setDraft(`/${prompt.name} `);
+  function syncCaret() {
+    if (input.current) setCaret(input.current.selectionStart);
+  }
+
+  function choose(option: CommandOption) {
+    if (!command) return;
+    const end = command.start + 1 + command.query.length;
+    const rest = draft.slice(end);
+    const inserted = `/${option.name}${rest.startsWith(" ") ? "" : " "}`;
+    const next = draft.slice(0, command.start) + inserted + rest;
+    const position = command.start + inserted.length + (rest.startsWith(" ") ? 1 : 0);
+    setDraft(next);
+    setCaret(position);
     setActive(0);
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(position, position);
+    });
   }
 
   /** Returns true when the menu consumed the key. */
@@ -46,13 +98,17 @@ export function useChatPromptMenu(draft: string, setDraft: (value: string) => vo
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      setDismissed(draft);
+      setDismissed(dismissKey);
       return true;
     }
     return false;
   }
 
-  return { matches, index, choose, onKeyDown };
+  return { matches, index, choose, onKeyDown, syncCaret, commandNames };
+}
+
+export function chatCommandOptionId(option: CommandOption) {
+  return `chat-prompt-${option.kind}-${option.name.replace(/[^\p{L}\p{N}_-]/gu, "_")}`;
 }
 
 export function ChatPromptMenu({
@@ -60,38 +116,48 @@ export function ChatPromptMenu({
   index,
   choose,
 }: Pick<ReturnType<typeof useChatPromptMenu>, "matches" | "index" | "choose">) {
+  const activeId = matches[index] ? chatCommandOptionId(matches[index]) : null;
+  useEffect(() => {
+    if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: "nearest" });
+  }, [activeId]);
   if (!matches.length) return null;
   return (
     <div
       id="chat-prompt-menu"
       role="listbox"
-      aria-label="Prompts"
+      aria-label="Prompts and skills"
       data-testid="chat-prompt-menu"
       className="mb-1 max-h-60 overflow-y-auto rounded-lg border border-border bg-background p-1"
     >
-      {matches.map((prompt, position) => (
+      {matches.map((option, position) => (
         <button
-          key={prompt.name}
+          key={`${option.kind}:${option.name}`}
           type="button"
           tabIndex={-1}
-          id={`chat-prompt-${prompt.name}`}
+          id={chatCommandOptionId(option)}
           role="option"
           aria-selected={position === index}
           data-testid="chat-prompt-option"
+          data-kind={option.kind}
           className={cn(
             "flex min-h-11 w-full cursor-pointer flex-col justify-center rounded-md px-3 py-1 text-left text-sm",
             position === index ? "bg-surface-highest" : "hover:bg-surface",
           )}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => choose(prompt)}
+          onClick={() => choose(option)}
         >
-          <span className="min-w-0 truncate">
-            <span className="font-mono">/{prompt.name}</span>
-            <span className="ml-2 text-on-surface-variant">{prompt.title}</span>
+          <span className="flex w-full min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate font-mono">/{option.name}</span>
+            {option.title && (
+              <span className="min-w-0 truncate text-on-surface-variant">{option.title}</span>
+            )}
+            <span className="ml-auto shrink-0 rounded px-1.5 text-xs text-on-surface-variant ring-1 ring-border">
+              {option.kind}
+            </span>
           </span>
-          {prompt.description && (
+          {option.description && (
             <span className="w-full truncate text-xs text-on-surface-variant">
-              {prompt.description}
+              {option.description}
             </span>
           )}
         </button>

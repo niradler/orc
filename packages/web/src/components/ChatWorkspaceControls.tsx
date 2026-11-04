@@ -340,7 +340,7 @@ export function ChatWorkspaceControls() {
                 event.preventDefault();
                 keyboardPath.current = event.detail === 0;
                 keepPathOpen();
-                if (pathOpen && keyboardPath.current) copyTrigger.current?.focus();
+                if (keyboardPath.current) copyTrigger.current?.focus();
               }}
               className="workspace-path-trigger min-h-11 min-w-0 flex-1 rounded-md px-1 text-left text-xs text-muted-foreground hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus sm:min-h-8"
             >

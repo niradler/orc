@@ -153,9 +153,3 @@ export function renderMcpPrompt(prompt: Pick<McpPrompt, "content">, request = ""
     return text.split(REQUEST_SLOT).join(value || "(none given; ask what is needed)");
   return value ? `${text}\n\nRequest: ${value}` : text;
 }
-
-/** Splits a chat message like `/create-task fix login` into a prompt name and request. */
-export function parsePromptCommand(message: string): { name: string; request: string } | null {
-  const match = /^\/([a-z][a-z0-9_-]{0,63})(?:\s+([\s\S]*))?$/.exec(message.trim());
-  return match?.[1] ? { name: match[1], request: match[2]?.trim() ?? "" } : null;
-}

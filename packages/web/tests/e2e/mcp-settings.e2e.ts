@@ -55,13 +55,32 @@ for (const width of [1440, 390]) {
         .getByTestId("chat-input");
       await input.fill("/browser");
       const menu = page.getByTestId("chat-prompt-menu");
-      await expect(menu.getByTestId("chat-prompt-option")).toHaveCount(1);
-      await expect(menu).toContainText("Browser example");
+      const options = menu.getByTestId("chat-prompt-option");
+      await expect(options.and(page.locator('[data-kind="prompt"]'))).toHaveCount(1);
+      await expect(options.first()).toContainText("Browser example");
       await input.press("Enter");
       await expect(input).toHaveValue("/browser-example ");
       await expect(menu).toHaveCount(0);
+      await input.fill("fix it /orc-sd");
+      await expect(options.first()).toContainText("/orc-sdlc");
+      await expect(options.first()).toHaveAttribute("data-kind", "skill");
+      await input.press("Enter");
+      await expect(input).toHaveValue("fix it /orc-sdlc ");
+      await input.pressSequentially("/orc-plat");
+      await input.press("Tab");
+      await expect(input).toHaveValue("fix it /orc-sdlc /orc-platform ");
+      await expect(menu).toHaveCount(0);
+      const commands = page.getByTestId("chat-input-command").filter({ visible: true });
+      await expect(commands).toHaveText(["/orc-sdlc", "/orc-platform"]);
+      const [typed, shown] = await Promise.all([
+        input.boundingBox(),
+        commands.first().boundingBox(),
+      ]);
+      expect(Math.abs((typed?.y ?? 0) - (shown?.y ?? 0))).toBeLessThan(20);
+      await input.screenshot({ path: testInfo.outputPath(`chat-command-highlight-${width}.png`) });
       await input.fill("/");
       await expect(menu).toContainText("/render-ui");
+      await expect(menu.locator('[data-kind="skill"]').first()).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath(`chat-prompt-menu-${width}.png`) });
       await input.press("Escape");
       await expect(menu).toHaveCount(0);

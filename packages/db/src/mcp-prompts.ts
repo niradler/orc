@@ -6,8 +6,6 @@ import {
   type McpPrompt,
   McpPromptListSchema,
   McpPromptSchema,
-  parsePromptCommand,
-  renderMcpPrompt,
 } from "@orc/core/mcp-prompts";
 
 /** Built-ins are seeded only when the table is first created, so deleting one sticks. */
@@ -76,13 +74,6 @@ export class McpPromptStore {
         )
         .get(name) ?? null
     );
-  }
-
-  /** Turns a chat message like `/create-task fix login` into its saved prompt; anything else is kept. */
-  expand(message: string): string {
-    const command = parsePromptCommand(message);
-    const prompt = command && this.get(command.name);
-    return command && prompt ? renderMcpPrompt(prompt, command.request) : message;
   }
 
   /** The settings form edits the list as a whole; order is kept as given. */
