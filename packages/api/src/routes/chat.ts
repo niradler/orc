@@ -29,6 +29,7 @@ import {
   nativeChatAgent,
   nativeChatResumeUnavailableReason,
 } from "@orc/core/chat";
+import { expandChatCommands } from "@orc/core/chat-commands";
 import {
   type ChatTurnContext,
   ChatTurnContextSchema,
@@ -48,11 +49,13 @@ import {
   type UploadFile,
 } from "@orc/core/session-file-types";
 import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
+import { renderSkillInstructions } from "@orc/core/skill-service";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
+import { SkillHistory } from "@orc/db/skill-history";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -73,6 +76,20 @@ import { launchDeps, sessionDirDeps } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
 
 const logger = createLogger("api:chat");
+
+function expandChatInput(input: string, projectId: string | null): string {
+  const prompts = new McpPromptStore(getSqlite());
+  const skills = new SkillHistory(getSqlite());
+  return expandChatCommands(input, {
+    prompt: (name) => prompts.get(name),
+    skill: (name) => {
+      const skill = skills.read(name, projectId);
+      if (!skill || !("files" in skill)) return null;
+      skills.recordRead(name, projectId, "ui");
+      return renderSkillInstructions(skill);
+    },
+  });
+}
 const app = createRouter();
 const id = z.string().uuid();
 const response = {
@@ -1171,8 +1188,8 @@ async function beginTurn(
           ? await backend.resumeSession(thread.runtimeId, opts)
           : await backend.startSession(opts);
         if (stopped) return;
-        // The transcript keeps the typed "/name request"; the agent receives the saved prompt.
-        const turn = new McpPromptStore(getSqlite()).expand(input) + uploadPrompt(attachments);
+        // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
+        const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const sent = setup.context ? withOrcContext(turn, setup.context) : turn;
         const prompt =
           thread.backend === "acpx"

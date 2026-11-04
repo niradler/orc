@@ -11,6 +11,7 @@
     "./push": "./src/push.ts",
     "./human-request-client": "./src/human-request-client.ts",
     "./chat": "./src/chat.ts",
+    "./chat-commands": "./src/chat-commands.ts",
     "./chat-context": "./src/chat-context.ts",
     "./chat-options": "./src/chat-options.ts",
     "./chat-ui": "./src/chat-ui.ts",

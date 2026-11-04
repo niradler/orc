@@ -32,7 +32,11 @@ import {
   ChatModelPicker,
   ChatSessionPicker,
 } from "@/components/ChatControls";
-import { ChatPromptMenu, useChatPromptMenu } from "@/components/ChatPromptMenu";
+import {
+  ChatPromptMenu,
+  chatCommandOptionId,
+  useChatPromptMenu,
+} from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -112,6 +116,7 @@ export function ChatPanel({
     forceQueued,
     send,
     cancel,
+    projectId,
   } = useChat();
   const session = useQuery({
     queryKey: ["chat-threads", "session", thread?.id],
@@ -129,7 +134,6 @@ export function ChatPanel({
     void session.refetch();
   };
   const terminalControl = useChatContinueInTerminal();
-  const promptMenu = useChatPromptMenu(draft, setDraft);
   const desktop = useBreakpoint("xl");
   const [historyVisible, setHistoryVisible] = useState(true);
   const docked = fullscreen && desktop && historyVisible;
@@ -150,6 +154,8 @@ export function ChatPanel({
     return () => observer.disconnect();
   }, [open]);
   const input = useRef<HTMLTextAreaElement>(null);
+  const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
+  const activeCommandOption = promptMenu.matches[promptMenu.index];
   useLayoutEffect(() => {
     if (!open) return;
     const measure = () => {
@@ -629,14 +635,16 @@ export function ChatPanel({
               aria-label="Message your agent"
               aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
               aria-activedescendant={
-                promptMenu.matches[promptMenu.index]
-                  ? `chat-prompt-${promptMenu.matches[promptMenu.index]?.name}`
-                  : undefined
+                activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
               }
-              placeholder="Message your agent… (/ for prompts)"
+              placeholder="Message your agent… (/ for prompts and skills)"
               disabled={!ready}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                promptMenu.syncCaret();
+              }}
+              onSelect={promptMenu.syncCaret}
               onPaste={(event) => {
                 if (event.clipboardData.files.length) {
                   event.preventDefault();
