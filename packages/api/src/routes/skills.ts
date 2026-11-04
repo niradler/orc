@@ -32,6 +32,7 @@ import { SkillUpdateSchema } from "@orc/core/skill-update";
 import { getSqlite } from "@orc/db/client";
 import { readSourceFromHeader } from "@orc/db/read-usage";
 import { SkillHistory } from "@orc/db/skill-history";
+import { listProjectRoots } from "../lib/project-folders.js";
 import { createRouter } from "../lib/router.js";
 import { resolveScopeProject } from "../lib/scope.js";
 import { skillDownloads } from "../skill-downloads.js";
@@ -655,6 +656,50 @@ app.openapi(
     c.json({
       agents: listLocalAgentSkills(skillSources(c.req.valid("query").path), skillEntryReader()),
     }),
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/skills/project-folders",
+    tags: ["Skills"],
+    summary: "List ORC projects' checkout folders and the agent skill folders inside each",
+    request: {
+      query: z.object({
+        project_id: z.string().min(1).max(64).optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description:
+          "Project roots from the project's scope folder and local agent session folders, most used first",
+        content: {
+          "application/json": {
+            schema: z.object({
+              projects: z.array(
+                z
+                  .object({
+                    project_id: z.string(),
+                    project_name: z.string(),
+                    root: z.string(),
+                    folders: z.array(
+                      z.object({
+                        agent: z.string(),
+                        label: z.string(),
+                        dir: z.string(),
+                        skills: z.number().int(),
+                      }),
+                    ),
+                  })
+                  .openapi("ProjectSkillRoot"),
+              ),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => c.json({ projects: listProjectRoots(c.req.valid("query").project_id) }),
 );
 
 app.openapi(

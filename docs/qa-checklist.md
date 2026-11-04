@@ -166,6 +166,7 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 - [ ] `orc mem export [dir] --dry-run` compares; export writes `<name>.md` with frontmatter and updates `MEMORY.md`; rerun reports identical
 - [ ] `orc skill local --path <dir>` scans a folder; near copies and renamed copies are flagged and not importable
 - [ ] `orc skill export-to <agent|dir> <names...>` writes `SKILL.md` folders; existing folders need `--overwrite`; a backup is kept
+- [ ] Skills export/import dialogs list each project's checkout skill folders (from the project scope and local session git roots, worktrees folded in); `--project <name>` on `export-to` / `local` targets `<repo>/.claude/skills` or `<repo>/.agents/skills`
 - [ ] `orc mem history <name>` lists changes; `orc mem revert <name> <change-id> --expected-change-id <latest-change-id> -r <reason>` restores
 
 ### 4.2 Memory API

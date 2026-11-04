@@ -2,7 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
-import { MatchNote, NativeFolderField } from "@/components/NativeFolderField";
+import {
+  MatchNote,
+  NativeFolderField,
+  PROJECT_PREFIX,
+  ProjectSkillFolderOptions,
+} from "@/components/NativeFolderField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,9 +43,11 @@ export function ExportSkillsDialog({ onClose }: { onClose: () => void }) {
       ? folder
         ? { path: folder }
         : null
-      : targetId
-        ? { agent: targetId }
-        : null;
+      : targetId.startsWith(PROJECT_PREFIX)
+        ? { path: targetId.slice(PROJECT_PREFIX.length) }
+        : targetId
+          ? { agent: targetId }
+          : null;
   const plan = useQuery({
     queryKey: ["skills", "export-plan", target],
     queryFn: () => api.skills.previewExport(target ?? { path: "" }),
@@ -75,9 +82,10 @@ export function ExportSkillsDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>Export to agents</DialogTitle>
           <HelpPopover label="skill exports">
-            Writes ORC skills as native skill folders (SKILL.md plus supporting files) into an
-            agent's skills folder or any folder. Existing folders are only replaced when you select
-            them, and a backup is kept.
+            Writes ORC skills as native skill folders (SKILL.md plus supporting files) into your
+            agent skills folders, a project checkout (.claude/skills, .agents/skills, ...) or any
+            folder. Project checkouts come from the project's folder and its agent sessions.
+            Existing folders are only replaced when you select them, and a backup is kept.
           </HelpPopover>
         </DialogHeader>
         <div
@@ -97,11 +105,14 @@ export function ExportSkillsDialog({ onClose }: { onClose: () => void }) {
               onChange={(event) => changeTarget(event.target.value)}
             >
               <option value="">Choose a destination</option>
-              {(agents.data?.agents ?? []).map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.label} ({agent.dir})
-                </option>
-              ))}
+              <optgroup label="Your agent skill folders">
+                {(agents.data?.agents ?? []).map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.label} ({agent.dir})
+                  </option>
+                ))}
+              </optgroup>
+              <ProjectSkillFolderOptions />
               <option value={FOLDER}>Custom folder</option>
             </select>
             {targetId === FOLDER && (

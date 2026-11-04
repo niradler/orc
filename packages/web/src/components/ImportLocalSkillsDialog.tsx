@@ -3,7 +3,12 @@ import { Info } from "lucide-react";
 import { useState } from "react";
 import { api, type LocalSkill } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
-import { MatchNote, NativeFolderField } from "@/components/NativeFolderField";
+import {
+  MatchNote,
+  NativeFolderField,
+  PROJECT_PREFIX,
+  ProjectSkillFolderOptions,
+} from "@/components/NativeFolderField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,14 +32,19 @@ const key = (skill: LocalSkill) => `${skill.agent}:${skill.path}`;
 
 export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<LocalSkill[]>([]);
-  const [source, setSource] = useState<"agents" | "folder">("agents");
+  const [source, setSource] = useState("agents");
   const [folderDraft, setFolderDraft] = useState("");
   const [folder, setFolder] = useState("");
   const queryClient = useQueryClient();
-  const scanning = source === "agents" || Boolean(folder);
+  const scanPath = source.startsWith(PROJECT_PREFIX)
+    ? source.slice(PROJECT_PREFIX.length)
+    : source === "folder"
+      ? folder
+      : "";
+  const scanning = source === "agents" || Boolean(scanPath);
   const listing = useQuery({
-    queryKey: ["skills", "local-agents", source === "folder" ? folder : ""],
-    queryFn: () => api.skills.localAgents(source === "folder" ? folder : undefined),
+    queryKey: ["skills", "local-agents", scanPath],
+    queryFn: () => api.skills.localAgents(scanPath || undefined),
     enabled: scanning,
   });
   const importing = useMutation({
@@ -43,9 +53,9 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
         skills.map((skill) => ({
           agent: skill.agent,
           name: skill.name,
-          ...(source === "folder" ? { path: skill.path } : {}),
+          ...(scanPath ? { path: skill.path } : {}),
         })),
-        source === "folder" ? folder : undefined,
+        scanPath || undefined,
       ),
     onSuccess: async (result) => {
       setSelected([]);
@@ -71,7 +81,7 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
     }
     setSelected(next);
   };
-  const changeSource = (next: "agents" | "folder") => {
+  const changeSource = (next: string) => {
     setSource(next);
     setSelected([]);
     importing.reset();
@@ -85,9 +95,10 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>Import from local agents</DialogTitle>
           <HelpPopover label="local skill imports">
-            Copies skills from agent folders such as ~/.claude/skills and ~/.codex/skills, or any
-            folder of skill folders, into ORC. The originals are not changed. Near copies of skills
-            already in ORC are flagged so a one-letter edit does not create a duplicate.
+            Copies skills from agent folders such as ~/.claude/skills and ~/.codex/skills, a project
+            checkout's skill folders, or any folder of skill folders, into ORC. The originals are
+            not changed. Near copies of skills already in ORC are flagged so a one-letter edit does
+            not create a duplicate.
           </HelpPopover>
         </DialogHeader>
         <div
@@ -104,9 +115,10 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
               className="block h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-8"
               value={source}
               disabled={busy}
-              onChange={(event) => changeSource(event.target.value as "agents" | "folder")}
+              onChange={(event) => changeSource(event.target.value)}
             >
-              <option value="agents">Agent skill folders</option>
+              <option value="agents">Your agent skill folders</option>
+              <ProjectSkillFolderOptions withSkillsOnly />
               <option value="folder">Custom folder</option>
             </select>
             {source === "folder" && (
@@ -142,10 +154,9 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
           {listing.data && scanning && !agents.length && (
             <p role="status">No local agent skill folders found.</p>
           )}
-          {listing.data &&
-            source === "folder" &&
-            agents.length > 0 &&
-            !agents[0]?.skills.length && <p role="status">No skills found in this folder.</p>}
+          {listing.data && scanPath && agents.length > 0 && !agents[0]?.skills.length && (
+            <p role="status">No skills found in this folder.</p>
+          )}
           <div className="space-y-4">
             {agents.map((agent) => {
               const fresh = agent.skills.filter((skill) => skill.status === "new");

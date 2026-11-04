@@ -96,7 +96,7 @@ Paths must remain inside the skill; symlinks/traversal and oversize bundles are 
 
 Local agents: `orc skill local [agent] [--path <dir>]` lists skills in agent folders
 (`~/.claude/skills`, `~/.codex/skills`, ...) or any folder; `-s <names>` / `--all` imports.
-`orc skill export-to <agent|dir> [names...] --dry-run` writes native skill folders back.
+`orc skill export-to <agent|dir> [names...] --dry-run` writes native skill folders back; add `--project <name>` to write into that project's checkout (`claude` -> `.claude/skills`, `agents` -> `.agents/skills`), listed by `orc skill project-folders`.
 Near copies (a few characters different) and renamed copies count as the same skill and
 are flagged, not imported or exported as new; existing folders change only with
 `--overwrite <names>`. Memories: `orc mem sources|import|export` move project memories to and

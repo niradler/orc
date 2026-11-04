@@ -6123,6 +6123,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/project-folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List ORC projects' checkout folders and the agent skill folders inside each */
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Project roots from the project's scope folder and local agent session folders, most used first */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            projects: components["schemas"]["ProjectSkillRoot"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/local-agents/import": {
         parameters: {
             query?: never;
@@ -15995,6 +16035,17 @@ export interface components {
             score: number;
             /** @description "orc" or the folder holding the match */
             where: string;
+        };
+        ProjectSkillRoot: {
+            project_id: string;
+            project_name: string;
+            root: string;
+            folders: {
+                agent: string;
+                label: string;
+                dir: string;
+                skills: number;
+            }[];
         };
         SkillExportPlan: {
             dir: string;

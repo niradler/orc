@@ -111,6 +111,7 @@ import type {
   PackageMeta,
   Project,
   ProjectPage,
+  ProjectSkillRoot,
   ProjectSummary,
   RestartResponse,
   ResumeFlowInput,
@@ -614,6 +615,10 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
       localAgents: (path?: string) =>
         c<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents", undefined, { path }),
+      projectFolders: (projectId?: string) =>
+        c<{ projects: ProjectSkillRoot[] }>("GET", "/skills/project-folders", undefined, {
+          project_id: projectId,
+        }),
       importLocal: (skills: LocalSkillImportItem[], folder?: string) =>
         c<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills, folder }),
       previewExport: (target: SkillExportTarget, names?: string[]) =>

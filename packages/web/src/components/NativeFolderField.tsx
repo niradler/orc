@@ -1,4 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { api } from "@/api/client";
 import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +26,30 @@ export function MatchNote({ match, folder }: { match?: TransferMatch; folder?: s
       {matchText(match, folder)}
     </span>
   );
+}
+
+export const PROJECT_PREFIX = "project:";
+
+/** Option groups of each ORC project's checkout skill folders; values are `project:<dir>`. */
+export function ProjectSkillFolderOptions({ withSkillsOnly }: { withSkillsOnly?: boolean }) {
+  const projects = useQuery({
+    queryKey: ["skills", "project-folders"],
+    queryFn: () => api.skills.projectFolders(),
+  });
+  return (projects.data?.projects ?? []).map((project) => {
+    const folders = project.folders.filter((folder) => !withSkillsOnly || folder.skills > 0);
+    if (!folders.length) return null;
+    return (
+      <optgroup key={project.root} label={`Project ${project.project_name} (${project.root})`}>
+        {folders.map((folder) => (
+          <option key={folder.dir} value={`${PROJECT_PREFIX}${folder.dir}`}>
+            {project.project_name}: {folder.label} ({folder.dir}
+            {folder.skills ? `, ${folder.skills} skills` : ""})
+          </option>
+        ))}
+      </optgroup>
+    );
+  });
 }
 
 /** Absolute folder path on the API host, typed or picked with the shared folder picker. */

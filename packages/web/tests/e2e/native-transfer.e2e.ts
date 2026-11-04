@@ -72,6 +72,47 @@ test("exports a skill to a folder in native format and flags near copies on impo
   }
 });
 
+test("exports a skill into a project's checkout and imports it back from the project", async ({
+  page,
+  request,
+}) => {
+  const name = tid("pw-project-skill").toLowerCase();
+  await apiPost(request, "/skills", {
+    name,
+    content: `---\nname: ${name}\ndescription: Project folder fixture\n---\n\nRun the project smoke checks before every merge.\n`,
+  });
+  const checkout = tempDir("orc-pw-project-");
+  const project = await apiPost<{ id: string; name: string }>(request, "/projects", {
+    name: tid("pw-skill-project"),
+    scope: checkout,
+  });
+  const skillsDir = join(checkout, ".claude", "skills");
+  try {
+    await gotoView(page, "skills");
+    await page.getByTestId("skill-import-menu").click();
+    await page.getByTestId("export-skills-button").click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByTestId("skill-export-target").selectOption(`project:${skillsDir}`);
+    await expect(dialog.getByTestId("skill-export-plan")).toContainText(skillsDir);
+    const item = dialog.locator(`[data-testid="skill-export-item"][data-skill-name="${name}"]`);
+    await expect(item).toHaveAttribute("data-status", "new");
+    await item.getByTestId("skill-export-select").check();
+    await dialog.getByTestId("skill-export-submit").click();
+    await expect(dialog).toHaveCount(0);
+    expect(readFileSync(join(skillsDir, name, "SKILL.md"), "utf8")).toContain(`name: ${name}`);
+
+    await page.getByTestId("skill-import-menu").click();
+    await page.getByTestId("import-local-skills-button").click();
+    await dialog.getByTestId("local-skill-source").selectOption(`project:${skillsDir}`);
+    const row = dialog.locator(`[data-testid="local-skill"][data-skill-name="${name}"]`);
+    await expect(row).toContainText("Already in ORC");
+    await expect(row.getByTestId("local-skill-select")).toBeDisabled();
+  } finally {
+    await apiDelete(request, `/skills/${name}`);
+    await apiDelete(request, `/projects/${project.id}`);
+  }
+});
+
 test("exports project memories as Claude memory files and flags near copies on import", async ({
   page,
   request,

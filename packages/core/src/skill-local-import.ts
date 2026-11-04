@@ -60,6 +60,17 @@ export function defaultLocalSkillAgents(home = homedir()): LocalSkillAgent[] {
   ];
 }
 
+/** Repo-level skill folders each agent reads inside a project checkout. */
+export function projectSkillFolders(root: string): LocalSkillAgent[] {
+  return [
+    { id: "claude", label: "Claude Code", dir: join(root, ".claude", "skills") },
+    { id: "agents", label: "Codex and shared agents", dir: join(root, ".agents", "skills") },
+    { id: "gemini", label: "Gemini CLI", dir: join(root, ".gemini", "skills") },
+    { id: "cursor", label: "Cursor", dir: join(root, ".cursor", "skills") },
+    { id: "opencode", label: "OpenCode", dir: join(root, ".opencode", "skills") },
+  ];
+}
+
 /** Any folder as a skill source: a skill folder itself, or skills up to 3 levels below it. */
 export function folderSkillSource(path: string): LocalSkillAgent {
   if (!isAbsolute(path)) throw new ValidationError("Folder path must be absolute");

@@ -60,6 +60,7 @@ import type {
   MemoryImportPreview,
   MemoryImportResult,
   NativeMemorySource,
+  ProjectSkillRoot,
   PullCommentInput,
   PullReview,
   RestartResponse,
@@ -83,6 +84,7 @@ export type {
   MemoryExportItem,
   NativeMemory,
   NativeMemorySource,
+  ProjectSkillRoot,
   PullCommentInput,
   PullReview,
   SkillDiscovery,
@@ -1187,6 +1189,7 @@ export const api = {
         undefined,
         path ? { path } : undefined,
       ),
+    projectFolders: () => req<{ projects: ProjectSkillRoot[] }>("GET", "/skills/project-folders"),
     importLocal: (skills: LocalSkillImportItem[], folder?: string) =>
       req<LocalSkillImportResult>("POST", "/skills/local-agents/import", {
         skills,

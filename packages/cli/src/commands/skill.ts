@@ -40,8 +40,47 @@ function exportTarget(value: string): { agent: string } | { path: string } {
   return { path: resolve(expanded) };
 }
 
+/** The `agent` skills folder inside the named project's most used checkout. */
+async function projectSkillDir(projectName: string, agent: string): Promise<string> {
+  const client = createOrcClient({ source: "cli" });
+  const project = await client.projects.getByName(projectName);
+  if (project.error || !project.data) throw new Error(`Project not found: ${projectName}`);
+  const roots = await client.skills.projectFolders(project.data.id);
+  if (roots.error || !roots.data) throw new Error(JSON.stringify(roots.error));
+  const root = roots.data.projects[0];
+  if (!root) throw new Error(`No local checkout known for project ${projectName}`);
+  const folder = root.folders.find((entry) => entry.agent === agent);
+  if (!folder)
+    throw new Error(
+      `Unknown project skill folder: ${agent} (use ${root.folders.map((entry) => entry.agent).join(", ")})`,
+    );
+  return folder.dir;
+}
+
 export function skillCommand() {
   const cmd = new Command("skill").description("Manage skills");
+  cmd
+    .command("project-folders")
+    .description("List ORC projects' checkout folders and the agent skill folders inside each")
+    .option("--project <name>", "Only this project")
+    .action(async (options: { project?: string }) => {
+      const client = createOrcClient({ source: "cli" });
+      let projectId: string | undefined;
+      if (options.project) {
+        const project = await client.projects.getByName(options.project);
+        if (project.error || !project.data)
+          throw new Error(`Project not found: ${options.project}`);
+        projectId = project.data.id;
+      }
+      const result = await client.skills.projectFolders(projectId);
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      for (const root of result.data.projects) {
+        console.log(color(`${root.project_name} ${root.root}`, "1"));
+        for (const folder of root.folders)
+          console.log(`  ${folder.agent.padEnd(9)} ${folder.dir} (${folder.skills} skills)`);
+      }
+    });
   cmd
     .command("projects <name>")
     .description("Show or replace skill project assignments; no assignments means global")
@@ -100,15 +139,26 @@ export function skillCommand() {
       "List or import skills from local agents (~/.claude, ~/.codex, ~/.agents, ...) or a folder",
     )
     .option("-p, --path <dir>", "Scan this folder (recursively) instead of the agent folders")
+    .option(
+      "--project <name>",
+      "Scan <agent>'s skills folder in this project's checkout (claude, agents, ...)",
+    )
     .option("-s, --skill <names...>", "Import these skills from <agent> or --path")
     .option("--all", "Import every new skill from <agent> or --path")
     .action(
       async (
         agentArg: string | undefined,
-        options: { path?: string; skill?: string[]; all?: boolean },
+        options: { path?: string; project?: string; skill?: string[]; all?: boolean },
       ) => {
         const client = createOrcClient({ source: "cli" });
-        const folder = options.path ? resolve(options.path) : undefined;
+        if (options.project && options.path) throw new Error("Use either --path or --project");
+        if (options.project && !agentArg)
+          throw new Error("Name the agent folder, e.g. orc skill local claude --project orc");
+        const folder = options.project
+          ? await projectSkillDir(options.project, agentArg ?? "")
+          : options.path
+            ? resolve(options.path)
+            : undefined;
         const agent = folder ? "folder" : agentArg;
         const listing = await client.skills.localAgents(folder);
         if (listing.error || !listing.data) throw new Error(JSON.stringify(listing.error));
@@ -161,14 +211,25 @@ export function skillCommand() {
       "Write every skill the target has a near copy, conflict or duplicate of",
     )
     .option("--dry-run", "Show what would happen without writing")
+    .option(
+      "--project <name>",
+      "Write into <target>'s skills folder in this project's checkout (claude, agents, ...)",
+    )
     .action(
       async (
         targetArg: string,
         names: string[],
-        options: { overwrite?: string[]; overwriteAll?: boolean; dryRun?: boolean },
+        options: {
+          overwrite?: string[];
+          overwriteAll?: boolean;
+          dryRun?: boolean;
+          project?: string;
+        },
       ) => {
         const client = createOrcClient({ source: "cli" });
-        const target = exportTarget(targetArg);
+        const target = options.project
+          ? { path: await projectSkillDir(options.project, targetArg) }
+          : exportTarget(targetArg);
         const selection = names.length ? names : undefined;
         const plan = await client.skills.previewExport(target, selection);
         if (plan.error || !plan.data) throw new Error(JSON.stringify(plan.error));

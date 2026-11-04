@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   unlinkSync,
   writeFileSync,
@@ -203,6 +205,60 @@ describe("skill folder import and export", () => {
       names: ["no-such-skill-xyz"],
     });
     expect(missing.status).toBe(404);
+  });
+});
+
+describe("GET /skills/project-folders", () => {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "orc-api-project-folders-")));
+  const repo = join(root, "repo");
+  const projectId = `pf${process.pid}`;
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], { stdio: "ignore", timeout: 30_000 });
+
+  afterAll(() => {
+    getSqlite().query("DELETE FROM gateway_sessions WHERE project_id = ?").run(projectId);
+    getSqlite().query("DELETE FROM projects WHERE id = ?").run(projectId);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("should map local session folders and worktrees to the repo's agent skill folders", async () => {
+    mkdirSync(join(repo, ".claude", "skills", "deploy"), { recursive: true });
+    writeFileSync(join(repo, ".claude", "skills", "deploy", "SKILL.md"), "# deploy\n");
+    mkdirSync(join(repo, "sub"));
+    git("init", "-q");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+    git("worktree", "add", "-q", join(root, "wt"));
+    const sqlite = getSqlite();
+    sqlite.query("INSERT INTO projects (id, name) VALUES (?, ?)").run(projectId, `pf-${projectId}`);
+    sqlite
+      .query(
+        "INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id) VALUES ('pf-chat', 'web', 'pf')",
+      )
+      .run();
+    const session = sqlite.query(
+      "INSERT INTO gateway_sessions (id, chat_id, backend, mode, cwd, project_id, execution_host) VALUES (?, 'pf-chat', 'claude', 'chat', ?, ?, ?)",
+    );
+    session.run(`${projectId}-a`, join(repo, "sub"), projectId, null);
+    session.run(`${projectId}-b`, join(root, "wt"), projectId, null);
+    session.run(`${projectId}-c`, join(root, "missing"), projectId, null);
+    session.run(`${projectId}-d`, join(root, "wt"), projectId, "lab");
+
+    const res = await req(app, "GET", `/skills/project-folders?project_id=${projectId}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      projects: Array<{
+        root: string;
+        folders: Array<{ agent: string; dir: string; skills: number }>;
+      }>;
+    };
+    expect(body.projects.map((project) => project.root.toLowerCase())).toEqual([
+      repo.toLowerCase(),
+    ]);
+    const folders = body.projects[0]?.folders ?? [];
+    expect(folders.find((folder) => folder.agent === "claude")).toMatchObject({ skills: 1 });
+    expect(folders.find((folder) => folder.agent === "agents")?.dir.toLowerCase()).toBe(
+      join(repo, ".agents", "skills").toLowerCase(),
+    );
   });
 });
 

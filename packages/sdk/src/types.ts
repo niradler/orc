@@ -135,6 +135,7 @@ export type MemoryListItem = components["schemas"]["MemoryListItem"];
 export type MemoryChange = components["schemas"]["MemoryChange"];
 export type MemoryListSort = "reads" | "recent" | "priority";
 export type NativeMemorySource = components["schemas"]["NativeMemorySource"];
+export type ProjectSkillRoot = components["schemas"]["ProjectSkillRoot"];
 export type NativeMemory = components["schemas"]["NativeMemory"];
 export type MemoryImportPreview = components["schemas"]["MemoryImportPreview"];
 export type MemoryImportResult = components["schemas"]["MemoryImportResult"];

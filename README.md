@@ -838,7 +838,7 @@ orc skill import vercel-labs/agent-skills --skill web-design-guidelines
 orc skill sync web-design-guidelines
 ```
 
-**Skills → Import / export** also moves skills between ORC and local agents. **Import from local agents** copies skill folders from agent folders such as `~/.claude/skills` and `~/.codex/skills`, or any folder of skill folders. **Export to agents** writes ORC skills as native skill folders (`SKILL.md` plus supporting files) into an existing agent skills folder or any folder. Dedup ignores whitespace and case and compares content, not just names: a copy under another name or a near copy (a one-letter edit) is flagged with its match and is not imported or exported as new. Imports never replace an ORC skill. Exports replace an existing folder only when you select it, keep a backup, and never write through a symlinked folder.
+**Skills → Import / export** also moves skills between ORC and local agents. **Import from local agents** copies skill folders from agent folders such as `~/.claude/skills` and `~/.codex/skills`, or any folder of skill folders. **Export to agents** writes ORC skills as native skill folders (`SKILL.md` plus supporting files) into an existing agent skills folder, a project checkout or any folder. A project's checkout is its folder (scope) or the git repo of its local agent sessions, with worktrees folded into the main checkout; both dialogs list each one's repo-level skill folders (`.claude/skills`, `.agents/skills` for Codex and shared agents, `.gemini/skills`, `.cursor/skills`, `.opencode/skills`). Dedup ignores whitespace and case and compares content, not just names: a copy under another name or a near copy (a one-letter edit) is flagged with its match and is not imported or exported as new. Imports never replace an ORC skill. Exports replace an existing folder only when you select it, keep a backup, and never write through a symlinked folder.
 
 ```bash
 orc skill local                        # scan agent skill folders
@@ -846,6 +846,9 @@ orc skill local --path ./shared-skills --all
 orc skill local claude -s pdf-tools
 orc skill export-to claude my-workflow --dry-run
 orc skill export-to ./exported my-workflow --overwrite my-workflow
+orc skill project-folders --project orc
+orc skill export-to claude my-workflow --project orc   # <repo>/.claude/skills
+orc skill local agents --project orc --all            # <repo>/.agents/skills
 ```
 
 Imported skills remain editable: open the skill, choose `SKILL.md` or a supporting text file, then **Edit** and **Save changes**. **Sync from GitHub** fetches the source again and compares each file against its last imported version. Local edits are kept when upstream has not changed that file. If both sides changed the same file, the whole sync pauses and lists conflicts. **Review override → Replace listed files** requires confirmation and replaces only those conflicts with upstream versions; unrelated local edits remain. If the local files or upstream commit changed since review, ORC requires a new sync check. Sync retains the previous folder under `~/.orc/skill-sync-backups/`; import provenance and upstream baselines live under `~/.orc/skill-imports/`. These backups are retained until manually removed. Private repositories and non-GitHub sources are not supported by this importer.
