@@ -9935,7 +9935,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Claude Code project memory folders, the project's own first */
+        /** List native memory folders: Claude Code project memory (the project's own first) and Codex notes */
         get: {
             parameters: {
                 query?: {
@@ -16433,7 +16433,7 @@ export interface components {
         };
         NativeMemorySource: {
             /** @enum {string} */
-            agent: "claude";
+            agent: "claude" | "codex";
             label: string;
             dir: string;
             count: number;

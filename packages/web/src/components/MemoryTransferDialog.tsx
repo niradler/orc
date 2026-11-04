@@ -148,8 +148,8 @@ export function MemoryTransferDialog({
           </DialogTitle>
           <HelpPopover label={`memory ${mode}`}>
             {mode === "import"
-              ? "Reads Claude Code memory files (~/.claude/projects/<project>/memory/*.md) or any folder of memory files into this project. Near copies are flagged so a small edit does not create a duplicate."
-              : "Writes this project's memories as Claude Code memory files with a MEMORY.md index. Existing files are only replaced when you select them, and a backup is kept."}
+              ? "Reads Claude Code memory files (~/.claude/projects/<project>/memory/*.md), Codex notes (~/.codex/memories/extensions/ad_hoc/notes) or any folder of memory files into this project. Near copies are flagged so a small edit does not create a duplicate."
+              : "Writes this project's memories as memory files: Claude Code folders also get a MEMORY.md index, and Codex merges its notes into its memory. Existing files are only replaced when you select them, and a backup is kept."}
           </HelpPopover>
         </DialogHeader>
         <div

@@ -238,17 +238,17 @@ export function memCommand() {
   cmd
     .command("sources")
     .description(
-      "List Claude Code memory folders (~/.claude/projects/*/memory), the project's first",
+      "List native memory folders: Claude Code project memory (the project's first) and Codex notes",
     )
     .option("-p, --project <name>", "Project name (defaults to the active project)")
     .action(async (opts: { project?: string }) => {
       const { client, project } = await projectFrom(opts);
       const data = unwrap(await client.memories.nativeSources(project.id));
       if (isJson()) return jsonOut(data);
-      if (data.sources.length === 0) return console.log("No Claude memory folders found.");
+      if (data.sources.length === 0) return console.log("No native memory folders found.");
       for (const source of data.sources)
         console.log(
-          `  ${source.project_match ? "*" : " "} ${String(source.count).padStart(3)}  ${source.dir}`,
+          `  ${source.project_match ? "*" : " "} ${source.agent.padEnd(6)} ${String(source.count).padStart(3)}  ${source.dir}`,
         );
     });
 

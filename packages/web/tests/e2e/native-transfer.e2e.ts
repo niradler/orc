@@ -138,3 +138,71 @@ test("exports project memories as Claude memory files and flags near copies on i
     await apiDelete(request, `/projects/${project.id}`);
   }
 });
+
+test("imports plain Codex notes and exports memories back as notes without an index", async ({
+  page,
+  request,
+}) => {
+  const codexHome = process.env.CODEX_HOME;
+  if (!codexHome?.startsWith(tmpdir()))
+    throw new Error("Run through scripts/run-e2e.ts so CODEX_HOME points at the temp home");
+  const notes = join(codexHome, "memories", "extensions", "ad_hoc", "notes");
+  mkdirSync(notes, { recursive: true });
+  const noteName = tid("pw-codex-note").toLowerCase();
+  const noteFile = join(notes, `2026-10-23T17-38-43Z-${noteName}.md`);
+  writeFileSync(noteFile, "# Ask before pushing master\n\nNever push to master without consent.\n");
+  const project = await apiPost<{ id: string }>(request, "/projects", {
+    name: tid("pw-codex-transfer"),
+  });
+  const name = tid("pw-codex-mem").toLowerCase();
+  try {
+    await apiPost(request, "/memories", {
+      project_id: project.id,
+      name,
+      description: "Release protocol",
+      content: "Bump every package version together before running the release script",
+    });
+    await gotoView(page, "memories");
+    await page.goto(`/knowledge/memories?project=${encodeURIComponent(project.id)}`);
+    await page.getByTestId("memory-transfer-menu").click();
+    await page.getByTestId("memory-import-button").click();
+    const importing = page.getByTestId("memory-import-dialog");
+    await importing.getByTestId("memory-import-source").selectOption(notes);
+    const note = importing.locator(
+      `[data-testid="memory-import-item"][data-memory-name="${noteName}"]`,
+    );
+    await expect(note).toHaveAttribute("data-status", "new");
+    await expect(note).toContainText("Ask before pushing master");
+    await note.getByTestId("memory-import-select").check();
+    await importing.getByTestId("memory-import-submit").click();
+    await expect(importing).toHaveCount(0);
+    await expect(page.getByText("Ask before pushing master").first()).toBeVisible();
+
+    await page.getByTestId("memory-transfer-menu").click();
+    await page.getByTestId("memory-export-button").click();
+    const exporting = page.getByTestId("memory-export-dialog");
+    await exporting.getByTestId("memory-export-source").selectOption(notes);
+    const plan = exporting.getByTestId("memory-export-plan");
+    await expect(plan).not.toContainText("MEMORY.md");
+    await expect(
+      exporting.locator(`[data-testid="memory-export-item"][data-memory-name="${noteName}"]`),
+    ).toHaveAttribute("data-status", "identical");
+    const item = exporting.locator(
+      `[data-testid="memory-export-item"][data-memory-name="${name}"]`,
+    );
+    await expect(item).toHaveAttribute("data-status", "new");
+    await item.getByTestId("memory-export-select").check();
+    await exporting.getByTestId("memory-export-submit").click();
+    await expect(exporting).toHaveCount(0);
+
+    const text = readFileSync(join(notes, `${name}.md`), "utf8");
+    expect(text).toContain("description: Release protocol");
+    expect(text).toContain("Bump every package version together");
+    expect(existsSync(join(notes, "MEMORY.md"))).toBe(false);
+    expect(readFileSync(noteFile, "utf8")).toContain("Never push to master without consent.");
+  } finally {
+    await apiDelete(request, `/projects/${project.id}`);
+    rmSync(join(notes, `${name}.md`), { force: true });
+    rmSync(noteFile, { force: true });
+  }
+});

@@ -161,6 +161,7 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 - [ ] `orc mem edit <name>` updates description/content/priority with a reason
 - [ ] `orc mem delete <name>` deletes the memory
 - [ ] `orc mem sources` lists native memory folders and marks the project's Claude folder
+- [ ] `orc mem export <codex notes dir>` writes notes without `MEMORY.md`; `orc mem import` reads plain `# heading` Codex notes, dropping the date prefix from the name
 - [ ] `orc mem import [dir]` previews statuses; `--all` imports new only; a one-letter copy shows `[duplicate]` with its match; `--replace <name>` updates with history
 - [ ] `orc mem export [dir] --dry-run` compares; export writes `<name>.md` with frontmatter and updates `MEMORY.md`; rerun reports identical
 - [ ] `orc skill local --path <dir>` scans a folder; near copies and renamed copies are flagged and not importable

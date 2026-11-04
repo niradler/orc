@@ -18,6 +18,8 @@ import {
 const root = mkdtempSync(join(tmpdir(), "orc-memory-transfer-"));
 const previousConfig = process.env.CLAUDE_CONFIG_DIR;
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
+const previousCodex = process.env.CODEX_HOME;
+process.env.CODEX_HOME = join(root, "codex");
 const backups: string[] = [];
 const testing =
   "Run the full test suite before every merge and fix every failure, never dismiss one as pre-existing.";
@@ -51,15 +53,18 @@ beforeEach(() => {
 afterAll(() => {
   if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = previousConfig;
+  if (previousCodex === undefined) delete process.env.CODEX_HOME;
+  else process.env.CODEX_HOME = previousCodex;
   for (const backup of backups) rmSync(dirname(backup), { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
 
 describe("native memory import", () => {
-  test("should list Claude project memory folders with the matching project first", () => {
+  test("should list the matching Claude folder first and hide other empty ones", () => {
     const projects = join(root, "claude", "projects");
     mkdirSync(join(projects, "C--Projects-other", "memory"), { recursive: true });
     mkdirSync(join(projects, "C--Projects-orc", "memory"), { recursive: true });
+    mkdirSync(join(projects, "C--Temp-probe", "memory"), { recursive: true });
     writeFileSync(join(projects, "C--Projects-other", "memory", "a.md"), "x");
     writeFileSync(join(projects, "C--Projects-other", "memory", "MEMORY.md"), "x");
     const sources = listNativeMemorySources("orc");
@@ -149,6 +154,50 @@ describe("native memory import", () => {
     expect(memories.find((memory) => memory.name === "long")?.error).toContain("800");
   });
 
+  test("should list the Codex notes folder of the memory store Codex uses", () => {
+    const codex = join(root, "codex");
+    mkdirSync(join(codex, "memories_v2"), { recursive: true });
+    expect(listNativeMemorySources("orc")[1]).toEqual({
+      agent: "codex",
+      label: "Codex notes",
+      dir: join(codex, "memories_v2", "extensions", "ad_hoc", "notes"),
+      count: 0,
+      project_match: false,
+    });
+    mkdirSync(join(codex, "memories"), { recursive: true });
+    expect(listNativeMemorySources("orc")[1]?.dir).toBe(
+      join(codex, "memories", "extensions", "ad_hoc", "notes"),
+    );
+    rmSync(codex, { recursive: true, force: true });
+  });
+
+  test("should read plain Codex notes by heading and drop the date stamp from the name", () => {
+    writeFileSync(
+      join(dir, "2026-10-23T17-38-43Z-orc-release-protocol.md"),
+      `# ORC release protocol\n\n${release}\n`,
+    );
+    writeFileSync(join(dir, "20260916-122754-lab-lessons.md"), `## Lab lessons\n${testing}`);
+    writeFileSync(join(dir, "loose.md"), "Text before any heading\n# Late heading\nbody");
+    writeFileSync(
+      join(dir, "2026-10-28T01-00-17-ui-preference.md"),
+      "User preference update, requested on 2026-10-28:\n\nKeep the UI compact.",
+    );
+    const memories = previewMemoryImport(db, "p1", dir, store).memories;
+    expect(
+      memories.map((memory) => [memory.name, memory.status, memory.description, memory.error]),
+    ).toEqual([
+      ["orc-release-protocol", "new", "ORC release protocol", undefined],
+      ["ui-preference", "new", "User preference update, requested on 2026-10-28", undefined],
+      ["lab-lessons", "new", "Lab lessons", undefined],
+      ["loose", "new", "Text before any heading", undefined],
+    ]);
+    importNativeMemories(db, "p1", dir, [{ name: "orc-release-protocol" }]);
+    expect(store.get("p1", "orc-release-protocol")).toMatchObject({
+      description: "ORC release protocol",
+      content: release,
+    });
+  });
+
   test("should reject relative folders and unknown projects", () => {
     expect(() => previewMemoryImport(db, "p1", "relative")).toThrow("absolute");
     expect(() => previewMemoryImport(db, "nope", dir)).toThrow();
@@ -182,6 +231,27 @@ describe("native memory export", () => {
     expect(exportNativeMemories(db, "p1", target).skipped[0]?.reason).toBe(
       "Already identical in the folder",
     );
+  });
+
+  test("should write Codex notes without an index and edit an existing note in place", () => {
+    store.create({
+      project_id: "p1",
+      name: "release",
+      description: "Release flow",
+      content: release,
+    });
+    const notes = join(root, "codex-home", "memories", "extensions", "ad_hoc", "notes");
+    mkdirSync(notes, { recursive: true });
+    const stamped = join(notes, "2026-10-23T17-38-43Z-release.md");
+    writeFileSync(stamped, `# Release flow\n\n${release.replace("together", "togther")}\n`);
+    const plan = planMemoryExport(db, "p1", notes);
+    expect(plan.index).toBe(false);
+    expect(plan.memories[0]).toMatchObject({ status: "near", file: stamped, can_overwrite: true });
+    const result = exportNativeMemories(db, "p1", notes, { overwrite: ["release"] });
+    if (result.exported[0]?.backup) backups.push(result.exported[0].backup);
+    expect(result.exported[0]).toMatchObject({ file: stamped, replaced: true });
+    expect(existsSync(join(notes, "MEMORY.md"))).toBe(false);
+    expect(previewMemoryImport(db, "p1", notes).memories[0]?.status).toBe("installed");
   });
 
   test("should replace a near copy only on request, keeping its other frontmatter and a backup", () => {

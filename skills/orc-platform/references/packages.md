@@ -100,7 +100,8 @@ Local agents: `orc skill local [agent] [--path <dir>]` lists skills in agent fol
 Near copies (a few characters different) and renamed copies count as the same skill and
 are flagged, not imported or exported as new; existing folders change only with
 `--overwrite <names>`. Memories: `orc mem sources|import|export` move project memories to and
-from Claude Code memory folders (`<name>.md` + `MEMORY.md`) with the same dedup.
+from Claude Code memory folders (`<name>.md` + `MEMORY.md`) and Codex notes
+(`~/.codex/memories/extensions/ad_hoc/notes`) with the same dedup.
 
 ## Agent profiles and portable packages
 

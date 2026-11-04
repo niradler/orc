@@ -491,10 +491,10 @@ orc mem history ulid-ids               # every change, with before/after
 orc mem revert ulid-ids <change-id> --expected-change-id <latest-change-id> -r "Undo mistaken edit"
 ```
 
-Memories move both ways between ORC and native agent memory. **Memories → Import / export** (with a project selected) or `orc mem import|export` reads and writes Claude Code memory files (`~/.claude/projects/<project>/memory/*.md` with `name`/`description` frontmatter and a `MEMORY.md` index), or any folder of memory files. The project's Claude memory folder is the default. Dedup ignores whitespace and case, and treats a near copy (a few characters different) as the same memory: it is never imported or exported as new, and the dialog names the match. Similar items are flagged with their match and score. An existing memory or file is replaced only when you select it; imports keep memory history, and exports keep a backup.
+Memories move both ways between ORC and native agent memory. **Memories → Import / export** (with a project selected) or `orc mem import|export` reads and writes Claude Code memory files (`~/.claude/projects/<project>/memory/*.md` with `name`/`description` frontmatter and a `MEMORY.md` index), Codex notes (`$CODEX_HOME/memories/extensions/ad_hoc/notes`, which Codex consolidates into its generated memory; plain notes import with their leading heading, or else their first sentence, as the description; generated Codex summaries are never touched), or any folder of memory files. The project's Claude memory folder is the default. Dedup ignores whitespace and case, and treats a near copy (a few characters different) as the same memory: it is never imported or exported as new, and the dialog names the match. Similar items are flagged with their match and score. An existing memory or file is replaced only when you select it; imports keep memory history, and exports keep a backup.
 
 ```bash
-orc mem sources                        # native memory folders; * marks this project's
+orc mem sources                        # Claude and Codex memory folders; * marks this project's
 orc mem import                         # preview this project's Claude memory folder
 orc mem import --all                   # import every new memory
 orc mem import ./notes --replace api-port

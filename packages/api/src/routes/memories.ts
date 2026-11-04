@@ -376,7 +376,8 @@ app.openapi(
     method: "get",
     path: "/memory-transfer/sources",
     tags: ["Memory"],
-    summary: "List Claude Code project memory folders, the project's own first",
+    summary:
+      "List native memory folders: Claude Code project memory (the project's own first) and Codex notes",
     request: { query: z.object({ project_id: z.string().min(1).optional() }) },
     responses: {
       200: {
@@ -387,7 +388,7 @@ app.openapi(
               sources: z.array(
                 z
                   .object({
-                    agent: z.literal("claude"),
+                    agent: z.enum(["claude", "codex"]),
                     label: z.string(),
                     dir: z.string(),
                     count: z.number().int(),

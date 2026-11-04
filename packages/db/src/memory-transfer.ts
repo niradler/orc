@@ -30,10 +30,14 @@ const INDEX_FILE = "MEMORY.md";
 const BACKUP_DIR = join(homedir(), ".orc", "memory-export-backups");
 const IMPORT_AUTHOR = "native-memory-import";
 
-/** A Claude Code project's auto-memory folder (~/.claude/projects/<project>/memory). */
+/**
+ * A Claude Code project's auto-memory folder (~/.claude/projects/<project>/memory), or Codex's
+ * ad-hoc notes folder (<CODEX_HOME>/memories/extensions/ad_hoc/notes), which Codex consolidates
+ * into its generated memories.
+ */
 export type NativeMemorySource = {
-  agent: "claude";
-  /** Claude's project folder name: the project path with every other character replaced by "-". */
+  agent: "claude" | "codex";
+  /** Claude's project folder name (the project path with other characters as "-"), or "Codex notes". */
   label: string;
   dir: string;
   count: number;
@@ -125,10 +129,35 @@ function absoluteDir(dir: string): string {
   return resolved;
 }
 
-/** Claude Code project memory folders, those matching the project name first. */
+/** Codex keeps using memories/ when it exists; fresh homes use memories_v2/. */
+export function codexNotesDirectory(): string | undefined {
+  const home = resolve(process.env.CODEX_HOME ?? join(homedir(), ".codex"));
+  const root = ["memories", "memories_v2"]
+    .map((name) => join(home, name))
+    .find((path) => existsSync(path) && statSync(path).isDirectory());
+  return root && join(root, "extensions", "ad_hoc", "notes");
+}
+
+function isDirectory(path: string): boolean {
+  return existsSync(path) && statSync(path).isDirectory();
+}
+
+/** The project's Claude memory folder, Codex's notes folder, then other non-empty Claude folders. */
 export function listNativeMemorySources(projectName?: string): NativeMemorySource[] {
+  const codex = codexNotesDirectory();
+  const codexSource: NativeMemorySource[] = codex
+    ? [
+        {
+          agent: "codex",
+          label: "Codex notes",
+          dir: codex,
+          count: isDirectory(codex) ? memoryFiles(codex, false).length : 0,
+          project_match: false,
+        },
+      ]
+    : [];
   const projects = join(claudeConfigDirectory(), "projects");
-  if (!existsSync(projects)) return [];
+  if (!existsSync(projects)) return codexSource;
   const wanted = projectName?.toLowerCase().replace(/[^a-z0-9]/g, "-");
   const sources: NativeMemorySource[] = [];
   for (const entry of readdirSync(projects, { withFileTypes: true })) {
@@ -145,12 +174,40 @@ export function listNativeMemorySources(projectName?: string): NativeMemorySourc
       project_match: Boolean(wanted && (lower === wanted || lower.endsWith(`-${wanted}`))),
     });
   }
-  return sources.sort(
-    (left, right) =>
-      Number(right.project_match) - Number(left.project_match) ||
-      right.count - left.count ||
-      left.label.localeCompare(right.label),
-  );
+  const others = sources
+    .filter((source) => !source.project_match && source.count > 0)
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  return [...sources.filter((source) => source.project_match), ...codexSource, ...others];
+}
+
+const PLAIN_DESCRIPTION_MAX = 150;
+const DATE_PREFIX = /^\d{4}-?\d{2}-?\d{2}(?:[T-]\d{2}-?\d{2}-?\d{2}(?:[.-]\d+)?Z?)?-(?=.)/i;
+
+/**
+ * Plain Markdown notes (Codex ad-hoc notes) have no frontmatter: a leading heading is the
+ * description and the rest the content; otherwise the first sentence or line describes the whole
+ * note. A leading date stamp is dropped from the file name.
+ */
+function plainNote(file: string, body: string) {
+  const name = memoryName(basename(file, ".md").replace(DATE_PREFIX, ""));
+  const text = body.trim();
+  const heading = /^#{1,6}[ \t]+(.+?)[ \t#]*$/m.exec(text);
+  if (heading?.[1] && heading.index === 0)
+    return {
+      name,
+      description: heading[1].trim(),
+      content: text.slice(heading[0].length).trim(),
+    };
+  const lead = (/^[^\n]*?[.!?:](?=\s|$)/.exec(text)?.[0] ?? text.split("\n")[0] ?? "")
+    .replace(/:$/, "")
+    .trim();
+  if (!lead) return undefined;
+  return {
+    name,
+    description:
+      lead.length > PLAIN_DESCRIPTION_MAX ? `${lead.slice(0, PLAIN_DESCRIPTION_MAX - 3)}...` : lead,
+    content: text,
+  };
 }
 
 function memoryFiles(dir: string, limit = true): string[] {
@@ -169,11 +226,23 @@ function readNativeFiles(dir: string): NativeFile[] {
   return memoryFiles(dir).map((file): NativeFile => {
     try {
       if (statSync(file).size > MAX_FILE_BYTES) throw new ValidationError("File exceeds 64 KiB");
-      const { fields, body } = parseMarkdownFrontmatter(readFileSync(file, "utf8"));
+      const text = readFileSync(file, "utf8");
+      if (!/^﻿?---\r?\n/.test(text)) {
+        const note = plainNote(file, text.replace(/^﻿/, ""));
+        if (!note?.name)
+          throw new ValidationError("Needs a frontmatter description or a leading # heading");
+        return {
+          file,
+          ...note,
+          fields: {},
+          profile: memoryProfile(note.description, note.content),
+        };
+      }
+      const { fields, body } = parseMarkdownFrontmatter(text);
       const name = nameOf(file, fields);
       if (!name) throw new ValidationError("No usable memory name");
       if (typeof fields.description !== "string" || !fields.description.trim())
-        throw new ValidationError("Frontmatter description is required");
+        throw new ValidationError("Needs a frontmatter description or a leading # heading");
       const description = fields.description.trim();
       return {
         file,
