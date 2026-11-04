@@ -134,6 +134,7 @@ test("exports project memories as Claude memory files and flags near copies on i
     await page.getByTestId("memory-transfer-menu").click();
     await page.getByTestId("memory-export-button").click();
     const dialog = page.getByTestId("memory-export-dialog");
+    await expect(dialog.getByTestId("memory-export-project")).toHaveValue(project.id);
     await dialog.getByTestId("memory-export-source").selectOption("__folder__");
     await dialog.getByTestId("memory-export-folder").fill(dir);
     await dialog.getByTestId("memory-export-folder-apply").click();
@@ -157,9 +158,13 @@ test("exports project memories as Claude memory files and flags near copies on i
       text.replace(`name: ${name}`, `name: ${copy}`).replace("development", "developmen"),
     );
 
+    await page.goto("/knowledge/memories?project=all");
     await page.getByTestId("memory-transfer-menu").click();
     await page.getByTestId("memory-import-button").click();
     const importing = page.getByTestId("memory-import-dialog");
+    await expect(importing.getByTestId("memory-import-project")).toHaveValue("");
+    await expect(importing.getByTestId("memory-import-source")).toBeDisabled();
+    await importing.getByTestId("memory-import-project").selectOption(project.id);
     await importing.getByTestId("memory-import-source").selectOption("__folder__");
     await importing.getByTestId("memory-import-folder").fill(dir);
     await importing.getByTestId("memory-import-folder-apply").click();

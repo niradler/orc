@@ -165,17 +165,11 @@ export default function Memories({
                 align="end"
                 className="w-64 space-y-1 p-1"
               >
-                {!transferProject && (
-                  <p className="px-3 py-2 text-xs text-muted-foreground">
-                    Choose a project to import or export its memories.
-                  </p>
-                )}
                 <Button
                   data-testid="memory-import-button"
                   size="sm"
                   variant="ghost"
                   className="w-full justify-start"
-                  disabled={!transferProject}
                   onClick={() => {
                     setTransferMenuOpen(false);
                     setTransfer("import");
@@ -188,7 +182,6 @@ export default function Memories({
                   size="sm"
                   variant="ghost"
                   className="w-full justify-start"
-                  disabled={!transferProject}
                   onClick={() => {
                     setTransferMenuOpen(false);
                     setTransfer("export");
@@ -416,11 +409,11 @@ export default function Memories({
         />
       )}
 
-      {transfer && transferProject && (
+      {transfer && (
         <MemoryTransferDialog
           mode={transfer}
-          projectId={transferProject}
-          projectName={projectName(transferProject)}
+          initialProjectId={transferProject}
+          projects={projects ?? []}
           onClose={() => setTransfer(null)}
         />
       )}

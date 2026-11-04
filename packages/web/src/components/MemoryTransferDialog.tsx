@@ -41,15 +41,16 @@ const FOLDER = "__folder__";
 
 export function MemoryTransferDialog({
   mode,
-  projectId,
-  projectName,
+  initialProjectId,
+  projects,
   onClose,
 }: {
   mode: Mode;
-  projectId: string;
-  projectName: string;
+  initialProjectId: string | null;
+  projects: { id: string; name: string }[];
   onClose: () => void;
 }) {
+  const [projectId, setProjectId] = useState(initialProjectId ?? "");
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [folderDraft, setFolderDraft] = useState("");
   const [folder, setFolder] = useState("");
@@ -58,6 +59,7 @@ export function MemoryTransferDialog({
   const sources = useQuery({
     queryKey: ["memory-transfer", "sources", projectId],
     queryFn: () => api.memories.nativeSources(projectId),
+    enabled: Boolean(projectId),
   });
   const list = sources.data?.sources ?? [];
   const chosenSource = sourceId ?? list.find((source) => source.project_match)?.dir ?? "";
@@ -86,7 +88,7 @@ export function MemoryTransferDialog({
         })),
       };
     },
-    enabled: Boolean(dir),
+    enabled: Boolean(projectId && dir),
   });
   const transfer = useMutation({
     mutationFn: async (rows: Row[]) => {
@@ -126,7 +128,7 @@ export function MemoryTransferDialog({
     },
   });
   const busy = transfer.isPending;
-  const rows = dir ? (preview.data?.rows ?? []) : [];
+  const rows = projectId && dir ? (preview.data?.rows ?? []) : [];
   const chosen = rows.filter((row) => row.selectable && picked[row.name]);
   const fresh = rows.filter((row) => row.status === "new");
   const labels = mode === "import" ? IMPORT_LABEL : EXPORT_LABEL;
@@ -142,9 +144,7 @@ export function MemoryTransferDialog({
       >
         <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>
-            {mode === "import"
-              ? `Import native memories into ${projectName}`
-              : `Export ${projectName} memories`}
+            {mode === "import" ? "Import native memories" : "Export memories"}
           </DialogTitle>
           <HelpPopover label={`memory ${mode}`}>
             {mode === "import"
@@ -157,6 +157,31 @@ export function MemoryTransferDialog({
           data-testid={`${testId}-body`}
         >
           <div className="space-y-2">
+            <label htmlFor={`${testId}-project`} className="text-sm font-medium">
+              {mode === "import" ? "Into project" : "From project"}
+            </label>
+            <select
+              id={`${testId}-project`}
+              data-testid={`${testId}-project`}
+              className="block h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-8"
+              value={projectId}
+              disabled={busy}
+              onChange={(event) => {
+                setProjectId(event.target.value);
+                setSourceId(null);
+                setPicked({});
+                transfer.reset();
+              }}
+            >
+              <option value="">Choose a project</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
             <label htmlFor={`${testId}-source`} className="text-sm font-medium">
               {mode === "import" ? "Source" : "Destination"}
             </label>
@@ -165,7 +190,7 @@ export function MemoryTransferDialog({
               data-testid={`${testId}-source`}
               className="block h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-8"
               value={chosenSource}
-              disabled={busy || sources.isLoading}
+              disabled={busy || !projectId || sources.isLoading}
               onChange={(event) => {
                 setSourceId(event.target.value);
                 setPicked({});
@@ -210,8 +235,8 @@ export function MemoryTransferDialog({
               </form>
             )}
           </div>
-          {preview.isLoading && dir && <p role="status">Reading the folder…</p>}
-          {preview.data && dir && (
+          {preview.isLoading && projectId && dir && <p role="status">Reading the folder…</p>}
+          {preview.data && projectId && dir && (
             <section data-testid={`${testId}-plan`} className="space-y-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="min-w-0 flex-1 text-xs text-outline wrap-break-word">
