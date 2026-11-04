@@ -10,6 +10,7 @@ import {
   Search,
   ToggleLeft,
   ToggleRight,
+  Upload,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
@@ -20,6 +21,7 @@ import { DocumentTabs } from "@/components/DocumentTabs";
 import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { ExportSkillsDialog } from "@/components/ExportSkillsDialog";
 import { HelpPopover } from "@/components/HelpPopover";
 import { ImportLocalSkillsDialog } from "@/components/ImportLocalSkillsDialog";
 import { ImportSkillDialog } from "@/components/ImportSkillDialog";
@@ -132,6 +134,7 @@ export default function Skills({ projectId }: { projectId: string }) {
   const [creating, setCreating] = useState(false);
   const [importingRepository, setImportingRepository] = useState(false);
   const [importingLocal, setImportingLocal] = useState(false);
+  const [exportingNative, setExportingNative] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const visibility = useSkillVisibility();
   const setVisibility = useSetSkillVisibility();
@@ -309,16 +312,20 @@ export default function Skills({ projectId }: { projectId: string }) {
               <PopoverTrigger asChild>
                 <Button
                   data-testid="skill-import-menu"
-                  aria-label="Import skills"
+                  aria-label="Import or export skills"
                   size="sm"
                   variant="ghost"
                 >
                   <Download size={14} />
-                  <span className="hidden sm:inline">Import</span>
+                  <span className="hidden sm:inline">Import / export</span>
                   <ChevronDown size={12} className="hidden sm:block" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent aria-label="Import skills" align="end" className="w-56 space-y-1 p-1">
+              <PopoverContent
+                aria-label="Import or export skills"
+                align="end"
+                className="w-56 space-y-1 p-1"
+              >
                 <Button
                   data-testid="import-skill-button"
                   size="sm"
@@ -342,6 +349,18 @@ export default function Skills({ projectId }: { projectId: string }) {
                   }}
                 >
                   <Download size={12} className="mr-1" /> Import from agents
+                </Button>
+                <Button
+                  data-testid="export-skills-button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    setExportingNative(true);
+                  }}
+                >
+                  <Upload size={12} className="mr-1" /> Export to agents
                 </Button>
                 <a
                   className="block rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
@@ -846,6 +865,7 @@ export default function Skills({ projectId }: { projectId: string }) {
       {creating && <CreateSkillDialog open={creating} onClose={() => setCreating(false)} />}
       {importingRepository && <ImportSkillDialog onClose={() => setImportingRepository(false)} />}
       {importingLocal && <ImportLocalSkillsDialog onClose={() => setImportingLocal(false)} />}
+      {exportingNative && <ExportSkillsDialog onClose={() => setExportingNative(false)} />}
     </div>
   );
 }

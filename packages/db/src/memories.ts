@@ -379,6 +379,17 @@ export class MemoryStore {
       this.sqlite.query(`DELETE FROM ${table} WHERE project_id=?`).run(projectId);
   }
 
+  /** Why a memory with this description and content cannot be stored, or null when it can. */
+  problem(description: string, content: string): string | null {
+    try {
+      this.validate({ description, content, priority: null });
+      return null;
+    } catch (error) {
+      if (error instanceof ValidationError) return error.message;
+      throw error;
+    }
+  }
+
   private validate(snapshot: MemorySnapshot): void {
     validateDescription(snapshot.description);
     if (!snapshot.content.trim()) throw new ValidationError("Memory content cannot be empty");

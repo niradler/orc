@@ -1,25 +1,27 @@
-import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
-  realpathSync,
   renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
 import { ValidationError } from "./errors.js";
+import { closestMatch, compareProfiles, type TextProfile } from "./similarity.js";
 import {
-  encodeSkillFile,
-  MAX_SKILL_BUNDLE_BYTES,
-  MAX_SKILL_FILES,
-  validateSkillPath,
-} from "./skill-files.js";
+  findSkillDirs,
+  hashSkillBundle,
+  readSkillBundle,
+  type ScannedSkillDir,
+  type SkillBundle,
+  scanSkillDir,
+  skillBundleProfile,
+} from "./skill-bundle.js";
+import { encodeSkillFile, validateSkillPath } from "./skill-files.js";
 import type {
   LocalSkill,
   LocalSkillAgent,
@@ -27,9 +29,11 @@ import type {
   LocalSkillImportItem,
   LocalSkillImportResult,
   LocalSkillStatus,
+  SkillMatch,
 } from "./skill-import-types.js";
-import { createSkill, listSkills, parseFrontmatter } from "./skill-service.js";
+import { createSkill, listSkills, type SkillMeta } from "./skill-service.js";
 
+export { hashSkillBundle } from "./skill-bundle.js";
 export type {
   LocalSkill,
   LocalSkillAgent,
@@ -39,8 +43,11 @@ export type {
   LocalSkillStatus,
 } from "./skill-import-types.js";
 
+/** Returns a skill's effective SKILL.md (e.g. with ORC instruction edits), or null for the file on disk. */
+export type SkillEntryReader = (name: string) => string | null;
+
 const RECORD_DIR = join(homedir(), ".orc", "skill-local-imports");
-const SKIPPED_DIRS = new Set([".git", "node_modules"]);
+export const FOLDER_SOURCE_ID = "folder";
 
 export function defaultLocalSkillAgents(home = homedir()): LocalSkillAgent[] {
   return [
@@ -53,41 +60,24 @@ export function defaultLocalSkillAgents(home = homedir()): LocalSkillAgent[] {
   ];
 }
 
-/** Reads a skill folder into relative path -> bytes, skipping nested symlinks, .git and node_modules. */
-function readBundle(skillDir: string): Map<string, Buffer> {
-  const files = new Map<string, Buffer>();
-  let total = 0;
-  function walk(directory: string, prefix: string): void {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isSymbolicLink() || SKIPPED_DIRS.has(entry.name)) continue;
-      const name = prefix ? `${prefix}/${entry.name}` : entry.name;
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) walk(path, name);
-      else if (entry.isFile()) {
-        validateSkillPath(name);
-        const bytes = readFileSync(path);
-        total += bytes.length;
-        files.set(name, bytes);
-        if (files.size > MAX_SKILL_FILES) throw new ValidationError("Too many skill files");
-        if (total > MAX_SKILL_BUNDLE_BYTES)
-          throw new ValidationError("Skill bundle exceeds 16 MiB");
-      }
-    }
-  }
-  walk(skillDir, "");
-  return files;
+/** Repo-level skill folders each agent reads inside a project checkout. */
+export function projectSkillFolders(root: string): LocalSkillAgent[] {
+  return [
+    { id: "claude", label: "Claude Code", dir: join(root, ".claude", "skills") },
+    { id: "agents", label: "Codex and shared agents", dir: join(root, ".agents", "skills") },
+    { id: "gemini", label: "Gemini CLI", dir: join(root, ".gemini", "skills") },
+    { id: "cursor", label: "Cursor", dir: join(root, ".cursor", "skills") },
+    { id: "opencode", label: "OpenCode", dir: join(root, ".opencode", "skills") },
+  ];
 }
 
-/** sha256 over sorted relative paths and file bytes, so identical folders hash the same anywhere. */
-export function hashSkillBundle(files: Map<string, Buffer>): string {
-  const hash = createHash("sha256");
-  for (const name of [...files.keys()].sort()) {
-    hash.update(name);
-    hash.update("\0");
-    hash.update(files.get(name) as Buffer);
-    hash.update("\0");
-  }
-  return hash.digest("hex");
+/** Any folder as a skill source: a skill folder itself, or skills up to 3 levels below it. */
+export function folderSkillSource(path: string): LocalSkillAgent {
+  if (!isAbsolute(path)) throw new ValidationError("Folder path must be absolute");
+  const dir = resolve(path);
+  if (!existsSync(dir) || !statSync(dir).isDirectory())
+    throw new ValidationError(`Folder not found: ${dir}`);
+  return { id: FOLDER_SOURCE_ID, label: dir, dir, recursive: true };
 }
 
 const LocalImportRecordSchema = z.object({
@@ -107,8 +97,12 @@ function recordPath(name: string): string {
 function readRecord(name: string): LocalImportRecord | null {
   const path = recordPath(name);
   if (!existsSync(path) || lstatSync(path).isSymbolicLink()) return null;
-  const parsed = LocalImportRecordSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
-  return parsed.success ? parsed.data : null;
+  try {
+    const parsed = LocalImportRecordSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 function saveRecord(name: string, record: LocalImportRecord): void {
@@ -120,132 +114,155 @@ function saveRecord(name: string, record: LocalImportRecord): void {
   renameSync(temporary, recordPath(name));
 }
 
-type ScannedSkill = Omit<LocalSkill, "status" | "also_in"> & {
-  files?: Map<string, Buffer>;
-};
+export type OrcSkillEntry = { name: string; hash: string; profile: TextProfile };
 
-function scanAgent(agent: LocalSkillAgent): ScannedSkill[] {
-  const skills: ScannedSkill[] = [];
-  for (const entry of readdirSync(agent.dir)) {
-    const linkPath = join(agent.dir, entry);
-    let skillDir: string;
-    try {
-      skillDir = realpathSync(linkPath);
-      if (!statSync(skillDir).isDirectory() || !existsSync(join(skillDir, "SKILL.md"))) continue;
-    } catch {
-      continue;
-    }
-    try {
-      const files = readBundle(skillDir);
-      const entryFile = files.get("SKILL.md");
-      if (!entryFile) throw new ValidationError("SKILL.md cannot be a symlink");
-      const { frontmatter, extra_fields } = parseFrontmatter(entryFile.toString("utf8"));
-      skills.push({
-        agent: agent.id,
-        name: frontmatter.name,
-        description: frontmatter.description,
-        path: skillDir,
-        content_hash: hashSkillBundle(files),
-        extra_fields,
-        files,
-      });
-    } catch (error) {
-      skills.push({
-        agent: agent.id,
-        name: entry,
-        description: "",
-        path: skillDir,
-        content_hash: "",
-        extra_fields: [],
-        error: (error as Error).message,
-      });
-    }
-  }
-  return skills.sort((left, right) => left.name.localeCompare(right.name));
+/** An ORC skill's files with SKILL.md replaced by its effective content when `readEntry` has one. */
+export function readOrcSkillBundle(skill: SkillMeta, readEntry?: SkillEntryReader): SkillBundle {
+  const files = readSkillBundle(dirname(skill.path));
+  const entry = readEntry?.(skill.name);
+  if (entry != null) files.set("SKILL.md", Buffer.from(entry, "utf8"));
+  return files;
 }
 
-function installedHashes(): Map<string, string> {
-  const hashes = new Map<string, string>();
+/** Hash and comparison profile of every ORC skill, hidden ones included. */
+export function orcSkillIndex(readEntry?: SkillEntryReader): Map<string, OrcSkillEntry> {
+  const index = new Map<string, OrcSkillEntry>();
   for (const skill of listSkills({ reload: true, include_hidden: true })) {
     try {
-      hashes.set(skill.name, hashSkillBundle(readBundle(dirname(skill.path))));
-    } catch {
-      hashes.set(skill.name, "");
-    }
+      const files = readOrcSkillBundle(skill, readEntry);
+      index.set(skill.name, {
+        name: skill.name,
+        hash: hashSkillBundle(files),
+        profile: skillBundleProfile(files, skill.name),
+      });
+    } catch {}
   }
-  return hashes;
+  return index;
 }
 
-function classify(skill: ScannedSkill, installed: Map<string, string>): LocalSkillStatus {
-  if (skill.error) return "invalid";
-  const orcHash = installed.get(skill.name);
-  if (orcHash === undefined) return "new";
-  if (orcHash === skill.content_hash) return "installed";
-  const record = readRecord(skill.name);
-  const untouched = record?.source_path === skill.path && record.content_hash === orcHash;
-  return untouched ? "changed" : "conflict";
+function asMatch(
+  name: string,
+  level: string,
+  score: number,
+  where: string,
+): SkillMatch | undefined {
+  return level === "different"
+    ? undefined
+    : { name, level: level as SkillMatch["level"], score, where };
 }
 
-function discover(agents: LocalSkillAgent[]): Array<LocalSkillAgent & { skills: ScannedSkill[] }> {
+type Classified = { status: LocalSkillStatus; match?: SkillMatch | undefined };
+
+function classify(skill: ScannedSkillDir, orc: Map<string, OrcSkillEntry>): Classified {
+  if (skill.error || !skill.profile) return { status: "invalid" };
+  const same = orc.get(skill.name);
+  if (same) {
+    if (same.hash === skill.content_hash) return { status: "installed" };
+    const result = compareProfiles(skill.profile, same.profile);
+    const match = asMatch(same.name, result.level, result.score, "orc");
+    if (result.level === "identical") return { status: "installed", match };
+    const record = readRecord(skill.name);
+    if (record?.source_path === skill.path && record.content_hash === same.hash)
+      return { status: "changed", match };
+    return { status: result.level === "near" ? "duplicate" : "conflict", match };
+  }
+  const closest = closestMatch(
+    skill.profile,
+    [...orc.values()].map((entry) => ({ key: entry.name, profile: entry.profile })),
+  );
+  if (!closest) return { status: "new" };
+  const match = asMatch(closest.key, closest.level, closest.score, "orc");
+  return { status: closest.level === "similar" ? "new" : "duplicate", match };
+}
+
+type Source = LocalSkillAgent & { skills: ScannedSkillDir[] };
+
+function discover(agents: LocalSkillAgent[]): Source[] {
   return agents
     .filter((agent) => existsSync(agent.dir) && statSync(agent.dir).isDirectory())
-    .map((agent) => ({ ...agent, skills: scanAgent(agent) }));
+    .map((agent) => ({
+      ...agent,
+      skills: findSkillDirs(agent.dir, agent.recursive)
+        .map(scanSkillDir)
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    }));
 }
 
-/** Lists skills in local agent folders (~/.claude/skills, ~/.codex/skills, ...) with dedup status. */
+function sameSkill(left: ScannedSkillDir, right: ScannedSkillDir): boolean {
+  if (left.content_hash && left.content_hash === right.content_hash) return true;
+  if (!left.profile || !right.profile) return false;
+  const level = compareProfiles(left.profile, right.profile).level;
+  return level === "identical" || level === "near";
+}
+
+/**
+ * Lists skills in local agent folders (~/.claude/skills, ~/.codex/skills, ...) or a chosen folder,
+ * each classified against ORC with near-duplicate detection.
+ */
 export function listLocalAgentSkills(
   agents: LocalSkillAgent[] = defaultLocalSkillAgents(),
+  readEntry?: SkillEntryReader,
 ): LocalSkillAgentListing[] {
   const found = discover(agents);
-  const installed = installedHashes();
-  const agentsByHash = new Map<string, Set<string>>();
-  for (const agent of found) {
-    for (const skill of agent.skills) {
-      if (!skill.content_hash) continue;
-      const owners = agentsByHash.get(skill.content_hash) ?? new Set<string>();
-      owners.add(agent.id);
-      agentsByHash.set(skill.content_hash, owners);
-    }
-  }
+  const orc = orcSkillIndex(readEntry);
   return found.map((agent) => ({
-    ...agent,
-    skills: agent.skills.map(({ files: _files, ...skill }) => ({
-      ...skill,
-      status: classify(skill, installed),
-      also_in: [...(agentsByHash.get(skill.content_hash) ?? [])].filter((id) => id !== agent.id),
-    })),
+    id: agent.id,
+    label: agent.label,
+    dir: agent.dir,
+    ...(agent.recursive ? { recursive: true } : {}),
+    skills: agent.skills.map((skill): LocalSkill => {
+      const { files: _files, profile: _profile, ...fields } = skill;
+      const classified = classify(skill, orc);
+      return {
+        ...fields,
+        agent: agent.id,
+        status: classified.status,
+        also_in: found
+          .filter((other) => other.id !== agent.id)
+          .filter((other) => other.skills.some((candidate) => sameSkill(skill, candidate)))
+          .map((other) => other.id),
+        ...(classified.match ? { match: classified.match } : {}),
+      };
+    }),
   }));
 }
 
 /**
- * Copies selected local agent skills into ~/.orc/skills and records where each came from.
- * Only skills with status "new" are imported; the rest, and a name already taken earlier in this
- * batch (the same skill offered by several agents), are reported as skipped.
+ * Copies selected local skills into ~/.orc/skills and records where each came from. Only skills
+ * classified "new" are imported (a "similar" match is allowed); a skill that is the same as, or a
+ * near copy of, one imported earlier in this batch is skipped, so one skill offered by several
+ * agents is imported once.
  */
 export function importLocalAgentSkills(
   items: LocalSkillImportItem[],
   agents: LocalSkillAgent[] = defaultLocalSkillAgents(),
+  readEntry?: SkillEntryReader,
 ): LocalSkillImportResult {
   if (!items.length || items.length > 200) throw new ValidationError("Select 1-200 skills");
   const found = discover(agents);
-  const installed = installedHashes();
-  const takenNames = new Set<string>();
+  const orc = orcSkillIndex(readEntry);
+  const imported: ScannedSkillDir[] = [];
   const result: LocalSkillImportResult = { imported: [], skipped: [] };
   for (const item of items) {
     const skill = found
       .find((agent) => agent.id === item.agent)
-      ?.skills.find((candidate) => candidate.name === item.name);
-    if (!skill?.files) {
+      ?.skills.find(
+        (candidate) => candidate.name === item.name && (!item.path || candidate.path === item.path),
+      );
+    if (!skill?.files || !skill.profile) {
       result.skipped.push({ ...item, reason: skill?.error ?? "Skill not found" });
       continue;
     }
-    if (takenNames.has(skill.name)) {
-      result.skipped.push({ ...item, reason: "Already imported in this batch" });
+    const earlier = imported.find((other) => other.name === skill.name || sameSkill(skill, other));
+    if (earlier) {
+      result.skipped.push({ ...item, reason: `Same as ${earlier.name}, imported in this batch` });
       continue;
     }
-    const status = classify(skill, installed);
+    const { status, match } = classify(skill, orc);
     if (status !== "new") {
-      result.skipped.push({ ...item, reason: status });
+      const near =
+        match && match.level !== "similar" ? ` (${match.level} copy of ${match.name})` : "";
+      result.skipped.push({ ...item, reason: `${status}${near}` });
       continue;
     }
     const entry = (skill.files.get("SKILL.md") as Buffer).toString("utf8");
@@ -269,7 +286,8 @@ export function importLocalAgentSkills(
       content_hash: skill.content_hash,
       imported_at: new Date().toISOString(),
     });
-    takenNames.add(skill.name);
+    imported.push(skill);
+    orc.set(skill.name, { name: skill.name, hash: skill.content_hash, profile: skill.profile });
   }
   return result;
 }

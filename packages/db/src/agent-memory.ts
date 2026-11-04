@@ -9,11 +9,15 @@ import type { RuleEvent } from "@orc/core/rule-types";
 import { withinWorkspace } from "@orc/core/rules";
 import { MemoryStore } from "./memories.js";
 
+export function claudeConfigDirectory(): string {
+  return resolve(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"));
+}
+
 export function claudeMemoryDirectory(cwd: string, configured = "auto"): string {
   const expand = (value: string): string =>
     value.startsWith("~/") ? resolve(homedir(), value.slice(2)) : resolve(value);
   if (configured !== "auto") return expand(configured);
-  const configDirectory = resolve(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"));
+  const configDirectory = claudeConfigDirectory();
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
     encoding: "utf8",
@@ -50,7 +54,7 @@ export type MemorySyncResult = {
 };
 
 /** Claude names memories freely (`feedback_testing`); ORC names follow the skill name rules. */
-function memoryName(name: string): string {
+export function memoryName(name: string): string {
   return name
     .normalize("NFKC")
     .toLowerCase()
@@ -60,11 +64,11 @@ function memoryName(name: string): string {
     .replace(/-+$/, "");
 }
 
-function nameOf(file: string, fields: Record<string, unknown>): string {
+export function nameOf(file: string, fields: Record<string, unknown>): string {
   return memoryName(typeof fields.name === "string" ? fields.name : basename(file, ".md"));
 }
 
-function isMemoryFile(file: string): boolean {
+export function isMemoryFile(file: string): boolean {
   return /\.md$/i.test(file) && basename(file).toLowerCase() !== "memory.md";
 }
 

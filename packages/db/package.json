@@ -21,7 +21,8 @@
     "./mcp-prompts": "./src/mcp-prompts.ts",
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",
-    "./agent-memory": "./src/agent-memory.ts"
+    "./agent-memory": "./src/agent-memory.ts",
+    "./memory-transfer": "./src/memory-transfer.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

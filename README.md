@@ -491,6 +491,17 @@ orc mem history ulid-ids               # every change, with before/after
 orc mem revert ulid-ids <change-id> --expected-change-id <latest-change-id> -r "Undo mistaken edit"
 ```
 
+Memories move both ways between ORC and native agent memory. **Memories → Import / export** (with a project selected) or `orc mem import|export` reads and writes Claude Code memory files (`~/.claude/projects/<project>/memory/*.md` with `name`/`description` frontmatter and a `MEMORY.md` index), Codex notes (`$CODEX_HOME/memories/extensions/ad_hoc/notes`, which Codex consolidates into its generated memory; plain notes import with their leading heading, or else their first sentence, as the description; generated Codex summaries are never touched), or any folder of memory files. The project's Claude memory folder is the default. Dedup ignores whitespace and case, and treats a near copy (a few characters different) as the same memory: it is never imported or exported as new, and the dialog names the match. Similar items are flagged with their match and score. An existing memory or file is replaced only when you select it; imports keep memory history, and exports keep a backup.
+
+```bash
+orc mem sources                        # Claude and Codex memory folders; * marks this project's
+orc mem import                         # preview this project's Claude memory folder
+orc mem import --all                   # import every new memory
+orc mem import ./notes --replace api-port
+orc mem export --dry-run               # compare with the folder
+orc mem export ./memory -n ulid-ids --overwrite ulid-ids
+```
+
 ### Knowledge bases
 
 Knowledge bases hold human reference documents for agents to search and cite. A knowledge base belongs to a project or is global. Add documents by uploading files (PDF, Word, PowerPoint, Excel, HTML, CSV, Markdown, text), writing Markdown in the dashboard, or registering a folder whose files are copied in. ORC never writes the folder: a copy follows its file on each scan until it is edited in ORC, and a file deleted from the folder keeps its copy. Documents have folders, labels and `[[links]]` with backlinks.
@@ -827,6 +838,19 @@ orc skill import vercel-labs/agent-skills --skill web-design-guidelines
 orc skill sync web-design-guidelines
 ```
 
+**Skills → Import / export** also moves skills between ORC and local agents. **Import from local agents** copies skill folders from agent folders such as `~/.claude/skills` and `~/.codex/skills`, or any folder of skill folders. **Export to agents** writes ORC skills as native skill folders (`SKILL.md` plus supporting files) into an existing agent skills folder, a project checkout or any folder. A project's checkout is its folder (scope) or the git repo of its local agent sessions, with worktrees folded into the main checkout; both dialogs list each one's repo-level skill folders (`.claude/skills`, `.agents/skills` for Codex and shared agents, `.gemini/skills`, `.cursor/skills`, `.opencode/skills`). Dedup ignores whitespace and case and compares content, not just names: a copy under another name or a near copy (a one-letter edit) is flagged with its match and is not imported or exported as new. Imports never replace an ORC skill. Exports replace an existing folder only when you select it, keep a backup, and never write through a symlinked folder.
+
+```bash
+orc skill local                        # scan agent skill folders
+orc skill local --path ./shared-skills --all
+orc skill local claude -s pdf-tools
+orc skill export-to claude my-workflow --dry-run
+orc skill export-to ./exported my-workflow --overwrite my-workflow
+orc skill project-folders --project orc
+orc skill export-to claude my-workflow --project orc   # <repo>/.claude/skills
+orc skill local agents --project orc --all            # <repo>/.agents/skills
+```
+
 Imported skills remain editable: open the skill, choose `SKILL.md` or a supporting text file, then **Edit** and **Save changes**. **Sync from GitHub** fetches the source again and compares each file against its last imported version. Local edits are kept when upstream has not changed that file. If both sides changed the same file, the whole sync pauses and lists conflicts. **Review override → Replace listed files** requires confirmation and replaces only those conflicts with upstream versions; unrelated local edits remain. If the local files or upstream commit changed since review, ORC requires a new sync check. Sync retains the previous folder under `~/.orc/skill-sync-backups/`; import provenance and upstream baselines live under `~/.orc/skill-imports/`. These backups are retained until manually removed. Private repositories and non-GitHub sources are not supported by this importer.
 
 The dashboard can import a skill folder or add supporting files individually, then open each file from the detail sheet. API `POST /api/skills` and MCP `skill_create` accept optional `files: [{ path, content, encoding? }]` alongside `name` and the full `SKILL.md` `content`. Encoding defaults to `utf8`. Bundles allow 512 supporting files, 8 MiB per file and 16 MiB total. To change a supporting text file of an existing user skill, or add one, use MCP `skill_file_write`, API `PUT /api/skills/{name}/file` or `orc skill file <name> <path> -f <local-file> [--new]`: pass the current file text as the expected content (null / `--new` to add a file) so stale edits are rejected; every write is audited. These write the installed file for every scope; `SKILL.md` instructions change through `skill_update` / `orc skill update`. Paths must stay inside the skill folder; symlinks are excluded and cannot be read. The legacy `references` inventory is retained for existing clients. Worker prompts include the skill's entry path and file inventory so relative links resolve from the skill directory.
@@ -948,10 +972,10 @@ orc doctor                       Check which agent backends are usable here
 
 orc project list|add|show|use|update|archive
 orc task list|add|show|update|done|review|approve|reject|delete
-orc mem list|show|add|edit|delete|history|revert
+orc mem list|show|add|edit|delete|history|revert|sources|import|export
 orc job list|add|run|runs
 orc session list|show|log
-orc skill list|show
+orc skill list|show|local|export-to
 orc flow list|show|validate|create|attach|status|resume|halt
 orc kb search|get|collections|add|remove|update|status
 ```

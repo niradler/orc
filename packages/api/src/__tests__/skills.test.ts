@@ -1,5 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath } from "@orc/core/config";
 import { getUserSkillsDir, readSkill, reloadCache, type SkillFull } from "@orc/core/skill-service";
@@ -133,6 +144,121 @@ describe("local agent skills", () => {
     });
     const empty = await req(app, "POST", "/skills/local-agents/import", { skills: [] });
     expect(empty.status).toBe(400);
+  });
+});
+
+describe("skill folder import and export", () => {
+  const name = `api-transfer-${process.pid}`;
+  const root = mkdtempSync(join(tmpdir(), "orc-api-skill-transfer-"));
+  const entry = `---\nname: ${name}\ndescription: API transfer test skill\n---\nFollow the API transfer checklist carefully and report every step.\n`;
+
+  afterAll(() => {
+    rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    reloadCache();
+  });
+
+  test("should import from a folder, export it back and report it identical", async () => {
+    mkdirSync(join(root, "source", "nested", name), { recursive: true });
+    writeFileSync(join(root, "source", "nested", name, "SKILL.md"), entry);
+    const listing = await req(
+      app,
+      "GET",
+      `/skills/local-agents?path=${encodeURIComponent(join(root, "source"))}`,
+    );
+    expect(listing.status).toBe(200);
+    const [folder] = (
+      (await listing.json()) as {
+        agents: Array<{ id: string; skills: Array<{ name: string; status: string }> }>;
+      }
+    ).agents;
+    expect(folder?.id).toBe("folder");
+    expect(folder?.skills.find((skill) => skill.name === name)?.status).toBe("new");
+    const imported = await req(app, "POST", "/skills/local-agents/import", {
+      skills: [{ agent: "folder", name }],
+      folder: join(root, "source"),
+    });
+    expect(((await imported.json()) as { imported: Array<{ name: string }> }).imported).toEqual([
+      expect.objectContaining({ name }),
+    ]);
+    const target = { path: join(root, "target") };
+    const preview = await req(app, "POST", "/skills/export/preview", { target, names: [name] });
+    expect(
+      ((await preview.json()) as { skills: Array<{ status: string }> }).skills[0]?.status,
+    ).toBe("new");
+    const exported = await req(app, "POST", "/skills/export", { target, names: [name] });
+    expect(exported.status).toBe(200);
+    expect(readFileSync(join(root, "target", name, "SKILL.md"), "utf8")).toBe(entry);
+    const again = await req(app, "POST", "/skills/export/preview", { target, names: [name] });
+    expect(((await again.json()) as { skills: Array<{ status: string }> }).skills[0]?.status).toBe(
+      "identical",
+    );
+  });
+
+  test("should reject relative folders and ORC's own skills folder", async () => {
+    const relative = await req(app, "GET", "/skills/local-agents?path=relative");
+    expect(relative.status).toBe(400);
+    const own = await req(app, "POST", "/skills/export", { target: { path: getUserSkillsDir() } });
+    expect(own.status).toBe(400);
+    const missing = await req(app, "POST", "/skills/export", {
+      target: { path: join(root, "x") },
+      names: ["no-such-skill-xyz"],
+    });
+    expect(missing.status).toBe(404);
+  });
+});
+
+describe("GET /skills/project-folders", () => {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "orc-api-project-folders-")));
+  const repo = join(root, "repo");
+  const projectId = `pf${process.pid}`;
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], { stdio: "ignore", timeout: 30_000 });
+
+  afterAll(() => {
+    getSqlite().query("DELETE FROM gateway_sessions WHERE project_id = ?").run(projectId);
+    getSqlite().query("DELETE FROM projects WHERE id = ?").run(projectId);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("should map local session folders and worktrees to the repo's agent skill folders", async () => {
+    mkdirSync(join(repo, ".claude", "skills", "deploy"), { recursive: true });
+    writeFileSync(join(repo, ".claude", "skills", "deploy", "SKILL.md"), "# deploy\n");
+    mkdirSync(join(repo, "sub"));
+    git("init", "-q");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+    git("worktree", "add", "-q", join(root, "wt"));
+    const sqlite = getSqlite();
+    sqlite.query("INSERT INTO projects (id, name) VALUES (?, ?)").run(projectId, `pf-${projectId}`);
+    sqlite
+      .query(
+        "INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id) VALUES ('pf-chat', 'web', 'pf')",
+      )
+      .run();
+    const session = sqlite.query(
+      "INSERT INTO gateway_sessions (id, chat_id, backend, mode, cwd, project_id, execution_host) VALUES (?, 'pf-chat', 'claude', 'chat', ?, ?, ?)",
+    );
+    session.run(`${projectId}-a`, join(repo, "sub"), projectId, null);
+    session.run(`${projectId}-b`, join(root, "wt"), projectId, null);
+    session.run(`${projectId}-c`, join(root, "missing"), projectId, null);
+    session.run(`${projectId}-d`, join(root, "wt"), projectId, "lab");
+
+    const res = await req(app, "GET", `/skills/project-folders?project_id=${projectId}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      projects: Array<{
+        root: string;
+        folders: Array<{ agent: string; dir: string; skills: number }>;
+      }>;
+    };
+    expect(body.projects.map((project) => project.root.toLowerCase())).toEqual([
+      repo.toLowerCase(),
+    ]);
+    const folders = body.projects[0]?.folders ?? [];
+    expect(folders.find((folder) => folder.agent === "claude")).toMatchObject({ skills: 1 });
+    expect(folders.find((folder) => folder.agent === "agents")?.dir.toLowerCase()).toBe(
+      join(repo, ".agents", "skills").toLowerCase(),
+    );
   });
 });
 

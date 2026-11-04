@@ -11,6 +11,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  folderSkillSource,
   importLocalAgentSkills,
   type LocalSkillAgent,
   listLocalAgentSkills,
@@ -22,6 +23,21 @@ const fresh = `${prefix}-fresh`;
 const shared = `${prefix}-shared`;
 const edited = `${prefix}-edited`;
 const extra = `${prefix}-extra`;
+const renamed = `${prefix}-renamed`;
+const similar = `${prefix}-similar`;
+const folderSkill = `${prefix}-folder`;
+const created = [
+  fresh,
+  shared,
+  edited,
+  extra,
+  renamed,
+  folderSkill,
+  `${prefix}-batch1`,
+  `${prefix}-batch2`,
+];
+const longBody =
+  "Always run the full test suite before committing. Never dismiss failures as pre-existing; fix them or report them with the exact output.";
 const extraSkill = `---
 name: ${extra}
 description: Extra fields test
@@ -80,7 +96,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  for (const name of [fresh, shared, edited, extra]) {
+  for (const name of created) {
     rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
     rmSync(join(homedir(), ".orc", "skill-local-imports", `${name}.json`), { force: true });
   }
@@ -107,7 +123,7 @@ describe("local agent skill import", () => {
     expect(find("codex", "orc-sdlc").status).toBe("conflict");
     const result = importLocalAgentSkills([{ agent: "codex", name: "orc-sdlc" }], agents);
     expect(result.imported).toEqual([]);
-    expect(result.skipped[0]?.reason).toBe("conflict");
+    expect(result.skipped[0]?.reason).toStartWith("conflict");
   });
 
   test("should mark an unparseable skill invalid", () => {
@@ -128,8 +144,84 @@ describe("local agent skill import", () => {
     );
     expect(result.imported.map((skill) => skill.name)).toEqual([shared]);
     expect(result.skipped).toEqual([
-      { agent: "claude", name: shared, reason: "Already imported in this batch" },
+      { agent: "claude", name: shared, reason: `Same as ${shared}, imported in this batch` },
     ]);
+  });
+
+  test("should treat a one-letter edit of an ORC skill as a duplicate, not a new skill", () => {
+    writeSkill(codexDir, fresh, "Fresh bdy", { "references/guide.md": "Guide" });
+    const typo = find("codex", fresh);
+    expect(typo.status).toBe("duplicate");
+    expect(typo.match).toMatchObject({ name: fresh, level: "near", where: "orc" });
+    const result = importLocalAgentSkills([{ agent: "codex", name: fresh }], agents);
+    expect(result.imported).toEqual([]);
+    expect(result.skipped[0]?.reason).toBe(`duplicate (near copy of ${fresh})`);
+  });
+
+  test("should flag the same content under another name as a duplicate", () => {
+    writeSkill(claudeDir, renamed, longBody);
+    writeSkill(codexDir, `${renamed}x`, longBody.replace("pre-existing", "preexisting"));
+    const result = importLocalAgentSkills([{ agent: "claude", name: renamed }], agents);
+    expect(result.imported.map((skill) => skill.name)).toEqual([renamed]);
+    const copy = find("codex", `${renamed}x`);
+    expect(copy.status).toBe("duplicate");
+    expect(copy.match).toMatchObject({ name: renamed, level: "near" });
+  });
+
+  test("should import a largely similar skill but warn with the closest match", () => {
+    writeSkill(codexDir, similar, `${longBody} Also run the e2e suite before release.`);
+    const listed = find("codex", similar);
+    expect(listed.status).toBe("new");
+    expect(listed.match).toMatchObject({ name: renamed, level: "similar" });
+  });
+
+  test("should skip near copies selected together in one batch", () => {
+    const one = `${prefix}-batch1`;
+    const two = `${prefix}-batch2`;
+    writeSkill(claudeDir, one, `${longBody} Batch.`);
+    writeSkill(codexDir, two, `${longBody} Btch.`);
+    const result = importLocalAgentSkills(
+      [
+        { agent: "claude", name: one },
+        { agent: "codex", name: two },
+      ],
+      agents,
+    );
+    expect(result.imported.map((skill) => skill.name)).toEqual([one]);
+    expect(result.skipped).toEqual([
+      { agent: "codex", name: two, reason: `Same as ${one}, imported in this batch` },
+    ]);
+  });
+
+  test("should scan any folder recursively for skills", () => {
+    const repo = join(root, "repo");
+    writeSkill(
+      join(repo, ".claude", "skills"),
+      folderSkill,
+      "Found three levels down, unique text",
+    );
+    writeSkill(join(repo, "node_modules"), `${prefix}-ignored`, "Never scanned");
+    const source = folderSkillSource(repo);
+    const [listed] = listLocalAgentSkills([source]);
+    expect(listed?.skills.map((skill) => skill.name)).toEqual([folderSkill]);
+    expect(listed?.skills[0]?.status).toBe("new");
+    const single = listLocalAgentSkills([
+      folderSkillSource(join(repo, ".claude", "skills", folderSkill)),
+    ]);
+    expect(single[0]?.skills.map((skill) => skill.name)).toEqual([folderSkill]);
+    const result = importLocalAgentSkills([{ agent: "folder", name: folderSkill }], [source]);
+    expect(result.imported.map((skill) => skill.name)).toEqual([folderSkill]);
+    expect(() => folderSkillSource("relative/path")).toThrow("absolute");
+  });
+
+  test("should compare against effective ORC content when an entry reader is given", () => {
+    const effective = `---\nname: ${fresh}\ndescription: ${fresh} test\n---\nFresh body`;
+    const reader = (name: string) =>
+      name === fresh ? effective.replace("Fresh body", "Rewritten instructions entirely") : null;
+    const skill = listLocalAgentSkills(agents, reader)
+      .find((entry) => entry.id === "claude")
+      ?.skills.find((entry) => entry.name === fresh);
+    expect(skill?.status).not.toBe("installed");
   });
 
   test("should mark a source edited after import as changed, and a locally edited copy as conflict", () => {

@@ -3,6 +3,12 @@ import { Info } from "lucide-react";
 import { useState } from "react";
 import { api, type LocalSkill } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
+import {
+  MatchNote,
+  NativeFolderField,
+  PROJECT_PREFIX,
+  ProjectSkillFolderOptions,
+} from "@/components/NativeFolderField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,22 +22,41 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 const STATUS_LABEL: Record<LocalSkill["status"], string> = {
   new: "",
   installed: "Already in ORC",
+  duplicate: "Already in ORC under another name",
   conflict: "Name taken in ORC (different content)",
   changed: "Changed since import",
   invalid: "Invalid",
 };
 
-const key = (skill: LocalSkill) => `${skill.agent}/${skill.name}`;
+const key = (skill: LocalSkill) => `${skill.agent}:${skill.path}`;
 
 export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<LocalSkill[]>([]);
+  const [source, setSource] = useState("agents");
+  const [folderDraft, setFolderDraft] = useState("");
+  const [folder, setFolder] = useState("");
   const queryClient = useQueryClient();
+  const scanPath = source.startsWith(PROJECT_PREFIX)
+    ? source.slice(PROJECT_PREFIX.length)
+    : source === "folder"
+      ? folder
+      : "";
+  const scanning = source === "agents" || Boolean(scanPath);
   const listing = useQuery({
-    queryKey: ["skills", "local-agents"],
-    queryFn: api.skills.localAgents,
+    queryKey: ["skills", "local-agents", scanPath],
+    queryFn: () => api.skills.localAgents(scanPath || undefined),
+    enabled: scanning,
   });
   const importing = useMutation({
-    mutationFn: api.skills.importLocal,
+    mutationFn: (skills: LocalSkill[]) =>
+      api.skills.importLocal(
+        skills.map((skill) => ({
+          agent: skill.agent,
+          name: skill.name,
+          ...(scanPath ? { path: skill.path } : {}),
+        })),
+        scanPath || undefined,
+      ),
     onSuccess: async (result) => {
       setSelected([]);
       await queryClient.invalidateQueries({ queryKey: ["skills"] });
@@ -39,21 +64,27 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
     },
   });
   const busy = importing.isPending;
-  const agents = listing.data?.agents ?? [];
-  const selectedNames = new Set(selected.map((item) => item.split("/")[1]));
+  const agents = scanning ? (listing.data?.agents ?? []) : [];
+  const selectedKeys = new Set(selected.map(key));
+  const selectedNames = new Set(selected.map((skill) => skill.name));
   const toggle = (skill: LocalSkill, checked: boolean) =>
     setSelected(
-      checked ? [...selected, key(skill)] : selected.filter((item) => item !== key(skill)),
+      checked ? [...selected, skill] : selected.filter((item) => key(item) !== key(skill)),
     );
   const selectAll = (skills: LocalSkill[]) => {
     const next = [...selected];
     const names = new Set(selectedNames);
     for (const skill of skills) {
       if (skill.status !== "new" || names.has(skill.name)) continue;
-      next.push(key(skill));
+      next.push(skill);
       names.add(skill.name);
     }
     setSelected(next);
+  };
+  const changeSource = (next: string) => {
+    setSource(next);
+    setSelected([]);
+    importing.reset();
   };
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -64,17 +95,67 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>Import from local agents</DialogTitle>
           <HelpPopover label="local skill imports">
-            Copies skills from agent folders such as ~/.claude/skills and ~/.codex/skills into ORC.
-            The originals are not changed.
+            Copies skills from agent folders such as ~/.claude/skills and ~/.codex/skills, a project
+            checkout's skill folders, or any folder of skill folders, into ORC. The originals are
+            not changed. Near copies of skills already in ORC are flagged so a one-letter edit does
+            not create a duplicate.
           </HelpPopover>
         </DialogHeader>
         <div
           className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6"
           data-testid="local-skill-import-body"
         >
-          {listing.isLoading && <p role="status">Scanning agent folders…</p>}
-          {listing.data && !agents.length && (
+          <div className="space-y-2">
+            <label htmlFor="local-skill-source" className="text-sm font-medium">
+              Source
+            </label>
+            <select
+              id="local-skill-source"
+              data-testid="local-skill-source"
+              className="block h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-8"
+              value={source}
+              disabled={busy}
+              onChange={(event) => changeSource(event.target.value)}
+            >
+              <option value="agents">Your agent skill folders</option>
+              <ProjectSkillFolderOptions withSkillsOnly />
+              <option value="folder">Custom folder</option>
+            </select>
+            {source === "folder" && (
+              <form
+                className="flex flex-col gap-2 sm:flex-row sm:items-end"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setSelected([]);
+                  setFolder(folderDraft.trim());
+                }}
+              >
+                <div className="min-w-0 flex-1">
+                  <NativeFolderField
+                    id="local-skill-folder"
+                    label="Folder"
+                    value={folderDraft}
+                    disabled={busy}
+                    onChange={setFolderDraft}
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  data-testid="local-skill-folder-scan"
+                  disabled={busy || !folderDraft.trim()}
+                >
+                  Scan
+                </Button>
+              </form>
+            )}
+          </div>
+          {listing.isLoading && scanning && <p role="status">Scanning skill folders…</p>}
+          {listing.data && scanning && !agents.length && (
             <p role="status">No local agent skill folders found.</p>
+          )}
+          {listing.data && scanPath && agents.length > 0 && !agents[0]?.skills.length && (
+            <p role="status">No skills found in this folder.</p>
           )}
           <div className="space-y-4">
             {agents.map((agent) => {
@@ -103,7 +184,7 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="divide-y divide-border">
                     {agent.skills.map((skill) => {
-                      const checked = selected.includes(key(skill));
+                      const checked = selectedKeys.has(key(skill));
                       const takenElsewhere = !checked && selectedNames.has(skill.name);
                       return (
                         <div
@@ -132,6 +213,7 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
                               <span className="mt-0.5 line-clamp-2 text-xs leading-4 text-outline">
                                 {skill.description}
                               </span>
+                              <MatchNote match={skill.match} folder={agent.label} />
                               {skill.error && (
                                 <span className="block text-xs text-destructive wrap-break-word">
                                   {skill.error}
@@ -202,14 +284,7 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
           <Button
             data-testid="local-skill-import-submit"
             disabled={busy || !selected.length}
-            onClick={() =>
-              importing.mutate(
-                selected.map((item) => {
-                  const [agent = "", name = ""] = item.split("/");
-                  return { agent, name };
-                }),
-              )
-            }
+            onClick={() => importing.mutate(selected)}
           >
             {importing.isPending
               ? "Importing…"

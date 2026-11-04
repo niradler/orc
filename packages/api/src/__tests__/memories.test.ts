@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
@@ -255,5 +258,64 @@ describe("Memories REST API", () => {
       ).toBe(0);
     const other = await (await req(app, "GET", `/memories?project_id=${otherProjectId}`)).json();
     expect(other.total).toBe(1);
+  });
+});
+
+describe("Native memory transfer API", () => {
+  const root = mkdtempSync(join(tmpdir(), "orc-api-memory-transfer-"));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test("should export project memories as files and import them into another project", async () => {
+    const dir = join(root, "memory");
+    const preview = await req(app, "POST", "/memory-transfer/export/preview", {
+      project_id: otherProjectId,
+      dir,
+    });
+    expect(preview.status).toBe(200);
+    expect((await preview.json()).memories).toEqual([
+      expect.objectContaining({ name: "other-fact", status: "new" }),
+    ]);
+    const exported = await (
+      await req(app, "POST", "/memory-transfer/export", { project_id: otherProjectId, dir })
+    ).json();
+    expect(exported.exported.map((item: { name: string }) => item.name)).toEqual(["other-fact"]);
+    expect(readFileSync(join(dir, "other-fact.md"), "utf8")).toContain(
+      "description: Belongs elsewhere",
+    );
+
+    const target = (await (await req(app, "POST", "/projects", { name: "mem-target" })).json()).id;
+    const before = await (
+      await req(app, "POST", "/memory-transfer/import/preview", { project_id: target, dir })
+    ).json();
+    expect(before.memories.map((m: { status: string }) => m.status)).toEqual(["new"]);
+    const imported = await (
+      await req(app, "POST", "/memory-transfer/import", {
+        project_id: target,
+        dir,
+        memories: [{ name: "other-fact" }],
+      })
+    ).json();
+    expect(imported).toEqual({ imported: ["other-fact"], replaced: [], skipped: [] });
+    const memory = await (
+      await req(app, "GET", `/memories/other-fact?project_id=${target}`)
+    ).json();
+    expect(memory).toMatchObject({ content: "x", author: "native-memory-import" });
+    const sources = await (
+      await req(app, "GET", `/memory-transfer/sources?project_id=${target}`)
+    ).json();
+    expect(Array.isArray(sources.sources)).toBe(true);
+  });
+
+  test("should reject relative folders and unknown projects", async () => {
+    const relative = await req(app, "POST", "/memory-transfer/import/preview", {
+      project_id: otherProjectId,
+      dir: "relative",
+    });
+    expect(relative.status).toBe(400);
+    const unknown = await req(app, "POST", "/memory-transfer/export/preview", {
+      project_id: "no-such-project",
+      dir: root,
+    });
+    expect(unknown.status).toBe(404);
   });
 });

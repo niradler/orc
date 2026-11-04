@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { createOrcClient } from "@orc/sdk/client";
 import type { ApiResult, Memory, MemoryListSort, UpdateMemoryInput } from "@orc/sdk/types";
 import { Command } from "commander";
@@ -233,5 +235,141 @@ export function memCommand() {
       },
     );
 
+  cmd
+    .command("sources")
+    .description(
+      "List native memory folders: Claude Code project memory (the project's first) and Codex notes",
+    )
+    .option("-p, --project <name>", "Project name (defaults to the active project)")
+    .action(async (opts: { project?: string }) => {
+      const { client, project } = await projectFrom(opts);
+      const data = unwrap(await client.memories.nativeSources(project.id));
+      if (isJson()) return jsonOut(data);
+      if (data.sources.length === 0) return console.log("No native memory folders found.");
+      for (const source of data.sources)
+        console.log(
+          `  ${source.project_match ? "*" : " "} ${source.agent.padEnd(6)} ${String(source.count).padStart(3)}  ${source.dir}`,
+        );
+    });
+
+  cmd
+    .command("import [dir]")
+    .description(
+      "Import native memory files (Claude format) into the project; lists them unless --all or --name",
+    )
+    .option("-n, --name <names...>", "Import these memories")
+    .option("--all", "Import every new memory")
+    .option("--replace <names...>", "Update these project memories from the folder")
+    .option("-p, --project <name>", "Project name (defaults to the active project)")
+    .action(
+      async (
+        dirArg: string | undefined,
+        opts: { name?: string[]; all?: boolean; replace?: string[]; project?: string },
+      ) => {
+        const { client, project } = await projectFrom(opts);
+        const dir = await nativeDir(client, project, dirArg);
+        const preview = unwrap(await client.memories.previewImport(project.id, dir));
+        if (!opts.all && !opts.name && !opts.replace) {
+          if (isJson()) return jsonOut(preview);
+          console.log(preview.dir);
+          for (const memory of preview.memories) {
+            console.log(
+              `  [${memory.status}] ${memory.name} - ${memory.error ?? memory.description}`,
+            );
+            if (memory.match) console.log(`      ${matchText(memory.match)}`);
+          }
+          return;
+        }
+        const names = new Set([
+          ...(opts.all
+            ? preview.memories.filter((memory) => memory.status === "new").map((m) => m.name)
+            : []),
+          ...(opts.name ?? []),
+        ]);
+        const replace = new Set(opts.replace ?? []);
+        const items = [...new Set([...names, ...replace])].map((name) => ({
+          name,
+          ...(replace.has(name) ? { replace: true } : {}),
+        }));
+        if (!items.length) fail("No new memories to import");
+        const result = unwrap(await client.memories.importNative(project.id, dir, items));
+        if (isJson()) return jsonOut(result);
+        for (const name of result.imported) console.log(`Imported ${name}`);
+        for (const name of result.replaced) console.log(`Replaced ${name}`);
+        for (const skip of result.skipped) console.log(`Skipped ${skip.name}: ${skip.reason}`);
+      },
+    );
+
+  cmd
+    .command("export [dir]")
+    .description(
+      "Write project memories as native memory files (Claude format, MEMORY.md index); defaults to the project's Claude memory folder",
+    )
+    .option("-n, --name <names...>", "Export only these memories")
+    .option("--overwrite <names...>", "Write these even if the folder has a near copy or conflict")
+    .option(
+      "--overwrite-all",
+      "Write every memory the folder has a near copy, conflict or duplicate of",
+    )
+    .option("--dry-run", "Show what would happen without writing")
+    .option("-p, --project <name>", "Project name (defaults to the active project)")
+    .action(
+      async (
+        dirArg: string | undefined,
+        opts: {
+          name?: string[];
+          overwrite?: string[];
+          overwriteAll?: boolean;
+          dryRun?: boolean;
+          project?: string;
+        },
+      ) => {
+        const { client, project } = await projectFrom(opts);
+        const dir = await nativeDir(client, project, dirArg);
+        const plan = unwrap(await client.memories.previewExport(project.id, dir, opts.name));
+        if (opts.dryRun) {
+          if (isJson()) return jsonOut(plan);
+          console.log(plan.dir);
+          for (const item of plan.memories) {
+            console.log(`  [${item.status}] ${item.name}${item.reason ? ` - ${item.reason}` : ""}`);
+            if (item.match) console.log(`      ${matchText(item.match)}`);
+          }
+          return;
+        }
+        const overwrite = opts.overwriteAll
+          ? plan.memories.filter((item) => item.can_overwrite).map((item) => item.name)
+          : opts.overwrite;
+        const result = unwrap(
+          await client.memories.exportNative(project.id, dir, { names: opts.name, overwrite }),
+        );
+        if (isJson()) return jsonOut(result);
+        for (const item of result.exported)
+          console.log(
+            `${item.replaced ? "Replaced" : "Exported"} ${item.name} -> ${item.file}${item.backup ? ` (backup ${item.backup})` : ""}`,
+          );
+        for (const skip of result.skipped) console.log(`Skipped ${skip.name}: ${skip.reason}`);
+        if (result.index_updated) console.log("Updated MEMORY.md");
+      },
+    );
+
   return cmd;
+}
+
+function matchText(match: { name: string; level: string; score: number; where: string }): string {
+  const where = match.where === "orc" ? "in ORC" : "in the folder";
+  return `${match.level} to ${match.name} ${where} (${Math.round(match.score * 100)}%)`;
+}
+
+/** The given folder, or the Claude memory folder matching the project. */
+async function nativeDir(
+  client: ReturnType<typeof createOrcClient>,
+  project: { id: string; name: string },
+  dir: string | undefined,
+): Promise<string> {
+  if (dir) return resolve(dir.startsWith("~/") ? join(homedir(), dir.slice(2)) : dir);
+  const { sources } = unwrap(await client.memories.nativeSources(project.id));
+  const match = sources.find((source) => source.project_match);
+  if (!match)
+    fail(`No Claude memory folder matches project ${project.name}; pass the folder explicitly`);
+  return match.dir;
 }

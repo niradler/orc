@@ -160,6 +160,13 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 - [ ] `orc mem show <name>` shows the full memory
 - [ ] `orc mem edit <name>` updates description/content/priority with a reason
 - [ ] `orc mem delete <name>` deletes the memory
+- [ ] `orc mem sources` lists native memory folders and marks the project's Claude folder
+- [ ] `orc mem export <codex notes dir>` writes notes without `MEMORY.md`; `orc mem import` reads plain `# heading` Codex notes, dropping the date prefix from the name
+- [ ] `orc mem import [dir]` previews statuses; `--all` imports new only; a one-letter copy shows `[duplicate]` with its match; `--replace <name>` updates with history
+- [ ] `orc mem export [dir] --dry-run` compares; export writes `<name>.md` with frontmatter and updates `MEMORY.md`; rerun reports identical
+- [ ] `orc skill local --path <dir>` scans a folder; near copies and renamed copies are flagged and not importable
+- [ ] `orc skill export-to <agent|dir> <names...>` writes `SKILL.md` folders; existing folders need `--overwrite`; a backup is kept
+- [ ] Skills export/import dialogs list each project's checkout skill folders (from the project scope and local session git roots, worktrees folded in); `--project <name>` on `export-to` / `local` targets `<repo>/.claude/skills` or `<repo>/.agents/skills`
 - [ ] `orc mem history <name>` lists changes; `orc mem revert <name> <change-id> --expected-change-id <latest-change-id> -r <reason>` restores
 
 ### 4.2 Memory API

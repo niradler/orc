@@ -92,6 +92,8 @@ const env = {
   APPDATA: join(pwHome, "AppData", "Roaming"),
   LOCALAPPDATA: join(pwHome, "AppData", "Local"),
   XDG_CONFIG_HOME: join(pwHome, ".config"),
+  CLAUDE_CONFIG_DIR: join(pwHome, ".claude"),
+  CODEX_HOME: join(pwHome, ".codex"),
   PLAYWRIGHT_BROWSERS_PATH: browserCache,
   ORC_API_HOST: "127.0.0.1",
   PW_API_PORT: pwApiPort,

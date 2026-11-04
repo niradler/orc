@@ -2,6 +2,13 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { getSqlite } from "@orc/db/client";
 import { MEMORY_DESCRIPTION_MAX, MEMORY_PRIORITY_MAX, MemoryStore } from "@orc/db/memories";
+import {
+  exportNativeMemories,
+  importNativeMemories,
+  listNativeMemorySources,
+  planMemoryExport,
+  previewMemoryImport,
+} from "@orc/db/memory-transfer";
 import { readSourceFromHeader } from "@orc/db/read-usage";
 import { createRouter } from "../lib/router.js";
 
@@ -320,6 +327,269 @@ app.openapi(
       { reason: input.reason, author: input.author ?? "human", session_id: input.session_id },
     );
     return c.json({ memory });
+  },
+);
+
+const FolderSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .openapi({ description: "Absolute native memory folder, e.g. ~/.claude/projects/<p>/memory" });
+const MemoryNamesSchema = z.array(z.string().min(1).max(64)).max(500);
+const MemoryMatchSchema = z
+  .object({
+    name: z.string(),
+    level: z.enum(["identical", "near", "similar"]),
+    score: z.number(),
+    where: z.enum(["orc", "folder"]),
+  })
+  .openapi("MemoryMatch");
+const NativeMemorySchema = z
+  .object({
+    file: z.string(),
+    name: z.string(),
+    description: z.string(),
+    status: z.enum(["new", "installed", "duplicate", "conflict", "invalid"]),
+    can_replace: z.boolean(),
+    match: MemoryMatchSchema.optional(),
+    error: z.string().optional(),
+  })
+  .openapi("NativeMemory");
+const MemoryExportItemSchema = z
+  .object({
+    name: z.string(),
+    description: z.string(),
+    file: z.string(),
+    status: z.enum(["new", "identical", "near", "conflict", "duplicate"]),
+    can_overwrite: z.boolean(),
+    match: MemoryMatchSchema.optional(),
+    reason: z.string().optional(),
+  })
+  .openapi("MemoryExportItem");
+const json = <T extends z.ZodTypeAny>(schema: T) => ({
+  body: { content: { "application/json": { schema } } },
+});
+
+// Not under /memories/: a memory may be named "import" or "export".
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/memory-transfer/sources",
+    tags: ["Memory"],
+    summary:
+      "List native memory folders: Claude Code project memory (the project's own first) and Codex notes",
+    request: { query: z.object({ project_id: z.string().min(1).optional() }) },
+    responses: {
+      200: {
+        description: "Native memory folders",
+        content: {
+          "application/json": {
+            schema: z.object({
+              sources: z.array(
+                z
+                  .object({
+                    agent: z.enum(["claude", "codex"]),
+                    label: z.string(),
+                    dir: z.string(),
+                    count: z.number().int(),
+                    project_match: z.boolean(),
+                  })
+                  .openapi("NativeMemorySource"),
+              ),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => {
+    const projectId = c.req.valid("query").project_id;
+    const project = projectId
+      ? getSqlite()
+          .query<{ name: string }, [string]>("SELECT name FROM projects WHERE id=?")
+          .get(projectId)
+      : null;
+    return c.json({ sources: listNativeMemorySources(project?.name) });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/memory-transfer/import/preview",
+    tags: ["Memory"],
+    summary: "Preview importing a native memory folder, flagging duplicates and near copies",
+    request: json(z.object({ project_id: z.string().min(1), dir: FolderSchema }).strict()),
+    responses: {
+      200: {
+        description: "Each memory file with its status against the project",
+        content: {
+          "application/json": {
+            schema: z
+              .object({ dir: z.string(), memories: z.array(NativeMemorySchema) })
+              .openapi("MemoryImportPreview"),
+          },
+        },
+      },
+      400: { description: "Folder is not absolute or does not exist" },
+      404: { description: "Project not found" },
+    },
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    return c.json(previewMemoryImport(getSqlite(), input.project_id, input.dir));
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/memory-transfer/import",
+    tags: ["Memory"],
+    summary: "Import native memory files into a project, skipping duplicates and near copies",
+    request: json(
+      z
+        .object({
+          project_id: z.string().min(1),
+          dir: FolderSchema,
+          memories: z
+            .array(
+              z
+                .object({
+                  name: z.string().min(1).max(64),
+                  replace: z.boolean().optional().openapi({
+                    description: "Update the project memory of the same name (kept in its history)",
+                  }),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(256),
+          ...Writer,
+        })
+        .strict(),
+    ),
+    responses: {
+      200: {
+        description: "Imported, replaced and skipped memories",
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                imported: z.array(z.string()),
+                replaced: z.array(z.string()),
+                skipped: z.array(z.object({ name: z.string(), reason: z.string() })),
+              })
+              .openapi("MemoryImportResult"),
+          },
+        },
+      },
+      400: { description: "Invalid folder or selection" },
+      404: { description: "Project not found" },
+    },
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    return c.json(
+      importNativeMemories(getSqlite(), input.project_id, input.dir, input.memories, {
+        author: input.author,
+        session_id: input.session_id,
+      }),
+    );
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/memory-transfer/export/preview",
+    tags: ["Memory"],
+    summary: "Preview exporting project memories as native memory files",
+    request: json(
+      z
+        .object({
+          project_id: z.string().min(1),
+          dir: FolderSchema,
+          names: MemoryNamesSchema.optional().openapi({
+            description: "Memories to export; all when omitted",
+          }),
+        })
+        .strict(),
+    ),
+    responses: {
+      200: {
+        description: "What would happen to each memory",
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                dir: z.string(),
+                index: z.boolean(),
+                memories: z.array(MemoryExportItemSchema),
+              })
+              .openapi("MemoryExportPlan"),
+          },
+        },
+      },
+      400: { description: "Folder is not absolute" },
+      404: { description: "Project or memory not found" },
+    },
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    return c.json(planMemoryExport(getSqlite(), input.project_id, input.dir, input.names));
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/memory-transfer/export",
+    tags: ["Memory"],
+    summary: "Write project memories as native memory files (and MEMORY.md index lines)",
+    request: json(
+      z
+        .object({
+          project_id: z.string().min(1),
+          dir: FolderSchema,
+          names: MemoryNamesSchema.optional(),
+          overwrite: MemoryNamesSchema.optional().openapi({
+            description:
+              "Memories to write even though the folder has a near copy, conflict or duplicate; replaced files are backed up",
+          }),
+        })
+        .strict(),
+    ),
+    responses: {
+      200: {
+        description: "Exported and skipped memories",
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                dir: z.string(),
+                exported: z.array(
+                  z.object({
+                    name: z.string(),
+                    file: z.string(),
+                    replaced: z.boolean(),
+                    backup: z.string().optional(),
+                  }),
+                ),
+                skipped: z.array(z.object({ name: z.string(), reason: z.string() })),
+                index_updated: z.boolean(),
+              })
+              .openapi("MemoryExportResult"),
+          },
+        },
+      },
+      400: { description: "Folder is not absolute" },
+      404: { description: "Project or memory not found" },
+    },
+  }),
+  (c) => {
+    const { project_id, dir, ...input } = c.req.valid("json");
+    return c.json(exportNativeMemories(getSqlite(), project_id, dir, input));
   },
 );
 

@@ -55,12 +55,21 @@ import type {
   LocalSkillAgentListing,
   LocalSkillImportItem,
   LocalSkillImportResult,
+  MemoryExportPlan,
+  MemoryExportResult,
+  MemoryImportPreview,
+  MemoryImportResult,
+  NativeMemorySource,
+  ProjectSkillRoot,
   PullCommentInput,
   PullReview,
   RestartResponse,
   ScopeQuery,
   SkillChange,
   SkillDiscovery,
+  SkillExportPlan,
+  SkillExportResult,
+  SkillExportTarget,
   SkillImportInput,
   SkillImportOrigin,
   SkillSyncInput,
@@ -72,6 +81,10 @@ import type {
 export type {
   LocalSkill,
   LocalSkillAgentListing,
+  MemoryExportItem,
+  NativeMemory,
+  NativeMemorySource,
+  ProjectSkillRoot,
   PullCommentInput,
   PullReview,
   SkillDiscovery,
@@ -923,6 +936,38 @@ export const api = {
       ),
     revert: (name: string, input: RevertMemoryInput) =>
       req<{ memory: Memory | null }>("POST", `/memories/${encodeURIComponent(name)}/revert`, input),
+    nativeSources: (projectId: string) =>
+      req<{ sources: NativeMemorySource[] }>("GET", "/memory-transfer/sources", undefined, {
+        project_id: projectId,
+      }),
+    previewImport: (projectId: string, dir: string) =>
+      req<MemoryImportPreview>("POST", "/memory-transfer/import/preview", {
+        project_id: projectId,
+        dir,
+      }),
+    importNative: (
+      projectId: string,
+      dir: string,
+      memories: Array<{ name: string; replace?: boolean }>,
+    ) =>
+      req<MemoryImportResult>("POST", "/memory-transfer/import", {
+        project_id: projectId,
+        dir,
+        memories,
+        author: UI_AUTHOR,
+      }),
+    previewExport: (projectId: string, dir: string) =>
+      req<MemoryExportPlan>("POST", "/memory-transfer/export/preview", {
+        project_id: projectId,
+        dir,
+      }),
+    exportNative: (projectId: string, dir: string, names: string[], overwrite: string[]) =>
+      req<MemoryExportResult>("POST", "/memory-transfer/export", {
+        project_id: projectId,
+        dir,
+        names,
+        overwrite,
+      }),
   },
 
   scratchpads: {
@@ -1137,9 +1182,23 @@ export const api = {
       req<{ skills: SkillFull[] }>("POST", "/skills/import", input),
     origin: (name: string) =>
       req<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
-    localAgents: () => req<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents"),
-    importLocal: (skills: LocalSkillImportItem[]) =>
-      req<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
+    localAgents: (path?: string) =>
+      req<{ agents: LocalSkillAgentListing[] }>(
+        "GET",
+        "/skills/local-agents",
+        undefined,
+        path ? { path } : undefined,
+      ),
+    projectFolders: () => req<{ projects: ProjectSkillRoot[] }>("GET", "/skills/project-folders"),
+    importLocal: (skills: LocalSkillImportItem[], folder?: string) =>
+      req<LocalSkillImportResult>("POST", "/skills/local-agents/import", {
+        skills,
+        ...(folder ? { folder } : {}),
+      }),
+    previewExport: (target: SkillExportTarget) =>
+      req<SkillExportPlan>("POST", "/skills/export/preview", { target }),
+    exportTo: (target: SkillExportTarget, names: string[], overwrite: string[]) =>
+      req<SkillExportResult>("POST", "/skills/export", { target, names, overwrite }),
     delete: (name: string) => req<null>("DELETE", `/skills/${encodeURIComponent(name)}`),
     sync: (name: string, input: SkillSyncInput = {}) =>
       req<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
