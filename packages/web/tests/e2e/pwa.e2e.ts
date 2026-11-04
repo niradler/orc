@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
 import { gotoView } from "./_helpers";
 
+test.use({ serviceWorkers: "allow" });
+
 test("serves an installable manifest and public PWA files without auth", async ({ request }) => {
   const manifest = await request.get("/manifest.webmanifest");
   expect(manifest.status()).toBe(200);

@@ -248,21 +248,75 @@ const deleteRoute = createRoute({
   },
 });
 
+// Bun closes a request idle for 255s (runtime.ts idleTimeout), so a sync wait must end first.
+const MAX_SYNC_WAIT_SECS = 240;
+
 const triggerRoute = createRoute({
   method: "post",
   path: "/jobs/{id}/trigger",
   tags: ["Jobs"],
   summary: "Manually trigger a job",
-  request: { params: z.object({ id: z.string() }) },
+  description:
+    "Starts a run and returns 202 with its id. With sync=true the request waits for the run " +
+    "and returns 200 with its output; stdout that is a JSON document is also returned parsed " +
+    "as result. A run still going after wait_secs returns 202 and keeps running.",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({
+      sync: z
+        .enum(["true", "false"])
+        .transform((value) => value === "true")
+        .optional(),
+      wait_secs: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_SYNC_WAIT_SECS)
+        .optional()
+        .default(MAX_SYNC_WAIT_SECS),
+    }),
+  },
   responses: {
-    202: {
-      description: "Triggered",
+    200: {
+      description: "Finished (sync=true)",
       content: {
-        "application/json": { schema: z.object({ run_id: z.string() }) },
+        "application/json": {
+          schema: z
+            .object({
+              run_id: z.string(),
+              status: JobStatusSchema,
+              exit_code: z.number().nullable(),
+              error_msg: z.string().nullable(),
+              stdout: z.string().nullable(),
+              stderr: z.string().nullable(),
+              result: z.unknown().nullable().openapi({
+                description: "stdout parsed as JSON, or null when it is not JSON",
+              }),
+            })
+            .openapi("JobRunResult"),
+        },
+      },
+    },
+    202: {
+      description: "Triggered, or still running when the sync wait ended",
+      content: {
+        "application/json": {
+          schema: z.object({ run_id: z.string(), status: JobStatusSchema.optional() }),
+        },
       },
     },
   },
 });
+
+function parseJsonOutput(stdout: string | null): unknown {
+  const text = stdout?.trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
 
 const runsRoute = createRoute({
   method: "get",
@@ -496,6 +550,7 @@ app.openapi(deleteRoute, async (c) => {
 app.openapi(triggerRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
+  const { sync, wait_secs } = c.req.valid("query");
   const job = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!job) throw new NotFoundError("Job", id);
 
@@ -508,13 +563,37 @@ app.openapi(triggerRoute, async (c) => {
     created_at: new Date(),
   });
 
-  executeJob({ jobId: id, runId, triggerBy: "api" }).catch((err) =>
+  const execution = executeJob({ jobId: id, runId, triggerBy: "api" }).catch((err) =>
     logger.error(
       `Background execution failed for run ${runId}: ${err instanceof Error ? err.message : String(err)}`,
     ),
   );
+  if (!sync) return c.json({ run_id: runId }, 202);
 
-  return c.json({ run_id: runId }, 202);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const finished = await Promise.race([
+    execution.then(() => true),
+    new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), wait_secs * 1000);
+    }),
+  ]);
+  clearTimeout(timer);
+  const run = await db.query.job_runs.findFirst({ where: eq(job_runs.id, runId) });
+  if (!run) throw new NotFoundError("JobRun", runId);
+  if (!finished || run.status === "pending" || run.status === "running")
+    return c.json({ run_id: runId, status: run.status }, 202);
+  return c.json(
+    {
+      run_id: runId,
+      status: run.status,
+      exit_code: run.exit_code,
+      error_msg: run.error_msg,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      result: parseJsonOutput(run.stdout),
+    },
+    200,
+  );
 });
 
 app.openapi(runsRoute, async (c) => {

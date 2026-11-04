@@ -97,6 +97,8 @@ import type {
   JobPage,
   JobRun,
   JobRunLog,
+  JobRunResult,
+  JobRunStillRunning,
   LiveSession,
   Memory,
   MemoryChange,
@@ -558,6 +560,13 @@ export function createOrcClient(options?: OrcClientOptions) {
       delete: (id: string) => c<null>("DELETE", `/jobs/${id}`),
 
       trigger: (id: string) => c<{ run_id: string }>("POST", `/jobs/${id}/trigger`),
+
+      /** Waits up to waitSecs (max 240) for the run; a result without `result` is still running. */
+      triggerSync: (id: string, waitSecs?: number) =>
+        c<JobRunResult | JobRunStillRunning>("POST", `/jobs/${id}/trigger`, undefined, {
+          sync: true,
+          wait_secs: waitSecs,
+        }),
 
       runs: (id: string, limit?: number) =>
         c<{ runs: JobRun[] }>("GET", `/jobs/${id}/runs`, undefined, { limit }),

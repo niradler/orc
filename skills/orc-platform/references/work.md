@@ -74,7 +74,9 @@ Verify a run's exit code and bounded log output; scheduler presence is not succe
 
 Example for an intended test job: `orc job add verify --command "bun test"
 --trigger manual --timeout 300 --project my-app`, inspect `orc job show verify`,
-run with `orc job run verify`, then `orc job runs verify --logs`. Verify the actual
+run with `orc job run verify`, then `orc job runs verify --logs`, or wait for the
+output with `orc job run verify --wait` (exits non-zero unless the run succeeds; JSON
+stdout comes back as `result` with `--json`; API: `POST /jobs/{id}/trigger?sync=true`). Verify the actual
 cwd/project and command before executing; add cron/watch only when recurring work
 is wanted. Pausing a schedule uses job update/disabled; inspect whether an already
 running job still needs an explicit stop. Check retries, timeout and scheduler logs

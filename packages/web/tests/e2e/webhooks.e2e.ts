@@ -219,16 +219,17 @@ test("standalone source connects multiple typed jobs, filters deliveries and reo
   await hook.getByTestId("webhook-job-link").filter({ hasText: taskName }).click();
   await expect(page.getByTestId("job-run-task-link")).toBeVisible();
   await page.getByTestId("job-detail-edit").click();
+  const editEvents = page.getByTestId("form-dialog").getByTestId("webhook-events");
   await expect(page.getByTestId("job-action-type")).toHaveValue("task");
-  await expect(page.getByTestId("webhook-events")).toHaveValue("build");
-  await revealFormField(page, page.getByTestId("webhook-events"));
-  await page.getByTestId("webhook-events").fill("build, deploy");
+  await expect(editEvents).toHaveValue("build");
+  await revealFormField(page, editEvents);
+  await editEvents.fill("build, deploy");
   await openFinalFormStep(page);
   await page.getByTestId("job-edit-submit").click();
   await expect(page.getByTestId("job-edit-submit")).toHaveCount(0);
   await page.goto(`/jobs/${taskJob.id}?project=all`);
   await page.getByTestId("job-detail-edit").click();
-  await expect(page.getByTestId("webhook-events")).toHaveValue("build, deploy");
+  await expect(editEvents).toHaveValue("build, deploy");
   await expect(page.getByTestId("webhook-secret")).toHaveCount(0);
 });
 

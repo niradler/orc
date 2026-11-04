@@ -1,7 +1,7 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { captureState } from "./_capture-state";
-import { closeChatHistory, openChatActions, openChatHistory, openChatSettings } from "./_chat-ui";
+import { openChatActions, openChatHistory, openChatSettings, waitHistoryClosed } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 for (const width of [1440, 390]) {
@@ -145,7 +145,7 @@ for (const width of [1440, 390]) {
       .locator(`[data-history-id="chat:${saved.id}"]`)
       .getByTestId("chat-resume-thread")
       .click();
-    await closeChatHistory(page);
+    await waitHistoryClosed(page);
     await expect(page.getByTestId("chat-agent-button")).toContainText("cursor");
     await expect(page.getByTestId("chat-model-button")).toContainText("fixture-model");
     expect(savedReads).toBe(1);
@@ -180,7 +180,7 @@ for (const width of [1440, 390]) {
       .locator('[data-history-id="native:native-claude"]')
       .getByTestId("chat-resume-live")
       .click();
-    await closeChatHistory(page);
+    await waitHistoryClosed(page);
     expect(resumeCalls).toBe(1);
     await expect(page.getByTestId("chat-model-button")).toContainText("fixture-claude");
     await expect(page.getByTestId("chat-agent-button")).toContainText("claude");
@@ -202,7 +202,7 @@ for (const width of [1440, 390]) {
     await openChatHistory(page);
     const draft = list.locator('[data-history-id^="draft:"]');
     await draft.getByTestId("chat-session-select").click();
-    await closeChatHistory(page);
+    await waitHistoryClosed(page);
     await expect(page.getByTestId("chat-input")).toHaveValue("Keep my unsent local draft");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,

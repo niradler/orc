@@ -255,6 +255,47 @@ test.describe("Scratchpads", () => {
     }
   });
 
+  test("a page with ORC access runs a job on click and renders the JSON it returns", async ({
+    page,
+    request,
+  }) => {
+    const job = await apiPost<{ id: string }>(request, "/jobs", {
+      name: tid("pw-pad-job"),
+      command: `bun -e "await Bun.sleep(1500);console.log(JSON.stringify({total:2,items:['alpha','beta']}))"`,
+      trigger_type: "manual",
+    });
+    const live =
+      `<!doctype html><button id=run>Run</button><p id=status>idle</p><ul id=items></ul><script>` +
+      `const JOB = ${JSON.stringify(job.id)};` +
+      "const $ = (id) => document.getElementById(id);" +
+      "$('run').onclick = async () => { $('status').textContent = 'running';" +
+      "  const r = await orc.fetch('/jobs/' + JOB + '/trigger?sync=true', { method: 'POST' });" +
+      "  const run = await r.json();" +
+      "  if (r.status !== 200) { $('status').textContent = 'http ' + r.status; return; }" +
+      "  $('status').textContent = run.status + ' / total ' + run.result.total;" +
+      "  $('items').innerHTML = run.result.items.map((i) => '<li>' + i + '</li>').join(''); };" +
+      "</script>";
+    const pad = await createPad(request, { kind: "html", content: live });
+    try {
+      await openPad(page, pad.id);
+      await page.getByTestId("scratchpad-html-trust").click();
+      await page.getByTestId("confirm-dialog-confirm").click();
+      const view = preview(page);
+      await view.locator("#run").click();
+      await expect(view.locator("#status")).toHaveText("running");
+      await expect(view.locator("#status")).toHaveText("success / total 2", { timeout: 20_000 });
+      await expect(view.locator("#items li")).toHaveText(["alpha", "beta"]);
+      const { runs } = await apiGet<{ runs: { status: string; trigger_by: string }[] }>(
+        request,
+        `/jobs/${job.id}/runs`,
+      );
+      expect(runs).toMatchObject([{ status: "success", trigger_by: "api" }]);
+    } finally {
+      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/jobs/${job.id}`);
+    }
+  });
+
   test("ORC access refuses paths outside the API, forged requests and discarded-to content", async ({
     page,
     request,

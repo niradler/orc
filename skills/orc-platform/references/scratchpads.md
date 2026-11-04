@@ -133,6 +133,24 @@ async function loadTasks() {
 </script>
 ```
 
+To run a job from a button and show what it returns, trigger it with `sync=true`: the
+call waits for the run (up to `wait_secs`, default and max 240) and answers 200 with
+`status`, `exit_code`, `stdout`, `stderr` and `result`, the job's stdout parsed as JSON
+(null when it is not JSON). Have the job print one JSON document as its last and only
+stdout. A 202 means it is still running: poll `/jobs/{id}/runs` for that `run_id`.
+
+```js
+button.onclick = async () => {
+  status.textContent = "running…";
+  const res = await orc.fetch(`/jobs/${JOB_ID}/trigger?sync=true`, { method: "POST" });
+  const run = await res.json();
+  if (res.status === 202) return void (status.textContent = `still running (${run.run_id})`);
+  if (!res.ok) return void (status.textContent = `ORC API ${res.status}`);
+  status.textContent = run.status;
+  render(run.result ?? run.stdout); // build nodes with textContent, not innerHTML
+};
+```
+
 Show which mode the page is in and tell the human that live data needs "Render with
 ORC access". Check routes and limits in the OpenAPI spec (`/openapi.json`) rather than
 guessing. Writes (`POST`/`PATCH`) act as the human: make each one an explicit user

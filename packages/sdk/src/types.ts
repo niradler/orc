@@ -180,6 +180,20 @@ export type JobRun = {
   created_at: string;
 };
 
+/** A finished run from triggering with sync; `result` is stdout parsed as JSON, else null. */
+export type JobRunResult = {
+  run_id: string;
+  status: JobStatus;
+  exit_code: number | null;
+  error_msg: string | null;
+  stdout: string | null;
+  stderr: string | null;
+  result: unknown;
+};
+
+/** A sync trigger whose run outlasted the wait; it keeps running. */
+export type JobRunStillRunning = { run_id: string; status: JobStatus };
+
 export type SessionEvent = {
   id: string;
   type: string;

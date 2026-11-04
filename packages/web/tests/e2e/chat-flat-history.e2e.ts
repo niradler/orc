@@ -1,6 +1,6 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { closeChatHistory, openChatHistory } from "./_chat-ui";
+import { openChatHistory, waitHistoryClosed } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 for (const width of [1440, 390]) {
@@ -523,7 +523,7 @@ for (const width of [1440, 390]) {
     await expect(list.locator("details,summary,h2,h3")).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath(`flat-history-waiting-${width}.png`) });
     await pending.getByTestId("chat-session-select").click();
-    await closeChatHistory(page);
+    await waitHistoryClosed(page);
     await expect(page.getByTestId("chat-permission")).toContainText("echo review");
   });
 }

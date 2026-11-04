@@ -1,6 +1,6 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { closeChatHistory, openChatHistory } from "./_chat-ui";
+import { openChatHistory, waitHistoryClosed } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 test("should show queued ORC answers and rebuild the chat when its session changed on disk", async ({
@@ -82,7 +82,7 @@ test("should show queued ORC answers and rebuild the chat when its session chang
     .locator(`[data-history-id="chat:${thread.id}"]`)
     .getByTestId("chat-resume-thread")
     .click();
-  await closeChatHistory(page);
+  await waitHistoryClosed(page);
   await expect(page.getByTestId("chat-pending-count")).toHaveText("1 pending");
   await page.getByTestId("chat-queue-toggle").click();
   await expect(page.getByTestId("chat-queued-answer")).toContainText("IBKR positions check");

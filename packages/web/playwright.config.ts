@@ -24,6 +24,8 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: `http://127.0.0.1:${PW_API_PORT}`,
+    // A controlling service worker makes page.route() miss requests; pwa.e2e.ts opts back in.
+    serviceWorkers: "block",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     actionTimeout: 10_000,

@@ -39,6 +39,10 @@ export async function openChatHistory(page: Page): Promise<void> {
   await expect(page.getByTestId("chat-session-list")).toBeVisible();
 }
 
+export async function waitHistoryClosed(page: Page): Promise<void> {
+  await expect(page.getByTestId("chat-sessions-dialog")).toBeHidden();
+}
+
 export async function closeChatHistory(page: Page): Promise<void> {
   if (await page.getByTestId("chat-sessions-dialog").isVisible())
     await page.keyboard.press("Escape");

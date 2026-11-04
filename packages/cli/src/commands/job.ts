@@ -118,15 +118,37 @@ export function jobCommand() {
   cmd
     .command("run <name-or-id>")
     .description("Manually trigger a job")
-    .action(async (nameOrId: string) => {
+    .option("-w, --wait", "Wait for the run and print its output (JSON stdout as result)")
+    .option("--wait-secs <secs>", "Longest wait with --wait, 1-240", "240")
+    .action(async (nameOrId: string, opts: { wait?: boolean; waitSecs: string }) => {
       const client = createOrcClient();
       const job = await findJob(client, nameOrId);
       if (!job) return;
 
-      const { data, error } = await client.jobs.trigger(job.id);
-      if (error || !data) return console.error("Error:", error);
+      if (!opts.wait) {
+        const { data, error } = await client.jobs.trigger(job.id);
+        if (error || !data) return console.error("Error:", error);
+        if (isJson()) return jsonOut(data);
+        return console.log(`Triggered job ${job.name} → run: ${data.run_id}`);
+      }
+      const { data, error } = await client.jobs.triggerSync(job.id, Number(opts.waitSecs));
+      if (error || !data) {
+        process.exitCode = 1;
+        return console.error("Error:", error);
+      }
+      const finished = "result" in data;
+      if (!finished || data.status !== "success") process.exitCode = 1;
       if (isJson()) return jsonOut(data);
-      console.log(`Triggered job ${job.name} → run: ${data.run_id}`);
+      if (!finished)
+        return console.error(
+          `Job ${job.name} is still ${data.status} → run: ${data.run_id} (see orc job show)`,
+        );
+      if (data.stdout) console.log(data.stdout);
+      if (data.stderr) console.error(data.stderr);
+      if (data.status !== "success")
+        console.error(
+          `Job ${job.name} ${data.status} (exit ${data.exit_code ?? "?"})${data.error_msg ? `: ${data.error_msg}` : ""}`,
+        );
     });
 
   cmd

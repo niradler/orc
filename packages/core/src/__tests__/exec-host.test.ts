@@ -15,6 +15,7 @@ import {
   parseProbe,
   parseSshConfigHosts,
   remoteCommand,
+  retryTransientSqlite,
   type SshExecHost,
   shQuote,
   sshArgv,
@@ -260,5 +261,41 @@ describe("describeSshFailure", () => {
     expect(
       describeSshFailure("box", "Error: remote port forwarding failed for listen port 7700"),
     ).toMatch(/port/i);
+  });
+});
+
+describe("retryTransientSqlite", () => {
+  const sqliteError = (code: string) => Object.assign(new Error(code), { code });
+
+  test("retries a transient SQLite failure and returns the next result", async () => {
+    let calls = 0;
+    const rows = await retryTransientSqlite(
+      () => {
+        calls++;
+        if (calls === 1) throw sqliteError("SQLITE_IOERR_TRUNCATE");
+        return ["row"];
+      },
+      3,
+      1,
+    );
+    expect(rows).toEqual(["row"]);
+    expect(calls).toBe(2);
+  });
+
+  test("throws non-transient errors immediately and gives up after the attempt limit", async () => {
+    let calls = 0;
+    const corrupt = () => {
+      calls++;
+      throw sqliteError("SQLITE_CORRUPT");
+    };
+    await expect(retryTransientSqlite(corrupt, 3, 1)).rejects.toThrow("SQLITE_CORRUPT");
+    expect(calls).toBe(1);
+    calls = 0;
+    const busy = () => {
+      calls++;
+      throw sqliteError("SQLITE_BUSY");
+    };
+    await expect(retryTransientSqlite(busy, 3, 1)).rejects.toThrow("SQLITE_BUSY");
+    expect(calls).toBe(3);
   });
 });

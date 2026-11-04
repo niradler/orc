@@ -65,7 +65,8 @@ test("should show dated unavailable questions and contextual help on desktop and
       new Date(entry.created_at).toISOString(),
     );
     await expect(page.getByTestId("view-title")).toHaveText("Attention needed");
-    await page.getByTestId("view-help").click();
+    await page.mouse.move(0, 0);
+    await page.getByTestId("view-help").hover();
     await expect(page.getByTestId("view-help-content")).toContainText(
       "Live Codex questions can also appear as session notices.",
     );
@@ -324,6 +325,7 @@ test("should show whether ORC pushed an answer or the agent read it", async ({ p
   ).toHaveText("The agent is unavailable.");
   await apiGet<HumanRequest>(request, `/human-requests/${read.id}`);
   await expect(state(read.id)).toHaveText("Delivered · agent read it");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("should preserve Ask user expiry and notification settings when editing its prompt", async ({
