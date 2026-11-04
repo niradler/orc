@@ -70,6 +70,14 @@ for (const width of [1440, 390]) {
       await input.press("Tab");
       await expect(input).toHaveValue("fix it /orc-sdlc /orc-platform ");
       await expect(menu).toHaveCount(0);
+      const commands = page.getByTestId("chat-input-command").filter({ visible: true });
+      await expect(commands).toHaveText(["/orc-sdlc", "/orc-platform"]);
+      const [typed, shown] = await Promise.all([
+        input.boundingBox(),
+        commands.first().boundingBox(),
+      ]);
+      expect(Math.abs((typed?.y ?? 0) - (shown?.y ?? 0))).toBeLessThan(20);
+      await input.screenshot({ path: testInfo.outputPath(`chat-command-highlight-${width}.png`) });
       await input.fill("/");
       await expect(menu).toContainText("/render-ui");
       await expect(menu.locator('[data-kind="skill"]').first()).toBeVisible();

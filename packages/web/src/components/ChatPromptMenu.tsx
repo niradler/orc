@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { KeyboardEvent, RefObject } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import { activeCommand, type CommandOption, rankCommands } from "@/lib/chat-commands";
 import { cn } from "@/lib/utils";
@@ -17,15 +17,16 @@ export function useChatPromptMenu(
 ) {
   const [caret, setCaret] = useState(0);
   const command = activeCommand(draft, Math.min(caret, draft.length));
+  const wanted = draft.includes("/");
   const prompts = useQuery({
     queryKey: ["mcp-settings"],
     queryFn: api.settings.mcp.get,
-    enabled: command !== null,
+    enabled: wanted,
   });
   const skills = useQuery({
     queryKey: ["chat-command-skills", projectId],
     queryFn: () => api.skills.list({ limit: 500, ...(projectId ? { project_id: projectId } : {}) }),
-    enabled: command !== null,
+    enabled: wanted,
     staleTime: 60_000,
   });
   const [active, setActive] = useState(0);
@@ -51,6 +52,14 @@ export function useChatPromptMenu(
       ? []
       : rankCommands([...promptOptions, ...skillOptions], command.query);
   const index = Math.min(active, Math.max(matches.length - 1, 0));
+  const commandNames = useMemo(
+    () =>
+      new Set([
+        ...(prompts.data?.prompts ?? []).map((prompt) => prompt.name),
+        ...(skills.data?.skills ?? []).map((skill) => skill.name),
+      ]),
+    [prompts.data, skills.data],
+  );
 
   function syncCaret() {
     if (input.current) setCaret(input.current.selectionStart);
@@ -95,7 +104,7 @@ export function useChatPromptMenu(
     return false;
   }
 
-  return { matches, index, choose, onKeyDown, syncCaret };
+  return { matches, index, choose, onKeyDown, syncCaret, commandNames };
 }
 
 export function chatCommandOptionId(option: CommandOption) {

@@ -16,7 +16,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
@@ -43,7 +43,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { commandSegments } from "@/lib/chat-commands";
 import { cn } from "@/lib/utils";
+
+// The highlight layer must wrap text exactly like the textarea above it.
+const composerText = "p-2 text-base leading-relaxed [scrollbar-gutter:stable]";
 
 interface ChatPanelProps {
   open: boolean;
@@ -156,6 +160,12 @@ export function ChatPanel({
   const input = useRef<HTMLTextAreaElement>(null);
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
+  const inputBackdrop = useRef<HTMLDivElement>(null);
+  const draftSegments = useMemo(
+    () => commandSegments(draft, promptMenu.commandNames),
+    [draft, promptMenu.commandNames],
+  );
+  const highlighted = draftSegments.some((segment) => segment.command);
   useLayoutEffect(() => {
     if (!open) return;
     const measure = () => {
@@ -629,43 +639,74 @@ export function ChatPanel({
               </ul>
             )}
             <ChatPromptMenu {...promptMenu} />
-            <textarea
-              ref={input}
-              data-testid="chat-input"
-              aria-label="Message your agent"
-              aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
-              aria-activedescendant={
-                activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
-              }
-              placeholder="Message your agent… (/ for prompts and skills)"
-              disabled={!ready}
-              value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                promptMenu.syncCaret();
-              }}
-              onSelect={promptMenu.syncCaret}
-              onPaste={(event) => {
-                if (event.clipboardData.files.length) {
-                  event.preventDefault();
-                  addFiles(Array.from(event.clipboardData.files));
+            <div className="relative">
+              {highlighted && (
+                <div
+                  ref={inputBackdrop}
+                  aria-hidden
+                  data-testid="chat-input-highlight"
+                  className={`${composerText} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`}
+                >
+                  {draftSegments.map((segment, index) =>
+                    segment.command ? (
+                      <span
+                        // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
+                        key={index}
+                        data-testid="chat-input-command"
+                        className="rounded-sm bg-surface-highest text-on-surface shadow-[0_0_0_2px_var(--color-surface-highest)] [-webkit-text-stroke:0.5px_currentColor]"
+                      >
+                        {segment.text}
+                      </span>
+                    ) : (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
+                      <span key={index}>{segment.text}</span>
+                    ),
+                  )}
+                  {"​"}
+                </div>
+              )}
+              <textarea
+                ref={input}
+                data-testid="chat-input"
+                aria-label="Message your agent"
+                aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
+                aria-activedescendant={
+                  activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                 }
-              }}
-              onKeyDown={(event) => {
-                if (promptMenu.onKeyDown(event)) return;
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing &&
-                  !window.matchMedia("(pointer: coarse)").matches
-                ) {
-                  event.preventDefault();
-                  submit();
-                }
-              }}
-              rows={1}
-              className="chat-composer-input block w-full resize-none overflow-y-auto bg-transparent p-2 text-base leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60"
-            />
+                placeholder="Message your agent… (/ for prompts and skills)"
+                disabled={!ready}
+                value={draft}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  promptMenu.syncCaret();
+                }}
+                onSelect={promptMenu.syncCaret}
+                onScroll={(event) => {
+                  if (inputBackdrop.current)
+                    inputBackdrop.current.scrollTop = event.currentTarget.scrollTop;
+                }}
+                onPaste={(event) => {
+                  if (event.clipboardData.files.length) {
+                    event.preventDefault();
+                    addFiles(Array.from(event.clipboardData.files));
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (promptMenu.onKeyDown(event)) return;
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing &&
+                    !window.matchMedia("(pointer: coarse)").matches
+                  ) {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
+                rows={1}
+                className={`chat-composer-input ${composerText} relative block w-full resize-none overflow-y-auto bg-transparent placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60 ${highlighted ? "text-transparent caret-on-surface" : ""}`}
+              />
+            </div>
             <div className="flex items-center justify-between gap-2">
               <div className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
                 <label

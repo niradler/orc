@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { activeCommand, type CommandOption, rankCommands } from "../../src/lib/chat-commands";
+import {
+  activeCommand,
+  type CommandOption,
+  commandSegments,
+  rankCommands,
+} from "../../src/lib/chat-commands";
 
 describe("chat command menu", () => {
   test("detects the command being typed at the caret anywhere in the draft", () => {
@@ -22,5 +27,21 @@ describe("chat command menu", () => {
     const options = [option("x-review"), option("review"), option("plan", "review a plan")];
     expect(rankCommands(options, "rev").map((o) => o.name)).toEqual(["review", "x-review", "plan"]);
     expect(rankCommands(options, "zzz")).toEqual([]);
+  });
+});
+
+describe("command highlighting", () => {
+  test("marks only known commands at word starts", () => {
+    const names = new Set(["tdd", "pkg/review"]);
+    expect(commandSegments("fix /tdd and /nope /pkg/review", names)).toEqual([
+      { text: "fix ", command: false },
+      { text: "/tdd", command: true },
+      { text: " and /nope ", command: false },
+      { text: "/pkg/review", command: true },
+    ]);
+    expect(commandSegments("a/tdd /tdd/x", names)).toEqual([
+      { text: "a/tdd /tdd/x", command: false },
+    ]);
+    expect(commandSegments("", names)).toEqual([]);
   });
 });

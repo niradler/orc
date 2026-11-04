@@ -34,3 +34,24 @@ export function rankCommands(options: CommandOption[], query: string): CommandOp
     .slice(0, MAX_OPTIONS)
     .map(({ option }) => option);
 }
+
+const COMMAND_TOKEN =
+  /(^|\s)(\/[\p{L}\p{N}][\p{L}\p{N}_:-]*(?:\/[\p{L}\p{N}][\p{L}\p{N}_:-]*)?)(?=\s|$)/gu;
+
+export type DraftSegment = { text: string; command: boolean };
+
+/** Splits a draft so known `/name` commands can be highlighted; mirrors the server's matching. */
+export function commandSegments(draft: string, names: ReadonlySet<string>): DraftSegment[] {
+  const segments: DraftSegment[] = [];
+  let last = 0;
+  for (const match of draft.matchAll(COMMAND_TOKEN)) {
+    const token = match[2] as string;
+    if (!names.has(token.slice(1))) continue;
+    const start = (match.index ?? 0) + (match[1] as string).length;
+    if (start > last) segments.push({ text: draft.slice(last, start), command: false });
+    segments.push({ text: token, command: true });
+    last = start + token.length;
+  }
+  if (last < draft.length) segments.push({ text: draft.slice(last), command: false });
+  return segments;
+}
