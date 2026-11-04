@@ -1,6 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { chooseChatModel, closeChatHistory, openChatHistory, settingsSection } from "./_chat-ui";
+import { chooseChatModel, openChatHistory, settingsSection, waitHistoryClosed } from "./_chat-ui";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { API_SECRET, AUTH_HEADERS, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
@@ -291,7 +291,7 @@ for (const width of [1440, 390]) {
       page.getByTestId("chat-session-list").getByTestId("chat-session-select"),
     ).toBeVisible();
     await page.getByTestId("chat-session-list").getByTestId("chat-session-select").click();
-    await closeChatHistory(page);
+    await waitHistoryClosed(page);
     await expect(page.getByTestId("chat-input")).toHaveValue("Keep my unsent follow-up");
     await expect(page.getByTestId("chat-model-button")).toHaveText("retained-model");
     await expect(page.getByTestId("chat-message-content").last()).toContainText(marker);

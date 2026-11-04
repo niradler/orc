@@ -1,7 +1,7 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { captureState } from "./_capture-state";
-import { closeChatHistory, openChatHistory } from "./_chat-ui";
+import { closeChatHistory, openChatHistory, waitHistoryClosed } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 test("session history scopes assigned sources and local drafts without inventing legacy ownership", async ({
@@ -130,7 +130,7 @@ test("session history scopes assigned sources and local drafts without inventing
     animations: "disabled",
   });
   await row(`chat:${summaries[0].id}`).getByTestId("chat-resume-thread").click();
-  await closeChatHistory(page);
+  await waitHistoryClosed(page);
   await selectProject("p2");
   await expect(page.getByTestId("chat-agent-button")).toContainText("codex");
   await openChatHistory(page);
@@ -144,7 +144,7 @@ test("session history scopes assigned sources and local drafts without inventing
   await expect(page.getByTestId("chat-input")).toHaveValue("Project two unsent draft");
   await openChatHistory(page);
   await list.locator('[data-history-id^="draft:"]').getByTestId("chat-session-select").click();
-  await closeChatHistory(page);
+  await waitHistoryClosed(page);
   await expect(page.getByTestId("chat-input")).toHaveValue("Project one unsent draft");
   await selectProject("unassigned");
   await openChatHistory(page);
@@ -169,7 +169,7 @@ test("session history scopes assigned sources and local drafts without inventing
   await selectProject("p1");
   await openChatHistory(page);
   await row(`chat:${summaries[0].id}`).getByTestId("chat-session-select").click();
-  await closeChatHistory(page);
+  await waitHistoryClosed(page);
   await expect
     .poll(() =>
       page.evaluate(

@@ -1196,11 +1196,32 @@ export async function hostSqliteQuery<T extends object>(
       sql,
     });
   }
-  const db = new Database(target, { readonly: true });
-  try {
-    return db.query<T, []>(sql).all();
-  } finally {
-    db.close();
+  return retryTransientSqlite(() => {
+    const db = new Database(target, { readonly: true });
+    try {
+      return db.query<T, []>(sql).all();
+    } finally {
+      db.close();
+    }
+  });
+}
+
+const TRANSIENT_SQLITE = /^SQLITE_(BUSY|LOCKED|IOERR)/;
+
+export async function retryTransientSqlite<T>(
+  read: () => T,
+  attempts = 3,
+  delayMs = 50,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return read();
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      if (attempt >= attempts || typeof code !== "string" || !TRANSIENT_SQLITE.test(code))
+        throw error;
+      await Bun.sleep(delayMs * attempt);
+    }
   }
 }
 
