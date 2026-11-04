@@ -94,6 +94,14 @@ with its imported baseline; local/upstream conflicts require review, not blind
 replacement. Review the pinned source and licenses before running imported scripts.
 Paths must remain inside the skill; symlinks/traversal and oversize bundles are rejected.
 
+Local agents: `orc skill local [agent] [--path <dir>]` lists skills in agent folders
+(`~/.claude/skills`, `~/.codex/skills`, ...) or any folder; `-s <names>` / `--all` imports.
+`orc skill export-to <agent|dir> [names...] --dry-run` writes native skill folders back.
+Near copies (a few characters different) and renamed copies count as the same skill and
+are flagged, not imported or exported as new; existing folders change only with
+`--overwrite <names>`. Memories: `orc mem sources|import|export` move project memories to and
+from Claude Code memory folders (`<name>.md` + `MEMORY.md`) with the same dedup.
+
 ## Agent profiles and portable packages
 
 A profile defines specialist instructions/model/tools; a backend selects how an

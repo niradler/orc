@@ -3,13 +3,20 @@ import { skillVisibility, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ScopeQuerySchema } from "@orc/core/scope";
 import { MAX_SKILL_DOWNLOAD_TOKEN_CHARS, SkillDownloadSchema } from "@orc/core/skill-download";
+import { exportSkills, planSkillExport } from "@orc/core/skill-export";
 import {
   discoverRepositorySkills,
   getSkillImportOrigin,
   importRepositorySkills,
   removeSkillImportRecord,
 } from "@orc/core/skill-import";
-import { importLocalAgentSkills, listLocalAgentSkills } from "@orc/core/skill-local-import";
+import {
+  defaultLocalSkillAgents,
+  folderSkillSource,
+  importLocalAgentSkills,
+  listLocalAgentSkills,
+  type SkillEntryReader,
+} from "@orc/core/skill-local-import";
 import {
   createSkill,
   deleteSkill,
@@ -569,6 +576,14 @@ app.openapi(
   },
 );
 
+const SkillMatchSchema = z
+  .object({
+    name: z.string(),
+    level: z.enum(["identical", "near", "similar"]),
+    score: z.number(),
+    where: z.string().openapi({ description: '"orc" or the folder holding the match' }),
+  })
+  .openapi("SkillMatch");
 const LocalSkillSchema = z
   .object({
     agent: z.string(),
@@ -576,23 +591,47 @@ const LocalSkillSchema = z
     description: z.string(),
     path: z.string(),
     content_hash: z.string(),
-    status: z.enum(["new", "installed", "conflict", "changed", "invalid"]),
+    status: z.enum(["new", "installed", "duplicate", "conflict", "changed", "invalid"]),
     also_in: z.array(z.string()),
     extra_fields: z.array(z.string()),
+    match: SkillMatchSchema.optional(),
     error: z.string().optional(),
   })
   .openapi("LocalSkill");
-const LocalSkillItemSchema = z.object({ agent: z.string().max(64), name: z.string().max(64) });
+const LocalSkillItemSchema = z.object({
+  agent: z.string().max(64),
+  name: z.string().max(64),
+  path: z.string().max(4096).optional(),
+});
+const FolderPathSchema = z.string().min(1).max(4096);
+
+function skillEntryReader(): SkillEntryReader {
+  const history = new SkillHistory(getSqlite());
+  return (name) =>
+    (history.read(name, null, "SKILL.md") as SkillRefContent | null)?.content ?? null;
+}
+
+function skillSources(folder: string | undefined) {
+  return folder ? [folderSkillSource(folder)] : defaultLocalSkillAgents();
+}
 
 app.openapi(
   createRoute({
     method: "get",
     path: "/skills/local-agents",
     tags: ["Skills"],
-    summary: "List skills installed for local coding agents (~/.claude, ~/.codex, ...)",
+    summary:
+      "List skills installed for local coding agents (~/.claude, ~/.codex, ...) or found in a folder",
+    request: {
+      query: z.object({
+        path: FolderPathSchema.optional().openapi({
+          description: "Absolute folder to scan recursively instead of the agent folders",
+        }),
+      }),
+    },
     responses: {
       200: {
-        description: "Agents with their skills and import status",
+        description: "Sources with their skills, import status and closest ORC match",
         content: {
           "application/json": {
             schema: z.object({
@@ -601,6 +640,7 @@ app.openapi(
                   id: z.string(),
                   label: z.string(),
                   dir: z.string(),
+                  recursive: z.boolean().optional(),
                   skills: z.array(LocalSkillSchema),
                 }),
               ),
@@ -608,9 +648,13 @@ app.openapi(
           },
         },
       },
+      400: { description: "Folder is not absolute or does not exist" },
     },
   }),
-  (c) => c.json({ agents: listLocalAgentSkills() }),
+  (c) =>
+    c.json({
+      agents: listLocalAgentSkills(skillSources(c.req.valid("query").path), skillEntryReader()),
+    }),
 );
 
 app.openapi(
@@ -618,12 +662,19 @@ app.openapi(
     method: "post",
     path: "/skills/local-agents/import",
     tags: ["Skills"],
-    summary: "Copy selected local agent skills into ORC",
+    summary: "Copy selected local agent or folder skills into ORC, skipping duplicates",
     request: {
       body: {
         content: {
           "application/json": {
-            schema: z.object({ skills: z.array(LocalSkillItemSchema).min(1).max(200) }).strict(),
+            schema: z
+              .object({
+                skills: z.array(LocalSkillItemSchema).min(1).max(200),
+                folder: FolderPathSchema.optional().openapi({
+                  description: 'Absolute folder for items with agent "folder"',
+                }),
+              })
+              .strict(),
           },
         },
       },
@@ -645,7 +696,132 @@ app.openapi(
       400: { description: "Invalid selection" },
     },
   }),
-  (c) => c.json(importLocalAgentSkills(c.req.valid("json").skills)),
+  (c) => {
+    const input = c.req.valid("json");
+    return c.json(
+      importLocalAgentSkills(input.skills, skillSources(input.folder), skillEntryReader()),
+    );
+  },
+);
+
+const SkillExportTargetSchema = z
+  .union([
+    z.object({ agent: z.string().min(1).max(64) }).strict(),
+    z.object({ path: FolderPathSchema }).strict(),
+  ])
+  .openapi("SkillExportTarget", {
+    description: "A local agent id (claude, codex, agents, ...) or an absolute folder",
+  });
+const SkillExportItemSchema = z
+  .object({
+    name: z.string(),
+    description: z.string(),
+    status: z.enum(["new", "identical", "near", "conflict", "duplicate", "blocked"]),
+    path: z.string(),
+    can_overwrite: z.boolean(),
+    match: SkillMatchSchema.optional(),
+    reason: z.string().optional(),
+  })
+  .openapi("SkillExportItem");
+const SkillNamesSchema = z.array(z.string().min(1).max(64)).max(500);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/skills/export/preview",
+    tags: ["Skills"],
+    summary: "Preview exporting ORC skills to an agent's skills folder or a custom folder",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                target: SkillExportTargetSchema,
+                names: SkillNamesSchema.optional().openapi({
+                  description: "Skills to export; all discoverable skills when omitted",
+                }),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "What would happen to each skill",
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                dir: z.string(),
+                label: z.string(),
+                skills: z.array(SkillExportItemSchema),
+              })
+              .openapi("SkillExportPlan"),
+          },
+        },
+      },
+      400: { description: "Invalid target" },
+    },
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    return c.json(planSkillExport(input.names, input.target, skillEntryReader()));
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/skills/export",
+    tags: ["Skills"],
+    summary: "Export ORC skills (effective SKILL.md plus files) as native skill folders",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                target: SkillExportTargetSchema,
+                names: SkillNamesSchema.optional(),
+                overwrite: SkillNamesSchema.optional().openapi({
+                  description:
+                    "Skills to write even though the target has a near copy, conflict or duplicate; replaced folders are backed up",
+                }),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Exported skills and the ones skipped with a reason",
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                dir: z.string(),
+                exported: z.array(
+                  z.object({
+                    name: z.string(),
+                    path: z.string(),
+                    replaced: z.boolean(),
+                    backup: z.string().optional(),
+                  }),
+                ),
+                skipped: z.array(z.object({ name: z.string(), reason: z.string() })),
+              })
+              .openapi("SkillExportResult"),
+          },
+        },
+      },
+      400: { description: "Invalid target" },
+      404: { description: "None of the named skills exist" },
+    },
+  }),
+  (c) => c.json(exportSkills(c.req.valid("json"), skillEntryReader())),
 );
 
 app.openapi(

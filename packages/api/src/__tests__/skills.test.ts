@@ -1,5 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath } from "@orc/core/config";
 import { getUserSkillsDir, readSkill, reloadCache, type SkillFull } from "@orc/core/skill-service";
@@ -133,6 +142,67 @@ describe("local agent skills", () => {
     });
     const empty = await req(app, "POST", "/skills/local-agents/import", { skills: [] });
     expect(empty.status).toBe(400);
+  });
+});
+
+describe("skill folder import and export", () => {
+  const name = `api-transfer-${process.pid}`;
+  const root = mkdtempSync(join(tmpdir(), "orc-api-skill-transfer-"));
+  const entry = `---\nname: ${name}\ndescription: API transfer test skill\n---\nFollow the API transfer checklist carefully and report every step.\n`;
+
+  afterAll(() => {
+    rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    reloadCache();
+  });
+
+  test("should import from a folder, export it back and report it identical", async () => {
+    mkdirSync(join(root, "source", "nested", name), { recursive: true });
+    writeFileSync(join(root, "source", "nested", name, "SKILL.md"), entry);
+    const listing = await req(
+      app,
+      "GET",
+      `/skills/local-agents?path=${encodeURIComponent(join(root, "source"))}`,
+    );
+    expect(listing.status).toBe(200);
+    const [folder] = (
+      (await listing.json()) as {
+        agents: Array<{ id: string; skills: Array<{ name: string; status: string }> }>;
+      }
+    ).agents;
+    expect(folder?.id).toBe("folder");
+    expect(folder?.skills.find((skill) => skill.name === name)?.status).toBe("new");
+    const imported = await req(app, "POST", "/skills/local-agents/import", {
+      skills: [{ agent: "folder", name }],
+      folder: join(root, "source"),
+    });
+    expect(((await imported.json()) as { imported: Array<{ name: string }> }).imported).toEqual([
+      expect.objectContaining({ name }),
+    ]);
+    const target = { path: join(root, "target") };
+    const preview = await req(app, "POST", "/skills/export/preview", { target, names: [name] });
+    expect(
+      ((await preview.json()) as { skills: Array<{ status: string }> }).skills[0]?.status,
+    ).toBe("new");
+    const exported = await req(app, "POST", "/skills/export", { target, names: [name] });
+    expect(exported.status).toBe(200);
+    expect(readFileSync(join(root, "target", name, "SKILL.md"), "utf8")).toBe(entry);
+    const again = await req(app, "POST", "/skills/export/preview", { target, names: [name] });
+    expect(((await again.json()) as { skills: Array<{ status: string }> }).skills[0]?.status).toBe(
+      "identical",
+    );
+  });
+
+  test("should reject relative folders and ORC's own skills folder", async () => {
+    const relative = await req(app, "GET", "/skills/local-agents?path=relative");
+    expect(relative.status).toBe(400);
+    const own = await req(app, "POST", "/skills/export", { target: { path: getUserSkillsDir() } });
+    expect(own.status).toBe(400);
+    const missing = await req(app, "POST", "/skills/export", {
+      target: { path: join(root, "x") },
+      names: ["no-such-skill-xyz"],
+    });
+    expect(missing.status).toBe(404);
   });
 });
 

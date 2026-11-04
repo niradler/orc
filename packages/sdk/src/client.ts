@@ -64,6 +64,9 @@ import type {
   LocalSkillImportItem,
   LocalSkillImportResult,
   SkillDiscovery,
+  SkillExportPlan,
+  SkillExportResult,
+  SkillExportTarget,
   SkillImportInput,
   SkillImportOrigin,
   SkillSyncInput,
@@ -97,8 +100,13 @@ import type {
   LiveSession,
   Memory,
   MemoryChange,
+  MemoryExportPlan,
+  MemoryExportResult,
+  MemoryImportPreview,
+  MemoryImportResult,
   MemoryListItem,
   MemoryListSort,
+  NativeMemorySource,
   PackageFull,
   PackageMeta,
   Project,
@@ -464,6 +472,29 @@ export function createOrcClient(options?: OrcClientOptions) {
           project_id,
           ...input,
         }),
+
+      nativeSources: (project_id?: string) =>
+        c<{ sources: NativeMemorySource[] }>("GET", "/memory-transfer/sources", undefined, {
+          project_id,
+        }),
+
+      previewImport: (project_id: string, dir: string) =>
+        c<MemoryImportPreview>("POST", "/memory-transfer/import/preview", { project_id, dir }),
+
+      importNative: (
+        project_id: string,
+        dir: string,
+        memories: Array<{ name: string; replace?: boolean | undefined }>,
+      ) => c<MemoryImportResult>("POST", "/memory-transfer/import", { project_id, dir, memories }),
+
+      previewExport: (project_id: string, dir: string, names?: string[]) =>
+        c<MemoryExportPlan>("POST", "/memory-transfer/export/preview", { project_id, dir, names }),
+
+      exportNative: (
+        project_id: string,
+        dir: string,
+        input: { names?: string[] | undefined; overwrite?: string[] | undefined } = {},
+      ) => c<MemoryExportResult>("POST", "/memory-transfer/export", { project_id, dir, ...input }),
     },
 
     scratchpads: {
@@ -581,9 +612,16 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<{ skills: SkillFull[] }>("POST", "/skills/import", input),
       origin: (name: string) =>
         c<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
-      localAgents: () => c<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents"),
-      importLocal: (skills: LocalSkillImportItem[]) =>
-        c<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
+      localAgents: (path?: string) =>
+        c<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents", undefined, { path }),
+      importLocal: (skills: LocalSkillImportItem[], folder?: string) =>
+        c<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills, folder }),
+      previewExport: (target: SkillExportTarget, names?: string[]) =>
+        c<SkillExportPlan>("POST", "/skills/export/preview", { target, names }),
+      exportTo: (
+        target: SkillExportTarget,
+        input: { names?: string[] | undefined; overwrite?: string[] | undefined } = {},
+      ) => c<SkillExportResult>("POST", "/skills/export", { target, ...input }),
       sync: (name: string, input: SkillSyncInput = {}) =>
         c<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
       editFile: (

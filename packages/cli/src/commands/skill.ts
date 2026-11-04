@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { encodeSkillFile, listSkillFiles, validateSkillPath } from "@orc/core/skill-files";
 import { parseFrontmatter } from "@orc/core/skill-service";
@@ -25,6 +26,18 @@ async function currentText(name: string, ref: string, projectId?: string): Promi
   const file = result.data as SkillRefContent;
   if (file.encoding !== "utf8") throw new Error("Binary files cannot be edited as text");
   return file.content;
+}
+
+function matchText(match: { name: string; level: string; score: number; where: string }): string {
+  const where = match.where === "orc" ? "in ORC" : `in ${match.where}`;
+  return `${match.level} to ${match.name} ${where} (${Math.round(match.score * 100)}%)`;
+}
+
+/** A bare word is an agent id; anything that looks like a path is a folder. */
+function exportTarget(value: string): { agent: string } | { path: string } {
+  if (/^[a-z][a-z0-9-]*$/.test(value) && !existsSync(value)) return { agent: value };
+  const expanded = value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
+  return { path: resolve(expanded) };
 }
 
 export function skillCommand() {
@@ -83,46 +96,105 @@ export function skillCommand() {
     });
   cmd
     .command("local [agent]")
-    .description("List or import skills from local agents (~/.claude, ~/.codex, ~/.agents, ...)")
-    .option("-s, --skill <names...>", "Import these skills from <agent>")
-    .option("--all", "Import every new skill from <agent>")
-    .action(async (agent: string | undefined, options: { skill?: string[]; all?: boolean }) => {
-      const client = createOrcClient({ source: "cli" });
-      const listing = await client.skills.localAgents();
-      if (listing.error || !listing.data) throw new Error(JSON.stringify(listing.error));
-      const agents = listing.data.agents.filter((entry) => !agent || entry.id === agent);
-      if (agent && !agents.length) throw new Error(`No skills folder found for agent: ${agent}`);
-      if (!options.skill && !options.all) {
-        if (isJson()) return jsonOut({ agents });
-        for (const entry of agents) {
-          console.log(color(`${entry.label} (${entry.id}) ${entry.dir}`, "1"));
-          for (const skill of entry.skills) {
-            const shared = skill.also_in.length ? ` (also in ${skill.also_in.join(", ")})` : "";
-            const detail = skill.error ?? skill.description;
-            console.log(`  [${skill.status}] ${skill.name}${shared} - ${detail}`);
-            if (skill.extra_fields.length)
-              console.log(`      extra fields: ${skill.extra_fields.join(", ")}`);
+    .description(
+      "List or import skills from local agents (~/.claude, ~/.codex, ~/.agents, ...) or a folder",
+    )
+    .option("-p, --path <dir>", "Scan this folder (recursively) instead of the agent folders")
+    .option("-s, --skill <names...>", "Import these skills from <agent> or --path")
+    .option("--all", "Import every new skill from <agent> or --path")
+    .action(
+      async (
+        agentArg: string | undefined,
+        options: { path?: string; skill?: string[]; all?: boolean },
+      ) => {
+        const client = createOrcClient({ source: "cli" });
+        const folder = options.path ? resolve(options.path) : undefined;
+        const agent = folder ? "folder" : agentArg;
+        const listing = await client.skills.localAgents(folder);
+        if (listing.error || !listing.data) throw new Error(JSON.stringify(listing.error));
+        const agents = listing.data.agents.filter((entry) => !agent || entry.id === agent);
+        if (agent && !agents.length) throw new Error(`No skills folder found for agent: ${agent}`);
+        if (!options.skill && !options.all) {
+          if (isJson()) return jsonOut({ agents });
+          for (const entry of agents) {
+            console.log(color(`${entry.label} (${entry.id}) ${entry.dir}`, "1"));
+            for (const skill of entry.skills) {
+              const shared = skill.also_in.length ? ` (also in ${skill.also_in.join(", ")})` : "";
+              const detail = skill.error ?? skill.description;
+              console.log(`  [${skill.status}] ${skill.name}${shared} - ${detail}`);
+              if (skill.match) console.log(color(`      ${matchText(skill.match)}`, "33"));
+              if (skill.extra_fields.length)
+                console.log(`      extra fields: ${skill.extra_fields.join(", ")}`);
+            }
           }
+          return;
         }
-        return;
-      }
-      if (!agent)
-        throw new Error("Name the agent to import from, e.g. orc skill local claude --all");
-      const skills = agents[0]?.skills ?? [];
-      const missing = options.skill?.filter((name) => !skills.some((skill) => skill.name === name));
-      if (missing?.length) throw new Error(`Not found in ${agent}: ${missing.join(", ")}`);
-      const selected = options.all
-        ? skills.filter((skill) => skill.status === "new")
-        : skills.filter((skill) => options.skill?.includes(skill.name));
-      if (!selected.length) throw new Error(`No new skills to import from ${agent}`);
-      const result = await client.skills.importLocal(
-        selected.map((skill) => ({ agent, name: skill.name })),
-      );
-      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
-      if (isJson()) return jsonOut(result.data);
-      for (const skill of result.data.imported) console.log(`Imported ${skill.name}`);
-      for (const skip of result.data.skipped) console.log(`Skipped ${skip.name}: ${skip.reason}`);
-    });
+        if (!agent)
+          throw new Error("Name the agent to import from, e.g. orc skill local claude --all");
+        const skills = agents[0]?.skills ?? [];
+        const missing = options.skill?.filter(
+          (name) => !skills.some((skill) => skill.name === name),
+        );
+        if (missing?.length) throw new Error(`Not found in ${agent}: ${missing.join(", ")}`);
+        const selected = options.all
+          ? skills.filter((skill) => skill.status === "new")
+          : skills.filter((skill) => options.skill?.includes(skill.name));
+        if (!selected.length) throw new Error(`No new skills to import from ${agent}`);
+        const result = await client.skills.importLocal(
+          selected.map((skill) => ({ agent, name: skill.name, path: skill.path })),
+          folder,
+        );
+        if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+        if (isJson()) return jsonOut(result.data);
+        for (const skill of result.data.imported) console.log(`Imported ${skill.name}`);
+        for (const skip of result.data.skipped) console.log(`Skipped ${skip.name}: ${skip.reason}`);
+      },
+    );
+  cmd
+    .command("export-to <target> [names...]")
+    .description(
+      "Export ORC skills as native skill folders into an agent (claude, codex, agents, ...) or a folder",
+    )
+    .option("--overwrite <names...>", "Write these even if the target has a near copy or conflict")
+    .option(
+      "--overwrite-all",
+      "Write every skill the target has a near copy, conflict or duplicate of",
+    )
+    .option("--dry-run", "Show what would happen without writing")
+    .action(
+      async (
+        targetArg: string,
+        names: string[],
+        options: { overwrite?: string[]; overwriteAll?: boolean; dryRun?: boolean },
+      ) => {
+        const client = createOrcClient({ source: "cli" });
+        const target = exportTarget(targetArg);
+        const selection = names.length ? names : undefined;
+        const plan = await client.skills.previewExport(target, selection);
+        if (plan.error || !plan.data) throw new Error(JSON.stringify(plan.error));
+        if (options.dryRun) {
+          if (isJson()) return jsonOut(plan.data);
+          console.log(color(`${plan.data.label} ${plan.data.dir}`, "1"));
+          for (const item of plan.data.skills) {
+            const detail = item.reason ? ` - ${item.reason}` : "";
+            console.log(`  [${item.status}] ${item.name}${detail}`);
+            if (item.match) console.log(color(`      ${matchText(item.match)}`, "33"));
+          }
+          return;
+        }
+        const overwrite = options.overwriteAll
+          ? plan.data.skills.filter((item) => item.can_overwrite).map((item) => item.name)
+          : options.overwrite;
+        const result = await client.skills.exportTo(target, { names: selection, overwrite });
+        if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+        if (isJson()) return jsonOut(result.data);
+        for (const item of result.data.exported)
+          console.log(
+            `${item.replaced ? "Replaced" : "Exported"} ${item.name} -> ${item.path}${item.backup ? ` (backup ${item.backup})` : ""}`,
+          );
+        for (const skip of result.data.skipped) console.log(`Skipped ${skip.name}: ${skip.reason}`);
+      },
+    );
   cmd
     .command("history <name>")
     .description("Read audited instruction history")

@@ -4,6 +4,101 @@
  */
 
 export interface paths {
+    "/webhooks/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive a signed webhook delivery
+         * @description Public endpoint authenticated by an HMAC-SHA256 signature of the raw body. GitHub webhooks send X-Hub-Signature-256, X-GitHub-Event and X-GitHub-Delivery; generic webhooks send X-Orc-Signature-256 and optionally X-Orc-Event and X-Orc-Delivery or Idempotency-Key.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    "x-hub-signature-256"?: string;
+                    "x-github-event"?: string;
+                    "x-github-delivery"?: string;
+                    "x-orc-signature-256"?: string;
+                    "x-orc-event"?: string;
+                    "x-orc-delivery"?: string;
+                    "idempotency-key"?: string;
+                };
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Delivery recorded; matching jobs started when accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accepted: boolean;
+                            delivery_id: string;
+                            run_id?: string;
+                            run_ids?: string[];
+                        };
+                    };
+                };
+                /** @description Invalid payload, event or missing delivery ID */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid webhook signature */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Unknown or disabled webhook */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Delivery already received */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Payload too large */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backends": {
         parameters: {
             query?: never;
@@ -478,6 +573,7 @@ export interface paths {
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            transcriptMark?: string;
                             updatedAt: number;
                         };
                     };
@@ -629,6 +725,7 @@ export interface paths {
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            transcriptMark?: string;
                             updatedAt: number;
                         };
                     };
@@ -637,6 +734,206 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/threads/{id}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Whether the native session changed on disk since this conversation last showed it, whether a turn is running, and the human answers queued for it. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Native session state */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            changed: boolean;
+                            running: boolean;
+                            queued: {
+                                id: string;
+                                title: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/threads/{id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Rebuild the conversation from its native session transcript. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Chat conversation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            title: string;
+                            config: {
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
+                            cwd: string;
+                            host: string | null;
+                            runtimeId: string | null;
+                            backend: string;
+                            sourceId: string | null;
+                            toolAllowlist?: string[];
+                            messages: {
+                                id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant";
+                                content: string;
+                                timestamp: number;
+                                agent?: string;
+                                activity?: ({
+                                    /** @enum {string} */
+                                    type: "thinking";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "tool";
+                                    id: string;
+                                    name: string;
+                                    input: string;
+                                    result?: string;
+                                    isError?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "status";
+                                    id: string;
+                                    text: string;
+                                })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                    description?: string;
+                                }[];
+                            }[];
+                            historyBefore?: number | null;
+                            importedMessages?: number;
+                            projectId?: string;
+                            transcriptMark?: string;
+                            updatedAt: number;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -830,6 +1127,7 @@ export interface paths {
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            transcriptMark?: string;
                             updatedAt: number;
                         };
                     };
@@ -1110,6 +1408,7 @@ export interface paths {
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            transcriptMark?: string;
                             updatedAt: number;
                         };
                     };
@@ -1888,7 +2187,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -1950,6 +2249,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         }[];
                     };
                 };
@@ -2002,7 +2310,7 @@ export interface paths {
                         command?: {
                             script: string;
                             cwd: string;
-                            host: string | null;
+                            host?: string | null;
                             /** @default [] */
                             arguments?: {
                                 name: string;
@@ -2085,7 +2393,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -2147,6 +2455,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         };
                     };
                 };
@@ -2221,7 +2538,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -2283,6 +2600,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         };
                     };
                 };
@@ -2385,7 +2711,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -2447,6 +2773,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         };
                     };
                 };
@@ -2533,7 +2868,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -2595,6 +2930,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         };
                     };
                 };
@@ -2677,7 +3021,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -2739,6 +3083,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         };
                     };
                 };
@@ -2821,7 +3174,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -2883,6 +3236,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         };
                     };
                 };
@@ -5714,17 +6076,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List skills installed for local coding agents (~/.claude, ~/.codex, ...) */
+        /** List skills installed for local coding agents (~/.claude, ~/.codex, ...) or found in a folder */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Absolute folder to scan recursively instead of the agent folders */
+                    path?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description Agents with their skills and import status */
+                /** @description Sources with their skills, import status and closest ORC match */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -5735,10 +6100,18 @@ export interface paths {
                                 id: string;
                                 label: string;
                                 dir: string;
+                                recursive?: boolean;
                                 skills: components["schemas"]["LocalSkill"][];
                             }[];
                         };
                     };
+                };
+                /** @description Folder is not absolute or does not exist */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -5759,7 +6132,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Copy selected local agent skills into ORC */
+        /** Copy selected local agent or folder skills into ORC, skipping duplicates */
         post: {
             parameters: {
                 query?: never;
@@ -5773,7 +6146,10 @@ export interface paths {
                         skills: {
                             agent: string;
                             name: string;
+                            path?: string;
                         }[];
+                        /** @description Absolute folder for items with agent "folder" */
+                        folder?: string;
                     };
                 };
             };
@@ -5793,6 +6169,7 @@ export interface paths {
                             skipped: {
                                 agent: string;
                                 name: string;
+                                path?: string;
                                 reason: string;
                             }[];
                         };
@@ -5800,6 +6177,116 @@ export interface paths {
                 };
                 /** @description Invalid selection */
                 400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/export/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview exporting ORC skills to an agent's skills folder or a custom folder */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        target: components["schemas"]["SkillExportTarget"];
+                        /** @description Skills to export; all discoverable skills when omitted */
+                        names?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description What would happen to each skill */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SkillExportPlan"];
+                    };
+                };
+                /** @description Invalid target */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export ORC skills (effective SKILL.md plus files) as native skill folders */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        target: components["schemas"]["SkillExportTarget"];
+                        names?: string[];
+                        /** @description Skills to write even though the target has a near copy, conflict or duplicate; replaced folders are backed up */
+                        overwrite?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Exported skills and the ones skipped with a reason */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SkillExportResult"];
+                    };
+                };
+                /** @description Invalid target */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description None of the named skills exist */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -5991,7 +6478,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Edit an existing user skill text file */
+        /** Edit a user skill text file, or add one with expectedContent null */
         put: {
             parameters: {
                 query?: never;
@@ -6006,7 +6493,9 @@ export interface paths {
                     "application/json": {
                         path: string;
                         content: string;
-                        expectedContent: string;
+                        /** @description Current file text; null creates a new file */
+                        expectedContent: string | null;
+                        reason?: string;
                     };
                 };
             };
@@ -6034,7 +6523,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description File changed since opening */
+                /** @description File changed since opening, or already exists */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -6407,7 +6896,7 @@ export interface paths {
                                 command?: {
                                     script: string;
                                     cwd: string;
-                                    host: string | null;
+                                    host?: string | null;
                                     /** @default [] */
                                     arguments: {
                                         name: string;
@@ -6469,6 +6958,15 @@ export interface paths {
                             expires_at: number;
                             responded_at: number | null;
                             delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
                         };
                     };
                 };
@@ -9430,6 +9928,291 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory-transfer/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Claude Code project memory folders, the project's own first */
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Native memory folders */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sources: components["schemas"]["NativeMemorySource"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory-transfer/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview importing a native memory folder, flagging duplicates and near copies */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        project_id: string;
+                        /** @description Absolute native memory folder, e.g. ~/.claude/projects/<p>/memory */
+                        dir: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Each memory file with its status against the project */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemoryImportPreview"];
+                    };
+                };
+                /** @description Folder is not absolute or does not exist */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Project not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory-transfer/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import native memory files into a project, skipping duplicates and near copies */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        project_id: string;
+                        /** @description Absolute native memory folder, e.g. ~/.claude/projects/<p>/memory */
+                        dir: string;
+                        memories: {
+                            name: string;
+                            /** @description Update the project memory of the same name (kept in its history) */
+                            replace?: boolean;
+                        }[];
+                        author?: string;
+                        /** @description Native session id of the agent making the change, when known */
+                        session_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Imported, replaced and skipped memories */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemoryImportResult"];
+                    };
+                };
+                /** @description Invalid folder or selection */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Project not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory-transfer/export/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview exporting project memories as native memory files */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        project_id: string;
+                        /** @description Absolute native memory folder, e.g. ~/.claude/projects/<p>/memory */
+                        dir: string;
+                        /** @description Memories to export; all when omitted */
+                        names?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description What would happen to each memory */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemoryExportPlan"];
+                    };
+                };
+                /** @description Folder is not absolute */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Project or memory not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory-transfer/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Write project memories as native memory files (and MEMORY.md index lines) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        project_id: string;
+                        /** @description Absolute native memory folder, e.g. ~/.claude/projects/<p>/memory */
+                        dir: string;
+                        names?: string[];
+                        /** @description Memories to write even though the folder has a near copy, conflict or duplicate; replaced files are backed up */
+                        overwrite?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Exported and skipped memories */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemoryExportResult"];
+                    };
+                };
+                /** @description Folder is not absolute */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Project or memory not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scratchpads": {
         parameters: {
             query?: never;
@@ -11182,12 +11965,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description File bytes */
+                /** @description File bytes in the uploaded media type */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/octet-stream": string;
+                    };
                 };
             };
         };
@@ -13509,6 +14294,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/terminals/browse/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a folder inside a folder on the machine where terminals run */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        host: string | null;
+                        parent: string;
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created folder */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/terminals/{id}": {
         parameters: {
             query?: never;
@@ -15151,10 +15982,53 @@ export interface components {
             path: string;
             content_hash: string;
             /** @enum {string} */
-            status: "new" | "installed" | "conflict" | "changed" | "invalid";
+            status: "new" | "installed" | "duplicate" | "conflict" | "changed" | "invalid";
             also_in: string[];
             extra_fields: string[];
+            match?: components["schemas"]["SkillMatch"];
             error?: string;
+        };
+        SkillMatch: {
+            name: string;
+            /** @enum {string} */
+            level: "identical" | "near" | "similar";
+            score: number;
+            /** @description "orc" or the folder holding the match */
+            where: string;
+        };
+        SkillExportPlan: {
+            dir: string;
+            label: string;
+            skills: components["schemas"]["SkillExportItem"][];
+        };
+        SkillExportItem: {
+            name: string;
+            description: string;
+            /** @enum {string} */
+            status: "new" | "identical" | "near" | "conflict" | "duplicate" | "blocked";
+            path: string;
+            can_overwrite: boolean;
+            match?: components["schemas"]["SkillMatch"];
+            reason?: string;
+        };
+        /** @description A local agent id (claude, codex, agents, ...) or an absolute folder */
+        SkillExportTarget: {
+            agent: string;
+        } | {
+            path: string;
+        };
+        SkillExportResult: {
+            dir: string;
+            exported: {
+                name: string;
+                path: string;
+                replaced: boolean;
+                backup?: string;
+            }[];
+            skipped: {
+                name: string;
+                reason: string;
+            }[];
         };
         SkillListItem: components["schemas"]["SkillMeta"] & {
             project_ids: string[];
@@ -15556,6 +16430,73 @@ export interface components {
             author: string;
             session_id: string | null;
             created_at: number;
+        };
+        NativeMemorySource: {
+            /** @enum {string} */
+            agent: "claude";
+            label: string;
+            dir: string;
+            count: number;
+            project_match: boolean;
+        };
+        MemoryImportPreview: {
+            dir: string;
+            memories: components["schemas"]["NativeMemory"][];
+        };
+        NativeMemory: {
+            file: string;
+            name: string;
+            description: string;
+            /** @enum {string} */
+            status: "new" | "installed" | "duplicate" | "conflict" | "invalid";
+            can_replace: boolean;
+            match?: components["schemas"]["MemoryMatch"];
+            error?: string;
+        };
+        MemoryMatch: {
+            name: string;
+            /** @enum {string} */
+            level: "identical" | "near" | "similar";
+            score: number;
+            /** @enum {string} */
+            where: "orc" | "folder";
+        };
+        MemoryImportResult: {
+            imported: string[];
+            replaced: string[];
+            skipped: {
+                name: string;
+                reason: string;
+            }[];
+        };
+        MemoryExportPlan: {
+            dir: string;
+            index: boolean;
+            memories: components["schemas"]["MemoryExportItem"][];
+        };
+        MemoryExportItem: {
+            name: string;
+            description: string;
+            file: string;
+            /** @enum {string} */
+            status: "new" | "identical" | "near" | "conflict" | "duplicate";
+            can_overwrite: boolean;
+            match?: components["schemas"]["MemoryMatch"];
+            reason?: string;
+        };
+        MemoryExportResult: {
+            dir: string;
+            exported: {
+                name: string;
+                file: string;
+                replaced: boolean;
+                backup?: string;
+            }[];
+            skipped: {
+                name: string;
+                reason: string;
+            }[];
+            index_updated: boolean;
         };
         AuditEntry: {
             id: string;

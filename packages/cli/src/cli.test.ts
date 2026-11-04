@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@orc/api/server";
 import { resetConfig } from "@orc/core/config";
@@ -289,5 +291,81 @@ describe("CLI - mem commands", () => {
     expect(result.exitCode).toBe(0);
     const show = await mem("show", "api-port");
     expect(show.exitCode).toBe(1);
+  });
+});
+
+describe("CLI - native memory and skill folders", () => {
+  const dir = join(tmpdir(), `orc-cli-transfer-${Date.now()}`);
+  const memDir = join(dir, "memory");
+  const P = ["-p", "cli-transfer-test"];
+
+  beforeAll(async () => {
+    mkdirSync(memDir, { recursive: true });
+    for (const name of ["cli-transfer-test", "cli-transfer-copy"]) {
+      const res = await fetch(`http://127.0.0.1:${port}/api/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRET}` },
+        body: JSON.stringify({ name }),
+      });
+      expect(res.status).toBe(201);
+    }
+    const added = await cli(
+      "mem",
+      "add",
+      "build-cmd",
+      "-d",
+      "How to build the app",
+      "-c",
+      "Run bun run build from the repo root",
+      ...P,
+    );
+    expect(added.exitCode).toBe(0);
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  test("orc mem export writes Claude memory files and reports identical on re-run", async () => {
+    const result = await cli("mem", "export", memDir, ...P);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toMatch(/Exported build-cmd -> /);
+    const text = readFileSync(join(memDir, "build-cmd.md"), "utf8");
+    expect(text).toContain("name: build-cmd");
+    expect(text).toContain("Run bun run build from the repo root");
+    const again = await cli("--json", "mem", "export", memDir, "--dry-run", ...P);
+    expect(JSON.parse(again.stdout).memories[0].status).toBe("identical");
+  });
+
+  test("orc mem import lists then imports into another project", async () => {
+    const target = ["-p", "cli-transfer-copy"];
+    const listed = await cli("mem", "import", memDir, ...target);
+    expect(listed.stdout).toMatch(/\[new\] build-cmd - How to build the app/);
+    const imported = await cli("mem", "import", memDir, "--all", ...target);
+    expect(imported.stdout).toMatch(/Imported build-cmd/);
+    const show = await cli("--json", "mem", "show", "build-cmd", ...target);
+    expect(JSON.parse(show.stdout).content).toBe("Run bun run build from the repo root");
+  });
+
+  test("orc mem import warns about a near copy in the folder", async () => {
+    writeFileSync(
+      join(memDir, "build-command.md"),
+      "---\nname: build-command\ndescription: How to build the app\n---\n\nRun bun run build from the repo root.\n",
+    );
+    const listed = await cli("mem", "import", memDir, ...P);
+    expect(listed.stdout).toMatch(/\[duplicate\] build-command/);
+    expect(listed.stdout).toMatch(/(identical|near) to build-cmd in ORC/);
+  });
+
+  test("orc skill export-to writes a skill folder and dry-run reports identical", async () => {
+    const skills = join(dir, "skills");
+    const result = await cli("skill", "export-to", skills, "orc-platform");
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toMatch(/Exported orc-platform/);
+    expect(readFileSync(join(skills, "orc-platform", "SKILL.md"), "utf8")).toContain(
+      "name: orc-platform",
+    );
+    const again = await cli("--json", "skill", "export-to", skills, "orc-platform", "--dry-run");
+    expect(JSON.parse(again.stdout).skills[0].status).toBe("identical");
+    const listed = await cli("skill", "local", "--path", skills);
+    expect(listed.stdout).toMatch(/orc-platform/);
   });
 });

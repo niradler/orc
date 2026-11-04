@@ -1,4 +1,4 @@
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronDown, Download, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
@@ -16,11 +16,13 @@ import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
 import { Markdown } from "@/components/Markdown";
 import { MarkdownField } from "@/components/MarkdownField";
+import { MemoryTransferDialog } from "@/components/MemoryTransferDialog";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -102,6 +104,8 @@ export default function Memories({
   const [deleting, setDeleting] = useState<Memory | null>(null);
   const { data: projects } = useProjects({ status: "active" });
   const deleteMemory = useDeleteMemory();
+  const [transferMenuOpen, setTransferMenuOpen] = useState(false);
+  const [transfer, setTransfer] = useState<"import" | "export" | null>(null);
 
   // Memories always belong to a project, so "unassigned" has none to show.
   const unassigned = project === "unassigned";
@@ -117,6 +121,7 @@ export default function Memories({
   );
   const memories = list.data?.memories ?? [];
   const projectName = (id: string) => projects?.find((p) => p.id === id)?.name ?? id;
+  const transferProject = allProjects || unassigned ? null : project;
   const selectedItem = memories.find(
     (m) => m.project_id === memoryProject && m.name === memoryName,
   );
@@ -141,14 +146,67 @@ export default function Memories({
             : undefined
         }
         action={
-          <Button
-            data-testid="new-memory-button"
-            size="sm"
-            onClick={() => setEditing("new")}
-            className="font-label text-sm"
-          >
-            <Plus size={12} className="mr-1" /> New memory
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Popover open={transferMenuOpen} onOpenChange={setTransferMenuOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  data-testid="memory-transfer-menu"
+                  aria-label="Import or export memories"
+                  size="sm"
+                  variant="ghost"
+                >
+                  <Download size={14} />
+                  <span className="hidden sm:inline">Import / export</span>
+                  <ChevronDown size={12} className="hidden sm:block" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                aria-label="Import or export memories"
+                align="end"
+                className="w-64 space-y-1 p-1"
+              >
+                {!transferProject && (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    Choose a project to import or export its memories.
+                  </p>
+                )}
+                <Button
+                  data-testid="memory-import-button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  disabled={!transferProject}
+                  onClick={() => {
+                    setTransferMenuOpen(false);
+                    setTransfer("import");
+                  }}
+                >
+                  <Download size={12} className="mr-1" /> Import native memories
+                </Button>
+                <Button
+                  data-testid="memory-export-button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  disabled={!transferProject}
+                  onClick={() => {
+                    setTransferMenuOpen(false);
+                    setTransfer("export");
+                  }}
+                >
+                  <Upload size={12} className="mr-1" /> Export to native memory
+                </Button>
+              </PopoverContent>
+            </Popover>
+            <Button
+              data-testid="new-memory-button"
+              size="sm"
+              onClick={() => setEditing("new")}
+              className="font-label text-sm"
+            >
+              <Plus size={12} className="mr-1" /> New memory
+            </Button>
+          </div>
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -355,6 +413,15 @@ export default function Memories({
           defaultProjectId={allProjects || unassigned ? "" : project}
           onClose={() => setEditing(null)}
           onCreated={(memory) => openDetail(memory)}
+        />
+      )}
+
+      {transfer && transferProject && (
+        <MemoryTransferDialog
+          mode={transfer}
+          projectId={transferProject}
+          projectName={projectName(transferProject)}
+          onClose={() => setTransfer(null)}
         />
       )}
 

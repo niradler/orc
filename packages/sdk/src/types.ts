@@ -53,8 +53,13 @@ export type {
   LocalSkillImportItem,
   LocalSkillImportResult,
   SkillDiscovery,
+  SkillExportPlan,
+  SkillExportPlanItem,
+  SkillExportResult,
+  SkillExportTarget,
   SkillImportInput,
   SkillImportOrigin,
+  SkillMatch,
   SkillSyncInput,
   SkillSyncResult,
 } from "@orc/core/skill-import-types";
@@ -129,6 +134,13 @@ export type Memory = components["schemas"]["Memory"];
 export type MemoryListItem = components["schemas"]["MemoryListItem"];
 export type MemoryChange = components["schemas"]["MemoryChange"];
 export type MemoryListSort = "reads" | "recent" | "priority";
+export type NativeMemorySource = components["schemas"]["NativeMemorySource"];
+export type NativeMemory = components["schemas"]["NativeMemory"];
+export type MemoryImportPreview = components["schemas"]["MemoryImportPreview"];
+export type MemoryImportResult = components["schemas"]["MemoryImportResult"];
+export type MemoryExportItem = components["schemas"]["MemoryExportItem"];
+export type MemoryExportPlan = components["schemas"]["MemoryExportPlan"];
+export type MemoryExportResult = components["schemas"]["MemoryExportResult"];
 
 export type Job = {
   action?: JobAction;
