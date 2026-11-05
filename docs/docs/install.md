@@ -43,7 +43,7 @@ On launch the app:
 | Starts the daemon | Reuses a daemon already healthy on the configured port (`api.port`, default `7700`), otherwise starts the bundled `orc` binary. Only a daemon the app started is stopped when the app quits. |
 | Sets an API secret | When no secret is configured and the app starts the daemon, it generates one, saves it as `api.secret` in `~/.orc/config.json` and sends it on every dashboard request. |
 | Installs the CLI | Copies `orc` to `~/.orc/bin` (`orc.exe` on Windows). Re-copied when the app version changes. |
-| Adds the CLI to `PATH` | zsh: `~/.zshenv`. bash: `~/.bash_profile` on macOS, `~/.bashrc` on Linux. fish: `~/.config/fish/conf.d/orc.fish`. Windows: the user `PATH`. Open a new terminal afterwards. |
+| Adds the CLI to `PATH` | zsh: `~/.zshenv`. bash: `~/.bash_profile` (and `~/.bashrc` if present) on macOS, `~/.bashrc` (and `~/.profile` if present) on Linux. fish: `~/.config/fish/conf.d/orc.fish`. Windows: the user `PATH`. Open a new terminal afterwards. |
 | Starts at login | Enabled on first run, started hidden. Toggle it from the tray menu. |
 | Adds a tray icon | **Open orc**, **Start at login**, **Quit orc**. |
 

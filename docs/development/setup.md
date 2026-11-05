@@ -62,7 +62,7 @@ ORC_DB_PATH=/tmp/orc-dev.db bun dev
 
 ## Worktrees
 
-Create Git worktrees under `.orc/worktrees/<name>` (or `.claude/worktrees/<name>` for Claude Code). A workspace rule blocks other locations.
+Create Git worktrees under `.orc/worktrees/<name>`, `.claude/worktrees/<name>` (Claude Code) or `~/.codex/worktrees/` (Codex), never beside the repo.
 
 ```bash
 git worktree add .orc/worktrees/session-resume -b fix/session-resume

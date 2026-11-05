@@ -45,7 +45,7 @@ Specs live in `packages/web/tests/e2e/` and select elements by `data-testid` onl
 
 ```bash
 bun run build                               # every package
-bun run --filter @orc/cli build             # CLI bundle with the web dashboard embedded
+bun run --filter orc-ai build               # CLI bundle with the web dashboard embedded
 cd packages/cli && bun run build:bin        # standalone binaries
 bun run --filter @orc/desktop dist          # desktop installer for this machine
 ```

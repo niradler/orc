@@ -17,7 +17,7 @@ Pages are grouped in the sidebar:
 
 | Group | Pages |
 | --- | --- |
-| Activity | Dashboard, Attention needed, Sessions, Jobs, Webhooks, Audit |
+| Activity | Activity, Attention needed, Sessions, Jobs, Webhooks, Audit |
 | Tasks | Tasks |
 | Knowledge | Knowledge base, Memories |
 | Terminals | Terminals |
@@ -30,9 +30,9 @@ The sun and moon button in the header switches between the dark and light themes
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
 
-## Dashboard
+## Activity
 
-![Dashboard](/screens/dashboard.png)
+![Activity](/screens/dashboard.png)
 
 The **Activity** page: task metrics plus recent jobs, memories and sessions for the selected project.
 
@@ -121,7 +121,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Section | Controls |
 | --- | --- |
 | Connection | API URL for this browser |
-| Security | API secret, access tokens, sign-in lifetime, allowed web origins |
+| Security | Sign-in status and sign-out, default sign-in lifetime, allowed web origins, access tokens (minted by entering the secret) |
 | Appearance | Theme |
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
 | Server | **Restart ORC server** (closes terminals, keeps settings, reconnects) |
@@ -145,7 +145,7 @@ The desktop app is an Electron shell around the same dashboard. On top of the br
 | Installs the CLI | `~/.orc/bin/orc`, added to your shell `PATH` |
 | Tray icon | **Open orc**, **Start at login** toggle, **Quit orc** |
 | Start at login | On by default, starts hidden in the tray |
-| Keeps running when closed | On Windows and Linux, closing the window hides it; the daemon keeps running |
+| Keeps running when closed | On Windows and Linux, closing the window hides it; the daemon keeps running. On macOS, closing the window currently quits the app ([#176](https://github.com/niradler/orc/issues/176)). |
 | Recovers from crashes | If the daemon stops, offers **Retry** or **Quit** |
 | Remembers the window | Size, position and maximized state |
 

@@ -55,7 +55,7 @@ try {
 
   for (const entry of readdirSync(worktree))
     if (entry !== ".git") rmSync(join(worktree, entry), { recursive: true });
-  cpSync(dist, worktree, { recursive: true });
+  cpSync(dist, worktree, { recursive: true, filter: (path) => !path.endsWith(".DS_Store") });
   writeFileSync(join(worktree, ".nojekyll"), "");
 
   git(["add", "-A"], worktree);

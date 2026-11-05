@@ -40,7 +40,7 @@ orc task add "Fix the auth bug" --priority high
 orc task list
 ```
 
-Priorities: `low`, `normal`, `high`, `critical`. Tasks move through `todo → queued → doing → review → done`.
+Priorities: `low`, `normal`, `high`, `critical`. The normal path is `todo → queued → doing → review → done`; a task can also be `changes_requested`, `blocked`, `paused` or `cancelled`.
 
 To have an agent pick tasks up automatically, enable the task loop (off by default):
 

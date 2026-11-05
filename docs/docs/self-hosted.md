@@ -79,7 +79,7 @@ The image includes Node, ACPX, Claude Code and Codex CLI. The default backend is
 | Mount | Holds | Required |
 | --- | --- | --- |
 | `orc-home:/home/bun` | `~/.orc`: `orc.db`, `secret.key`, `config.json`, knowledge originals, agents, packages, flows; agent CLI logins and session histories | Yes |
-| `orc-data:/data` | `ORC_HOME`: daemon PID and log | Recommended |
+| `orc-data:/data` | `ORC_HOME`: daemon PID file | Recommended |
 | `${HOME}/.ssh:/ssh-host:ro` | SSH keys and config, copied into `/home/bun/.ssh` at start | Only for Git over SSH or an SSH execution host |
 | Your repositories | Checkouts that projects point at | For any agent work |
 
@@ -164,7 +164,7 @@ Set `api.cors_origins` (or `ORC_API_CORS_ORIGINS`) only if a dashboard on a diff
 The server ORC can run agents, terminals, Git and jobs on another machine over SSH instead of inside the container.
 
 1. Mount `~/.ssh` (the Compose file does) with a `Host` alias for the machine.
-2. Set `ORC_API_SECRET`. The SSH tunnel requires it.
+2. Set `ORC_API_SECRET`. Without it the reverse tunnel exposes an unauthenticated API on the SSH host's loopback.
 3. Select the host: `ORC_SSH_HOST=<alias>` in the environment (fixed), or **Settings → Execution host** / `PUT /api/ssh`.
 4. Check it with the connection test in **Settings → Execution host** or `POST /api/ssh/test`. It reports OS, shell, installed agent CLIs and Claude login.
 
@@ -217,7 +217,7 @@ spec call --spec orc-cloud context --data '{"project":"my-app"}'
 `/mcp` query parameters set connection defaults: `project=<name>` or `projects=a,b`, and `mode=meta|full`. See [MCP](./mcp.md).
 
 ::: warning
-Do not point stdio `orc mcp` at a remote server. Stdio MCP reads and writes the local `~/.orc/orc.db` directly for most tools and only forwards a few calls (channels, human requests, session sync, job runs, downloads) to `ORC_API_BASE`. Against a remote server it would split state between two databases. Use HTTP `/mcp` for any remote ORC.
+Do not point stdio `orc mcp` at a remote server. Stdio MCP reads and writes the local `~/.orc/orc.db` directly for most tools and only forwards a few calls (channels, human requests, session sync and handoff, skill and scratchpad downloads, knowledge-base digests) to `ORC_API_BASE`. Against a remote server it would split state between two databases. Use HTTP `/mcp` for any remote ORC.
 :::
 
 ### Hooks and live sessions
@@ -256,7 +256,7 @@ Steps, from the laptop session, with `orc-cloud` connected over MCP:
      --upload-url '<upload_url>'
    ```
 
-4. On the server dashboard, **Sessions** shows the session as **Ready**. Choose **Open in terminal**.
+4. On the server dashboard, **Sessions** shows the session as **Ready**. Choose **Resume → Terminal**.
 
 The worktree is `<repo>/.orc/worktrees/<handoff-id>` on branch `orc/handoff/<handoff-id>`. Only Git-tracked state and the native transcript move. Ignored files, dependencies, environment variables and running processes do not. The agent can run the whole sequence when asked to hand off; the `orc-platform` skill documents it. Details: [Session handoff](./session-handoff.md).
 
@@ -276,7 +276,7 @@ To make laptop history searchable on the server without running anything, sync i
 
    Alternatively pass `--url https://orc.example.com` with `ORC_API_SECRET` in the environment. HTTPS is required except on loopback.
 
-Synced sessions appear under **Sessions → Archived sessions** and in `session_search`. Re-running uploads only changed sessions; diverged histories are kept as conflicts and never overwrite. An archived session can later be resumed with **Prepare and resume in terminal**, which runs the same handoff checks (`POST /api/sessions/archive/{id}/resume`).
+Synced sessions appear under **Sessions → Archived sessions** and in `session_search`. Re-running uploads only changed sessions; diverged histories are kept as conflicts and never overwrite. An archived session can later be resumed from its **Continue on ORC** section with **Resume → Terminal**, which runs the same handoff checks (`POST /api/sessions/archive/{id}/resume`).
 
 ### Run tasks on the server runner
 

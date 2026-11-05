@@ -4,7 +4,7 @@ The Sessions view uses the same working, waiting and ended states, task links, s
 
 Codex uses its native writer locks and latest turn status. A held lock identifies an open session; a completed turn is waiting, and a turn in progress is working. A released lock ends the session. Older Codex versions without a writer-lock directory retain the legacy activity fallback.
 
-Cursor IDE history, Cursor CLI (`agent` / `cursor-agent`) history and Gemini conversations are discovered separately. CLI and IDE Cursor histories are separate stores: only Cursor CLI records offer a CLI resume command. Gemini and Cursor CLI support Open in terminal, Copy resume command, and Copy terminal link alongside Claude and Codex.
+Cursor IDE history, Cursor CLI (`agent` / `cursor-agent`) history and Gemini conversations are discovered separately. CLI and IDE Cursor histories are separate stores: only Cursor CLI records offer a CLI resume command. Gemini and Cursor CLI support Resume in a terminal, Copy resume command, and Copy terminal link alongside Claude and Codex.
 
 Install lifecycle hooks for Cursor and Gemini from this checkout:
 

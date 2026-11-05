@@ -170,7 +170,7 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 | `ORC_LOG_FILE` | on | `0` disables the log file |
 | `ORC_WEB_DIST` | bundled | Serve a different dashboard build |
 | `ORC_SQLITE_VEC_PATH` | bundled | sqlite-vec library for vector search |
-| `AGENTAPI_URL` | `http://127.0.0.1:3284` | agentapi server for the `agentapi` backend |
+| `AGENTAPI_URL` | `http://localhost:3284` | agentapi server for the `agentapi` backend |
 | `ANTHROPIC_API_KEY` | none | `claude` backend |
 
 ## Ports
@@ -249,7 +249,7 @@ or put it in `~/.orc/config.json` as `api.secret`, or set `ORC_API_SECRET`. The 
 | Dashboard | Asks for the secret once and stores a signed HttpOnly cookie for `api.session_days` |
 | Desktop app | Sends the secret it configured |
 
-Unauthenticated paths: `/api/health`, `/api/auth/session`, `/api/auth/token`.
+Unauthenticated paths: `/health`, `/api/health`, `/api/auth/session`, `/api/auth/token`. Handoff upload, session-sync, skill download and scratchpad content URLs skip the secret but check their own signed, expiring link.
 
 ### Access tokens
 

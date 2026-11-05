@@ -78,7 +78,7 @@ A session is one coding-agent conversation. ORC tracks two kinds:
 - **Managed sessions** that ORC started: task workers, job runs, chat and terminal agents. They record backend, model, execution host, cwd, transcript, tokens and linked task.
 - **Live sessions** that you started yourself in Claude Code, Codex, Cursor or Gemini. ORC discovers them from native history and lifecycle hooks and shows them as working, waiting or ended.
 
-The Sessions view lists both, with search, transcripts, **Open in terminal** and resume commands. Sessions can also be archived to ORC and handed off to another machine.
+The Sessions view lists both, with search, transcripts, **Resume → Terminal** and resume commands. Sessions can also be archived to ORC and handed off to another machine.
 
 See [Live sessions](./live-sessions.md) and [Session handoff](./session-handoff.md).
 

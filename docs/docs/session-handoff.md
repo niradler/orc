@@ -4,7 +4,7 @@ Use the bundled `orc-platform` skill's `references/execution.md` handoff section
 with Claude Code or Codex. Within Git authorization, the agent commits and
 pushes the intended work, verifies the remote SHA, calls `session_handoff`, and uploads
 its native conversation. In **Sessions**, the imported session appears as **Ready**.
-Choose **Open in terminal** to continue it.
+Choose **Resume → Terminal** to continue it.
 
 The destination project must already exist in ORC with its folder scope pointing to a
 repository on the selected execution host. Its configured remote must match the reported
