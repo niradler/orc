@@ -26,7 +26,8 @@
     "clean": "bun run --filter '*' clean",
     "docs:dev": "vitepress dev docs --host 127.0.0.1",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs --host 127.0.0.1"
+    "docs:preview": "vitepress preview docs --host 127.0.0.1",
+    "docs:deploy": "bun scripts/deploy-docs.ts"
   },
   "overrides": {
     "minimatch": "11.0.3",

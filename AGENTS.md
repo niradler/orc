@@ -70,8 +70,8 @@ extra agents, production changes, publication, or imply hook enforcement.
 ## Documentation
 
 `README.md` is for users: what ORC is, install, quick start and links. Everything
-else lives in `docs/`, published to https://niradler.github.io/orc/ by
-`.github/workflows/docs.yml`. `docs/docs/` is usage, `docs/development/` is
+else lives in `docs/`, published to https://niradler.github.io/orc/ from the
+`gh-pages` branch by `bun run docs:deploy` (run it from master after a docs merge). `docs/docs/` is usage, `docs/development/` is
 the short contributor section, and `docs/internal/` (design specs, verification
 records) is kept in the repo but not published.
 

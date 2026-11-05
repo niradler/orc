@@ -59,4 +59,4 @@ bun run docs:build    # fails on dead links
 - A new page goes into the sidebar in `docs/.vitepress/config.ts`.
 - Screenshots live in `docs/public/screens/`. Capture them from a dev server with demo data, never from a real workspace.
 
-Merges to `master` that touch `docs/` deploy this site through `.github/workflows/docs.yml`.
+After a docs change merges, a maintainer publishes it from an up-to-date `master` with `bun run docs:deploy`. It builds the site locally and pushes it to the `gh-pages` branch, which GitHub Pages serves.
