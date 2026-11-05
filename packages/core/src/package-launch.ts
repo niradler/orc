@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -210,8 +211,8 @@ export function buildPackagePlan(
     });
     const root = new TextDecoder().decode(result.stdout).trim();
     const normalize = (path: string) =>
-      process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
-    if (result.exitCode !== 0 || normalize(root) !== normalize(cwd))
+      process.platform === "win32" ? realpathSync(path).toLowerCase() : realpathSync(path);
+    if (result.exitCode !== 0 || !root || normalize(root) !== normalize(cwd))
       throw new ValidationError(
         "Choose the Git repository root so Copilot loads APM's project registration",
       );

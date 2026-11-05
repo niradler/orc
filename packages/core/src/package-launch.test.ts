@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { createAgent, discoverAgents, getUserAgentsDir } from "./agent-service.js";
@@ -14,7 +14,7 @@ import { createPackage, getPackagesDir, readPackage } from "./package-service.js
 import { readSkillFile } from "./skill-files.js";
 import { listSkills, reloadCache } from "./skill-service.js";
 
-const cwd = mkdtempSync(join(tmpdir(), "orc-launch-test-"));
+const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-launch-test-")));
 Bun.spawnSync(["git", "init", cwd], {
   stdout: "ignore",
   stderr: "ignore",

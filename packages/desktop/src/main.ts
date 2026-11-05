@@ -150,7 +150,7 @@ function openWindow(url: string): void {
   win.on("close", (event) => {
     if (!win) return;
     saveWindowState(win);
-    if (!quitting && tray && process.platform !== "darwin") {
+    if (!quitting && tray) {
       event.preventDefault();
       win.hide();
     }
@@ -334,6 +334,7 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
     else showWindow();
   });
   app.on("activate", showWindow);
+  app.on("window-all-closed", () => {});
   app.on("before-quit", () => {
     quitting = true;
     daemon?.stop();

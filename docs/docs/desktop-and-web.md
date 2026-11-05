@@ -145,7 +145,7 @@ The desktop app is an Electron shell around the same dashboard. On top of the br
 | Installs the CLI | `~/.orc/bin/orc`, added to your shell `PATH` |
 | Tray icon | **Open orc**, **Start at login** toggle, **Quit orc** |
 | Start at login | On by default, starts hidden in the tray |
-| Keeps running when closed | On Windows and Linux, closing the window hides it; the daemon keeps running. On macOS, closing the window currently quits the app ([#176](https://github.com/niradler/orc/issues/176)). |
+| Keeps running when closed | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits. |
 | Recovers from crashes | If the daemon stops, offers **Retry** or **Quit** |
 | Remembers the window | Size, position and maximized state |
 

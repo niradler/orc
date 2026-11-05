@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getUserAgentsDir } from "@orc/core/agent-service";
@@ -322,7 +322,7 @@ describe("MCP agent and package tools", () => {
   let home: string;
 
   beforeAll(() => {
-    home = mkdtempSync(join(tmpdir(), "orc-mcp-agents-"));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "orc-mcp-agents-")));
     process.env.HOME = home;
     process.env.USERPROFILE = home;
     process.env.ORC_PACKAGES_DIR = join(home, "packages");

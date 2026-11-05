@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, sep } from "node:path";
 import { LOCAL_HOST } from "../exec-host";
@@ -7,7 +7,7 @@ import { UPLOAD_MAX_BYTES } from "../session-file-types";
 import { storeSessionFiles, uploadFilename } from "../session-files";
 
 test("should preserve binary uploads, isolate duplicate names and honor directory overrides", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-uploads-"));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-uploads-")));
   try {
     const data = new Uint8Array([0, 255, 13, 10, 1]);
     expect(

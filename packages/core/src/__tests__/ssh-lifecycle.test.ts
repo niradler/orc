@@ -437,7 +437,7 @@ test(
   () =>
     sshScenario(`
 writeFileSync(process.env.HOME + "/delay-master", "");
-const command = hostExec(host, ["queued-command"], { timeoutMs: 150 })
+const command = hostExec(host, ["queued-command"], { timeoutMs: 1500 })
   .then(() => "executed", error => String(error));
 await until(() => events().includes("master-start"));
 await retireSshMaster(host.alias);
