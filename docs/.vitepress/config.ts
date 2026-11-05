@@ -149,6 +149,12 @@ export default withMermaid(
         noteTextColor: "#e5e5e5",
       },
     },
-    vite: { build: { target: "es2022" } },
+    vite: {
+      build: { target: "es2022" },
+      optimizeDeps: {
+        esbuildOptions: { target: "es2022" },
+        include: ["mermaid"],
+      },
+    },
   }),
 );
