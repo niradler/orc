@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img">
+  <title>orc</title>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#000000"/>
+  <path d="M512 232 L792 512 L512 792 L232 512 Z" fill="none" stroke="#E5E5E5" stroke-width="44" stroke-linejoin="round"/>
+  <path d="M512 394 L630 512 L512 630 L394 512 Z" fill="#E5E5E5"/>
+</svg>
