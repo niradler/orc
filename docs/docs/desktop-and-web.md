@@ -133,6 +133,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Knowledge | Parser, embeddings and knowledge defaults |
 | Terminals | Terminal font for new terminals |
 | Storage | Where settings are stored |
+| About | Server, desktop and Electron versions, platform, runtime, data folder, uptime and project links |
 
 ## Desktop app only
 
