@@ -168,7 +168,7 @@ The server ORC can run agents, terminals, Git and jobs on another machine over S
 3. Select the host: `ORC_SSH_HOST=<alias>` in the environment (fixed), or **Settings → Execution host** / `PUT /api/ssh`.
 4. Check it with the connection test in **Settings → Execution host** or `POST /api/ssh/test`. It reports OS, shell, installed agent CLIs and Claude login.
 
-ORC opens a multiplexed SSH connection with a reverse port forward, so agents on that host reach ORC at `http://127.0.0.1:<port>` and get `ORC_API_BASE` and `ORC_API_SECRET` in their environment. The SSH key must allow remote forwarding, or set `ssh.remote_port` to a port where the API is already reachable. Native Windows ORC does not support SSH execution.
+ORC opens a multiplexed SSH connection with a reverse port forward, so agents on that host reach ORC at `http://127.0.0.1:<port>` and get `ORC_API_BASE` and `ORC_API_SECRET` in their environment. The SSH key must allow remote forwarding, or set `ssh.remote_port` to a port where the API is already reachable. Windows OpenSSH has no connection sharing, so native Windows ORC keeps one `ssh -N -R` tunnel per host for the callback and opens a separate connection for each command.
 
 ## Connect a laptop to both
 

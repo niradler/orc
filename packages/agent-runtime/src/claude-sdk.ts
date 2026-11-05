@@ -105,6 +105,7 @@ async function sshSdkLaunch(host: SshExecHost): Promise<Partial<Options>> {
       const child = spawn(bin, args, {
         env: process.env,
         stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
       });
       child.stderr.on("data", (chunk: Buffer) => {
         logger.debug("claude stderr (ssh)", {

@@ -129,6 +129,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         stdin: stdinBytes,
         timeout,
         killSignal: "SIGKILL",
+        windowsHide: true,
       });
       handle = { proc: local, kill: () => local.kill() };
     }

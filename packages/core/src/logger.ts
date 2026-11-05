@@ -37,10 +37,16 @@ const MAX_ROTATED_FILES = 3;
 
 let logDir: string | null = null;
 let logFilePath: string | null = null;
-let fileEnabled = process.env.ORC_LOG_FILE !== "0";
+let fileFailed = false;
+
+// bun test sets NODE_ENV=test; tests must not write into the user's real orc.log.
+function fileEnabled(): boolean {
+  const flag = process.env.ORC_LOG_FILE;
+  return !fileFailed && (flag === "1" || (flag !== "0" && process.env.NODE_ENV !== "test"));
+}
 
 function getLogFilePath(): string | null {
-  if (!fileEnabled) return null;
+  if (!fileEnabled()) return null;
   if (logFilePath) return logFilePath;
   try {
     logDir = join(process.env.ORC_LOG_DIR ?? join(homedir(), ".orc"), "logs");
@@ -48,7 +54,7 @@ function getLogFilePath(): string | null {
     logFilePath = join(logDir, "orc.log");
     return logFilePath;
   } catch {
-    fileEnabled = false;
+    fileFailed = true;
     return null;
   }
 }

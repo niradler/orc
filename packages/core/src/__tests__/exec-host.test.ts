@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../config.js";
 import {
+  connectionSharing,
   describeSshFailure,
   envScript,
   execHostFor,
@@ -14,12 +15,14 @@ import {
   listHostDirectories,
   parseProbe,
   parseSshConfigHosts,
+  parseTunnelReady,
   remoteCommand,
   retryTransientSqlite,
   type SshExecHost,
   shQuote,
   sshArgv,
   sshMasterArgv,
+  sshTunnelArgv,
 } from "../exec-host.js";
 
 const host: SshExecHost = {
@@ -166,10 +169,6 @@ describe("execHostFor", () => {
 
 describe("sshArgv", () => {
   test("keeps long-lived commands independent from control sockets", () => {
-    if (process.platform === "win32") {
-      expect(() => sshArgv(host, "true")).toThrow("Windows does not support");
-      return;
-    }
     const argv = sshArgv(host, "true", { tty: true });
     expect(argv).toContain("ControlMaster=no");
     expect(argv).toContain("ControlPath=none");
@@ -188,6 +187,24 @@ describe("sshArgv", () => {
     expect(argv).toContain("-T");
   });
 
+  test("uses one connection per command where OpenSSH cannot share connections", () => {
+    expect(connectionSharing("win32")).toBe(false);
+    expect(connectionSharing("linux")).toBe(true);
+    if (process.platform !== "win32") return;
+    const argv = sshArgv(host, "true", { shared: true });
+    expect(argv).toContain("ControlPath=none");
+    expect(argv).not.toContain("ProxyCommand=false");
+  });
+
+  test("keeps the reverse tunnel in its own foreground process", () => {
+    const argv = sshTunnelArgv(host, "127.0.0.1:0:127.0.0.1:7700");
+    expect(argv).toContain("-N");
+    expect(argv).toContain("ExitOnForwardFailure=yes");
+    expect(argv).toContain("ControlPath=none");
+    expect(argv).not.toContain("-f");
+    expect(argv.slice(-3)).toEqual(["-R", "127.0.0.1:0:127.0.0.1:7700", "box"]);
+  });
+
   test("starts direct and forwarded control masters without mixing their modes", () => {
     if (process.platform === "win32") return;
     const direct = sshMasterArgv(host, null);
@@ -198,6 +215,20 @@ describe("sshArgv", () => {
       "-R",
       "7799:127.0.0.1:7700",
     ]);
+  });
+});
+
+describe("parseTunnelReady", () => {
+  test("waits for every forward reply and reads the allocated port", () => {
+    expect(parseTunnelReady("debug1: Authenticated to box").ready).toBe(false);
+    expect(
+      parseTunnelReady(
+        "Allocated port 42607 for remote forward to 127.0.0.1:7700\r\ndebug1: forwarding_success: all expected forwarding replies received",
+      ),
+    ).toEqual({ ready: true, port: 42607 });
+    expect(
+      parseTunnelReady("debug1: forwarding_success: all expected forwarding replies received"),
+    ).toEqual({ ready: true, port: null });
   });
 });
 

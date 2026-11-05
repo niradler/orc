@@ -46,6 +46,7 @@ export function convertAudio(
     cmd: [ffmpeg, ...args],
     stdout: "ignore",
     stderr: "pipe",
+    windowsHide: true,
   });
   if (result.exitCode !== 0) {
     const message = new TextDecoder().decode(result.stderr);

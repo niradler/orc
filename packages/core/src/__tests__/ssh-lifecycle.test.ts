@@ -117,7 +117,13 @@ ${body}
 `,
   );
   const child = Bun.spawn([process.execPath, scenario], {
-    env: { ...process.env, HOME: dir, USERPROFILE: dir, PATH: `${dir}:${process.env.PATH}` },
+    env: {
+      ...process.env,
+      HOME: dir,
+      USERPROFILE: dir,
+      PATH: `${dir}:${process.env.PATH}`,
+      ORC_LOG_FILE: "1",
+    },
     stdout: "pipe",
     stderr: "pipe",
     timeout: 15_000,

@@ -72,5 +72,5 @@ ORC's saved setup remains separate from its manifest.
 
 The shared resolver lives in `@orc/core/package-launch`; the API's host preparation
 adapter serves terminal, chat and copied-command actions. Launch host selection
-does not change the installation's default SSH host. Existing SSH platform support
-still applies: the API must run on Linux, macOS or in Docker for SSH connection sharing.
+does not change the installation's default SSH host. On Windows, where OpenSSH has no
+connection sharing, the API keeps one tunnel process per host and opens a connection per command.

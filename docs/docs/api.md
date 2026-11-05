@@ -218,6 +218,7 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `GET` | `/backends` | Agent backends and whether each can run |
 | `GET` | `/events` | Resource-change event stream |
 | `GET` `PUT` | `/ssh` | SSH execution host |
+| `GET` | `/system/about` | Server version, platform, runtime, data folder, start time |
 | `POST` | `/system/restart` | Restart ORC |
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |
 | `GET` | `/audit` | Knowledge audit log |
