@@ -1,9 +1,9 @@
 # Setup, interfaces and authentication
 
 Contents: installation; connection/config; interfaces; diagnostics and recovery.
-Detailed sources: [Getting started](https://github.com/niradler/orc/blob/master/README.md#getting-started),
-[Connect your agent](https://github.com/niradler/orc/blob/master/README.md#connect-your-agent),
-[Configuration](https://github.com/niradler/orc/blob/master/README.md#configuration).
+Detailed sources: [Quick start](https://niradler.github.io/orc/docs/quick-start),
+[Connect your agents](https://niradler.github.io/orc/docs/connect-agents),
+[Configuration](https://niradler.github.io/orc/docs/configuration).
 
 ## Install and verify
 
@@ -201,4 +201,4 @@ operations. Do not run migrations against the only live copy as an experiment.
 Restore into an isolated location first, including knowledge originals and the
 secret key, and verify document reads/search and credential availability. Rebuilt
 indexes are not substitutes for original documents. Describe unavailable checks;
-publishing ORC releases is a separate maintainer operation documented in docs/releases.md.
+publishing ORC releases is a separate maintainer operation documented in docs/development/releases.md.

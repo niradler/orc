@@ -1,6 +1,6 @@
 # Sessions, execution hosts and Git
 
-Sources: [Live sessions](https://github.com/niradler/orc/blob/master/docs/live-sessions.md), [Handoff](https://github.com/niradler/orc/blob/master/docs/session-handoff.md).
+Sources: [Live sessions](https://github.com/niradler/orc/blob/master/docs/docs/live-sessions.md), [Handoff](https://github.com/niradler/orc/blob/master/docs/docs/session-handoff.md).
 
 For dashboard URLs, session ID distinctions, and reading versus resuming links,
 see [Web navigation and links](web.md).
@@ -160,7 +160,7 @@ from the last get, including after a denial. Denied, cancelled, expired or
 unavailable never authorizes a retry or a workaround, and a failed command is a
 result to report; report it. Creating a request runs nothing and grants no privileges.
 CLI equivalents are `orc attention request|get|acknowledge`. Details:
-[Agent questions and approvals](https://github.com/niradler/orc/blob/master/docs/human-requests.md).
+[Agent questions and approvals](https://github.com/niradler/orc/blob/master/docs/docs/human-requests.md).
 
 ## Git, GitHub and worktrees
 

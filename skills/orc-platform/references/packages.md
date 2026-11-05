@@ -1,7 +1,7 @@
 # Skills, profiles and packages
 
-Sources: [Skills](https://github.com/niradler/orc/blob/master/README.md#skills),
-[Agent packages](https://github.com/niradler/orc/blob/master/docs/agent-packages.md).
+Sources: [Skills](https://niradler.github.io/orc/docs/skills),
+[Agent packages](https://github.com/niradler/orc/blob/master/docs/docs/agent-packages.md).
 
 ## Discover and load
 

@@ -5,7 +5,7 @@ description: Run or resume the ORC release protocol, verify published artifacts,
 
 # ORC release
 
-Read [the release operator protocol](../../../docs/releases.md), including its
+Read [the release operator protocol](../../../docs/development/releases.md), including its
 commands and operator protocol, and the latest `.claude/docs/releases.md` handoff
 if present. Refresh ORC context and effective guidance as required by the repo's
 agent instructions. The protocol is authoritative; the handoff is historical

@@ -52,3 +52,7 @@ output/playwright/
 !packages/sdk/src/openapi.gen.ts
 
 .playwright-cli
+
+docs/.vitepress/cache
+.playwright-mcp/
+.DS_Store

@@ -2,7 +2,7 @@
 
 Skills guide reasoning; flows coordinate work; rules return deterministic decisions
 for supported events. A prompt instruction is not an enforced policy or OS sandbox.
-Source: [Agent rules](https://github.com/niradler/orc/blob/master/docs/agent-rules.md).
+Source: [Agent rules](https://github.com/niradler/orc/blob/master/docs/docs/agent-rules.md).
 
 ## Inspect, check and apply
 

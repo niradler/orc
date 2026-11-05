@@ -1,0 +1,146 @@
+:root {
+  --vp-font-family-base: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --vp-font-family-mono: "IBM Plex Mono", Consolas, monospace;
+
+  --vp-c-bg: #fafafa;
+  --vp-c-bg-alt: #ffffff;
+  --vp-c-bg-elv: #f3f3f5;
+  --vp-c-bg-soft: #f3f3f5;
+  --vp-c-text-1: #25262a;
+  --vp-c-text-2: #62666e;
+  --vp-c-text-3: #858991;
+  --vp-c-divider: #dee0e4;
+  --vp-c-border: #dee0e4;
+  --vp-c-gutter: #dee0e4;
+  --vp-c-default-soft: #e9eaed;
+
+  --vp-c-brand-1: #25262a;
+  --vp-c-brand-2: #506585;
+  --vp-c-brand-3: #25262a;
+  --vp-c-brand-soft: #e9eaed;
+
+  --vp-c-tip-1: #315797;
+  --vp-c-tip-soft: rgba(49, 87, 151, 0.08);
+  --vp-c-success-1: #466653;
+  --vp-c-warning-1: #795f30;
+  --vp-c-warning-soft: rgba(121, 95, 48, 0.1);
+  --vp-c-danger-1: #9b454d;
+  --vp-c-danger-soft: rgba(155, 69, 77, 0.1);
+
+  --vp-button-brand-bg: #25262a;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-hover-bg: #3a3b40;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-active-bg: #3a3b40;
+  --vp-button-alt-bg: #e9eaed;
+  --vp-button-alt-text: #25262a;
+
+  --vp-home-hero-name-color: #25262a;
+  --vp-code-block-bg: #f3f3f5;
+}
+
+.dark {
+  --vp-c-bg: #000000;
+  --vp-c-bg-alt: #0a0a0a;
+  --vp-c-bg-elv: #1c1c1c;
+  --vp-c-bg-soft: #141414;
+  --vp-c-text-1: #e5e5e5;
+  --vp-c-text-2: #a3a3a3;
+  --vp-c-text-3: #717171;
+  --vp-c-divider: #262626;
+  --vp-c-border: #262626;
+  --vp-c-gutter: #141414;
+  --vp-c-default-soft: #242424;
+
+  --vp-c-brand-1: #dedede;
+  --vp-c-brand-2: #c4c4c4;
+  --vp-c-brand-3: #dedede;
+  --vp-c-brand-soft: #242424;
+
+  --vp-c-tip-1: #8ab4f8;
+  --vp-c-tip-soft: rgba(138, 180, 248, 0.08);
+  --vp-c-success-1: #85c19d;
+  --vp-c-warning-1: #d6b675;
+  --vp-c-warning-soft: rgba(214, 182, 117, 0.08);
+  --vp-c-danger-1: #e2919a;
+  --vp-c-danger-soft: rgba(226, 145, 154, 0.08);
+
+  --vp-button-brand-bg: #dedede;
+  --vp-button-brand-text: #000000;
+  --vp-button-brand-hover-bg: #ffffff;
+  --vp-button-brand-hover-text: #000000;
+  --vp-button-brand-active-bg: #ffffff;
+  --vp-button-alt-bg: #1c1c1c;
+  --vp-button-alt-text: #e5e5e5;
+
+  --vp-home-hero-name-color: #e5e5e5;
+  --vp-code-block-bg: #141414;
+}
+
+.vp-doc a {
+  color: var(--vp-c-tip-1);
+  text-decoration: none;
+}
+
+.vp-doc a:hover {
+  text-decoration: underline;
+}
+
+.vp-doc h1 {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h2 {
+  font-weight: 500;
+  border-top-color: var(--vp-c-divider);
+}
+
+.vp-doc h3 {
+  font-weight: 500;
+}
+
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.65;
+}
+
+.vp-doc img {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.vp-doc table {
+  font-size: 14px;
+}
+
+.vp-doc tr:nth-child(2n) {
+  background-color: var(--vp-c-bg-soft);
+}
+
+.custom-block,
+.vp-doc div[class*="language-"],
+.VPFeature {
+  border-radius: 8px;
+}
+
+.VPFeature {
+  border: 1px solid var(--vp-c-divider);
+  background-color: var(--vp-c-bg-soft);
+}
+
+.VPHero .name {
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.VPHero .image-src {
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--vp-c-divider);
+}
+
+.VPButton {
+  border-radius: 6px !important;
+}
