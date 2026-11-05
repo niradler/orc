@@ -245,8 +245,7 @@ app.openapi(
     const thread = threadId ? requireThread(threadId) : null;
     if (thread && thread.config.agent !== agent)
       throw new ValidationError("The agent does not match this conversation.");
-    if (agent !== "codex" && agent !== "claude")
-      return c.json({ models: [], warning: "Choose a saved model or enter a custom model ID." });
+    if (agent !== "codex" && agent !== "claude") return c.json({ models: [], warning: null });
     const host = thread ? execHostFor(thread.host) : resolveExecHost();
     const cwd = thread?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
     const key = JSON.stringify([agent, host.kind === "ssh" ? host.alias : null, cwd]);
@@ -1244,7 +1243,7 @@ async function beginTurn(
             await emit({ type: "request_resolved", requestId: event.data.requestId });
           } else if (event.type === "error") await emit({ type: "error", message: event.data });
         }
-        if (!receivedResult && !stopped)
+        if (!receivedResult && !stopped && failure === null)
           await emit({
             type: "error",
             message:

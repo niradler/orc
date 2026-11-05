@@ -40,9 +40,8 @@ for (const theme of ["dark", "light"] as const) {
       await chooseChatAgent(page, "cursor");
       await expect(picker).toHaveText("cursor");
       await openChatModel(page);
-      const option = page.getByTestId("chat-model-select").locator("option").first();
       expect(
-        await option.evaluate((element) => ({
+        await page.getByTestId("chat-model-select").evaluate((element) => ({
           background: getComputedStyle(element).backgroundColor,
           text: getComputedStyle(element).color,
         })),

@@ -468,7 +468,7 @@ describe("native chat runtime", () => {
     expect((await request("/chat/models?agent=--bad")).status).toBe(400);
     expect((await request("/chat/models?agent=gemini&host=other")).status).toBe(400);
     const fallback = await (await request("/chat/models?agent=gemini")).json();
-    expect(fallback).toMatchObject({ models: [], warning: expect.any(String) });
+    expect(fallback).toEqual({ models: [], warning: null });
     const existing = await turn({ messages: [{ role: "user", content: "Model scope" }] });
     const threadEvent = existing.events.find((event) => event.type === "thread");
     if (threadEvent?.type !== "thread") throw new Error("No thread fixture");

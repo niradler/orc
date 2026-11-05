@@ -201,8 +201,13 @@ export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): 
       -200,
     ) as ChatActivity[];
   }
-  if (event.type === "tool_use")
+  if (event.type === "tool_use") {
+    if (activity.some((item) => item.type === "tool" && item.id === event.data.id))
+      return activity.map((item) =>
+        item.type === "tool" && item.id === event.data.id ? { ...item, ...event.data } : item,
+      );
     return [...activity, { type: "tool", ...event.data }].slice(-200) as ChatActivity[];
+  }
   if (event.type === "tool_result") {
     const existing = activity.some(
       (item) => item.type === "tool" && item.id === event.data.toolUseId,
