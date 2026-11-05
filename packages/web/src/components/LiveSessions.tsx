@@ -1,3 +1,4 @@
+import { CODING_AGENTS } from "@orc/core/coding-agents";
 import { RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -25,7 +26,7 @@ import { useProjects } from "@/hooks/useProjects";
 import { useLiveSessions, useSessionSearch, useSyncSessions } from "@/hooks/useSessions";
 import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
 
-const AGENTS = ["claude", "codex", "cursor", "cursor-agent", "gemini"];
+const AGENTS = [...CODING_AGENTS.flatMap((agent) => agent.sessionBackends), "cursor"];
 const PAGE_SIZE = 25;
 const HEAD = "font-label text-xs font-medium text-outline";
 

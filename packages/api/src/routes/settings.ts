@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { ChatSettingsSchema } from "@orc/core/chat";
+import { AGENT_ID_PATTERN } from "@orc/core/coding-agents";
 import { loadConfig, OrcConfigSchema, updateGlobalConfig } from "@orc/core/config";
 import { McpServerSettingsSchema } from "@orc/core/mcp-prompts";
 import { getSqlite } from "@orc/db/client";
@@ -106,6 +107,7 @@ const PreferencesSchema = z
     terminal_font: z.string().trim().max(200).optional(),
     attention_retention_hours: z.number().int().min(1).max(8760).optional(),
     chat: ChatSettingsSchema.optional(),
+    agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
   })
   .strict();
 const response = {

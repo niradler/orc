@@ -1,6 +1,7 @@
 import { type AgentBackend, type AgentEvent, createBackend } from "@orc/agent-runtime";
 import { changes } from "@orc/core/changes";
 import { nativeChatAgent } from "@orc/core/chat";
+import { chatRuntimeFor } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
@@ -76,7 +77,7 @@ async function findTarget(request: HumanRequest): Promise<PushTarget | null> {
   return {
     sourceId: row.id,
     agent,
-    backend: agent === "codex" ? "codex-cli" : agent === "claude" ? "claude" : "acpx",
+    backend: chatRuntimeFor(agent),
     runtimeId: row.runtime_session_id,
     host: row.execution_host ?? null,
     cwd: row.cwd,

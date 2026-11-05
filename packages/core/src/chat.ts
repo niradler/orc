@@ -3,7 +3,6 @@ import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-opti
 import { chatUiCatalogText } from "./chat-ui.js";
 import { SessionFileSchema } from "./session-file-types.js";
 
-export const CHAT_AGENTS = ["codex", "claude", "cursor", "gemini", "copilot"] as const;
 export function nativeChatAgent(agent: string): string | null {
   return ["claude", "codex", "gemini"].includes(agent) ? agent : null;
 }

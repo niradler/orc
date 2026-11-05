@@ -132,7 +132,7 @@ test("session history scopes assigned sources and local drafts without inventing
   await row(`chat:${summaries[0].id}`).getByTestId("chat-resume-thread").click();
   await waitHistoryClosed(page);
   await selectProject("p2");
-  await expect(page.getByTestId("chat-agent-button")).toContainText("codex");
+  await expect(page.getByTestId("chat-agent-button")).toContainText("Codex");
   await openChatHistory(page);
   await expect(row(`chat:${summaries[1].id}`)).toBeVisible();
   await expect(row(`chat:${summaries[0].id}`)).toHaveCount(0);
@@ -179,7 +179,7 @@ test("session history scopes assigned sources and local drafts without inventing
     )
     .toBe("p1");
   await page.reload();
-  await expect(page.getByTestId("chat-agent-button")).toContainText("codex");
+  await expect(page.getByTestId("chat-agent-button")).toContainText("Codex");
   await openChatHistory(page);
   await expect(row(`chat:${summaries[0].id}`)).toHaveCount(1);
   for (const kind of ["live", "archive"])

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { useProjects } from "@/hooks/useProjects";
 import { commandMatches, searchHitPath } from "@/lib/command-palette";
-import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
+import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { TERMINAL_PALETTE_EVENT, type TerminalPaletteRequest } from "@/lib/terminal-palette";
 import { terminalStatus } from "@/lib/terminal-presentation";
 import { useTerminals } from "@/lib/terminals";
@@ -194,7 +194,7 @@ export function CommandPalette({
       return rank(left.id) - rank(right.id) || right.created_at.localeCompare(left.created_at);
     });
     for (const terminal of ordered) {
-      const kind = TERMINAL_KINDS[terminal.kind].label;
+      const kind = terminalKind(terminal.kind).label;
       const detail = `${kind} · ${terminal.host ?? "Local"} · ${terminalStatus(terminal, connectionOf(terminal.id))} · ${cwdTail(terminal.cwd) || "Home"}`;
       if (!commandMatches(terminal.name, `${detail} ${terminal.kind} ${terminal.cwd ?? ""}`, query))
         continue;

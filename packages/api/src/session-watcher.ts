@@ -20,6 +20,7 @@ import { cursorAdapter, cursorStateDbPath } from "./sessions/cursor.js";
 import { cursorAgentAdapter } from "./sessions/cursor-agent.js";
 import { geminiAdapter } from "./sessions/gemini.js";
 import { lifecycleRecords, withLifecycle } from "./sessions/lifecycle.js";
+import { opencodeAdapter } from "./sessions/opencode.js";
 import type { KnownSession, SessionAdapter, SessionRecord } from "./sessions/types.js";
 
 export { LIVE_CHAT_ID };
@@ -46,6 +47,7 @@ const defaultAdapters = (): SessionAdapter[] => {
     cursorAdapter({ runtime }),
     cursorAgentAdapter(undefined, runtime),
     geminiAdapter(undefined, runtime),
+    opencodeAdapter(undefined, runtime),
   ].map((adapter) => withLifecycle(adapter, undefined, runtime));
 };
 

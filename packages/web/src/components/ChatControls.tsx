@@ -1,4 +1,5 @@
-import { CHAT_AGENTS, ChatModelSchema } from "@orc/core/chat";
+import { ChatModelSchema } from "@orc/core/chat";
+import { agentLabel } from "@orc/core/coding-agents";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
 import { History, PanelLeftClose, Plus, X } from "lucide-react";
@@ -28,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useEnabledAgents } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { useSsh } from "@/hooks/useSsh";
@@ -543,7 +545,7 @@ function HistoryRow({
 
 export function ChatAgentPicker() {
   const chat = useChat();
-  const agents = Array.from(new Set([...CHAT_AGENTS, chat.config.agent]));
+  const agents = Array.from(new Set([...useEnabledAgents(), chat.config.agent]));
   return (
     <Select
       value={chat.config.agent}
@@ -568,7 +570,7 @@ export function ChatAgentPicker() {
       <SelectContent data-testid="chat-agent-select" side="top" align="start">
         {agents.map((agent) => (
           <SelectItem key={agent} value={agent} data-testid={`chat-agent-option-${agent}`}>
-            {agent}
+            {agentLabel(agent)}
           </SelectItem>
         ))}
       </SelectContent>

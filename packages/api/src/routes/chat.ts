@@ -36,6 +36,7 @@ import {
   withOrcContext,
 } from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
+import { chatRuntimeFor } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
@@ -310,7 +311,7 @@ async function newThread(
     id: crypto.randomUUID(),
     title: "New chat",
     config,
-    backend: config.agent === "codex" ? "codex-cli" : config.agent === "claude" ? "claude" : "acpx",
+    backend: chatRuntimeFor(config.agent),
     runtimeId: null,
     cwd,
     host: host.kind === "ssh" ? host.alias : null,
@@ -351,8 +352,7 @@ async function newThread(
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;
     thread.config.model = model ?? source.model ?? "";
-    thread.backend =
-      source.backend === "codex" ? "codex-cli" : source.backend === "claude" ? "claude" : "acpx";
+    thread.backend = chatRuntimeFor(agent);
     if (source.project_id) thread.projectId = source.project_id;
     thread.runtimeId = source.runtime_session_id;
     thread.cwd = source.cwd;

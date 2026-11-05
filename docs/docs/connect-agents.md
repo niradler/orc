@@ -145,6 +145,7 @@ It returns the project's active tasks and its memories by priority.
 | Codex | Discovered from its local session files and writer locks. No setup. |
 | Cursor (IDE and CLI) | History is discovered; live state needs lifecycle hooks |
 | Gemini CLI | History is discovered; live state needs lifecycle hooks |
+| OpenCode | History is read from its SQLite store. No setup; no live state. |
 
 Install the Cursor and Gemini lifecycle hooks from a clone of the repository (needs Bun):
 

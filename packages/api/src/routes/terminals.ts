@@ -37,7 +37,9 @@ import { prepareSessionDirectory } from "../terminals/session-dir.js";
 
 const app = createRouter();
 
-const LaunchKindSchema = z.enum(LAUNCH_KINDS);
+const LaunchKindSchema = z
+  .string()
+  .refine((kind) => LAUNCH_KINDS.includes(kind), { message: "Unknown terminal kind" });
 
 const TerminalSchema = z
   .object({
@@ -276,7 +278,7 @@ app.openapi(listRoute, async (c) => {
   let launchers: ReturnType<typeof availableLaunchers> = [];
   if (ready) {
     try {
-      launchers = availableLaunchers(await launchDeps(config, host));
+      launchers = availableLaunchers(await launchDeps(config, host), config.preferences.agents);
     } catch (error) {
       ready = false;
       reason = error instanceof Error ? error.message : String(error);

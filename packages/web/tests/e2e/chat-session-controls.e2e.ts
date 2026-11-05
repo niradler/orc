@@ -146,7 +146,7 @@ for (const width of [1440, 390]) {
       .getByTestId("chat-resume-thread")
       .click();
     await waitHistoryClosed(page);
-    await expect(page.getByTestId("chat-agent-button")).toContainText("cursor");
+    await expect(page.getByTestId("chat-agent-button")).toContainText("Cursor");
     await expect(page.getByTestId("chat-model-button")).toContainText("fixture-model");
     expect(savedReads).toBe(1);
     await openChatSettings(page);
@@ -183,7 +183,7 @@ for (const width of [1440, 390]) {
     await waitHistoryClosed(page);
     expect(resumeCalls).toBe(1);
     await expect(page.getByTestId("chat-model-button")).toContainText("fixture-claude");
-    await expect(page.getByTestId("chat-agent-button")).toContainText("claude");
+    await expect(page.getByTestId("chat-agent-button")).toContainText("Claude Code");
     await openChatSettings(page);
     await expect(page.getByTestId("chat-config-dialog")).toContainText("claude-host");
     await expect(page.getByTestId("chat-config-dialog")).toContainText(resumed.cwd);

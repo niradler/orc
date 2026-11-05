@@ -10,7 +10,7 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 | --- | --- |
 | Sidebar | Activity, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
 | Project picker | Scopes most pages to one project, all projects, or unassigned items |
-| Chat panel | Talk to Claude, Codex or an ACPX agent from any page. Pick the agent and model at the top. |
+| Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; other agents run through ACPX. |
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
 
 Pages are grouped in the sidebar:
@@ -54,7 +54,7 @@ Open a task to see its body, status, comments, linked sessions and Git links, an
 
 ![Sessions](/screens/sessions.png)
 
-Live and archived sessions from Claude Code, Codex, Cursor and Gemini on this machine or the selected host. Working sessions update live; waiting sessions stay available to resume in a terminal or in chat. Search across archived conversations. See [Live sessions](./live-sessions.md).
+Live and archived sessions from Claude Code, Codex, Cursor, Gemini CLI and OpenCode on this machine or the selected host. Working sessions update live; waiting sessions stay available to resume in a terminal or in chat. Search across archived conversations. See [Live sessions](./live-sessions.md).
 
 ## Terminals
 
@@ -126,6 +126,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
 | Server | **Restart ORC server** (closes terminals, keeps settings, reconnects) |
 | Notifications | Browser push notifications for approvals, questions and chat replies. Needs HTTPS. |
+| Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code and Codex are native; Cursor, Gemini CLI, GitHub Copilot, OpenCode, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. The terminal launcher only lists enabled agents installed on the selected host. |
 | Channels | Telegram and Slack connections |
 | Chat | Default models, instructions, tools and permission mode for chat |
 | MCP | Build the MCP config snippet for your agent. See [Connect agents](./connect-agents.md). |

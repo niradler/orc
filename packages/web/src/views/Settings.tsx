@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Save } from "lucide-react";
 import { useState } from "react";
 import { api, getApiUrl } from "@/api/client";
+import { AgentSettings } from "@/components/AgentSettings";
 import { AttentionSettings } from "@/components/AttentionSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
@@ -29,6 +30,7 @@ const sections = [
   "server",
   "notifications",
   "channels",
+  "agents",
   "chat",
   "mcp",
   "integrations",
@@ -45,6 +47,7 @@ const sectionLabels: Record<Section, string> = {
   server: "Server",
   notifications: "Notifications",
   channels: "Channels",
+  agents: "Agents",
   chat: "Chat",
   mcp: "MCP",
   integrations: "Integrations",
@@ -225,6 +228,9 @@ export default function Settings() {
           <div hidden={section !== "notifications"}>
             <NotificationSettings />
             <AttentionSettings />
+          </div>
+          <div hidden={section !== "agents"}>
+            <AgentSettings />
           </div>
           <div hidden={section !== "chat"}>
             <ChatSettingsForm />
