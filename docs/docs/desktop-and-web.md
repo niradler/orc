@@ -26,6 +26,10 @@ Pages are grouped in the sidebar:
 
 Projects has its own page at `/projects`. Every page has a shareable URL.
 
+The sun and moon button in the header switches between the dark and light themes:
+
+![Dashboard in the light theme](/screens/dashboard-light.png)
+
 ## Dashboard
 
 ![Dashboard](/screens/dashboard.png)
@@ -40,9 +44,11 @@ The task board. Switch between **Board** (kanban) and **Table** views and filter
 
 Open a task to see its body, status, comments, linked sessions and Git links, and its flow run:
 
-![Task flow](/screens/task-flow.png)
+![Task detail](/screens/task-detail.png)
 
-The flow graph shows the nodes of the task's [flow](./task-flows.md) and the progress of its run.
+**Edit task → View flow** shows the nodes and edges of the task's [flow](./task-flows.md), including loops back for review:
+
+![Task flow](/screens/task-flow.png)
 
 ## Sessions
 
