@@ -32,7 +32,7 @@ The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (the `/
 
 ### Running dev servers
 
-> **Do not use the global `orc daemon`** for development - it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`. For production daemon setup (auto-start on boot, background service), see [Configuration](../guide/configuration.md).
+> **Do not use the global `orc daemon`** for development - it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`. For production daemon setup (auto-start on boot, background service), see [Configuration](../docs/configuration.md).
 
 ```bash
 bun dev                         # API + CLI + web in one shell (recommended)
@@ -116,7 +116,7 @@ React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs,
 - **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (shared SSE change notifications) + `@dnd-kit` (kanban DnD) + Playwright (e2e)
 - **API client**: `packages/web/src/api/client.ts` - calls `${getApiUrl()}/<route>`, default `getApiUrl()` is `/api`. Override via `localStorage.orc_api_url`; auth uses the HttpOnly `orc_session` cookie (`credentials: "include"`).
 - **Hooks**: `packages/web/src/hooks/` - one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useFlows`, `useBackends`, `useChat`, `useHealth`)
-- **Flows**: the flow run panel in the task sheet and the `/flows` browser read `GET /tasks/{id}/flow` and `GET /flows`. The graph is drawn by hand (`src/lib/flow-graph.ts` - a pure, unit-tested layered layout, no graph library) so loopbacks are visible as edges that go backwards. See [docs/guide/task-flows.md](../guide/task-flows.md#in-the-web-dashboard).
+- **Flows**: the flow run panel in the task sheet and the `/flows` browser read `GET /tasks/{id}/flow` and `GET /flows`. The graph is drawn by hand (`src/lib/flow-graph.ts` - a pure, unit-tested layered layout, no graph library) so loopbacks are visible as edges that go backwards. See [docs/docs/task-flows.md](../docs/task-flows.md#in-the-web-dashboard).
 - **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
 
 Resource-list standard: provide row selection and bulk actions using shared

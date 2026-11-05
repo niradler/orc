@@ -1,6 +1,6 @@
 # ORC agent guide
 
-ORC is a Bun/TypeScript orchestration hub. See [docs/guide/](docs/guide) for
+ORC is a Bun/TypeScript orchestration hub. See [docs/docs/](docs/docs) for
 product behavior, commands, interfaces and configuration, and
 [docs/development/](docs/development) for contributing, running, building and
 testing. [docs/internal/](docs/internal) holds design specs and the
@@ -71,13 +71,13 @@ extra agents, production changes, publication, or imply hook enforcement.
 
 `README.md` is for users: what ORC is, install, quick start and links. Everything
 else lives in `docs/`, published to https://niradler.github.io/orc/ by
-`.github/workflows/docs.yml`. `docs/guide/` is usage, `docs/development/` is
+`.github/workflows/docs.yml`. `docs/docs/` is usage, `docs/development/` is
 the short contributor section, and `docs/internal/` (design specs, verification
 records) is kept in the repo but not published.
 
 - A change to user-visible behavior, a CLI command or flag, an MCP tool, a REST
   route, a config key or env var, or install and deploy steps updates the matching
-  `docs/guide/` page in the same PR. Verify every name against the code.
+  `docs/docs/` page in the same PR. Verify every name against the code.
 - A new page is added to the sidebar in `docs/.vitepress/config.ts`. Link pages
   relatively (`./cli.md`); `bun run docs:build` fails on dead links.
 - Screenshots live in `docs/public/screens/` and are captured from a dev server
@@ -85,6 +85,6 @@ records) is kept in the repo but not published.
   stale.
 
 For task flows, node outcomes and managed status, see
-[docs/guide/task-flows.md](docs/guide/task-flows.md). For API and SDK changes, inspect the
+[docs/docs/task-flows.md](docs/docs/task-flows.md). For API and SDK changes, inspect the
 current routes and regenerate SDK types when the contract changes. For validation
 commands, see [development guide](docs/internal/development-reference.md).

@@ -55,7 +55,7 @@ bun run docs:dev      # http://127.0.0.1:5173/orc/ with live reload
 bun run docs:build    # fails on dead links
 ```
 
-- A change to user-visible behavior, a CLI command, an MCP tool, a REST route, a config key or install steps updates the matching page in `docs/guide/`.
+- A change to user-visible behavior, a CLI command, an MCP tool, a REST route, a config key or install steps updates the matching page in `docs/docs/`.
 - A new page goes into the sidebar in `docs/.vitepress/config.ts`.
 - Screenshots live in `docs/public/screens/`. Capture them from a dev server with demo data, never from a real workspace.
 

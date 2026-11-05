@@ -1,9 +1,9 @@
 # Setup, interfaces and authentication
 
 Contents: installation; connection/config; interfaces; diagnostics and recovery.
-Detailed sources: [Quick start](https://niradler.github.io/orc/guide/quick-start),
-[Connect your agents](https://niradler.github.io/orc/guide/connect-agents),
-[Configuration](https://niradler.github.io/orc/guide/configuration).
+Detailed sources: [Quick start](https://niradler.github.io/orc/docs/quick-start),
+[Connect your agents](https://niradler.github.io/orc/docs/connect-agents),
+[Configuration](https://niradler.github.io/orc/docs/configuration).
 
 ## Install and verify
 

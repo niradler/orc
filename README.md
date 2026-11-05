@@ -55,7 +55,7 @@ docker run -d --name orc -p 127.0.0.1:7700:7700 \
 ```
 
 > [!TIP]
-> Without the desktop app, run `orc daemon install` to start ORC now and at every login. Full options are in the [install guide](https://niradler.github.io/orc/guide/install).
+> Without the desktop app, run `orc daemon install` to start ORC now and at every login. Full options are in the [install guide](https://niradler.github.io/orc/docs/install).
 
 ## Quick start
 
@@ -75,7 +75,7 @@ claude mcp add --transport http orc 'http://127.0.0.1:7700/mcp' \
 npx skills add niradler/orc --all
 ```
 
-Codex, Cursor, Gemini and other MCP clients are covered in [Connect your agents](https://niradler.github.io/orc/guide/connect-agents).
+Codex, Cursor, Gemini and other MCP clients are covered in [Connect your agents](https://niradler.github.io/orc/docs/connect-agents).
 
 ## Five ways in
 
@@ -83,11 +83,11 @@ The same data sits behind every interface.
 
 | Interface | Use it for | Docs |
 | --- | --- | --- |
-| **Desktop app** | Daily driver: tray, start at login, bundled daemon and CLI | [Desktop and web](https://niradler.github.io/orc/guide/desktop-and-web) |
-| **Web dashboard** | Board, sessions, terminals, knowledge, jobs, settings, from any browser or phone | [Desktop and web](https://niradler.github.io/orc/guide/desktop-and-web) |
-| **CLI** | `orc task`, `orc mem`, `orc kb`, `orc job`, `orc flow`, `orc session` and more | [CLI](https://niradler.github.io/orc/guide/cli) |
-| **MCP** | Agents read and write tasks, memory, knowledge and sessions at `/mcp` | [MCP](https://niradler.github.io/orc/guide/mcp) |
-| **REST API + SDK** | Scripts and integrations, OpenAPI at `/openapi.json`, typed `@orc/sdk` client | [REST API](https://niradler.github.io/orc/guide/api) |
+| **Desktop app** | Daily driver: tray, start at login, bundled daemon and CLI | [Desktop and web](https://niradler.github.io/orc/docs/desktop-and-web) |
+| **Web dashboard** | Board, sessions, terminals, knowledge, jobs, settings, from any browser or phone | [Desktop and web](https://niradler.github.io/orc/docs/desktop-and-web) |
+| **CLI** | `orc task`, `orc mem`, `orc kb`, `orc job`, `orc flow`, `orc session` and more | [CLI](https://niradler.github.io/orc/docs/cli) |
+| **MCP** | Agents read and write tasks, memory, knowledge and sessions at `/mcp` | [MCP](https://niradler.github.io/orc/docs/mcp) |
+| **REST API + SDK** | Scripts and integrations, OpenAPI at `/openapi.json`, typed `@orc/sdk` client | [REST API](https://niradler.github.io/orc/docs/api) |
 
 <table>
   <tr>
@@ -102,13 +102,13 @@ The same data sits behind every interface.
 
 ## Local and cloud
 
-Run ORC on your laptop and a second ORC on your own server, side by side. Point the CLI and your agents at either one, hand a running session off to the server so it keeps going there, run tasks on the server's runner, and copy scratchpads, skills, agents and packages between the two. The two installations stay independent: nothing replicates on its own. See [Self-hosted ORC](https://niradler.github.io/orc/guide/self-hosted).
+Run ORC on your laptop and a second ORC on your own server, side by side. Point the CLI and your agents at either one, hand a running session off to the server so it keeps going there, run tasks on the server's runner, and copy scratchpads, skills, agents and packages between the two. The two installations stay independent: nothing replicates on its own. See [Self-hosted ORC](https://niradler.github.io/orc/docs/self-hosted).
 
 ## Documentation
 
 Everything else lives on the docs site, **[niradler.github.io/orc](https://niradler.github.io/orc/)**:
 
-- **Usage**: [what ORC is](https://niradler.github.io/orc/guide/what-is-orc), [concepts](https://niradler.github.io/orc/guide/concepts), [task flows](https://niradler.github.io/orc/guide/task-flows), [live sessions](https://niradler.github.io/orc/guide/live-sessions), [configuration](https://niradler.github.io/orc/guide/configuration)
+- **Usage**: [what ORC is](https://niradler.github.io/orc/docs/what-is-orc), [concepts](https://niradler.github.io/orc/docs/concepts), [task flows](https://niradler.github.io/orc/docs/task-flows), [live sessions](https://niradler.github.io/orc/docs/live-sessions), [configuration](https://niradler.github.io/orc/docs/configuration)
 - **Contributing**: [how to contribute](https://niradler.github.io/orc/development/), [run locally](https://niradler.github.io/orc/development/setup), [build and test](https://niradler.github.io/orc/development/build-and-test)
 
 The same pages are in [`docs/`](docs) as plain Markdown.

@@ -3,7 +3,7 @@
 Historical design record. Its retired skill names and original worker/reviewer
 pipeline describe the earlier implementation. For the current graph-based runtime,
 two-skill routing, scoped compatibility and prompt contract, use
-[Task flows](../guide/task-flows.md), [Knowledge learning](knowledge-loop.md) and the
+[Task flows](../docs/task-flows.md), [Knowledge learning](knowledge-loop.md) and the
 `orc-platform` / `orc-sdlc` entry points. Do not use this record as current agent
 bootstrap instructions.
 
