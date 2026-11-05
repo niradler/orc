@@ -475,7 +475,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -627,7 +627,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -829,7 +829,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -1029,7 +1029,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -1310,7 +1310,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -3474,7 +3474,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -3566,7 +3566,7 @@ export interface paths {
                             /**
                              * @default You are the ORC platform chat assistant.
                              *
-                             *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                             *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                              *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                              *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                              *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -3648,7 +3648,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
