@@ -76,6 +76,7 @@ import type {
   SkillSyncResult,
   SkillUpdate,
   SkillVisibility,
+  SystemAbout,
 } from "@orc/sdk/types";
 
 export type {
@@ -854,6 +855,7 @@ export const api = {
       }),
   },
   system: {
+    about: () => req<SystemAbout>("GET", "/system/about"),
     restart: () => req<RestartResponse>("POST", "/system/restart", {}),
   },
 

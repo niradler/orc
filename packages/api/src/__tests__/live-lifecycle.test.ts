@@ -64,7 +64,11 @@ describe("native ownership", () => {
             "-Command",
             "$file=[System.IO.File]::Open($env:ORC_TEST_LOCK,'Open','ReadWrite','ReadWrite'); $file.Lock(0,1); [Console]::WriteLine('ready'); [Console]::In.ReadLine() | Out-Null; $file.Unlock(0,1); $file.Dispose()",
           ]
-        : ["sh", "-c", 'exec 9<"$ORC_TEST_LOCK"; flock -x 9; echo ready; read release'];
+        : [
+            "python3",
+            "-c",
+            "import fcntl, os, sys\nfd = os.open(os.environ['ORC_TEST_LOCK'], os.O_RDONLY)\nfcntl.flock(fd, fcntl.LOCK_EX)\nprint('ready', flush=True)\nsys.stdin.readline()",
+          ];
     const child = Bun.spawn(command, {
       env: { ...process.env, ORC_TEST_LOCK: path },
       stdin: "pipe",

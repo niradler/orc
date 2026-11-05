@@ -1,5 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOCAL_HOST } from "@orc/core/exec-host";
@@ -131,7 +139,7 @@ describe("prepareSessionDirectory with git", () => {
   }
 
   test("creates a worktree for a repo and opens a plain folder as itself", async () => {
-    const root = mkdtempSync(join(tmpdir(), "orc-session-dir-"));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-session-dir-")));
     roots.push(root);
     const plain = join(root, "plain");
     const repo = join(root, "repo");

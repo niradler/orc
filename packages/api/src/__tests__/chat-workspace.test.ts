@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatThread } from "@orc/core/chat";
@@ -25,7 +25,7 @@ afterAll(() => {
   resetConfig();
 });
 test("should validate messages, host and Git repository before allocating a chat worktree", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-chat-workspace-"));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-chat-workspace-")));
   const git = (args: string[]) => {
     const result = Bun.spawnSync(["git", "-C", cwd, ...args], { timeout: 10000 });
     expect(result.exitCode).toBe(0);

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import type { HealthResponse, RestartResponse } from "@orc/sdk/types";
+import type { HealthResponse, RestartResponse, SystemAbout } from "@orc/sdk/types";
 import { registerRestartHandler } from "../lifecycle.js";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -34,4 +34,20 @@ test("should protect restart, validate input, reject unavailable/duplicate resta
   expect((await req(app, "POST", "/system/restart", {})).status).toBe(409);
   await Bun.sleep(300);
   expect(calls).toBe(1);
+});
+
+test("should describe the server build and environment to signed-in clients only", async () => {
+  expect((await app.request("/api/system/about")).status).toBe(401);
+  const response = await req(app, "GET", "/system/about");
+  expect(response.status).toBe(200);
+  const about = await response.json<SystemAbout>();
+  const health = await (await req(app, "GET", "/health")).json<HealthResponse>();
+  expect(about).toMatchObject({
+    version: health.version,
+    platform: process.platform,
+    arch: process.arch,
+    instance_id: health.instance_id,
+  });
+  expect(about.runtime).toStartWith("bun ");
+  expect(about.data_dir.length).toBeGreaterThan(0);
 });

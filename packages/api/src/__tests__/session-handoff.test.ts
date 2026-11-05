@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { resetConfig } from "@orc/core/config";
@@ -24,7 +24,7 @@ import { setTerminalManager } from "../terminals/service.js";
 import type { PtyHandle, SpawnOptions } from "../terminals/spawn.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
-const root = mkdtempSync(join(tmpdir(), "orc-handoff-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-handoff-")));
 const remote = join(root, "remote.git");
 const source = join(root, "source");
 const target = join(root, "target");

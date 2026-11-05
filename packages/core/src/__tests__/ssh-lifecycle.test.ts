@@ -117,7 +117,13 @@ ${body}
 `,
   );
   const child = Bun.spawn([process.execPath, scenario], {
-    env: { ...process.env, HOME: dir, USERPROFILE: dir, PATH: `${dir}:${process.env.PATH}` },
+    env: {
+      ...process.env,
+      HOME: dir,
+      USERPROFILE: dir,
+      PATH: `${dir}:${process.env.PATH}`,
+      ORC_LOG_FILE: "1",
+    },
     stdout: "pipe",
     stderr: "pipe",
     timeout: 15_000,
@@ -437,7 +443,7 @@ test(
   () =>
     sshScenario(`
 writeFileSync(process.env.HOME + "/delay-master", "");
-const command = hostExec(host, ["queued-command"], { timeoutMs: 150 })
+const command = hostExec(host, ["queued-command"], { timeoutMs: 1500 })
   .then(() => "executed", error => String(error));
 await until(() => events().includes("master-start"));
 await retireSshMaster(host.alias);

@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   renameSync,
   symlinkSync,
   writeFileSync,
@@ -56,7 +57,8 @@ describe("worktree registry and cleanup", () => {
     const body = await response.json();
     expect(
       body.repos.filter(
-        (item: { root: string }) => item.root.replaceAll("\\", "/") === repo.replaceAll("\\", "/"),
+        (item: { root: string }) =>
+          item.root.replaceAll("\\", "/") === realpathSync.native(repo).replaceAll("\\", "/"),
       ),
     ).toHaveLength(1);
   });

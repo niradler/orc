@@ -20,25 +20,37 @@ except ProcessLookupError:
     pass
 `;
 
+const WINDOWS_POLL_MS = 1_000;
+
+export function localProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function pollLocalProcessExit(pid: number, onExit: () => void): () => void {
+  const timer = setInterval(() => {
+    if (localProcessAlive(pid)) return;
+    clearInterval(timer);
+    onExit();
+  }, WINDOWS_POLL_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 export function watchProcessExit(host: ExecHost, pid: number, onExit: () => void): () => void {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new RangeError("Invalid process id");
+  // Windows has no pidfd/kqueue and a watcher process per session would open a console window.
+  if (host.kind === "local" && process.platform === "win32")
+    return pollLocalProcessExit(pid, onExit);
   let stopped = false;
   let stop: (() => void) | undefined;
   const run = async (): Promise<void> => {
     try {
-      const windows = host.kind === "local" && process.platform === "win32";
-      const command = windows
-        ? [
-            Bun.which("pwsh") ?? "powershell.exe",
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            // A process that is already gone has exited. Exit 0 explicitly: the failed
-            // Get-Process lookup would otherwise make pwsh exit 1 with no error output.
-            `try { $targetProcess = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($targetProcess) { $targetProcess.WaitForExit() }; exit 0 } catch { [Console]::Error.WriteLine("Process exit watch failed: $($_.Exception.Message)"); exit 1 }`,
-          ]
-        : ["python3", "-u", "-c", WAIT_PROCESS, String(pid)];
+      const command = ["python3", "-u", "-c", WAIT_PROCESS, String(pid)];
       const child = await hostSpawn(host, command, {
         passEnv: [],
         stdin: "pipe",

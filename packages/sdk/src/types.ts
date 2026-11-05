@@ -323,6 +323,7 @@ export type IntegrationTool = components["schemas"]["IntegrationTool"];
 export type IntegrationToolDetail = components["schemas"]["IntegrationToolDetail"];
 export type IntegrationToolResult = components["schemas"]["IntegrationToolResult"];
 export type RestartResponse = components["schemas"]["RestartResponse"];
+export type SystemAbout = components["schemas"]["SystemAbout"];
 
 export type CreateTaskInput = TaskGitLinks & {
   title: string;

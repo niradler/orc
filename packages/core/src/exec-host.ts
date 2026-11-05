@@ -251,11 +251,13 @@ function sshDir(): string {
   return join(homedir(), ".orc", "ssh");
 }
 
+// Windows OpenSSH has no ControlMaster: orc keeps a plain tunnel process and runs each command
+// on its own connection.
+export function connectionSharing(platform: NodeJS.Platform = process.platform): boolean {
+  return platform !== "win32";
+}
+
 export function sshBinary(): string {
-  if (process.platform === "win32")
-    throw new ValidationError(
-      "SSH host mode needs OpenSSH connection sharing, which Windows does not support. Run orc on Linux, macOS or in Docker to use an SSH host.",
-    );
   const bin = Bun.which("ssh", { PATH: process.env.PATH ?? "" });
   if (!bin) throw new ValidationError("The OpenSSH client (ssh) is not installed where orc runs");
   return bin;
@@ -283,9 +285,10 @@ export function sshArgv(
   remote: string,
   opts: { tty?: boolean; shared?: boolean } = {},
 ): string[] {
-  const connectionOptions = opts.shared
-    ? [...masterOptions(host), "-o", "ControlMaster=no", "-o", "ProxyCommand=false"]
-    : [...commonOptions(host), "-o", "ControlMaster=no", "-o", "ControlPath=none"];
+  const connectionOptions =
+    opts.shared && connectionSharing()
+      ? [...masterOptions(host), "-o", "ControlMaster=no", "-o", "ProxyCommand=false"]
+      : [...commonOptions(host), "-o", "ControlMaster=no", "-o", "ControlPath=none"];
   return [sshBinary(), ...connectionOptions, opts.tty ? "-tt" : "-T", host.alias, remote];
 }
 
@@ -316,14 +319,186 @@ async function collect(proc: ReturnType<typeof Bun.spawn>): Promise<ExecResult> 
   return { code, stdout: new TextDecoder().decode(bytes), stderr, bytes };
 }
 
+export function sshTunnelArgv(host: SshExecHost, reverseForward: string): string[] {
+  return [
+    sshBinary(),
+    "-v",
+    ...commonOptions(host),
+    "-o",
+    "ControlMaster=no",
+    "-o",
+    "ControlPath=none",
+    "-o",
+    "ExitOnForwardFailure=yes",
+    "-N",
+    "-R",
+    reverseForward,
+    host.alias,
+  ];
+}
+
+export function parseTunnelReady(log: string): { ready: boolean; port: number | null } {
+  const allocated = /Allocated port (\d+) for remote forward/.exec(log)?.[1];
+  return {
+    ready: /forwarding_success: all expected forwarding replies received/.test(log),
+    port: allocated ? Number(allocated) : null,
+  };
+}
+
+interface Tunnel {
+  proc: ReturnType<typeof Bun.spawn> | null;
+  forward: string;
+  port: number | null;
+}
+
+const tunnels = new Map<string, Tunnel>();
+let tunnelExitHook = false;
+
+function tunnelPidFile(alias: string): string {
+  return join(sshDir(), `${alias}.tunnel.pid`);
+}
+
+function tunnelAlive(alias: string): boolean {
+  const tunnel = tunnels.get(alias);
+  return Boolean(tunnel && (tunnel.proc === null || tunnel.proc.exitCode === null));
+}
+
+function closeTunnel(alias: string): void {
+  const tunnel = tunnels.get(alias);
+  tunnels.delete(alias);
+  try {
+    tunnel?.proc?.kill();
+  } catch {}
+  try {
+    unlinkSync(tunnelPidFile(alias));
+  } catch {}
+}
+
+function killOrphanTunnel(alias: string): void {
+  const file = tunnelPidFile(alias);
+  if (tunnels.has(alias) || !existsSync(file)) return;
+  const pid = Number(readFileSync(file, "utf8").trim());
+  try {
+    unlinkSync(file);
+  } catch {}
+  if (!Number.isSafeInteger(pid) || pid <= 0) return;
+  const list = Bun.spawnSync(["tasklist", "/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+    stdout: "pipe",
+    stderr: "ignore",
+    windowsHide: true,
+    timeout: 5_000,
+  });
+  if (!/^"ssh(\.exe)?"/i.test(list.stdout.toString().trim())) return;
+  try {
+    process.kill(pid);
+    logger.info("Stopped SSH tunnel left by a previous orc", { alias, pid });
+  } catch {}
+}
+
+async function waitForTunnel(
+  proc: ReturnType<typeof Bun.spawn>,
+  timeoutMs: number,
+): Promise<{ ok: boolean; port: number | null; log: string }> {
+  const stream = proc.stderr as ReadableStream<Uint8Array>;
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let log = "";
+  const deadline = Date.now() + timeoutMs;
+  const result = await (async () => {
+    while (Date.now() < deadline) {
+      const chunk = await Promise.race([
+        reader.read(),
+        Bun.sleep(Math.max(0, deadline - Date.now())).then(() => null),
+      ]);
+      if (chunk === null) break;
+      if (chunk.done) return { ok: false, port: null, log };
+      log = `${log}${decoder.decode(chunk.value, { stream: true })}`.slice(-64_000);
+      const ready = parseTunnelReady(log);
+      if (ready.ready) return { ok: true, port: ready.port, log };
+    }
+    return { ok: false, port: null, log: `${log}\nConnection timed out` };
+  })();
+  // Keep draining so a chatty -v connection never blocks on a full pipe.
+  void (async () => {
+    try {
+      for (;;) if ((await reader.read()).done) return;
+    } catch {}
+  })();
+  return result;
+}
+
+async function startTunnel(host: SshExecHost): Promise<void> {
+  mkdirSync(sshDir(), { recursive: true, mode: 0o700 });
+  const forward = `${host.automaticPort ? "auto" : host.remotePort}:${host.apiTarget}`;
+  const current = tunnels.get(host.alias);
+  if (current && tunnelAlive(host.alias) && current.forward === forward) {
+    if (current.port) {
+      allocatedPorts.set(`${host.alias}|${host.apiTarget}`, current.port);
+      host.remotePort = current.port;
+    }
+    return;
+  }
+  masterGenerations.set(host.alias, Symbol());
+  closeTunnel(host.alias);
+  killOrphanTunnel(host.alias);
+  if (!host.automaticPort && (await remoteApiReachable(host))) {
+    tunnels.set(host.alias, { proc: null, forward, port: null });
+    return;
+  }
+  const spec = host.automaticPort
+    ? `127.0.0.1:0:${host.apiTarget}`
+    : `${host.remotePort}:${host.apiTarget}`;
+  const proc = Bun.spawn(sshTunnelArgv(host, spec), {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "pipe",
+    windowsHide: true,
+  });
+  const ready = await waitForTunnel(proc, (host.connectTimeoutSecs + 20) * 1000);
+  if (!ready.ok || (host.automaticPort && !ready.port)) {
+    try {
+      proc.kill();
+    } catch {}
+    const failure = ready.log
+      .split("\n")
+      .filter((line) => !line.startsWith("debug"))
+      .join("\n");
+    throw new SshError(describeSshFailure(host.alias, failure), isSshTransportFailure(failure));
+  }
+  tunnels.set(host.alias, { proc, forward, port: ready.port });
+  writeFileSync(tunnelPidFile(host.alias), String(proc.pid), { mode: 0o600 });
+  if (!tunnelExitHook) {
+    tunnelExitHook = true;
+    process.once("exit", () => {
+      for (const alias of [...tunnels.keys()]) closeTunnel(alias);
+    });
+  }
+  void proc.exited.then(() => {
+    if (tunnels.get(host.alias)?.proc !== proc) return;
+    logger.warn("SSH tunnel closed", { alias: host.alias, code: proc.exitCode });
+    closeTunnel(host.alias);
+    masterGenerations.set(host.alias, Symbol());
+    forgetHost(host.alias);
+  });
+  if (ready.port) {
+    allocatedPorts.set(`${host.alias}|${host.apiTarget}`, ready.port);
+    host.remotePort = ready.port;
+  }
+}
+
 async function controlCommand(
   alias: string,
   command: "check" | "exit",
   connectTimeoutSecs = 10,
 ): Promise<boolean> {
+  if (!connectionSharing()) {
+    if (command === "check") return tunnelAlive(alias);
+    closeTunnel(alias);
+    return true;
+  }
   const proc = Bun.spawn(
     [sshBinary(), ...masterOptions({ connectTimeoutSecs }), "-O", command, alias],
-    { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 10_000 },
+    { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 10_000, windowsHide: true },
   );
   const result = await collect(proc);
   if (command === "check" && result.code !== 0) {
@@ -361,6 +536,7 @@ export function describeSshFailure(alias: string, log: string): string {
 }
 
 async function startMaster(host: SshExecHost): Promise<void> {
+  if (!connectionSharing()) return startTunnel(host);
   mkdirSync(sshDir(), { recursive: true, mode: 0o700 });
   const forward = `${host.automaticPort ? "auto" : host.remotePort}:${host.apiTarget}`;
   const stateFile = join(sshDir(), `${host.alias}.forward`);
@@ -487,6 +663,7 @@ async function remoteApiReachable(host: SshExecHost, shared = false): Promise<bo
       stdout: "ignore",
       stderr: "ignore",
       timeout: (host.connectTimeoutSecs + 5) * 1000,
+      windowsHide: true,
     },
   );
   return (await result.exited) === 0;
@@ -746,6 +923,7 @@ export async function hostExec(
             stdin: input,
             stdout: "pipe",
             stderr: "pipe",
+            windowsHide: true,
             ...(remainingTimeoutMs !== undefined ? { timeout: remainingTimeoutMs } : {}),
           }),
         );
@@ -824,6 +1002,7 @@ export async function hostSpawn(
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
       ...(opts.env ? { env: opts.env as Record<string, string> } : {}),
       ...stdio,
+      windowsHide: true,
     }) as ReturnType<typeof Bun.spawn>;
     return {
       proc,
@@ -839,6 +1018,7 @@ export async function hostSpawn(
     cmd: prepared.argv(argv, opts.cwd),
     env: process.env,
     ...stdio,
+    windowsHide: true,
   }) as ReturnType<typeof Bun.spawn>;
   prepared.track(proc.exited);
   return {

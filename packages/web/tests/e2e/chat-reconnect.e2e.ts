@@ -212,20 +212,27 @@ test("an unauthorized reattach stops retrying and requests login", async ({ page
   await expect(page.getByTestId("api-login")).toBeVisible();
 });
 
-test("bounded retries leave Refresh available for recovery", async ({ page }) => {
+test("keeps reattaching through a long outage and recovers when the network returns", async ({
+  page,
+}) => {
   await page.evaluate(() => {
     window.reconnectTest.state.unavailable = true;
     window.reconnectTest.drop(false);
   });
-  await page.clock.runFor(6_500);
-  await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
-  expect(await page.evaluate(() => window.reconnectTest.state.attaches)).toBe(3);
+  await page.clock.runFor(31_000);
+  await expect
+    .poll(() => page.evaluate(() => window.reconnectTest.state.attaches))
+    .toBeGreaterThan(3);
+  await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "true");
+  await expect(page.getByTestId("chat-reconnecting")).toBeVisible();
+  const before = await page.evaluate(() => window.reconnectTest.state.attaches);
   await page.evaluate(() => {
     window.reconnectTest.state.unavailable = false;
+    window.dispatchEvent(new Event("online"));
   });
-  await openChatActions(page);
-  await page.getByTestId("chat-refresh-button").click();
-  await expect.poll(() => page.evaluate(() => window.reconnectTest.state.attaches)).toBe(4);
+  await expect
+    .poll(() => page.evaluate(() => window.reconnectTest.state.attaches))
+    .toBe(before + 1);
   await page.evaluate(() => window.reconnectTest.finish());
   await expect(page.getByTestId("chat-message-content").last()).toHaveText("First Second");
   await expect(page.getByTestId("chat-message-content")).toHaveCount(2);

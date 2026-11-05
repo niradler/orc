@@ -6,7 +6,7 @@
  *   bun run ci:full     # the above plus web e2e
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -40,14 +40,14 @@ env.PLAYWRIGHT_BROWSERS_PATH ??= join(
 const started = performance.now();
 function cleanupTestHome(path: string): void {
   const target = resolve(path);
-  if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("orc-ci-home-"))
+  if (dirname(target) !== realpathSync(tmpdir()) || !basename(target).startsWith("orc-ci-home-"))
     throw new Error("CI cleanup target is outside its temporary home root");
   rmSync(target, { recursive: true, force: true });
 }
 for (const [name, command] of steps) {
   console.log(`\n=== ${name}: ${command.join(" ")}`);
   const testStep = name === "Test" || name.includes("tests") || name === "Web e2e";
-  const testHome = testStep ? mkdtempSync(join(tmpdir(), "orc-ci-home-")) : undefined;
+  const testHome = testStep ? realpathSync(mkdtempSync(join(tmpdir(), "orc-ci-home-"))) : undefined;
   let exitCode: number;
   try {
     const childEnv = testHome

@@ -7,10 +7,10 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { ConflictError, NotFoundError, ValidationError } from "./errors.js";
+import { userHome } from "./home.js";
 import { parseMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { getPackagesDir } from "./package-paths.js";
 import type { AgentFields, AgentFull, AgentProfile, BrokenAgent } from "./primitive-types.js";
@@ -50,7 +50,7 @@ export const AgentFieldsSchema = z
   .passthrough();
 
 export function getUserAgentsDir(): string {
-  return join(homedir(), ".orc", "agents");
+  return join(userHome(), ".orc", "agents");
 }
 
 export function parseAgent(

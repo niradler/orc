@@ -182,10 +182,14 @@ export function installChangeTracking(sqlite: Database, path: string): void {
     };
     attach();
   }
+  const poll =
+    path !== ":memory:" && process.platform === "darwin" ? setInterval(schedule, 500) : undefined;
+  poll?.unref();
   observers.set(sqlite, () => {
     stopped = true;
     clearTimeout(timer);
     clearTimeout(retry);
+    clearInterval(poll);
     watcher?.close();
   });
 }

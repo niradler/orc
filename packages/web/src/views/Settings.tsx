@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Save } from "lucide-react";
 import { useState } from "react";
 import { api, getApiUrl } from "@/api/client";
+import { AboutSettings } from "@/components/AboutSettings";
 import { AgentSettings } from "@/components/AgentSettings";
 import { AttentionSettings } from "@/components/AttentionSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
@@ -37,6 +38,7 @@ const sections = [
   "knowledge",
   "terminals",
   "storage",
+  "about",
 ] as const;
 type Section = (typeof sections)[number];
 const sectionLabels: Record<Section, string> = {
@@ -54,6 +56,7 @@ const sectionLabels: Record<Section, string> = {
   knowledge: "Knowledge",
   terminals: "Terminals",
   storage: "Storage",
+  about: "About",
 };
 
 export default function Settings() {
@@ -274,6 +277,9 @@ export default function Settings() {
               <code>~/.orc/config.json</code>. The API address is stored in this browser; sign-in
               uses an HttpOnly cookie, never the API secret.
             </p>
+          </section>
+          <section hidden={section !== "about"} aria-label="About ORC">
+            <AboutSettings />
           </section>
           {error && (
             <p role="alert" className="mt-4 text-sm text-error">

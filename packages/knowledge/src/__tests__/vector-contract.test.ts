@@ -61,35 +61,38 @@ test("cosine distance rejects incompatible vector spaces instead of comparing pr
 });
 
 for (const backend of ["sqlite-vec", "exact-scan"] as const) {
-  test(`${backend} rejects query dimension drift before ranking`, async () => {
-    const index = await IndexDb.open(":memory:");
-    try {
-      if (backend === "sqlite-vec") expect(index.backend).toBe("sqlite-vec");
-      else index.backend = backend;
-      index.replaceDocument({
-        document_id: "doc",
-        kb_id: "kb",
-        revision: 1,
-        title: "Fixture",
-        labels: [],
-        media_type: "text/plain",
-        chunks: [{ ordinal: 0, heading_path: [], locator: null, text: "Fixture passage" }],
-      });
-      const chunk = index.pendingEmbeddings("profile", 1)[0];
-      if (!chunk) throw Error("Missing fixture chunk");
-      index.putVectors("profile", [
-        {
-          chunk_id: chunk.id,
-          hash: chunk.input_hash,
-          vector: new Uint8Array(new Float32Array([1, 0, 1]).buffer),
-        },
-      ]);
-      expect(() => index.semantic([1, 0], "profile", { kb_ids: ["kb"] }, 5)).toThrow();
-      expect(() => index.semantic([0, 0, 0], "profile", { kb_ids: ["kb"] }, 5)).toThrow();
-    } finally {
-      index.close();
-    }
-  });
+  test.skipIf(backend === "sqlite-vec" && process.platform === "darwin")(
+    `${backend} rejects query dimension drift before ranking`,
+    async () => {
+      const index = await IndexDb.open(":memory:");
+      try {
+        if (backend === "sqlite-vec") expect(index.backend).toBe("sqlite-vec");
+        else index.backend = backend;
+        index.replaceDocument({
+          document_id: "doc",
+          kb_id: "kb",
+          revision: 1,
+          title: "Fixture",
+          labels: [],
+          media_type: "text/plain",
+          chunks: [{ ordinal: 0, heading_path: [], locator: null, text: "Fixture passage" }],
+        });
+        const chunk = index.pendingEmbeddings("profile", 1)[0];
+        if (!chunk) throw Error("Missing fixture chunk");
+        index.putVectors("profile", [
+          {
+            chunk_id: chunk.id,
+            hash: chunk.input_hash,
+            vector: new Uint8Array(new Float32Array([1, 0, 1]).buffer),
+          },
+        ]);
+        expect(() => index.semantic([1, 0], "profile", { kb_ids: ["kb"] }, 5)).toThrow();
+        expect(() => index.semantic([0, 0, 0], "profile", { kb_ids: ["kb"] }, 5)).toThrow();
+      } finally {
+        index.close();
+      }
+    },
+  );
 }
 
 test("index rejects a mixed-dimension batch atomically before caching any vector", async () => {

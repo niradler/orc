@@ -111,7 +111,11 @@ export function syncClaudeMemory(
     const path = event.input.file_path ?? event.input.path;
     if (typeof path !== "string") return result;
     changed = resolve(event.cwd, path);
-    if (!withinWorkspace(root, changed) || !existsSync(changed) || !isMemoryFile(changed))
+    if (
+      !(withinWorkspace(root, changed) || withinWorkspace(resolve(directory), changed)) ||
+      !existsSync(changed) ||
+      !isMemoryFile(changed)
+    )
       return result;
   }
   const directoryFiles: string[] = [];

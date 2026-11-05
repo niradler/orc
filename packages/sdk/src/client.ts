@@ -136,6 +136,7 @@ import type {
   SkillSource,
   SkillUpdate,
   SkillVisibility,
+  SystemAbout,
   Task,
   TaskLink,
   TranscriptPage,
@@ -911,6 +912,7 @@ export function createOrcClient(options?: OrcClientOptions) {
       check: () => c<HealthResponse>("GET", "/health"),
     },
     system: {
+      about: () => c<SystemAbout>("GET", "/system/about"),
       restart: () => c<RestartResponse>("POST", "/system/restart", {}),
     },
 

@@ -40,7 +40,7 @@ Remote folder choices are kept separately from Local during the launch menu's li
 
 | API platform | Local PTYs | SSH terminals |
 | --- | --- | --- |
-| Windows with Bun 1.4.2+ | Supported through ConPTY | Existing SSH transport is unsupported natively |
+| Windows with Bun 1.4.2+ | Supported through ConPTY | One SSH connection per terminal plus a per-host callback tunnel (no OpenSSH multiplexing on Windows); trusted host keys and noninteractive key authentication |
 | Linux/macOS with supported Bun PTYs | Supported | Requires OpenSSH multiplexing, trusted host keys and noninteractive key authentication |
 
 The SSH transport needs a callback to the ORC API. Automatic reverse forwarding requires the SSH key/server to permit forwarding. A restricted key is reported as an error; the application does not change SSH permissions or trust settings. An explicitly configured callback port can use an already reachable API endpoint.

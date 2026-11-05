@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { existsSync, statSync } from "node:fs";
-import { loadConfig } from "@orc/core/config";
+import { globalConfigPath, loadConfig } from "@orc/core/config";
 import { ORC_VERSION } from "@orc/core/version";
 import { Command } from "commander";
 import { agentCommand, agentPackageCommand } from "./commands/agent.js";
@@ -103,7 +103,7 @@ program
 
     const files = [
       { label: "DB", path: config.db.path },
-      { label: "config", path: `${ORC_HOME}/config.json` },
+      { label: "config", path: globalConfigPath() },
       { label: "pid", path: ORC_PID },
       { label: "daemon log", path: `${ORC_HOME}/daemon.log` },
     ];
