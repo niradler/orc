@@ -1,11 +1,19 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deleteAgent, discoverAgents } from "./agent-service.js";
 
 describe("project agent deletion", () => {
-  const project = mkdtempSync(join(tmpdir(), "orc-agent-delete-"));
+  const project = realpathSync(mkdtempSync(join(tmpdir(), "orc-agent-delete-")));
   const directory = join(project, ".apm", "agents");
   const content = "---\nname: Reviewer\ndescription: Project reviewer\n---\nReview.";
   afterAll(() => rmSync(project, { recursive: true, force: true }));

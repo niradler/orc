@@ -720,9 +720,14 @@ describe("native chat runtime", () => {
     getSqlite()
       .query("UPDATE gateway_sessions SET pid = ? WHERE id = ?")
       .run(process.pid, "claude-stale");
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY ||= "orc-test-placeholder";
     const nowOwned = await turn({
       threadId: staleThread.id,
       messages: [{ role: "user", content: "Do not overlap owners" }],
+    }).finally(() => {
+      if (apiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = apiKey;
     });
     expect(nowOwned.events).toContainEqual({
       type: "error",

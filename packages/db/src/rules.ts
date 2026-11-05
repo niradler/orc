@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
+import { existsSync, realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { processRuleCommand } from "@orc/core/rule-command";
@@ -19,6 +21,12 @@ import {
 } from "@orc/core/rules";
 
 export type { RuleRevision } from "@orc/core/rule-types";
+
+function workspaceFilter(workspace: string | undefined): [string | null, string | null] {
+  const key =
+    workspace && existsSync(workspace) ? realpathSync(resolve(workspace)) : (workspace ?? null);
+  return [key, key];
+}
 
 function workspace(path: string): string {
   try {
@@ -134,7 +142,7 @@ export class RuleStore {
       .query<RevisionRow, [string | null, string | null]>(
         `SELECT r.*,h.revision_id=r.id AS current FROM rule_revisions r LEFT JOIN rule_heads h ON h.workspace=r.workspace WHERE (? IS NULL OR r.workspace=?) ORDER BY r.created_at DESC,r.id DESC LIMIT 200`,
       )
-      .all(workspace ?? null, workspace ?? null)
+      .all(...workspaceFilter(workspace))
       .map(revision);
   }
 
@@ -566,7 +574,7 @@ export class RuleStore {
       >(
         "SELECT d.id,d.revision_id,d.session_id,d.phase,d.tool,d.result,d.created_at FROM rule_decisions d JOIN rule_revisions r ON r.id=d.revision_id WHERE (? IS NULL OR r.workspace=?) ORDER BY d.created_at DESC,d.id DESC LIMIT 200",
       )
-      .all(workspace ?? null, workspace ?? null);
+      .all(...workspaceFilter(workspace));
   }
 
   actions(workspace?: string) {
@@ -583,6 +591,6 @@ export class RuleStore {
       >(
         "SELECT a.id,a.job_id,a.status,a.run_id,a.error FROM rule_actions a JOIN rule_decisions d ON d.id=a.decision_id JOIN rule_revisions r ON r.id=d.revision_id WHERE (? IS NULL OR r.workspace=?) ORDER BY a.created_at DESC,a.id DESC LIMIT 200",
       )
-      .all(workspace ?? null, workspace ?? null);
+      .all(...workspaceFilter(workspace));
   }
 }

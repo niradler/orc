@@ -91,11 +91,7 @@ export function evaluateRules(
                   .map((arg) => resolve(event.cwd, arg))
               : [],
           ),
-        ].some(
-          (p) =>
-            p !== ":memory:" &&
-            relative(existsSync(p) ? realpathSync(p) : resolve(p), actual) === "",
-        )
+        ].some((p) => p !== ":memory:" && relative(editTarget(resolve(p)), actual) === "")
       ) {
         deny("orc-control-storage", "Agent cannot edit ORC policy storage");
         return result;

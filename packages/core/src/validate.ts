@@ -19,7 +19,7 @@ function sensitiveRoots(): string[] {
     "/root",
     "C:\\Windows",
     "C:\\Windows\\System32",
-  ].map((p) => resolve(p));
+  ].flatMap((p) => (existsSync(p) ? [resolve(p), realpathSync(p)] : [resolve(p)]));
 }
 
 export class PathValidationError extends Error {}

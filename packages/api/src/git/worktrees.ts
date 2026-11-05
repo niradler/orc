@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { normalize, resolve, sep } from "node:path";
+import { basename, dirname, join, normalize, resolve, sep } from "node:path";
 import { ConflictError, OrcError, ValidationError } from "@orc/core/errors";
 import { type GitResult, gitError, repoRoot } from "../terminals/session-dir.js";
 
@@ -51,10 +51,20 @@ export class WorktreeDirtyError extends OrcError {
 
 function comparable(path: string, platform: NodeJS.Platform): string {
   let absolute = resolve(path);
-  try {
-    absolute = realpathSync.native(absolute);
-  } catch {
-    /* Missing worktrees still need a comparable path. */
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      absolute = join(realpathSync.native(absolute), ...missing);
+      break;
+    } catch {
+      const parent = dirname(absolute);
+      if (parent === absolute) {
+        absolute = resolve(path);
+        break;
+      }
+      missing.unshift(basename(absolute));
+      absolute = parent;
+    }
   }
   const full = absolute.replace(/[\\/]+$/, "");
   return platform === "win32" ? full.toLowerCase() : full;
