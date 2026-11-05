@@ -23,7 +23,10 @@
     "ci": "bun scripts/ci-local.ts",
     "ci:full": "bun scripts/ci-local.ts --e2e",
     "prepare": "git config core.hooksPath .githooks || true",
-    "clean": "bun run --filter '*' clean"
+    "clean": "bun run --filter '*' clean",
+    "docs:dev": "vitepress dev docs --host 127.0.0.1",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs --host 127.0.0.1"
   },
   "overrides": {
     "minimatch": "11.0.3",
@@ -44,11 +47,14 @@
     "postcss-selector-parser@6": "6.1.5"
   },
   "devDependencies": {
-    "bun": "1.4.4",
     "@biomejs/biome": "^2.6.3",
     "@orc/db": "workspace:*",
+    "bun": "1.4.4",
     "bun-types": "^1.4.4",
+    "mermaid": "^11",
     "typescript": "^7.0.2",
+    "vitepress": "^1.6.4",
+    "vitepress-plugin-mermaid": "^2.0.17",
     "zod": "^4.6.7"
   },
   "trustedDependencies": [

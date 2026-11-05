@@ -1,0 +1,211 @@
+# Connect agents
+
+How to connect Claude Code, Codex, Cursor, Gemini CLI and other MCP clients to ORC: MCP registration, session tracking, hooks and skills.
+
+## What each piece gives you
+
+| Piece | Gives the agent | Setup |
+| --- | --- | --- |
+| [MCP server](#mcp) | ORC tools: context, tasks, memories, knowledge, jobs, skills, scratchpads | Register once per agent |
+| [Session tracking](#session-tracking) | The agent's sessions in **Sessions**, with resume and search | Automatic for Claude Code and Codex; hooks for Cursor and Gemini |
+| [Rule hooks](#rule-hooks) | ORC rules enforced inside the agent (block, approve, inject context) | `orc rules install-hook` |
+| [Skills](#skills) | ORC's `orc-platform` and `orc-sdlc` skills in the agent | `npx skills add` or `orc skill export-to` |
+
+MCP and hooks are independent. Hooks alone do not give the agent ORC tools.
+
+## MCP
+
+ORC serves MCP two ways:
+
+| Transport | Endpoint | Auth |
+| --- | --- | --- |
+| Streamable HTTP | `http://127.0.0.1:7700/mcp` | `Authorization: Bearer <secret or token>` when a secret is set |
+| stdio | `orc mcp` | Reads `api.secret` from `~/.orc/config.json` or `ORC_API_SECRET` |
+
+Both default to meta mode: three tools (`tool_search`, `tool_describe`, `tool_invoke`) that let the agent find and call any ORC tool without loading every schema. Use `?mode=full` (HTTP) or `orc mcp --mode full` (stdio) for the full tool list.
+
+Scope a connection to projects with query parameters:
+
+| Parameter | Effect |
+| --- | --- |
+| `?project=my-app` | Project-aware tools default to `my-app` |
+| `?projects=my-app,lib` | Several projects in priority order (max 50) |
+
+Pass `project` or `projects`, not both. Unknown project names are rejected.
+
+::: tip Generate the snippet
+**Settings → MCP** in the dashboard builds the exact config for Claude Code (`.mcp.json` or CLI), Codex (`config.toml`), the spec CLI or a bare URL, with your endpoint, mode, projects and the name of the environment variable that holds your secret. The secret itself is never shown.
+:::
+
+The examples below assume the secret is exported as `ORC_API_SECRET`. Without a secret, drop the header or token line. To use a revocable token instead of the secret, create one under **Settings → Security** (see [Configuration](./configuration.md#authentication)).
+
+### Claude Code
+
+CLI:
+
+```bash
+claude mcp add --transport http orc 'http://127.0.0.1:7700/mcp' \
+  --header 'Authorization: Bearer ${ORC_API_SECRET}'
+```
+
+Or `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "orc": {
+      "type": "http",
+      "url": "http://127.0.0.1:7700/mcp",
+      "headers": { "Authorization": "Bearer ${ORC_API_SECRET}" }
+    }
+  }
+}
+```
+
+### Codex
+
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.orc]
+url = "http://127.0.0.1:7700/mcp"
+bearer_token_env_var = "ORC_API_SECRET"
+```
+
+### Cursor
+
+`.cursor/mcp.json` (stdio):
+
+```json
+{
+  "mcpServers": {
+    "orc": {
+      "command": "orc",
+      "args": ["mcp"],
+      "env": {
+        "ORC_API_BASE": "http://127.0.0.1:7700",
+        "ORC_SESSION_ID": "cursor"
+      }
+    }
+  }
+}
+```
+
+### Gemini CLI and other MCP clients
+
+Any client that launches stdio servers:
+
+```json
+{
+  "mcpServers": {
+    "orc": {
+      "command": "orc",
+      "args": ["mcp"],
+      "env": {
+        "ORC_API_BASE": "http://127.0.0.1:7700",
+        "ORC_SESSION_ID": "gemini"
+      }
+    }
+  }
+}
+```
+
+Clients that support HTTP can use `http://127.0.0.1:7700/mcp` with the bearer header instead.
+
+| stdio variable | Purpose |
+| --- | --- |
+| `ORC_API_BASE` | ORC origin to call (default from `api.host` / `api.port`) |
+| `ORC_SESSION_ID` | Attribution for memory, knowledge and scratchpad writes |
+| `ORC_API_SECRET` | Secret, when not in `~/.orc/config.json` |
+
+### spec CLI
+
+If you use the `spec` CLI, register ORC once and every agent can reach it through `spec`:
+
+```bash
+spec add orc --mcp-http 'http://127.0.0.1:7700/mcp' --auth env:ORC_API_SECRET
+spec call --spec orc context --data '{"project":"my-app"}'
+```
+
+### Check the connection
+
+Ask the agent to call `context` for your project, or call it yourself:
+
+```bash
+spec call --mcp-http http://127.0.0.1:7700/mcp context --data '{"project":"my-app"}'
+```
+
+It returns the project's active tasks and its memories by priority.
+
+## Session tracking
+
+| Agent | How sessions reach ORC |
+| --- | --- |
+| Claude Code | Discovered from its local session files. No setup. |
+| Codex | Discovered from its local session files and writer locks. No setup. |
+| Cursor (IDE and CLI) | History is discovered; live state needs lifecycle hooks |
+| Gemini CLI | History is discovered; live state needs lifecycle hooks |
+
+Install the Cursor and Gemini lifecycle hooks from a clone of the repository (needs Bun):
+
+```bash
+bun scripts/install-session-hooks.ts
+```
+
+It adds hooks to `~/.cursor/hooks.json` and `~/.gemini/settings.json`, keeps existing entries and writes a dated backup of each file. Details: [Live sessions](./live-sessions.md).
+
+## Rule hooks
+
+ORC rules run inside the agent through its native hook system. Install the adapter into the agent's settings file:
+
+```bash
+orc rules install-hook claude --target ~/.claude/settings.json
+orc rules install-hook codex  --target <codex hooks JSON file>
+orc rules install-hook cursor --target ~/.cursor/hooks.json
+orc rules install-hook gemini --target ~/.gemini/settings.json
+```
+
+| Option | Purpose |
+| --- | --- |
+| `--target <file>` | Settings file to merge into (required). Existing hooks are kept and a backup is written. |
+| `--events <list>` | Comma-separated event names; default is every supported event |
+| `--timeout-seconds <n>` | Hook timeout (default `10`). Raise it above the ask-user request lifetime when using [human requests](./human-requests.md). |
+| `--legacy-hooks-dir <dir>` | Replace old `hooks/*.ts` continuity handlers in that directory |
+
+Rule enforcement also needs `rules.enabled: true` (or `ORC_RULES_ENABLED=true`). See [Agent rules](./agent-rules.md) and [Human requests](./human-requests.md).
+
+::: warning Old hook scripts
+Older setups pointed Claude Code at `bun /path/to/orc/hooks/session-start.ts`, `post-tool-use.ts` and `pre-compact.ts`. Those scripts now forward to the rule dispatcher. Migrate with `orc rules install-hook claude --target ~/.claude/settings.json --legacy-hooks-dir /path/to/orc/hooks`.
+:::
+
+## Skills
+
+ORC ships two entry-point skills, `orc-platform` and `orc-sdlc`. Install them into your agents with the `skills` CLI:
+
+```bash
+npx skills add niradler/orc --all          # into the current project
+npx skills add niradler/orc --all -g       # globally
+npx skills add niradler/orc --skill orc-platform orc-sdlc
+```
+
+Or export from your running ORC, which also includes your own skills:
+
+```bash
+orc skill export-to claude                  # ~/.claude/skills
+orc skill export-to codex                   # ~/.codex/skills
+orc skill export-to agents                  # ~/.agents/skills
+orc skill export-to claude --project my-app # <checkout>/.claude/skills
+orc skill export-to claude --dry-run
+```
+
+Agents connected over MCP can also list and read skills without installing them (`skill_list`, `skill_read`). See [Skills](./skills.md).
+
+## Agents ORC runs itself
+
+Separate from connecting your own agent: ORC can start agents for tasks, jobs and chat. Check which backends work on this machine:
+
+```bash
+orc doctor
+```
+
+Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `acpx`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).

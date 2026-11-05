@@ -1,8 +1,8 @@
 # Projects, tasks and operations
 
 Contents: projects/tasks/flows/status; jobs/gateway; tags/audit/monitoring.
-Sources: [Task flows](https://github.com/niradler/orc/blob/master/docs/task-flows.md),
-[Usage](https://github.com/niradler/orc/blob/master/README.md#usage).
+Sources: [Task flows](https://github.com/niradler/orc/blob/master/docs/guide/task-flows.md),
+[Usage guide](https://niradler.github.io/orc/guide/usage-guide).
 
 ## Project and task operations
 
