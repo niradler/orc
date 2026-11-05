@@ -2,6 +2,8 @@
 
 This page explains the problem ORC solves, what it gives you, who it is for, and how its parts fit together.
 
+![A tour of the ORC dashboard: activity, task board, task flow, agent sessions and the terminal](/screens/orc-tour.gif)
+
 ## The problem
 
 Every coding-agent session is an island.

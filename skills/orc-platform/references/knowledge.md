@@ -1,7 +1,7 @@
 # Memory, knowledge, embeddings and Markdown
 
 Contents: where information belongs; recall/edit; embeddings; repository docs.
-Sources: [Knowledge learning](https://github.com/niradler/orc/blob/master/docs/develop/knowledge-loop.md),
+Sources: [Knowledge learning](https://github.com/niradler/orc/blob/master/docs/internal/knowledge-loop.md),
 [Concepts](https://niradler.github.io/orc/guide/concepts).
 
 ## Choose the store and read narrowly

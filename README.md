@@ -108,7 +108,7 @@ Run ORC on your laptop and a second ORC on your own server, side by side. Point 
 
 Everything else lives on the docs site, **[niradler.github.io/orc](https://niradler.github.io/orc/)**:
 
-- **Guide**: [what ORC is](https://niradler.github.io/orc/guide/what-is-orc), [concepts](https://niradler.github.io/orc/guide/concepts), [task flows](https://niradler.github.io/orc/guide/task-flows), [live sessions](https://niradler.github.io/orc/guide/live-sessions), [configuration](https://niradler.github.io/orc/guide/configuration)
-- **Develop**: [development setup](https://niradler.github.io/orc/develop/development), [releases](https://niradler.github.io/orc/develop/releases), [architecture](https://niradler.github.io/orc/develop/agent-orchestration-design)
+- **Usage**: [what ORC is](https://niradler.github.io/orc/guide/what-is-orc), [concepts](https://niradler.github.io/orc/guide/concepts), [task flows](https://niradler.github.io/orc/guide/task-flows), [live sessions](https://niradler.github.io/orc/guide/live-sessions), [configuration](https://niradler.github.io/orc/guide/configuration)
+- **Contributing**: [how to contribute](https://niradler.github.io/orc/development/), [run locally](https://niradler.github.io/orc/development/setup), [build and test](https://niradler.github.io/orc/development/build-and-test)
 
 The same pages are in [`docs/`](docs) as plain Markdown.

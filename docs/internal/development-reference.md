@@ -4,7 +4,7 @@ This guide contains task-specific development and troubleshooting details. See [
 
 ## Dev Environment
 
-For releases or installation upgrades, read [docs/develop/releases.md](releases.md),
+For releases or installation upgrades, read [docs/development/releases.md](../development/releases.md),
 including its operator protocol, and the latest `.claude/docs/releases.md`
 handoff before running publication or deployment commands.
 

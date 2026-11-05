@@ -226,4 +226,4 @@ status explaining that the native client is required. Passwords belong in a
 separate credential flow, never in an inbox answer.
 
 Implementation evidence and opt-in native verification commands are recorded in
-[Attention verification](../develop/verification/attention.md).
+[Attention verification](https://github.com/niradler/orc/blob/master/docs/internal/verification/attention.md).

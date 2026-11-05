@@ -1,7 +1,7 @@
 import { defineConfig } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
 
-const guide = [
+const sidebar = [
   {
     text: "Start",
     items: [
@@ -43,48 +43,13 @@ const guide = [
       { text: "Agent packages", link: "/guide/agent-packages" },
     ],
   },
-];
-
-const develop = [
   {
-    text: "Contributing",
+    text: "Development",
     items: [
-      { text: "Development", link: "/develop/development" },
-      { text: "Releases", link: "/develop/releases" },
-      { text: "QA checklist", link: "/develop/qa-checklist" },
-    ],
-  },
-  {
-    text: "Design",
-    items: [
-      { text: "Vision", link: "/develop/vision" },
-      { text: "Roadmap", link: "/develop/roadmap" },
-      { text: "Agent orchestration", link: "/develop/agent-orchestration-design" },
-      { text: "Portable packages", link: "/develop/portable-packages-design" },
-      { text: "Knowledge loop", link: "/develop/knowledge-loop" },
-      { text: "Dashboard updates", link: "/develop/realtime" },
-      { text: "Skill evaluation", link: "/develop/skill-evaluation" },
-      { text: "SDLC onboarding validation", link: "/develop/sdlc-onboarding-validation" },
-    ],
-  },
-  {
-    text: "Code quality",
-    collapsed: true,
-    items: [
-      { text: "Roadmap", link: "/develop/code-quality/" },
-      { text: "API and DB", link: "/develop/code-quality/api-db" },
-      { text: "Runtime", link: "/develop/code-quality/runtime" },
-      { text: "Web", link: "/develop/code-quality/web" },
-    ],
-  },
-  {
-    text: "Verification records",
-    collapsed: true,
-    items: [
-      { text: "Attention", link: "/develop/verification/attention" },
-      { text: "Channels", link: "/develop/verification/channels" },
-      { text: "Telegram chat", link: "/develop/verification/telegram-chat" },
-      { text: "Chat keyboard", link: "/develop/verification/chat-keyboard/" },
+      { text: "Contributing", link: "/development/" },
+      { text: "Run locally", link: "/development/setup" },
+      { text: "Build and test", link: "/development/build-and-test" },
+      { text: "Releases", link: "/development/releases" },
     ],
   },
 ];
@@ -95,6 +60,7 @@ export default withMermaid(
     description: "One hub for every coding agent: tasks, sessions, memory and knowledge across Claude Code, Codex and Cursor.",
     base: "/orc/",
     cleanUrls: true,
+    srcExclude: ["internal/**", "screenshots/**"],
     lastUpdated: true,
     appearance: "dark",
     ignoreDeadLinks: "localhostLinks",
@@ -114,11 +80,11 @@ export default withMermaid(
       logo: "/logo.svg",
       siteTitle: "orc",
       nav: [
-        { text: "Guide", link: "/guide/what-is-orc", activeMatch: "/guide/" },
-        { text: "Develop", link: "/develop/development", activeMatch: "/develop/" },
+        { text: "Docs", link: "/guide/what-is-orc", activeMatch: "/guide/" },
+        { text: "Contributing", link: "/development/", activeMatch: "/development/" },
         { text: "Releases", link: "https://github.com/niradler/orc/releases" },
       ],
-      sidebar: { "/guide/": guide, "/develop/": develop },
+      sidebar,
       socialLinks: [{ icon: "github", link: "https://github.com/niradler/orc" }],
       search: { provider: "local" },
       outline: { level: [2, 3] },

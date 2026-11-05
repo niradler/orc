@@ -201,4 +201,4 @@ operations. Do not run migrations against the only live copy as an experiment.
 Restore into an isolated location first, including knowledge originals and the
 secret key, and verify document reads/search and credential availability. Rebuilt
 indexes are not substitutes for original documents. Describe unavailable checks;
-publishing ORC releases is a separate maintainer operation documented in docs/develop/releases.md.
+publishing ORC releases is a separate maintainer operation documented in docs/development/releases.md.

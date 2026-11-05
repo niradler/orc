@@ -2,8 +2,9 @@
 
 ORC is a Bun/TypeScript orchestration hub. See [docs/guide/](docs/guide) for
 product behavior, commands, interfaces and configuration, and
-[docs/develop/](docs/develop) for architecture; read
-[docs/develop/development.md](docs/develop/development.md) when developing or troubleshooting.
+[docs/development/](docs/development) for contributing, running, building and
+testing. [docs/internal/](docs/internal) holds design specs and the
+[development reference](docs/internal/development-reference.md) for troubleshooting.
 
 ## ORC process access
 
@@ -48,21 +49,21 @@ extra agents, production changes, publication, or imply hook enforcement.
   Do not request Windows Firewall/public-network approval or change firewall
   rules for local validation. Public/LAN binding requires Nir's explicit request.
   For port recovery, dev commands and Windows process details, see
-  [docs/develop/development.md](docs/develop/development.md).
+  [docs/internal/development-reference.md](docs/internal/development-reference.md).
 - Read [DESIGN.md](DESIGN.md) before web UI work. Follow its compact,
   screen-aware controls guidance: secondary lists default to a quiet
   collapsed summary, expanded items use slim rows, and editors appear on demand.
   Review populated desktop and phone states before declaring substantial UI work done.
   Preserve its list-selection
   and bulk-action standard. Browser E2E selectors use `data-testid`; see
-  [docs/develop/development.md](docs/develop/development.md#web-ui-e2e-tests-playwright).
-- For releases or installation upgrades, follow [docs/develop/releases.md](docs/develop/releases.md)
+  [docs/internal/development-reference.md](docs/internal/development-reference.md#web-ui-e2e-tests-playwright).
+- For releases or installation upgrades, follow [docs/development/releases.md](docs/development/releases.md)
   and the latest `.claude/docs/releases.md` handoff. Use the canonical release
   command; a release does not authorize a branch push. Keep workspace versions
   aligned, and keep runtime dependencies that resolve files relative to their own
   package external to the CLI bundle and declared as dependencies.
 - When modifying memory, KB digest, KB comment or instruction-history code, read
-  [docs/develop/knowledge-loop.md](docs/develop/knowledge-loop.md). Do not inject KB content or
+  [docs/internal/knowledge-loop.md](docs/internal/knowledge-loop.md). Do not inject KB content or
   summaries into startup context or runner prompts. Use the current `orc-sdlc`
   delivery guidance for learning and session handoff.
 
@@ -70,8 +71,9 @@ extra agents, production changes, publication, or imply hook enforcement.
 
 `README.md` is for users: what ORC is, install, quick start and links. Everything
 else lives in `docs/`, published to https://niradler.github.io/orc/ by
-`.github/workflows/docs.yml`. `docs/guide/` is for users, `docs/develop/` for
-contributors.
+`.github/workflows/docs.yml`. `docs/guide/` is usage, `docs/development/` is
+the short contributor section, and `docs/internal/` (design specs, verification
+records) is kept in the repo but not published.
 
 - A change to user-visible behavior, a CLI command or flag, an MCP tool, a REST
   route, a config key or env var, or install and deploy steps updates the matching
@@ -85,4 +87,4 @@ contributors.
 For task flows, node outcomes and managed status, see
 [docs/guide/task-flows.md](docs/guide/task-flows.md). For API and SDK changes, inspect the
 current routes and regenerate SDK types when the contract changes. For validation
-commands, see [development guide](docs/develop/development.md).
+commands, see [development guide](docs/internal/development-reference.md).
