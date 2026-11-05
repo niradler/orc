@@ -334,7 +334,9 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
     else showWindow();
   });
   app.on("activate", showWindow);
-  app.on("window-all-closed", () => {});
+  app.on("window-all-closed", () => {
+    if (!tray && process.platform !== "darwin") app.quit();
+  });
   app.on("before-quit", () => {
     quitting = true;
     daemon?.stop();
