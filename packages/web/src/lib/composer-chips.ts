@@ -80,10 +80,6 @@ export function branchChipLabel({
   return branch ?? "Branch";
 }
 
-export function permissionSupported(agent: string): boolean {
-  return agent === "claude" || agent === "codex";
-}
-
 export function effectivePermissionMode(config: ChatSettings): PermissionMode {
   const options = config.agentOptions[config.agent];
   const sdkMode = options?.runtime === "claude-sdk" ? options.options.permissionMode : undefined;

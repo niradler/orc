@@ -9,12 +9,12 @@ import {
   onChipListKeyDown,
 } from "@/components/ComposerChip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import {
   effectivePermissionMode,
   PERMISSION_LABELS,
   type PermissionMode,
-  permissionSupported,
   withPermissionMode,
 } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,7 @@ export function ChatPermissionSelect({
   onChange: (config: ChatSettings) => void;
   disabled?: boolean;
 }) {
-  const supported = permissionSupported(config.agent);
+  const supported = useAgentCapabilities(config.agent)?.livePermissions === true;
   const mode = effectivePermissionMode(config);
   return (
     <label className="block space-y-2 text-sm">
@@ -49,7 +49,7 @@ export function ChatPermissionSelect({
       </select>
       <span className="block text-xs text-muted-foreground">
         {!supported
-          ? "Set ACPX permission flags under Advanced launch options in Session settings."
+          ? "This backend does not expose live permission modes. ACP approvals appear individually; ACPX uses Advanced launch options."
           : mode === "bypassPermissions"
             ? "Allows actions without permission prompts. Codex also runs without a sandbox. Workspace rules still apply."
             : "Ask in chat keeps approval prompts. Workspace edits allow changes within the agent’s workspace policy."}
@@ -59,11 +59,12 @@ export function ChatPermissionSelect({
 }
 
 export function ChatPermissionChip() {
-  const { config, changePermissions, ready } = useChat();
+  const { config, changePermissions, ready, thread } = useChat();
+  const supported = useAgentCapabilities(config.agent, thread)?.livePermissions === true;
   const [open, setOpen] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const mode = effectivePermissionMode(config);
-  if (!permissionSupported(config.agent) || mode === "default") return null;
+  if (!supported || mode === "default") return null;
   const Icon = mode === "bypassPermissions" ? ShieldAlert : ShieldCheck;
   return (
     <Popover open={open} onOpenChange={setOpen}>

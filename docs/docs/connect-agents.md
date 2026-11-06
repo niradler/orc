@@ -209,4 +209,73 @@ Separate from connecting your own agent: ORC can start agents for tasks, jobs an
 orc doctor
 ```
 
-Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `acpx`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
+Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `acpx`, `acp`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
+
+
+## Capabilities and direct ACP
+
+ORC reports the operations each backend actually implements through `GET /backends`
+and `GET /chat/capabilities?agent=codex`. Add `threadId` to read the capabilities
+negotiated for a saved conversation. Discovery does not launch an agent or a login
+flow. Unknown integrations report conservative capabilities. This describes ORC's
+adapter, not proof that every installed agent version supports every native feature.
+
+Codex chat uses `codex app-server` over stdio. It supports native resume, approvals,
+questions, live permission changes, steering and interruption. While Codex is
+responding, **Send now** sends a text message into that active turn; ordinary **Send**
+queues it for later. Stop requests native interruption before closing the process.
+Fork and conversation rollback are not exposed. Non-interactive `codex-cli` callers
+continue to use execution mode, without chat's interactive controls.
+
+ACPX remains the compatibility path for other coding agents. It streams text,
+reasoning and tool results and keeps named sessions. Its CLI permissions are chosen
+through launch flags; ORC cannot answer individual live ACPX permission requests.
+
+For an installed agent that speaks ACP directly, configure a separate agent ID in
+`~/.orc/config.json`:
+
+```json
+{
+  "agent_loop": {
+    "acp_commands": {
+      "my-acp": { "command": "my-agent", "args": ["--acp"] }
+    }
+  },
+  "preferences": {
+    "agents": ["codex", "claude", "my-acp"]
+  }
+}
+```
+
+Use the executable and ACP arguments documented by that agent. The command runs on
+the selected local or SSH execution host, with literal arguments and no shell
+expansion. Keep credentials in the agent's login store or existing environment,
+never in these arguments. Reserved native backend IDs cannot be replaced. An
+existing ACPX agent such as `gemini` can be explicitly configured for direct ACP;
+already saved conversations keep their original backend.
+
+Select the configured ID in chat, or use it as a task backend. The registered `acp`
+backend also accepts `SessionOpts.acpAgent`. Direct ACP currently negotiates stable
+ACP v1 using the official TypeScript SDK. It supports streamed text/tool updates,
+per-request approvals, cancellation, and native resume when `loadSession` is
+advertised. Model selection uses an advertised model config option; unsupported
+explicit model choices fail instead of being ignored. Image input is negotiated
+for runtime callers. ORC's chat uploads retain their existing file-reference flow.
+
+**Allow for session** never writes the agent's persistent `allow_always` policy:
+ORC selects `allow_once`, or cancels when no safe matching option exists. Direct
+ACP does not advertise ORC filesystem, terminal, browser-login or native-rule-hook
+handlers. The agent runs its own tools under its own sandbox. ACP approval prompts
+are not a sandbox, and ORC's live permission-mode selector is unavailable for ACP.
+
+If the agent does not advertise HTTP MCP, select **Native configuration** for its
+MCP connection before starting chat. Existing agent login and native MCP settings
+remain agent-owned. ACPX-specific launch flags do not apply to direct ACP. Failed
+resume preserves the original identity instead of silently starting fresh.
+
+
+Stopping a native Codex or direct ACP turn revokes pending interactive requests and
+rejects new approval callbacks while cancellation completes, including when automatic
+approvals were enabled. ACP requests while idle are also cancelled. Steering saves
+its intent before native delivery and reuses a request ID on retry; a delivery warning
+means to inspect the current response before sending another message.

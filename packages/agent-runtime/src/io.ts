@@ -2,6 +2,7 @@ export async function readLines(
   stream: ReadableStream<Uint8Array> | number,
   onLine: (line: string) => void,
   signal?: AbortSignal,
+  maxLineLength = Number.POSITIVE_INFINITY,
 ): Promise<void> {
   if (typeof stream === "number" || signal?.aborted) return;
   const reader = stream.getReader();
@@ -17,8 +18,12 @@ export async function readLines(
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
       for (const line of lines) {
+        if (line.length > maxLineLength)
+          throw new Error("Agent protocol message exceeded the output limit.");
         if (line.trim()) onLine(line);
       }
+      if (buf.length > maxLineLength)
+        throw new Error("Agent protocol message exceeded the output limit.");
     }
     if (buf.trim() && !signal?.aborted) onLine(buf);
   } finally {

@@ -90,6 +90,33 @@ Inbound event sources. Configure a webhook once, then connect it to one or more 
 
 Questions and approval requests from your agents in one queue. Answer here and the reply goes back to the waiting session. See [Human requests](./human-requests.md).
 
+## Agent notifications
+
+When a session you are not viewing needs your approval, has a question or fails,
+ORC shows a **Needs you** notification and plays a short chime. Notifications
+settle for about one second before appearing and repeated snapshots do not repeat
+the alert. **Open Attention** takes you to the queue, closing any open chat. A
+single pending approval also offers **Approve** and **Deny**.
+
+Desktop browsers show toasts. Needs-you toasts stay until dismissed or resolved;
+**Done** toasts are silent and close after six seconds, pausing on hover or focus.
+Sessions finishing together collapse into one notification. Use **Alt+N** or
+**Focus notifications** in the command palette to reach notifications.
+
+On phones, the bell in the workspace and chat headers shows an unread count.
+New notifications never open the panel automatically. Tap the bell to read or
+dismiss them; Done updates remain there until dismissed or opened.
+
+**Settings → Notifications → Sound** controls the browser chime, volume and
+per-project sound mute. Preferences are saved in this browser. Audio starts after
+your first interaction. Browser/PWA push remains separately opt-in and requires
+HTTPS (and Home Screen installation on iOS); it delivers background approvals,
+questions and chat replies while ORC is unfocused. See [Installation](./install.md).
+
+The Electron desktop app also sends native notifications while its window is
+unfocused, minimized or hidden. Clicking one brings ORC forward and opens its
+destination. Done notifications are silent; native Needs-you sound follows the OS.
+
 ## Audit
 
 Recorded session summaries and events. Use Sessions to read full conversations or resume an agent.
@@ -125,7 +152,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Appearance | Theme |
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
 | Server | **Restart ORC server** (closes terminals, keeps settings, reconnects) |
-| Notifications | Browser push notifications for approvals, questions and chat replies. Needs HTTPS. |
+| Notifications | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions and chat replies. Push needs HTTPS. |
 | Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code and Codex are native; Cursor, Gemini CLI, GitHub Copilot, OpenCode, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. The terminal launcher only lists enabled agents installed on the selected host. |
 | Channels | Telegram and Slack connections |
 | Chat | Default models, instructions, tools and permission mode for chat |

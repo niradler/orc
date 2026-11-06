@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-options.js";
 import { chatUiCatalogText } from "./chat-ui.js";
 import { SessionFileSchema } from "./session-file-types.js";
+import { AgentCapabilitiesSchema } from "./types.js";
 
 export function nativeChatAgent(agent: string): string | null {
   return ["claude", "codex", "gemini"].includes(agent) ? agent : null;
@@ -154,6 +155,7 @@ export const ChatThreadSchema = z.object({
   host: z.string().nullable(),
   runtimeId: z.string().nullable(),
   backend: z.string(),
+  capabilities: AgentCapabilitiesSchema.optional(),
   sourceId: z.string().nullable(),
   toolAllowlist: z.array(z.string()).optional(),
   messages: z.array(ChatMessageSchema),
@@ -165,6 +167,7 @@ export const ChatThreadSchema = z.object({
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;
 export const ChatEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("capabilities"), capabilities: AgentCapabilitiesSchema }),
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({ type: z.literal("thinking"), text: z.string() }),
   z.object({ type: z.literal("system_status"), text: z.string() }),

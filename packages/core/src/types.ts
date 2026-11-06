@@ -45,6 +45,25 @@ export type MemoryImportance = z.infer<typeof MemoryImportanceSchema>;
 export type BridgePlatform = z.infer<typeof BridgePlatformSchema>;
 export type BridgeMode = z.infer<typeof BridgeModeSchema>;
 
+/** Features ORC can deliver end to end; native support alone is insufficient. */
+export const AgentCapabilitiesSchema = z.object({
+  version: z.literal(1),
+  source: z.enum(["unknown", "adapter", "negotiated"]),
+  resume: z.boolean(),
+  modelSelection: z.boolean(),
+  images: z.boolean(),
+  toolOutput: z.boolean(),
+  approvals: z.boolean(),
+  questions: z.boolean(),
+  livePermissions: z.boolean(),
+  interrupt: z.boolean(),
+  steering: z.boolean(),
+  mcp: z.boolean(),
+  fork: z.boolean(),
+  rollback: z.boolean(),
+});
+export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;
+
 export const AgentBackendSchema = z
   .string()
   .min(1)

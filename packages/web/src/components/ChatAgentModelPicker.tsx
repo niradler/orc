@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useEnabledAgents } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
@@ -51,6 +52,8 @@ export function ChatAgentModelPicker() {
   const name = agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
+  const fixedModel = useAgentCapabilities(config.agent, thread)?.modelSelection === false;
+  const modelsDisabled = streaming || !ready || fixedModel;
 
   const reset = () => {
     setCustom(false);
@@ -170,7 +173,7 @@ export function ChatAgentModelPicker() {
                   data-chip-option
                   aria-checked={config.model === id}
                   data-testid={id ? `chat-model-option-${id}` : "chat-model-option-default"}
-                  disabled={streaming || !ready}
+                  disabled={modelsDisabled}
                   onClick={() => chooseModel(id)}
                   className={chipOption}
                 >
@@ -222,7 +225,7 @@ export function ChatAgentModelPicker() {
                 type="button"
                 data-chip-option
                 data-testid="chat-model-option-custom"
-                disabled={streaming || !ready}
+                disabled={modelsDisabled}
                 onClick={() => {
                   setModel(config.model);
                   setError("");
@@ -252,16 +255,18 @@ export function ChatAgentModelPicker() {
             )}
           </div>
         </div>
-        {(started || effort) && (
+        {(started || effort || fixedModel) && (
           <p
             data-testid="chat-agent-model-note"
             className="mt-1.5 border-t border-border px-2 pt-1.5 pb-0.5 text-xs text-muted-foreground"
           >
-            {streaming
-              ? "Model changes are available after the current response. Changing agent starts a new session."
-              : thread
-                ? "Changing agent starts a new session; this one stays in history. Model changes apply to the next turn."
-                : `Effort is set in ${name} options.`}
+            {fixedModel
+              ? `${name} picks its own model here.${thread ? " Changing agent starts a new session." : ""}`
+              : streaming
+                ? "Model changes are available after the current response. Changing agent starts a new session."
+                : thread
+                  ? "Changing agent starts a new session; this one stays in history. Model changes apply to the next turn."
+                  : `Effort is set in ${name} options.`}
           </p>
         )}
       </PopoverContent>

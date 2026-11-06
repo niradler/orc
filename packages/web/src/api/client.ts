@@ -46,6 +46,7 @@ import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
+import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
@@ -675,6 +676,16 @@ export const api = {
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/cancel`, { version }),
   },
   chat: {
+    capabilities: (agent: string, threadId?: string) =>
+      req<{ backend: string; capabilities: import("@orc/core/types").AgentCapabilities }>(
+        "GET",
+        `/chat/capabilities?${new URLSearchParams({ agent, ...(threadId ? { threadId } : {}) })}`,
+      ),
+    steer: (runId: string, input: string, requestId: string = crypto.randomUUID()) =>
+      req<import("@orc/core/chat").ChatThread>("POST", `/chat/runs/${runId}/steer`, {
+        input,
+        requestId,
+      }),
     waiting: () =>
       req<{
         waiting: {
@@ -735,6 +746,8 @@ export const api = {
       req<ChatThread>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission-mode`, { mode }),
   },
   settings: {
+    usageHistory: (days: string) => req<UsageHistory>("GET", "/usage/history", undefined, { days }),
+    usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {
       get: () => req<McpServerSettings>("GET", "/settings/mcp"),
       save: (settings: McpServerSettings) =>
@@ -1082,6 +1095,8 @@ export const api = {
   },
 
   sessions: {
+    cacheUsage: (id: string) =>
+      req<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
     archive: (params: {
       q?: string;
       project_id?: string;

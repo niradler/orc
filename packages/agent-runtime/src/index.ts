@@ -5,6 +5,7 @@ export {
   resolveAcpx,
   resolveAcpxCli,
 } from "./acpx.js";
+export { chatBackendFor, UNKNOWN_CAPABILITIES } from "./capabilities.js";
 export { hostClaudeLoggedIn } from "./claude-sdk.js";
 export { type AgentModel, discoverAgentModels } from "./models.js";
 export { type BackendProbe, probeBackend, probeBackends } from "./probe.js";
@@ -35,6 +36,7 @@ export type {
 import "./claude-sdk.js";
 import "./claude.js";
 import "./acpx.js";
+import "./acp.js";
 import "./codex.js";
 import "./a2a.js";
 import "./agentapi.js";

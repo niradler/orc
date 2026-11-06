@@ -17,6 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { AGENT_STATES, type AgentState, liveSessionState, moreUrgent } from "@/lib/agent-state";
@@ -494,6 +495,7 @@ export function ChatConversationInfo({
   onOpenChange: (open: boolean) => void;
 }) {
   const { config, changePermissions, thread } = useChat();
+  const capabilities = useAgentCapabilities(config.agent, thread);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="chat-config-dialog" className="w-[calc(100%-1rem)]">
@@ -527,6 +529,19 @@ export function ChatConversationInfo({
             </dd>
           </div>
         </dl>
+        {capabilities && (
+          <p data-testid="chat-capabilities" className="text-xs text-muted-foreground">
+            {[
+              capabilities.resume && "Resume",
+              capabilities.approvals && "Approvals in chat",
+              capabilities.questions && "Questions",
+              capabilities.steering && "Send now",
+              capabilities.interrupt && "Native stop",
+            ]
+              .filter(Boolean)
+              .join(" · ") || "Basic text conversation"}
+          </p>
+        )}
         <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
         <details className="text-sm">
           <summary className="min-h-11 cursor-pointer py-3">Session instructions</summary>
