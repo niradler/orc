@@ -17,11 +17,11 @@ export function SessionStateFilters({
   children?: ReactNode;
 }) {
   return (
-    <div className={cn("flex min-w-0 items-center gap-1", className)}>
+    <div className={cn("flex min-w-0 items-center gap-1 max-sm:gap-0.5", className)}>
       <fieldset
         aria-label="Filter sessions by state"
         data-testid="session-filters"
-        className="flex min-w-0 flex-1 gap-1 overflow-x-auto scrollbar-none"
+        className="flex min-w-0 flex-1 gap-1 overflow-x-auto scrollbar-none max-sm:gap-0.5"
       >
         {SESSION_FILTERS.map((filter) => (
           <button
@@ -31,7 +31,7 @@ export function SessionStateFilters({
             aria-pressed={value === filter}
             onClick={() => onChange(filter)}
             className={cn(
-              "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs whitespace-nowrap max-lg:min-h-11",
+              "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs whitespace-nowrap max-lg:min-h-11 max-sm:gap-1 max-sm:px-1.5",
               value === filter
                 ? "bg-surface-highest text-on-surface"
                 : "text-muted-foreground hover:bg-surface",
@@ -63,7 +63,7 @@ export function StableOrderPill({ pending, onApply }: { pending: number; onApply
       type="button"
       data-testid="stable-order-pill"
       onClick={onApply}
-      className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap text-primary hover:bg-surface max-lg:min-h-11"
+      className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap text-primary hover:bg-surface max-lg:min-h-11 max-sm:px-1.5"
     >
       <ArrowUp aria-hidden="true" size={12} />
       {pending}
