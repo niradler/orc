@@ -9,6 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
+import { AgentNotifications } from "@/components/AgentNotifications";
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
@@ -203,7 +204,8 @@ export default function App() {
             </div>
 
             {/* Main content - the only element that owns vertical scroll for page content. */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              <AgentNotifications />
               <WorkspaceHeader
                 onShowChat={() => setChatVisible(true)}
                 onProjectChange={setProjectId}

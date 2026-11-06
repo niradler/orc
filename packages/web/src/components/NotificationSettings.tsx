@@ -1,7 +1,8 @@
 import { PUSH_TOPICS, type PushDevice, type PushTopic } from "@orc/core/push";
-import { Bell, BellOff, Send, Trash2 } from "lucide-react";
+import { Bell, BellOff, Send, Trash2, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useProjects } from "@/hooks/useProjects";
 import {
   useDisablePush,
   useEnablePush,
@@ -11,6 +12,12 @@ import {
   useThisPushDevice,
   useUpdatePushTopics,
 } from "@/hooks/usePush";
+import {
+  playNeedsYouSound,
+  setNotificationPrefs,
+  unlockNotificationSound,
+  useNotificationPrefs,
+} from "@/lib/notification-sound";
 import { type PushSupport, pushSupport } from "@/lib/pwa";
 
 const TOPIC_LABELS: Record<PushTopic, string> = {
@@ -56,6 +63,87 @@ function TopicToggles({ device }: { device: PushDevice }) {
         </label>
       ))}
     </fieldset>
+  );
+}
+
+function SoundSettings() {
+  const prefs = useNotificationPrefs();
+  const projects = useProjects({ status: "active" });
+  const toggleProject = (id: string, muted: boolean) =>
+    setNotificationPrefs({
+      mutedProjects: muted
+        ? [...prefs.mutedProjects, id]
+        : prefs.mutedProjects.filter((current) => current !== id),
+    });
+  const preview = () => {
+    unlockNotificationSound();
+    window.setTimeout(() => playNeedsYouSound(prefs.volume), 50);
+  };
+  return (
+    <div className="mt-6 space-y-3" data-testid="notification-sound-settings">
+      <div>
+        <h3 className="text-sm font-medium">Sound</h3>
+        <p className="text-sm text-muted-foreground">
+          A short chime plays in this browser when an agent needs you. Finished sessions stay
+          silent; every alert also shows a toast.
+        </p>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          data-testid="notification-sound-enabled"
+          checked={prefs.sound}
+          onChange={(event) => setNotificationPrefs({ sound: event.target.checked })}
+        />
+        Play a sound when an agent needs you
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <label htmlFor="notification-volume" className="text-sm">
+          Volume
+        </label>
+        <input
+          id="notification-volume"
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          data-testid="notification-sound-volume"
+          disabled={!prefs.sound}
+          value={Math.round(prefs.volume * 100)}
+          onChange={(event) => setNotificationPrefs({ volume: Number(event.target.value) / 100 })}
+          className="w-40 accent-primary"
+        />
+        <span className="w-10 text-sm tabular-nums text-outline">
+          {Math.round(prefs.volume * 100)}%
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="notification-sound-test"
+          disabled={!prefs.sound || prefs.volume === 0}
+          onClick={preview}
+        >
+          <Volume2 className="size-4" />
+          Play test sound
+        </Button>
+      </div>
+      {(projects.data?.length ?? 0) > 0 && (
+        <fieldset className="space-y-1.5" disabled={!prefs.sound}>
+          <legend className="mb-1 text-sm font-medium">Mute projects</legend>
+          {projects.data?.map((project) => (
+            <label key={project.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                data-testid={`notification-mute-${project.id}`}
+                checked={prefs.mutedProjects.includes(project.id)}
+                onChange={(event) => toggleProject(project.id, event.target.checked)}
+              />
+              <span className="truncate">{project.name}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+    </div>
   );
 }
 
@@ -135,6 +223,7 @@ export function NotificationSettings() {
           {error}
         </p>
       )}
+      <SoundSettings />
       {others.length > 0 && (
         <div className="mt-6">
           <h3 className="mb-2 text-sm font-medium">Other devices</h3>
