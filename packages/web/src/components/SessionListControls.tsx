@@ -66,7 +66,8 @@ export function StableOrderPill({ pending, onApply }: { pending: number; onApply
       className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap text-primary hover:bg-surface max-lg:min-h-11"
     >
       <ArrowUp aria-hidden="true" size={12} />
-      {pending} updated
+      {pending}
+      <span className="max-sm:sr-only"> updated</span>
     </button>
   );
 }

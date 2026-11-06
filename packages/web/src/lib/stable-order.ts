@@ -1,9 +1,6 @@
 export type Versioned = { id: string; version: string };
 
-/**
- * Keeps the snapshot's rows and order while the user works the list. `present` says whether a
- * snapshot row still exists; `pending` counts the rows the live order would add, move or drop.
- */
+/** Keeps the snapshot order; `pending` counts rows the live order would add, move or drop. */
 export function stableOrder(
   snapshot: readonly Versioned[],
   live: readonly Versioned[],

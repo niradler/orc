@@ -1,10 +1,7 @@
 import { type FocusEvent, useCallback, useEffect, useRef, useState } from "react";
 import { stableOrder, type Versioned } from "@/lib/stable-order";
 
-/**
- * While the pointer is over the list or a row has keyboard focus, rows keep their order and new
- * rows wait; their states still update. `apply` takes the live order without leaving the list.
- */
+/** Freezes row order while the list is hovered or keyboard-focused; states still update live. */
 export function useStableOrder<T>({
   items,
   id,
