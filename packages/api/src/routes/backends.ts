@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { probeBackends } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
+import { AgentCapabilitiesSchema } from "@orc/core/types";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
@@ -8,6 +9,7 @@ const app = createRouter();
 const BackendSchema = z
   .object({
     name: z.string(),
+    capabilities: AgentCapabilitiesSchema,
     kind: z.enum(["in-process", "cli", "http"]).openapi({
       description:
         "How the backend reaches its agent: in-process needs no external tool, cli spawns a binary, http calls a service.",

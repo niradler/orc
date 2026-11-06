@@ -5,6 +5,7 @@
 
 import type { AgentFull } from "@orc/core/agent-service";
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
+import { loadConfig } from "@orc/core/config";
 import { resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { packageInstructionsForAgent } from "@orc/core/package-service";
@@ -26,6 +27,8 @@ async function resolveBackend(
   name: string,
   opts: SessionOpts,
 ): Promise<{ backend: AgentBackend; resolvedOpts: SessionOpts }> {
+  if (loadConfig().agent_loop.acp_commands?.[name])
+    return { backend: createBackend("acp"), resolvedOpts: { ...opts, acpAgent: name } };
   if (name === "a2a") {
     return { backend: createBackend("a2a"), resolvedOpts: opts };
   }
@@ -60,7 +63,7 @@ async function resolveBackend(
 /**
  * Open (or resume) an agent session.
  *
- * - If runtimeSessionId is provided, attempts resumeSession first, falls back to startSession.
+ * - If runtimeSessionId is provided, resumes it or fails without replacing the identity.
  * - Does NOT call session.send() — caller owns the prompt.
  */
 export async function openAgentSession(
@@ -85,6 +88,20 @@ export async function openAgentSession(
     if (!profile) return session;
     return {
       id: session.id,
+      get capabilities() {
+        return session.capabilities;
+      },
+      ...(session.interrupt ? { interrupt: session.interrupt.bind(session) } : {}),
+      ...(session.steer
+        ? {
+            steer: async (prompt: string) => {
+              await session.steer?.(`${context}\n\n${prompt}`);
+            },
+          }
+        : {}),
+      ...(session.setPermissionMode
+        ? { setPermissionMode: session.setPermissionMode.bind(session) }
+        : {}),
       getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
       send: (prompt, images) => session.send(`${context}\n\n${prompt}`, images),
       respondPermission: (requestId, result) => session.respondPermission(requestId, result),
@@ -110,7 +127,10 @@ export async function openAgentSession(
       logger.info(`Resumed session ${runtimeSessionId} via ${backendName}`);
       return wrap(session);
     } catch (err) {
-      logger.warn(`Resume failed for ${backendName}, starting fresh`, { err });
+      throw new Error(
+        `Could not resume ${backendName} session; the original identity was preserved.`,
+        { cause: err },
+      );
     }
   }
 

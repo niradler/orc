@@ -1,5 +1,6 @@
 import type { ChatQuestion } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
+import type { AgentCapabilities } from "@orc/core/types";
 import type { OrcMcpMode } from "./orc-mcp.js";
 import type { SessionRuleGuard } from "./rules.js";
 
@@ -31,6 +32,7 @@ export type SessionOpts = {
   runtimeSessionId?: string | undefined;
   autoApprove?: boolean | undefined;
   acpxAgent?: string | undefined;
+  acpAgent?: string | undefined;
   acpxNativeSessionId?: string | undefined;
   a2aUrl?: string | undefined;
   agentApiUrl?: string | undefined;
@@ -55,6 +57,7 @@ export type ImageAttachment = {
 export type PermissionResult = "approved" | "denied" | "session";
 
 export type AgentEvent =
+  | { type: "capabilities"; data: AgentCapabilities }
   | { type: "question_request"; data: ChatQuestion }
   | { type: "request_resolved"; data: { requestId: string } }
   | { type: "text"; data: string }
@@ -92,6 +95,9 @@ export function permissionModeAllows(mode: LivePermissionMode | undefined, tool:
 
 export interface AgentSession {
   readonly id: string;
+  readonly capabilities?: AgentCapabilities | undefined;
+  interrupt?(): Promise<void>;
+  steer?(prompt: string): Promise<void>;
   /** Native identity may be known before a turn completes, including on cancellation. */
   getRuntimeSessionId?(): string | undefined;
   send(prompt: string, images?: ImageAttachment[]): Promise<void>;
@@ -129,10 +135,13 @@ export type BackendDescription = {
 
 export interface AgentBackend {
   readonly name: AgentBackendName;
+  readonly capabilities?: AgentCapabilities | undefined;
   readonly profileCapabilities?: { model: boolean; toolAllowlist: boolean };
   startSession(opts: SessionOpts): Promise<AgentSession>;
   resumeSession(runtimeSessionId: string, opts: SessionOpts): Promise<AgentSession>;
-  preflight(opts?: Pick<SessionOpts, "executionHost">): Promise<{ ok: boolean; error?: string }>;
+  preflight(
+    opts?: Pick<SessionOpts, "executionHost" | "acpAgent" | "acpxAgent">,
+  ): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;
   /**
    * Optional: describe what this backend needs and what it resolved to.

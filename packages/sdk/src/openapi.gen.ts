@@ -377,6 +377,244 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read supported chat features without starting an agent */
+        get: {
+            parameters: {
+                query: {
+                    agent: string;
+                    threadId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Adapter guarantees, or capabilities negotiated by this conversation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            backend: string;
+                            capabilities: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/runs/{id}/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a message into the active native turn */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        input: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Steering message accepted */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            title: string;
+                            config: {
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
+                            cwd: string;
+                            host: string | null;
+                            runtimeId: string | null;
+                            backend: string;
+                            capabilities?: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
+                            sourceId: string | null;
+                            toolAllowlist?: string[];
+                            messages: {
+                                id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant";
+                                content: string;
+                                timestamp: number;
+                                agent?: string;
+                                activity?: ({
+                                    /** @enum {string} */
+                                    type: "thinking";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "tool";
+                                    id: string;
+                                    name: string;
+                                    input: string;
+                                    result?: string;
+                                    isError?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "status";
+                                    id: string;
+                                    text: string;
+                                })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                    description?: string;
+                                }[];
+                            }[];
+                            historyBefore?: number | null;
+                            importedMessages?: number;
+                            projectId?: string;
+                            transcriptMark?: string;
+                            updatedAt: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/threads": {
         parameters: {
             query?: never;
@@ -533,6 +771,24 @@ export interface paths {
                             host: string | null;
                             runtimeId: string | null;
                             backend: string;
+                            capabilities?: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
                             sourceId: string | null;
                             toolAllowlist?: string[];
                             messages: {
@@ -685,6 +941,24 @@ export interface paths {
                             host: string | null;
                             runtimeId: string | null;
                             backend: string;
+                            capabilities?: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
                             sourceId: string | null;
                             toolAllowlist?: string[];
                             messages: {
@@ -887,6 +1161,24 @@ export interface paths {
                             host: string | null;
                             runtimeId: string | null;
                             backend: string;
+                            capabilities?: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
                             sourceId: string | null;
                             toolAllowlist?: string[];
                             messages: {
@@ -1087,6 +1379,24 @@ export interface paths {
                             host: string | null;
                             runtimeId: string | null;
                             backend: string;
+                            capabilities?: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
                             sourceId: string | null;
                             toolAllowlist?: string[];
                             messages: {
@@ -1368,6 +1678,24 @@ export interface paths {
                             host: string | null;
                             runtimeId: string | null;
                             backend: string;
+                            capabilities?: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
                             sourceId: string | null;
                             toolAllowlist?: string[];
                             messages: {
@@ -3528,6 +3856,7 @@ export interface paths {
                                  */
                                 mcp: "orc" | "native";
                             };
+                            agents?: string[];
                         };
                     };
                 };
@@ -3620,6 +3949,7 @@ export interface paths {
                              */
                             mcp?: "orc" | "native";
                         };
+                        agents?: string[];
                     };
                 };
             };
@@ -3702,6 +4032,7 @@ export interface paths {
                                  */
                                 mcp: "orc" | "native";
                             };
+                            agents?: string[];
                         };
                     };
                 };
@@ -14221,7 +14552,7 @@ export interface paths {
                             ready: boolean;
                             reason: string | null;
                             host: string | null;
-                            launchers: ("shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot")[];
+                            launchers: string[];
                             terminals: components["schemas"]["Terminal"][];
                         };
                     };
@@ -14240,8 +14571,7 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        /** @enum {string} */
-                        kind?: "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+                        kind?: string;
                         /** @description SSH config alias, or null for Local. Omit to use the configured default. */
                         host?: string | null;
                         cwd?: string;
@@ -15711,6 +16041,24 @@ export interface components {
     schemas: {
         AgentBackend: {
             name: string;
+            capabilities: {
+                /** @enum {number} */
+                version: 1;
+                /** @enum {string} */
+                source: "unknown" | "adapter" | "negotiated";
+                resume: boolean;
+                modelSelection: boolean;
+                images: boolean;
+                toolOutput: boolean;
+                approvals: boolean;
+                questions: boolean;
+                livePermissions: boolean;
+                interrupt: boolean;
+                steering: boolean;
+                mcp: boolean;
+                fork: boolean;
+                rollback: boolean;
+            };
             /**
              * @description How the backend reaches its agent: in-process needs no external tool, cli spawns a binary, http calls a service.
              * @enum {string}
@@ -16902,8 +17250,7 @@ export interface components {
         Terminal: {
             id: string;
             name: string;
-            /** @enum {string} */
-            kind: "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+            kind: string;
             cwd: string | null;
             host: string | null;
             /** @enum {string} */

@@ -12,6 +12,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { ACPX_CAPABILITIES } from "./capabilities.js";
 import { sessionExecHost } from "./execution-host.js";
 import { readProcessOutput } from "./io.js";
 import { type OrcMcpConfigFile, writeOrcMcpConfigFile } from "./orc-mcp.js";
@@ -321,6 +322,7 @@ export const ACPX_MISSING_MESSAGE =
   "to its location. Agents that do not need acpx (the built-in `claude` backend) still work.";
 
 export class AcpxSession implements AgentSession {
+  readonly capabilities = ACPX_CAPABILITIES;
   readonly id: string;
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
@@ -618,6 +620,7 @@ async function acpxVersion(host: ExecHost, cmd: string[]): Promise<string | null
 function createAcpxBackend(agent?: "cursor"): AgentBackend {
   return {
     name: agent ?? "acpx",
+    capabilities: ACPX_CAPABILITIES,
     profileCapabilities: { model: true, toolAllowlist: false },
 
     async preflight(opts = {}) {

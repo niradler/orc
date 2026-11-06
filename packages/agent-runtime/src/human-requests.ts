@@ -33,7 +33,13 @@ export function withHumanRequests(
   opts: SessionOpts,
 ): AgentSession {
   const agent =
-    backend === "codex-cli" ? "codex" : backend === "acpx" ? (opts.acpxAgent ?? backend) : backend;
+    backend === "codex-cli"
+      ? "codex"
+      : backend === "acp"
+        ? (opts.acpAgent ?? opts.acpxAgent ?? backend)
+        : backend === "acpx"
+          ? (opts.acpxAgent ?? backend)
+          : backend;
   const store = new HumanRequestStore(getSqlite());
   const owner = randomUUID();
   const waits = new Map<string, Wait>();
@@ -323,6 +329,11 @@ export function withHumanRequests(
   }
   return {
     id: session.id,
+    get capabilities() {
+      return session.capabilities;
+    },
+    ...(session.interrupt ? { interrupt: session.interrupt.bind(session) } : {}),
+    ...(session.steer ? { steer: session.steer.bind(session) } : {}),
     getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
     send: (prompt, images) => session.send(prompt, images),
     respondPermission: (id, result) => {

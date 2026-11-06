@@ -266,3 +266,14 @@ curl -s -X POST http://127.0.0.1:7700/api/auth/token \
 Returns `{"token": "...", "expires_at": <unix seconds>}`. Pass `expires_at` (unix seconds) to choose the expiry, up to 365 days. Rotating the secret revokes every token.
 
 For exposing ORC beyond localhost, see [Self-hosting](./self-hosted.md).
+
+
+### Direct ACP commands
+
+`agent_loop.acp_commands` optionally maps agent IDs to `{ "command": "executable",
+"args": ["literal", "arguments"] }`. Add the ID to `preferences.agents` to select it
+in chat. Commands run on the chosen execution host; authenticate using that agent's
+own login or existing secure environment configuration. Arguments are not shell
+expressions and must not contain secrets. See [Connect agents](./connect-agents.md#capabilities-and-direct-acp)
+for setup, capability negotiation and permission limitations. Existing chats retain
+their selected backend even if this configuration changes.

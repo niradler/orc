@@ -325,7 +325,11 @@ function useChatController() {
               : message,
           ),
         }));
-      } else if (event.type === "text")
+      } else if (event.type === "capabilities")
+        update(key, (tab) => ({
+          thread: tab.thread ? { ...tab.thread, capabilities: event.capabilities } : tab.thread,
+        }));
+      else if (event.type === "text")
         update(key, (tab) => ({ streamText: tab.streamText + event.text }));
       else if (event.type === "error") update(key, () => ({ error: event.message }));
       else if (event.type === "session")
@@ -930,6 +934,38 @@ function useChatController() {
     [find, stop, update],
   );
 
+  const steer = useCallback(async () => {
+    const key = activeRef.current;
+    const current = find(key);
+    if (
+      !current?.streaming ||
+      !current.runId ||
+      !current.draft.trim() ||
+      current.files.length ||
+      responding
+    )
+      return;
+    setResponding(true);
+    try {
+      const input = current.draft;
+      const thread = await api.chat.steer(current.runId, input);
+      update(key, (tab) => ({
+        thread,
+        draft: tab.draft === input ? "" : tab.draft,
+        messages: [
+          ...tab.messages,
+          { id: crypto.randomUUID(), role: "user", content: input, timestamp: Date.now() },
+        ],
+      }));
+    } catch (cause) {
+      update(key, () => ({
+        error: message(cause, "The message could not be sent into the active response."),
+      }));
+    } finally {
+      setResponding(false);
+    }
+  }, [find, update, responding]);
+
   const respondPermission = useCallback(
     async (decision: "approved" | "denied") => {
       const key = activeRef.current;
@@ -1086,6 +1122,7 @@ function useChatController() {
     loadingHistory: tab.loadingHistory,
     loadOlder,
     permission,
+    steer,
     respondPermission,
     question,
     respondQuestion,

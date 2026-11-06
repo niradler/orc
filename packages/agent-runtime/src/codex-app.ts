@@ -2,6 +2,7 @@ import { ChatAnswersSchema, type ChatQuestion, ChatQuestionSchema } from "@orc/c
 import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import { type ExecHost, ensureSshMaster, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
+import { CODEX_CAPABILITIES } from "./capabilities.js";
 import { buildCodexEnv, codexCommand, hasConfiguredOrcMcp } from "./codex.js";
 import { elicitationForm } from "./elicitation.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
@@ -9,6 +10,7 @@ import { buildOrcMcpServer } from "./orc-mcp.js";
 import {
   type AgentEvent,
   type AgentSession,
+  type ImageAttachment,
   type LivePermissionMode,
   type PermissionResult,
   permissionModeAllows,
@@ -27,17 +29,31 @@ type Pending = {
   mcpApproval?: { sessionPersist: boolean };
 };
 function object(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 /** Interactive chat uses JSON-RPC; exec remains available for unattended callers. */
 export class CodexAppSession implements AgentSession {
   readonly id = ulid();
+  readonly capabilities = CODEX_CAPABILITIES;
+  private sending = false;
+  private bufferedBytes = 0;
+  private usage: unknown;
+  private activeTurnId: string | undefined;
+  private turnQueued = false;
+  private readonly startedTurns = new Set<string>();
+  private readonly readyWaiters = new Set<() => void>();
+  private transportFailed = false;
+  private readonly readerAbort = new AbortController();
   private child: Awaited<ReturnType<typeof hostSpawn>> | null = null;
   private readonly queue: AgentEvent[] = [];
   private wake: (() => void) | undefined;
   private done = false;
   private closed = false;
+  private closing = false;
+  private shutdown: Promise<void> | undefined;
   private runtimeId: string | undefined;
   private sequence = 0;
   private completedTurn = false;
@@ -56,6 +72,7 @@ export class CodexAppSession implements AgentSession {
     private readonly opts: SessionOpts,
     private readonly host: ExecHost,
     private readonly launcher: (host: ExecHost) => Promise<string[]> = codexCommand,
+    private readonly spawnProcess: typeof hostSpawn = hostSpawn,
   ) {
     this.runtimeId = opts.runtimeSessionId;
   }
@@ -65,12 +82,16 @@ export class CodexAppSession implements AgentSession {
     writeToStdin(this.child.proc.stdin, new TextEncoder().encode(`${JSON.stringify(message)}\n`));
   }
 
-  private async call(method: string, params: unknown): Promise<Record<string, unknown>> {
+  private async call(
+    method: string,
+    params: unknown,
+    timeoutMs = 60_000,
+  ): Promise<Record<string, unknown>> {
     const id = ++this.sequence;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await new Promise<Record<string, unknown>>((resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(`Codex ${method} timed out.`)), 60_000);
+        timer = setTimeout(() => reject(new Error(`Codex ${method} timed out.`)), timeoutMs);
         this.calls.set(id, { resolve, reject });
         this.write({ id, method, params });
       });
@@ -81,6 +102,22 @@ export class CodexAppSession implements AgentSession {
   }
 
   private push(event: AgentEvent): void {
+    if (this.closed || (this.transportFailed && event.type !== "error")) return;
+    const bytes = JSON.stringify(event).length;
+    if (this.bufferedBytes + bytes > 2_000_000) {
+      if (this.transportFailed) return;
+      this.transportFailed = true;
+      const error = new Error("Codex response exceeded the output limit.");
+      for (const call of this.calls.values()) call.reject(error);
+      this.queue.length = 0;
+      this.bufferedBytes = 0;
+      this.pending.clear();
+      this.done = true;
+      this.child?.kill();
+      this.push({ type: "error", data: error.message });
+      return;
+    }
+    this.bufferedBytes += bytes;
     this.queue.push(event);
     this.wake?.();
     this.wake = undefined;
@@ -106,6 +143,17 @@ export class CodexAppSession implements AgentSession {
         this.write({
           id: message.id,
           error: { code: -32602, message: "Request does not belong to this conversation." },
+        });
+        return;
+      }
+      if (
+        this.activeTurnId &&
+        typeof params.turnId === "string" &&
+        params.turnId !== this.activeTurnId
+      ) {
+        this.write({
+          id: message.id,
+          error: { code: -32602, message: "Request does not belong to the active turn." },
         });
         return;
       }
@@ -249,7 +297,28 @@ export class CodexAppSession implements AgentSession {
       return;
     }
     if (params.threadId && params.threadId !== this.runtimeId) return;
-    if (method === "serverRequest/resolved") {
+    const nativeTurnId = typeof params.turnId === "string" ? params.turnId : object(params.turn).id;
+    if (this.activeTurnId && nativeTurnId && nativeTurnId !== this.activeTurnId) return;
+    if (method === "turn/started" && typeof nativeTurnId === "string") {
+      this.activeTurnId = nativeTurnId;
+      this.startedTurns.add(nativeTurnId);
+      this.turnQueued = false;
+      for (const ready of this.readyWaiters) ready();
+    }
+    if (method === "thread/tokenUsage/updated") {
+      this.usage = params.tokenUsage;
+    } else if (method === "turn/plan/updated") {
+      const plan = Array.isArray(params.plan) ? params.plan : [];
+      this.push({
+        type: "system_status",
+        data: plan
+          .map((entry) => {
+            const step = object(entry);
+            return `${String(step.status ?? "pending")}: ${String(step.step ?? "")}`;
+          })
+          .join("\n"),
+      });
+    } else if (method === "serverRequest/resolved") {
       for (const [id, request] of this.pending)
         if (request.wireId === params.requestId) this.resolved(id);
     } else if (method === "item/agentMessage/delta") {
@@ -337,8 +406,12 @@ export class CodexAppSession implements AgentSession {
       else if (turn.status === "interrupted")
         this.push({ type: "system_status", data: "Codex turn stopped." });
       this.completedTurn = true;
+      for (const ready of this.readyWaiters) ready();
       if (!this.pending.size) {
-        this.push({ type: "result", data: { runtimeSessionId: this.runtimeId } });
+        this.push({
+          type: "result",
+          data: { runtimeSessionId: this.runtimeId, usage: this.usage },
+        });
         this.done = true;
       }
     } else if (method === "error" && params.willRetry !== true) {
@@ -346,6 +419,11 @@ export class CodexAppSession implements AgentSession {
         type: "error",
         data: String(object(params.error).message ?? "Codex turn failed."),
       });
+      this.completedTurn = true;
+      for (const id of this.pending.keys()) this.resolved(id);
+      this.done = true;
+      for (const ready of this.readyWaiters) ready();
+      this.wake?.();
     }
   }
 
@@ -355,17 +433,40 @@ export class CodexAppSession implements AgentSession {
     this.push({ type: "text", data: separated ? `\n\n${text}` : text });
   }
 
-  async send(prompt: string): Promise<void> {
-    if (this.child && !this.done) throw new Error("Codex turn is still running.");
+  async send(prompt: string, images?: ImageAttachment[]): Promise<void> {
+    if (this.closed || this.closing || this.transportFailed)
+      throw new Error("Codex connection is closed; resume the conversation in a new connection.");
+    if (this.sending || (this.child && !this.done)) throw new Error("Codex turn is still running.");
+    this.sending = true;
+    try {
+      await this.startTurn(prompt, images);
+    } catch (error) {
+      await this.close();
+      throw error;
+    } finally {
+      this.sending = false;
+    }
+  }
+
+  private async startTurn(prompt: string, images?: ImageAttachment[]): Promise<void> {
     this.done = false;
     this.completedTurn = false;
     this.streamedItems.clear();
     this.textItem = undefined;
     this.actionItems.clear();
     this.queue.length = 0;
+    this.bufferedBytes = 0;
+    this.usage = undefined;
+    if (
+      images?.some((image) => !/^image\/(png|jpeg|webp|gif)$/.test(image.mimeType)) ||
+      (images ?? []).reduce((sum, image) => sum + image.data.byteLength, 0) > 20_000_000
+    )
+      throw new Error("Use PNG, JPEG, WebP or GIF images totaling at most 20 MB.");
     if (!this.child) {
       if (this.host.kind === "ssh") await ensureSshMaster(this.host);
       const command = await this.launcher(this.host);
+      if (this.closed || this.closing)
+        throw new Error("Codex connection was closed during startup.");
       const supplied = this.opts.chatAgentOptions
         ? ChatAgentOptionsSchema.parse(this.opts.chatAgentOptions)
         : undefined;
@@ -399,7 +500,7 @@ export class CodexAppSession implements AgentSession {
           args.push("-c", `${key}.bearer_token_env_var="ORC_CODEX_MCP_TOKEN"`);
         }
       }
-      this.child = await hostSpawn(this.host, args, {
+      this.child = await this.spawnProcess(this.host, args, {
         cwd: this.opts.cwd,
         stdin: "pipe",
         stdout: "pipe",
@@ -408,20 +509,44 @@ export class CodexAppSession implements AgentSession {
         passEnv: ["ORC_CODEX_MCP_TOKEN"],
       });
       const child = this.child;
+      if (this.closed || this.closing) {
+        child.kill();
+        await child.proc.exited;
+        throw new Error("Codex connection was closed during startup.");
+      }
+      const failTransport = (error: Error) => {
+        if (this.transportFailed || this.closed) return;
+        this.transportFailed = true;
+        for (const call of this.calls.values()) call.reject(error);
+        for (const id of this.pending.keys()) this.resolved(id);
+        if (!this.done) this.push({ type: "error", data: error.message });
+        this.done = true;
+        this.wake?.();
+        child.kill();
+      };
       const drained = child.proc.stdout
-        ? readLines(child.proc.stdout, (line) => {
-            if (line.length > 2_000_000) {
-              this.push({ type: "error", data: "Codex message exceeded the output limit." });
-              child.kill();
-              return;
-            }
-            try {
-              this.handle(JSON.parse(line));
-            } catch {
-              this.push({ type: "error", data: "Codex returned an invalid protocol message." });
-              child.kill();
-            }
-          })
+        ? readLines(
+            child.proc.stdout,
+            (line) => {
+              if (this.closed || this.transportFailed) return;
+              try {
+                const message: unknown = JSON.parse(line);
+                if (!message || typeof message !== "object" || Array.isArray(message))
+                  throw new Error();
+                this.handle(message as Record<string, unknown>);
+              } catch {
+                failTransport(new Error("Codex returned an invalid protocol message."));
+              }
+            },
+            this.readerAbort.signal,
+            2_000_000,
+          )
+            .then(() =>
+              failTransport(new Error("Codex output closed before the connection ended.")),
+            )
+            .catch((error: unknown) =>
+              failTransport(error instanceof Error ? error : new Error("Codex output failed.")),
+            )
         : Promise.resolve();
       void child.proc.exited.then(async () => {
         await drained;
@@ -462,10 +587,68 @@ export class CodexAppSession implements AgentSession {
         throw new Error("Codex did not resume the requested conversation.");
       this.runtimeId = id;
     }
-    await this.call("turn/start", {
+    this.activeTurnId = undefined;
+    this.startedTurns.clear();
+    this.turnQueued = false;
+    const started = await this.call("turn/start", {
       threadId: this.runtimeId,
+      input: [
+        { type: "text", text: prompt },
+        ...(images ?? []).map((image) => ({
+          type: "image",
+          url: `data:${image.mimeType};base64,${Buffer.from(image.data).toString("base64")}`,
+        })),
+      ],
+    });
+    const turn = object(started.turn);
+    const turnId = turn.id;
+    if (typeof turnId === "string" && !this.completedTurn) {
+      this.activeTurnId = turnId;
+      this.turnQueued = turn.startedAt === null && !this.startedTurns.has(turnId);
+    }
+  }
+
+  private async waitForNativeStart(): Promise<void> {
+    if (!this.turnQueued || this.completedTurn || this.closed) return;
+    await new Promise<void>((resolve, reject) => {
+      const ready = () => {
+        clearTimeout(timer);
+        this.readyWaiters.delete(ready);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        this.readyWaiters.delete(ready);
+        reject(
+          new Error(
+            "Codex has not started the queued turn yet. Queue a message or stop the connection.",
+          ),
+        );
+      }, 1000);
+      this.readyWaiters.add(ready);
+    });
+  }
+
+  async steer(prompt: string): Promise<void> {
+    await this.waitForNativeStart();
+    if (this.done || !this.activeTurnId || this.closed)
+      throw new Error("No active Codex turn to steer.");
+    if (!prompt.trim() || prompt.length > 100000)
+      throw new Error("Enter a steering message up to 100000 characters.");
+    await this.call("turn/steer", {
+      threadId: this.runtimeId,
+      expectedTurnId: this.activeTurnId,
       input: [{ type: "text", text: prompt }],
     });
+  }
+
+  async interrupt(): Promise<void> {
+    await this.waitForNativeStart();
+    if (this.done || this.completedTurn || !this.activeTurnId || this.closed) return;
+    await this.call(
+      "turn/interrupt",
+      { threadId: this.runtimeId, turnId: this.activeTurnId },
+      1000,
+    );
   }
 
   setPermissionMode(mode: LivePermissionMode): void {
@@ -546,6 +729,7 @@ export class CodexAppSession implements AgentSession {
         },
       ];
       const completed = this.completedTurn;
+      if (completed) this.activeTurnId = undefined;
       this.pending.delete(requestId);
       this.completedTurn = false;
       try {
@@ -556,6 +740,7 @@ export class CodexAppSession implements AgentSession {
         });
       } catch (error) {
         this.pending.set(requestId, request);
+        this.completedTurn = completed;
         throw error;
       }
       this.push({ type: "request_resolved", data: { requestId } });
@@ -577,16 +762,28 @@ export class CodexAppSession implements AgentSession {
   async *events(): AsyncIterable<AgentEvent> {
     while (!this.done || this.queue.length) {
       const event = this.queue.shift();
-      if (event) yield event;
-      else
+      if (event) {
+        this.bufferedBytes -= JSON.stringify(event).length;
+        yield event;
+      } else
         await new Promise<void>((resolve) => {
           this.wake = resolve;
         });
     }
   }
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    this.closing = true;
+    this.shutdown ??= this.closeConnection();
+    return this.shutdown;
+  }
+
+  private async closeConnection(): Promise<void> {
+    if (!this.transportFailed) await this.interrupt().catch(() => {});
     this.closed = true;
-    this.pending.clear();
+    for (const ready of this.readyWaiters) ready();
+    this.readerAbort.abort();
+    for (const call of this.calls.values()) call.reject(new Error("Codex connection is closed."));
+    for (const id of this.pending.keys()) this.resolved(id);
     if (this.child) {
       endStdin(this.child.proc.stdin);
       const timer = setTimeout(() => this.child?.kill(), 3000);

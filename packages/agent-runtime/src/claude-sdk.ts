@@ -26,6 +26,7 @@ import { createLogger } from "@orc/core/logger";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
+import { CLAUDE_CAPABILITIES } from "./capabilities.js";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { elicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
@@ -126,6 +127,7 @@ async function sshSdkLaunch(host: SshExecHost): Promise<Partial<Options>> {
 }
 
 class ClaudeSDKSession implements AgentSession {
+  readonly capabilities = CLAUDE_CAPABILITIES;
   readonly id = ulid();
 
   private runtimeSessionId: string | undefined;
@@ -605,6 +607,7 @@ async function sshPreflight(host: SshExecHost): Promise<{ ok: boolean; error?: s
 function createClaudeSDKBackend(): AgentBackend {
   return {
     name: "claude",
+    capabilities: CLAUDE_CAPABILITIES,
     profileCapabilities: { model: true, toolAllowlist: true },
 
     async preflight(opts = {}) {

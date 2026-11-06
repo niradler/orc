@@ -223,3 +223,21 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |
 | `GET` | `/audit` | Knowledge audit log |
 | `GET` `POST` | `/integrations/connections` | spec-cli connections |
+
+
+### Agent capabilities and steering
+
+`GET /backends` includes a versioned `capabilities` object for each integration.
+`GET /chat/capabilities?agent=<id>&threadId=<optional-thread-uuid>` returns
+`{ backend, capabilities }` without starting a provider. Capability flags describe
+resume, model selection, image input, tool output, approvals, questions, live
+permissions, native interruption, steering, MCP, fork and rollback. `source` is
+`adapter`, `negotiated` or `unknown`; unsupported and unknown operations are false.
+Chat SSE emits `capabilities` events and persists negotiated values with the thread.
+
+`POST /chat/runs/{id}/steer` takes `{ "input": "Focus on the failing test" }` and
+returns the updated conversation after the active native turn accepts it. It
+requires a live steering-capable session; stale and unsupported runs return `409`.
+It keeps the original native thread and turn. Empty input is invalid. These routes
+use the same authentication as the rest of the API. The SDK exposes
+`client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input)`.
