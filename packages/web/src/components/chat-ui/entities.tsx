@@ -2,13 +2,15 @@ import type { Job, Task } from "@orc/sdk/types";
 import { useQuery } from "@tanstack/react-query";
 import { api, type TaskStatus } from "@/api/client";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { StateBadge } from "@/components/StateBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { useJob } from "@/hooks/useJobs";
 import { useProject } from "@/hooks/useProjects";
 import { useScratchpad } from "@/hooks/useScratchpads";
 import { useTask } from "@/hooks/useTasks";
-import { formatWhen, STATUS as SESSION_STATUS } from "@/lib/live-sessions";
+import { liveSessionState } from "@/lib/agent-state";
+import { formatWhen } from "@/lib/live-sessions";
 import { scratchpadPath } from "@/lib/scratchpad-routes";
 import { cn } from "@/lib/utils";
 import { useChatUiAction } from "./actions";
@@ -236,7 +238,6 @@ export function SessionList({
           {data.sessions.length ? (
             <Rows>
               {(expanded ? data.sessions : data.sessions.slice(0, 3)).map((session) => {
-                const status = SESSION_STATUS[session.status];
                 return (
                   <li key={session.id} className="flex min-w-0 flex-col gap-1 py-2">
                     <div className="flex min-w-0 items-center justify-between gap-3">
@@ -248,13 +249,7 @@ export function SessionList({
                           {session.name ?? session.agent}
                         </span>
                       </UiLink>
-                      <span className="flex shrink-0 items-center gap-1.5 text-xs text-on-surface-variant">
-                        <span
-                          aria-hidden="true"
-                          className={cn("size-1.5 rounded-full", status.dot)}
-                        />
-                        {status.label}
-                      </span>
+                      <StateBadge state={liveSessionState(session)} className="shrink-0" />
                     </div>
                     {session.summary && (
                       <p

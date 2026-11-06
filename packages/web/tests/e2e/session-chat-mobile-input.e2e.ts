@@ -131,6 +131,9 @@ for (const width of [1440, 390]) {
     await page.route("**/api/sessions/live?**", (route) =>
       route.fulfill({ json: { sessions: [session] } }),
     );
+    await page.route("**/api/sessions/archive?**", (route) =>
+      route.fulfill({ json: { sessions: [], has_more: false } }),
+    );
     let reject = true;
     await page.route("**/api/chat/threads", (route) => {
       expect(route.request().postDataJSON()).toEqual({ sourceSessionId: session.id });

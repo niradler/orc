@@ -5,11 +5,13 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
+import { StateBadge } from "@/components/StateBadge";
 import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveSessions, useTranscript } from "@/hooks/useSessions";
-import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
+import { liveSessionState } from "@/lib/agent-state";
+import { formatTokens, formatWhen } from "@/lib/live-sessions";
 
 type Turn = TranscriptPage["turns"][number];
 type TurnBlock = Turn["blocks"][number];
@@ -237,10 +239,7 @@ export function LiveSessionDetail({
           {session && (
             <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
               <span className="font-medium text-primary">{session.agent}</span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${STATUS[session.status].dot}`} />
-                {STATUS[session.status].label}
-              </span>
+              <StateBadge state={liveSessionState(session)} />
               <span>
                 <span className="text-on-surface-variant">tokens </span>
                 {formatTokens(session)}

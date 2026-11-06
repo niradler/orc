@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
 import { useAttentionChatWaits } from "@/hooks/useAttentionChatWaits";
 import { useHumanRequests } from "@/hooks/useHumanRequests";
 
@@ -9,12 +8,7 @@ const identity = (backend: string, host: string | null, id: string) =>
 export function useAttentionSessions() {
   const requests = useHumanRequests();
   const chatWaits = useAttentionChatWaits();
-  const sessions = useQuery({
-    queryKey: ["sessions", "live", true],
-    queryFn: () => api.sessions.live({ active: true, limit: 5000 }),
-    refetchInterval: 15000,
-    select: (data) => data.sessions,
-  });
+  const sessions = useActiveLiveSessions();
   const represented = new Set(
     (requests.data ?? [])
       .filter(

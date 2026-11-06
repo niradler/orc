@@ -116,7 +116,7 @@ for (const width of [1440, 390]) {
     const list = page.getByTestId("chat-session-list");
     await expect(list.locator('[data-history-id="native:native-codex"]')).toHaveAttribute(
       "data-state",
-      "running",
+      "working",
     );
     for (const provider of ["codex", "claude", "cursor"]) {
       const icon = list

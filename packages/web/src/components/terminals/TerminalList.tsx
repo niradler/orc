@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Terminal } from "@/api/client";
+import { StateBadge } from "@/components/StateBadge";
+import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
+import { liveSessionState } from "@/lib/agent-state";
 import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { filterTerminals, terminalStatus } from "@/lib/terminal-presentation";
 import type { ConnectionState } from "@/lib/terminal-runtime";
@@ -32,6 +35,10 @@ export function TerminalList({
   const [status, setStatus] = useState("all");
   const [menuId, setMenuId] = useState<string | null>(null);
   const shown = filterTerminals(terminals, "", status);
+  const liveSessions = useActiveLiveSessions();
+  const agentStates = new Map(
+    (liveSessions.data ?? []).map((session) => [session.id, liveSessionState(session)]),
+  );
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <div className="space-y-2 px-3 pb-3 border-b border-outline-variant">
@@ -72,6 +79,10 @@ export function TerminalList({
           const tail = cwdTail(terminal.cwd);
           const state = terminalStatus(terminal, connectionOf(terminal.id));
           const disconnected = state === "Disconnected" || state === "Reconnecting";
+          const agentState =
+            terminal.status === "running" && terminal.live_session_id
+              ? agentStates.get(terminal.live_session_id)
+              : undefined;
           const next = new URLSearchParams(params);
           next.delete("file");
           next.delete("session");
@@ -87,17 +98,27 @@ export function TerminalList({
                 active ? "bg-surface-highest" : "hover:bg-surface",
               )}
             >
-              <span
-                className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  disconnected
-                    ? "bg-warning"
-                    : terminal.status === "running"
-                      ? "bg-secondary"
-                      : "bg-outline",
-                )}
-                title={state}
-              />
+              {agentState ? (
+                <StateBadge
+                  state={agentState}
+                  compact
+                  context={terminal.name}
+                  testId="terminal-agent-state"
+                  className="-mx-1.5"
+                />
+              ) : (
+                <span
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full",
+                    disconnected
+                      ? "bg-warning"
+                      : terminal.status === "running"
+                        ? "bg-secondary"
+                        : "bg-outline",
+                  )}
+                  title={state}
+                />
+              )}
               <Link
                 onContextMenu={(event) => {
                   event.preventDefault();

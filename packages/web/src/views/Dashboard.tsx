@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { ResumeActions } from "@/components/ResumeActions";
+import { StateBadge } from "@/components/StateBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,7 +23,8 @@ import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 import { useLiveSessions } from "@/hooks/useSessions";
 import { useTasks } from "@/hooks/useTasks";
-import { formatWhen, STATUS } from "@/lib/live-sessions";
+import { liveSessionState } from "@/lib/agent-state";
+import { formatWhen } from "@/lib/live-sessions";
 import { MEMORIES_PATH } from "@/lib/memory-routes";
 
 interface DashboardProps {
@@ -351,8 +353,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
                       <span className="activity-muted">{formatWhen(session.last_activity_at)}</span>
                     </span>
                     <span className="activity-row-description inline-flex items-center gap-2">
-                      <span className={`size-1.5 rounded-full ${STATUS[session.status].dot}`} />
-                      {session.agent} · {STATUS[session.status].label}
+                      <StateBadge state={liveSessionState(session)} />· {session.agent}
                       {session.task ? ` · ${session.task.title}` : ""}
                     </span>
                   </button>

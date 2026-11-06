@@ -143,6 +143,7 @@ function openWindow(url: string): void {
     },
   });
   if (state.maximized) win.maximize();
+  win.on("page-title-updated", (_event, title) => showNeedsYou(title));
   win.once("ready-to-show", () => win?.show());
   win.on("session-end", () => {
     quitting = true;
@@ -248,6 +249,12 @@ function setAutostart(enabled: boolean): void {
     return;
   }
   app.setLoginItemSettings({ openAtLogin: enabled, args: [HIDDEN_FLAG] });
+}
+
+function showNeedsYou(title: string): void {
+  const count = Number(/^\((\d+)\) /.exec(title)?.[1] ?? 0);
+  app.setBadgeCount(count);
+  tray?.setToolTip(count ? `orc · ${count} need${count === 1 ? "s" : ""} you` : "orc");
 }
 
 function createTray(): void {
