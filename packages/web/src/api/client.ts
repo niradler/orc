@@ -46,6 +46,7 @@ import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
+import type { UsageHistory, UsageQuota } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
@@ -735,6 +736,8 @@ export const api = {
       req<ChatThread>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission-mode`, { mode }),
   },
   settings: {
+    usageHistory: (days: string) => req<UsageHistory>("GET", "/usage/history", undefined, { days }),
+    usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {
       get: () => req<McpServerSettings>("GET", "/settings/mcp"),
       save: (settings: McpServerSettings) =>

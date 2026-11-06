@@ -39,6 +39,20 @@ curl -s -X POST http://127.0.0.1:7700/api/auth/token \
 
 Unauthenticated exceptions: `GET /api/health`, the sign-in routes, `POST /webhooks/{token}` (signed deliveries), and signed short-lived capability URLs (skill downloads, scratchpad content, session uploads).
 
+## Usage
+
+`GET /api/usage/history?days=30` returns imported session lifetime token totals,
+grouped by agent and UTC session start date. `days` accepts `7`, `30` (default),
+`90`, or `0` for all time. Totals include session count, recorded tokens, unknown
+counts and estimated counts; these are session cohorts, not daily billed usage.
+
+`GET /api/usage/quotas` returns local Codex and Claude quota windows with percentage
+used, reset timestamps, availability and check time. Requests share a 60-second
+cache. Neither route returns credentials. Both use normal API authentication.
+See [Usage in Settings](./configuration.md#usage-in-settings) for account support
+and history limits. The SDK exposes `orc.usage.history("30")` and
+`orc.usage.quotas()`.
+
 ## Pagination
 
 `GET /api/projects`, `GET /api/jobs` and `GET /api/skills` take `limit` and `offset` and return `next_offset`; follow it until it is `null`. Projects and jobs default to 50 per page (max 100); skills default to 30 (max 500).

@@ -3528,6 +3528,7 @@ export interface paths {
                                  */
                                 mcp: "orc" | "native";
                             };
+                            agents?: string[];
                         };
                     };
                 };
@@ -3620,6 +3621,7 @@ export interface paths {
                              */
                             mcp?: "orc" | "native";
                         };
+                        agents?: string[];
                     };
                 };
             };
@@ -3702,11 +3704,126 @@ export interface paths {
                                  */
                                 mcp: "orc" | "native";
                             };
+                            agents?: string[];
                         };
                     };
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/usage/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lifetime token totals for imported sessions started in a selected period */
+        get: {
+            parameters: {
+                query?: {
+                    days?: "0" | "7" | "30" | "90";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session usage grouped by agent and UTC start date */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            days: number;
+                            /** Format: date-time */
+                            since: string | null;
+                            totals: {
+                                sessions: number;
+                                tokens: number;
+                                unknown_sessions: number;
+                                estimated_sessions: number;
+                            };
+                            agents: {
+                                sessions: number;
+                                tokens: number;
+                                unknown_sessions: number;
+                                estimated_sessions: number;
+                                agent: string;
+                            }[];
+                            daily: {
+                                sessions: number;
+                                tokens: number;
+                                unknown_sessions: number;
+                                estimated_sessions: number;
+                                date: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/usage/quotas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read local Codex and Claude account quota windows (cached for 60 seconds) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Per-provider quota availability and reset times; no credentials */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accounts: {
+                                /** @enum {string} */
+                                provider: "codex" | "claude";
+                                /** @enum {string} */
+                                status: "available" | "unavailable" | "signed_out";
+                                message: string | null;
+                                /** Format: date-time */
+                                checked_at: string;
+                                windows: {
+                                    label: string;
+                                    used_percent: number;
+                                    /** Format: date-time */
+                                    resets_at: string | null;
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/channels/providers": {
@@ -14221,7 +14338,7 @@ export interface paths {
                             ready: boolean;
                             reason: string | null;
                             host: string | null;
-                            launchers: ("shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot")[];
+                            launchers: string[];
                             terminals: components["schemas"]["Terminal"][];
                         };
                     };
@@ -14240,8 +14357,7 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        /** @enum {string} */
-                        kind?: "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+                        kind?: string;
                         /** @description SSH config alias, or null for Local. Omit to use the configured default. */
                         host?: string | null;
                         cwd?: string;
@@ -16902,8 +17018,7 @@ export interface components {
         Terminal: {
             id: string;
             name: string;
-            /** @enum {string} */
-            kind: "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+            kind: string;
             cwd: string | null;
             host: string | null;
             /** @enum {string} */

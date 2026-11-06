@@ -14,6 +14,7 @@ import { NotificationSettings } from "@/components/NotificationSettings";
 import { SecuritySettings } from "@/components/SecuritySettings";
 import { ServerSettings } from "@/components/ServerSettings";
 import { SshHostSettings } from "@/components/SshHostSettings";
+import { UsageSettings } from "@/components/UsageSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +39,7 @@ const sections = [
   "knowledge",
   "terminals",
   "storage",
+  "usage",
   "about",
 ] as const;
 type Section = (typeof sections)[number];
@@ -56,6 +58,7 @@ const sectionLabels: Record<Section, string> = {
   knowledge: "Knowledge",
   terminals: "Terminals",
   storage: "Storage",
+  usage: "Usage",
   about: "About",
 };
 
@@ -176,6 +179,7 @@ export default function Settings() {
           </select>
         </label>
         <div className="min-w-0 max-w-4xl">
+          {section === "usage" && <UsageSettings />}
           <section hidden={section !== "connection"} aria-label="Connection settings">
             <h2 className="mb-6 text-base font-medium">Connection</h2>
             <div className="grid gap-4 border-b border-border pb-6 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
