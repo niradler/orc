@@ -110,15 +110,6 @@
   }
 }
 
-@utility chat-scroll-latest {
-  html[data-compact-viewport="true"] & {
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-  }
-}
-
 @utility chat-compact-activity {
   display: none;
   html[data-compact-viewport="true"] & {

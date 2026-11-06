@@ -487,14 +487,19 @@ test("provider activity is collapsed, readable, safe and retained after completi
   await openChat(page);
   await page.getByTestId("chat-input").fill("Show activity");
   await page.getByTestId("chat-send-button").click();
-  const group = page.getByTestId("chat-tool-group");
+  const fold = page.getByTestId("chat-turn-fold");
   const thinking = page.getByTestId("chat-thinking");
   const tool = page.getByTestId("chat-tool");
-  await expect(group.locator("summary").first()).toContainText("1 tool call · 1 thought");
-  await group.locator("summary").first().click();
+  await expect(fold).toHaveCount(1);
+  await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(
+    /^Worked( for \d+s)? · 1 tool$/,
+  );
+  await expect(fold).not.toHaveAttribute("open");
+  await page.getByTestId("chat-turn-fold-summary").click();
   await expect(thinking).toBeVisible();
   await expect(thinking).not.toHaveAttribute("open");
-  await expect(tool).toContainText("Completed");
+  await expect(tool).toContainText("Read workspace");
+  await expect(tool).not.toContainText("Running");
   await thinking.locator("summary").click();
   await expect(thinking).toContainText("Provider supplied summary");
   await tool.locator("summary").click();

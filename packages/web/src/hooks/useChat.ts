@@ -736,7 +736,7 @@ function useChatController() {
       let accepted = false;
       update(key, (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== userMessage.id),
-        messages: [...tab.messages, userMessage],
+        messages: [...tab.messages, { ...userMessage, timestamp: Date.now() }],
         streaming: true,
         streamText: "",
         activity: [],
@@ -1135,26 +1135,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChatController();
   useChatLink(chat);
   const messages = useMemo<ThreadMessageLike[]>(() => {
-    const history: ThreadMessageLike[] = chat.messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: [{ type: "text", text: message.content }],
-      createdAt: new Date(message.timestamp),
-      metadata: {
-        custom: {
-          agent: message.agent,
-          activity: message.activity,
-          attachments: message.attachments,
+    let turnStart: number | undefined;
+    const history: ThreadMessageLike[] = chat.messages.map((message) => {
+      const startedAt = turnStart;
+      turnStart = message.role === "user" ? message.timestamp : undefined;
+      return {
+        id: message.id,
+        role: message.role,
+        content: [{ type: "text", text: message.content }],
+        createdAt: new Date(message.timestamp),
+        metadata: {
+          custom: {
+            agent: message.agent,
+            activity: message.activity,
+            attachments: message.attachments,
+            ...(message.role === "assistant" ? { startedAt, finishedAt: message.timestamp } : {}),
+          },
         },
-      },
-    }));
+      };
+    });
     if (chat.streaming)
       history.push({
         id: chat.streamingId,
         role: "assistant",
         content: [{ type: "text", text: chat.streamText }],
         status: { type: "running" },
-        metadata: { custom: { agent: chat.streamingAgent, activity: chat.activity } },
+        metadata: {
+          custom: {
+            agent: chat.streamingAgent,
+            activity: chat.activity,
+            startedAt: turnStart,
+            live: true,
+          },
+        },
       });
     return history;
   }, [

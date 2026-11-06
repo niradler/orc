@@ -1,92 +1,77 @@
-import { type ChatActivity, ChatActivitySchema } from "@orc/core/chat";
-import { ChevronRight } from "lucide-react";
-import { activitySummary, groupChatActivity } from "@/lib/chat-activity";
+import { ChatActivitySchema } from "@orc/core/chat";
+import { ChevronRight, CircleAlert } from "lucide-react";
+import { useMemo } from "react";
+import { ActivityRow } from "@/components/chat-ui/tool-renderers";
+import { foldLabel, foldTurn } from "@/lib/chat-activity";
 
-function ActivityItem({ item }: { item: ChatActivity }) {
-  return item.type === "status" ? (
-    <p className="py-1 wrap-break-word">{item.text}</p>
-  ) : (
-    <details
-      data-testid={item.type === "thinking" ? "chat-thinking" : "chat-tool"}
-      className="group/item rounded-md border border-outline-variant"
-    >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 hover:bg-surface">
-        <ChevronRight aria-hidden="true" size={14} className="shrink-0 group-open/item:rotate-90" />
-        <span className="min-w-0 flex-1 truncate">
-          {item.type === "thinking" ? "Thinking" : item.name}
-        </span>
-        {item.type === "tool" && (
-          <span className={item.isError ? "text-error" : ""}>
-            {item.result === undefined ? "Started" : item.isError ? "Failed" : "Completed"}
-          </span>
-        )}
-      </summary>
-      <div className="max-h-72 overflow-auto border-t border-outline-variant px-3 py-2 whitespace-pre-wrap wrap-break-word wrap-anywhere">
-        {item.type === "thinking" ? (
-          item.text
-        ) : (
-          <>
-            <p className="mb-1 font-medium">Input</p>
-            <pre className="whitespace-pre-wrap wrap-break-word font-mono">
-              {item.input || "No arguments"}
-            </pre>
-            {item.result !== undefined && (
-              <>
-                <p className="mt-3 mb-1 font-medium">Result</p>
-                <pre className="whitespace-pre-wrap wrap-break-word font-mono">
-                  {item.result || "Completed without output"}
-                </pre>
-              </>
-            )}
-          </>
-        )}
-      </div>
-    </details>
-  );
+function finite(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-export function ChatActivityList({ value }: { value: unknown }) {
-  if (!Array.isArray(value)) return null;
-  const items = value.flatMap((item) => {
-    const parsed = ChatActivitySchema.safeParse(item);
-    return parsed.success ? [parsed.data] : [];
-  });
+export function ChatActivityList({
+  value,
+  startedAt,
+  finishedAt,
+  live = false,
+}: {
+  value: unknown;
+  startedAt?: unknown;
+  finishedAt?: unknown;
+  live?: boolean;
+}) {
+  const items = useMemo(
+    () =>
+      Array.isArray(value)
+        ? value.flatMap((item) => {
+            const parsed = ChatActivitySchema.safeParse(item);
+            return parsed.success ? [parsed.data] : [];
+          })
+        : [],
+    [value],
+  );
+  const start = finite(startedAt);
+  const end = finite(finishedAt);
+  const fold = useMemo(
+    () => foldTurn(items, { startedAt: start, finishedAt: end }),
+    [items, start, end],
+  );
   if (!items.length) return null;
+  const label = foldLabel(fold, live);
   return (
-    <div data-testid="chat-activity" className="mb-3 space-y-1 text-xs text-on-surface-variant">
-      {groupChatActivity(items).map((item) =>
-        item.type === "tools" ? (
-          <details
-            key={item.id}
-            data-testid="chat-tool-group"
-            className="group/tools rounded-md border border-outline-variant"
-          >
-            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 hover:bg-surface">
-              <ChevronRight
-                aria-hidden="true"
-                size={14}
-                className="shrink-0 group-open/tools:rotate-90"
-              />
-              <span className="min-w-0 flex-1">{activitySummary(item.items)}</span>
-              {item.items.some((tool) => tool.type === "tool" && tool.isError) && (
-                <span className="text-error">
-                  {item.items.filter((tool) => tool.type === "tool" && tool.isError).length} failed
-                </span>
-              )}
-              {item.items.some((tool) => tool.type === "tool" && tool.result === undefined) && (
-                <span>Running</span>
-              )}
-            </summary>
-            <div className="space-y-1 border-t border-outline-variant p-2">
-              {item.items.map((tool) => (
-                <ActivityItem key={tool.id} item={tool} />
-              ))}
-            </div>
-          </details>
-        ) : (
-          <ActivityItem key={item.id} item={item} />
-        ),
-      )}
-    </div>
+    <details
+      data-testid="chat-turn-fold"
+      data-live={live || undefined}
+      data-failed={fold.failed > 0 || undefined}
+      className="group/fold mb-3 text-xs text-on-surface-variant"
+    >
+      <summary
+        data-testid="chat-turn-fold-summary"
+        className="flex min-h-8 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11 [&::-webkit-details-marker]:hidden"
+      >
+        <span data-testid="chat-turn-fold-label" className="min-w-0 truncate">
+          {label}
+        </span>
+        {fold.failed > 0 && (
+          <span className="flex shrink-0 items-center gap-1 text-error">
+            <CircleAlert aria-hidden="true" size={12} />
+            {fold.failed} failed
+          </span>
+        )}
+        <ChevronRight
+          aria-hidden="true"
+          size={14}
+          className="shrink-0 group-open/fold:rotate-90 motion-safe:transition-transform"
+        />
+      </summary>
+      <section
+        aria-label="Tool calls"
+        data-testid="chat-activity"
+        className="mt-1 ml-2 max-h-[min(28rem,60dvh)] overflow-y-auto border-l border-outline-variant pl-1"
+      >
+        {items.map((item) => (
+          <ActivityRow key={item.id} item={item} />
+        ))}
+      </section>
+    </details>
   );
 }
