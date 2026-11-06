@@ -1,6 +1,7 @@
 import { Bell, Menu, MessageSquare } from "lucide-react";
 import { type Ref, useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -78,10 +79,10 @@ export function WorkspaceHeader({
           data-testid="attention-indicator"
           to={workspaceDestination("/attention", projectId, search)}
           aria-label={`Attention needed: ${totalAttention} requests`}
-          className={buttonVariants({
+          className={`hidden md:inline-flex ${buttonVariants({
             variant: totalAttention ? "outline" : "ghost",
             size: "sm",
-          })}
+          })}`}
         >
           <Bell size={16} />
           <span className="hidden sm:inline">Attention</span>
@@ -89,6 +90,7 @@ export function WorkspaceHeader({
             <span className="rounded bg-surface-highest px-1.5 text-xs">{totalAttention}</span>
           )}
         </NavLink>
+        <AgentNotificationBell />
         <CommandPalette
           projectId={projectId}
           onProjectChange={onProjectChange}

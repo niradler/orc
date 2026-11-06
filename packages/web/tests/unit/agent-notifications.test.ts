@@ -145,6 +145,16 @@ const toast = (id: string, level: AgentNotification["level"], ...subjects: Notif
 });
 
 describe("toast stack", () => {
+  test("refreshes approval actions when a request is replaced without changing session state", () => {
+    const original = { ...subject("a", "needs-you"), approval: { id: "old", version: 1 } };
+    const latest = { ...original, approval: { id: "new", version: 2 } };
+    const result = retireNotifications(
+      [toast("1", "needs-you", original)],
+      new Map([["a", latest]]),
+      never,
+    );
+    expect(result[0].subjects[0].approval).toEqual({ id: "new", version: 2 });
+  });
   test("done toasts merge into one, needs-you toasts stack newest first", () => {
     let toasts = addNotifications([], [toast("1", "done", subject("a", "done"))]);
     toasts = addNotifications(toasts, [toast("2", "needs-you", subject("b", "needs-you"))]);
@@ -168,9 +178,9 @@ describe("toast stack", () => {
       toast("1", "needs-you", subject("a", "needs-you"), subject("b", "needs-you")),
       toast("2", "done", subject("c", "done")),
     ];
-    const states = new Map<string, AgentState>([
-      ["a", "working"],
-      ["b", "needs-you"],
+    const states = new Map([
+      ["a", subject("a", "working")],
+      ["b", subject("b", "needs-you")],
     ]);
     expect(retireNotifications(toasts, states, never).map((t) => t.subjects.length)).toEqual([
       1, 1,
@@ -178,10 +188,7 @@ describe("toast stack", () => {
     expect(retireNotifications(toasts, states, (s) => s.key === "b").map((t) => t.id)).toEqual([
       "2",
     ]);
-    const unchanged = new Map<string, AgentState>([
-      ["a", "needs-you"],
-      ["b", "needs-you"],
-    ]);
+    const unchanged = new Map(toasts[0].subjects.map((subject) => [subject.key, subject]));
     expect(retireNotifications(toasts, unchanged, never)).toBe(toasts);
   });
 });

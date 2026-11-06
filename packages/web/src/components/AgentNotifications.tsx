@@ -1,14 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, X } from "lucide-react";
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bell, Check, ExternalLink, X } from "lucide-react";
+import {
+  createContext,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { activeLiveSessionsQuery } from "@/hooks/useActiveLiveSessions";
 import { useAttentionChatWaits } from "@/hooks/useAttentionChatWaits";
 import { CHAT_THREAD_PARAM, useChat } from "@/hooks/useChat";
 import { useHumanRequests } from "@/hooks/useHumanRequests";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { notifySubjects } from "@/lib/agent-notification-subjects";
 import {
   type AgentNotification,
@@ -37,6 +49,12 @@ export const NOTIFICATIONS_SHORTCUT = "Alt+N";
 const FLUSH_MS = 250;
 const MAX_LISTED = 3;
 const NONE: never[] = [];
+const NotificationsContext = createContext<{
+  toasts: AgentNotification[];
+  attentionCount: number;
+  dismiss: (id: string) => void;
+  open: (id: string, target: NotifyTarget) => void;
+} | null>(null);
 
 function isShortcut(event: globalThis.KeyboardEvent) {
   return (
@@ -46,30 +64,25 @@ function isShortcut(event: globalThis.KeyboardEvent) {
 
 function targetPath(target: NotifyTarget, pathname: string, search: string): string {
   const params = new URLSearchParams(search);
-  const projectId = params.get("project") ?? "all";
+  if (target.kind === "attention") return "/attention?project=all";
   if (target.kind === "chat") {
     params.set("chat", "open");
     params.set(CHAT_THREAD_PARAM, target.threadId);
     return `${pathname}?${params}`;
   }
   if (target.kind === "session")
-    return workspaceDestination(
-      `/sessions?session=${encodeURIComponent(target.id)}`,
-      projectId,
-      search,
-    );
-  return workspaceDestination("/attention", projectId, search);
+    return `/sessions?session=${encodeURIComponent(target.id)}&project=all`;
+  return "/attention?project=all";
 }
 
 function notificationTarget(notification: AgentNotification): NotifyTarget {
-  if (notification.subjects.length === 1) return notification.subjects[0].target;
-  return notification.level === "needs-you"
-    ? { kind: "attention" }
-    : notification.subjects[0].target;
+  if (notification.level === "needs-you") return { kind: "attention" };
+  return notification.subjects[0].target;
 }
 
 /** Watches every agent the user is not looking at and raises toasts, sound and desktop alerts. */
-export function AgentNotifications() {
+export function AgentNotifications({ children }: { children: ReactNode }) {
+  const desktop = useBreakpoint("md");
   const { tabs, activeKey } = useChat();
   const requests = useHumanRequests();
   const waits = useAttentionChatWaits();
@@ -94,6 +107,9 @@ export function AgentNotifications() {
       }),
     [tabs, waitList, requests.data, sessions.data],
   );
+  const attentionCount = subjects.filter(
+    (subject) => subject.state === "needs-you" || subject.state === "failed",
+  ).length;
 
   const params = new URLSearchParams(search);
   const chatShown = !!params.get("chat");
@@ -101,7 +117,7 @@ export function AgentNotifications() {
   const viewedSession = pathname === "/sessions" ? params.get("session") : null;
   const inView = useCallback(
     (subject: NotifySubject, level?: NotificationLevel) => {
-      if (document.visibilityState === "hidden") return false;
+      if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
       if (level === "needs-you" && pathname === "/attention") return true;
       if (subject.target.kind === "chat" && chatShown && subject.target.threadId === activeThread)
         return true;
@@ -147,9 +163,9 @@ export function AgentNotifications() {
   }, []);
 
   useEffect(() => {
-    const states = new Map(subjects.map((subject) => [subject.key, subject.state]));
+    const currentSubjects = new Map(subjects.map((subject) => [subject.key, subject]));
     setToasts((current) =>
-      retireNotifications(current, states, (subject) => inView(subject, "needs-you")),
+      retireNotifications(current, currentSubjects, (subject) => inView(subject, "needs-you")),
     );
   }, [subjects, inView]);
 
@@ -173,6 +189,14 @@ export function AgentNotifications() {
 
   useEffect(() => {
     const focus = () => {
+      if (!desktop) {
+        const bell =
+          document.querySelector<HTMLButtonElement>(
+            '[data-testid="mobile-chat-sheet"] [data-testid="notification-bell"]',
+          ) ?? document.querySelector<HTMLButtonElement>('[data-testid="notification-bell"]');
+        bell?.click();
+        return;
+      }
       const first = stack.current?.querySelector<HTMLElement>("[data-toast-focus]");
       if (first) first.focus();
       else
@@ -201,7 +225,7 @@ export function AgentNotifications() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener(FOCUS_NOTIFICATIONS_EVENT, onRequest);
     };
-  }, [navigate]);
+  }, [navigate, desktop]);
 
   const dismiss = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -212,16 +236,17 @@ export function AgentNotifications() {
   };
 
   return (
-    <>
+    <NotificationsContext.Provider value={{ toasts, attentionCount, dismiss, open }}>
+      {children}
       <div data-testid="agent-notification-live" aria-live="polite" className="sr-only">
         {announcement}
       </div>
-      {toasts.length > 0 && (
+      {desktop && toasts.length > 0 && (
         <section
           ref={stack}
           data-testid="agent-toasts"
           aria-label={`Agent notifications (${NOTIFICATIONS_SHORTCUT})`}
-          className="pointer-events-none absolute right-3 bottom-3 z-40 flex w-[min(24rem,calc(100%-1.5rem))] flex-col gap-2 md:right-4 md:bottom-4"
+          className="pointer-events-none fixed right-4 bottom-4 z-40 flex w-[min(24rem,calc(100%-1.5rem))] flex-col gap-2"
         >
           {toasts.map((toast) => (
             <AgentToast
@@ -233,16 +258,89 @@ export function AgentNotifications() {
           ))}
         </section>
       )}
-    </>
+    </NotificationsContext.Provider>
+  );
+}
+
+export function AgentNotificationBell() {
+  const notifications = useContext(NotificationsContext);
+  const [expanded, setExpanded] = useState(false);
+  if (!notifications) return null;
+  const { toasts, attentionCount, dismiss, open } = notifications;
+  const pending = toasts
+    .filter((toast) => toast.level === "needs-you")
+    .reduce((total, toast) => total + toast.subjects.length, 0);
+  const done = toasts
+    .filter((toast) => toast.level === "done")
+    .reduce((total, toast) => total + toast.subjects.length, 0);
+  const count = Math.max(attentionCount, pending) + done;
+  return (
+    <Popover open={expanded} onOpenChange={setExpanded}>
+      <PopoverTrigger asChild>
+        <Button
+          data-testid="notification-bell"
+          variant="ghost"
+          size="icon"
+          className="relative min-h-11 min-w-11 md:hidden"
+          aria-label={`Notifications: ${count} unread`}
+        >
+          <Bell className="size-4" />
+          {count > 0 && (
+            <span
+              data-testid="notification-unread"
+              className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] text-primary-foreground"
+            >
+              {count}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        aria-label="Agent notifications"
+        data-testid="notification-menu"
+        className="z-[60] w-[min(24rem,calc(100vw-2rem))] space-y-2"
+      >
+        <h2 className="text-sm font-medium">Notifications</h2>
+        {toasts.length === 0 && <p className="text-sm text-outline">No new notifications.</p>}
+        {toasts.map((toast) => (
+          <AgentToast
+            key={toast.id}
+            toast={toast}
+            autoDismiss={false}
+            onDismiss={() => dismiss(toast.id)}
+            onOpen={(target) => {
+              setExpanded(false);
+              open(toast.id, target);
+            }}
+          />
+        ))}
+        <Button
+          data-testid="notification-open-attention"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => {
+            setExpanded(false);
+            open("", { kind: "attention" });
+          }}
+        >
+          <ExternalLink className="size-4" /> Open Attention
+          {attentionCount > 0 ? ` (${attentionCount})` : ""}
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }
 
 function AgentToast({
   toast,
+  autoDismiss = true,
   onDismiss,
   onOpen,
 }: {
   toast: AgentNotification;
+  autoDismiss?: boolean;
   onDismiss: () => void;
   onOpen: (target: NotifyTarget) => void;
 }) {
@@ -251,14 +349,14 @@ function AgentToast({
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
   useEffect(() => {
-    if (toast.level !== "done" || paused) return;
+    if (!autoDismiss || toast.level !== "done" || paused) return;
     const started = Date.now();
     const timer = window.setTimeout(() => dismissRef.current(), remaining.current);
     return () => {
       window.clearTimeout(timer);
       remaining.current = Math.max(0, remaining.current - (Date.now() - started));
     };
-  }, [toast.level, paused]);
+  }, [toast.level, paused, autoDismiss]);
 
   const [subject] = toast.subjects;
   const single = toast.subjects.length === 1;
@@ -280,9 +378,11 @@ function AgentToast({
       }}
       onKeyDown={onKeyDown}
       className={cn(
-        "pointer-events-auto rounded-lg border border-control-border bg-surface-high p-3 text-on-surface shadow-lg",
-        "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-2 motion-safe:duration-150",
-        toast.level === "needs-you" && "border-l-2 border-l-warning",
+        "pointer-events-auto text-on-surface",
+        autoDismiss
+          ? "rounded-lg border border-control-border bg-surface-high p-3 shadow-lg motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-2 motion-safe:duration-150"
+          : "border-b border-border py-2",
+        autoDismiss && toast.level === "needs-you" && "border-l-2 border-l-warning",
       )}
     >
       <div className="flex items-start gap-2">
@@ -306,7 +406,7 @@ function AgentToast({
           data-toast-focus={toast.level === "done" ? "" : undefined}
           variant="ghost"
           size="icon"
-          className="-mt-1 -mr-1 size-8 shrink-0 text-outline"
+          className="-mt-1 -mr-1 size-8 min-h-11 min-w-11 md:min-h-8 md:min-w-8 shrink-0 text-outline"
           aria-label="Dismiss notification"
           onClick={onDismiss}
         >
@@ -320,8 +420,10 @@ function AgentToast({
               <button
                 type="button"
                 data-testid="agent-toast-subject"
-                className="flex w-full min-w-0 items-center gap-2 rounded px-1 py-1 text-left text-xs hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus"
-                onClick={() => onOpen(item.target)}
+                className="flex min-h-11 md:min-h-0 w-full min-w-0 items-center gap-2 rounded px-1 py-1 text-left text-xs hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus"
+                onClick={() =>
+                  onOpen(toast.level === "needs-you" ? { kind: "attention" } : item.target)
+                }
               >
                 <StateBadge state={item.state} compact testId="agent-toast-subject-state" />
                 <span className="truncate text-on-surface">{item.title}</span>
@@ -366,7 +468,7 @@ function ToastActions({
     onSuccess: onDone,
     onSettled: () => client.invalidateQueries({ queryKey: ["human-requests"] }),
   });
-  const target = single ? single.target : ({ kind: "attention" } as const);
+  const target = notificationTarget(toast);
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
       {approval && (
@@ -399,7 +501,7 @@ function ToastActions({
         onClick={() => onOpen(target)}
       >
         <ExternalLink className="size-4" />
-        {single ? "Open" : "Open Attention"}
+        {toast.level === "needs-you" ? "Open Attention" : "Open"}
       </Button>
       {respond.isError && (
         <p role="alert" className="w-full text-xs text-error">

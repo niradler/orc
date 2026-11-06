@@ -165,8 +165,9 @@ export function NotificationSettings() {
         Notifications
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
-        Get a push notification on this device when an agent needs your approval or answer, or a
-        chat reply is ready. Notifications are skipped while ORC is open and focused.
+        Agent updates appear as toasts on desktop and in the notification bell on phones. Customize
+        the Needs-you chime below. Enable push for background approvals, questions and chat replies;
+        push notifications are skipped while ORC is open and focused.
       </p>
       <Separator className="mb-4" />
       {support !== "supported" ? (

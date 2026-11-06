@@ -148,16 +148,16 @@ export function addNotifications(
 /** Needs-you toasts leave once their sessions no longer need the user or come into view. */
 export function retireNotifications(
   toasts: readonly AgentNotification[],
-  states: ReadonlyMap<string, AgentState>,
+  current: ReadonlyMap<string, NotifySubject>,
   inView: (subject: NotifySubject) => boolean,
 ): AgentNotification[] {
   let changed = false;
   const result = toasts.flatMap((toast) => {
     if (toast.level !== "needs-you") return [toast];
     const subjects = toast.subjects.flatMap((subject) => {
-      const state = states.get(subject.key);
-      if (!state || !ACTIVE.has(state) || inView(subject)) return [];
-      return [states.get(subject.key) === subject.state ? subject : { ...subject, state }];
+      const latest = current.get(subject.key);
+      if (!latest || !ACTIVE.has(latest.state) || inView(latest)) return [];
+      return [latest];
     });
     if (
       subjects.length === toast.subjects.length &&

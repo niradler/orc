@@ -20,6 +20,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
+import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAttachments } from "@/components/ChatAttachments";
 import {
@@ -371,6 +372,7 @@ export function ChatPanel({
               </button>
             </ActionHelp>
           )}
+          <AgentNotificationBell />
           <ActionHelp label="Close chat">
             <button
               type="button"
