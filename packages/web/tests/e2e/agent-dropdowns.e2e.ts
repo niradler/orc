@@ -13,10 +13,12 @@ for (const theme of ["dark", "light"] as const) {
       await page.setViewportSize({ width, height: 900 });
       await gotoView(page, "tasks");
       await page.goto("/tasks?chat=full");
-      const picker = page.getByTestId("chat-agent-button");
-      await expect(picker).toHaveText("Codex");
+      const picker = page.getByTestId("chat-agent-model-button");
+      const current = page.getByTestId("chat-agent-current");
+      await expect(current).toHaveText("Codex");
       await picker.click();
-      const list = page.getByTestId("chat-agent-select");
+      await expect(page.getByTestId("chat-agent-select")).toBeVisible();
+      const list = page.getByTestId("chat-agent-model-picker");
       await expect(list).toBeVisible();
       await expect(page.getByRole("heading", { name: "Choose agent" })).toHaveCount(0);
       await expect(page.getByTestId("chat-agent-option-cursor")).toBeVisible();
@@ -38,17 +40,17 @@ for (const theme of ["dark", "light"] as const) {
       await page.screenshot({ path: testInfo.outputPath(`agents-${theme}-${width}.png`) });
       await page.keyboard.press("Escape");
       await chooseChatAgent(page, "cursor");
-      await expect(picker).toHaveText("Cursor");
+      await expect(current).toHaveText("Cursor");
       await openChatModel(page);
       expect(
-        await page.getByTestId("chat-model-select").evaluate((element) => ({
+        await page.getByTestId("chat-agent-model-picker").evaluate((element) => ({
           background: getComputedStyle(element).backgroundColor,
           text: getComputedStyle(element).color,
         })),
       ).toEqual(colours);
       await page.keyboard.press("Escape");
       await page.reload();
-      await expect(page.getByTestId("chat-agent-button")).toHaveText("Cursor");
+      await expect(page.getByTestId("chat-agent-current")).toHaveText("Cursor");
     });
   }
 }

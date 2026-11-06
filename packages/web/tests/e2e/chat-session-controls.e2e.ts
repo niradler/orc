@@ -123,12 +123,9 @@ for (const width of [1440, 390]) {
         .locator(`[data-testid="chat-session-provider"][data-provider="${provider}"]`)
         .first();
       await expect(icon).toBeVisible();
-      const mask = await icon.evaluate((el) => getComputedStyle(el).maskImage);
-      expect(mask).toContain(`/assets/${provider}-`);
-      const assetURL = mask.replace(/^url\(["']?/, "").replace(/["']?\)$/, "");
-      const asset = await page.request.get(assetURL);
-      expect(asset.ok()).toBe(true);
-      expect(await asset.text()).toContain("<svg");
+      await expect(icon).toHaveAttribute("data-agent-mark", provider);
+      await expect(icon).toHaveAttribute("role", "img");
+      await expect(icon.locator("svg")).toHaveAttribute("stroke", "currentColor");
     }
     await expect(list.locator("details,summary,h2,h3")).toHaveCount(0);
     await captureState(page, {
@@ -146,8 +143,8 @@ for (const width of [1440, 390]) {
       .getByTestId("chat-resume-thread")
       .click();
     await waitHistoryClosed(page);
-    await expect(page.getByTestId("chat-agent-button")).toContainText("Cursor");
-    await expect(page.getByTestId("chat-model-button")).toContainText("fixture-model");
+    await expect(page.getByTestId("chat-agent-current")).toContainText("Cursor");
+    await expect(page.getByTestId("chat-model-current")).toContainText("fixture-model");
     expect(savedReads).toBe(1);
     await openChatSettings(page);
     await expect(page.getByTestId("chat-config-dialog")).toContainText("build-host");
@@ -182,8 +179,8 @@ for (const width of [1440, 390]) {
       .click();
     await waitHistoryClosed(page);
     expect(resumeCalls).toBe(1);
-    await expect(page.getByTestId("chat-model-button")).toContainText("fixture-claude");
-    await expect(page.getByTestId("chat-agent-button")).toContainText("Claude Code");
+    await expect(page.getByTestId("chat-model-current")).toContainText("fixture-claude");
+    await expect(page.getByTestId("chat-agent-current")).toContainText("Claude Code");
     await openChatSettings(page);
     await expect(page.getByTestId("chat-config-dialog")).toContainText("claude-host");
     await expect(page.getByTestId("chat-config-dialog")).toContainText(resumed.cwd);
