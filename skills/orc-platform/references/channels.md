@@ -6,10 +6,28 @@ Channels are bidirectional: an approved inbound message can invoke an agent thro
 
 1. Select the intended ORC installation and project; call context as usual.
 2. Call `channel_list` for connections, readiness, provider capabilities and native API documentation.
-3. Call `channel_targets` with a connection ID. Use a configured recipient alias such as `me`; never invent chat IDs or choose a different recipient on failure.
-4. Call `channel_send`; retain its receipt ID. Use `channel_message_get` to inspect delivery and `channel_message_update` to edit an accepted message.
+3. Call `channel_targets` with that channel id. Use a configured recipient alias such as `me`; never invent chat IDs or choose a different recipient on failure.
+4. Call `channel_send` with `channel_id` and `text`. Omit `target` to use the paired `me` recipient, or the only outbound recipient. Pass `overrides` for native Telegram `sendMessage` or Slack `chat.postMessage` fields. Retain the receipt ID. Use `channel_message_get` to inspect delivery and `channel_message_update` to edit an accepted message.
 
-All request bodies are JSON. Examples below are MCP arguments; the equivalent send API is `POST /api/channels/messages` with the same body (use `project_id` for HTTP requests).
+`channel_id` is the connection id from `channel_list` and is the same for Telegram and Slack. `connection` is an alias of `channel_id`. `message` is the longer form of `text` when you also need format or links. Pass `text` or `message`, not both.
+
+```json
+{ "channel_id": "1", "text": "dsdsd" }
+```
+
+```json
+{
+  "channel_id": "1",
+  "text": "dsdsd",
+  "overrides": {
+    "text": "<b>dsdsd</b>",
+    "parse_mode": "HTML",
+    "disable_notification": true
+  }
+}
+```
+
+`POST /api/channels/messages` uses `connection` (the same id), optional `target`, and `message`. Omitting `target` uses the same default. The same native `overrides` object works for either provider: explicit fields replace generated fields. Use `project_id` on HTTP requests. The longer example below is also a valid `channel_send` call.
 
 ```json
 {

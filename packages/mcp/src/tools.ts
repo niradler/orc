@@ -6,7 +6,7 @@ import {
   readAgent,
   updateAgent,
 } from "@orc/core/agent-service";
-import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
+import { ChannelMessageSchema, ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
@@ -114,30 +114,68 @@ const channelScopeParams = z.object({
   project: projectParam,
   project_id: z.string().min(1).max(100).optional(),
 });
-const channelTargetsParams = channelScopeParams.extend({ connection: z.string().min(1).max(100) });
-const channelSendParams = ChannelSendSchema.extend({ project: projectParam });
+const channelIdParam = z
+  .string()
+  .min(1)
+  .max(100)
+  .describe('Channel id from channel_list. Telegram and Slack use the same id, for example "1".');
+function sameChannel(
+  value: { channel_id?: string | undefined; connection?: string | undefined },
+  ctx: z.RefinementCtx,
+) {
+  if (!value.channel_id && !value.connection)
+    ctx.addIssue({ code: "custom", message: "Pass channel_id", path: ["channel_id"] });
+  if (value.channel_id && value.connection && value.channel_id !== value.connection)
+    ctx.addIssue({
+      code: "custom",
+      message: "channel_id and connection must be the same channel",
+      path: ["connection"],
+    });
+}
+const channelTargetsParams = channelScopeParams
+  .extend({
+    channel_id: channelIdParam.optional(),
+    connection: channelIdParam.optional().describe("Alias of channel_id."),
+  })
+  .superRefine(sameChannel);
+const channelSendParams = channelScopeParams
+  .extend({
+    channel_id: channelIdParam.optional(),
+    connection: channelIdParam.optional().describe("Alias of channel_id."),
+    target: z
+      .string()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe(
+        "Recipient id such as me. Omit to use the paired me recipient, or the only outbound recipient.",
+      ),
+    text: z
+      .string()
+      .min(1)
+      .max(100000)
+      .optional()
+      .describe('Message text. Example: channel_id "1", text "dsdsd".'),
+    message: ChannelMessageSchema.optional().describe("Message object. Use this or text."),
+    overrides: ChannelSendSchema.shape.overrides,
+    idempotency_key: z.string().min(1).max(200).optional(),
+    thread_id: z.string().min(1).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    sameChannel(value, ctx);
+    if (value.text && value.message)
+      ctx.addIssue({
+        code: "custom",
+        message: "Pass text or message, not both",
+        path: ["message"],
+      });
+    if (!value.text && !value.message)
+      ctx.addIssue({ code: "custom", message: "Pass text", path: ["text"] });
+  });
 const channelReadParams = channelScopeParams.extend({ id: z.string().min(1).max(100) });
 const channelEditParams = ChannelUpdateSchema.extend({
   id: z.string().min(1).max(100),
   project: projectParam,
-});
-const telegramStatusParams = z.object({
-  project: projectParam,
-  chat: z
-    .string()
-    .min(1)
-    .max(200)
-    .optional()
-    .describe("Configured recipient alias, name, or chat id. Omit to resolve Nir."),
-});
-const telegramSendParams = telegramStatusParams.extend({
-  text: z.string().min(1).max(4096).describe("Plain text to send to Nir"),
-  idempotency_key: z
-    .string()
-    .min(1)
-    .max(200)
-    .optional()
-    .describe("Reuse the same key when retrying an identical send"),
 });
 const auditParams = scopeParams.extend({
   entity_type: z.enum(["memory", "skill", "kb"]).optional(),
@@ -215,19 +253,19 @@ export const toolDefinitions = [
   {
     name: "channel_list",
     description:
-      "Discover configured communication channels, readiness, provider capabilities and native message documentation. Configure connections in Settings > Channels; credentials are never returned.",
+      "Discover configured Telegram and Slack channels. Each connection id is the channel_id for channel_send. Includes readiness, provider capabilities and native message documentation. Credentials are never returned.",
     inputSchema: channelScopeParams,
   },
   {
     name: "channel_targets",
     description:
-      "List approved channel destinations and aliases such as me, subject to project restrictions.",
+      "List approved destinations for a Telegram or Slack channel_id, including aliases such as me. Subject to project restrictions.",
     inputSchema: channelTargetsParams,
   },
   {
     name: "channel_send",
     description:
-      "Send a message through a configured channel. Common Markdown renders automatically. Optional overrides are the provider's native JSON payload: all message options pass through unchanged and explicit fields replace generated fields. ORC owns credentials and destination. Return a delivery receipt; accepted is provider acceptance, not human read. Use an idempotency key for retries. Read orc-platform references/channels.md for examples.",
+      'Send a message through a configured Telegram or Slack channel. Call with channel_id and text, for example channel_id "1" and text "dsdsd". Omit target to use the paired me recipient, or the only outbound recipient. overrides is that provider\'s native JSON (Telegram sendMessage or Slack chat.postMessage): every message field passes through and explicit fields replace generated fields. ORC owns credentials and destination. accepted means the provider accepted the message. Use an idempotency key for retries. Read orc-platform references/channels.md.',
     inputSchema: channelSendParams,
   },
   {
@@ -241,18 +279,6 @@ export const toolDefinitions = [
     description:
       "Edit an accepted channel message using Markdown or native overrides. Keep the same number of provider message chunks.",
     inputSchema: channelEditParams,
-  },
-  {
-    name: "telegram_status",
-    description:
-      "See whether Telegram can message Nir, which configured recipient would be used, and what setup is missing. Does not return the bot token. Call this before telegram_send.",
-    inputSchema: telegramStatusParams,
-  },
-  {
-    name: "telegram_send",
-    description:
-      "Send a plain-text message to Nir through the configured Telegram channel (the paired me recipient, or gateway.telegram.default_chat_id when no channel is enabled). Pass chat only to pick another recipient that is already configured. Pass project when that recipient is limited to a project. Accepted means Telegram accepted the message, not that Nir has read it. Do not invent a chat id or paste the bot token. Read orc-platform references/channels.md for setup.",
-    inputSchema: telegramSendParams,
   },
   {
     name: "human_request",
@@ -1219,43 +1245,20 @@ function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): strin
   return resolveProjectId(input.project)?.id ?? null;
 }
 
+function channelIdFrom(input: {
+  channel_id?: string | undefined;
+  connection?: string | undefined;
+}) {
+  const id = input.channel_id ?? input.connection;
+  if (!id) throw new ValidationError("Pass channel_id");
+  return id;
+}
+
 export async function executeTool(
   name: ToolName,
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
-  if (name === "telegram_status" || name === "telegram_send") {
-    const parsed =
-      name === "telegram_status"
-        ? telegramStatusParams.parse(args)
-        : telegramSendParams.parse(args);
-    const scope = parsed.project
-      ? resolveProjectId(parsed.project)?.id
-      : (options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
-    if (
-      options.projectScopes &&
-      (!scope || !options.projectScopes.some((item) => item.id === scope))
-    )
-      throw new ValidationError("Telegram access is outside the selected MCP projects");
-    const query = new URLSearchParams();
-    if (scope) query.set("project_id", scope);
-    if (parsed.chat) query.set("chat", parsed.chat);
-    if (name === "telegram_status") {
-      const suffix = query.size ? `?${query}` : "";
-      return JSON.stringify(await orcApi("GET", `/telegram/status${suffix}`));
-    }
-    const { project: _project, chat, text, idempotency_key } = telegramSendParams.parse(args);
-    return JSON.stringify(
-      await orcApi("POST", "/telegram/send", {
-        body: {
-          text,
-          ...(chat ? { chat } : {}),
-          ...(scope ? { project_id: scope } : {}),
-          ...(idempotency_key ? { idempotency_key } : {}),
-        },
-      }),
-    );
-  }
   if (name.startsWith("channel_")) {
     const schema =
       name === "channel_list"
@@ -1284,13 +1287,29 @@ export async function executeTool(
     if (name === "channel_targets") {
       const input = channelTargetsParams.parse(args);
       return JSON.stringify(
-        await orcApi("GET", `/channels/${encodeURIComponent(input.connection)}/targets${query}`),
+        await orcApi(
+          "GET",
+          `/channels/${encodeURIComponent(channelIdFrom(input))}/targets${query}`,
+        ),
       );
     }
     if (name === "channel_send") {
-      const { project: _project, ...input } = channelSendParams.parse(args);
+      const input = channelSendParams.parse(args);
+      const channelId = channelIdFrom(input);
+      const message = input.message ?? (input.text ? { text: input.text } : undefined);
+      if (!message) throw new ValidationError("Pass text");
       return JSON.stringify(
-        await orcApi("POST", "/channels/messages", { body: { ...input, project_id: scope } }),
+        await orcApi("POST", "/channels/messages", {
+          body: {
+            connection: channelId,
+            ...(input.target ? { target: input.target } : {}),
+            message,
+            ...(input.overrides ? { overrides: input.overrides } : {}),
+            ...(input.idempotency_key ? { idempotency_key: input.idempotency_key } : {}),
+            ...(input.thread_id ? { thread_id: input.thread_id } : {}),
+            project_id: scope,
+          },
+        }),
       );
     }
     const input =

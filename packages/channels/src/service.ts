@@ -492,6 +492,25 @@ export class ChannelService {
       }
     }
   }
+  private defaultTarget(c: ChannelConnection, project?: string | null) {
+    const outbound = c.targets.filter(
+      (item) =>
+        item.outbound &&
+        (project === undefined ||
+          !item.project_ids.length ||
+          (!!project && item.project_ids.includes(project))),
+    );
+    const paired = outbound.find((item) => item.id === "me");
+    if (paired) return paired.id;
+    if (outbound.length === 1) return outbound[0]?.id ?? "";
+    if (!outbound.length)
+      throw new ValidationError(
+        `Channel ${c.id} has no outbound recipient in this project. Add one in Settings → Channels, or pass target.`,
+      );
+    throw new ValidationError(
+      `Channel ${c.id} has more than one outbound recipient (${outbound.map((item) => item.id).join(", ")}). Pass target.`,
+    );
+  }
   private authorizedTarget(c: ChannelConnection, id: string, project?: string | null) {
     const target = c.targets.find((t) => t.id === id);
     if (
@@ -546,7 +565,11 @@ export class ChannelService {
     if (this.stopped) throw new ConflictError("Channel runtime is stopping");
     const input = ChannelSendSchema.parse(raw);
     const c = this.connection(input.connection);
-    const target = this.authorizedTarget(c, input.target, input.project_id);
+    const target = this.authorizedTarget(
+      c,
+      input.target ?? this.defaultTarget(c, input.project_id),
+      input.project_id,
+    );
     if (!c.enabled || !target.outbound) throw new ForbiddenError("Outbound messaging is disabled");
     const { payloads, warnings } = this.payloads(c, target, input);
     const { receipt, fresh } = this.store.reserve(
@@ -807,7 +830,4 @@ let service: ChannelService | undefined;
 export function getChannelService() {
   service ??= new ChannelService(new ChannelStore(getSqlite()));
   return service;
-}
-export function resetChannelService(): void {
-  service = undefined;
 }

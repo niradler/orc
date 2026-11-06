@@ -44,7 +44,6 @@ import { systemRouter } from "./routes/system.js";
 import { tagsRouter } from "./routes/tags.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
-import { telegramRouter } from "./routes/telegram.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
 import { webhookPublicRouter, webhooksRouter } from "./routes/webhooks.js";
@@ -155,7 +154,6 @@ export function createApp() {
   app.route("/api", sessionHandoffsRouter);
   app.route("/api", jobsRouter);
   app.route("/api", gatewayRouter);
-  app.route("/api", telegramRouter);
   app.route("/api", tagsRouter);
   app.route("/api", terminalsRouter);
   app.route("/api", gitRouter);

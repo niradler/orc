@@ -252,7 +252,7 @@ See [Human requests](./human-requests.md) and [Command requests](./command-reque
 | --- | --- |
 | `channel_list` | Configured channels, readiness and capabilities |
 | `channel_targets` | Approved destinations and aliases such as `me` |
-| `channel_send` | Send a message through a channel |
+| `channel_send` | Send text through a Telegram or Slack channel by `channel_id`, with optional `target` and native `overrides` |
 | `channel_message_get` | Inspect a delivery receipt |
 | `channel_message_update` | Edit an accepted message |
 

@@ -280,7 +280,11 @@ export const ChannelMessageSchema = z
 export const ChannelSendSchema = z
   .object({
     connection: key,
-    target: key,
+    target: key
+      .optional()
+      .describe(
+        "Recipient id such as me. Omit to use the paired me recipient, or the only outbound recipient.",
+      ),
     message: ChannelMessageSchema,
     overrides: native
       .optional()
