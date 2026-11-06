@@ -13,12 +13,15 @@ export type SessionRecord = {
   lastActivityAt: Date;
   transcriptPath?: string | null;
   tokensUsed?: number | null;
+  tokensVersion?: number;
   tokens?: () => Promise<number | null>;
 };
 
 export type KnownSession = {
   lastActivityMs: number;
   tokensUsed: number | null;
+  tokensVersion?: number;
+  session?: SessionRecord;
 };
 
 export type SessionAdapter = {

@@ -8,7 +8,7 @@
   "author": "Nir Adler",
   "main": "dist/main.js",
   "scripts": {
-    "bundle": "bun build src/main.ts --outdir dist --target node --format esm --external electron",
+    "bundle": "bun build src/main.ts --outdir dist --target node --format esm --external electron && bun build src/preload.ts --outfile dist/preload.cjs --target node --format cjs --external electron",
     "bin": "cd ../cli && bun run build.ts",
     "dev": "bun run bundle && electron .",
     "build": "bun run bundle",

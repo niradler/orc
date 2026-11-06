@@ -25,18 +25,28 @@ export function createBackend(name: AgentBackendName): AgentBackend {
     const backend = factory();
     return {
       ...backend,
-      startSession: async (opts) =>
-        withHumanRequests(
+      startSession: async (opts) => {
+        if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
+          throw new Error(
+            `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
+          );
+        return withHumanRequests(
           await backend.startSession(await sessionRules(String(name), opts)),
           String(name),
           opts,
-        ),
-      resumeSession: async (id, opts) =>
-        withHumanRequests(
+        );
+      },
+      resumeSession: async (id, opts) => {
+        if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
+          throw new Error(
+            `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
+          );
+        return withHumanRequests(
           await backend.resumeSession(id, await sessionRules(String(name), opts)),
           String(name),
           opts,
-        ),
+        );
+      },
     };
   }
   throw new Error(

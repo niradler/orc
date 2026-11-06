@@ -39,6 +39,27 @@ curl -s -X POST http://127.0.0.1:7700/api/auth/token \
 
 Unauthenticated exceptions: `GET /api/health`, the sign-in routes, `POST /webhooks/{token}` (signed deliveries), and signed short-lived capability URLs (skill downloads, scratchpad content, session uploads).
 
+## Usage
+
+`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence from a
+stored native session transcript: `latest` (including optional recorded time and
+a conservative `may_be_cold_after` hint) and `totals`. Missing or unsupported
+evidence is `null`. No prompt text, credentials or transcript paths are returned.
+The route uses normal API authentication and the session's stored execution host;
+clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
+
+`GET /api/usage/history?days=30` returns imported session lifetime token totals,
+grouped by agent and UTC session start date. `days` accepts `7`, `30` (default),
+`90`, or `0` for all time. Totals include session count, recorded tokens, unknown
+counts and estimated counts; these are session cohorts, not daily billed usage.
+
+`GET /api/usage/quotas` returns local Codex and Claude quota windows with percentage
+used, reset timestamps, availability and check time. Requests share a 60-second
+cache. Neither route returns credentials. Both use normal API authentication.
+See [Usage in Settings](./configuration.md#usage-in-settings) for account support
+and history limits. The SDK exposes `orc.usage.history("30")` and
+`orc.usage.quotas()`.
+
 ## Pagination
 
 `GET /api/projects`, `GET /api/jobs` and `GET /api/skills` take `limit` and `offset` and return `next_offset`; follow it until it is `null`. Projects and jobs default to 50 per page (max 100); skills default to 30 (max 500).
@@ -223,3 +244,26 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |
 | `GET` | `/audit` | Knowledge audit log |
 | `GET` `POST` | `/integrations/connections` | spec-cli connections |
+
+
+### Agent capabilities and steering
+
+`GET /backends` includes a versioned `capabilities` object for each integration.
+`GET /chat/capabilities?agent=<id>&threadId=<optional-thread-uuid>` returns
+`{ backend, capabilities }` without starting a provider. Capability flags describe
+resume, model selection, image input, tool output, approvals, questions, live
+permissions, native interruption, steering, MCP, fork and rollback. `source` is
+`adapter`, `negotiated` or `unknown`; unsupported and unknown operations are false.
+Chat SSE emits `capabilities` events and persists negotiated values with the thread.
+
+`POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
+returns the updated conversation after the active native turn accepts it. It
+requires a live steering-capable session; stale and unsupported runs return `409`.
+It keeps the original native thread and turn. Empty input is invalid. These routes
+use the same authentication as the rest of the API. The SDK exposes
+`client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.
+Reuse the same request ID and input when retrying. A duplicate ID with different
+content returns `409`; a live run accepts at most 32 distinct steering requests.
+The intent is saved before native delivery. An initial save failure sends nothing.
+Unconfirmed delivery is retained in history and cannot be resent with the same ID;
+a delivery-status save failure reports a warning while keeping the saved intent.

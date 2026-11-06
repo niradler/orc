@@ -10,8 +10,13 @@ import {
   registerBackend,
   type SessionOpts,
 } from "@orc/agent-runtime";
-import { type ChatEvent, ChatHistoryPageSchema, type ChatThread } from "@orc/core/chat";
-import { resetConfig, updateGlobalConfig } from "@orc/core/config";
+import {
+  type ChatEvent,
+  ChatHistoryPageSchema,
+  type ChatThread,
+  ChatThreadSchema,
+} from "@orc/core/chat";
+import { loadConfig, resetConfig, updateGlobalConfig } from "@orc/core/config";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -22,6 +27,7 @@ import { setupTestApp, teardownTestApp } from "./helpers";
 
 let app: ReturnType<typeof createApp>;
 let original: AgentBackend;
+const CODEX_CAPABILITIES = createBackend("codex-cli").capabilities;
 const calls: { id: string | null; opts: SessionOpts; prompt?: string }[] = [];
 const home = mkdtempSync(join(tmpdir(), "orc-chat-runtime-"));
 const oldHome = process.env.HOME;
@@ -32,6 +38,9 @@ let waitPermission = false;
 let waitQuestion = false;
 let secretQuestion = false;
 let manyOptions = false;
+const nativeSteers: string[] = [];
+let steeringFailure = false;
+let steeringDelay = 0;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
 let failedTurn = false;
@@ -47,6 +56,13 @@ function session(call: (typeof calls)[number]): AgentSession {
   });
   return {
     id: "fixture",
+    capabilities: CODEX_CAPABILITIES,
+    steer: async (prompt) => {
+      nativeSteers.push(prompt);
+      if (steeringDelay) await Bun.sleep(steeringDelay);
+      if (steeringFailure) throw new Error("fixture uncertain delivery");
+      call.prompt = prompt;
+    },
     getRuntimeSessionId: () => (waitPermission ? "early-native-fixture" : undefined),
     send: async (prompt) => {
       call.prompt = prompt;
@@ -164,6 +180,7 @@ beforeAll(() => {
   original = createBackend("codex-cli");
   registerBackend("codex-cli", () => ({
     name: "codex-cli",
+    capabilities: CODEX_CAPABILITIES,
     preflight: async () => ({ ok: true }),
     stop: async () => {},
     startSession: async (opts) => {
@@ -365,6 +382,7 @@ describe("native chat runtime", () => {
     expect(result.response.status).toBe(200);
     expect(result.events.map((event) => event.type)).toEqual([
       "thread",
+      "capabilities",
       "thinking",
       "tool_use",
       "tool_result",
@@ -1267,4 +1285,250 @@ describe("native chat runtime", () => {
       });
     }
   });
+});
+
+test("capability discovery requires auth and preserves provider/session isolation", async () => {
+  expect((await request("/chat/capabilities?agent=codex", undefined, false)).status).toBe(401);
+  const capabilities = await (await request("/chat/capabilities?agent=codex")).json();
+  expect(capabilities).toMatchObject({
+    backend: "codex-cli",
+    capabilities: {
+      version: 1,
+      source: "adapter",
+      steering: true,
+      approvals: true,
+      fork: false,
+      rollback: false,
+    },
+  });
+  const acpx = await (await request("/chat/capabilities?agent=gemini")).json();
+  expect(acpx).toMatchObject({
+    capabilities: { approvals: false, questions: false, livePermissions: false, steering: false },
+  });
+  expect((await request("/chat/capabilities?agent=--invalid")).status).toBe(400);
+});
+
+test("steering enters the active native session and persists the message without starting another turn", async () => {
+  waitPermission = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "working" }],
+  });
+  if (!response.body) throw new Error("Missing response stream");
+  const reader = response.body.getReader();
+  let text = "";
+  const decoder = new TextDecoder();
+  while (!text.includes("permission_request")) {
+    const part = await reader.read();
+    if (part.done) throw new Error("stream ended");
+    text += decoder.decode(part.value);
+  }
+  const events = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)));
+  const started = events.find((event) => event.type === "thread");
+  const before = calls.length;
+  const steeringId = crypto.randomUUID();
+  try {
+    expect(
+      (
+        await request(
+          `/chat/runs/${started.runId}/steer`,
+          { input: "focus on tests", requestId: steeringId },
+          false,
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (await request(`/chat/runs/${started.runId}/steer`, { input: " ", requestId: steeringId }))
+        .status,
+    ).toBe(400);
+    const originalPrompt = calls.at(-1)?.prompt;
+    getSqlite().exec(
+      "CREATE TEMP TRIGGER fail_steering_save BEFORE UPDATE ON chat_threads WHEN instr(NEW.data, 'blocked steering') > 0 BEGIN SELECT RAISE(FAIL, 'fixture steering save failure'); END",
+    );
+    try {
+      expect(
+        (
+          await request(`/chat/runs/${started.runId}/steer`, {
+            input: "blocked steering",
+            requestId: steeringId,
+          })
+        ).status,
+      ).toBe(500);
+      expect(calls.at(-1)?.prompt).toBe(originalPrompt);
+    } finally {
+      getSqlite().exec("DROP TRIGGER IF EXISTS fail_steering_save");
+    }
+    const steered = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "focus on tests",
+      requestId: steeringId,
+    });
+    expect(steered.status).toBe(200);
+    expect(calls.length).toBe(before);
+    expect(calls.at(-1)?.prompt).toBe("focus on tests");
+    const steeringCount = nativeSteers.length;
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "focus on tests",
+          requestId: steeringId,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "different",
+          requestId: steeringId,
+        })
+      ).status,
+    ).toBe(409);
+    expect(nativeSteers.length).toBe(steeringCount);
+    const parallelId = crypto.randomUUID();
+    steeringDelay = 20;
+    const parallel = await Promise.all(
+      [1, 2].map(() =>
+        request(`/chat/runs/${started.runId}/steer`, {
+          input: "parallel steering",
+          requestId: parallelId,
+        }),
+      ),
+    );
+    steeringDelay = 0;
+    expect(parallel.map((response) => response.status)).toEqual([200, 200]);
+    expect(nativeSteers.filter((input) => input === "parallel steering")).toHaveLength(1);
+    const durableId = crypto.randomUUID();
+    getSqlite().exec(
+      "CREATE TEMP TRIGGER fail_delivery_status BEFORE UPDATE ON chat_threads WHEN instr(NEW.data, 'durable steering') > 0 AND instr(NEW.data, 'Sending this message') = 0 BEGIN SELECT RAISE(FAIL, 'fixture delivery status failure'); END",
+    );
+    try {
+      expect(
+        (
+          await request(`/chat/runs/${started.runId}/steer`, {
+            input: "durable steering",
+            requestId: durableId,
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await request(`/chat/runs/${started.runId}/steer`, {
+            input: "durable steering",
+            requestId: durableId,
+          })
+        ).status,
+      ).toBe(200);
+      expect(nativeSteers.filter((input) => input === "durable steering")).toHaveLength(1);
+      const durable = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${started.thread.id}`)).json(),
+      );
+      expect(durable.messages.filter((message) => message.id === durableId)).toHaveLength(1);
+    } finally {
+      getSqlite().exec("DROP TRIGGER IF EXISTS fail_delivery_status");
+    }
+    const uncertainId = crypto.randomUUID();
+    steeringFailure = true;
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "uncertain steering",
+          requestId: uncertainId,
+        })
+      ).status,
+    ).toBe(409);
+    steeringFailure = false;
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "uncertain steering",
+          requestId: uncertainId,
+        })
+      ).status,
+    ).toBe(409);
+    expect(nativeSteers.filter((input) => input === "uncertain steering")).toHaveLength(1);
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(saved.messages.some((m: { content: string }) => m.content === "focus on tests")).toBe(
+      true,
+    );
+    await request(`/chat/runs/${started.runId}/permission`, {
+      requestId: "permission-1",
+      decision: "approved",
+    });
+    while (!(await reader.read()).done) {}
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "too late",
+          requestId: steeringId,
+        })
+      ).status,
+    ).toBe(409);
+  } finally {
+    waitPermission = false;
+    steeringFailure = false;
+    steeringDelay = 0;
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+test("configured direct ACP runs, negotiates and resumes through the actual chat API", async () => {
+  const previous = loadConfig();
+  const script = join(home, "api-acp-peer.ts");
+  writeFileSync(
+    script,
+    `import {createInterface} from 'node:readline';
+const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
+for await(const line of createInterface({input:process.stdin})) { const m=JSON.parse(line);
+ if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true}}});
+ if(m.method==='session/new')emit({id:m.id,result:{sessionId:'api-acp-session'}});
+ if(m.method==='session/load')emit({id:m.id,result:{}});
+ if(m.method==='session/prompt'){emit({method:'session/update',params:{sessionId:'api-acp-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'ACP through API'}}}});emit({id:m.id,result:{stopReason:'end_turn'}});}
+}`,
+  );
+  updateGlobalConfig((raw) => {
+    raw.agent_loop = {
+      ...previous.agent_loop,
+      acp_commands: { "local-acp": { command: process.execPath, args: [script] } },
+    };
+    raw.preferences = {
+      ...previous.preferences,
+      chat: { ...previous.preferences.chat, model: "", mcp: "native" },
+    };
+  });
+  try {
+    const result = await turn({
+      agent: "local-acp",
+      model: "",
+      messages: [{ role: "user", content: "Hello ACP" }],
+    });
+    expect(result.response.status).toBe(200);
+    expect(result.events).toContainEqual({ type: "text", text: "ACP through API" });
+    const thread = result.events.find((event) => event.type === "thread");
+    if (thread?.type !== "thread") throw new Error("No thread");
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${thread.thread.id}`)).json(),
+    );
+    expect(saved).toMatchObject({
+      backend: "acp",
+      runtimeId: "api-acp-session",
+      capabilities: { source: "negotiated", resume: true, approvals: true, mcp: false },
+    });
+    const continued = await turn({
+      threadId: saved.id,
+      messages: [{ role: "user", content: "Continue" }],
+    });
+    expect(continued.events).toContainEqual({ type: "text", text: "ACP through API" });
+    expect(continued.events.filter((event) => event.type === "error")).toEqual([]);
+  } finally {
+    updateGlobalConfig((raw) => {
+      raw.agent_loop = previous.agent_loop;
+      raw.preferences = previous.preferences;
+    });
+  }
 });

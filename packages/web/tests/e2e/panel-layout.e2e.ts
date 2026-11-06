@@ -30,6 +30,15 @@ test("agent and package panels resize, remember their width, and fit a phone", a
   await expect
     .poll(async () => (await panel.boundingBox())?.width)
     .toBeGreaterThan((before?.width ?? 0) + 250);
+  let settled = 0;
+  await expect
+    .poll(async () => {
+      const width = (await panel.boundingBox())?.width ?? 0;
+      const same = width === settled;
+      settled = width;
+      return same;
+    })
+    .toBe(true);
   const expanded = await panel.boundingBox();
   await page.screenshot({ path: "../../output/playwright/agent-detail-desktop.png" });
   await page.getByTestId("sheet-close").click();

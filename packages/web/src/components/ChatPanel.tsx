@@ -20,6 +20,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
+import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAttachments } from "@/components/ChatAttachments";
 import {
@@ -119,6 +120,7 @@ export function ChatPanel({
     removeQueued,
     forceQueued,
     send,
+    steer,
     cancel,
     projectId,
   } = useChat();
@@ -370,6 +372,7 @@ export function ChatPanel({
               </button>
             </ActionHelp>
           )}
+          <AgentNotificationBell />
           <ActionHelp label="Close chat">
             <button
               type="button"
@@ -739,6 +742,23 @@ export function ChatPanel({
                 <ChatWorkspaceControls />
               </div>
               <div className="flex items-center gap-1">
+                {streaming && thread?.capabilities?.steering && (
+                  <ActionHelp
+                    label="Send now"
+                    description="Send this message into the active response; ordinary Send queues it for later"
+                  >
+                    <button
+                      type="button"
+                      data-testid="chat-steer-button"
+                      onClick={() => void steer()}
+                      disabled={!draft.trim() || !!files.length || responding}
+                      aria-label="Send now"
+                      className={iconButton}
+                    >
+                      <ArrowUp size={17} className="rotate-45" />
+                    </button>
+                  </ActionHelp>
+                )}
                 {streaming && (
                   <ActionHelp label="Stop response">
                     <button

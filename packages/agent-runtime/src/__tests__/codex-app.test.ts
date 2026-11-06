@@ -1,12 +1,23 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexAppSession } from "../codex-app";
 import type { AgentEvent, PermissionResult, SessionOpts } from "../types";
 
+const temporaryDirectories: string[] = [];
+function temporaryDirectory(prefix: string): string {
+  const directory = mkdtempSync(prefix);
+  temporaryDirectories.push(directory);
+  return directory;
+}
+afterAll(() => {
+  for (const directory of temporaryDirectories)
+    rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+});
+
 function fixture(opts: Partial<SessionOpts> = {}) {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-app-protocol-"));
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-app-protocol-"));
   const script = join(cwd, "app.ts");
   writeFileSync(
     script,
@@ -42,7 +53,7 @@ for await (const line of createInterface({input:process.stdin})) {
 }
 
 test("should retain exact file changes and deliver a typed MCP form on the same native thread", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-file-form-"));
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-file-form-"));
   const script = join(cwd, "native.ts");
   writeFileSync(
     script,
@@ -94,7 +105,7 @@ for await (const line of createInterface({input:process.stdin})) {
 
 // Shape captured from codex-cli 0.160: tool approval arrives as an empty MCP form.
 function mcpApprovalFixture(permissionMode: SessionOpts["permissionMode"]) {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-mcp-approval-"));
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-mcp-approval-"));
   const script = join(cwd, "native.ts");
   writeFileSync(
     script,
@@ -262,7 +273,7 @@ test("should restore an existing native thread without creating a replacement", 
 
 for (const decision of ["approved", "denied"] as const) {
   test(`should ${decision === "approved" ? "grant only requested" : "deny"} native permission profiles`, async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "orc-permission-profile-"));
+    const cwd = temporaryDirectory(join(tmpdir(), "orc-permission-profile-"));
     const script = join(cwd, "profile.ts");
     writeFileSync(
       script,
@@ -306,7 +317,7 @@ for await (const line of createInterface({input:process.stdin})) {
 }
 
 test("should start each agent message in a turn as its own paragraph", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-codex-paragraphs-"));
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-codex-paragraphs-"));
   const script = join(cwd, "paragraphs.ts");
   writeFileSync(
     script,
@@ -347,7 +358,7 @@ for await (const line of createInterface({input:process.stdin})) {
 
 for (const completeBeforeAnswer of [false, true]) {
   test(`should answer asynchronous questions ${completeBeforeAnswer ? "after turn completion" : "during the active turn"}`, async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "orc-async-question-"));
+    const cwd = temporaryDirectory(join(tmpdir(), "orc-async-question-"));
     const script = join(cwd, "async.ts");
     writeFileSync(
       script,
@@ -366,7 +377,7 @@ for await (const line of createInterface({input:process.stdin})) {
  } else if(m.method==='turn/steer' || m.method==='turn/start') {
   emit({id:m.id,result:{}});
   emit({method:'item/agentMessage/delta',params:{threadId:'async-native',itemId:'answer',delta:JSON.stringify(m)}});
-  emit({method:'turn/completed',params:{threadId:'async-native',turn:{id:'turn-2',status:'completed'}}});
+  emit({method:'turn/completed',params:{threadId:'async-native',turn:{id:m.method==='turn/steer'?'turn-1':'turn-2',status:'completed'}}});
  }
 }`,
     );
@@ -399,7 +410,7 @@ for await (const line of createInterface({input:process.stdin})) {
 }
 
 test("should approve pending and later prompts that a loosened permission mode allows", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-live-permission-"));
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-live-permission-"));
   const script = join(cwd, "live.ts");
   writeFileSync(
     script,
