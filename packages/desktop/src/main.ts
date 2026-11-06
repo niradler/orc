@@ -6,7 +6,9 @@ import {
   app,
   BrowserWindow,
   dialog,
+  ipcMain,
   Menu,
+  Notification,
   nativeImage,
   screen,
   session,
@@ -14,6 +16,12 @@ import {
   Tray,
 } from "electron";
 import { type Daemon, ensureDaemon } from "./daemon.js";
+import {
+  NOTIFY_CHANNEL,
+  OPEN_CHANNEL,
+  parseNotifyRequest,
+  shouldNotifyNatively,
+} from "./notify.js";
 import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
 
 type OrcConfig = { api?: { port?: number; secret?: string } };
@@ -136,6 +144,7 @@ function openWindow(url: string): void {
     show: false,
     ...(app.isPackaged ? {} : { icon: iconPath }),
     webPreferences: {
+      preload: resolve(import.meta.dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -144,6 +153,7 @@ function openWindow(url: string): void {
   });
   if (state.maximized) win.maximize();
   win.on("page-title-updated", (_event, title) => showNeedsYou(title));
+  win.on("focus", closeNotifications);
   win.once("ready-to-show", () => win?.show());
   win.on("session-end", () => {
     quitting = true;
@@ -257,6 +267,35 @@ function showNeedsYou(title: string): void {
   tray?.setToolTip(count ? `orc · ${count} need${count === 1 ? "s" : ""} you` : "orc");
 }
 
+const notifications = new Set<Notification>();
+
+function closeNotifications(): void {
+  for (const notification of notifications) notification.close();
+  notifications.clear();
+}
+
+function listenForNotifications(): void {
+  ipcMain.on(NOTIFY_CHANNEL, (event, payload: unknown) => {
+    if (!win || event.sender.id !== win.webContents.id) return;
+    const request = parseNotifyRequest(payload);
+    if (!request || !Notification.isSupported() || !shouldNotifyNatively(win)) return;
+    const notification = new Notification({
+      title: request.title,
+      body: request.body,
+      silent: request.level === "done",
+      ...(app.isPackaged ? {} : { icon: iconPath }),
+    });
+    notifications.add(notification);
+    notification.on("close", () => notifications.delete(notification));
+    notification.on("click", () => {
+      notifications.delete(notification);
+      showWindow();
+      win?.webContents.send(OPEN_CHANNEL, request.path);
+    });
+    notification.show();
+  });
+}
+
 function createTray(): void {
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 }));
   tray.setToolTip("orc");
@@ -314,6 +353,7 @@ function hardenSession(): void {
 async function start(): Promise<void> {
   try {
     hardenSession();
+    listenForNotifications();
     const up = await bringUp();
     firstRunSetup();
     createTray();
@@ -328,6 +368,7 @@ async function start(): Promise<void> {
 
 app.setName("orc");
 app.enableSandbox();
+if (process.platform === "win32") app.setAppUserModelId("dev.orc.desktop");
 app.setAboutPanelOptions({
   applicationName: "orc",
   applicationVersion: app.getVersion(),

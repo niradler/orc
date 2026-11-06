@@ -65,9 +65,10 @@ A backend is the coding agent that runs a task node, job or chat session.
 | `claude-cli` | The `claude` binary |
 | `codex-cli` | The `codex` binary |
 | `acpx` | ACP CLI, which drives 14+ agents (Gemini, Copilot, Cursor, Kiro, ...) |
+| `acp` | An explicitly configured direct ACP command with negotiated capabilities |
 | `agentapi` | A coder/agentapi server wrapping any local agent |
 | `a2a` | A remote A2A endpoint |
-| any other name | Passed to acpx as the agent name |
+| any other name | A configured `agent_loop.acp_commands` entry, otherwise passed to acpx as the agent name |
 
 `orc doctor` reports which backends are usable on the machine. `GET /api/backends` returns the same data.
 

@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useEnabledAgents } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -727,6 +728,7 @@ export function ChatAgentPicker() {
 export function ChatModelPicker() {
   const { config, setConfig, streaming, thread, ready } = useChat();
   const { data: ssh } = useSsh();
+  const capabilities = useAgentCapabilities(config.agent, thread);
   const [custom, setCustom] = useState(false);
   const [model, setModel] = useState("");
   const [error, setError] = useState("");
@@ -755,7 +757,7 @@ export function ChatModelPicker() {
     >
       <Select
         value={config.model || DEFAULT_MODEL}
-        disabled={streaming || !ready}
+        disabled={streaming || !ready || capabilities?.modelSelection === false}
         onValueChange={(value) => {
           setError("");
           if (value === CUSTOM_MODEL) {
@@ -862,6 +864,7 @@ export function ChatConversationInfo({
   onOpenChange: (open: boolean) => void;
 }) {
   const { config, changePermissions, thread } = useChat();
+  const capabilities = useAgentCapabilities(config.agent, thread);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="chat-config-dialog" className="w-[calc(100%-1rem)]">
@@ -895,6 +898,19 @@ export function ChatConversationInfo({
             </dd>
           </div>
         </dl>
+        {capabilities && (
+          <p data-testid="chat-capabilities" className="text-xs text-muted-foreground">
+            {[
+              capabilities.resume && "Resume",
+              capabilities.approvals && "Approvals in chat",
+              capabilities.questions && "Questions",
+              capabilities.steering && "Send now",
+              capabilities.interrupt && "Native stop",
+            ]
+              .filter(Boolean)
+              .join(" · ") || "Basic text conversation"}
+          </p>
+        )}
         <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
         <details className="text-sm">
           <summary className="min-h-11 cursor-pointer py-3">Session instructions</summary>

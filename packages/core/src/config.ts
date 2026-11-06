@@ -230,6 +230,54 @@ export const OrcConfigSchema = z.object({
       poll_interval_minutes: z.number().int().min(1).default(5),
       max_workers: z.number().int().min(1).default(1),
       default_backend: z.string().default("claude"),
+      acp_commands: z
+        .record(
+          z
+            .string()
+            .regex(/^[a-z][a-z0-9-]{0,31}$/)
+            .refine(
+              (id) =>
+                ![
+                  "claude",
+                  "codex",
+                  "acp",
+                  "acpx",
+                  "claude-cli",
+                  "codex-cli",
+                  "cursor",
+                  "agentapi",
+                  "a2a",
+                ].includes(id),
+              "Use a distinct ACP agent ID, such as codex-acp",
+            ),
+          z
+            .object({
+              command: z
+                .string()
+                .min(1)
+                .max(4096)
+                .refine(
+                  (value) =>
+                    !Array.from(value).some((char) => [0, 10, 13].includes(char.charCodeAt(0))),
+                  "Command cannot contain control characters",
+                ),
+              args: z
+                .array(
+                  z
+                    .string()
+                    .max(4096)
+                    .refine(
+                      (value) =>
+                        !Array.from(value).some((char) => [0, 10, 13].includes(char.charCodeAt(0))),
+                      "Arguments cannot contain control characters",
+                    ),
+                )
+                .max(64)
+                .default([]),
+            })
+            .strict(),
+        )
+        .optional(),
       session_idle_timeout_minutes: z.number().int().min(1).default(20),
       session_max_lifetime_minutes: z.number().int().min(1).default(120),
       worker_auto_approve: z.boolean().default(true),

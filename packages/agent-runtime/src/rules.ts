@@ -17,7 +17,14 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
     import("@orc/db/rules"),
   ]);
   const store = new RuleStore(getSqlite());
-  const agent = backend === "claude-cli" ? "claude" : backend === "codex-cli" ? "codex" : backend;
+  const agent =
+    backend === "acp"
+      ? (opts.acpAgent ?? opts.acpxAgent ?? backend)
+      : backend === "claude-cli"
+        ? "claude"
+        : backend === "codex-cli"
+          ? "codex"
+          : backend;
   const policies = store
     .active(opts.cwd)
     .filter((policy) =>

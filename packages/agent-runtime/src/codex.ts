@@ -10,6 +10,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { CODEX_CAPABILITIES, CODEX_EXEC_CAPABILITIES } from "./capabilities.js";
 import { CodexAppSession } from "./codex-app.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readProcessOutput, writeToStdin } from "./io.js";
@@ -108,6 +109,7 @@ export async function hasConfiguredOrcMcp(
 type StreamState = { hasReceivedResult: boolean };
 
 export class CodexSession implements AgentSession {
+  readonly capabilities = CODEX_EXEC_CAPABILITIES;
   readonly id = ulid();
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
@@ -336,6 +338,7 @@ export class CodexSession implements AgentSession {
 function createCodexBackend(): AgentBackend {
   return {
     name: "codex-cli",
+    capabilities: CODEX_CAPABILITIES,
     profileCapabilities: { model: true, toolAllowlist: false },
 
     async preflight(opts = {}) {

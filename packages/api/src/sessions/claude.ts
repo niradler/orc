@@ -2,6 +2,7 @@ import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { CLAUDE_TOKENS_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { isAlive, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
@@ -75,7 +76,8 @@ function claudeTokensFromText(content: string): number {
       total +=
         (usage.input_tokens ?? 0) +
         (usage.output_tokens ?? 0) +
-        (usage.cache_creation_input_tokens ?? 0);
+        (usage.cache_creation_input_tokens ?? 0) +
+        (usage.cache_read_input_tokens ?? 0);
     } catch {}
   };
   for (const line of content.split("\n")) take(line);
@@ -206,6 +208,16 @@ export function claudeAdapter(
         });
       }
 
+      for (const [id, before] of known) {
+        if (
+          !records.has(id) &&
+          before.session &&
+          before.tokensVersion !== CLAUDE_TOKENS_VERSION &&
+          transcripts.has(id)
+        ) {
+          records.set(id, { ...before.session });
+        }
+      }
       for (const record of records.values()) {
         const transcript = transcripts.get(record.externalId);
         if (!transcript) continue;
@@ -213,11 +225,17 @@ export function claudeAdapter(
         const before = known.get(record.externalId);
         const mtime = transcript.mtimeMs;
         record.lastActivityAt = new Date(Math.max(record.lastActivityAt.getTime(), mtime));
-        if (!before || before.tokensUsed == null || mtime - before.lastActivityMs >= 1000) {
+        if (
+          !before ||
+          before.tokensUsed == null ||
+          before.tokensVersion !== CLAUDE_TOKENS_VERSION ||
+          mtime - before.lastActivityMs >= 1000
+        ) {
           const content = new TextDecoder().decode(
             await runtime.readFile(transcript.path, 150 * 1024 * 1024),
           );
           record.tokens = async () => claudeTokensFromText(content);
+          record.tokensVersion = CLAUDE_TOKENS_VERSION;
           record.summary = firstPromptFromText(content);
         }
       }

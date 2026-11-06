@@ -3,6 +3,7 @@ import { ArrowUpRight, Command, FileText, Folder, Search, TerminalSquare, Zap } 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
+import { FOCUS_NOTIFICATIONS_EVENT, NOTIFICATIONS_SHORTCUT } from "@/components/AgentNotifications";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,7 @@ export function CommandPalette({
   const input = useRef<HTMLInputElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const selectedTerminal = useRef(false);
+  const focusNotifications = useRef(false);
   const [terminalTarget, setTerminalTarget] = useState<TerminalPaletteRequest | null>(null);
   const recentTerminals = useRef<string[]>([]);
   const scope = scoped && projectId !== "all" ? projectId : undefined;
@@ -100,6 +102,7 @@ export function CommandPalette({
     setOpen(value);
     if (value) {
       selectedTerminal.current = false;
+      focusNotifications.current = false;
       returnFocus.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setTerminalTarget(null);
@@ -337,6 +340,16 @@ export function CommandPalette({
     "jump finished unread unseen",
   );
   add(
+    "notifications",
+    "Focus notifications",
+    `Jump to agent toasts (${NOTIFICATIONS_SHORTCUT})`,
+    "Actions",
+    () => {
+      focusNotifications.current = true;
+    },
+    "toast alerts needs you attention",
+  );
+  add(
     "theme",
     `Switch to ${theme === "dark" ? "light" : "dark"} theme`,
     "Change appearance",
@@ -479,6 +492,10 @@ export function CommandPalette({
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
+            if (focusNotifications.current) {
+              window.dispatchEvent(new Event(FOCUS_NOTIFICATIONS_EVENT));
+              return;
+            }
             if (selectedTerminal.current) {
               requestAnimationFrame(() => {
                 const pane = document.querySelector(

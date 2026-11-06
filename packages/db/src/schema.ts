@@ -313,6 +313,7 @@ export const gateway_sessions = sqliteTable(
     summary: text("summary"),
     transcript_path: text("transcript_path"),
     tokens_used: integer("tokens_used"),
+    tokens_version: integer("tokens_version").notNull().default(0),
     task_id: text("task_id").references(() => tasks.id, {
       onDelete: "set null",
     }),
