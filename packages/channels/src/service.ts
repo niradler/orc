@@ -808,3 +808,6 @@ export function getChannelService() {
   service ??= new ChannelService(new ChannelStore(getSqlite()));
   return service;
 }
+export function resetChannelService(): void {
+  service = undefined;
+}

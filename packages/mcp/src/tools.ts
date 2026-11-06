@@ -121,6 +121,24 @@ const channelEditParams = ChannelUpdateSchema.extend({
   id: z.string().min(1).max(100),
   project: projectParam,
 });
+const telegramStatusParams = z.object({
+  project: projectParam,
+  chat: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Configured recipient alias, name, or chat id. Omit to resolve Nir."),
+});
+const telegramSendParams = telegramStatusParams.extend({
+  text: z.string().min(1).max(4096).describe("Plain text to send to Nir"),
+  idempotency_key: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Reuse the same key when retrying an identical send"),
+});
 const auditParams = scopeParams.extend({
   entity_type: z.enum(["memory", "skill", "kb"]).optional(),
   session_id: z.string().min(1).max(200).optional(),
@@ -223,6 +241,18 @@ export const toolDefinitions = [
     description:
       "Edit an accepted channel message using Markdown or native overrides. Keep the same number of provider message chunks.",
     inputSchema: channelEditParams,
+  },
+  {
+    name: "telegram_status",
+    description:
+      "See whether Telegram can message Nir, which configured recipient would be used, and what setup is missing. Does not return the bot token. Call this before telegram_send.",
+    inputSchema: telegramStatusParams,
+  },
+  {
+    name: "telegram_send",
+    description:
+      "Send a plain-text message to Nir through the configured Telegram channel (the paired me recipient, or gateway.telegram.default_chat_id when no channel is enabled). Pass chat only to pick another recipient that is already configured. Pass project when that recipient is limited to a project. Accepted means Telegram accepted the message, not that Nir has read it. Do not invent a chat id or paste the bot token. Read orc-platform references/channels.md for setup.",
+    inputSchema: telegramSendParams,
   },
   {
     name: "human_request",
@@ -1194,6 +1224,38 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
+  if (name === "telegram_status" || name === "telegram_send") {
+    const parsed =
+      name === "telegram_status"
+        ? telegramStatusParams.parse(args)
+        : telegramSendParams.parse(args);
+    const scope = parsed.project
+      ? resolveProjectId(parsed.project)?.id
+      : (options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
+    if (
+      options.projectScopes &&
+      (!scope || !options.projectScopes.some((item) => item.id === scope))
+    )
+      throw new ValidationError("Telegram access is outside the selected MCP projects");
+    const query = new URLSearchParams();
+    if (scope) query.set("project_id", scope);
+    if (parsed.chat) query.set("chat", parsed.chat);
+    if (name === "telegram_status") {
+      const suffix = query.size ? `?${query}` : "";
+      return JSON.stringify(await orcApi("GET", `/telegram/status${suffix}`));
+    }
+    const { project: _project, chat, text, idempotency_key } = telegramSendParams.parse(args);
+    return JSON.stringify(
+      await orcApi("POST", "/telegram/send", {
+        body: {
+          text,
+          ...(chat ? { chat } : {}),
+          ...(scope ? { project_id: scope } : {}),
+          ...(idempotency_key ? { idempotency_key } : {}),
+        },
+      }),
+    );
+  }
   if (name.startsWith("channel_")) {
     const schema =
       name === "channel_list"
