@@ -20,6 +20,7 @@ import { sessionCommand } from "./commands/session.js";
 import { skillCommand } from "./commands/skill.js";
 import { statusCommand } from "./commands/status.js";
 import { taskCommand } from "./commands/task.js";
+import { exportCommand, importCommand } from "./commands/transfer.js";
 
 type GlobalOpts = {
   db?: string;
@@ -66,6 +67,8 @@ const program = new Command()
   });
 
 program.addCommand(taskCommand());
+program.addCommand(exportCommand());
+program.addCommand(importCommand());
 program.addCommand(attentionCommand());
 program.addCommand(rulesCommand());
 program.addCommand(projectCommand());

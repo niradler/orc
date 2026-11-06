@@ -220,38 +220,65 @@ function memoryFiles(dir: string, limit = true): string[] {
   return files;
 }
 
+export type MemoryContentFile = { file: string; content: string };
+
+/** A memory upload names a file. A directory path would be read on the server. */
+export function memoryContentName(file: string): string {
+  const name = basename(file);
+  if (
+    !name ||
+    name !== file ||
+    name === "." ||
+    name === ".." ||
+    name.toLowerCase() === INDEX_FILE.toLowerCase()
+  )
+    throw new ValidationError("Send a memory file name and its contents, not a directory path");
+  if (!isMemoryFile(name)) throw new ValidationError(`Not a memory file: ${name}`);
+  return name;
+}
+
+function parseNativeText(file: string, text: string): NativeFile {
+  try {
+    if (Buffer.byteLength(text) > MAX_FILE_BYTES) throw new ValidationError("File exceeds 64 KiB");
+    if (!/^﻿?---\r?\n/.test(text)) {
+      const note = plainNote(file, text.replace(/^﻿/, ""));
+      if (!note?.name)
+        throw new ValidationError("Needs a frontmatter description or a leading # heading");
+      return { file, ...note, fields: {}, profile: memoryProfile(note.description, note.content) };
+    }
+    const { fields, body } = parseMarkdownFrontmatter(text);
+    const name = nameOf(file, fields);
+    if (!name) throw new ValidationError("No usable memory name");
+    if (typeof fields.description !== "string" || !fields.description.trim())
+      throw new ValidationError("Needs a frontmatter description or a leading # heading");
+    const description = fields.description.trim();
+    return {
+      file,
+      name,
+      description,
+      content: body,
+      fields,
+      profile: memoryProfile(description, body),
+    };
+  } catch (error) {
+    if (!(error instanceof ValidationError)) throw error;
+    return {
+      file,
+      name: memoryName(basename(file, ".md")),
+      description: "",
+      content: "",
+      fields: {},
+      error: error.message,
+    };
+  }
+}
+
 /** Memory files (*.md except MEMORY.md, symlinks skipped) parsed like Claude's own memory sync. */
 function readNativeFiles(dir: string): NativeFile[] {
   if (!existsSync(dir)) return [];
-  return memoryFiles(dir).map((file): NativeFile => {
+  return memoryFiles(dir).map((file) => {
     try {
       if (statSync(file).size > MAX_FILE_BYTES) throw new ValidationError("File exceeds 64 KiB");
-      const text = readFileSync(file, "utf8");
-      if (!/^﻿?---\r?\n/.test(text)) {
-        const note = plainNote(file, text.replace(/^﻿/, ""));
-        if (!note?.name)
-          throw new ValidationError("Needs a frontmatter description or a leading # heading");
-        return {
-          file,
-          ...note,
-          fields: {},
-          profile: memoryProfile(note.description, note.content),
-        };
-      }
-      const { fields, body } = parseMarkdownFrontmatter(text);
-      const name = nameOf(file, fields);
-      if (!name) throw new ValidationError("No usable memory name");
-      if (typeof fields.description !== "string" || !fields.description.trim())
-        throw new ValidationError("Needs a frontmatter description or a leading # heading");
-      const description = fields.description.trim();
-      return {
-        file,
-        name,
-        description,
-        content: body,
-        fields,
-        profile: memoryProfile(description, body),
-      };
     } catch (error) {
       if (!(error instanceof ValidationError)) throw error;
       return {
@@ -263,7 +290,14 @@ function readNativeFiles(dir: string): NativeFile[] {
         error: error.message,
       };
     }
+    return parseNativeText(file, readFileSync(file, "utf8"));
   });
+}
+
+function nativeFilesFromContents(files: MemoryContentFile[]): NativeFile[] {
+  if (files.length > MAX_FILES)
+    throw new ValidationError(`Folder has more than ${MAX_FILES} memory files`);
+  return files.map((file) => parseNativeText(memoryContentName(file.file), file.content));
 }
 
 function orcMemories(db: Database, projectId: string): Map<string, OrcMemory> {
@@ -350,6 +384,16 @@ function classifyImport(
   });
 }
 
+function previewFromFiles(
+  db: Database,
+  projectId: string,
+  dir: string,
+  files: NativeFile[],
+  store: MemoryStore,
+): MemoryImportPreview {
+  return { dir, memories: classifyImport(files, orcMemories(db, projectId), store) };
+}
+
 /** What importing a native memory folder into a project would do, per file, without writing. */
 export function previewMemoryImport(
   db: Database,
@@ -359,10 +403,18 @@ export function previewMemoryImport(
 ): MemoryImportPreview {
   const folder = absoluteDir(dir);
   if (!existsSync(folder)) throw new ValidationError(`Folder not found: ${folder}`);
-  return {
-    dir: folder,
-    memories: classifyImport(readNativeFiles(folder), orcMemories(db, projectId), store),
-  };
+  return previewFromFiles(db, projectId, folder, readNativeFiles(folder), store);
+}
+
+/** Preview an import from file contents the client read. `dir` is a label and is not opened. */
+export function previewMemoryImportContents(
+  db: Database,
+  projectId: string,
+  files: MemoryContentFile[],
+  dir = "",
+  store: MemoryStore = new MemoryStore(db),
+): MemoryImportPreview {
+  return previewFromFiles(db, projectId, dir, nativeFilesFromContents(files), store);
 }
 
 /**
@@ -371,19 +423,16 @@ export function previewMemoryImport(
  * that is the same as, or a near copy of, one already in ORC or imported earlier in this batch
  * is skipped.
  */
-export function importNativeMemories(
+function importFiles(
   db: Database,
   projectId: string,
-  dir: string,
+  files: NativeFile[],
   items: MemoryImportItem[],
-  writer: MemoryWriter = {},
-  store: MemoryStore = new MemoryStore(db),
+  writer: MemoryWriter,
+  store: MemoryStore,
 ): MemoryImportResult {
   if (!items.length || items.length > MAX_FILES)
     throw new ValidationError(`Select 1-${MAX_FILES} memories`);
-  const folder = absoluteDir(dir);
-  if (!existsSync(folder)) throw new ValidationError(`Folder not found: ${folder}`);
-  const files = readNativeFiles(folder);
   const preview = new Map(
     classifyImport(files, orcMemories(db, projectId), store).map((memory) => [memory.name, memory]),
   );
@@ -437,6 +486,31 @@ export function importNativeMemories(
   return result;
 }
 
+export function importNativeMemories(
+  db: Database,
+  projectId: string,
+  dir: string,
+  items: MemoryImportItem[],
+  writer: MemoryWriter = {},
+  store: MemoryStore = new MemoryStore(db),
+): MemoryImportResult {
+  const folder = absoluteDir(dir);
+  if (!existsSync(folder)) throw new ValidationError(`Folder not found: ${folder}`);
+  return importFiles(db, projectId, readNativeFiles(folder), items, writer, store);
+}
+
+/** Import file contents uploaded by the client. The directory is not read on the server. */
+export function importNativeMemoryContents(
+  db: Database,
+  projectId: string,
+  files: MemoryContentFile[],
+  items: MemoryImportItem[],
+  writer: MemoryWriter = {},
+  store: MemoryStore = new MemoryStore(db),
+): MemoryImportResult {
+  return importFiles(db, projectId, nativeFilesFromContents(files), items, writer, store);
+}
+
 function importSkipReason(memory: NativeMemory): string {
   if (memory.status === "invalid") return memory.error ?? "Invalid";
   if (memory.status === "installed") return "Already in ORC";
@@ -459,12 +533,13 @@ function buildExportPlan(
   projectId: string,
   dir: string,
   names: string[] | undefined,
+  loaded?: { files: NativeFile[]; index: boolean },
 ): { dir: string; index: boolean; items: PlannedExport[] } {
-  const folder = absoluteDir(dir);
+  const folder = loaded ? dir : absoluteDir(dir);
   const orc = orcMemories(db, projectId);
   const selected = names?.length ? [...new Set(names)] : [...orc.keys()];
   for (const name of selected) if (!orc.has(name)) throw new NotFoundError("Memory", name);
-  const files = readNativeFiles(folder);
+  const files = loaded ? loaded.files : readNativeFiles(folder);
   const byName = new Map<string, NativeFile>();
   for (const file of files) if (!byName.has(file.name)) byName.set(file.name, file);
   const items = selected.map((name): PlannedExport => {
@@ -491,8 +566,11 @@ function buildExportPlan(
         ...(existing.error ? { reason: existing.error } : {}),
       };
     }
-    const file = join(folder, `${name}.md`);
-    if (existsSync(file))
+    const file = loaded ? `${name}.md` : join(folder, `${name}.md`);
+    const occupied = loaded
+      ? files.some((item) => basename(item.file) === file && item.name !== name)
+      : existsSync(file);
+    if (occupied)
       return {
         ...base,
         file,
@@ -517,7 +595,9 @@ function buildExportPlan(
   });
   return {
     dir: folder,
-    index: existsSync(join(folder, INDEX_FILE)) || isClaudeMemoryDir(folder),
+    index: loaded
+      ? loaded.index
+      : existsSync(join(folder, INDEX_FILE)) || isClaudeMemoryDir(folder),
     items,
   };
 }
@@ -644,6 +724,98 @@ export function exportNativeMemories(
     }
   }
   if (plan.index && indexed.length) result.index_updated = appendIndex(plan.dir, indexed);
+  return result;
+}
+
+export type MemoryContentExportResult = MemoryExportResult & {
+  files: Array<{ name: string; file: string; content: string; replaced: boolean }>;
+  index_content: string | null;
+};
+
+function nextIndex(
+  current: string | null,
+  entries: Array<{ name: string; file: string; description: string }>,
+): string | null {
+  const text = current ?? "";
+  const missing = entries.filter((entry) => !text.includes(`](${basename(entry.file)})`));
+  if (!missing.length) return null;
+  const prefix = !text ? "# Memory Index\n\n" : text.endsWith("\n") ? "" : "\n";
+  return `${text}${prefix}${missing.map((entry) => indexLine(entry.name, entry.file, entry.description)).join("\n")}\n`;
+}
+
+/** Preview an export against file contents the client already has. `dir` is not opened. */
+export function planMemoryExportContents(
+  db: Database,
+  projectId: string,
+  files: MemoryContentFile[],
+  names?: string[],
+  dir = "",
+  maintainIndex = false,
+): MemoryExportPlan {
+  const plan = buildExportPlan(db, projectId, dir, names, {
+    files: nativeFilesFromContents(files),
+    index: maintainIndex,
+  });
+  return {
+    dir: plan.dir,
+    index: plan.index,
+    memories: plan.items.map(({ memory: _memory, existing: _existing, ...item }) => item),
+  };
+}
+
+/**
+ * Returns the memory files the client should write. Nothing is written on the server,
+ * including when `dir` names a folder that exists there.
+ */
+export function exportNativeMemoryContents(
+  db: Database,
+  projectId: string,
+  files: MemoryContentFile[],
+  input: {
+    names?: string[] | undefined;
+    overwrite?: string[] | undefined;
+    dir?: string | undefined;
+    index?: string | null | undefined;
+    maintain_index?: boolean | undefined;
+  } = {},
+): MemoryContentExportResult {
+  const plan = buildExportPlan(db, projectId, input.dir ?? "", input.names, {
+    files: nativeFilesFromContents(files),
+    index: Boolean(input.maintain_index),
+  });
+  const overwrite = new Set(input.overwrite ?? []);
+  const result: MemoryContentExportResult = {
+    dir: plan.dir,
+    exported: [],
+    files: [],
+    skipped: [],
+    index_updated: false,
+    index_content: null,
+  };
+  const indexed: Array<{ name: string; file: string; description: string }> = [];
+  for (const item of plan.items) {
+    const allowed = item.status === "new" || (item.can_overwrite && overwrite.has(item.name));
+    if (!allowed) {
+      result.skipped.push({ name: item.name, reason: exportSkipReason(item) });
+      continue;
+    }
+    const file = basename(item.file);
+    const content = nativeMemoryText(
+      item.name,
+      item.memory.description,
+      item.memory.content,
+      item.existing?.error ? {} : item.existing?.fields,
+    );
+    const replaced = Boolean(item.existing);
+    const written = { name: item.name, file, content, replaced };
+    result.files.push(written);
+    result.exported.push({ name: item.name, file, replaced });
+    indexed.push({ name: item.name, file, description: item.memory.description });
+  }
+  if (plan.index && indexed.length) {
+    result.index_content = nextIndex(input.index ?? null, indexed);
+    result.index_updated = result.index_content !== null;
+  }
   return result;
 }
 

@@ -1,7 +1,10 @@
+import { loadConfig } from "@orc/core/config";
 import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { moveTask } from "../move-task.js";
 import { isJson, jsonErr, jsonOut } from "../output.js";
+import { resolveRemoteBase } from "../remote-target.js";
 import { resolveProject } from "./project.js";
 
 async function resolveTaskId(
@@ -382,6 +385,47 @@ export function taskCommand() {
       }
       if (isJson()) return jsonOut(data);
       console.log(`Updated: [${shortId(data?.id)}] ${data?.title}`);
+    });
+
+  cmd
+    .command("move <id>")
+    .description("Move a task to another ORC. --to is an API base URL or host:port (ORC_API_BASE).")
+    .requiredOption("--to <target>", "Destination API base, for example https://orc.example.com")
+    .option("--to-secret <secret>", "Destination bearer token; defaults to the current API secret")
+    .action(async (id: string, opts: { to: string; toSecret?: string }) => {
+      const source = createOrcClient({ source: "cli" });
+      const full = await resolveTaskId(source, id);
+      if (!full) return;
+      let baseUrl: string;
+      try {
+        baseUrl = resolveRemoteBase(opts.to);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isJson()) return jsonErr(message);
+        console.error(`Error: ${message}`);
+        process.exitCode = 1;
+        return;
+      }
+      const secret = opts.toSecret ?? loadConfig().api.secret;
+      const destination = createOrcClient({
+        baseUrl,
+        source: "cli",
+        ...(secret ? { secret } : {}),
+      });
+      try {
+        const result = await moveTask({ source, destination, taskId: full });
+        if (isJson()) return jsonOut(result);
+        console.log(
+          `Moved ${shortId(full)} to ${baseUrl}${result.project_name ? ` (${result.project_name})` : ""}`,
+        );
+        if (!result.source_deleted)
+          console.error(`Imported, but the source task was not deleted: ${result.delete_error}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isJson()) return jsonErr(message);
+        console.error(`Error: ${message}`);
+        process.exitCode = 1;
+      }
     });
 
   cmd

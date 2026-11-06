@@ -46,6 +46,7 @@ import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
+import { transferRouter } from "./routes/transfer.js";
 import { webhookPublicRouter, webhooksRouter } from "./routes/webhooks.js";
 import { createWebStatic } from "./static.js";
 
@@ -138,6 +139,7 @@ export function createApp() {
   app.route("/api", integrationsRouter);
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
+  app.route("/api", transferRouter);
   app.route("/api", skillsRouter);
   app.route("/api", rulesRouter);
   app.route("/api", searchRouter);

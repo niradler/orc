@@ -4,10 +4,14 @@ import { getSqlite } from "@orc/db/client";
 import { MEMORY_DESCRIPTION_MAX, MEMORY_PRIORITY_MAX, MemoryStore } from "@orc/db/memories";
 import {
   exportNativeMemories,
+  exportNativeMemoryContents,
   importNativeMemories,
+  importNativeMemoryContents,
   listNativeMemorySources,
   planMemoryExport,
+  planMemoryExportContents,
   previewMemoryImport,
+  previewMemoryImportContents,
 } from "@orc/db/memory-transfer";
 import { readSourceFromHeader } from "@orc/db/read-usage";
 import { createRouter } from "../lib/router.js";
@@ -335,6 +339,16 @@ const FolderSchema = z
   .min(1)
   .max(4096)
   .openapi({ description: "Absolute native memory folder, e.g. ~/.claude/projects/<p>/memory" });
+const MemoryFileSchema = z
+  .object({
+    file: z.string().min(1).max(256).openapi({ description: "File name, not a directory path" }),
+    content: z.string().max(65536),
+  })
+  .strict();
+const memoryFiles = z.array(MemoryFileSchema).max(256).optional().openapi({
+  description:
+    "File contents read by the client. When present, dir is a label and is not opened on the server.",
+});
 const MemoryNamesSchema = z.array(z.string().min(1).max(64)).max(500);
 const MemoryMatchSchema = z
   .object({
@@ -419,7 +433,14 @@ app.openapi(
     path: "/memory-transfer/import/preview",
     tags: ["Memory"],
     summary: "Preview importing a native memory folder, flagging duplicates and near copies",
-    request: json(z.object({ project_id: z.string().min(1), dir: FolderSchema }).strict()),
+    request: json(
+      z
+        .object({ project_id: z.string().min(1), dir: FolderSchema.optional(), files: memoryFiles })
+        .strict()
+        .refine((input) => input.files !== undefined || input.dir !== undefined, {
+          message: "Provide memory file contents or a folder on this server",
+        }),
+    ),
     responses: {
       200: {
         description: "Each memory file with its status against the project",
@@ -437,7 +458,11 @@ app.openapi(
   }),
   (c) => {
     const input = c.req.valid("json");
-    return c.json(previewMemoryImport(getSqlite(), input.project_id, input.dir));
+    if (input.files)
+      return c.json(
+        previewMemoryImportContents(getSqlite(), input.project_id, input.files, input.dir ?? ""),
+      );
+    return c.json(previewMemoryImport(getSqlite(), input.project_id, input.dir ?? ""));
   },
 );
 
@@ -451,7 +476,8 @@ app.openapi(
       z
         .object({
           project_id: z.string().min(1),
-          dir: FolderSchema,
+          dir: FolderSchema.optional(),
+          files: memoryFiles,
           memories: z
             .array(
               z
@@ -467,7 +493,10 @@ app.openapi(
             .max(256),
           ...Writer,
         })
-        .strict(),
+        .strict()
+        .refine((input) => input.files !== undefined || input.dir !== undefined, {
+          message: "Provide memory file contents or a folder on this server",
+        }),
     ),
     responses: {
       200: {
@@ -490,11 +519,19 @@ app.openapi(
   }),
   (c) => {
     const input = c.req.valid("json");
+    const writer = { author: input.author, session_id: input.session_id };
+    if (input.files)
+      return c.json(
+        importNativeMemoryContents(
+          getSqlite(),
+          input.project_id,
+          input.files,
+          input.memories,
+          writer,
+        ),
+      );
     return c.json(
-      importNativeMemories(getSqlite(), input.project_id, input.dir, input.memories, {
-        author: input.author,
-        session_id: input.session_id,
-      }),
+      importNativeMemories(getSqlite(), input.project_id, input.dir ?? "", input.memories, writer),
     );
   },
 );
@@ -509,12 +546,19 @@ app.openapi(
       z
         .object({
           project_id: z.string().min(1),
-          dir: FolderSchema,
+          dir: FolderSchema.optional(),
+          files: memoryFiles,
+          index: z.boolean().optional().openapi({
+            description: "Client will maintain MEMORY.md; ignored when the server reads dir",
+          }),
           names: MemoryNamesSchema.optional().openapi({
             description: "Memories to export; all when omitted",
           }),
         })
-        .strict(),
+        .strict()
+        .refine((input) => input.files !== undefined || input.dir !== undefined, {
+          message: "Provide memory file contents or a folder on this server",
+        }),
     ),
     responses: {
       200: {
@@ -537,7 +581,18 @@ app.openapi(
   }),
   (c) => {
     const input = c.req.valid("json");
-    return c.json(planMemoryExport(getSqlite(), input.project_id, input.dir, input.names));
+    if (input.files)
+      return c.json(
+        planMemoryExportContents(
+          getSqlite(),
+          input.project_id,
+          input.files,
+          input.names,
+          input.dir ?? "",
+          input.index ?? false,
+        ),
+      );
+    return c.json(planMemoryExport(getSqlite(), input.project_id, input.dir ?? "", input.names));
   },
 );
 
@@ -551,14 +606,22 @@ app.openapi(
       z
         .object({
           project_id: z.string().min(1),
-          dir: FolderSchema,
+          dir: FolderSchema.optional(),
+          files: memoryFiles,
+          index: z.string().nullable().optional().openapi({
+            description: "Current MEMORY.md contents, when the client maintains the index",
+          }),
+          maintain_index: z.boolean().optional(),
           names: MemoryNamesSchema.optional(),
           overwrite: MemoryNamesSchema.optional().openapi({
             description:
               "Memories to write even though the folder has a near copy, conflict or duplicate; replaced files are backed up",
           }),
         })
-        .strict(),
+        .strict()
+        .refine((input) => input.files !== undefined || input.dir !== undefined, {
+          message: "Provide memory file contents or a folder on this server",
+        }),
     ),
     responses: {
       200: {
@@ -578,6 +641,17 @@ app.openapi(
                 ),
                 skipped: z.array(z.object({ name: z.string(), reason: z.string() })),
                 index_updated: z.boolean(),
+                files: z
+                  .array(
+                    z.object({
+                      name: z.string(),
+                      file: z.string(),
+                      content: z.string(),
+                      replaced: z.boolean(),
+                    }),
+                  )
+                  .optional(),
+                index_content: z.string().nullable().optional(),
               })
               .openapi("MemoryExportResult"),
           },
@@ -588,8 +662,23 @@ app.openapi(
     },
   }),
   (c) => {
-    const { project_id, dir, ...input } = c.req.valid("json");
-    return c.json(exportNativeMemories(getSqlite(), project_id, dir, input));
+    const input = c.req.valid("json");
+    if (input.files)
+      return c.json(
+        exportNativeMemoryContents(getSqlite(), input.project_id, input.files, {
+          names: input.names,
+          overwrite: input.overwrite,
+          dir: input.dir,
+          index: input.index,
+          maintain_index: input.maintain_index,
+        }),
+      );
+    return c.json(
+      exportNativeMemories(getSqlite(), input.project_id, input.dir ?? "", {
+        names: input.names,
+        overwrite: input.overwrite,
+      }),
+    );
   },
 );
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
@@ -317,5 +317,58 @@ describe("Native memory transfer API", () => {
       dir: root,
     });
     expect(unknown.status).toBe(404);
+  });
+
+  test("should import and export memory file contents without reading a server path", async () => {
+    const missing = join(root, "does-not-exist");
+    const uploadProject = (
+      await (await req(app, "POST", "/projects", { name: "mem-upload" })).json()
+    ).id as string;
+    const preview = await req(app, "POST", "/memory-transfer/import/preview", {
+      project_id: uploadProject,
+      dir: missing,
+      files: [
+        {
+          file: "uploaded-fact.md",
+          content:
+            "---\nname: uploaded-fact\ndescription: Sent by the client\n---\n\nUploaded body\n",
+        },
+      ],
+    });
+    expect(preview.status).toBe(200);
+    expect((await preview.json()).memories).toEqual([
+      expect.objectContaining({ name: "uploaded-fact", status: "new", file: "uploaded-fact.md" }),
+    ]);
+    expect(existsSync(missing)).toBe(false);
+    const imported = await req(app, "POST", "/memory-transfer/import", {
+      project_id: uploadProject,
+      dir: missing,
+      files: [
+        {
+          file: "uploaded-fact.md",
+          content:
+            "---\nname: uploaded-fact\ndescription: Sent by the client\n---\n\nUploaded body\n",
+        },
+      ],
+      memories: [{ name: "uploaded-fact" }],
+    });
+    expect(imported.status).toBe(200);
+    expect(await imported.json()).toMatchObject({ imported: ["uploaded-fact"] });
+    const memory = await (
+      await req(app, "GET", `/memories/uploaded-fact?project_id=${uploadProject}`)
+    ).json();
+    expect(memory.content).toBe("Uploaded body");
+
+    const exported = await req(app, "POST", "/memory-transfer/export", {
+      project_id: uploadProject,
+      dir: missing,
+      files: [],
+      names: ["uploaded-fact"],
+    });
+    expect(exported.status).toBe(200);
+    const body = await exported.json();
+    expect(body.files[0].content).toContain("Uploaded body");
+    expect(existsSync(missing)).toBe(false);
+    expect(existsSync(join(missing, "uploaded-fact.md"))).toBe(false);
   });
 });
