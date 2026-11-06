@@ -325,7 +325,11 @@ function useChatController() {
               : message,
           ),
         }));
-      } else if (event.type === "text")
+      } else if (event.type === "capabilities")
+        update(key, (tab) => ({
+          thread: tab.thread ? { ...tab.thread, capabilities: event.capabilities } : tab.thread,
+        }));
+      else if (event.type === "text")
         update(key, (tab) => ({ streamText: tab.streamText + event.text }));
       else if (event.type === "error") update(key, () => ({ error: event.message }));
       else if (event.type === "session")
@@ -930,6 +934,56 @@ function useChatController() {
     [find, stop, update],
   );
 
+  const steeringRequest = useRef<{
+    key: string;
+    runId: string;
+    input: string;
+    requestId: string;
+  } | null>(null);
+  const steer = useCallback(async () => {
+    const key = activeRef.current;
+    const current = find(key);
+    if (
+      !current?.streaming ||
+      !current.runId ||
+      !current.draft.trim() ||
+      current.files.length ||
+      responding
+    )
+      return;
+    setResponding(true);
+    try {
+      const input = current.draft;
+      const previous = steeringRequest.current;
+      const requestId =
+        previous?.key === key && previous.runId === current.runId && previous.input === input
+          ? previous.requestId
+          : crypto.randomUUID();
+      steeringRequest.current = { key, runId: current.runId, input, requestId };
+      const thread = await api.chat.steer(current.runId, input, requestId);
+      steeringRequest.current = null;
+      const delivered = thread.messages.find((message) => message.id === requestId) ?? {
+        id: requestId,
+        role: "user" as const,
+        content: input,
+        timestamp: Date.now(),
+      };
+      update(key, (tab) => ({
+        thread,
+        draft: tab.draft === input ? "" : tab.draft,
+        messages: tab.messages.some((message) => message.id === requestId)
+          ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
+          : [...tab.messages, delivered],
+      }));
+    } catch (cause) {
+      update(key, () => ({
+        error: message(cause, "The message could not be sent into the active response."),
+      }));
+    } finally {
+      setResponding(false);
+    }
+  }, [find, update, responding]);
+
   const respondPermission = useCallback(
     async (decision: "approved" | "denied") => {
       const key = activeRef.current;
@@ -1086,6 +1140,7 @@ function useChatController() {
     loadingHistory: tab.loadingHistory,
     loadOlder,
     permission,
+    steer,
     respondPermission,
     question,
     respondQuestion,

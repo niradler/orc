@@ -9,6 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
+import { AgentNotifications } from "@/components/AgentNotifications";
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
@@ -187,181 +188,189 @@ export default function App() {
   return (
     <TerminalsProvider>
       <ChatProvider>
-        <div
-          data-testid="app-viewport"
-          className="app-viewport bg-background flex flex-col overflow-hidden"
-        >
-          <div className="flex-1 min-h-0 flex">
-            {/* Sidebar: visible on md+. On mobile we instead render a Dialog drawer below. */}
-            <div className="hidden md:flex">
-              <Sidebar
-                projectId={projectId}
-                onProjectChange={setProjectId}
-                collapsed={sidebarCollapsed}
-                onToggle={() => setSidebarCollapsed((v) => !v)}
-              />
-            </div>
-
-            {/* Main content - the only element that owns vertical scroll for page content. */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <WorkspaceHeader
-                onShowChat={() => setChatVisible(true)}
-                onProjectChange={setProjectId}
-                navButtonRef={navButtonRef}
-                chatButtonRef={chatButtonRef}
-                projectId={projectId}
-                onOpenNav={() => setMobileNavOpen(true)}
-                onOpenChat={() => setChatVisible(!chatRequested)}
-              />
-              <main
-                className={cn(
-                  "relative flex-1 min-w-0 min-h-0",
-                  fullBleed ? "overflow-hidden" : "overflow-y-auto",
-                )}
-              >
-                <div
-                  className={cn(
-                    fullBleed
-                      ? "absolute inset-0 flex"
-                      : "p-4 md:p-6 lg:p-8 min-h-full flex flex-col",
-                  )}
-                >
-                  <Suspense
-                    fallback={
-                      <div role="status" className="p-6 text-sm text-outline">
-                        Loading workspace…
-                      </div>
-                    }
-                  >
-                    <Routes>
-                      <Route path="/" element={<DefaultWorkspaceRedirect />} />
-                      <Route path="/activity" element={<Dashboard projectId={projectId} />} />
-                      <Route path="/attention" element={<Attention />} />
-                      <Route path="/overview" element={<LegacyActivityRedirect />} />
-                      <Route path="/dashboard" element={<LegacyActivityRedirect />} />
-                      <Route path="/tasks" element={<Tasks projectId={projectId} />} />
-                      <Route path="/tasks/:taskId" element={<Tasks projectId={projectId} />} />
-                      <Route path="/terminals" element={<Terminals />} />
-                      <Route path="/terminals/:terminalId" element={<Terminals />} />
-                      <Route path="/jobs" element={<Jobs projectId={projectId} />} />
-                      <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
-                      <Route path="/webhooks" element={<Webhooks projectId={projectId} />} />
-                      <Route path="/sessions" element={<Sessions projectId={projectId} />} />
-                      <Route path="/audit" element={<Audit projectId={projectId} />} />
-                      <Route path="/audit/:sessionId" element={<Audit projectId={projectId} />} />
-                      <Route path="/projects" element={<Projects />} />
-                      <Route path="/projects/:projectId" element={<Projects />} />
-                      <Route path="/knowledge" element={<KnowledgeRedirect />} />
-                      <Route path="/knowledge/base" element={<Knowledge projectId={projectId} />} />
-                      <Route
-                        path="/knowledge/memories"
-                        element={<Knowledge projectId={projectId} />}
-                      />
-                      <Route
-                        path="/knowledge/memories/:memoryProject/:memoryName"
-                        element={<Knowledge projectId={projectId} />}
-                      />
-                      <Route path="/skills" element={<Skills projectId={projectId} />} />
-                      <Route path="/skills/:skillName" element={<Skills projectId={projectId} />} />
-                      <Route path="/agents" element={<LegacyAgentsRedirect />} />
-                      <Route path="/agents/:agentId" element={<LegacyAgentsRedirect />} />
-                      <Route path="/packages" element={<Packages />} />
-                      <Route path="/packages/item" element={<Packages />} />
-                      <Route path="/packages/item/:packageName" element={<Packages />} />
-                      <Route path="/packages/agents" element={<Agents />} />
-                      <Route path="/packages/agents/:agentId" element={<Agents />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route
-                        path="/integrations/oauth/:name/callback"
-                        element={<IntegrationCallback />}
-                      />
-                      <Route path="/rules" element={<Rules />} />
-                      <Route path="/scratchpad" element={<Scratchpads projectId={projectId} />} />
-                      <Route
-                        path="/scratchpad/:scratchpadId"
-                        element={<Scratchpads projectId={projectId} />}
-                      />
-                      <Route path="*" element={<Navigate to="/activity" replace />} />
-                    </Routes>
-                  </Suspense>
-                </div>
-              </main>
-            </div>
-
-            <div className={cn("hidden xl:flex", !chatOpen && "xl:hidden")}>
-              <ChatPanel
-                open={chatOpen}
-                onToggle={() => setChatVisible(false)}
-                onToggleFullscreen={() => setChatVisible(true, true)}
-              />
-            </div>
-          </div>
-
-          {/* Mobile nav drawer (Radix Dialog, slides in from the left). */}
-          <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-            <Dialog.Portal>
-              <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-              <Dialog.Content
-                data-testid="mobile-nav-drawer"
-                onCloseAutoFocus={(event) => {
-                  event.preventDefault();
-                  if (window.innerWidth < BREAKPOINTS.md) navButtonRef.current?.focus();
-                  else chatButtonRef.current?.focus();
-                }}
-                className="viewport-sheet md:hidden fixed left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
-              >
-                <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-                <Dialog.Description className="sr-only">
-                  Main navigation and project selector
-                </Dialog.Description>
+        <AgentNotifications>
+          <div
+            data-testid="app-viewport"
+            className="app-viewport bg-background flex flex-col overflow-hidden"
+          >
+            <div className="flex-1 min-h-0 flex">
+              {/* Sidebar: visible on md+. On mobile we instead render a Dialog drawer below. */}
+              <div className="hidden md:flex">
                 <Sidebar
                   projectId={projectId}
                   onProjectChange={setProjectId}
-                  collapsed={false}
-                  onToggle={() => {}}
-                  embedded
-                  onNavigate={() => setMobileNavOpen(false)}
+                  collapsed={sidebarCollapsed}
+                  onToggle={() => setSidebarCollapsed((v) => !v)}
                 />
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
+              </div>
 
-          {/* Mobile chat sheet (full-screen on mobile). */}
-          <Dialog.Root
-            open={mobileChatOpen}
-            onOpenChange={(open) => setChatVisible(open, chatFullscreen)}
-          >
-            <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-              <Dialog.Content
-                ref={chatDialogRef}
-                data-testid="mobile-chat-sheet"
-                onCloseAutoFocus={(event) => {
-                  event.preventDefault();
-                  if (!chatRequested) chatButtonRef.current?.focus();
-                }}
-                className="viewport-sheet fixed inset-x-0 z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
-                onOpenAutoFocus={(event) => {
-                  event.preventDefault();
-                  chatDialogRef.current?.focus();
-                }}
-              >
-                <Dialog.Title className="sr-only">Chat</Dialog.Title>
-                <Dialog.Description className="sr-only">
-                  Chat with your configured agent
-                </Dialog.Description>
-                <ChatPanel
-                  open
-                  onToggle={() => setChatVisible(false)}
-                  embedded
-                  onClose={() => setChatVisible(false)}
-                  fullscreen={chatFullscreen}
-                  onToggleFullscreen={() => setChatVisible(true, !chatFullscreen)}
+              {/* Main content - the only element that owns vertical scroll for page content. */}
+              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                <WorkspaceHeader
+                  onShowChat={() => setChatVisible(true)}
+                  onProjectChange={setProjectId}
+                  navButtonRef={navButtonRef}
+                  chatButtonRef={chatButtonRef}
+                  projectId={projectId}
+                  onOpenNav={() => setMobileNavOpen(true)}
+                  onOpenChat={() => setChatVisible(!chatRequested)}
                 />
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
-        </div>
+                <main
+                  className={cn(
+                    "relative flex-1 min-w-0 min-h-0",
+                    fullBleed ? "overflow-hidden" : "overflow-y-auto",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      fullBleed
+                        ? "absolute inset-0 flex"
+                        : "p-4 md:p-6 lg:p-8 min-h-full flex flex-col",
+                    )}
+                  >
+                    <Suspense
+                      fallback={
+                        <div role="status" className="p-6 text-sm text-outline">
+                          Loading workspace…
+                        </div>
+                      }
+                    >
+                      <Routes>
+                        <Route path="/" element={<DefaultWorkspaceRedirect />} />
+                        <Route path="/activity" element={<Dashboard projectId={projectId} />} />
+                        <Route path="/attention" element={<Attention />} />
+                        <Route path="/overview" element={<LegacyActivityRedirect />} />
+                        <Route path="/dashboard" element={<LegacyActivityRedirect />} />
+                        <Route path="/tasks" element={<Tasks projectId={projectId} />} />
+                        <Route path="/tasks/:taskId" element={<Tasks projectId={projectId} />} />
+                        <Route path="/terminals" element={<Terminals />} />
+                        <Route path="/terminals/:terminalId" element={<Terminals />} />
+                        <Route path="/jobs" element={<Jobs projectId={projectId} />} />
+                        <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
+                        <Route path="/webhooks" element={<Webhooks projectId={projectId} />} />
+                        <Route path="/sessions" element={<Sessions projectId={projectId} />} />
+                        <Route path="/audit" element={<Audit projectId={projectId} />} />
+                        <Route path="/audit/:sessionId" element={<Audit projectId={projectId} />} />
+                        <Route path="/projects" element={<Projects />} />
+                        <Route path="/projects/:projectId" element={<Projects />} />
+                        <Route path="/knowledge" element={<KnowledgeRedirect />} />
+                        <Route
+                          path="/knowledge/base"
+                          element={<Knowledge projectId={projectId} />}
+                        />
+                        <Route
+                          path="/knowledge/memories"
+                          element={<Knowledge projectId={projectId} />}
+                        />
+                        <Route
+                          path="/knowledge/memories/:memoryProject/:memoryName"
+                          element={<Knowledge projectId={projectId} />}
+                        />
+                        <Route path="/skills" element={<Skills projectId={projectId} />} />
+                        <Route
+                          path="/skills/:skillName"
+                          element={<Skills projectId={projectId} />}
+                        />
+                        <Route path="/agents" element={<LegacyAgentsRedirect />} />
+                        <Route path="/agents/:agentId" element={<LegacyAgentsRedirect />} />
+                        <Route path="/packages" element={<Packages />} />
+                        <Route path="/packages/item" element={<Packages />} />
+                        <Route path="/packages/item/:packageName" element={<Packages />} />
+                        <Route path="/packages/agents" element={<Agents />} />
+                        <Route path="/packages/agents/:agentId" element={<Agents />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route
+                          path="/integrations/oauth/:name/callback"
+                          element={<IntegrationCallback />}
+                        />
+                        <Route path="/rules" element={<Rules />} />
+                        <Route path="/scratchpad" element={<Scratchpads projectId={projectId} />} />
+                        <Route
+                          path="/scratchpad/:scratchpadId"
+                          element={<Scratchpads projectId={projectId} />}
+                        />
+                        <Route path="*" element={<Navigate to="/activity" replace />} />
+                      </Routes>
+                    </Suspense>
+                  </div>
+                </main>
+              </div>
+
+              <div className={cn("hidden xl:flex", !chatOpen && "xl:hidden")}>
+                <ChatPanel
+                  open={chatOpen}
+                  onToggle={() => setChatVisible(false)}
+                  onToggleFullscreen={() => setChatVisible(true, true)}
+                />
+              </div>
+            </div>
+
+            {/* Mobile nav drawer (Radix Dialog, slides in from the left). */}
+            <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+              <Dialog.Portal>
+                <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+                <Dialog.Content
+                  data-testid="mobile-nav-drawer"
+                  onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    if (window.innerWidth < BREAKPOINTS.md) navButtonRef.current?.focus();
+                    else chatButtonRef.current?.focus();
+                  }}
+                  className="viewport-sheet md:hidden fixed left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+                >
+                  <Dialog.Title className="sr-only">Navigation</Dialog.Title>
+                  <Dialog.Description className="sr-only">
+                    Main navigation and project selector
+                  </Dialog.Description>
+                  <Sidebar
+                    projectId={projectId}
+                    onProjectChange={setProjectId}
+                    collapsed={false}
+                    onToggle={() => {}}
+                    embedded
+                    onNavigate={() => setMobileNavOpen(false)}
+                  />
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
+
+            {/* Mobile chat sheet (full-screen on mobile). */}
+            <Dialog.Root
+              open={mobileChatOpen}
+              onOpenChange={(open) => setChatVisible(open, chatFullscreen)}
+            >
+              <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+                <Dialog.Content
+                  ref={chatDialogRef}
+                  data-testid="mobile-chat-sheet"
+                  onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    if (!chatRequested) chatButtonRef.current?.focus();
+                  }}
+                  className="viewport-sheet fixed inset-x-0 z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
+                  onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    chatDialogRef.current?.focus();
+                  }}
+                >
+                  <Dialog.Title className="sr-only">Chat</Dialog.Title>
+                  <Dialog.Description className="sr-only">
+                    Chat with your configured agent
+                  </Dialog.Description>
+                  <ChatPanel
+                    open
+                    onToggle={() => setChatVisible(false)}
+                    embedded
+                    onClose={() => setChatVisible(false)}
+                    fullscreen={chatFullscreen}
+                    onToggleFullscreen={() => setChatVisible(true, !chatFullscreen)}
+                  />
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
+          </div>
+        </AgentNotifications>
       </ChatProvider>
     </TerminalsProvider>
   );

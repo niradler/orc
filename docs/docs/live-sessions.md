@@ -2,6 +2,25 @@
 
 The Sessions view uses the same working, waiting and ended states, task links, search and conversation viewer for all agents. Waiting sessions stay in the active view; inactivity alone does not end a registered session.
 
+Open a Codex or Claude session to see its last reported cached-input percentage.
+Expand that compact row for input, cached reads, cache writes when reported, and
+recorded session totals. Cached input is a share of **input** tokens, not output
+or total billed cost. Claude input includes uncached input plus cache reads and
+writes; Codex reports input with its cache reads already included. Claude totals
+deduplicate repeated messages; Codex totals use the provider's cumulative snapshot.
+
+When Claude records a cache-write lifetime and activity timestamp, the indicator
+can change to **Cache may need rebuilding** after that lifetime has elapsed
+since the recorded activity. This is a conservative hint, not an exact expiry or
+a guarantee about the next request: request generation time, prompt changes and
+other requests can affect reuse. Missing cache metrics or timing are omitted;
+there is no expiry-unavailable message. Codex does not currently provide timing
+evidence here. Other backends omit the indicator until native cache metrics are
+supported. Metrics refresh every 15 seconds while an active session's details
+are open; opening an ended session reads its recorded data once.
+
+![Session cache details with demo data](/screens/session-cache.png)
+
 Codex uses its native writer locks and latest turn status. A held lock identifies an open session; a completed turn is waiting, and a turn in progress is working. A released lock ends the session. Older Codex versions without a writer-lock directory retain the legacy activity fallback.
 
 Cursor IDE history, Cursor CLI (`agent` / `cursor-agent`) history and Gemini conversations are discovered separately. CLI and IDE Cursor histories are separate stores: only Cursor CLI records offer a CLI resume command. Gemini and Cursor CLI support Resume in a terminal, Copy resume command, and Copy terminal link alongside Claude and Codex.
