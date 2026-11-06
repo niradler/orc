@@ -2,11 +2,13 @@ import type { Database } from "bun:sqlite";
 import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
+import { SessionCacheUsageSchema } from "@orc/core/usage";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
+import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
@@ -420,6 +422,37 @@ app.openapi(liveSearchRoute, async (c) => {
     200,
   );
 });
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/sessions/live/{id}/cache",
+    tags: ["Sessions"],
+    summary: "Read recorded prompt-cache usage for a native session",
+    request: { params: z.object({ id: z.string().min(1).max(200) }) },
+    responses: {
+      200: {
+        description:
+          "Numeric cache usage; absent evidence is null and timing is only a cautious hint",
+        content: { "application/json": { schema: SessionCacheUsageSchema } },
+      },
+      404: { description: "Session not found" },
+      503: { description: "Cache data could not be read" },
+    },
+  }),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    const row = await getDb().query.gateway_sessions.findFirst({
+      where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
+    });
+    if (!row) throw new NotFoundError("Session", id);
+    c.header("Cache-Control", "no-store");
+    if (!row.transcript_path || (row.backend !== "claude" && row.backend !== "codex"))
+      return c.json({ latest: null, totals: null }, 200);
+    const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
+    return c.json(await loadSessionCacheUsage(runtime, row.backend, row.transcript_path), 200);
+  },
+);
 
 app.openapi(liveTranscriptRoute, async (c) => {
   const { id } = c.req.valid("param");

@@ -2,14 +2,10 @@ import { Bot } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
 import { ResumeActions } from "@/components/ResumeActions";
+import { StateBadge } from "@/components/StateBadge";
 import { useTaskSessions } from "@/hooks/useSessions";
-import {
-  formatTokenCount,
-  formatTokens,
-  formatWhen,
-  STATUS,
-  scopedSessionPath,
-} from "@/lib/live-sessions";
+import { liveSessionState, rollupState } from "@/lib/agent-state";
+import { formatTokenCount, formatTokens, formatWhen, scopedSessionPath } from "@/lib/live-sessions";
 
 export function TaskSessions({ taskId }: { taskId: string }) {
   const [params] = useSearchParams();
@@ -20,11 +16,13 @@ export function TaskSessions({ taskId }: { taskId: string }) {
     .map((s) => s.last_activity_at ?? "")
     .sort()
     .pop();
+  const groupState = rollupState((sessions ?? []).map(liveSessionState));
   return (
     <div className="border-t border-surface-highest pt-4 space-y-3" data-testid="task-sessions">
       <div className="flex items-center gap-1.5 font-label text-xs text-outline">
         <Bot size={12} />
         Agent sessions
+        {groupState && <StateBadge state={groupState} compact testId="task-sessions-state" />}
         {sessions && sessions.length > 0 && (
           <span className="font-body text-xs normal-case tracking-normal text-on-surface-variant">
             {" "}
@@ -56,10 +54,7 @@ export function TaskSessions({ taskId }: { taskId: string }) {
               data-testid="task-session-row"
               className="flex flex-wrap items-center gap-3 px-2 py-2 rounded-lg"
             >
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${STATUS[s.status].dot}`}
-                title={STATUS[s.status].label}
-              />
+              <StateBadge state={liveSessionState(s)} compact context={s.agent} />
               <span className="font-label text-xs text-primary w-14 shrink-0">{s.agent}</span>
               <Link
                 to={scopedSessionPath(

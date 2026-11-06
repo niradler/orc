@@ -1,13 +1,6 @@
 import { agentForSessionBackend } from "@orc/core/coding-agents";
 import type { LiveSession } from "@/api/client";
 
-export const STATUS: Record<LiveSession["status"], { label: string; dot: string }> = {
-  running: { label: "working", dot: "bg-progress motion-safe:animate-pulse" },
-  idle: { label: "waiting for you", dot: "bg-tertiary" },
-  stopped: { label: "ended", dot: "bg-outline" },
-  error: { label: "error", dot: "bg-error" },
-};
-
 export function resumeCommand(s: LiveSession): string | null {
   if (!s.session_id || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(s.session_id)) return null;
   const cwd = s.cwd?.replace(/^\\\\\?\\(?=[A-Za-z]:\\)/, "");

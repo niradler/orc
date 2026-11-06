@@ -1,5 +1,40 @@
 # Configuration
 
+## Usage in Settings
+
+Open **Settings → Usage** for session token history and account quotas. History
+shows lifetime token totals for imported native sessions started in the last 7,
+30 or 90 days, or all time, across all projects. Daily rows use UTC session start
+dates; they do not represent tokens consumed that day. Missing counts are reported
+separately, Cursor counts are estimates, and these totals are not billed costs.
+Claude totals include input, output, cache-creation and cache-read tokens, with
+repeated assistant messages counted once. Older Claude counts refresh from
+available transcripts on the next session sync, even for unchanged sessions.
+Until a refresh succeeds, those counts are excluded from token totals and
+reported among sessions without complete token counts. Inaccessible transcripts
+remain unknown; ORC does not substitute their old partial counts.
+The existing session importers determine which tokens are counted; this view does
+not rescan transcripts or include managed gateway sessions a second time.
+
+![Usage in Settings with demo data](/screens/settings-usage.png)
+
+Account quotas show percentage used and reset times for local Codex and Claude
+accounts on the API host. ORC reads the existing CLI login from
+`CODEX_HOME/auth.json` (default `~/.codex/auth.json`) or
+`CLAUDE_CONFIG_DIR/.credentials.json` (default `~/.claude/.credentials.json`) and
+requests quota data from the provider over HTTPS. Credentials stay on the server
+and are never returned to the browser. Keychain-only, API-key and SSH-host logins
+are not supported. Missing logins, expired access and unsupported provider
+responses display an unavailable state. Sign in again using the provider CLI
+when access expires; ORC does not refresh or modify provider credentials.
+
+The authenticated read-only routes `GET /api/usage/history?days=30` and
+`GET /api/usage/quotas` expose the same data. History accepts `7`, `30`, `90`, or
+`0` (all time). Quota requests share a 60-second server cache and an 8-second
+provider timeout. The Usage panel polls quotas once a minute while open; Refresh
+retries both views while respecting that cache. Provider quota interfaces can
+change; unavailable quota data does not prevent session history from loading.
+
 Where ORC keeps its config and data, every config key and environment variable you are likely to set, logs, running as a background service, and authentication.
 
 ## Files and directories

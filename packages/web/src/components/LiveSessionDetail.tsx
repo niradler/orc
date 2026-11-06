@@ -4,12 +4,15 @@ import type { LiveSession, TranscriptPage } from "@/api/client";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
+import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
+import { StateBadge } from "@/components/StateBadge";
 import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveSessions, useTranscript } from "@/hooks/useSessions";
-import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
+import { liveSessionState } from "@/lib/agent-state";
+import { formatTokens, formatWhen } from "@/lib/live-sessions";
 
 type Turn = TranscriptPage["turns"][number];
 type TurnBlock = Turn["blocks"][number];
@@ -237,10 +240,7 @@ export function LiveSessionDetail({
           {session && (
             <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
               <span className="font-medium text-primary">{session.agent}</span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${STATUS[session.status].dot}`} />
-                {STATUS[session.status].label}
-              </span>
+              <StateBadge state={liveSessionState(session)} />
               <span>
                 <span className="text-on-surface-variant">tokens </span>
                 {formatTokens(session)}
@@ -255,6 +255,7 @@ export function LiveSessionDetail({
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
           )}
+          {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-[150px] flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-outline" />

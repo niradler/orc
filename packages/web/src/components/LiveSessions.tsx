@@ -11,6 +11,7 @@ import { Pager } from "@/components/Pager";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
+import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -24,7 +25,8 @@ import { ViewHeader } from "@/components/ViewHeader";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { useLiveSessions, useSessionSearch, useSyncSessions } from "@/hooks/useSessions";
-import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
+import { liveSessionState } from "@/lib/agent-state";
+import { formatTokens, formatWhen } from "@/lib/live-sessions";
 
 const AGENTS = [...CODING_AGENTS.flatMap((agent) => agent.sessionBackends), "cursor"];
 const PAGE_SIZE = 25;
@@ -244,10 +246,9 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                     </button>
                     <div className="flex flex-wrap gap-3 text-xs text-outline">
                       <span className="text-primary">{session.agent}</span>
-                      <span data-testid="live-status">
-                        {session.handoff?.status === "ready"
-                          ? "Ready"
-                          : STATUS[session.status].label}
+                      <span data-testid="live-status" className="inline-flex items-center gap-1.5">
+                        <StateBadge state={liveSessionState(session)} />
+                        {session.handoff?.status === "ready" && <span>· Ready to resume</span>}
                       </span>
                       <span data-testid="live-tokens">{formatTokens(session)} tokens</span>
                       <span>{formatWhen(session.last_activity_at)}</span>
@@ -292,7 +293,6 @@ export function LiveSessions({ projectId }: { projectId: string }) {
               </TableHeader>
               <TableBody>
                 {visible.slice(pageStart, pageStart + PAGE_SIZE).map((s) => {
-                  const st = STATUS[s.status];
                   return (
                     <TableRow
                       key={s.id}
@@ -309,9 +309,14 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       }}
                     >
                       <TableCell className="font-label text-xs text-on-surface">
-                        <span className="inline-flex items-center gap-2" data-testid="live-status">
-                          <span className={`h-2 w-2 rounded-full ${st.dot}`} />
-                          {s.handoff?.status === "ready" ? "Ready" : st.label}
+                        <span
+                          className="inline-flex items-center gap-1.5"
+                          data-testid="live-status"
+                        >
+                          <StateBadge state={liveSessionState(s)} />
+                          {s.handoff?.status === "ready" && (
+                            <span className="text-on-surface-variant">· Ready to resume</span>
+                          )}
                         </span>
                       </TableCell>
                       <TableCell className="font-label text-xs font-medium text-primary">

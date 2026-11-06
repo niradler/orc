@@ -2,6 +2,7 @@ import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
+import { type AgentState, liveSessionState, moreUrgent } from "./agent-state";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   running: boolean;
@@ -15,23 +16,17 @@ type HistorySource =
   | { kind: "saved"; thread: SavedChat }
   | { kind: "native"; session: LiveSession }
   | { kind: "archive"; session: ArchiveSession };
-export type ChatHistoryState = "idle" | "open" | "running" | "waiting" | "attention" | "error";
 export type ChatHistoryEntry = HistorySource & {
   id: string;
   title: string;
   updatedAt: number;
-  observedState?: ChatHistoryState;
+  observedState?: AgentState;
   provider?: string;
   projectId?: string | null;
 };
 
-export function mergeHistoryState(a: ChatHistoryState, b: ChatHistoryState): ChatHistoryState {
-  const priority = { idle: 0, open: 1, attention: 2, running: 3, error: 4, waiting: 5 };
-  return priority[a] >= priority[b] ? a : b;
-}
-
-function observe(entry: ChatHistoryEntry, state: ChatHistoryState) {
-  entry.observedState = mergeHistoryState(entry.observedState ?? "idle", state);
+function observe(entry: ChatHistoryEntry, state: AgentState) {
+  entry.observedState = entry.observedState ? moreUrgent(entry.observedState, state) : state;
 }
 
 function timestamp(value: number | string | null | undefined): number {
@@ -97,7 +92,7 @@ export function chatHistoryList(
   )) {
     if (chatIds.has(thread.id)) {
       const entry = entries.find((entry) => entry.id === `chat:${thread.id}`);
-      if (entry && thread.running) observe(entry, "running");
+      if (entry && thread.running) observe(entry, "working");
       continue;
     }
     const key =
@@ -108,7 +103,7 @@ export function chatHistoryList(
       (thread.sourceId ? sources.get(thread.sourceId) : undefined) ||
       (key ? identities.get(key) : undefined);
     if (existing) {
-      if (thread.running) observe(existing, "running");
+      if (thread.running) observe(existing, "working");
       existing.updatedAt = Math.max(existing.updatedAt, timestamp(thread.updatedAt));
       keywords.set(
         existing.id,
@@ -124,7 +119,7 @@ export function chatHistoryList(
       id: `chat:${thread.id}`,
       title: thread.title,
       updatedAt: timestamp(thread.updatedAt),
-      observedState: thread.running ? "running" : "idle",
+      observedState: thread.running ? "working" : "idle",
     };
     entries.push(entry);
     keywords.set(entry.id, `${thread.title} ${thread.agent ?? ""}`);
@@ -153,18 +148,7 @@ export function chatHistoryList(
     if (!existing) entries.push(entry);
     entry.provider ??= session.agent;
     entry.projectId = session.project_id;
-    observe(
-      entry,
-      session.waiting_for_human
-        ? "waiting"
-        : session.status === "running"
-          ? "running"
-          : session.status === "error"
-            ? "error"
-            : session.status === "idle"
-              ? "open"
-              : "idle",
-    );
+    observe(entry, liveSessionState(session));
     entry.updatedAt = Math.max(entry.updatedAt, date);
     keywords.set(
       entry.id,

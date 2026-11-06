@@ -12,6 +12,7 @@ import cursorIcon from "@/assets/providers/cursor.svg?no-inline";
 import { ActionHelp } from "@/components/ActionHelp";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,7 +35,8 @@ import { useEnabledAgents } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { useSsh } from "@/hooks/useSsh";
-import { type ChatHistoryEntry, chatHistoryList, mergeHistoryState } from "@/lib/chat-history-list";
+import { AGENT_STATES, type AgentState, liveSessionState, moreUrgent } from "@/lib/agent-state";
+import { type ChatHistoryEntry, chatHistoryList } from "@/lib/chat-history-list";
 
 const providerIcons: Record<string, string> = {
   claude: claudeIcon,
@@ -383,7 +385,6 @@ function SessionHistoryFrame({
   );
 }
 
-type SessionState = "idle" | "open" | "running" | "waiting" | "attention" | "error";
 function HistoryRow({
   entry,
   pending,
@@ -403,34 +404,24 @@ function HistoryRow({
   const tab = entry.kind === "local" ? entry.tab : null;
   const selected = tab?.key === chat.activeKey;
   const open = !!tab && !tab.hidden;
-  const localState: SessionState = tab
+  const localState: AgentState = tab
     ? tab.permissions.length || tab.questions.length
-      ? "waiting"
+      ? "needs-you"
       : tab.error
-        ? "error"
+        ? "failed"
         : tab.streaming
-          ? "running"
+          ? "working"
           : tab.attention
-            ? "attention"
-            : open
-              ? "open"
-              : "idle"
+            ? "done"
+            : "idle"
     : entry.kind === "saved"
       ? entry.thread.running
-        ? "running"
+        ? "working"
         : "idle"
       : entry.kind === "native"
-        ? entry.session.waiting_for_human
-          ? "waiting"
-          : entry.session.status === "running"
-            ? "running"
-            : entry.session.status === "idle"
-              ? "open"
-              : entry.session.status === "error"
-                ? "error"
-                : "idle"
-        : "idle";
-  const state = mergeHistoryState(localState, entry.observedState ?? "idle");
+        ? liveSessionState(entry.session)
+        : "ended";
+  const state = entry.observedState ? moreUrgent(localState, entry.observedState) : localState;
   const agent =
     tab?.config.agent ||
     (entry.kind === "saved"
@@ -438,14 +429,7 @@ function HistoryRow({
       : entry.kind === "native" || entry.kind === "archive"
         ? entry.session.agent
         : "");
-  const status = {
-    idle: "Saved session",
-    open: "Open session",
-    running: "Working",
-    waiting: "Needs your input",
-    attention: "New response",
-    error: "Error",
-  }[state];
+  const status = AGENT_STATES[state].label;
   const selectRow = () => {
     if (entry.kind === "local") {
       chat.selectTab(entry.tab.key);
@@ -483,12 +467,10 @@ function HistoryRow({
           className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60"
         >
           <span
-            data-testid="chat-session-status"
-            data-state={state}
             role="img"
-            aria-label={`${agent || "Unknown provider"} · ${status}`}
-            title={`${agent || "Unknown provider"} · ${status}`}
-            className={`inline-flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold ${state === "waiting" || state === "attention" ? "text-warning" : state === "error" ? "text-error" : state === "running" || state === "open" ? "text-progress" : "text-muted-foreground"}`}
+            aria-label={agent || "Unknown provider"}
+            title={agent || "Unknown provider"}
+            className="inline-flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold text-muted-foreground"
           >
             {agent && providerIcons[agent] ? (
               <span
@@ -512,6 +494,12 @@ function HistoryRow({
             )}
           </span>
           <span className="min-w-0 flex-1 truncate text-[13px]">{entry.title}</span>
+          <StateBadge
+            state={state}
+            compact
+            context={agent || undefined}
+            testId="chat-session-status"
+          />
           <span className="sr-only">
             {agent ? ` · ${agent}` : ""}
             {tab?.draft ? " · Draft" : ""}
