@@ -72,6 +72,7 @@ import type {
   SkillSyncInput,
   SkillSyncResult,
 } from "@orc/core/skill-import-types";
+import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
 import type {
   AgentBackendInfo,
   AgentFull,
@@ -811,7 +812,14 @@ export function createOrcClient(options?: OrcClientOptions) {
         }>("GET", `/projects/${id}/comments`),
     },
 
+    usage: {
+      history: (days: "7" | "30" | "90" | "0" = "30") =>
+        c<UsageHistory>("GET", "/usage/history", undefined, { days }),
+      quotas: () => c<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
+    },
     sessions: {
+      cacheUsage: (id: string) =>
+        c<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
       archiveSync: (projects?: string[]) =>
         c<{
           sync_url: string;
