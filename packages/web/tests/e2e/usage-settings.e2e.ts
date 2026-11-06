@@ -50,7 +50,7 @@ for (const width of [1440, 390])
       const section = page.getByTestId("settings-usage");
       await expect(section).toBeVisible();
       await expect(page.getByTestId("usage-total-tokens")).toHaveText("125,000");
-      await expect(section).toContainText("Sessions without reported token counts: 1");
+      await expect(section).toContainText("Sessions without complete token counts: 1");
       await expect(section).toContainText("Cursor sessions");
       await expect(section.getByRole("progressbar").first()).toHaveAttribute("aria-valuenow", "35");
       await expect(section.getByRole("progressbar").last()).toHaveAttribute("aria-valuenow", "100");

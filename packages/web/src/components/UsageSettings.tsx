@@ -158,7 +158,7 @@ export function UsageSettings() {
             </dl>
             {data.totals.unknown_sessions > 0 && (
               <p className="mb-3 text-xs text-muted-foreground">
-                Sessions without reported token counts: {count.format(data.totals.unknown_sessions)}
+                Sessions without complete token counts: {count.format(data.totals.unknown_sessions)}
                 . Excluded from token totals.
               </p>
             )}

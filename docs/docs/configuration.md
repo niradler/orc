@@ -7,6 +7,12 @@ shows lifetime token totals for imported native sessions started in the last 7,
 30 or 90 days, or all time, across all projects. Daily rows use UTC session start
 dates; they do not represent tokens consumed that day. Missing counts are reported
 separately, Cursor counts are estimates, and these totals are not billed costs.
+Claude totals include input, output, cache-creation and cache-read tokens, with
+repeated assistant messages counted once. Older Claude counts refresh from
+available transcripts on the next session sync, even for unchanged sessions.
+Until a refresh succeeds, those counts are excluded from token totals and
+reported among sessions without complete token counts. Inaccessible transcripts
+remain unknown; ORC does not substitute their old partial counts.
 The existing session importers determine which tokens are counted; this view does
 not rescan transcripts or include managed gateway sessions a second time.
 

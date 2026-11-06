@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const CLAUDE_TOKENS_VERSION = 1;
+
 const UsageCountSchema = z.object({
   sessions: z.number().int().nonnegative(),
   tokens: z.number().nonnegative(),

@@ -148,19 +148,30 @@ async function loadKnown(
         {
           lastActivityMs: r.last_activity_at?.getTime() ?? 0,
           tokensUsed: r.tokens_used ?? null,
+          tokensVersion: r.tokens_version,
+          session: {
+            backend: r.backend,
+            externalId: r.runtime_session_id as string,
+            title: r.title ?? (r.runtime_session_id as string),
+            cwd: r.cwd,
+            summary: r.summary,
+            status: "stopped" as const,
+            createdAt: r.created_at,
+            lastActivityAt: r.last_activity_at ?? r.updated_at,
+          },
         },
       ]),
   );
 }
 
-function queueTokens(id: string, compute: () => Promise<number | null>): void {
+function queueTokens(id: string, compute: () => Promise<number | null>, version = 0): void {
   tokenChain = tokenChain
     .then(async () => {
       const tokens = await compute();
       if (tokens != null) {
         await getDb()
           .update(gateway_sessions)
-          .set({ tokens_used: tokens })
+          .set({ tokens_used: tokens, tokens_version: version })
           .where(eq(gateway_sessions.id, id));
       }
     })
@@ -176,7 +187,7 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
     let pendingChanged = false;
     for (const r of records) {
       const id = await upsertRecord(r, executionHost);
-      if (r.tokens) queueTokens(id, r.tokens);
+      if (r.tokens) queueTokens(id, r.tokens, r.tokensVersion);
       if (r.pendingHuman === true && r.status !== "stopped" && !pending.has(r.externalId)) {
         pending.add(r.externalId);
         pendingChanged = true;

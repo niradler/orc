@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { UsageHistorySchema, UsageQuotasSchema } from "@orc/core/usage";
+import { CLAUDE_TOKENS_VERSION, UsageHistorySchema, UsageQuotasSchema } from "@orc/core/usage";
 import { getSqlite } from "@orc/db/client";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID } from "../sessions/common.js";
@@ -34,16 +34,21 @@ app.openapi(
           unknown_sessions: number;
           estimated_sessions: number;
         },
-        [string, number]
+        [number, string, number]
       >(`
+    WITH imported AS (
+      SELECT backend, created_at,
+        CASE WHEN backend = 'claude' AND tokens_version < ? THEN NULL ELSE tokens_used END AS tokens_used
+      FROM gateway_sessions WHERE chat_id = ? AND created_at >= ?
+    )
     SELECT backend AS agent, date(created_at, 'unixepoch') AS date,
       count(*) AS sessions, coalesce(sum(max(coalesce(tokens_used, 0), 0)), 0) AS tokens,
       sum(CASE WHEN tokens_used IS NULL THEN 1 ELSE 0 END) AS unknown_sessions,
       sum(CASE WHEN backend = 'cursor' AND tokens_used IS NOT NULL THEN 1 ELSE 0 END) AS estimated_sessions
-    FROM gateway_sessions WHERE chat_id = ? AND created_at >= ?
+    FROM imported
     GROUP BY backend, date(created_at, 'unixepoch') ORDER BY date DESC, backend
   `)
-      .all(LIVE_CHAT_ID, since ? Math.floor(since.getTime() / 1000) : 0);
+      .all(CLAUDE_TOKENS_VERSION, LIVE_CHAT_ID, since ? Math.floor(since.getTime() / 1000) : 0);
     const totals = { sessions: 0, tokens: 0, unknown_sessions: 0, estimated_sessions: 0 };
     const agents = new Map<string, typeof totals & { agent: string }>();
     const daily = new Map<string, typeof totals & { date: string }>();

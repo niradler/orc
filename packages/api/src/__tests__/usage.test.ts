@@ -69,6 +69,30 @@ test("should aggregate imported sessions once, preserve unknown and estimated co
   expect(all.daily).toHaveLength(2);
 });
 
+test("should exclude old Claude counts until they have been refreshed with cache-read tokens", async () => {
+  const sqlite = getSqlite();
+  const baseline = UsageHistorySchema.parse(
+    await (await app.request("/api/usage/history?days=0", { headers })).json(),
+  );
+  sqlite.run(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, tokens_used, tokens_version, created_at) VALUES ('usage-old-claude', ?, 'claude', 'direct', 100, 0, ?)",
+    [LIVE_CHAT_ID, Math.floor(Date.now() / 1000)],
+  );
+  const stale = UsageHistorySchema.parse(
+    await (await app.request("/api/usage/history?days=0", { headers })).json(),
+  );
+  expect(stale.totals.tokens).toBe(baseline.totals.tokens);
+  expect(stale.totals.unknown_sessions).toBe(baseline.totals.unknown_sessions + 1);
+  sqlite.run(
+    "UPDATE gateway_sessions SET tokens_used = 1500, tokens_version = 1 WHERE id = 'usage-old-claude'",
+  );
+  const refreshed = UsageHistorySchema.parse(
+    await (await app.request("/api/usage/history?days=0", { headers })).json(),
+  );
+  expect(refreshed.totals.tokens).toBe(baseline.totals.tokens + 1500);
+  expect(refreshed.totals.unknown_sessions).toBe(baseline.totals.unknown_sessions);
+});
+
 test("should decode quota windows including zero and exhausted usage and reject malformed data", () => {
   expect(
     decodeClaudeQuota({
