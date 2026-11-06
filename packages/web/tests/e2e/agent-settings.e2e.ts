@@ -44,6 +44,7 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("chat-agent-option-opencode")).toHaveText("OpenCode");
       await expect(page.getByTestId("chat-agent-option-qoder")).toHaveText("qoder");
       await expect(page.getByTestId("chat-agent-option-copilot")).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath(`chat-agent-picker-${width}.png`) });
       expect(errors).toEqual([]);
     } finally {
       await apiPatch(request, "/settings", { agents: [] });

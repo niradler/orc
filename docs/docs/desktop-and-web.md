@@ -136,6 +136,12 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Storage | Where settings are stored |
 | About | Server, desktop and Electron versions, platform, runtime, data folder, uptime and project links |
 
+![Coding agents settings](/screens/settings-agents.png)
+
+Enabled agents, including custom ACPX ids, appear in the chat agent picker:
+
+![Chat agent picker](/screens/chat-agent-picker.png)
+
 ## Desktop app only
 
 The desktop app is an Electron shell around the same dashboard. On top of the browser experience it:
