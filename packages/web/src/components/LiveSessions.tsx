@@ -10,6 +10,7 @@ import { LiveSessionDetail } from "@/components/LiveSessionDetail";
 import { Pager } from "@/components/Pager";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { ResumeActions } from "@/components/ResumeActions";
+import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
@@ -24,9 +25,13 @@ import {
 import { ViewHeader } from "@/components/ViewHeader";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
+import { useSessionSeen } from "@/hooks/useSessionSeen";
 import { useLiveSessions, useSessionSearch, useSyncSessions } from "@/hooks/useSessions";
-import { liveSessionState } from "@/lib/agent-state";
+import { useStableOrder } from "@/hooks/useStableOrder";
+import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { formatTokens, formatWhen } from "@/lib/live-sessions";
+import { filterCounts, matchesFilter, parseFilter } from "@/lib/session-filter";
+import { lastSeen, markSeen, unseenState } from "@/lib/session-seen";
 
 const AGENTS = [...CODING_AGENTS.flatMap((agent) => agent.sessionBackends), "cursor"];
 const PAGE_SIZE = 25;
@@ -42,6 +47,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   const query = params.get("q") ?? "";
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const openId = params.get("session");
+  const stateFilter = parseFilter(params.get("state"));
   const [draft, setDraft] = useState(query);
   const [pagination, setPagination] = useState({ order, page: 0 });
   const page = pagination.order === order ? pagination.page : 0;
@@ -88,21 +94,49 @@ export function LiveSessions({ projectId }: { projectId: string }) {
       (!agent || s.agent === agent) &&
       (showEnded || s.status !== "stopped" || s.handoff?.status === "ready"),
   );
-  const visible = byAgent
-    .filter((s) =>
-      projectId === "all"
-        ? true
-        : projectId === "unassigned"
-          ? s.project_id === null
-          : s.project_id === projectId,
-    )
-    .sort((a, b) => {
-      const compared =
-        new Date(a.last_activity_at ?? a.created_at).getTime() -
-        new Date(b.last_activity_at ?? b.created_at).getTime();
-      const result = compared || a.id.localeCompare(b.id);
-      return order === "asc" ? result : -result;
-    });
+  const seen = useSessionSeen();
+  useEffect(() => {
+    if (!openId) return;
+    const keys = [`native:${openId}`];
+    markSeen(keys);
+    return () => markSeen(keys);
+  }, [openId]);
+  const activity = (s: Row) => new Date(s.last_activity_at ?? s.created_at).getTime();
+  const states = new Map<string, AgentState>(
+    byAgent.map((s) => [
+      s.id,
+      s.id === openId
+        ? liveSessionState(s)
+        : unseenState(liveSessionState(s), activity(s), lastSeen(seen, [`native:${s.id}`])),
+    ]),
+  );
+  const stateOf = (s: Row) => states.get(s.id) ?? liveSessionState(s);
+  const scoped = byAgent.filter((s) =>
+    projectId === "all"
+      ? true
+      : projectId === "unassigned"
+        ? s.project_id === null
+        : s.project_id === projectId,
+  );
+  const counts = filterCounts(scoped.map(stateOf));
+  const byId = new Map(scoped.map((s) => [s.id, s]));
+  const stable = useStableOrder({
+    items: scoped
+      .filter((s) => matchesFilter(stateOf(s), stateFilter))
+      .sort((a, b) => {
+        const compared =
+          new Date(a.last_activity_at ?? a.created_at).getTime() -
+          new Date(b.last_activity_at ?? b.created_at).getTime();
+        const result = compared || a.id.localeCompare(b.id);
+        return order === "asc" ? result : -result;
+      }),
+    id: (s) => s.id,
+    version: (s) => String(activity(s)),
+    lookup: (id) => byId.get(id),
+    resetKey: [projectId, stateFilter, agent, showEnded, query, order].join("\n"),
+    loading: isLoading,
+  });
+  const visible = stable.items;
   const pageStart =
     Math.min(page, Math.max(0, Math.ceil(visible.length / PAGE_SIZE) - 1)) * PAGE_SIZE;
   const scopeName =
@@ -118,7 +152,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
         meta={
           <>
             {visible.length}
-            {visible.length !== byAgent.length && (
+            {scoped.length !== byAgent.length && (
               <span data-testid="scope-hint" className="normal-case tracking-normal">
                 {" "}
                 of {byAgent.length} · scope: {scopeName}
@@ -202,199 +236,221 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           }
         </ResponsiveFilters>
       </div>
-      {sync.error && (
-        <p role="alert" className="mb-3 text-sm text-error">
-          {sync.error.message}
-        </p>
-      )}
-      {result.error ? (
-        <ErrorState message={result.error.message} onRetry={() => result.refetch()} />
-      ) : isLoading ? (
-        <p role="status" className="py-8 text-sm text-outline">
-          Loading sessions…
-        </p>
-      ) : visible.length === 0 ? (
-        <EmptyState
-          message={
-            searching
-              ? "No sessions match"
-              : "No active agent sessions. Enable Show ended to browse previous conversations."
-          }
-        />
-      ) : (
-        <div className="min-w-0 overflow-hidden">
-          {!desktop ? (
-            <div className="divide-y divide-border">
-              {visible.slice(pageStart, pageStart + PAGE_SIZE).map((session) => {
-                return (
-                  <article
-                    key={session.id}
-                    data-testid="live-session-row"
-                    data-session-id={session.session_id}
-                    data-agent={session.agent}
-                    className="py-3 space-y-2"
-                  >
-                    <button
-                      type="button"
-                      className="text-left text-sm font-medium wrap-break-word hover:text-primary"
-                      onClick={() => setParam("session", session.id)}
-                    >
-                      <Highlight
-                        text={session.name ?? "Untitled session"}
-                        query={searching ? query : ""}
-                      />
-                    </button>
-                    <div className="flex flex-wrap gap-3 text-xs text-outline">
-                      <span className="text-primary">{session.agent}</span>
-                      <span data-testid="live-status" className="inline-flex items-center gap-1.5">
-                        <StateBadge state={liveSessionState(session)} />
-                        {session.handoff?.status === "ready" && <span>· Ready to resume</span>}
-                      </span>
-                      <span data-testid="live-tokens">{formatTokens(session)} tokens</span>
-                      <span>{formatWhen(session.last_activity_at)}</span>
-                    </div>
-                    {session.summary && (
-                      <p className="text-sm text-outline wrap-break-word">
-                        <Highlight text={session.summary} query={searching ? query : ""} />
-                      </p>
-                    )}
-                    {session.snippets?.map((snippet) => (
-                      <p
-                        key={snippet}
-                        data-testid="search-snippet"
-                        className="text-xs wrap-break-word text-on-surface-variant"
-                      >
-                        <Highlight text={snippet} query={query} />
-                      </p>
-                    ))}
-                    <p className="text-xs text-outline break-all">
-                      {(session.project_id && projectName.get(session.project_id)) || "Unassigned"}
-                      {session.cwd ? ` · ${session.cwd}` : ""}
-                    </p>
-                    <SessionTaskLink session={session} />
-                    <ResumeActions session={session} />
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-b border-border hover:bg-transparent">
-                  <TableHead className={`${HEAD} w-40`}>Status</TableHead>
-                  <TableHead className={`${HEAD} w-20`}>Agent</TableHead>
-                  <TableHead className={HEAD}>Session</TableHead>
-                  <TableHead className={`${HEAD} w-28`}>Project</TableHead>
-                  <TableHead className={`${HEAD} w-20 text-right`}>Tokens</TableHead>
-                  <TableHead className={`${HEAD} w-36`}>Last active</TableHead>
-                  <TableHead className={`${HEAD} w-56`}>Task</TableHead>
-                  <TableHead className={`${HEAD} w-24`} />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visible.slice(pageStart, pageStart + PAGE_SIZE).map((s) => {
+      <div {...stable.listProps}>
+        {searching ? (
+          <StableOrderPill pending={stable.pending} onApply={stable.apply} />
+        ) : (
+          <SessionStateFilters
+            className="mb-3"
+            value={stateFilter}
+            counts={counts}
+            onChange={(filter) => setParam("state", filter === "all" ? null : filter)}
+          >
+            <StableOrderPill pending={stable.pending} onApply={stable.apply} />
+          </SessionStateFilters>
+        )}
+        {sync.error && (
+          <p role="alert" className="mb-3 text-sm text-error">
+            {sync.error.message}
+          </p>
+        )}
+        {result.error ? (
+          <ErrorState message={result.error.message} onRetry={() => result.refetch()} />
+        ) : isLoading ? (
+          <p role="status" className="py-8 text-sm text-outline">
+            Loading sessions…
+          </p>
+        ) : visible.length === 0 ? (
+          <EmptyState
+            message={
+              searching || stateFilter !== "all"
+                ? "No sessions match"
+                : "No active agent sessions. Enable Show ended to browse previous conversations."
+            }
+          />
+        ) : (
+          <div className="min-w-0 overflow-hidden">
+            {!desktop ? (
+              <div className="divide-y divide-border">
+                {visible.slice(pageStart, pageStart + PAGE_SIZE).map((session) => {
                   return (
-                    <TableRow
-                      key={s.id}
+                    <article
+                      key={session.id}
                       data-testid="live-session-row"
-                      data-session-id={s.session_id}
-                      data-agent={s.agent}
-                      className="border-b border-border/65 cursor-pointer hover:bg-surface-high"
-                      onClick={(event) => {
-                        if (
-                          (event.target as HTMLElement).closest("button, a, input, [role='dialog']")
-                        )
-                          return;
-                        setParam("session", s.id);
-                      }}
+                      data-session-id={session.session_id}
+                      data-agent={session.agent}
+                      data-state={stateOf(session)}
+                      className="py-3 space-y-2"
                     >
-                      <TableCell className="font-label text-xs text-on-surface">
-                        <span
-                          className="inline-flex items-center gap-1.5"
-                          data-testid="live-status"
-                        >
-                          <StateBadge state={liveSessionState(s)} />
-                          {s.handoff?.status === "ready" && (
-                            <span className="text-on-surface-variant">· Ready to resume</span>
-                          )}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-label text-xs font-medium text-primary">
-                        {s.agent}
-                      </TableCell>
-                      <TableCell className="max-w-md">
-                        <button
-                          type="button"
-                          className="block max-w-full text-left font-body text-sm font-medium text-on-surface truncate hover:text-primary"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setParam("session", s.id);
-                          }}
-                        >
-                          <Highlight
-                            text={s.name ?? "Untitled session"}
-                            query={searching ? query : ""}
-                          />
-                        </button>
-                        {s.summary && s.summary !== s.name && (
-                          <div
-                            className="font-body text-xs text-outline truncate"
-                            title={s.summary}
-                          >
-                            <Highlight text={s.summary} query={searching ? query : ""} />
-                          </div>
-                        )}
-                        {s.snippets?.map((snippet) => (
-                          <div
-                            key={snippet}
-                            data-testid="search-snippet"
-                            className="font-mono text-xs text-on-surface-variant truncate"
-                            title={snippet}
-                          >
-                            <Highlight text={snippet} query={query} />
-                          </div>
-                        ))}
-                        <div
-                          className="font-label text-xs text-outline truncate"
-                          title={s.cwd ?? undefined}
-                        >
-                          {s.cwd ?? ""}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-label text-xs text-outline">
-                        {(s.project_id && projectName.get(s.project_id)) || "—"}
-                      </TableCell>
-                      <TableCell
-                        data-testid="live-tokens"
-                        className="font-body text-xs text-on-surface-variant text-right"
+                      <button
+                        type="button"
+                        className="text-left text-sm font-medium wrap-break-word hover:text-primary"
+                        onClick={() => setParam("session", session.id)}
                       >
-                        {formatTokens(s)}
-                      </TableCell>
-                      <TableCell className="font-body text-xs text-on-surface-variant">
-                        {formatWhen(s.last_activity_at)}
-                      </TableCell>
-                      <TableCell>
-                        <SessionTaskLink session={s} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="inline-flex items-center gap-3">
-                          <ResumeActions session={s} />
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        <Highlight
+                          text={session.name ?? "Untitled session"}
+                          query={searching ? query : ""}
+                        />
+                      </button>
+                      <div className="flex flex-wrap gap-3 text-xs text-outline">
+                        <span className="text-primary">{session.agent}</span>
+                        <span
+                          data-testid="live-status"
+                          className="inline-flex items-center gap-1.5"
+                        >
+                          <StateBadge state={stateOf(session)} />
+                          {session.handoff?.status === "ready" && <span>· Ready to resume</span>}
+                        </span>
+                        <span data-testid="live-tokens">{formatTokens(session)} tokens</span>
+                        <span>{formatWhen(session.last_activity_at)}</span>
+                      </div>
+                      {session.summary && (
+                        <p className="text-sm text-outline wrap-break-word">
+                          <Highlight text={session.summary} query={searching ? query : ""} />
+                        </p>
+                      )}
+                      {session.snippets?.map((snippet) => (
+                        <p
+                          key={snippet}
+                          data-testid="search-snippet"
+                          className="text-xs wrap-break-word text-on-surface-variant"
+                        >
+                          <Highlight text={snippet} query={query} />
+                        </p>
+                      ))}
+                      <p className="text-xs text-outline break-all">
+                        {(session.project_id && projectName.get(session.project_id)) ||
+                          "Unassigned"}
+                        {session.cwd ? ` · ${session.cwd}` : ""}
+                      </p>
+                      <SessionTaskLink session={session} />
+                      <ResumeActions session={session} />
+                    </article>
                   );
                 })}
-              </TableBody>
-            </Table>
-          )}
-          <Pager
-            page={pageStart / PAGE_SIZE}
-            pageSize={PAGE_SIZE}
-            total={visible.length}
-            onPage={setPage}
-          />
-        </div>
-      )}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-border hover:bg-transparent">
+                    <TableHead className={`${HEAD} w-40`}>Status</TableHead>
+                    <TableHead className={`${HEAD} w-20`}>Agent</TableHead>
+                    <TableHead className={HEAD}>Session</TableHead>
+                    <TableHead className={`${HEAD} w-28`}>Project</TableHead>
+                    <TableHead className={`${HEAD} w-20 text-right`}>Tokens</TableHead>
+                    <TableHead className={`${HEAD} w-36`}>Last active</TableHead>
+                    <TableHead className={`${HEAD} w-56`}>Task</TableHead>
+                    <TableHead className={`${HEAD} w-24`} />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.slice(pageStart, pageStart + PAGE_SIZE).map((s) => {
+                    return (
+                      <TableRow
+                        key={s.id}
+                        data-testid="live-session-row"
+                        data-session-id={s.session_id}
+                        data-agent={s.agent}
+                        data-state={stateOf(s)}
+                        className="border-b border-border/65 cursor-pointer hover:bg-surface-high"
+                        onClick={(event) => {
+                          if (
+                            (event.target as HTMLElement).closest(
+                              "button, a, input, [role='dialog']",
+                            )
+                          )
+                            return;
+                          setParam("session", s.id);
+                        }}
+                      >
+                        <TableCell className="font-label text-xs text-on-surface">
+                          <span
+                            className="inline-flex items-center gap-1.5"
+                            data-testid="live-status"
+                          >
+                            <StateBadge state={stateOf(s)} />
+                            {s.handoff?.status === "ready" && (
+                              <span className="text-on-surface-variant">· Ready to resume</span>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-label text-xs font-medium text-primary">
+                          {s.agent}
+                        </TableCell>
+                        <TableCell className="max-w-md">
+                          <button
+                            type="button"
+                            className="block max-w-full text-left font-body text-sm font-medium text-on-surface truncate hover:text-primary"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setParam("session", s.id);
+                            }}
+                          >
+                            <Highlight
+                              text={s.name ?? "Untitled session"}
+                              query={searching ? query : ""}
+                            />
+                          </button>
+                          {s.summary && s.summary !== s.name && (
+                            <div
+                              className="font-body text-xs text-outline truncate"
+                              title={s.summary}
+                            >
+                              <Highlight text={s.summary} query={searching ? query : ""} />
+                            </div>
+                          )}
+                          {s.snippets?.map((snippet) => (
+                            <div
+                              key={snippet}
+                              data-testid="search-snippet"
+                              className="font-mono text-xs text-on-surface-variant truncate"
+                              title={snippet}
+                            >
+                              <Highlight text={snippet} query={query} />
+                            </div>
+                          ))}
+                          <div
+                            className="font-label text-xs text-outline truncate"
+                            title={s.cwd ?? undefined}
+                          >
+                            {s.cwd ?? ""}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-label text-xs text-outline">
+                          {(s.project_id && projectName.get(s.project_id)) || "—"}
+                        </TableCell>
+                        <TableCell
+                          data-testid="live-tokens"
+                          className="font-body text-xs text-on-surface-variant text-right"
+                        >
+                          {formatTokens(s)}
+                        </TableCell>
+                        <TableCell className="font-body text-xs text-on-surface-variant">
+                          {formatWhen(s.last_activity_at)}
+                        </TableCell>
+                        <TableCell>
+                          <SessionTaskLink session={s} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center gap-3">
+                            <ResumeActions session={s} />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+            <Pager
+              page={pageStart / PAGE_SIZE}
+              pageSize={PAGE_SIZE}
+              total={visible.length}
+              onPage={setPage}
+            />
+          </div>
+        )}
+      </div>
       <LiveSessionDetail
         key={openId ?? "closed"}
         sessionId={openId}
