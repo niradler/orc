@@ -4,9 +4,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { useAttentionChatWaits } from "@/hooks/useAttentionChatWaits";
-import { useAttentionSessions } from "@/hooks/useAttentionSessions";
-import { useHumanRequests } from "@/hooks/useHumanRequests";
+import { useNeedsYouCount, useNeedsYouTitle } from "@/hooks/useNeedsYouCount";
 import { useProjects } from "@/hooks/useProjects";
 import { persistTheme, useTheme } from "@/lib/theme";
 import { workspaceDestination, workspacePage, workspaceSection } from "@/lib/workspace-navigation";
@@ -42,14 +40,8 @@ export function WorkspaceHeader({
     }
   }, [pathname]);
   const { data: projects } = useProjects({ status: "active" });
-  const { data: humanRequests } = useHumanRequests();
-  const observedSessions = useAttentionSessions();
-  const chatWaits = useAttentionChatWaits();
-  const attentionCount =
-    humanRequests?.filter(
-      (request) => request.status === "pending" || request.status === "unavailable",
-    ).length ?? 0;
-  const totalAttention = attentionCount + observedSessions.data.length + chatWaits.data.length;
+  const totalAttention = useNeedsYouCount();
+  useNeedsYouTitle(totalAttention);
   const { theme, setTheme, error: themeError } = useTheme();
   const section = workspaceSection(pathname);
   const name =

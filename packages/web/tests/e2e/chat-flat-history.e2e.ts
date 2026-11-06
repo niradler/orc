@@ -83,7 +83,7 @@ for (const width of [1440, 390]) {
     await expect(list.getByText(/^Native alias/)).toHaveCount(0);
     await expect(rows.nth(2).getByTestId("chat-session-status")).toHaveAttribute(
       "data-state",
-      "running",
+      "working",
     );
     await expect(rows.nth(3).getByTestId("chat-session-status")).toHaveAttribute(
       "data-state",
@@ -348,12 +348,12 @@ for (const width of [1440, 390]) {
     await expect(rows.last()).toHaveAttribute("data-history-open", "true");
     await expect(rows.last().getByTestId("chat-session-status")).toHaveAttribute(
       "data-state",
-      "open",
+      "idle",
     );
     await expect(list.getByText(/^Duplicate /)).toHaveCount(0);
     await expect(rows.nth(3).getByTestId("chat-session-status")).toHaveAttribute(
       "data-state",
-      "running",
+      "working",
     );
 
     await page.screenshot({ path: testInfo.outputPath(`flat-history-${width}.png`) });
@@ -511,14 +511,14 @@ for (const width of [1440, 390]) {
     await expect(pending).toHaveAttribute("data-active", "true");
     await expect(pending.getByTestId("chat-session-status")).toHaveAttribute(
       "data-state",
-      "waiting",
+      "needs-you",
     );
     await pending.getByTestId("chat-tab-close").click();
     await expect(pending).toBeVisible();
     await expect(pending).toHaveAttribute("data-history-open", "false");
     await expect(pending.getByTestId("chat-session-status")).toHaveAttribute(
       "data-state",
-      "waiting",
+      "needs-you",
     );
     await expect(list.locator("details,summary,h2,h3")).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath(`flat-history-waiting-${width}.png`) });

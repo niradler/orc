@@ -58,7 +58,7 @@ test("registered agents share idle visibility, transcripts, task links and termi
       `[data-testid="live-session-row"][data-session-id="${prefix}-${backend}"]`,
     );
     await expect(row).toBeVisible();
-    await expect(row.getByTestId("live-status")).toHaveText("waiting for you");
+    await expect(row.getByTestId("live-status")).toHaveText("Idle");
     await row.getByTestId("link-task").click();
     const picker = page.getByTestId("session-task-dialog");
     await picker.locator(`[data-testid="session-task-option"][data-task-id="${task.id}"]`).click();
@@ -109,7 +109,7 @@ test("registered agents share idle visibility, transcripts, task links and termi
       page
         .locator(`[data-testid="live-session-row"][data-session-id="${prefix}-${backend}"]`)
         .getByTestId("live-status"),
-    ).toHaveText("ended");
+    ).toHaveText("Ended");
   }
   await page.getByTestId("show-ended").click();
   await expect(page.getByTestId("show-ended")).not.toBeChecked();

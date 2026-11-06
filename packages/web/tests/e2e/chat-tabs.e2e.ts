@@ -31,7 +31,7 @@ test("a run keeps going in its own tab while another conversation runs, and the 
   await panel.getByTestId("chat-send-button").click();
   const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
   const backgroundTab = tabs.filter({ hasText: background });
-  await expect(backgroundTab).toHaveAttribute("data-state", "running");
+  await expect(backgroundTab).toHaveAttribute("data-state", "working");
 
   await panel.getByTestId("chat-clear-button").click();
   await expect(tabs).toHaveCount(1);
@@ -43,11 +43,11 @@ test("a run keeps going in its own tab while another conversation runs, and the 
   await expect(panel.getByTestId("chat-messages")).not.toContainText(background);
 
   // The first run finished unseen, so its tab asks for attention instead of being dropped.
-  await expect(backgroundTab).toHaveAttribute("data-state", "attention", { timeout: 10000 });
+  await expect(backgroundTab).toHaveAttribute("data-state", "done", { timeout: 10000 });
   await backgroundTab.getByTestId("chat-session-select").click();
   await expect(backgroundTab).toHaveAttribute("data-active", "true");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(background);
-  await expect(backgroundTab).toHaveAttribute("data-state", "open");
+  await expect(backgroundTab).toHaveAttribute("data-state", "idle");
 
   await expect(page).toHaveURL(/[?&]chatThread=[0-9a-f-]{36}/);
   const shared = page.url();

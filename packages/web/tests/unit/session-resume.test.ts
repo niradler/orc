@@ -3,7 +3,6 @@ import type { LiveSession } from "../../src/api/client";
 import {
   resumeCommand,
   resumeUnavailableReason,
-  STATUS,
   scopedSessionPath,
 } from "../../src/lib/live-sessions";
 
@@ -35,11 +34,6 @@ describe("agent session actions", () => {
   ])("should offer the native resume command for %s", (agent, command) => {
     expect(resumeCommand({ ...session, agent: agent as string })).toBe(command);
     expect(resumeCommand({ ...session, agent: agent as string, session_id: null })).toBeNull();
-  });
-  test("should use the same status labels for every agent", () => {
-    expect(STATUS.running.label).toBe("working");
-    expect(STATUS.idle.label).toBe("waiting for you");
-    expect(STATUS.stopped.label).toBe("ended");
   });
   test("should not pretend a Cursor IDE chat can resume through the separate CLI store", () => {
     expect(resumeCommand({ ...session, agent: "cursor" })).toBeNull();

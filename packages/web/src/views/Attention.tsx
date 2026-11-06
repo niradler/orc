@@ -16,6 +16,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type LiveSession } from "@/api/client";
 import { CommandRequestForm } from "@/components/CommandRequestForm";
 import { HelpPopover } from "@/components/HelpPopover";
+import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
@@ -29,7 +30,7 @@ import { useTerminals } from "@/lib/terminals";
 type RequestState = { label: string; tone: string; Icon: LucideIcon; spin?: boolean };
 
 const REQUEST_STATUS: Record<HumanRequest["status"], RequestState> = {
-  pending: { label: "Waiting for you", tone: "text-warning", Icon: Clock },
+  pending: { label: "Needs you", tone: "text-warning", Icon: CircleAlert },
   running: { label: "Running", tone: "text-muted-foreground", Icon: LoaderCircle, spin: true },
   unavailable: { label: "Agent unavailable", tone: "text-error", Icon: CircleAlert },
   answered: {
@@ -83,7 +84,8 @@ function ObservedSessionCard({ session }: { session: LiveSession }) {
       <div className="min-w-0 space-y-1">
         <h2 className="text-sm font-medium wrap-break-word">{session.name ?? "Coding session"}</h2>
         <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <span className="text-warning">Question</span>
+          <StateBadge state="needs-you" />
+          <span>Question</span>
           <span>{session.agent}</span>
           <span>{session.host ?? "Local"}</span>
           <span>Reply in the original session</span>
@@ -247,13 +249,21 @@ function RequestCard({
             </span>
           </button>
         </h2>
-        <span
-          data-testid="attention-state"
-          className={`flex shrink-0 items-center gap-1 text-xs ${status.tone}`}
-        >
-          <status.Icon aria-hidden="true" size={13} className={status.spin ? "animate-spin" : ""} />
-          {status.label}
-        </span>
+        {pending ? (
+          <StateBadge state="needs-you" testId="attention-state" className="shrink-0" />
+        ) : (
+          <span
+            data-testid="attention-state"
+            className={`flex shrink-0 items-center gap-1 text-xs ${status.tone}`}
+          >
+            <status.Icon
+              aria-hidden="true"
+              size={13}
+              className={status.spin ? "motion-safe:animate-spin" : ""}
+            />
+            {status.label}
+          </span>
+        )}
       </div>
       <div
         id={`request-details-${request.id}`}
@@ -590,9 +600,8 @@ export default function Attention() {
             <div className="min-w-0 space-y-1">
               <h2 className="text-sm font-medium wrap-break-word">{wait.title}</h2>
               <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                <span className="text-warning">
-                  {wait.kind === "question" ? "Question" : "Approval"}
-                </span>
+                <StateBadge state="needs-you" />
+                <span>{wait.kind === "question" ? "Question" : "Approval"}</span>
                 <span>{wait.agent}</span>
                 <span>{wait.host ?? "Local"}</span>
                 <span>Chat</span>

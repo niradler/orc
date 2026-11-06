@@ -111,7 +111,7 @@ test("queued messages stay with their background conversation across refresh", a
   await openChatHistory(page);
   await expect(
     page.getByTestId("chat-session-list").getByTestId("chat-tab").filter({ hasText: "BACKGROUND" }),
-  ).toHaveAttribute("data-state", "attention");
+  ).toHaveAttribute("data-state", "done");
   await page
     .getByTestId("chat-session-list")
     .getByTestId("chat-tab")
