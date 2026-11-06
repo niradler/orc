@@ -1,4 +1,5 @@
 import type { ChatSettings } from "@orc/core/chat";
+import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 
 export function ChatPermissionSelect({
   config,
@@ -9,7 +10,8 @@ export function ChatPermissionSelect({
   onChange: (config: ChatSettings) => void;
   disabled?: boolean;
 }) {
-  const supported = ["claude", "codex"].includes(config.agent);
+  const capabilities = useAgentCapabilities(config.agent);
+  const supported = capabilities?.livePermissions === true;
   const agentOptions = config.agentOptions[config.agent];
   const sdkMode =
     agentOptions?.runtime === "claude-sdk" ? agentOptions.options.permissionMode : undefined;
@@ -55,7 +57,7 @@ export function ChatPermissionSelect({
       </select>
       <span className="block text-xs text-muted-foreground">
         {!supported
-          ? "Set ACPX permission flags under Advanced launch options in Session settings."
+          ? "This backend does not expose live permission modes. ACP approvals appear individually; ACPX uses Advanced launch options."
           : (sdkMode ?? config.permissionMode) === "bypassPermissions" ||
               (!config.permissionMode && config.autoApprove && config.agent === "claude")
             ? "Allows actions without permission prompts. Codex also runs without a sandbox. Workspace rules still apply."

@@ -1,3 +1,5 @@
+import type { AgentCapabilities } from "@orc/core/types";
+import { UNKNOWN_CAPABILITIES } from "./capabilities.js";
 import { createBackend, listRegisteredBackends } from "./registry.js";
 import type { AgentBackendName, BackendKind } from "./types.js";
 
@@ -8,6 +10,7 @@ import type { AgentBackendName, BackendKind } from "./types.js";
  */
 export type BackendProbe = {
   name: string;
+  capabilities: AgentCapabilities;
   kind: BackendKind;
   /** Usable right now: preflight passed. */
   available: boolean;
@@ -39,6 +42,7 @@ export async function probeBackend(name: AgentBackendName): Promise<BackendProbe
   } catch (err) {
     return {
       name,
+      capabilities: { ...UNKNOWN_CAPABILITIES },
       kind: FALLBACK_KIND[name] ?? "cli",
       available: false,
       error: err instanceof Error ? err.message : String(err),
@@ -65,6 +69,7 @@ export async function probeBackend(name: AgentBackendName): Promise<BackendProbe
 
   return {
     name,
+    capabilities: backend.capabilities ?? { ...UNKNOWN_CAPABILITIES },
     kind: described?.kind ?? FALLBACK_KIND[name] ?? "cli",
     available,
     error,

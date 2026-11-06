@@ -676,6 +676,16 @@ export const api = {
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/cancel`, { version }),
   },
   chat: {
+    capabilities: (agent: string, threadId?: string) =>
+      req<{ backend: string; capabilities: import("@orc/core/types").AgentCapabilities }>(
+        "GET",
+        `/chat/capabilities?${new URLSearchParams({ agent, ...(threadId ? { threadId } : {}) })}`,
+      ),
+    steer: (runId: string, input: string, requestId: string = crypto.randomUUID()) =>
+      req<import("@orc/core/chat").ChatThread>("POST", `/chat/runs/${runId}/steer`, {
+        input,
+        requestId,
+      }),
     waiting: () =>
       req<{
         waiting: {
