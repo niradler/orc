@@ -44,6 +44,7 @@ import type {
   KnowledgeBase,
 } from "@orc/core/kb";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type { ImportResult, ProjectBundle } from "@orc/core/project-bundle";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleTemplate } from "@orc/core/rule-catalog";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
@@ -482,23 +483,62 @@ export function createOrcClient(options?: OrcClientOptions) {
           project_id,
         }),
 
-      previewImport: (project_id: string, dir: string) =>
-        c<MemoryImportPreview>("POST", "/memory-transfer/import/preview", { project_id, dir }),
+      previewImport: (
+        project_id: string,
+        files: Array<{ file: string; content: string }>,
+        dir?: string,
+      ) =>
+        c<MemoryImportPreview>("POST", "/memory-transfer/import/preview", {
+          project_id,
+          files,
+          ...(dir ? { dir } : {}),
+        }),
 
       importNative: (
         project_id: string,
-        dir: string,
+        files: Array<{ file: string; content: string }>,
         memories: Array<{ name: string; replace?: boolean | undefined }>,
-      ) => c<MemoryImportResult>("POST", "/memory-transfer/import", { project_id, dir, memories }),
+        dir?: string,
+      ) =>
+        c<MemoryImportResult>("POST", "/memory-transfer/import", {
+          project_id,
+          files,
+          memories,
+          ...(dir ? { dir } : {}),
+        }),
 
-      previewExport: (project_id: string, dir: string, names?: string[]) =>
-        c<MemoryExportPlan>("POST", "/memory-transfer/export/preview", { project_id, dir, names }),
+      previewExport: (
+        project_id: string,
+        files: Array<{ file: string; content: string }>,
+        names?: string[],
+        dir?: string,
+        index?: boolean,
+      ) =>
+        c<MemoryExportPlan>("POST", "/memory-transfer/export/preview", {
+          project_id,
+          files,
+          names,
+          ...(dir ? { dir } : {}),
+          ...(index ? { index } : {}),
+        }),
 
       exportNative: (
         project_id: string,
-        dir: string,
-        input: { names?: string[] | undefined; overwrite?: string[] | undefined } = {},
-      ) => c<MemoryExportResult>("POST", "/memory-transfer/export", { project_id, dir, ...input }),
+        files: Array<{ file: string; content: string }>,
+        input: {
+          names?: string[] | undefined;
+          overwrite?: string[] | undefined;
+          dir?: string | undefined;
+          index?: string | null | undefined;
+          maintain_index?: boolean | undefined;
+        } = {},
+      ) =>
+        c<
+          MemoryExportResult & {
+            files?: Array<{ name: string; file: string; content: string; replaced: boolean }>;
+            index_content?: string | null;
+          }
+        >("POST", "/memory-transfer/export", { project_id, files, ...input }),
     },
 
     scratchpads: {
@@ -809,6 +849,12 @@ export function createOrcClient(options?: OrcClientOptions) {
             created_at: string;
           }[];
         }>("GET", `/projects/${id}/comments`),
+    },
+
+    transfer: {
+      exportProject: (project: string) => c<ProjectBundle>("POST", "/export", { project }),
+      exportTask: (task: string) => c<ProjectBundle>("POST", "/export", { task }),
+      importBundle: (bundle: ProjectBundle) => c<ImportResult>("POST", "/import", bundle),
     },
 
     sessions: {

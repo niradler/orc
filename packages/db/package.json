@@ -22,7 +22,8 @@
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",
     "./agent-memory": "./src/agent-memory.ts",
-    "./memory-transfer": "./src/memory-transfer.ts"
+    "./memory-transfer": "./src/memory-transfer.ts",
+    "./project-transfer": "./src/project-transfer.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

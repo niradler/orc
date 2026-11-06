@@ -191,7 +191,7 @@ orc-cloud task list -p my-app
 | --- | --- |
 | Use `ORC_API_BASE` for HTTPS | The global `--host` and `--port` flags always build an `http://` URL |
 | Active project is local | `orc project use` writes `activeProject` to the laptop's config, so it also applies to `orc-cloud`. Pass `-p` or set `ORC_ACTIVE_PROJECT` |
-| Server-side paths | `orc mem import/export`, `orc skill local`, `orc skill export-to` and `orc kb sources add` read and write folders on the ORC server, not the laptop |
+| Server-side paths | `orc skill local`, `orc skill export-to` and `orc kb sources add` read and write folders on the ORC server, not the laptop. `orc mem import/export` reads and writes the folder on the machine running the CLI and uploads the file contents |
 
 ### Agents (MCP)
 
@@ -288,7 +288,7 @@ orc-cloud task add "Implement user auth" -p my-app --flow orc-default --backend 
 
 or with `task_create` / `task_batch_create` on the `orc-cloud` MCP connection, or in the server dashboard. With `ORC_AGENT_LOOP_ENABLED=true`, the server's runner claims queued tasks and runs workers in the container or on its SSH execution host. Review and approve them in the server dashboard, the CLI, or Telegram/Slack connected to the server.
 
-There is no command to move an existing task from the laptop ORC to the server ORC.
+Move one task with `orc task move <id> --to https://orc.example.com`. `--to` is the destination API base (`ORC_API_BASE`, or `host:port`). Pass `--to-secret` when the destination token is not the current `ORC_API_SECRET`. The task, its comments and its links are copied, then deleted on the laptop. Named connection profiles are not part of this command.
 
 ### Terminals on remote hosts
 
@@ -306,8 +306,8 @@ The server dashboard's **Terminals** open shells and agents on the server. **New
 | Agent packages | `orc agent-package export <name> ./pkg`, then `orc-cloud agent-package import ./pkg` | File contents are uploaded |
 | Flows | `orc --json flow show <name> \| jq .definition > flow.json`, then `orc-cloud flow create -f flow.json` | Or copy `~/.orc/flows/<name>/flow.json` |
 | Knowledge base documents | `orc-cloud kb add <kb> ./docs/*.pdf` | Uploads from the laptop. `kb sources add` registers a folder on the server instead |
-| Memories | Recreate with `orc-cloud mem add` | `mem import/export` use folders on the server; copy files into a mounted path first to use them |
-| Tasks, jobs, webhooks, channels, rules, settings | Recreate on the server | No export or import |
+| Memories | `orc mem export ./memory`, then `orc-cloud mem import ./memory` | The CLI reads and writes the folder locally and uploads file contents |
+| Tasks, jobs, webhooks, channels, rules, settings | `orc export -p my-app > bundle.json`, then `orc-cloud import bundle.json` | Secrets are omitted and listed as needs re-entry. Webhook signing secrets are issued again on import |
 
 Each installation keeps its own `secret.key`. Encrypted values such as embedding API keys and channel credentials do not transfer; enter them again on the server.
 

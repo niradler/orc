@@ -1,5 +1,13 @@
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createOrcClient } from "@orc/sdk/client";
 import type { ApiResult, Memory, MemoryListSort, UpdateMemoryInput } from "@orc/sdk/types";
 import { Command } from "commander";
@@ -268,7 +276,9 @@ export function memCommand() {
       ) => {
         const { client, project } = await projectFrom(opts);
         const dir = await nativeDir(client, project, dirArg);
-        const preview = unwrap(await client.memories.previewImport(project.id, dir));
+        const preview = unwrap(
+          await client.memories.previewImport(project.id, readMemoryFiles(dir), dir),
+        );
         if (!opts.all && !opts.name && !opts.replace) {
           if (isJson()) return jsonOut(preview);
           console.log(preview.dir);
@@ -292,7 +302,9 @@ export function memCommand() {
           ...(replace.has(name) ? { replace: true } : {}),
         }));
         if (!items.length) fail("No new memories to import");
-        const result = unwrap(await client.memories.importNative(project.id, dir, items));
+        const result = unwrap(
+          await client.memories.importNative(project.id, readMemoryFiles(dir), items, dir),
+        );
         if (isJson()) return jsonOut(result);
         for (const name of result.imported) console.log(`Imported ${name}`);
         for (const name of result.replaced) console.log(`Replaced ${name}`);
@@ -326,7 +338,16 @@ export function memCommand() {
       ) => {
         const { client, project } = await projectFrom(opts);
         const dir = await nativeDir(client, project, dirArg);
-        const plan = unwrap(await client.memories.previewExport(project.id, dir, opts.name));
+        const index = memoryIndex(dir);
+        const plan = unwrap(
+          await client.memories.previewExport(
+            project.id,
+            readMemoryFiles(dir),
+            opts.name,
+            dir,
+            index.maintain,
+          ),
+        );
         if (opts.dryRun) {
           if (isJson()) return jsonOut(plan);
           console.log(plan.dir);
@@ -340,10 +361,17 @@ export function memCommand() {
           ? plan.memories.filter((item) => item.can_overwrite).map((item) => item.name)
           : opts.overwrite;
         const result = unwrap(
-          await client.memories.exportNative(project.id, dir, { names: opts.name, overwrite }),
+          await client.memories.exportNative(project.id, readMemoryFiles(dir), {
+            names: opts.name,
+            overwrite,
+            dir,
+            index: index.content,
+            maintain_index: index.maintain,
+          }),
         );
-        if (isJson()) return jsonOut(result);
-        for (const item of result.exported)
+        const written = writeMemoryExport(dir, result);
+        if (isJson()) return jsonOut({ ...result, exported: written });
+        for (const item of written)
           console.log(
             `${item.replaced ? "Replaced" : "Exported"} ${item.name} -> ${item.file}${item.backup ? ` (backup ${item.backup})` : ""}`,
           );
@@ -358,6 +386,53 @@ export function memCommand() {
 function matchText(match: { name: string; level: string; score: number; where: string }): string {
   const where = match.where === "orc" ? "in ORC" : "in the folder";
   return `${match.level} to ${match.name} ${where} (${Math.round(match.score * 100)}%)`;
+}
+
+function readMemoryFiles(dir: string): Array<{ file: string; content: string }> {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => /\.md$/i.test(name) && name.toLowerCase() !== "memory.md")
+    .sort()
+    .map((file) => ({ file, content: readFileSync(join(dir, file), "utf8") }));
+}
+
+function memoryIndex(dir: string): { maintain: boolean; content: string | null } {
+  const index = join(dir, "MEMORY.md");
+  const claudeRoot = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
+  const claude = basename(dir) === "memory" && dirname(dirname(dir)) === claudeRoot;
+  const exists = existsSync(index);
+  return { maintain: exists || claude, content: exists ? readFileSync(index, "utf8") : null };
+}
+
+function writeMemoryExport(
+  dir: string,
+  result: {
+    files?: Array<{ name: string; file: string; content: string; replaced: boolean }> | undefined;
+    index_content?: string | null | undefined;
+    index_updated?: boolean | undefined;
+  },
+): Array<{ name: string; file: string; replaced: boolean; backup?: string }> {
+  mkdirSync(dir, { recursive: true });
+  const written = [];
+  for (const file of result.files ?? []) {
+    const path = join(dir, basename(file.file));
+    let backup: string | undefined;
+    if (file.replaced && existsSync(path)) {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      backup = join(homedir(), ".orc", "memory-export-backups", stamp, basename(path));
+      mkdirSync(dirname(backup), { recursive: true });
+      copyFileSync(path, backup);
+    }
+    writeFileSync(path, file.content);
+    written.push({
+      name: file.name,
+      file: path,
+      replaced: file.replaced,
+      ...(backup ? { backup } : {}),
+    });
+  }
+  if (result.index_content) writeFileSync(join(dir, "MEMORY.md"), result.index_content);
+  return written;
 }
 
 /** The given folder, or the Claude memory folder matching the project. */
