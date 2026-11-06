@@ -236,6 +236,10 @@ the actual application with realistic data and preserve its working behavior.
   and background activity, but pauses pending-message dispatch. Stop, requests,
   errors and paused queues remain discoverable. Provider catalogs and model
   validation use the existing contracts; never hardcode a preview model list.
+  A newest-activity list must not move a row under the pointer. While the list is
+  hovered or has keyboard focus, update state in place and defer re-ordering behind
+  a quiet "N updated" control; re-sort when the pointer leaves or on request.
+  Filters (All, Needs you, Working, Done) narrow the flat list without sections.
 - **Settings:** named sections have clear save ownership. Appearance saves
   immediately; browser connection and server terminal font each have their own
   actions. Embedded server/host/chat/notification/knowledge forms own their saves.
@@ -289,8 +293,11 @@ Use a pure black canvas with neutral charcoal interaction surfaces in dark mode 
 Dark chrome uses equal RGB channels. Sidebar, header and main canvas share the
 same #000000 background: one continuous workspace, not contrasting panels. Avoid
 even a subtle blue cast. This reflects Nir’s preference after
-the Activity comparison. Fonts remain; control sizing follows the compact platform rules above. Dark is the
-initial default; an explicit choice persists. Avoid blue casts across the entire
+the Activity comparison. Fonts remain; control sizing follows the compact platform rules above.
+Appearance offers System, Dark and Light, plus a high-contrast variant of each
+theme. Dark remains the initial default; System follows `prefers-color-scheme`
+live; an explicit choice persists. Terminal ANSI, diff and syntax colors derive
+from the same tokens and meet the same contrast rules in every variant. Avoid blue casts across the entire
 canvas, sidebar, cards and text. Dark mode should remain comfortable, rather than
 using maximum black/white contrast everywhere.
 
@@ -362,7 +369,12 @@ The shell is project-centered: a compact sidebar, project dropdown and one
 contextual navigation row. Keep Activity first and the default at `/activity`.
 Knowledge has exactly Knowledge base and Memories as sibling destinations.
 KB settings, digest, comments and document history are contextual actions. Chat opens from
-the header; it is not another sidebar destination. The separate Agents/Packages
+the header; it is not another sidebar destination. Agent sessions have one
+full-width presentation, reached from that header action's fullscreen mode:
+session list, conversation and an inspector opened on demand. In full width the
+workspace sidebar stays visible as its collapsed icon rail; Minimize returns to the
+previous page. Other surfaces that list sessions link into it and reuse its row
+design. The separate Agents/Packages
 relationship remains an open UX decision; this document does not silently resolve it.
 
 Keep flexible space for tasks, boards and terminals; do not impose a marketing
@@ -400,6 +412,14 @@ the conversation and show permission decisions separately from tool results.
 Settings owns new-chat defaults; the chat model dialog shows the session's
 actual instructions, tools connection, permissions and execution folder. Changing
 agents starts a new session; changing models affects the next turn.
+
+A finished turn folds its tool calls and intermediate narration into one summary
+line with duration, tool count, files changed and failures; the user message and
+final answer stay visible. While running, show elapsed time and the current tool
+beside Stop. Render tools by kind: edits as compact diffs, commands as command plus
+output tail, reads/searches as one line; unknown tools keep the raw view. Follow
+new output only while the reader is at the bottom; when they scroll up, hold
+position and show a "Jump to latest" control. Cover this with a browser test.
 
 On narrow screens, Knowledge Browse is a modal with trapped focus and a visible
 close action. Restore focus to its trigger when dismissed; selecting a document
@@ -447,6 +467,9 @@ Shared icon Buttons provide `ActionHelp`; raw icon actions use the same wrapper.
 On touch, a hold explains an action without executing it, while a short tap keeps
 its normal behavior. Actions with an existing explanation/confirmation popover
 opt out of duplicate help. Keep destructive and installation confirmation explicit.
+Reversible list actions (settle, pin, snooze, mark seen) act immediately and offer
+Undo for about 5 s plus Ctrl/Cmd+Z. Confirmation is reserved for destructive or
+irreversible actions.
 
 Navigation uses readable text with a quiet selected fill. Avoid simultaneously
 emphasizing the same selection through several decorative treatments. Keep URL,
@@ -463,6 +486,24 @@ Activity should read as a concise working summary. Replace the visual effect of
 large, individually colored KPI tiles with quieter grouped metrics. Give recent
 work more importance than its container. Board columns and drag affordances must
 stay legible without heavy borders or large colored headers.
+
+### Agent state language
+
+Every surface that shows an agent session (session list, Sessions table, terminal
+rows, Attention, chat tabs, notifications, tab title, tray) uses one state model:
+Needs you > Failed > Done (unseen) > Working > Idle > Ended, in that priority.
+Each state has a word, an icon shape and its semantic color token; never color
+alone. Compact rows may drop the visible word but keep the icon and put the word in
+the accessible name and help. A group shows its most urgent child's state; quiet
+groups show nothing. The Working icon is static under reduced motion. Do not use
+filled pills or tinted rows for state.
+
+### Keyboard
+
+Commands live in one registry shared by the Ctrl+K palette and the keymap. Show the
+bound key beside each command in the palette, menus and `ActionHelp`. Shortcuts are
+scoped (global, chat, terminal), never fire while typing unless scoped there, avoid
+browser/OS reserved keys, and are remappable.
 
 ### Inputs and filters
 
@@ -535,10 +576,16 @@ summary; those are examples, not mandatory heights for every component.
 Use **Sessions** consistently in chat navigation. Keep history flat, ordered by
 latest activity descending; do not pin open sessions above newer history. Place
 the new-session plus beside the Sessions title. Each row uses its actual provider
-icon, with a state color and accessible explanation; do not infer stale or running
+icon and the shared state icon and word (see Agent state language); do not infer stale or running
 state from age. Keep useful session actions in the header when space permits and
 move them into More at narrower panel widths. Keep agent/model controls in the
 composer, and preserve settings drafts across responsive transitions.
+
+The composer states where the next message will run as compact, labelled chips:
+project/folder (name, never a raw path; full path in help), host when remote,
+branch or new worktree, agent + model, and permission only when not default. Chips
+open pickers usable by keyboard. Agent marks are single-color (`currentColor`) and
+always paired with a name; state color comes only from the state language.
 
 Keep messages on a calm reading surface with light role/agent attribution.
 Avoid a border around every assistant paragraph or a new card for each chunk.
@@ -575,6 +622,16 @@ Use short, user-triggered transitions around 120–180ms. Honor reduced motion.
 Selective Magic UI interactions must support orientation; theme switching does
 not need a decorative reveal to feel polished.
 
+Notify about work the user is not looking at, at two levels. **Needs you**
+(question, approval, failure) is active: a toast that stays until acted on or
+dismissed, with the request's own actions, and the Needs-you sound. **Done** is
+passive: a silent toast that closes after about 6 s, pauses on hover/focus, and
+remains discoverable in its list. Re-check a state about one second before
+notifying; never notify for the session in view; one notification per state
+change, never repeated; collapse bursts. Sound supplements and never carries
+information alone. Toasts are announced through a polite live region without
+taking focus and are reachable from the keyboard.
+
 ## Do's and Don'ts
 
 - Do prioritize the work over the chrome: page, conversation, task, terminal.
@@ -603,6 +660,25 @@ accessibility or visual approval.
 ### Black canvas palette refinement
 
 Activity uses #000000 throughout its shell, #141414 hover, #242424 selection, #E5E5E5 content and #A3A3A3 secondary text. Primary action fill is #DEDEDE. Status dots are 6px at full opacity: neutral todo, blue doing/queued (#8AB4F8), amber review, rose blocked/changes requested and green done. Critical/high priorities retain restrained semantic text. The Activity direction is approved for broader adoption; remaining screens receive integration validation.
+
+## Core agent flows
+
+These flows define ORC's daily loop. A change that touches one must keep its step
+budget, and each has an end-to-end browser test.
+
+1. **Start**: from anywhere, Ctrl+K or the header opens a new session; the composer
+   shows project, branch, agent and model before the first message (one screen).
+2. **Watch**: the user can tell which sessions need them from any page (tab title
+   count, toast) without opening chat.
+3. **Answer**: a question or approval can be answered from its notification or from
+   Attention in one action, without opening the conversation.
+4. **Review**: from a Done session, one action shows what changed in the last turn
+   and across the branch; line comments go back to the agent as a draft the user
+   sends.
+5. **Ship**: one action commits, pushes and opens a PR linked to the session and
+   task; the session then shows the PR and CI state.
+6. **Follow up**: failing CI or review comments return to the same session as
+   Needs you.
 
 ## Approved implementation reference: Activity
 
