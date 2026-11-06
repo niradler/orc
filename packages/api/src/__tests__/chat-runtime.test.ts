@@ -38,6 +38,9 @@ let waitPermission = false;
 let waitQuestion = false;
 let secretQuestion = false;
 let manyOptions = false;
+const nativeSteers: string[] = [];
+let steeringFailure = false;
+let steeringDelay = 0;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
 let failedTurn = false;
@@ -55,6 +58,9 @@ function session(call: (typeof calls)[number]): AgentSession {
     id: "fixture",
     capabilities: CODEX_CAPABILITIES,
     steer: async (prompt) => {
+      nativeSteers.push(prompt);
+      if (steeringDelay) await Bun.sleep(steeringDelay);
+      if (steeringFailure) throw new Error("fixture uncertain delivery");
       call.prompt = prompt;
     },
     getRuntimeSessionId: () => (waitPermission ? "early-native-fixture" : undefined),
@@ -1323,16 +1329,125 @@ test("steering enters the active native session and persists the message without
     .map((line) => JSON.parse(line.slice(5)));
   const started = events.find((event) => event.type === "thread");
   const before = calls.length;
+  const steeringId = crypto.randomUUID();
   try {
     expect(
-      (await request(`/chat/runs/${started.runId}/steer`, { input: "focus on tests" }, false))
-        .status,
+      (
+        await request(
+          `/chat/runs/${started.runId}/steer`,
+          { input: "focus on tests", requestId: steeringId },
+          false,
+        )
+      ).status,
     ).toBe(401);
-    expect((await request(`/chat/runs/${started.runId}/steer`, { input: " " })).status).toBe(400);
-    const steered = await request(`/chat/runs/${started.runId}/steer`, { input: "focus on tests" });
+    expect(
+      (await request(`/chat/runs/${started.runId}/steer`, { input: " ", requestId: steeringId }))
+        .status,
+    ).toBe(400);
+    const originalPrompt = calls.at(-1)?.prompt;
+    getSqlite().exec(
+      "CREATE TEMP TRIGGER fail_steering_save BEFORE UPDATE ON chat_threads WHEN instr(NEW.data, 'blocked steering') > 0 BEGIN SELECT RAISE(FAIL, 'fixture steering save failure'); END",
+    );
+    try {
+      expect(
+        (
+          await request(`/chat/runs/${started.runId}/steer`, {
+            input: "blocked steering",
+            requestId: steeringId,
+          })
+        ).status,
+      ).toBe(500);
+      expect(calls.at(-1)?.prompt).toBe(originalPrompt);
+    } finally {
+      getSqlite().exec("DROP TRIGGER IF EXISTS fail_steering_save");
+    }
+    const steered = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "focus on tests",
+      requestId: steeringId,
+    });
     expect(steered.status).toBe(200);
     expect(calls.length).toBe(before);
     expect(calls.at(-1)?.prompt).toBe("focus on tests");
+    const steeringCount = nativeSteers.length;
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "focus on tests",
+          requestId: steeringId,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "different",
+          requestId: steeringId,
+        })
+      ).status,
+    ).toBe(409);
+    expect(nativeSteers.length).toBe(steeringCount);
+    const parallelId = crypto.randomUUID();
+    steeringDelay = 20;
+    const parallel = await Promise.all(
+      [1, 2].map(() =>
+        request(`/chat/runs/${started.runId}/steer`, {
+          input: "parallel steering",
+          requestId: parallelId,
+        }),
+      ),
+    );
+    steeringDelay = 0;
+    expect(parallel.map((response) => response.status)).toEqual([200, 200]);
+    expect(nativeSteers.filter((input) => input === "parallel steering")).toHaveLength(1);
+    const durableId = crypto.randomUUID();
+    getSqlite().exec(
+      "CREATE TEMP TRIGGER fail_delivery_status BEFORE UPDATE ON chat_threads WHEN instr(NEW.data, 'durable steering') > 0 AND instr(NEW.data, 'Sending this message') = 0 BEGIN SELECT RAISE(FAIL, 'fixture delivery status failure'); END",
+    );
+    try {
+      expect(
+        (
+          await request(`/chat/runs/${started.runId}/steer`, {
+            input: "durable steering",
+            requestId: durableId,
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await request(`/chat/runs/${started.runId}/steer`, {
+            input: "durable steering",
+            requestId: durableId,
+          })
+        ).status,
+      ).toBe(200);
+      expect(nativeSteers.filter((input) => input === "durable steering")).toHaveLength(1);
+      const durable = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${started.thread.id}`)).json(),
+      );
+      expect(durable.messages.filter((message) => message.id === durableId)).toHaveLength(1);
+    } finally {
+      getSqlite().exec("DROP TRIGGER IF EXISTS fail_delivery_status");
+    }
+    const uncertainId = crypto.randomUUID();
+    steeringFailure = true;
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "uncertain steering",
+          requestId: uncertainId,
+        })
+      ).status,
+    ).toBe(409);
+    steeringFailure = false;
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "uncertain steering",
+          requestId: uncertainId,
+        })
+      ).status,
+    ).toBe(409);
+    expect(nativeSteers.filter((input) => input === "uncertain steering")).toHaveLength(1);
     const saved = ChatThreadSchema.parse(
       await (await request(`/chat/threads/${started.thread.id}`)).json(),
     );
@@ -1344,12 +1459,21 @@ test("steering enters the active native session and persists the message without
       decision: "approved",
     });
     while (!(await reader.read()).done) {}
-    expect((await request(`/chat/runs/${started.runId}/steer`, { input: "too late" })).status).toBe(
-      409,
-    );
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "too late",
+          requestId: steeringId,
+        })
+      ).status,
+    ).toBe(409);
   } finally {
     waitPermission = false;
+    steeringFailure = false;
+    steeringDelay = 0;
+    await request(`/chat/runs/${started.runId}/cancel`, {});
     await reader.cancel();
+    await Bun.sleep(10);
   }
 });
 

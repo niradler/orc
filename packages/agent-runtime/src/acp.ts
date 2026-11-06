@@ -56,6 +56,7 @@ export class AcpSession implements AgentSession {
   private closed = false;
   private done = true;
   private busy = false;
+  private cancelling = false;
   private replaying = false;
   private failure: string | undefined;
   private outputBytes = 0;
@@ -125,7 +126,16 @@ export class AcpSession implements AgentSession {
     params: RequestPermissionRequest,
     signal: AbortSignal,
   ): Promise<RequestPermissionResponse> {
-    if (this.replaying || this.closed || params.sessionId !== this.runtimeId || signal.aborted)
+    if (
+      this.replaying ||
+      this.closed ||
+      this.failure ||
+      !this.busy ||
+      this.done ||
+      this.cancelling ||
+      params.sessionId !== this.runtimeId ||
+      signal.aborted
+    )
       return Promise.resolve({ outcome: { outcome: "cancelled" } });
     // Never turn an ORC session grant into the agent's persistent "allow_always" policy.
     const once = params.options.find((option) => option.kind === "allow_once");
@@ -313,6 +323,7 @@ export class AcpSession implements AgentSession {
     if (images?.length && !this.capabilities.images)
       throw new Error("This ACP agent does not accept images.");
     this.busy = true;
+    this.cancelling = false;
     this.done = false;
     this.queue.length = 0;
     this.outputBytes = 0;
@@ -375,6 +386,7 @@ export class AcpSession implements AgentSession {
   }
   async interrupt(): Promise<void> {
     if (!this.busy || !this.connection || !this.runtimeId) return;
+    this.cancelling = true;
     this.cancelPermissions();
     await this.connection.agent.notify("session/cancel", { sessionId: this.runtimeId });
   }

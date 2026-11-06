@@ -681,8 +681,11 @@ export const api = {
         "GET",
         `/chat/capabilities?${new URLSearchParams({ agent, ...(threadId ? { threadId } : {}) })}`,
       ),
-    steer: (runId: string, input: string) =>
-      req<import("@orc/core/chat").ChatThread>("POST", `/chat/runs/${runId}/steer`, { input }),
+    steer: (runId: string, input: string, requestId: string = crypto.randomUUID()) =>
+      req<import("@orc/core/chat").ChatThread>("POST", `/chat/runs/${runId}/steer`, {
+        input,
+        requestId,
+      }),
     waiting: () =>
       req<{
         waiting: {

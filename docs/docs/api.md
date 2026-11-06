@@ -256,9 +256,14 @@ permissions, native interruption, steering, MCP, fork and rollback. `source` is
 `adapter`, `negotiated` or `unknown`; unsupported and unknown operations are false.
 Chat SSE emits `capabilities` events and persists negotiated values with the thread.
 
-`POST /chat/runs/{id}/steer` takes `{ "input": "Focus on the failing test" }` and
+`POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
 returns the updated conversation after the active native turn accepts it. It
 requires a live steering-capable session; stale and unsupported runs return `409`.
 It keeps the original native thread and turn. Empty input is invalid. These routes
 use the same authentication as the rest of the API. The SDK exposes
-`client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input)`.
+`client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.
+Reuse the same request ID and input when retrying. A duplicate ID with different
+content returns `409`; a live run accepts at most 32 distinct steering requests.
+The intent is saved before native delivery. An initial save failure sends nothing.
+Unconfirmed delivery is retained in history and cannot be resent with the same ID;
+a delivery-status save failure reports a warning while keeping the saved intent.

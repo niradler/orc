@@ -43,13 +43,18 @@ for (const width of [390, 1440]) {
       updatedAt: Date.now(),
     };
     await page.addInitScript(
-      ({ thread }) => {
+      ({ thread, failFirst }) => {
         const original = window.fetch.bind(window);
         const encoder = new TextEncoder();
         let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
         const emit = (event: unknown) =>
           stream?.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-        const state = { steer: null as null | { input: string }, starts: 0 };
+        const state = {
+          steer: null as null | { input: string },
+          starts: 0,
+          requests: [] as string[],
+          nativeSteers: 0,
+        };
         Object.assign(window, { steeringTest: state });
         window.fetch = async (input, init) => {
           const url = new URL(
@@ -80,14 +85,23 @@ for (const width of [390, 1440]) {
             );
           }
           if (url.pathname.endsWith("/steer")) {
-            const steering: { input: string } = JSON.parse(String(init?.body));
+            const steering: { input: string; requestId: string } = JSON.parse(String(init?.body));
+            state.requests.push(steering.requestId);
             state.steer = steering;
-            thread.messages.push({
-              id: "steer",
-              role: "user",
-              content: steering.input,
-              timestamp: Date.now(),
-            });
+            if (!thread.messages.some((message) => message.id === steering.requestId)) {
+              state.nativeSteers++;
+              thread.messages.push({
+                id: steering.requestId,
+                role: "user",
+                content: steering.input,
+                timestamp: Date.now(),
+              });
+            }
+            if (failFirst && state.requests.length === 1)
+              return Response.json(
+                { error: "fixture response lost", code: "FIXTURE" },
+                { status: 503 },
+              );
             setTimeout(() => {
               emit({ type: "text", text: " Updated focus accepted." });
               emit({ type: "session", runtimeId: thread.runtimeId });
@@ -108,7 +122,7 @@ for (const width of [390, 1440]) {
           return original(input, init);
         };
       },
-      { thread },
+      { thread, failFirst: width === 390 },
     );
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),
@@ -138,13 +152,26 @@ for (const width of [390, 1440]) {
     );
     await page.screenshot({ path: testInfo.outputPath(`steering-${width}.png`) });
     await steer.click();
+    if (width === 390) {
+      await expect(page.getByRole("alert")).toContainText("fixture response lost");
+      await expect(input).toHaveValue("Focus on tests");
+      await steer.click();
+    }
     await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
     await expect(input).toHaveValue("");
     await expect(steer).toHaveCount(0);
     expect(await page.evaluate(() => Reflect.get(window, "steeringTest"))).toMatchObject({
       starts: 1,
+      nativeSteers: 1,
       steer: { input: "Focus on tests" },
     });
+    if (width === 390) {
+      const ids = await page.evaluate(
+        () => (Reflect.get(window, "steeringTest") as { requests: string[] }).requests,
+      );
+      expect(ids).toHaveLength(2);
+      expect(new Set(ids).size).toBe(1);
+    }
     await expect(
       page.locator('[data-testid="chat-message"][data-role="user"]').last(),
     ).toContainText("Focus on tests");

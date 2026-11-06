@@ -53,6 +53,7 @@ export class CodexAppSession implements AgentSession {
   private done = false;
   private closed = false;
   private closing = false;
+  private interrupting = false;
   private shutdown: Promise<void> | undefined;
   private runtimeId: string | undefined;
   private sequence = 0;
@@ -139,6 +140,16 @@ export class CodexAppSession implements AgentSession {
     const method = String(message.method ?? "");
     const params = object(message.params);
     if (typeof message.id === "number" || typeof message.id === "string") {
+      if (this.closing || this.interrupting || this.done || this.completedTurn) {
+        this.write({
+          id: message.id,
+          error: {
+            code: -32000,
+            message: "This turn is no longer accepting interactive requests.",
+          },
+        });
+        return;
+      }
       if (params.threadId !== this.runtimeId) {
         this.write({
           id: message.id,
@@ -450,6 +461,7 @@ export class CodexAppSession implements AgentSession {
 
   private async startTurn(prompt: string, images?: ImageAttachment[]): Promise<void> {
     this.done = false;
+    this.interrupting = false;
     this.completedTurn = false;
     this.streamedItems.clear();
     this.textItem = undefined;
@@ -600,6 +612,10 @@ export class CodexAppSession implements AgentSession {
         })),
       ],
     });
+    this.adoptStartedTurn(started);
+  }
+
+  private adoptStartedTurn(started: Record<string, unknown>): void {
     const turn = object(started.turn);
     const turnId = turn.id;
     if (typeof turnId === "string" && !this.completedTurn) {
@@ -630,7 +646,14 @@ export class CodexAppSession implements AgentSession {
 
   async steer(prompt: string): Promise<void> {
     await this.waitForNativeStart();
-    if (this.done || !this.activeTurnId || this.closed)
+    if (
+      this.done ||
+      this.completedTurn ||
+      this.closing ||
+      this.interrupting ||
+      !this.activeTurnId ||
+      this.closed
+    )
       throw new Error("No active Codex turn to steer.");
     if (!prompt.trim() || prompt.length > 100000)
       throw new Error("Enter a steering message up to 100000 characters.");
@@ -642,6 +665,15 @@ export class CodexAppSession implements AgentSession {
   }
 
   async interrupt(): Promise<void> {
+    this.interrupting = true;
+    for (const [id, request] of this.pending) {
+      if (!request.asyncTurnId && !this.closed)
+        this.write({
+          id: request.wireId,
+          error: { code: -32000, message: "The turn was interrupted." },
+        });
+      this.resolved(id);
+    }
     await this.waitForNativeStart();
     if (this.done || this.completedTurn || !this.activeTurnId || this.closed) return;
     await this.call(
@@ -659,6 +691,8 @@ export class CodexAppSession implements AgentSession {
   }
 
   respondPermission(requestId: string, result: PermissionResult): void {
+    if (this.closing || this.interrupting || this.closed)
+      throw new Error("This approval is no longer pending.");
     const request = this.pending.get(requestId);
     if (request?.kind !== "permission") throw new Error("This approval is no longer pending.");
     if (request.mcpApproval) {
@@ -698,6 +732,8 @@ export class CodexAppSession implements AgentSession {
   }
 
   async respondQuestion(requestId: string, answers: Record<string, string[]>): Promise<void> {
+    if (this.closing || this.interrupting || this.closed)
+      throw new Error("This question is no longer pending.");
     const request = this.pending.get(requestId);
     if (request?.kind !== "question" || !request.question)
       throw new Error("This question is no longer pending.");
@@ -729,15 +765,20 @@ export class CodexAppSession implements AgentSession {
         },
       ];
       const completed = this.completedTurn;
-      if (completed) this.activeTurnId = undefined;
+      if (completed) {
+        this.activeTurnId = undefined;
+        this.startedTurns.clear();
+        this.turnQueued = false;
+      }
       this.pending.delete(requestId);
       this.completedTurn = false;
       try {
-        await this.call(completed ? "turn/start" : "turn/steer", {
+        const started = await this.call(completed ? "turn/start" : "turn/steer", {
           threadId: this.runtimeId,
           ...(completed ? {} : { expectedTurnId: request.asyncTurnId }),
           input,
         });
+        if (completed) this.adoptStartedTurn(started);
       } catch (error) {
         this.pending.set(requestId, request);
         this.completedTurn = completed;

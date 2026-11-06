@@ -106,6 +106,7 @@ interface ChatRun {
   session: AgentSession | null;
   permissions: Set<string>;
   questions: Map<string, ChatQuestion>;
+  steering: Map<string, { input: string; result: Promise<ChatThread> }>;
   threadId: string;
   thread: ChatThread;
   key: string;
@@ -335,7 +336,9 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ input: z.string().trim().min(1).max(100000) }).strict(),
+            schema: z
+              .object({ requestId: z.string().uuid(), input: z.string().trim().min(1).max(100000) })
+              .strict(),
           },
         },
       },
@@ -351,17 +354,81 @@ app.openapi(
     const run = runs.get(c.req.valid("param").id);
     if (!run?.session?.steer || run.session.capabilities?.steering !== true)
       throw new ConflictError("This response cannot be steered. Queue a message instead.");
-    const { input } = c.req.valid("json");
-    await run.session.steer(expandChatInput(input, run.thread.projectId ?? null));
-    run.thread.messages.push({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: input,
-      timestamp: Date.now(),
+    const { input, requestId } = c.req.valid("json");
+    const previous = run.steering.get(requestId);
+    if (previous) {
+      if (previous.input !== input)
+        throw new ConflictError("This steering request ID already has different content.");
+      return c.json(await previous.result);
+    }
+    if (run.steering.size >= 32)
+      throw new ConflictError(
+        "This response has reached its steering limit. Queue a message instead.",
+      );
+    if (run.thread.messages.some((message) => message.id === requestId))
+      throw new ConflictError("This message ID is already in use.");
+    const steer = run.session.steer.bind(run.session);
+    let dispatched = false;
+    const deliver = async (): Promise<ChatThread> => {
+      const message: ChatMessage = {
+        id: requestId,
+        role: "user",
+        content: input,
+        timestamp: Date.now(),
+        activity: [
+          {
+            type: "status",
+            id: `steering:${requestId}`,
+            text: "Sending this message into the active response.",
+          },
+        ],
+      };
+      run.thread.messages.push(message);
+      run.thread.updatedAt = Date.now();
+      try {
+        store().save(run.thread);
+      } catch (error) {
+        run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
+        throw error;
+      }
+      const saveDelivery = () => {
+        try {
+          store().save(run.thread);
+        } catch {
+          publish(run, {
+            type: "error",
+            message:
+              "The steering request was saved, but its delivery status could not be saved. Check the response before sending again.",
+          });
+        }
+      };
+      dispatched = true;
+      try {
+        await steer(expandChatInput(input, run.thread.projectId ?? null));
+      } catch {
+        message.activity = [
+          {
+            type: "status",
+            id: `steering:${requestId}`,
+            text: "Delivery unconfirmed. Check the response before sending again.",
+          },
+        ];
+        saveDelivery();
+        throw new ConflictError(
+          "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
+        );
+      }
+      delete message.activity;
+      saveDelivery();
+      return run.thread;
+    };
+    const result = deliver();
+    run.steering.set(requestId, { input, result });
+    // A failed intent save sent nothing, so the same ID may safely retry after storage recovers.
+    void result.catch(() => {
+      if (!dispatched) run.steering.delete(requestId);
     });
-    run.thread.updatedAt = Date.now();
-    store().save(run.thread);
-    return c.json(run.thread);
+    return c.json(await result);
   },
 );
 
@@ -1137,6 +1204,7 @@ async function beginTurn(
     session: null,
     permissions: new Set(),
     questions: new Map(),
+    steering: new Map(),
     threadId: thread.id,
     thread,
     key,

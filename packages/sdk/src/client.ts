@@ -749,8 +749,11 @@ export function createOrcClient(options?: OrcClientOptions) {
           "GET",
           `/chat/capabilities?${new URLSearchParams({ agent, ...(threadId ? { threadId } : {}) })}`,
         ),
-      steer: (runId: string, input: string) =>
-        c<import("@orc/core/chat").ChatThread>("POST", `/chat/runs/${runId}/steer`, { input }),
+      steer: (runId: string, input: string, requestId: string = crypto.randomUUID()) =>
+        c<import("@orc/core/chat").ChatThread>("POST", `/chat/runs/${runId}/steer`, {
+          input,
+          requestId,
+        }),
     },
     backends: {
       list: () => c<{ backends: AgentBackendInfo[]; default_backend: string }>("GET", "/backends"),

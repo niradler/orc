@@ -228,3 +228,65 @@ test("a non-retryable native error settles the consumer without requiring a comp
   expect(events).toContainEqual({ type: "error", data: "provider unavailable" });
   expect(session.getRuntimeSessionId()).toBe("native");
 });
+
+test("Codex does not grant new approvals after Stop even when live permissions were loosened", async () => {
+  const { session, cwd } =
+    fixture(`if(m.method==='turn/start')emit({id:m.id,result:{turn:{id:'current'}}});
+    if(m.method==='turn/interrupt') {
+      globalThis.interruptId=m.id;
+      emit({id:'late-approval',method:'item/commandExecution/requestApproval',params:{threadId:'native',turnId:'current',command:'late action'}});
+    }
+    if(m.id==='late-approval'&&!m.method){
+      emit({id:globalThis.interruptId,result:{}});notify('turn/completed',{turn:{id:'current',status:'interrupted'}});
+    }`);
+  await session.send("Wait");
+  session.setPermissionMode("bypassPermissions");
+  await session.interrupt();
+  await collect(session);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const reply = wire.find((m) => m.id === "late-approval" && !m.method);
+  expect(reply?.error).toBeDefined();
+  expect(reply?.result).toBeUndefined();
+});
+
+test("Stop rejects steering while the native interruption is still in flight", async () => {
+  const { session, cwd } =
+    fixture(`if(m.method==='turn/start')emit({id:m.id,result:{turn:{id:'current'}}});
+    if(m.method==='turn/interrupt')setTimeout(()=>{emit({id:m.id,result:{}});notify('turn/completed',{turn:{id:'current',status:'interrupted'}})},30);
+    if(m.method==='turn/steer')emit({id:m.id,result:{}});`);
+  await session.send("Wait");
+  const stopping = session.interrupt();
+  await expect(session.steer("too late")).rejects.toThrow("No active");
+  await stopping;
+  await collect(session);
+  expect(readFileSync(join(cwd, "wire.ndjson"), "utf8")).not.toContain("turn/steer");
+});
+
+test("queued question follow-ups remain interruptible on the new native turn", async () => {
+  const { session } = fixture(`if(m.method==='turn/start') {
+    if(!globalThis.asked){globalThis.asked=true;emit({id:m.id,result:{turn:{id:'first'}}});
+      notify('item/completed',{turnId:'first',item:{type:'agentMessage',id:'question',text:'Choose',questions:[{title:'Color?',options:['Blue']}]}});
+      notify('turn/completed',{turn:{id:'first',status:'completed'}});
+    } else {globalThis.ready=false;emit({id:m.id,result:{turn:{id:'followup',startedAt:null,status:'inProgress'}}});
+      setTimeout(()=>{globalThis.ready=true;notify('turn/started',{turn:{id:'followup',startedAt:1,status:'inProgress'}})},30);
+    }
+  }
+  if(m.method==='turn/interrupt'){
+    if(!globalThis.ready||m.params.turnId!=='followup')emit({id:m.id,error:{code:-32600,message:'wrong turn'}});
+    else {emit({id:m.id,result:{}});notify('turn/completed',{turn:{id:'followup',status:'interrupted'}});}
+  }`);
+  await session.send("Ask");
+  let stopped = false;
+  for await (const event of session.events()) {
+    if (event.type === "question_request") {
+      await Bun.sleep(10);
+      await session.respondQuestion(event.data.requestId, { "q-0": ["Blue"] });
+      await session.interrupt();
+    }
+    if (event.type === "system_status" && event.data.includes("stopped")) stopped = true;
+  }
+  expect(stopped).toBe(true);
+});

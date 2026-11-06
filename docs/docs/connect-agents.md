@@ -272,3 +272,10 @@ If the agent does not advertise HTTP MCP, select **Native configuration** for it
 MCP connection before starting chat. Existing agent login and native MCP settings
 remain agent-owned. ACPX-specific launch flags do not apply to direct ACP. Failed
 resume preserves the original identity instead of silently starting fresh.
+
+
+Stopping a native Codex or direct ACP turn revokes pending interactive requests and
+rejects new approval callbacks while cancellation completes, including when automatic
+approvals were enabled. ACP requests while idle are also cancelled. Steering saves
+its intent before native delivery and reuses a request ID on retry; a delivery warning
+means to inspect the current response before sending another message.

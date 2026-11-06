@@ -458,6 +458,8 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
                         input: string;
                     };
                 };
