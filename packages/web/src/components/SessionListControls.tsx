@@ -21,7 +21,7 @@ export function SessionStateFilters({
       <fieldset
         aria-label="Filter sessions by state"
         data-testid="session-filters"
-        className="flex min-w-0 flex-1 gap-1 overflow-x-auto scrollbar-none max-sm:gap-0.5"
+        className="flex min-w-0 flex-1 flex-wrap gap-1 max-sm:gap-0.5"
       >
         {SESSION_FILTERS.map((filter) => (
           <button
