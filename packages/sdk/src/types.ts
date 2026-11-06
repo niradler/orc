@@ -538,6 +538,7 @@ export type ApiResult<T> = { data: T; error: null } | { data: null; error: ApiEr
 export type AgentBackendKind = "in-process" | "cli" | "http";
 
 export type AgentBackendInfo = {
+  capabilities: import("@orc/core/types").AgentCapabilities;
   name: string;
   kind: AgentBackendKind;
   available: boolean;

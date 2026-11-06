@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
+  chatBackendFor,
   createBackend,
   discoverAgentModels,
   type SessionOpts,
   sessionRules,
+  UNKNOWN_CAPABILITIES,
 } from "@orc/agent-runtime";
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
 import { changes } from "@orc/core/changes";
@@ -36,7 +38,6 @@ import {
   withOrcContext,
 } from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
-import { chatRuntimeFor } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
@@ -51,6 +52,7 @@ import {
 } from "@orc/core/session-file-types";
 import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
 import { renderSkillInstructions } from "@orc/core/skill-service";
+import { AgentCapabilitiesSchema } from "@orc/core/types";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
@@ -104,6 +106,7 @@ interface ChatRun {
   session: AgentSession | null;
   permissions: Set<string>;
   questions: Map<string, ChatQuestion>;
+  steering: Map<string, { input: string; result: Promise<ChatThread> }>;
   threadId: string;
   thread: ChatThread;
   key: string;
@@ -285,6 +288,150 @@ app.openapi(
   },
 );
 
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/capabilities",
+    tags: ["Chat"],
+    summary: "Read supported chat features without starting an agent",
+    request: {
+      query: z.object({
+        agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/),
+        threadId: z.string().uuid().optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Adapter guarantees, or capabilities negotiated by this conversation",
+        content: {
+          "application/json": {
+            schema: z.object({ backend: z.string(), capabilities: AgentCapabilitiesSchema }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => {
+    const { agent, threadId } = c.req.valid("query");
+    const thread = threadId ? requireThread(threadId) : null;
+    if (thread && thread.config.agent !== agent)
+      throw new ValidationError("The agent does not match this conversation.");
+    const backend = thread?.backend ?? chatBackendFor(agent);
+    return c.json({
+      backend,
+      capabilities: thread?.capabilities ??
+        createBackend(backend).capabilities ?? { ...UNKNOWN_CAPABILITIES },
+    });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/runs/{id}/steer",
+    tags: ["Chat"],
+    summary: "Send a message into the active native turn",
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({ requestId: z.string().uuid(), input: z.string().trim().min(1).max(100000) })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Steering message accepted",
+        content: { "application/json": { schema: ChatThreadSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    const run = runs.get(c.req.valid("param").id);
+    if (!run?.session?.steer || run.session.capabilities?.steering !== true)
+      throw new ConflictError("This response cannot be steered. Queue a message instead.");
+    const { input, requestId } = c.req.valid("json");
+    const previous = run.steering.get(requestId);
+    if (previous) {
+      if (previous.input !== input)
+        throw new ConflictError("This steering request ID already has different content.");
+      return c.json(await previous.result);
+    }
+    if (run.steering.size >= 32)
+      throw new ConflictError(
+        "This response has reached its steering limit. Queue a message instead.",
+      );
+    if (run.thread.messages.some((message) => message.id === requestId))
+      throw new ConflictError("This message ID is already in use.");
+    const steer = run.session.steer.bind(run.session);
+    let dispatched = false;
+    const deliver = async (): Promise<ChatThread> => {
+      const message: ChatMessage = {
+        id: requestId,
+        role: "user",
+        content: input,
+        timestamp: Date.now(),
+        activity: [
+          {
+            type: "status",
+            id: `steering:${requestId}`,
+            text: "Sending this message into the active response.",
+          },
+        ],
+      };
+      run.thread.messages.push(message);
+      run.thread.updatedAt = Date.now();
+      try {
+        store().save(run.thread);
+      } catch (error) {
+        run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
+        throw error;
+      }
+      const saveDelivery = () => {
+        try {
+          store().save(run.thread);
+        } catch {
+          publish(run, {
+            type: "error",
+            message:
+              "The steering request was saved, but its delivery status could not be saved. Check the response before sending again.",
+          });
+        }
+      };
+      dispatched = true;
+      try {
+        await steer(expandChatInput(input, run.thread.projectId ?? null));
+      } catch {
+        message.activity = [
+          {
+            type: "status",
+            id: `steering:${requestId}`,
+            text: "Delivery unconfirmed. Check the response before sending again.",
+          },
+        ];
+        saveDelivery();
+        throw new ConflictError(
+          "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
+        );
+      }
+      delete message.activity;
+      saveDelivery();
+      return run.thread;
+    };
+    const result = deliver();
+    run.steering.set(requestId, { input, result });
+    // A failed intent save sent nothing, so the same ID may safely retry after storage recovers.
+    void result.catch(() => {
+      if (!dispatched) run.steering.delete(requestId);
+    });
+    return c.json(await result);
+  },
+);
+
 async function newThread(
   agent?: string,
   model?: string,
@@ -311,7 +458,7 @@ async function newThread(
     id: crypto.randomUUID(),
     title: "New chat",
     config,
-    backend: chatRuntimeFor(config.agent),
+    backend: chatBackendFor(config.agent),
     runtimeId: null,
     cwd,
     host: host.kind === "ssh" ? host.alias : null,
@@ -352,7 +499,7 @@ async function newThread(
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;
     thread.config.model = model ?? source.model ?? "";
-    thread.backend = chatRuntimeFor(agent);
+    thread.backend = chatBackendFor(agent);
     if (source.project_id) thread.projectId = source.project_id;
     thread.runtimeId = source.runtime_session_id;
     thread.cwd = source.cwd;
@@ -745,8 +892,8 @@ app.openapi(
     if (!run) throw new ConflictError("This response already finished.");
     const { mode } = c.req.valid("json");
     const { thread } = run;
-    if (!["codex", "claude"].includes(thread.config.agent))
-      throw new ValidationError("Permission modes are supported by Claude and Codex.");
+    if (!run.session?.setPermissionMode)
+      throw new ValidationError("This backend does not support changing live permissions.");
     const updated: ChatThread = {
       ...thread,
       config: structuredClone(thread.config),
@@ -989,8 +1136,8 @@ async function streamChat(
   if (!input) throw new ValidationError("A user message is required.");
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   if (body.permissionMode !== undefined) {
-    if (!["codex", "claude"].includes(thread.config.agent))
-      throw new ValidationError("Permission modes are supported by Claude and Codex.");
+    if (createBackend(thread.backend).capabilities?.livePermissions === false)
+      throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = body.permissionMode;
   }
   const { run } = await beginTurn(thread, input, {
@@ -1057,6 +1204,7 @@ async function beginTurn(
     session: null,
     permissions: new Set(),
     questions: new Map(),
+    steering: new Map(),
     threadId: thread.id,
     thread,
     key,
@@ -1073,7 +1221,10 @@ async function beginTurn(
   let synced = true;
   try {
     if (!mock) {
-      const check = await backend.preflight({ executionHost: thread.host });
+      const check = await backend.preflight({
+        executionHost: thread.host,
+        acpAgent: thread.config.agent,
+      });
       if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
     }
     attachments = (await setup.prepare?.()) ?? [];
@@ -1114,7 +1265,8 @@ async function beginTurn(
   const execute = async () => {
     const timer = setTimeout(run.stop, 15 * 60000);
     const emit = async (event: ChatEvent) => {
-      if (event.type !== "thread" && event.type !== "error") responded = true;
+      if (event.type !== "thread" && event.type !== "error" && event.type !== "capabilities")
+        responded = true;
       if (event.type === "text") assistant.content += event.text;
       if (event.type === "error") failure ??= event.message;
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
@@ -1153,6 +1305,7 @@ async function beginTurn(
           orcMcpMode: loadConfig().mcp.default_mode,
           mcpAlwaysLoad: true,
           acpxAgent: thread.config.agent,
+          acpAgent: thread.config.agent,
           acpxNativeSessionId:
             thread.backend === "acpx" && thread.sourceId
               ? (thread.runtimeId ?? undefined)
@@ -1194,6 +1347,9 @@ async function beginTurn(
           thread.backend === "acpx"
             ? [thread.config.system, sent].filter(Boolean).join("\n\n")
             : sent;
+        thread.capabilities = run.session.capabilities ??
+          backend.capabilities ?? { ...UNKNOWN_CAPABILITIES };
+        await emit({ type: "capabilities", capabilities: thread.capabilities });
         await run.session.send(prompt);
         let receivedResult = false;
         let outputBytes = 0;
@@ -1201,6 +1357,11 @@ async function beginTurn(
           if (stopped) break;
           outputBytes += JSON.stringify(event).length;
           if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
+          if (event.type === "capabilities") {
+            thread.capabilities = event.data;
+            await emit({ type: "capabilities", capabilities: event.data });
+            continue;
+          }
           if (event.type === "result") {
             if (
               event.data.runtimeSessionId &&

@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hostRuntime, LOCAL_HOST, SshError } from "@orc/core/exec-host";
+import { CLAUDE_TOKENS_VERSION } from "@orc/core/usage";
+import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { runSync, startSessionWatcher, tokensSettled } from "../session-watcher.js";
 import { claudeAdapter } from "../sessions/claude.js";
@@ -231,17 +233,73 @@ describe("claude adapter: ended sessions, tokens and summary", () => {
 
     const all = await live({ active: false });
     const row = all.find((r) => r.session_id === id);
+    if (!row) throw new Error("Imported session is missing");
     expect(row).toMatchObject({
       agent: "claude",
       status: "stopped",
       name: "an old session",
       cwd: "/tmp/ended-repo",
       summary: "fix the flaky test please",
-      tokens_used: 66,
+      tokens_used: 2_000_064,
       tokens_estimated: false,
     });
     expect(all.some((r) => r.session_id === "archived-one")).toBe(false);
     expect((await live()).some((r) => r.session_id === id)).toBe(false);
+    const sqlite = getSqlite();
+    expect(
+      sqlite
+        .query<{ tokens_version: number }, [string]>(
+          "SELECT tokens_version FROM gateway_sessions WHERE id = ?",
+        )
+        .get(row.id)?.tokens_version,
+    ).toBe(CLAUDE_TOKENS_VERSION);
+    sqlite.run("UPDATE gateway_sessions SET tokens_used = 66, tokens_version = 0 WHERE id = ?", [
+      row.id,
+    ]);
+    await runSync([adapter], { force: true });
+    await tokensSettled();
+    expect(
+      (await live({ active: false })).find((session) => session.id === row.id)?.tokens_used,
+    ).toBe(2_000_064);
+    expect(
+      sqlite
+        .query<{ tokens_version: number }, [string]>(
+          "SELECT tokens_version FROM gateway_sessions WHERE id = ?",
+        )
+        .get(row.id)?.tokens_version,
+    ).toBe(CLAUDE_TOKENS_VERSION);
+    const fresh = await adapter.list(
+      new Map([
+        [
+          id,
+          {
+            lastActivityMs: Date.now(),
+            tokensUsed: 2_000_064,
+            tokensVersion: CLAUDE_TOKENS_VERSION,
+          },
+        ],
+      ]),
+    );
+    expect(fresh.find((session) => session.externalId === id)?.tokens).toBeUndefined();
+    sqlite.run("UPDATE gateway_sessions SET tokens_used = 66, tokens_version = 0 WHERE id = ?", [
+      row.id,
+    ]);
+    await runSync(
+      [
+        claudeAdapter({
+          registry: join(root, "empty-registry"),
+          desktop: null,
+          projects: join(root, "projects"),
+        }),
+      ],
+      { force: true },
+    );
+    await tokensSettled();
+    expect((await live({ active: false })).find((session) => session.id === row.id)).toMatchObject({
+      tokens_used: 2_000_064,
+      name: "an old session",
+      status: "stopped",
+    });
   });
 });
 

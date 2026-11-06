@@ -72,6 +72,7 @@ import type {
   SkillSyncInput,
   SkillSyncResult,
 } from "@orc/core/skill-import-types";
+import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
 import type {
   AgentBackendInfo,
   AgentFull,
@@ -742,6 +743,18 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
     },
 
+    chat: {
+      capabilities: (agent: string, threadId?: string) =>
+        c<{ backend: string; capabilities: import("@orc/core/types").AgentCapabilities }>(
+          "GET",
+          `/chat/capabilities?${new URLSearchParams({ agent, ...(threadId ? { threadId } : {}) })}`,
+        ),
+      steer: (runId: string, input: string, requestId: string = crypto.randomUUID()) =>
+        c<import("@orc/core/chat").ChatThread>("POST", `/chat/runs/${runId}/steer`, {
+          input,
+          requestId,
+        }),
+    },
     backends: {
       list: () => c<{ backends: AgentBackendInfo[]; default_backend: string }>("GET", "/backends"),
     },
@@ -811,7 +824,14 @@ export function createOrcClient(options?: OrcClientOptions) {
         }>("GET", `/projects/${id}/comments`),
     },
 
+    usage: {
+      history: (days: "7" | "30" | "90" | "0" = "30") =>
+        c<UsageHistory>("GET", "/usage/history", undefined, { days }),
+      quotas: () => c<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
+    },
     sessions: {
+      cacheUsage: (id: string) =>
+        c<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
       archiveSync: (projects?: string[]) =>
         c<{
           sync_url: string;

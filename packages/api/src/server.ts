@@ -46,6 +46,7 @@ import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
+import { usageRouter } from "./routes/usage.js";
 import { webhookPublicRouter, webhooksRouter } from "./routes/webhooks.js";
 import { createWebStatic } from "./static.js";
 
@@ -132,6 +133,7 @@ export function createApp() {
   app.route("/api", authRouter);
   app.route("/api", humanRequestsRouter);
   app.route("/api", settingsRouter);
+  app.route("/api", usageRouter);
   app.route("/api", channelsRouter);
   app.route("/api", systemRouter);
   app.route("/api", mcpToolRouter);

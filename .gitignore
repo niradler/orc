@@ -56,3 +56,6 @@ output/playwright/
 docs/.vitepress/cache
 .playwright-mcp/
 .DS_Store
+
+# VitePress intermediate build output
+docs/.vitepress/.temp/
