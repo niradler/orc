@@ -4,6 +4,7 @@ import type { LiveSession, TranscriptPage } from "@/api/client";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
+import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -255,6 +256,7 @@ export function LiveSessionDetail({
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
           )}
+          {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-[150px] flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-outline" />

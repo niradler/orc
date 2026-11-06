@@ -41,6 +41,13 @@ Unauthenticated exceptions: `GET /api/health`, the sign-in routes, `POST /webhoo
 
 ## Usage
 
+`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence from a
+stored native session transcript: `latest` (including optional recorded time and
+a conservative `may_be_cold_after` hint) and `totals`. Missing or unsupported
+evidence is `null`. No prompt text, credentials or transcript paths are returned.
+The route uses normal API authentication and the session's stored execution host;
+clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
+
 `GET /api/usage/history?days=30` returns imported session lifetime token totals,
 grouped by agent and UTC session start date. `days` accepts `7`, `30` (default),
 `90`, or `0` for all time. Totals include session count, recorded tokens, unknown

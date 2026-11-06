@@ -34,3 +34,20 @@ export const UsageQuotaSchema = z.object({
 export const UsageQuotasSchema = z.object({ accounts: z.array(UsageQuotaSchema) });
 export type UsageHistory = z.infer<typeof UsageHistorySchema>;
 export type UsageQuota = z.infer<typeof UsageQuotaSchema>;
+
+export const CacheTokenUsageSchema = z.object({
+  input_tokens: z.number().nonnegative(),
+  cached_input_tokens: z.number().nonnegative(),
+  cache_write_tokens: z.number().nonnegative().nullable(),
+});
+
+export const SessionCacheUsageSchema = z.object({
+  latest: CacheTokenUsageSchema.extend({
+    recorded_at: z.string().datetime().nullable(),
+    may_be_cold_after: z.string().datetime().nullable(),
+  }).nullable(),
+  totals: CacheTokenUsageSchema.nullable(),
+});
+
+export type CacheTokenUsage = z.infer<typeof CacheTokenUsageSchema>;
+export type SessionCacheUsage = z.infer<typeof SessionCacheUsageSchema>;

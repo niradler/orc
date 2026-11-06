@@ -46,7 +46,7 @@ import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
-import type { UsageHistory, UsageQuota } from "@orc/core/usage";
+import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
@@ -1085,6 +1085,8 @@ export const api = {
   },
 
   sessions: {
+    cacheUsage: (id: string) =>
+      req<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
     archive: (params: {
       q?: string;
       project_id?: string;

@@ -13371,6 +13371,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/{id}/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read recorded prompt-cache usage for a native session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Numeric cache usage; absent evidence is null and timing is only a cautious hint */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            latest: {
+                                input_tokens: number;
+                                cached_input_tokens: number;
+                                cache_write_tokens: number | null;
+                                /** Format: date-time */
+                                recorded_at: string | null;
+                                /** Format: date-time */
+                                may_be_cold_after: string | null;
+                            } | null;
+                            totals: {
+                                input_tokens: number;
+                                cached_input_tokens: number;
+                                cache_write_tokens: number | null;
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Cache data could not be read */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/live/{id}/transcript": {
         parameters: {
             query?: never;
