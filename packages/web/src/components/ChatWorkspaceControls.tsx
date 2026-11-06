@@ -331,6 +331,7 @@ export function ChatWorkspaceControls() {
               title={`${host ?? "Local"}: ${displayPath}`}
               aria-label={`Workspace folder: ${displayPath}`}
               onMouseEnter={() => {
+                if (recentOpen) return;
                 keyboardPath.current = false;
                 keepPathOpen();
               }}
