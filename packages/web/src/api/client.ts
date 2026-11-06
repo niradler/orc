@@ -232,7 +232,7 @@ export type SecuritySettings = { session_days: number; cors_origins: string[] };
 
 export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
 
-export type TerminalKind = "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+export type TerminalKind = string;
 export type AgentSetup = {
   name: string;
   packages: string[];

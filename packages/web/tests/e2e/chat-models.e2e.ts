@@ -20,7 +20,7 @@ for (const width of [320, 1440]) {
       return route.fulfill({
         json:
           agent === "gemini"
-            ? { models: [], warning: "Choose a saved model or enter a custom model ID." }
+            ? { models: [], warning: null }
             : {
                 models: [{ id: `${agent}-native`, label: `${agent} discovered model` }],
                 warning: null,
@@ -40,29 +40,29 @@ for (const width of [320, 1440]) {
       (await page.getByTestId("chat-input").boundingBox())?.y ?? 0,
     );
     await openChatModel(page);
-    const model = page.getByTestId("chat-model-select");
-    await expect(model.locator("option[value='codex-native']")).toHaveCount(1);
-    await expect(model.locator("option[value='saved-codex']")).toHaveCount(1);
-    await model.selectOption("codex-native");
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("chat-config-dialog")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Choose model" })).toHaveCount(0);
+    await expect(page.getByTestId("chat-model-option-codex-native")).toBeVisible();
+    await expect(page.getByTestId("chat-model-option-saved-codex")).toBeVisible();
+    await page.getByTestId("chat-model-option-codex-native").click();
+    await expect(page.getByTestId("chat-model-select")).toBeHidden();
+    await expect(modelButton).toContainText("codex discovered model");
     await chooseChatAgent(page, "claude");
+    await expect(modelButton).toContainText("Agent default");
     await openChatModel(page);
-    await expect(model).toHaveValue("");
-    await expect(model.locator("option[value='claude-native']")).toHaveCount(1);
-    await expect(model.locator("option[value='codex-native']")).toHaveCount(0);
+    await expect(page.getByTestId("chat-model-option-claude-native")).toBeVisible();
+    await expect(page.getByTestId("chat-model-option-codex-native")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await chooseChatAgent(page, "gemini");
-    await expect(page.getByTestId("chat-model-warning").filter({ visible: true })).toBeVisible();
     await openChatModel(page);
-    await model.selectOption("__custom__");
+    await expect(page.getByTestId("chat-model-warning")).toHaveCount(0);
+    await page.getByTestId("chat-model-option-custom").click();
     await page.getByTestId("chat-custom-model").fill("--bad");
     await page.getByTestId("chat-custom-model-apply").click();
     await expect(page.getByRole("alert")).toContainText("valid model ID");
     await page.getByTestId("chat-custom-model").fill("provider/custom-model");
     await page.getByTestId("chat-custom-model-apply").click();
-    await expect(model).toHaveValue("provider/custom-model");
-    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("chat-custom-model")).toBeHidden();
+    await expect(modelButton).toContainText("provider/custom-model");
     await chooseChatAgent(page, "codex");
     await chooseChatModel(page, "codex-native");
     await page.screenshot({ path: testInfo.outputPath(`chat-models-${width}.png`) });
@@ -99,7 +99,7 @@ test("choosing a custom model does not submit an existing composer draft", async
   await page.goto("/tasks?chat=open");
   await page.getByTestId("chat-input").fill("Unsent draft while choosing a model");
   await openChatModel(page);
-  await page.getByTestId("chat-model-select").selectOption("__custom__");
+  await page.getByTestId("chat-model-option-custom").click();
   await page.getByTestId("chat-custom-model").fill("--invalid");
   await page.getByTestId("chat-custom-model-apply").click();
   await expect(page.getByRole("alert")).toContainText("valid model ID");

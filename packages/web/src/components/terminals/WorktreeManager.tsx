@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useRemoveWorktree } from "@/hooks/useGit";
-import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
+import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { launchRequest } from "@/lib/terminal-launch";
 import { cn } from "@/lib/utils";
 
@@ -346,7 +346,7 @@ export function WorktreeManager({
                           <div className="ml-auto flex shrink-0 items-center">
                             {!tree.prunable &&
                               launchers.map((kind) => {
-                                const { label, icon: Icon } = TERMINAL_KINDS[kind];
+                                const { label, icon: Icon } = terminalKind(kind);
                                 return (
                                   <button
                                     key={kind}

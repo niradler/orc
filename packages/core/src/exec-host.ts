@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path";
+import { CODING_AGENTS } from "./coding-agents.js";
 import { configuredApiSecret, loadConfig, type OrcConfig } from "./config.js";
 import { ConflictError, OrcError, ValidationError } from "./errors.js";
 import { ulid } from "./ids.js";
@@ -106,18 +107,15 @@ export const LOCAL_HOST: ExecHost = { kind: "local" };
 export const ALIAS_PATTERN = /^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/;
 
 const PROBE_BINARIES = [
-  "claude",
-  "codex",
-  "cursor-agent",
-  "agent",
-  "gemini",
-  "copilot",
-  "acpx",
-  "git",
-  "bun",
-  "node",
-  "python3",
-  "rg",
+  ...new Set([
+    ...CODING_AGENTS.flatMap((agent) => agent.binaries),
+    "acpx",
+    "git",
+    "bun",
+    "node",
+    "python3",
+    "rg",
+  ]),
 ];
 
 const FORWARD_PREFIXES = ["ANTHROPIC_", "OPENAI_", "GEMINI_", "GOOGLE_GENAI_"];

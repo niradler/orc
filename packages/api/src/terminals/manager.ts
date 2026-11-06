@@ -1,4 +1,5 @@
 import { changes } from "@orc/core/changes";
+import { agentForSessionBackend } from "@orc/core/coding-agents";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { trackHostProcess } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
@@ -121,7 +122,7 @@ export class TerminalManager {
         info.status === "running" &&
         info.pid === input.pid &&
         info.host === input.host &&
-        info.kind === (input.backend === "cursor-agent" ? "cursor" : input.backend) &&
+        info.kind === (agentForSessionBackend(input.backend)?.id ?? input.backend) &&
         Math.floor(Date.parse(info.created_at) / 1000) <=
           Math.floor(input.createdAt.getTime() / 1000)
       ) {

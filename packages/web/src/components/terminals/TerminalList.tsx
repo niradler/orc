@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Terminal } from "@/api/client";
-import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
+import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { filterTerminals, terminalStatus } from "@/lib/terminal-presentation";
 import type { ConnectionState } from "@/lib/terminal-runtime";
 import { cn } from "@/lib/utils";
@@ -68,7 +68,7 @@ export function TerminalList({
         )}
         {shown.map((terminal) => {
           const active = terminal.id === activeId;
-          const { label, icon: Icon } = TERMINAL_KINDS[terminal.kind];
+          const { label, icon: Icon } = terminalKind(terminal.kind);
           const tail = cwdTail(terminal.cwd);
           const state = terminalStatus(terminal, connectionOf(terminal.id));
           const disconnected = state === "Disconnected" || state === "Reconnecting";

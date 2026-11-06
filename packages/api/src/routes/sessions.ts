@@ -9,7 +9,8 @@ import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
-import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
+import { readTranscriptBytes } from "../sessions/transcript.js";
+import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
 
 const app = createRouter();
 
@@ -433,14 +434,20 @@ app.openapi(liveTranscriptRoute, async (c) => {
   const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
   if (!(await runtime.isFile(row.transcript_path)))
     throw new NotFoundError("Transcript for session", id);
-  const bytes = await runtime.readFile(row.transcript_path, MAX_TRANSCRIPT_BYTES);
+  const externalId = row.runtime_session_id ?? null;
+  const bytes = await loadTranscriptBytes(runtime, row.backend, row.transcript_path, externalId);
   const host = runtime.host.kind === "ssh" ? runtime.host.alias : "local";
   return c.json(
-    await readTranscriptBytes(bytes, row.backend, `${host}:${row.transcript_path}`, {
-      offset,
-      limit,
-      q,
-    }),
+    await readTranscriptBytes(
+      bytes,
+      row.backend,
+      transcriptCacheKey(host, row.backend, row.transcript_path, externalId),
+      {
+        offset,
+        limit,
+        q,
+      },
+    ),
     200,
   );
 });

@@ -1,7 +1,8 @@
-import { CHAT_AGENTS, ChatModelSchema } from "@orc/core/chat";
+import { ChatModelSchema } from "@orc/core/chat";
+import { agentLabel } from "@orc/core/coding-agents";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, History, PanelLeftClose, Plus, X } from "lucide-react";
+import { History, PanelLeftClose, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import claudeIcon from "@/assets/providers/claude.svg?no-inline";
@@ -20,7 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useEnabledAgents } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { useSsh } from "@/hooks/useSsh";
@@ -39,6 +41,9 @@ const providerIcons: Record<string, string> = {
   copilot: copilotIcon,
   cursor: cursorIcon,
 };
+
+const DEFAULT_MODEL = "__default__";
+const CUSTOM_MODEL = "__custom__";
 
 export function ChatSessionPicker({
   docked = false,
@@ -540,7 +545,7 @@ function HistoryRow({
 
 export function ChatAgentPicker() {
   const chat = useChat();
-  const agents = Array.from(new Set([...CHAT_AGENTS, chat.config.agent]));
+  const agents = Array.from(new Set([...useEnabledAgents(), chat.config.agent]));
   return (
     <Select
       value={chat.config.agent}
@@ -565,7 +570,7 @@ export function ChatAgentPicker() {
       <SelectContent data-testid="chat-agent-select" side="top" align="start">
         {agents.map((agent) => (
           <SelectItem key={agent} value={agent} data-testid={`chat-agent-option-${agent}`}>
-            {agent}
+            {agentLabel(agent)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -593,102 +598,113 @@ export function ChatModelPicker() {
   const warning = catalog.isError
     ? "Models could not be loaded. Saved and custom models are available."
     : catalog.data?.warning;
+  const current = choices.get(config.model) || config.model || "Agent default";
   return (
-    <div className="min-w-0">
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
+    <Popover
+      open={custom}
+      onOpenChange={(open) => {
+        setCustom(open);
+        if (!open) setError("");
+      }}
+    >
+      <Select
+        value={config.model || DEFAULT_MODEL}
+        disabled={streaming || !ready}
+        onValueChange={(value) => {
+          setError("");
+          if (value === CUSTOM_MODEL) {
+            setModel(config.model);
+            setCustom(true);
+          } else setConfig({ ...config, model: value === DEFAULT_MODEL ? "" : value });
+        }}
+      >
+        <PopoverAnchor asChild>
+          <SelectTrigger
             data-testid="chat-model-button"
-            aria-label={`Choose model, current ${choices.get(config.model) || config.model || "Agent default"}`}
-            disabled={streaming || !ready}
+            aria-label={`Choose model, current ${current}`}
             title={streaming ? "Available after the current response" : "Choose model"}
-            className="inline-flex min-h-8 max-w-48 min-w-0 items-center gap-1 rounded-md px-2 text-[13px] text-muted-foreground hover:bg-surface-highest disabled:opacity-50"
+            className="w-auto min-w-0 max-w-48"
           >
-            <span className="truncate">
-              {choices.get(config.model) || config.model || "Agent default"}
-            </span>
-            <ChevronDown size={12} className="shrink-0" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          aria-label="Choose model"
+            <SelectValue>{current}</SelectValue>
+          </SelectTrigger>
+        </PopoverAnchor>
+        <SelectContent
+          data-testid="chat-model-select"
           side="top"
           align="start"
-          className="w-80 max-w-[calc(100vw-2rem)] space-y-3"
+          onCloseAutoFocus={(event) => {
+            if (custom) event.preventDefault();
+          }}
         >
-          <h2 className="text-sm font-medium">Choose model</h2>
-          <label className="block min-w-0">
-            <span className="sr-only">Model</span>
-            <select
-              data-testid="chat-model-select"
-              aria-label="Chat model"
-              title={catalog.isFetching ? "Loading models…" : config.model || "Agent default"}
-              value={custom ? "__custom__" : config.model}
-              disabled={streaming || !ready}
-              onChange={(event) => {
-                setError("");
-                const value = event.target.value;
-                setCustom(value === "__custom__");
-                if (value === "__custom__") setModel(config.model);
-                else setConfig({ ...config, model: value });
-              }}
-              className="min-h-8 w-full min-w-0 rounded-md border border-control-border bg-background px-2 text-base sm:text-sm text-on-surface disabled:opacity-50"
-            >
-              <option value="">Agent default</option>
-              {[...choices].map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-              <option value="__custom__">Custom model…</option>
-            </select>
-          </label>
-          {custom && (
-            <form
-              className="mt-2 flex min-w-0 gap-1"
-              onSubmit={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const parsed = ChatModelSchema.safeParse(model);
-                if (!parsed.success) {
-                  setError("Enter a valid model ID (up to 200 characters).");
-                  return;
-                }
-                setConfig({ ...config, model: parsed.data });
-                setCustom(false);
-              }}
-            >
-              <Input
-                data-testid="chat-custom-model"
-                aria-label="Custom model ID"
-                value={model}
-                disabled={streaming}
-                onChange={(event) => setModel(event.target.value)}
-                className="min-w-0"
-              />
-              <Button
-                type="submit"
-                data-testid="chat-custom-model-apply"
-                disabled={streaming}
-                className="min-h-8 px-2"
-              >
-                Use
-              </Button>
-            </form>
+          <SelectItem value={DEFAULT_MODEL} data-testid="chat-model-option-default">
+            Agent default
+          </SelectItem>
+          {[...choices].map(([id, label]) => (
+            <SelectItem key={id} value={id} data-testid={`chat-model-option-${id}`}>
+              {label}
+            </SelectItem>
+          ))}
+          <SelectItem value={CUSTOM_MODEL} data-testid="chat-model-option-custom">
+            Custom model…
+          </SelectItem>
+          {catalog.isFetching && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading models…</p>
           )}
-        </PopoverContent>
-      </Popover>
-      {(error || warning) && (
-        <p
-          data-testid="chat-model-warning"
-          role={error ? "alert" : "status"}
-          className="mt-1 text-xs text-on-surface-variant wrap-break-word"
+          {warning && (
+            <p
+              data-testid="chat-model-warning"
+              role="status"
+              className="max-w-72 px-2 py-1.5 text-xs text-muted-foreground wrap-break-word"
+            >
+              {warning}
+            </p>
+          )}
+        </SelectContent>
+      </Select>
+      <PopoverContent
+        aria-label="Custom model"
+        side="top"
+        align="start"
+        className="w-80 max-w-[calc(100vw-2rem)]"
+      >
+        <form
+          className="flex min-w-0 gap-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const parsed = ChatModelSchema.safeParse(model);
+            if (!parsed.success) {
+              setError("Enter a valid model ID (up to 200 characters).");
+              return;
+            }
+            setConfig({ ...config, model: parsed.data });
+            setCustom(false);
+          }}
         >
-          {error || warning}
-        </p>
-      )}
-    </div>
+          <Input
+            data-testid="chat-custom-model"
+            aria-label="Custom model ID"
+            value={model}
+            disabled={streaming}
+            onChange={(event) => setModel(event.target.value)}
+            className="min-w-0"
+          />
+          <Button
+            type="submit"
+            data-testid="chat-custom-model-apply"
+            disabled={streaming}
+            className="min-h-8 px-2"
+          >
+            Use
+          </Button>
+        </form>
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-error wrap-break-word">
+            {error}
+          </p>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

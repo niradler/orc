@@ -285,3 +285,30 @@ test("should save and reload attention retention without exposing credentials", 
   expect(JSON.parse(body).attention_retention_hours).toBe(48);
   expect(body).not.toContain("private-server-secret");
 });
+
+test("should save enabled coding agents and reject malformed agent ids", async () => {
+  const saved = await app.request("/api/settings", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ agents: ["claude", "opencode", "my-acp-agent"] }),
+  });
+  expect(saved.status).toBe(200);
+  resetConfig();
+  const reloaded = await app.request("/api/settings", { headers });
+  expect(((await reloaded.json()) as { agents?: string[] }).agents).toEqual([
+    "claude",
+    "opencode",
+    "my-acp-agent",
+  ]);
+  for (const agents of [["Bad Id"], ["--help"], ["x".repeat(40)], "claude"]) {
+    expect(
+      (
+        await app.request("/api/settings", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ agents }),
+        })
+      ).status,
+    ).toBe(400);
+  }
+});

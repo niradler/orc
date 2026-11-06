@@ -36,6 +36,7 @@ import {
   withOrcContext,
 } from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
+import { chatRuntimeFor } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
@@ -245,8 +246,7 @@ app.openapi(
     const thread = threadId ? requireThread(threadId) : null;
     if (thread && thread.config.agent !== agent)
       throw new ValidationError("The agent does not match this conversation.");
-    if (agent !== "codex" && agent !== "claude")
-      return c.json({ models: [], warning: "Choose a saved model or enter a custom model ID." });
+    if (agent !== "codex" && agent !== "claude") return c.json({ models: [], warning: null });
     const host = thread ? execHostFor(thread.host) : resolveExecHost();
     const cwd = thread?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
     const key = JSON.stringify([agent, host.kind === "ssh" ? host.alias : null, cwd]);
@@ -311,7 +311,7 @@ async function newThread(
     id: crypto.randomUUID(),
     title: "New chat",
     config,
-    backend: config.agent === "codex" ? "codex-cli" : config.agent === "claude" ? "claude" : "acpx",
+    backend: chatRuntimeFor(config.agent),
     runtimeId: null,
     cwd,
     host: host.kind === "ssh" ? host.alias : null,
@@ -352,8 +352,7 @@ async function newThread(
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;
     thread.config.model = model ?? source.model ?? "";
-    thread.backend =
-      source.backend === "codex" ? "codex-cli" : source.backend === "claude" ? "claude" : "acpx";
+    thread.backend = chatRuntimeFor(agent);
     if (source.project_id) thread.projectId = source.project_id;
     thread.runtimeId = source.runtime_session_id;
     thread.cwd = source.cwd;
@@ -1244,7 +1243,7 @@ async function beginTurn(
             await emit({ type: "request_resolved", requestId: event.data.requestId });
           } else if (event.type === "error") await emit({ type: "error", message: event.data });
         }
-        if (!receivedResult && !stopped)
+        if (!receivedResult && !stopped && failure === null)
           await emit({
             type: "error",
             message:

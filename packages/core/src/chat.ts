@@ -3,7 +3,6 @@ import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-opti
 import { chatUiCatalogText } from "./chat-ui.js";
 import { SessionFileSchema } from "./session-file-types.js";
 
-export const CHAT_AGENTS = ["codex", "claude", "cursor", "gemini", "copilot"] as const;
 export function nativeChatAgent(agent: string): string | null {
   return ["claude", "codex", "gemini"].includes(agent) ? agent : null;
 }
@@ -201,8 +200,13 @@ export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): 
       -200,
     ) as ChatActivity[];
   }
-  if (event.type === "tool_use")
+  if (event.type === "tool_use") {
+    if (activity.some((item) => item.type === "tool" && item.id === event.data.id))
+      return activity.map((item) =>
+        item.type === "tool" && item.id === event.data.id ? { ...item, ...event.data } : item,
+      );
     return [...activity, { type: "tool", ...event.data }].slice(-200) as ChatActivity[];
+  }
   if (event.type === "tool_result") {
     const existing = activity.some(
       (item) => item.type === "tool" && item.id === event.data.toolUseId,

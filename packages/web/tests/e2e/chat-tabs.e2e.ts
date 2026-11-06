@@ -72,7 +72,7 @@ test("chat preferences picked in the browser survive a reload", async ({ page })
   await page.keyboard.press("Escape");
   await page.reload();
   await expect(page.getByTestId("chat-panel").getByTestId("chat-agent-button")).toHaveText(
-    "claude",
+    "Claude Code",
   );
   await openChatSettings(page);
   await expect(page.getByTestId("chat-permission-mode")).toHaveValue("bypassPermissions");

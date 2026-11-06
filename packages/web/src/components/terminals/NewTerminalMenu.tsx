@@ -16,7 +16,7 @@ import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { useSsh } from "@/hooks/useSsh";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
-import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
+import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import {
   CWD_KEY,
   launchRequest,
@@ -429,7 +429,7 @@ export function NewTerminalMenu({
             </label>
             <div className="space-y-0.5">
               {launchers.map((kind) => {
-                const { label, icon: Icon } = TERMINAL_KINDS[kind];
+                const { label, icon: Icon } = terminalKind(kind);
                 return (
                   <button
                     key={kind}
@@ -493,7 +493,7 @@ export function NewTerminalMenu({
                       <div className="ml-auto flex shrink-0 items-center">
                         {!row.prunable &&
                           launchers.map((kind) => {
-                            const { label, icon: Icon } = TERMINAL_KINDS[kind];
+                            const { label, icon: Icon } = terminalKind(kind);
                             return (
                               <button
                                 key={kind}

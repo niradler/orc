@@ -269,12 +269,54 @@ async function* geminiTurns(content: string): AsyncGenerator<Draft> {
   }
 }
 
+type OpenCodePart = {
+  type?: string;
+  text?: string;
+  synthetic?: boolean;
+  tool?: string;
+  callID?: string;
+  state?: { status?: string; input?: unknown; output?: unknown; error?: unknown };
+};
+
+async function* opencodeTurns(content: string): AsyncGenerator<Draft> {
+  for await (const line of jsonLines(content)) {
+    const message = (line.message ?? {}) as { role?: string };
+    const parts = Array.isArray(line.parts) ? (line.parts as OpenCodePart[]) : [];
+    const blocks: TranscriptBlock[] = [];
+    for (const part of parts) {
+      if (!part || typeof part !== "object") continue;
+      if (part.type === "text" && part.text && !part.synthetic)
+        blocks.push({ type: "text", text: cut(part.text, TEXT_MAX) });
+      else if (part.type === "reasoning" && part.text)
+        blocks.push({ type: "thinking", text: cut(part.text, TEXT_MAX) });
+      else if (part.type === "tool") {
+        const output = part.state?.output ?? part.state?.error;
+        blocks.push({
+          type: "tool_use",
+          name: part.tool ?? "tool",
+          input: cut(stringify(part.state?.input ?? ""), TOOL_INPUT_MAX),
+          ...(part.callID ? { id: part.callID } : {}),
+          ...(output != null ? { result: cut(resultText(output), TOOL_RESULT_MAX) } : {}),
+        });
+      }
+    }
+    if (!blocks.length) continue;
+    yield {
+      role:
+        message.role === "user" ? "user" : message.role === "assistant" ? "assistant" : "system",
+      time: typeof line.time === "number" ? new Date(line.time).toISOString() : null,
+      blocks,
+    };
+  }
+}
+
 const readers: Record<string, (content: string) => AsyncGenerator<Draft>> = {
   claude: claudeTurns,
   codex: codexTurns,
   cursor: cursorTurns,
   "cursor-agent": cursorTurns,
   gemini: geminiTurns,
+  opencode: opencodeTurns,
 };
 
 type ToolUse = Extract<TranscriptBlock, { type: "tool_use" }>;

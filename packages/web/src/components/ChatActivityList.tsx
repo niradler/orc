@@ -1,6 +1,6 @@
 import { type ChatActivity, ChatActivitySchema } from "@orc/core/chat";
 import { ChevronRight } from "lucide-react";
-import { groupChatActivity } from "@/lib/chat-activity";
+import { activitySummary, groupChatActivity } from "@/lib/chat-activity";
 
 function ActivityItem({ item }: { item: ChatActivity }) {
   return item.type === "status" ? (
@@ -67,13 +67,15 @@ export function ChatActivityList({ value }: { value: unknown }) {
                 size={14}
                 className="shrink-0 group-open/tools:rotate-90"
               />
-              <span className="min-w-0 flex-1">{item.items.length} tool calls</span>
-              {item.items.some((tool) => tool.isError) && (
+              <span className="min-w-0 flex-1">{activitySummary(item.items)}</span>
+              {item.items.some((tool) => tool.type === "tool" && tool.isError) && (
                 <span className="text-error">
-                  {item.items.filter((tool) => tool.isError).length} failed
+                  {item.items.filter((tool) => tool.type === "tool" && tool.isError).length} failed
                 </span>
               )}
-              {item.items.some((tool) => tool.result === undefined) && <span>Running</span>}
+              {item.items.some((tool) => tool.type === "tool" && tool.result === undefined) && (
+                <span>Running</span>
+              )}
             </summary>
             <div className="space-y-1 border-t border-outline-variant p-2">
               {item.items.map((tool) => (

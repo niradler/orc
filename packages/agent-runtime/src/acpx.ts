@@ -62,83 +62,154 @@ type AcpxUpdate = {
   };
 };
 
-export function parseAcpxLine(line: string): AgentEvent | null {
-  let msg: AcpxJsonRpc;
-  try {
-    msg = JSON.parse(line) as AcpxJsonRpc;
-  } catch {
-    return null;
-  }
+export const ACPX_MCP_CONFLICT_MESSAGE =
+  "The agent for this chat is still running with an older ORC connection (for example after an SSH reconnect). " +
+  "Wait a few minutes for it to go idle and send again, or start a new chat.";
 
-  if (msg.error) {
-    return { type: "error", data: msg.error.message ?? "ACPX error" };
-  }
+function acpxErrorMessage(error: AcpxJsonRpc["error"]): string {
+  const text = JSON.stringify(error ?? {});
+  if (text.includes("QUEUE_MCP_CONFIG_CONFLICT") || text.includes("different MCP config"))
+    return ACPX_MCP_CONFLICT_MESSAGE;
+  return error?.message ?? "ACPX error";
+}
 
-  if (msg.result && msg.id !== undefined) {
-    if (msg.result.stopReason || msg.result.usage) {
-      return { type: "result", data: { usage: msg.result.usage } };
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function pretty(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+export function formatAcpxToolInput(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  const record = asRecord(raw);
+  if (!record) return raw === undefined || raw === null ? "" : pretty(raw);
+  if (!Object.keys(record).length) return "";
+  if ("toolName" in record && "args" in record) return pretty(record.args ?? {});
+  if (typeof record.command === "string") return record.command;
+  return pretty(record);
+}
+
+function contentText(content: AcpxUpdate["content"]): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) => block?.content?.text ?? block?.text ?? "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function formatAcpxToolOutput(update: AcpxUpdate): { content: string; isError: boolean } {
+  const response = update._meta?.claudeCode?.toolResponse;
+  const failed = update.status === "failed";
+  const raw = update.rawOutput ?? response?.stdout;
+  if (typeof raw === "string")
+    return { content: raw, isError: failed || Boolean(response?.stderr) };
+  const record = asRecord(raw);
+  if (!record) {
+    const text = contentText(update.content);
+    return { content: text || (raw === undefined ? "" : pretty(raw)), isError: failed };
+  }
+  if ("exitCode" in record || "stdout" in record || "stderr" in record) {
+    const content = [record.stdout, record.stderr]
+      .filter((part): part is string => typeof part === "string" && part.trim() !== "")
+      .map((part) => part.trimEnd())
+      .join("\n");
+    const code = record.exitCode;
+    return {
+      content: content || (typeof code === "number" && code !== 0 ? `Exit code ${code}` : ""),
+      isError: failed || (typeof code === "number" && code !== 0),
+    };
+  }
+  if (typeof record.content === "string") return { content: record.content, isError: failed };
+  if (typeof record.error === "string") return { content: record.error, isError: true };
+  if (Object.keys(record).every((key) => key === "success"))
+    return { content: contentText(update.content), isError: failed || record.success === false };
+  return { content: pretty(record), isError: failed };
+}
+
+/** ACP streams a tool call as a start plus updates; this merges them into ORC tool events. */
+export function createAcpxParser(): (line: string) => AgentEvent[] {
+  const tools = new Map<string, { name: string; input: string }>();
+
+  const toolUse = (update: AcpxUpdate): AgentEvent | null => {
+    const id = update.toolCallId ?? ulid();
+    const previous = tools.get(id);
+    const name = update._meta?.claudeCode?.toolName ?? update.title ?? previous?.name ?? "";
+    const input =
+      update.rawInput === undefined
+        ? (previous?.input ?? "")
+        : formatAcpxToolInput(update.rawInput) || (previous?.input ?? "");
+    if (previous && previous.name === name && previous.input === input) return null;
+    tools.set(id, { name, input });
+    return { type: "tool_use", data: { id, name, input } };
+  };
+
+  return (line) => {
+    let msg: AcpxJsonRpc;
+    try {
+      msg = JSON.parse(line) as AcpxJsonRpc;
+    } catch {
+      return [];
     }
-    return null;
-  }
 
-  if (msg.method !== "session/update" || !msg.params?.update) return null;
+    if (msg.error) return [{ type: "error", data: acpxErrorMessage(msg.error) }];
 
-  const update = msg.params.update;
-  const sessionUpdate = update.sessionUpdate;
+    if (msg.result && msg.id !== undefined) {
+      if (msg.result.stopReason || msg.result.usage)
+        return [{ type: "result", data: { usage: msg.result.usage } }];
+      return [];
+    }
 
-  if (sessionUpdate === "agent_message_chunk" || sessionUpdate === "agent_thought_chunk") {
-    const content = update.content;
-    const blocks = Array.isArray(content)
-      ? content.map((block) => block?.content ?? block)
-      : [content];
-    const type =
-      sessionUpdate === "agent_thought_chunk" || blocks[0]?.type === "thinking"
-        ? "thinking"
-        : "text";
-    const text = blocks
-      .filter(
-        (block) =>
-          (block?.type === "text" || block?.type === "thinking") && typeof block.text === "string",
-      )
-      .map((block) => block?.text ?? "")
-      .join("");
-    return text ? { type, data: text } : null;
-  }
+    if (msg.method !== "session/update" || !msg.params?.update) return [];
 
-  if (sessionUpdate === "tool_call") {
-    const toolName = update._meta?.claudeCode?.toolName ?? update.title ?? "";
-    return {
-      type: "tool_use",
-      data: {
-        id: update.toolCallId ?? ulid(),
-        name: toolName,
-        input:
-          typeof update.rawInput === "string"
-            ? update.rawInput
-            : JSON.stringify(update.rawInput ?? {}),
-      },
-    };
-  }
+    const update = msg.params.update;
+    const sessionUpdate = update.sessionUpdate;
 
-  if (
-    sessionUpdate === "tool_call_update" &&
-    (update.status === "completed" || update.status === "failed")
-  ) {
-    const toolResponse = update._meta?.claudeCode?.toolResponse;
-    const output = update.rawOutput ?? toolResponse?.stdout ?? "";
-    const isError =
-      update.status === "failed" || (toolResponse?.stderr ? toolResponse.stderr.length > 0 : false);
-    return {
-      type: "tool_result",
-      data: {
-        toolUseId: update.toolCallId ?? "",
-        content: typeof output === "string" ? output : JSON.stringify(output),
-        isError,
-      },
-    };
-  }
+    if (sessionUpdate === "agent_message_chunk" || sessionUpdate === "agent_thought_chunk") {
+      const content = update.content;
+      const blocks = Array.isArray(content)
+        ? content.map((block) => block?.content ?? block)
+        : [content];
+      const type =
+        sessionUpdate === "agent_thought_chunk" || blocks[0]?.type === "thinking"
+          ? "thinking"
+          : "text";
+      const text = blocks
+        .filter(
+          (block) =>
+            (block?.type === "text" || block?.type === "thinking") &&
+            typeof block.text === "string",
+        )
+        .map((block) => block?.text ?? "")
+        .join("");
+      return text ? [{ type, data: text }] : [];
+    }
 
-  return null;
+    if (sessionUpdate === "tool_call") {
+      const event = toolUse(update);
+      return event ? [event] : [];
+    }
+
+    if (sessionUpdate !== "tool_call_update") return [];
+    const id = update.toolCallId ?? "";
+    const events: AgentEvent[] = [];
+    if (update.title !== undefined || update.rawInput !== undefined) {
+      const event = toolUse(update);
+      if (event) events.push(event);
+    }
+    if (update.status === "completed" || update.status === "failed") {
+      const output = formatAcpxToolOutput(update);
+      events.push({ type: "tool_result", data: { toolUseId: id, ...output } });
+    }
+    return events;
+  };
+}
+
+export function parseAcpxLine(line: string): AgentEvent | null {
+  return createAcpxParser()(line).at(-1) ?? null;
 }
 
 /**
@@ -271,6 +342,9 @@ export class AcpxSession implements AgentSession {
   private readonly host: ExecHost;
   private readonly opts: SessionOpts;
   private mcpConfig: OrcMcpConfigFile | null = null;
+  private mcpCleanup: Promise<void> = Promise.resolve();
+  private parse = createAcpxParser();
+  private gotError = false;
 
   constructor(opts: SessionOpts, acpxCmd: string[], host: ExecHost) {
     this.id = ulid();
@@ -341,18 +415,21 @@ export class AcpxSession implements AgentSession {
   }
 
   private releaseMcpConfig(): void {
-    this.mcpConfig?.cleanup();
+    if (this.mcpConfig) this.mcpCleanup = this.mcpConfig.cleanup();
     this.mcpConfig = null;
   }
 
+  // acpx keeps a warm session owner that rejects a different MCP config path, so the path is per session.
   private async prepareMcpConfig(): Promise<string[]> {
     this.releaseMcpConfig();
+    await this.mcpCleanup;
     if (!this.opts.orcMcp) return [];
     this.mcpConfig = await writeOrcMcpConfigFile(
       this.host,
       this.opts.orcMcpProject,
       this.opts.orcMcpMode,
       "acpx",
+      `acpx-${this.agent}-${this.sessionName}`,
     );
     return ["--mcp-config", this.mcpConfig.path];
   }
@@ -364,21 +441,20 @@ export class AcpxSession implements AgentSession {
   }
 
   private handleLine(line: string): void {
-    const event = parseAcpxLine(line);
-    if (!event) return;
-
-    if (event.type === "result") {
-      this.gotResult = true;
-      this.push({
-        type: "result",
-        data: { runtimeSessionId: this.sessionName, ...event.data },
-      });
-      this.done = true;
-      this.resolveNext?.();
-      return;
+    for (const event of this.parse(line)) {
+      if (event.type === "result") {
+        this.gotResult = true;
+        this.push({
+          type: "result",
+          data: { runtimeSessionId: this.sessionName, ...event.data },
+        });
+        this.done = true;
+        this.resolveNext?.();
+        return;
+      }
+      if (event.type === "error") this.gotError = true;
+      this.push(event);
     }
-
-    this.push(event);
   }
 
   private async watchExit(): Promise<void> {
@@ -398,7 +474,13 @@ export class AcpxSession implements AgentSession {
       const detail = this.stderrBuf.trim();
       const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
       logger.error(msg, { agent: this.agent, stderr: detail });
-      this.push({ type: "error", data: msg });
+      if (!this.gotError)
+        this.push({
+          type: "error",
+          data: /QUEUE_MCP_CONFIG_CONFLICT|different MCP config/.test(detail)
+            ? ACPX_MCP_CONFLICT_MESSAGE
+            : msg,
+        });
     } else if (!this.gotResult) {
       logger.warn("ACPX exited without a result event — synthesising empty result", {
         agent: this.agent,
@@ -419,6 +501,8 @@ export class AcpxSession implements AgentSession {
 
     this.done = false;
     this.gotResult = false;
+    this.gotError = false;
+    this.parse = createAcpxParser();
     this.stderrBuf = "";
     this.eventQueue.length = 0;
 

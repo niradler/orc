@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { ChannelConnectionSchema } from "./channels.js";
 import { ChatSettingsSchema } from "./chat.js";
+import { AGENT_ID_PATTERN } from "./coding-agents.js";
 import { userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
 import { decryptSecret } from "./secrets.js";
@@ -69,6 +70,7 @@ export const OrcConfigSchema = z.object({
       terminal_font: z.string().max(200).optional(),
       attention_retention_hours: z.number().int().min(1).max(8760).optional(),
       chat: ChatSettingsSchema.optional(),
+      agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
     })
     .default({}),
   skills: z

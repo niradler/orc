@@ -12,6 +12,7 @@ const BIN: Record<string, string> = {
   codex: "/bin/codex",
   "cursor-agent": "/bin/cursor-agent",
   gemini: "/bin/gemini",
+  opencode: "/bin/opencode",
   pwsh: "C:\\pwsh.exe",
   powershell: "C:\\powershell.exe",
 };
@@ -93,6 +94,12 @@ describe("resume launch", () => {
       ]);
     },
   );
+
+  test("should resume an OpenCode session with --session", async () => {
+    const launch = await buildLaunch({ live: live({ agent: "opencode" }) }, deps());
+    expect(launch).toMatchObject({ kind: "opencode", resume: true });
+    expect(launch.argv).toEqual(["/bin/opencode", "--session", "abc-123"]);
+  });
 
   test("null cwd spawns with no cwd override", async () => {
     expect((await buildLaunch({ live: live({ cwd: null }) }, deps())).cwd).toBeUndefined();
@@ -221,5 +228,13 @@ describe("platform shells", () => {
     expect(
       availableLaunchers(deps({ which: (c) => (c === "claude" ? "/bin/claude" : null) })),
     ).toEqual(["shell", "claude"]);
+  });
+
+  test("should offer only enabled agents that are installed, in catalog order", async () => {
+    expect(availableLaunchers(deps(), ["opencode", "gemini", "kimi", "custom-acp"])).toEqual([
+      "shell",
+      "gemini",
+      "opencode",
+    ]);
   });
 });

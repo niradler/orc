@@ -1,15 +1,11 @@
+import { agentLabel } from "@orc/core/coding-agents";
 import { Bot, MousePointer2, SquareTerminal } from "lucide-react";
 import type { ElementType } from "react";
-import type { TerminalKind } from "@/api/client";
 
-export const TERMINAL_KINDS: Record<TerminalKind, { label: string; icon: ElementType }> = {
-  shell: { label: "Shell", icon: SquareTerminal },
-  claude: { label: "Claude", icon: Bot },
-  codex: { label: "Codex", icon: Bot },
-  cursor: { label: "Cursor", icon: MousePointer2 },
-  gemini: { label: "Gemini", icon: Bot },
-  copilot: { label: "Copilot", icon: Bot },
-};
+export function terminalKind(kind: string): { label: string; icon: ElementType } {
+  if (kind === "shell") return { label: "Shell", icon: SquareTerminal };
+  return { label: agentLabel(kind), icon: kind === "cursor" ? MousePointer2 : Bot };
+}
 
 export function cwdTail(cwd: string | null): string {
   if (!cwd) return "";

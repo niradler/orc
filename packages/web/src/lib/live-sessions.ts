@@ -1,3 +1,4 @@
+import { agentForSessionBackend } from "@orc/core/coding-agents";
 import type { LiveSession } from "@/api/client";
 
 export const STATUS: Record<LiveSession["status"], { label: string; dot: string }> = {
@@ -16,11 +17,10 @@ export function resumeCommand(s: LiveSession): string | null {
       ? `Set-Location -LiteralPath '${cwd.replace(/'/g, "''")}'; `
       : `cd '${cwd.replace(/'/g, "'\\''")}' && `
     : "";
-  if (s.agent === "claude") return `${cd}claude --resume ${s.session_id}`;
-  if (s.agent === "codex") return `${cd}codex resume ${s.session_id}`;
-  if (s.agent === "cursor-agent") return `${cd}agent --resume ${s.session_id}`;
-  if (s.agent === "gemini") return `${cd}gemini --resume ${s.session_id}`;
-  return null;
+  const agent = agentForSessionBackend(s.agent);
+  const binary = agent?.binaries[agent.binaries.length - 1];
+  if (!agent?.resumeArgs || !binary) return null;
+  return `${cd}${[binary, ...agent.resumeArgs(s.session_id)].join(" ")}`;
 }
 
 export function resumeUnavailableReason(session: LiveSession): string | null {

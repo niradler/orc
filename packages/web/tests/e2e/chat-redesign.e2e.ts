@@ -147,7 +147,7 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await page.goto("/tasks");
   await page.getByTestId("chat-open-button").click();
   const panel = page.getByTestId("chat-panel");
-  await expect(panel.getByTestId("chat-agent-button")).toHaveText("codex");
+  await expect(panel.getByTestId("chat-agent-button")).toHaveText("Codex");
   await panel.getByTestId("chat-input").fill("First request");
   await panel.getByTestId("chat-send-button").click();
   await expect(panel).toHaveAttribute("data-streaming", "true");
@@ -173,7 +173,7 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await page.reload();
   await expect(page.getByTestId("chat-panel")).toBeVisible();
   await expect(page.getByTestId("mobile-chat-sheet").getByTestId("chat-agent-button")).toHaveText(
-    "claude",
+    "Claude Code",
   );
 });
 
@@ -218,7 +218,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByTestId("chat-open-button").click();
       const panel = page.getByTestId("chat-panel");
       const picker = panel.getByTestId("chat-agent-button");
-      await expect(picker).toHaveText("codex");
+      await expect(picker).toHaveText("Codex");
       expect((await picker.boundingBox())?.y).toBeGreaterThan(
         (await panel.getByTestId("chat-input").boundingBox())?.y ?? 0,
       );
@@ -257,7 +257,7 @@ for (const theme of ["dark", "light"] as const) {
       await saveClaudeDefault(page);
       await page.reload();
       await expect(page.getByTestId("chat-panel")).toBeVisible();
-      await expect(page.getByTestId("chat-agent-button")).toHaveText("claude");
+      await expect(page.getByTestId("chat-agent-button")).toHaveText("Claude Code");
     });
   }
 }

@@ -1,7 +1,8 @@
 import { discoverAgentModels, listRegisteredBackends } from "@orc/agent-runtime";
 import type { ChannelConnection } from "@orc/core/channels";
 import { ChannelBuiltinCommands, channelCommand, channelCommands } from "@orc/core/channels";
-import { CHAT_AGENTS } from "@orc/core/chat";
+import { enabledAgents } from "@orc/core/coding-agents";
+import { loadConfig } from "@orc/core/config";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import type { GatewayMode } from "@orc/core/types";
 import { getSqlite } from "@orc/db/client";
@@ -159,7 +160,9 @@ export async function channelDirectCommand(
     };
   }
   if (command.name === "agent") {
-    const agents = Array.from(new Set([...CHAT_AGENTS, ...listRegisteredBackends()]));
+    const agents = Array.from(
+      new Set([...enabledAgents(loadConfig().preferences.agents), ...listRegisteredBackends()]),
+    );
     if (!command.args || pageMatch)
       return {
         text: `Current agent: ${agent}\nDefault: ${input.defaultAgent}`,

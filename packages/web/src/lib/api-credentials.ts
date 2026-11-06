@@ -15,6 +15,7 @@ export type WorkspacePreferences = {
   theme?: "dark" | "light";
   terminal_font?: string;
   chat?: ChatSettings;
+  agents?: string[];
 };
 
 const endpoint = (apiUrl: string, path: string) => `${apiUrl.replace(/\/$/, "")}${path}`;

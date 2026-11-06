@@ -32,7 +32,7 @@ Drafts are kept separately by file, line and side. While a comment is sending, e
 
 ## Local and SSH hosts
 
-**New terminal** selects Local or an existing SSH-config host for that launch. Selecting a host scopes launcher availability, folder browsing and worktrees to that host. The global SSH setting is unchanged. Searching a supported SSH host in the terminal palette offers **New terminal on that host**, which opens the launcher without executing anything automatically.
+**New terminal** selects Local or an existing SSH-config host for that launch. The launcher offers a shell plus each agent enabled in **Settings → Agents** whose CLI is installed on that host. Selecting a host scopes launcher availability, folder browsing and worktrees to that host. The global SSH setting is unchanged. Searching a supported SSH host in the terminal palette offers **New terminal on that host**, which opens the launcher without executing anything automatically.
 
 Remote folder choices are kept separately from Local during the launch menu's lifetime. The new-worktree checkbox preference is remembered. Existing terminals retain their host, and resumed agent sessions retain their saved execution host.
 

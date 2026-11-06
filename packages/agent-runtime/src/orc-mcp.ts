@@ -1,14 +1,16 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { configuredApiSecret, loadConfig, type OrcConfig, resolveApiBase } from "@orc/core/config";
 import {
   type ExecHost,
   ensureSshMaster,
+  hostExec,
   orcUrlOnHost,
   remoteTempPath,
   removeHostFile,
   resolveExecHost,
+  type SshExecHost,
   writeHostFile,
 } from "@orc/core/exec-host";
 
@@ -63,7 +65,7 @@ export function buildOrcMcpServers(
   return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad, mode, project) };
 }
 
-export type OrcMcpConfigFile = { path: string; cleanup: () => void };
+export type OrcMcpConfigFile = { path: string; cleanup: () => Promise<void> };
 
 // The bearer secret must not appear on argv (visible in process listings), so the
 // CLI backend receives the MCP config as a private temp file instead of inline JSON.
@@ -72,6 +74,7 @@ export async function writeOrcMcpConfigFile(
   project?: string,
   mode: OrcMcpMode = loadConfig().mcp.default_mode,
   format: "claude" | "acpx" = "claude",
+  stableName?: string,
 ): Promise<OrcMcpConfigFile> {
   if (host.kind === "ssh") await ensureSshMaster(host);
   const servers = buildOrcMcpServers(host, false, mode, project);
@@ -85,10 +88,24 @@ export async function writeOrcMcpConfigFile(
         }))
       : servers;
   const content = JSON.stringify({ mcpServers });
+  const name = stableName?.replace(/[^A-Za-z0-9_-]/g, "_");
   if (host.kind === "ssh") {
-    const path = remoteTempPath(".mcp.json");
-    await writeHostFile(host, path, content);
-    return { path, cleanup: () => void removeHostFile(host, path) };
+    const path = name
+      ? await writePrivateHostFile(host, name, content)
+      : remoteTempPath(".mcp.json");
+    if (!name) await writeHostFile(host, path, content);
+    return { path, cleanup: () => removeHostFile(host, path) };
+  }
+  if (name) {
+    const dir = join(homedir(), ".orc", "mcp");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(dir, 0o700);
+    } catch {}
+    const path = join(dir, `${name}.json`);
+    removeLocal(path);
+    writeFileSync(path, content, { mode: 0o600 });
+    return { path, cleanup: async () => removeLocal(path) };
   }
   const dir = mkdtempSync(join(tmpdir(), "orc-mcp-"));
   const path = join(dir, "mcp.json");
@@ -96,5 +113,24 @@ export async function writeOrcMcpConfigFile(
   try {
     chmodSync(dir, 0o700);
   } catch {}
-  return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { path, cleanup: async () => removeLocal(dir) };
+}
+
+async function writePrivateHostFile(host: SshExecHost, name: string, content: string) {
+  const script =
+    'umask 077 && d="$HOME/.orc/mcp" && mkdir -p "$d" && chmod 700 "$d" && f="$d/$1.json" && rm -f "$f" && : > "$f" && chmod 600 "$f" && cat > "$f" && printf %s "$f"';
+  const result = await hostExec(host, ["/bin/sh", "-c", script, "sh", name], {
+    input: content,
+    login: false,
+  });
+  const path = result.stdout.trim();
+  if (result.code !== 0 || !path)
+    throw new Error(`Could not write the ORC MCP config on ${host.alias}: ${result.stderr.trim()}`);
+  return path;
+}
+
+function removeLocal(path: string): void {
+  try {
+    rmSync(path, { recursive: true, force: true });
+  } catch {}
 }

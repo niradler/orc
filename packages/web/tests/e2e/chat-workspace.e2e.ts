@@ -487,8 +487,11 @@ test("provider activity is collapsed, readable, safe and retained after completi
   await openChat(page);
   await page.getByTestId("chat-input").fill("Show activity");
   await page.getByTestId("chat-send-button").click();
+  const group = page.getByTestId("chat-tool-group");
   const thinking = page.getByTestId("chat-thinking");
   const tool = page.getByTestId("chat-tool");
+  await expect(group.locator("summary").first()).toContainText("1 tool call · 1 thought");
+  await group.locator("summary").first().click();
   await expect(thinking).toBeVisible();
   await expect(thinking).not.toHaveAttribute("open");
   await expect(tool).toContainText("Completed");
@@ -571,7 +574,7 @@ test("coding-session selection opens native history before sending a continuatio
   await page.getByTestId("chat-session-search").fill("Imported coding work");
   await page.getByTestId("chat-resume-live").filter({ hasText: "Imported coding work" }).click();
   await expect(page.getByTestId("chat-message-content")).toContainText("Earlier native answer");
-  await expect(page.getByTestId("chat-agent-button")).toHaveText("codex");
+  await expect(page.getByTestId("chat-agent-button")).toHaveText("Codex");
   await openChatSettings(page);
   await expect(page.getByTestId("chat-config-dialog")).toContainText("/fixture/repository");
 });

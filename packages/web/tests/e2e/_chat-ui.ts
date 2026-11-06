@@ -13,8 +13,8 @@ export async function openChatModel(page: Page): Promise<void> {
 
 export async function chooseChatModel(page: Page, model: string): Promise<void> {
   await openChatModel(page);
-  await page.getByTestId("chat-model-select").selectOption(model);
-  await page.keyboard.press("Escape");
+  await page.getByTestId(`chat-model-option-${model}`).click();
+  await expect(page.getByTestId("chat-model-select")).toBeHidden();
 }
 
 export async function openChatActions(page: Page): Promise<void> {

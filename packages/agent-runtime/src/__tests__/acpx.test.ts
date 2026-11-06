@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { parseAcpxLine } from "../acpx.js";
+import {
+  ACPX_MCP_CONFLICT_MESSAGE,
+  createAcpxParser,
+  formatAcpxToolInput,
+  formatAcpxToolOutput,
+  parseAcpxLine,
+} from "../acpx.js";
 
 describe("parseAcpxLine", () => {
   it("returns null for malformed JSON", () => {
@@ -236,6 +242,66 @@ it("preserves ACP thought chunks, array text and structured failed tool output",
     }),
   ).toEqual({
     type: "tool_result",
-    data: { toolUseId: "failed-call", content: '{"error":"Denied"}', isError: true },
+    data: { toolUseId: "failed-call", content: "Denied", isError: true },
   });
+});
+
+it("should merge cursor MCP tool updates into one named call with readable input and output", () => {
+  const parse = createAcpxParser();
+  const line = (update: unknown) =>
+    parse(JSON.stringify({ method: "session/update", params: { update } }));
+  expect(
+    line({ sessionUpdate: "tool_call", toolCallId: "m1", title: "MCP: tool", rawInput: {} }),
+  ).toEqual([{ type: "tool_use", data: { id: "m1", name: "MCP: tool", input: "" } }]);
+  expect(
+    line({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "m1",
+      title: "orc: tool_search",
+      rawInput: { providerIdentifier: "orc", toolName: "tool_search", args: { query: "tasks" } },
+    }),
+  ).toEqual([
+    {
+      type: "tool_use",
+      data: { id: "m1", name: "orc: tool_search", input: '{\n  "query": "tasks"\n}' },
+    },
+  ]);
+  expect(
+    line({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "m1",
+      status: "completed",
+      rawOutput: { success: true },
+    }),
+  ).toEqual([{ type: "tool_result", data: { toolUseId: "m1", content: "", isError: false } }]);
+  expect(
+    line({ sessionUpdate: "tool_call_update", toolCallId: "m1", title: "orc: tool_search" }),
+  ).toEqual([]);
+});
+
+it("should format execute and read tool output and flag non-zero exit codes", () => {
+  expect(formatAcpxToolInput({ command: "ls -la" })).toBe("ls -la");
+  expect(
+    formatAcpxToolOutput({
+      status: "completed",
+      rawOutput: { exitCode: 2, stdout: "a\n", stderr: "b" },
+    }),
+  ).toEqual({ content: "a\nb", isError: true });
+  expect(
+    formatAcpxToolOutput({ status: "completed", rawOutput: { exitCode: 0, stdout: "" } }),
+  ).toEqual({ content: "", isError: false });
+  expect(formatAcpxToolOutput({ status: "completed", rawOutput: { content: "file" } })).toEqual({
+    content: "file",
+    isError: false,
+  });
+});
+
+it("should explain an acpx MCP config conflict instead of the raw queue error", () => {
+  const line = JSON.stringify({
+    error: {
+      message: "Session queue owner uses a different MCP config; close the session before retrying",
+      data: { detailCode: "QUEUE_MCP_CONFIG_CONFLICT" },
+    },
+  });
+  expect(parseAcpxLine(line)).toEqual({ type: "error", data: ACPX_MCP_CONFLICT_MESSAGE });
 });

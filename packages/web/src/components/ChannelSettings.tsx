@@ -13,7 +13,6 @@ import {
   isChannelCatchAll,
   validChannelCondition,
 } from "@orc/core/channels";
-import { CHAT_AGENTS } from "@orc/core/chat";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import { cloneElement, type ReactElement, useId, useState } from "react";
@@ -24,6 +23,7 @@ import {
 } from "@/components/ChannelConditionBuilder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useEnabledAgents } from "@/hooks/useAgents";
 import { useBackends } from "@/hooks/useBackends";
 
 const conditionDefault: ChannelCondition = { field: "is_direct", op: "is", value: true };
@@ -402,10 +402,11 @@ function ConnectionEditor({
   const [replyProject, setReplyProject] = useState(projects[0]?.id ?? "");
   const [replyAgent, setReplyAgent] = useState("default");
   const { data: backends } = useBackends();
+  const enabled = useEnabledAgents();
   const replyAgents = Array.from(
     new Set([
       "default",
-      ...CHAT_AGENTS,
+      ...enabled,
       ...(backends?.backends.map((backend) => backend.name) ?? []),
       replyAgent,
     ]),
