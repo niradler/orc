@@ -31,6 +31,19 @@ The sun and moon button in the header switches between the dark and light themes
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
 
+## Full-width sessions view
+
+Open the chat panel and click **Full screen chat** to work with every agent session in one place. The same view opens from the full-screen button on **Sessions** (on the page or on a row) and in the **Terminals** session list.
+
+- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
+- **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
+- **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
+- Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
+- The sidebar shows as its collapsed rail while the view is open. **Exit full screen chat** returns to the page you came from.
+- The URL keeps the selected session and which panels are open, so reload and Back restore them.
+
+On a phone the list opens full screen from **Sessions** in the chat header and the inspector opens as a sheet.
+
 ## Activity
 
 ![Activity](/screens/dashboard.png)

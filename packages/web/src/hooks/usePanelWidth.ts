@@ -5,7 +5,7 @@ interface PanelWidthOptions {
   initial: number;
   min: number;
   max: number;
-  edge?: "left" | "right";
+  edge?: "left" | "right" | "top";
 }
 
 const KEY_STEP = 16;
@@ -36,7 +36,9 @@ export function usePanelWidth({
   max,
   edge = "right",
 }: PanelWidthOptions) {
-  const direction = edge === "left" ? -1 : 1;
+  const direction = edge === "right" ? 1 : -1;
+  const vertical = edge === "top";
+  const [back, forward] = vertical ? ["ArrowUp", "ArrowDown"] : ["ArrowLeft", "ArrowRight"];
   const [width, setWidth] = useState(() => clamp(readStored(storageKey, initial), min, max));
   const currentWidth = clamp(width, min, max);
 
@@ -53,32 +55,33 @@ export function usePanelWidth({
     (event: PointerEvent<HTMLElement>) => {
       event.preventDefault();
       const handle = event.currentTarget;
-      const startX = event.clientX;
+      const point = (e: { clientX: number; clientY: number }) => (vertical ? e.clientY : e.clientX);
+      const startX = point(event);
       const startWidth = currentWidth;
       handle.setPointerCapture(event.pointerId);
       const onMove = (e: globalThis.PointerEvent) =>
-        setWidth(clamp(startWidth + direction * (e.clientX - startX), min, max));
+        setWidth(clamp(startWidth + direction * (point(e) - startX), min, max));
       const onUp = (e: globalThis.PointerEvent) => {
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
         handle.removeEventListener("pointercancel", onUp);
-        commit(startWidth + direction * (e.clientX - startX));
+        commit(startWidth + direction * (point(e) - startX));
       };
       handle.addEventListener("pointermove", onMove);
       handle.addEventListener("pointerup", onUp);
       handle.addEventListener("pointercancel", onUp);
     },
-    [currentWidth, min, max, commit, direction],
+    [currentWidth, min, max, commit, direction, vertical],
   );
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      if (event.key === "ArrowLeft") commit(currentWidth - direction * KEY_STEP);
-      else if (event.key === "ArrowRight") commit(currentWidth + direction * KEY_STEP);
+      if (event.key === back) commit(currentWidth - direction * KEY_STEP);
+      else if (event.key === forward) commit(currentWidth + direction * KEY_STEP);
       else return;
       event.preventDefault();
     },
-    [currentWidth, commit, direction],
+    [currentWidth, commit, direction, back, forward],
   );
 
   const reset = useCallback(() => commit(initial), [commit, initial]);

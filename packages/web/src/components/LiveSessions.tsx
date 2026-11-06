@@ -10,6 +10,7 @@ import { LiveSessionDetail } from "@/components/LiveSessionDetail";
 import { Pager } from "@/components/Pager";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { ResumeActions } from "@/components/ResumeActions";
+import { SessionHomeLink } from "@/components/SessionHomeLink";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { StateBadge } from "@/components/StateBadge";
@@ -168,19 +169,22 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           </>
         }
         action={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={sync.isPending ? "Syncing sessions" : "Refresh sessions"}
-            title="Refresh sessions"
-            data-testid="sync-sessions"
-            disabled={sync.isPending}
-            className="lg:size-8"
-            onClick={() => sync.mutate()}
-          >
-            <RefreshCw className={sync.isPending ? "animate-spin" : ""} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <SessionHomeLink label="Open sessions view" testId="live-sessions-open-home" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={sync.isPending ? "Syncing sessions" : "Refresh sessions"}
+              title="Refresh sessions"
+              data-testid="sync-sessions"
+              disabled={sync.isPending}
+              className="lg:size-8"
+              onClick={() => sync.mutate()}
+            >
+              <RefreshCw className={sync.isPending ? "animate-spin" : ""} />
+            </Button>
+          </div>
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -324,7 +328,14 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                         {session.cwd ? ` · ${session.cwd}` : ""}
                       </p>
                       <SessionTaskLink session={session} />
-                      <ResumeActions session={session} />
+                      <div className="flex flex-wrap items-center gap-3">
+                        <ResumeActions session={session} />
+                        <SessionHomeLink
+                          liveId={session.id}
+                          label="Open in sessions view"
+                          testId="live-session-open-home"
+                        />
+                      </div>
                     </article>
                   );
                 })}
@@ -434,6 +445,11 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                         <TableCell className="text-right">
                           <div className="inline-flex items-center gap-3">
                             <ResumeActions session={s} />
+                            <SessionHomeLink
+                              liveId={s.id}
+                              label="Open in sessions view"
+                              testId="live-session-open-home"
+                            />
                           </div>
                         </TableCell>
                       </TableRow>

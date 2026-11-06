@@ -39,10 +39,19 @@ import {
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
+import {
+  SessionDrawer,
+  SessionHomeToggles,
+  SessionInspector,
+  SessionTerminalCenter,
+  useSessionContext,
+  useSessionLiveLink,
+} from "@/components/SessionHome";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { useSessionHome } from "@/hooks/useSessionHome";
 import { commandSegments } from "@/lib/chat-commands";
 import { cn } from "@/lib/utils";
 
@@ -139,8 +148,13 @@ export function ChatPanel({
   };
   const terminalControl = useChatContinueInTerminal();
   const desktop = useBreakpoint("xl");
-  const [historyVisible, setHistoryVisible] = useState(true);
-  const docked = fullscreen && desktop && historyVisible;
+  const home = useSessionHome();
+  const docked = fullscreen && desktop && !home.listHidden;
+  const rail = fullscreen && desktop && home.listHidden;
+  const context = useSessionContext(fullscreen ? home.terminalId : null);
+  const terminalCenter = fullscreen && !!home.terminalId;
+  const linkError = useSessionLiveLink(home, fullscreen);
+  const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
   const submit = () => {
     if (!ready || (!draft.trim() && !files.length)) return;
     void send(draft);
@@ -243,20 +257,21 @@ export function ChatPanel({
       )}
       <ChatSessionPicker
         docked={docked}
-        onCollapse={() => setHistoryVisible(false)}
-        onExpand={fullscreen && desktop ? () => setHistoryVisible(true) : undefined}
+        rail={rail}
+        wide={fullscreen && !desktop}
+        home={fullscreen ? home : undefined}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           ref={header}
           className={cn(
             "chat-header flex min-h-12 shrink-0 items-center gap-1 px-3 py-1",
-            !docked && "pl-40",
+            !docked && !rail && "pl-40",
           )}
         >
-          {thread?.title ? (
-            <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={thread.title}>
-              {thread.title}
+          {title ? (
+            <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={title}>
+              {title}
             </h2>
           ) : (
             <div className="min-w-0 flex-1" aria-hidden="true" />
@@ -268,7 +283,7 @@ export function ChatPanel({
               className="chat-compact-activity shrink-0 animate-spin"
             />
           )}
-          {headerWide ? (
+          {terminalCenter ? null : headerWide ? (
             <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
               <ActionHelp label="Refresh session">
                 <button
@@ -357,6 +372,7 @@ export function ChatPanel({
               </PopoverContent>
             </Popover>
           )}
+          {fullscreen && <SessionHomeToggles home={home} />}
           {onToggleFullscreen && (
             <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
               <button
@@ -382,392 +398,405 @@ export function ChatPanel({
             </button>
           </ActionHelp>
         </header>
-        <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
-        {reconnecting && (
-          <p
-            role="status"
-            data-testid="chat-reconnecting"
-            className="px-4 py-1 text-xs text-muted-foreground"
-          >
-            Connection interrupted. Reconnecting…
+        {linkError && (
+          <p role="alert" className="px-4 py-1 text-xs text-error">
+            {linkError}
           </p>
         )}
-        <ThreadPrimitive.Viewport
-          ref={viewport}
-          data-testid="chat-messages"
-          className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
-        >
-          {historyBefore !== null && (
-            <button
-              type="button"
-              data-testid="chat-load-older"
-              disabled={loadingHistory || streaming}
-              className="mx-auto mb-4 block min-h-8 rounded-md border border-border px-3 text-sm text-primary hover:bg-surface disabled:opacity-50"
-              onClick={() => {
-                const element = viewport.current;
-                if (element && thread)
-                  historyAnchor.current = {
-                    height: element.scrollHeight,
-                    top: element.scrollTop,
-                    threadId: thread.id,
-                  };
-                void loadOlder();
-              }}
+        {terminalCenter && <SessionTerminalCenter context={context} />}
+        <div className={cn("flex min-h-0 flex-1 flex-col", terminalCenter && "hidden")}>
+          <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
+          {reconnecting && (
+            <p
+              role="status"
+              data-testid="chat-reconnecting"
+              className="px-4 py-1 text-xs text-muted-foreground"
             >
-              {loadingHistory ? "Loading older messages…" : "Load older messages"}
-            </button>
+              Connection interrupted. Reconnecting…
+            </p>
           )}
-          {messages.length === 0 && !streaming && (
-            <div className="chat-empty-state mx-auto flex h-full w-full max-w-3xl flex-col justify-center gap-2">
-              <h3 className="text-lg font-medium">What are you working on?</h3>
-              <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
-                Ask about your tasks, review agent activity, or work through a coding question.
-              </p>
-            </div>
-          )}
-          <ThreadPrimitive.Messages>
-            {({ message }) => (
-              <MessagePrimitive.Root
-                style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
-                data-testid="chat-message"
-                data-role={message.role}
-                className="mx-auto mb-6 w-full max-w-3xl min-w-0 text-base leading-[1.65]"
+          <ThreadPrimitive.Viewport
+            ref={viewport}
+            data-testid="chat-messages"
+            className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
+          >
+            {historyBefore !== null && (
+              <button
+                type="button"
+                data-testid="chat-load-older"
+                disabled={loadingHistory || streaming}
+                className="mx-auto mb-4 block min-h-8 rounded-md border border-border px-3 text-sm text-primary hover:bg-surface disabled:opacity-50"
+                onClick={() => {
+                  const element = viewport.current;
+                  if (element && thread)
+                    historyAnchor.current = {
+                      height: element.scrollHeight,
+                      top: element.scrollTop,
+                      threadId: thread.id,
+                    };
+                  void loadOlder();
+                }}
               >
-                <div
-                  className={
-                    message.role === "user"
-                      ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
-                      : undefined
-                  }
+                {loadingHistory ? "Loading older messages…" : "Load older messages"}
+              </button>
+            )}
+            {messages.length === 0 && !streaming && (
+              <div className="chat-empty-state mx-auto flex h-full w-full max-w-3xl flex-col justify-center gap-2">
+                <h3 className="text-lg font-medium">What are you working on?</h3>
+                <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
+                  Ask about your tasks, review agent activity, or work through a coding question.
+                </p>
+              </div>
+            )}
+            <ThreadPrimitive.Messages>
+              {({ message }) => (
+                <MessagePrimitive.Root
+                  style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
+                  data-testid="chat-message"
+                  data-role={message.role}
+                  className="mx-auto mb-6 w-full max-w-3xl min-w-0 text-base leading-[1.65]"
                 >
                   <div
-                    data-testid="chat-message-agent"
                     className={
                       message.role === "user"
-                        ? "sr-only"
-                        : "mb-2 text-xs font-medium text-on-surface-variant"
+                        ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
+                        : undefined
                     }
                   >
-                    {message.role === "user"
-                      ? "You"
-                      : typeof message.metadata.custom.agent === "string"
-                        ? message.metadata.custom.agent
-                        : "Assistant"}
-                  </div>
-                  <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
-                    <ChatActivityList value={message.metadata.custom.activity} />
-                    <ChatAttachments value={message.metadata.custom.attachments} />
-                    <MessagePrimitive.Parts components={textParts} />
-                  </div>
-                </div>
-              </MessagePrimitive.Root>
-            )}
-          </ThreadPrimitive.Messages>
-        </ThreadPrimitive.Viewport>
-        {streaming && (
-          <p
-            role="status"
-            data-testid="chat-activity-status"
-            className="chat-activity-status flex shrink-0 items-center gap-2 px-4 py-2 text-xs text-on-surface-variant"
-          >
-            <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />
-            {streamingAgent} is responding…
-          </p>
-        )}
-        {error && (
-          <div
-            role="alert"
-            data-testid="chat-error"
-            className="shrink-0 max-h-32 overflow-auto border-t border-outline-variant px-4 py-3 text-sm text-error wrap-break-word"
-          >
-            {error}
-          </div>
-        )}
-        {(permission || question) && (
-          <div className="shrink-0 max-h-[45vh] overflow-auto" data-testid="chat-pending-requests">
-            {permission && (
-              <div
-                data-testid="chat-permission"
-                className="shrink-0 max-h-52 overflow-auto border-t border-outline-variant px-4 py-3 text-sm"
-              >
-                <p className="font-medium">Allow {permission.tool}?</p>
-                <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
-                  {permission.command}
-                </pre>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    data-testid="chat-permission-deny"
-                    disabled={responding}
-                    className="min-h-8 rounded-md border border-control-border px-3"
-                    onClick={() => void respondPermission("denied")}
-                  >
-                    Deny
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="chat-permission-allow"
-                    disabled={responding}
-                    className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground"
-                    onClick={() => void respondPermission("approved")}
-                  >
-                    Allow once
-                  </button>
-                  {["claude", "codex"].includes(config.agent) && (
-                    <button
-                      type="button"
-                      data-testid="chat-permission-allow-all"
-                      disabled={responding}
-                      title="Switch this session to full access / bypass permissions"
-                      className="min-h-8 rounded-md border border-control-border px-3"
-                      onClick={() =>
-                        void changePermissions({ ...config, permissionMode: "bypassPermissions" })
+                    <div
+                      data-testid="chat-message-agent"
+                      className={
+                        message.role === "user"
+                          ? "sr-only"
+                          : "mb-2 text-xs font-medium text-on-surface-variant"
                       }
                     >
-                      Allow all
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-            {question && (
-              <ChatQuestionForm
-                key={question.requestId}
-                request={question}
-                busy={responding}
-                onAnswer={respondQuestion}
-              />
-            )}
-          </div>
-        )}
-        {queued.length + answers.length > 0 && (
-          <details
-            key={activeKey}
-            ref={queueDetails}
-            data-testid="chat-message-queue"
-            aria-label="Pending messages"
-            className="group mx-auto w-full max-w-[calc(48rem+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
-          >
-            <summary
-              data-testid="chat-queue-toggle"
-              className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs text-on-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus sm:min-h-8 [&::-webkit-details-marker]:hidden"
+                      {message.role === "user"
+                        ? "You"
+                        : typeof message.metadata.custom.agent === "string"
+                          ? message.metadata.custom.agent
+                          : "Assistant"}
+                    </div>
+                    <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
+                      <ChatActivityList value={message.metadata.custom.activity} />
+                      <ChatAttachments value={message.metadata.custom.attachments} />
+                      <MessagePrimitive.Parts components={textParts} />
+                    </div>
+                  </div>
+                </MessagePrimitive.Root>
+              )}
+            </ThreadPrimitive.Messages>
+          </ThreadPrimitive.Viewport>
+          {streaming && (
+            <p
+              role="status"
+              data-testid="chat-activity-status"
+              className="chat-activity-status flex shrink-0 items-center gap-2 px-4 py-2 text-xs text-on-surface-variant"
             >
-              <ChevronDown
-                size={14}
-                className="shrink-0 transition-transform group-open:rotate-180"
-              />
-              <span role="status" data-testid="chat-pending-count">
-                {queued.length + answers.length} pending{queuePaused ? " · Paused" : ""}
-              </span>
-            </summary>
-            <ol className="max-h-[min(30vh,14rem)] overflow-y-auto pb-1">
-              {answers.map((answer) => (
-                <li
-                  key={answer.id}
-                  data-testid="chat-queued-answer"
-                  className="flex min-h-11 items-center gap-2 border-t border-outline-variant text-sm sm:min-h-9"
-                >
-                  <span className="shrink-0 text-xs text-on-surface-variant">ORC answer</span>
-                  <span className="min-w-0 truncate">{answer.title}</span>
-                </li>
-              ))}
-              {queued.map((entry) => (
-                <QueuedMessage
-                  key={entry.id}
-                  content={entry.content}
-                  editing={editingQueuedId === entry.id}
-                  draft={queuedDraft}
-                  onDraftChange={setQueuedDraft}
-                  forceDisabled={refreshing || !!editingQueuedId}
-                  onEdit={() => editQueued(entry.id)}
-                  onSave={(content) => editQueued(entry.id, content)}
-                  onCancel={() => editQueued(null)}
-                  onForce={() => forceQueued(entry.id)}
-                  onRemove={() => removeQueued(entry.id)}
-                />
-              ))}
-            </ol>
-          </details>
-        )}
-        <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
-          {messages.length > 0 && (
-            <ThreadPrimitive.ScrollToBottom
-              aria-label="Scroll to latest response"
-              className="chat-scroll-latest mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
-            >
-              <ArrowDown size={14} />
-              Latest response
-            </ThreadPrimitive.ScrollToBottom>
+              <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />
+              {streamingAgent} is responding…
+            </p>
           )}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (event.target !== event.currentTarget) return;
-              submit();
-            }}
-            data-testid="chat-composer-box"
-            onDragOver={(event) => {
-              if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-            }}
-            onDrop={(event) => {
-              if (event.dataTransfer.files.length) {
-                event.preventDefault();
-                addFiles(Array.from(event.dataTransfer.files));
-              }
-            }}
-            className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
-          >
-            {files.length > 0 && (
-              <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">
-                {files.map((file, index) => (
-                  <li
-                    key={attachmentKey(file)}
-                    className="flex min-w-0 max-w-full items-center gap-1 rounded border border-border px-2 text-xs"
-                  >
-                    <span className="truncate">{file.name}</span>
+          {error && (
+            <div
+              role="alert"
+              data-testid="chat-error"
+              className="shrink-0 max-h-32 overflow-auto border-t border-outline-variant px-4 py-3 text-sm text-error wrap-break-word"
+            >
+              {error}
+            </div>
+          )}
+          {(permission || question) && (
+            <div
+              className="shrink-0 max-h-[45vh] overflow-auto"
+              data-testid="chat-pending-requests"
+            >
+              {permission && (
+                <div
+                  data-testid="chat-permission"
+                  className="shrink-0 max-h-52 overflow-auto border-t border-outline-variant px-4 py-3 text-sm"
+                >
+                  <p className="font-medium">Allow {permission.tool}?</p>
+                  <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
+                    {permission.command}
+                  </pre>
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      data-testid="chat-remove-attachment"
-                      aria-label={`Remove ${file.name}`}
-                      className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11`}
-                      onClick={() => removeFile(index)}
+                      data-testid="chat-permission-deny"
+                      disabled={responding}
+                      className="min-h-8 rounded-md border border-control-border px-3"
+                      onClick={() => void respondPermission("denied")}
                     >
-                      <X size={13} />
+                      Deny
                     </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <ChatPromptMenu {...promptMenu} />
-            <div className="relative">
-              {highlighted && (
-                <div
-                  ref={inputBackdrop}
-                  aria-hidden
-                  data-testid="chat-input-highlight"
-                  className={`${composerText} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`}
-                >
-                  {draftSegments.map((segment, index) =>
-                    segment.command ? (
-                      <span
-                        // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
-                        key={index}
-                        data-testid="chat-input-command"
-                        className="rounded-sm bg-surface-highest text-on-surface shadow-[0_0_0_2px_var(--color-surface-highest)] [-webkit-text-stroke:0.5px_currentColor]"
+                    <button
+                      type="button"
+                      data-testid="chat-permission-allow"
+                      disabled={responding}
+                      className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground"
+                      onClick={() => void respondPermission("approved")}
+                    >
+                      Allow once
+                    </button>
+                    {["claude", "codex"].includes(config.agent) && (
+                      <button
+                        type="button"
+                        data-testid="chat-permission-allow-all"
+                        disabled={responding}
+                        title="Switch this session to full access / bypass permissions"
+                        className="min-h-8 rounded-md border border-control-border px-3"
+                        onClick={() =>
+                          void changePermissions({ ...config, permissionMode: "bypassPermissions" })
+                        }
                       >
-                        {segment.text}
-                      </span>
-                    ) : (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
-                      <span key={index}>{segment.text}</span>
-                    ),
-                  )}
-                  {"​"}
+                        Allow all
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
-              <textarea
-                ref={input}
-                data-testid="chat-input"
-                aria-label="Message your agent"
-                aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
-                aria-activedescendant={
-                  activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
-                }
-                placeholder="Message your agent… (/ for prompts and skills)"
-                disabled={!ready}
-                value={draft}
-                onChange={(event) => {
-                  setDraft(event.target.value);
-                  promptMenu.syncCaret();
-                }}
-                onSelect={promptMenu.syncCaret}
-                onScroll={(event) => {
-                  if (inputBackdrop.current)
-                    inputBackdrop.current.scrollTop = event.currentTarget.scrollTop;
-                }}
-                onPaste={(event) => {
-                  if (event.clipboardData.files.length) {
-                    event.preventDefault();
-                    addFiles(Array.from(event.clipboardData.files));
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (promptMenu.onKeyDown(event)) return;
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing &&
-                    !window.matchMedia("(pointer: coarse)").matches
-                  ) {
-                    event.preventDefault();
-                    submit();
-                  }
-                }}
-                rows={1}
-                className={`chat-composer-input ${composerText} relative block w-full resize-none overflow-y-auto bg-transparent placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60 ${highlighted ? "text-transparent caret-on-surface" : ""}`}
-              />
+              {question && (
+                <ChatQuestionForm
+                  key={question.requestId}
+                  request={question}
+                  busy={responding}
+                  onAnswer={respondQuestion}
+                />
+              )}
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
-                <label
-                  className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 focus-within:ring-2 focus-within:ring-focus`}
-                  aria-label="Attach files"
-                  data-testid="chat-attach-button"
-                  title="Attach files (up to 20 MB total)"
-                >
-                  <Paperclip size={16} />
-                  <input
-                    type="file"
-                    multiple
-                    data-testid="chat-file-input"
-                    aria-label="Attach files"
-                    disabled={!ready}
-                    className="sr-only"
-                    onChange={(event) => {
-                      addFiles(Array.from(event.target.files ?? []));
-                      event.target.value = "";
-                    }}
+          )}
+          {queued.length + answers.length > 0 && (
+            <details
+              key={activeKey}
+              ref={queueDetails}
+              data-testid="chat-message-queue"
+              aria-label="Pending messages"
+              className="group mx-auto w-full max-w-[calc(48rem+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
+            >
+              <summary
+                data-testid="chat-queue-toggle"
+                className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs text-on-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus sm:min-h-8 [&::-webkit-details-marker]:hidden"
+              >
+                <ChevronDown
+                  size={14}
+                  className="shrink-0 transition-transform group-open:rotate-180"
+                />
+                <span role="status" data-testid="chat-pending-count">
+                  {queued.length + answers.length} pending{queuePaused ? " · Paused" : ""}
+                </span>
+              </summary>
+              <ol className="max-h-[min(30vh,14rem)] overflow-y-auto pb-1">
+                {answers.map((answer) => (
+                  <li
+                    key={answer.id}
+                    data-testid="chat-queued-answer"
+                    className="flex min-h-11 items-center gap-2 border-t border-outline-variant text-sm sm:min-h-9"
+                  >
+                    <span className="shrink-0 text-xs text-on-surface-variant">ORC answer</span>
+                    <span className="min-w-0 truncate">{answer.title}</span>
+                  </li>
+                ))}
+                {queued.map((entry) => (
+                  <QueuedMessage
+                    key={entry.id}
+                    content={entry.content}
+                    editing={editingQueuedId === entry.id}
+                    draft={queuedDraft}
+                    onDraftChange={setQueuedDraft}
+                    forceDisabled={refreshing || !!editingQueuedId}
+                    onEdit={() => editQueued(entry.id)}
+                    onSave={(content) => editQueued(entry.id, content)}
+                    onCancel={() => editQueued(null)}
+                    onForce={() => forceQueued(entry.id)}
+                    onRemove={() => removeQueued(entry.id)}
                   />
-                </label>
-                <div
-                  data-testid="chat-composer-selectors"
-                  className="chat-composer-selectors flex min-w-0 items-center"
-                >
-                  <ChatAgentPicker />
-                  <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
-                </div>
-                <ChatWorkspaceControls />
-              </div>
-              <div className="flex items-center gap-1">
-                {streaming && (
-                  <ActionHelp label="Stop response">
-                    <button
-                      type="button"
-                      data-testid="chat-cancel-button"
-                      aria-label="Stop response"
-                      onClick={cancel}
-                      className={iconButton}
+                ))}
+              </ol>
+            </details>
+          )}
+          <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
+            {messages.length > 0 && (
+              <ThreadPrimitive.ScrollToBottom
+                aria-label="Scroll to latest response"
+                className="chat-scroll-latest mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
+              >
+                <ArrowDown size={14} />
+                Latest response
+              </ThreadPrimitive.ScrollToBottom>
+            )}
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (event.target !== event.currentTarget) return;
+                submit();
+              }}
+              data-testid="chat-composer-box"
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                if (event.dataTransfer.files.length) {
+                  event.preventDefault();
+                  addFiles(Array.from(event.dataTransfer.files));
+                }
+              }}
+              className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+            >
+              {files.length > 0 && (
+                <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">
+                  {files.map((file, index) => (
+                    <li
+                      key={attachmentKey(file)}
+                      className="flex min-w-0 max-w-full items-center gap-1 rounded border border-border px-2 text-xs"
                     >
-                      <Square size={17} />
+                      <span className="truncate">{file.name}</span>
+                      <button
+                        type="button"
+                        data-testid="chat-remove-attachment"
+                        aria-label={`Remove ${file.name}`}
+                        className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11`}
+                        onClick={() => removeFile(index)}
+                      >
+                        <X size={13} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <ChatPromptMenu {...promptMenu} />
+              <div className="relative">
+                {highlighted && (
+                  <div
+                    ref={inputBackdrop}
+                    aria-hidden
+                    data-testid="chat-input-highlight"
+                    className={`${composerText} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`}
+                  >
+                    {draftSegments.map((segment, index) =>
+                      segment.command ? (
+                        <span
+                          // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
+                          key={index}
+                          data-testid="chat-input-command"
+                          className="rounded-sm bg-surface-highest text-on-surface shadow-[0_0_0_2px_var(--color-surface-highest)] [-webkit-text-stroke:0.5px_currentColor]"
+                        >
+                          {segment.text}
+                        </span>
+                      ) : (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
+                        <span key={index}>{segment.text}</span>
+                      ),
+                    )}
+                    {"​"}
+                  </div>
+                )}
+                <textarea
+                  ref={input}
+                  data-testid="chat-input"
+                  aria-label="Message your agent"
+                  aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
+                  aria-activedescendant={
+                    activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
+                  }
+                  placeholder="Message your agent… (/ for prompts and skills)"
+                  disabled={!ready}
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                    promptMenu.syncCaret();
+                  }}
+                  onSelect={promptMenu.syncCaret}
+                  onScroll={(event) => {
+                    if (inputBackdrop.current)
+                      inputBackdrop.current.scrollTop = event.currentTarget.scrollTop;
+                  }}
+                  onPaste={(event) => {
+                    if (event.clipboardData.files.length) {
+                      event.preventDefault();
+                      addFiles(Array.from(event.clipboardData.files));
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (promptMenu.onKeyDown(event)) return;
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing &&
+                      !window.matchMedia("(pointer: coarse)").matches
+                    ) {
+                      event.preventDefault();
+                      submit();
+                    }
+                  }}
+                  rows={1}
+                  className={`chat-composer-input ${composerText} relative block w-full resize-none overflow-y-auto bg-transparent placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60 ${highlighted ? "text-transparent caret-on-surface" : ""}`}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+                  <label
+                    className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 focus-within:ring-2 focus-within:ring-focus`}
+                    aria-label="Attach files"
+                    data-testid="chat-attach-button"
+                    title="Attach files (up to 20 MB total)"
+                  >
+                    <Paperclip size={16} />
+                    <input
+                      type="file"
+                      multiple
+                      data-testid="chat-file-input"
+                      aria-label="Attach files"
+                      disabled={!ready}
+                      className="sr-only"
+                      onChange={(event) => {
+                        addFiles(Array.from(event.target.files ?? []));
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <div
+                    data-testid="chat-composer-selectors"
+                    className="chat-composer-selectors flex min-w-0 items-center"
+                  >
+                    <ChatAgentPicker />
+                    <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
+                  </div>
+                  <ChatWorkspaceControls />
+                </div>
+                <div className="flex items-center gap-1">
+                  {streaming && (
+                    <ActionHelp label="Stop response">
+                      <button
+                        type="button"
+                        data-testid="chat-cancel-button"
+                        aria-label="Stop response"
+                        onClick={cancel}
+                        className={iconButton}
+                      >
+                        <Square size={17} />
+                      </button>
+                    </ActionHelp>
+                  )}
+                  <ActionHelp label={streaming ? "Queue message" : "Send message"}>
+                    <button
+                      type="submit"
+                      disabled={!ready || (!draft.trim() && !files.length)}
+                      data-testid="chat-send-button"
+                      aria-label={streaming ? "Queue message" : "Send message"}
+                      className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+                    >
+                      <ArrowUp size={18} />
                     </button>
                   </ActionHelp>
-                )}
-                <ActionHelp label={streaming ? "Queue message" : "Send message"}>
-                  <button
-                    type="submit"
-                    disabled={!ready || (!draft.trim() && !files.length)}
-                    data-testid="chat-send-button"
-                    aria-label={streaming ? "Queue message" : "Send message"}
-                    className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-                  >
-                    <ArrowUp size={18} />
-                  </button>
-                </ActionHelp>
+                </div>
               </div>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
+        {fullscreen && home.drawer && <SessionDrawer context={context} />}
       </div>
+      {fullscreen && <SessionInspector context={context} home={home} narrow={!desktop} />}
     </ThreadPrimitive.Root>
   );
 }

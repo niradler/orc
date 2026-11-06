@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ArchiveSession } from "@orc/core/session-archive";
-import type { LiveSession } from "../../src/api/client";
+import type { LiveSession, Terminal } from "../../src/api/client";
 import { chatHistoryList, historyEntryState } from "../../src/lib/chat-history-list";
 
 const saved = {
@@ -137,4 +137,37 @@ test("unseen Done never hides a session that needs you or is working", () => {
   const empty = { since: 0, seen: {} };
   expect(historyEntryState(waiting, empty)).toBe("needs-you");
   expect(historyEntryState(working, empty)).toBe("working");
+});
+
+const terminal: Terminal = {
+  id: "term-1",
+  name: "claude · repo",
+  kind: "claude",
+  cwd: "/repo",
+  status: "running",
+  exit_code: null,
+  pid: 1,
+  live_session_id: null,
+  host: null,
+  created_at: "2026-10-30T00:00:02Z",
+};
+
+test("an agent running in an ORC terminal joins the list once and shell terminals stay out", () => {
+  const linked = { ...terminal, live_session_id: live.id };
+  const entries = chatHistoryList([], [], [live], [], "", "all", [
+    linked,
+    { ...terminal, id: "term-2", kind: "shell" },
+    { ...terminal, id: "term-3", status: "exited" },
+  ]);
+  expect(entries).toHaveLength(1);
+  expect(entries[0].terminalId).toBe("term-1");
+
+  const [own] = chatHistoryList([], [], [], [], "", "all", [terminal]);
+  expect(own.id).toBe("terminal:term-1");
+  expect(own.kind === "terminal" && own.terminal).toBe(terminal);
+  expect(own.terminalId).toBe("term-1");
+  expect(historyEntryState(own, { since: 0, seen: {} })).toBe("idle");
+  expect(chatHistoryList([], [], [], [], "", "project-a", [terminal])).toHaveLength(0);
+  expect(chatHistoryList([], [], [], [], "claude", "all", [terminal])).toHaveLength(1);
+  expect(chatHistoryList([], [], [], [], "nomatch", "all", [terminal])).toHaveLength(0);
 });
