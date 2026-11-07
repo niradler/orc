@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
 import { type ChannelService, getChannelService } from "@orc/channels";
+import { forwardChannelNotifications } from "@orc/channels/notifications";
 import { ProviderFailure, safeProviderCode } from "@orc/channels/providers";
 import { renderMessage } from "@orc/channels/render";
 import { type ChannelInbound, type ChannelTarget, channelCommand } from "@orc/core/channels";
@@ -654,7 +655,12 @@ export async function startChannelRuntime(
       );
       for (const c of service.connections().filter((c) => c.enabled && ready.has(c.id)))
         for (const t of c.targets.filter(
-          (t) => t.attention && t.inbound && t.outbound && t.user_ids.length,
+          (t) =>
+            !t.notifications?.enabled &&
+            t.attention &&
+            t.inbound &&
+            t.outbound &&
+            t.user_ids.length,
         )) {
           const destination = `${c.id}:${t.id}`;
           adapters.set(
@@ -825,13 +831,24 @@ export async function startChannelRuntime(
     await getGatewayManager()?.releaseManagedAccounts();
   };
   await service.start();
+  let notificationForwarding: Promise<void> | undefined;
   const timer = setInterval(() => {
     void notify().catch(() => {});
+    notificationForwarding ??= forwardChannelNotifications(service, undefined, () => stopping)
+      .catch(() =>
+        logger.warn(
+          "Notification forwarding could not run; check channel configuration and storage.",
+        ),
+      )
+      .finally(() => {
+        notificationForwarding = undefined;
+      });
   }, 2000);
   timer.unref();
   return async () => {
     stopping = true;
     clearInterval(timer);
+    await notificationForwarding;
     service.handler = undefined;
     service.control = undefined;
     service.unmatched = undefined;

@@ -46,6 +46,55 @@ app.route(
   createChannelsRouter(() => service),
 );
 const headers = { Authorization: "Bearer test-secret", "Content-Type": "application/json" };
+
+test("should persist global notification policy, validate inputs and preview filters without sending", async () => {
+  expect(await (await request("/channels/notification-policy")).json()).toEqual({
+    enabled: false,
+    base_url: "",
+  });
+  for (const body of [
+    { enabled: true },
+    { enabled: true, base_url: "https://user:secret@orc.example" },
+    { enabled: true, base_url: "https://orc.example/?secret=token" },
+    { enabled: false, unknown: true },
+  ])
+    expect((await request("/channels/notification-policy", "PUT", body)).status).toBe(400);
+  const policy = { enabled: true, base_url: "https://orc.example" };
+  expect((await request("/channels/notification-policy", "PUT", policy)).status).toBe(200);
+  expect(await (await request("/channels/notification-policy")).json()).toEqual(policy);
+  const count = sent.length;
+  const input = {
+    filter: { enabled: true, outcomes: ["failure"] },
+    project_ids: ["p1"],
+    event: { type: "job.failed", level: "needs-you", project_id: "p1" },
+  };
+  expect(await (await request("/channels/notification-preview", "POST", input)).json()).toEqual({
+    matches: true,
+    summary: "An ORC job failed. Open ORC for details.",
+  });
+  expect(
+    await (
+      await request("/channels/notification-preview", "POST", {
+        ...input,
+        event: { ...input.event, project_id: "p2" },
+      })
+    ).json(),
+  ).toMatchObject({ matches: false });
+  expect(
+    (
+      await request("/channels/notification-preview", "POST", {
+        ...input,
+        event: { ...input.event, body: "PRIVATE" },
+      })
+    ).status,
+  ).toBe(400);
+  expect((await request("/channels/notification-deliveries?limit=101")).status).toBe(400);
+  expect((await request("/channels/notification-deliveries")).status).toBe(200);
+  expect(sent).toHaveLength(count);
+  expect((await request("/channels/notification-policy", "PUT", { enabled: false })).status).toBe(
+    200,
+  );
+});
 const request = (path: string, method = "GET", body?: unknown) =>
   app.request(`/api${path}`, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
 beforeAll(() => {
@@ -71,6 +120,10 @@ test("channel APIs require authentication, including setup and discovery", async
     ["/channels/test", "PUT"],
     ["/channels/messages", "POST"],
     ["/channels/pairings/test", "GET"],
+    ["/channels/notification-policy", "GET"],
+    ["/channels/notification-policy", "PUT"],
+    ["/channels/notification-preview", "POST"],
+    ["/channels/notification-deliveries", "GET"],
   ] as const)
     expect((await app.request(`/api${path}`, { method })).status).toBe(401);
 });

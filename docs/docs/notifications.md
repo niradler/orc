@@ -47,10 +47,52 @@ are silent. **Settings → Notifications → Sound** controls browser-local soun
 project muting. Browser/PWA push remains separately opt-in for background human
 requests and chat replies; see [Installation](./install.md).
 
-Telegram and Slack messaging already share `channel_send`, `channel_list` and
-`channel_targets`, including provider-native overrides. Automatic forwarding of
-these notification events, with opt-out and filters, is tracked in
-[issue #212](https://github.com/niradler/orc/issues/212) and will reuse that API.
+### Forward notifications to Telegram or Slack
+
+In **Settings → Channels → Notification forwarding**, enter the ORC origin reachable
+from your channel client (for example `https://orc.example.com`), enable forwarding
+and save. The URL must have no credentials, path, query or fragment. Links open the
+existing authenticated ORC app; forwarding supplies no login or approval authority.
+
+Edit a connection, open **Recipients**, edit a recipient and select **Forward
+notifications**. Apply the recipient and save the connection. The connection and
+**Allow outbound** must be enabled. Inbound messaging and sender IDs are unnecessary
+for these outbound-only alerts. Existing recipient project restrictions apply;
+restricted recipients never receive unassigned or other-project notifications.
+
+**Notification filters and preview** selects types, categories (`human`, `agent`,
+`job`), severity (`needs-you`, `done`) and outcome (`waiting`, `success`, `failure`).
+Values within a group are alternatives; selected groups must all match. Empty
+groups match all known values. Unknown types are excluded unless **Include new or
+unknown types** is selected; they have no known outcome and cannot match an outcome
+filter. **Preview filters** evaluates the draft without sending a message.
+
+Forwarding sends fixed, escaped summaries and source links. It excludes titles,
+question text, command arguments, tool payloads, logs and credentials. Job events
+honor `notify_on`; human requests also retain their producer's `notify` provider
+selection. Selecting forwarding replaces the recipient's legacy **Interactive
+questions and approvals** delivery with safe links, avoiding duplicate request
+messages. Interactive delivery retains its own inbound/sender permissions.
+
+Clear a recipient's **Forward notifications**, or pause globally, without
+disconnecting the channel or changing in-app alerts. Activation or changes to a
+recipient's filters, destination or project restrictions start with new events;
+history and events produced during a global pause are not replayed. An in-flight
+send can finish after a pause. Saved configuration survives restart.
+
+**Recent deliveries** shows status, attempt count, safe errors and a channel receipt
+ID through the API. Stable notification/destination IDs prevent replay of completed
+deliveries after restart. Definite provider rate limits retry at most four times
+with bounded exponential backoff (4, 8, 16 seconds). Ambiguous network/timeouts and
+interrupted sends are marked `unknown` for inspection, rather than automatically
+resent. Permanent errors are `failed`. Expired events are never newly dispatched;
+errors stay in delivery history/logs and do not create recursive notifications.
+
+The authenticated API exposes `GET/PUT /api/channels/notification-policy`,
+`POST /api/channels/notification-preview` and
+`GET /api/channels/notification-deliveries?limit=50` (maximum 100).
+The preview body is `{filter, project_ids, event: {type, level, project_id}}`.
+These use the existing `channel_send` transport, destinations and secure credentials.
 
 Old `/attention` and `/notifications` links open the notification menu.
 See [Human requests](./human-requests.md) for source request actions and timeouts,

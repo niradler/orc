@@ -42,6 +42,9 @@ import type {
 } from "@orc/core/kb";
 import type { McpServerSettings } from "@orc/core/mcp-prompts";
 import type {
+  NotificationDelivery,
+  NotificationFilter,
+  NotificationForwardingPolicy,
   NotificationPage,
   NotificationUpdate,
   OrcNotification,
@@ -629,6 +632,18 @@ export type UpdateScratchpadInput = {
 
 export const api = {
   channels: {
+    notificationPolicy: () =>
+      req<NotificationForwardingPolicy>("GET", "/channels/notification-policy"),
+    saveNotificationPolicy: (input: NotificationForwardingPolicy) =>
+      req<NotificationForwardingPolicy>("PUT", "/channels/notification-policy", input),
+    notificationDeliveries: () =>
+      req<NotificationDelivery[]>("GET", "/channels/notification-deliveries"),
+    notificationPreview: (input: {
+      filter: NotificationFilter;
+      project_ids: string[];
+      event: { type: string; level: "needs-you" | "done"; project_id: string | null };
+    }) =>
+      req<{ matches: boolean; summary: string }>("POST", "/channels/notification-preview", input),
     list: () => req<ChannelView[]>("GET", "/channels"),
     providers: () => req<ChannelProviderInfo[]>("GET", "/channels/providers"),
     save: (input: ChannelConnection) =>

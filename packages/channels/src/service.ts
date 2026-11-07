@@ -17,6 +17,7 @@ import { decryptSecret, encryptSecret, isEncryptedSecret } from "@orc/core/secre
 import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES, type UploadFile } from "@orc/core/session-file-types";
 import { ChannelStore } from "@orc/db/channels";
 import { getSqlite } from "@orc/db/client";
+import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
 import {
   type ChannelTransport,
   channelProviders,
@@ -279,7 +280,12 @@ export class ChannelService {
       for (const id of target.project_ids)
         if (!this.store.db.query("SELECT id FROM projects WHERE id=?").get(id))
           throw new ValidationError("Target project does not exist");
-    this.store.saveConnection(parsed);
+    this.store.db
+      .transaction(() => {
+        this.store.saveConnection(parsed);
+        new NotificationDeliveryStore(this.store.db).syncDestinations(this.connections());
+      })
+      .immediate();
     if (this.conflicts.has(parsed.id)) await this.stopConnection(parsed.id);
     this.conflicts.delete(parsed.id);
     this.errors.delete(parsed.id);

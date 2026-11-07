@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./notification-deliveries": "./src/notification-deliveries.ts",
     "./notifications": "./src/notifications.ts",
     "./notification-producers": "./src/notification-producers.ts",
     "./channels": "./src/channels.ts",

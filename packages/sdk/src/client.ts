@@ -45,6 +45,9 @@ import type {
   KnowledgeBase,
 } from "@orc/core/kb";
 import type {
+  NotificationDelivery,
+  NotificationFilter,
+  NotificationForwardingPolicy,
   NotificationPage,
   NotificationUpdate,
   OrcNotification,
@@ -292,6 +295,18 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
     },
     channels: {
+      notificationPolicy: () =>
+        c<NotificationForwardingPolicy>("GET", "/channels/notification-policy"),
+      saveNotificationPolicy: (input: NotificationForwardingPolicy) =>
+        c<NotificationForwardingPolicy>("PUT", "/channels/notification-policy", input),
+      notificationDeliveries: () =>
+        c<NotificationDelivery[]>("GET", "/channels/notification-deliveries"),
+      notificationPreview: (input: {
+        filter: NotificationFilter;
+        project_ids: string[];
+        event: { type: string; level: "needs-you" | "done"; project_id: string | null };
+      }) =>
+        c<{ matches: boolean; summary: string }>("POST", "/channels/notification-preview", input),
       list: (project_id?: string) =>
         c<ChannelView[]>("GET", "/channels", undefined, { project_id }),
       providers: () => c<ChannelProviderInfo[]>("GET", "/channels/providers"),
