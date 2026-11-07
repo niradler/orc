@@ -10,6 +10,9 @@ import {
   HumanResponseSchema,
 } from "@orc/core/human-requests";
 import { ulid } from "@orc/core/ids";
+import { AuditLog, installAudit } from "./audit.js";
+import { publishNotification } from "./notification-producers.js";
+import { NotificationStore } from "./notifications.js";
 import { RuleStore } from "./rules.js";
 
 export class HumanRequestStore {
@@ -17,6 +20,7 @@ export class HumanRequestStore {
     readonly db: Database,
     private readonly now: () => number = Date.now,
   ) {
+    installAudit(db);
     db.exec(`CREATE TABLE IF NOT EXISTS human_requests (
       id TEXT PRIMARY KEY, origin_key TEXT UNIQUE NOT NULL, input_hash TEXT NOT NULL,
       payload TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL,
@@ -40,6 +44,40 @@ export class HumanRequestStore {
       version INTEGER NOT NULL, can_reply INTEGER NOT NULL, sent INTEGER NOT NULL DEFAULT 0,
       leased_until INTEGER NOT NULL, PRIMARY KEY(request_id,channel,destination)
     )`);
+  }
+
+  private recordStatus(
+    row: { id: string; status: string; version: number; payload: string },
+    created = false,
+  ): void {
+    const input = HumanRequestInputSchema.parse(JSON.parse(row.payload));
+    new AuditLog(this.db, { now: this.now }).record({
+      action: created ? "human_request.created" : `human_request.${row.status}`,
+      subject_ids: [row.id],
+      project_id: input.project_id,
+      session_id: input.origin.session_id,
+      snapshot: {
+        kind: input.kind,
+        status: row.status,
+        version: row.version,
+        backend: input.origin.backend,
+      },
+    });
+  }
+
+  private updateStatus(sql: string, ...params: (string | number | null)[]): { changes: number } {
+    return this.db
+      .transaction(() => {
+        const rows = this.db
+          .query<
+            { id: string; status: string; version: number; payload: string },
+            (string | number | null)[]
+          >(`${sql} RETURNING id,status,version,payload`)
+          .all(...params);
+        for (const row of rows) this.recordStatus(row);
+        return { changes: rows.length };
+      })
+      .immediate();
   }
 
   reserveNotification(
@@ -83,28 +121,24 @@ export class HumanRequestStore {
   }
 
   private expire(): void {
-    this.db
-      .query(
-        "UPDATE human_requests SET status='unavailable',delivery_error='Command execution was interrupted or its result is unknown; inspect the host before creating another request',version=version+1 WHERE status='running' AND responded_at<?",
-      )
-      .run(this.now() - 330000);
+    this.updateStatus(
+      "UPDATE human_requests SET status='unavailable',delivery_error='Command execution was interrupted or its result is unknown; inspect the host before creating another request',version=version+1 WHERE status='running' AND responded_at<?",
+      this.now() - 330000,
+    );
     const cutoff =
       this.now() - (loadConfig().preferences.attention_retention_hours ?? 72) * 3600000;
-    this.db
-      .query(
-        "UPDATE human_requests SET status='expired',version=version+1 WHERE status IN ('pending','answered','unavailable') AND created_at<=?",
-      )
-      .run(cutoff);
-    this.db
-      .query(
-        "UPDATE human_requests SET status='expired',version=version+1 WHERE status='pending' AND expires_at<=?",
-      )
-      .run(this.now());
-    this.db
-      .query(
-        "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime disconnected; response was not delivered',version=version+1 WHERE owner_id IS NOT NULL AND owner_heartbeat_at<? AND status IN ('pending','answered')",
-      )
-      .run(this.now() - 30000);
+    this.updateStatus(
+      "UPDATE human_requests SET status='expired',version=version+1 WHERE status IN ('pending','answered','unavailable') AND created_at<=?",
+      cutoff,
+    );
+    this.updateStatus(
+      "UPDATE human_requests SET status='expired',version=version+1 WHERE status='pending' AND expires_at<=?",
+      this.now(),
+    );
+    this.updateStatus(
+      "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime disconnected; response was not delivered',version=version+1 WHERE owner_id IS NOT NULL AND owner_heartbeat_at<? AND status IN ('pending','answered')",
+      this.now() - 30000,
+    );
   }
 
   get(id: string): HumanRequest {
@@ -126,11 +160,28 @@ export class HumanRequestStore {
       >("SELECT * FROM human_requests WHERE id=?")
       .get(id);
     if (!row) throw new NotFoundError("Human request", id);
-    return HumanRequestSchema.parse({
+    const request = HumanRequestSchema.parse({
       ...row,
       input: JSON.parse(row.payload),
       response: row.response ? JSON.parse(row.response) : null,
     });
+    if (request.status === "pending" || request.status === "unavailable") {
+      publishNotification(this.db, {
+        type: "human.request",
+        source_key: `human:${request.id}`,
+        source_id: request.id,
+        title:
+          request.input.title ??
+          `${request.input.kind === "approval" ? "Approval" : request.input.kind === "command" ? "Command" : "Question"} · ${request.input.origin.backend}`,
+        body: request.input.origin.session_title ?? "An agent needs your response.",
+        level: "needs-you",
+        project_id: request.input.project_id,
+        path: `/activity?notifications=open&request=${encodeURIComponent(request.id)}`,
+        requires_action: true,
+        created_at: request.created_at,
+      });
+    } else new NotificationStore(this.db).resolve(`human:${request.id}`);
+    return request;
   }
 
   create(raw: unknown, ownerId?: string): HumanRequest {
@@ -169,6 +220,7 @@ export class HumanRequestStore {
             ownerId ?? null,
             ownerId ? now : null,
           );
+        this.recordStatus({ id, status: "pending", version: 1, payload }, true);
         return this.get(id);
       })
       .immediate();
@@ -249,13 +301,19 @@ export class HumanRequestStore {
 
   pushed(id: string): void {
     this.db
-      .query(
-        `UPDATE human_requests SET push_state='pushed',
-         status=CASE status WHEN 'answered' THEN 'delivered' ELSE status END,
-         delivered_at=CASE status WHEN 'answered' THEN ? ELSE delivered_at END,
-         version=version+1 WHERE id=? AND push_state='pushing'`,
-      )
-      .run(this.now(), id);
+      .transaction(() => {
+        this.updateStatus(
+          "UPDATE human_requests SET status='delivered',delivered_at=?,push_state='pushed',version=version+1 WHERE id=? AND push_state='pushing' AND status='answered'",
+          this.now(),
+          id,
+        );
+        this.db
+          .query(
+            "UPDATE human_requests SET push_state='pushed',version=version+1 WHERE id=? AND push_state='pushing'",
+          )
+          .run(id);
+      })
+      .immediate();
   }
 
   // The answer stays answered so the agent can still read it.
@@ -304,11 +362,14 @@ export class HumanRequestStore {
             response.answer !== response.selected_choices.join(", "))
         )
           throw new ValidationError("Selected choices do not match this question");
-        this.db
-          .query(
-            "UPDATE human_requests SET status='answered',response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
-          )
-          .run(JSON.stringify(response), this.now(), this.now(), id, version);
+        this.updateStatus(
+          "UPDATE human_requests SET status='answered',response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+          JSON.stringify(response),
+          this.now(),
+          this.now(),
+          id,
+          version,
+        );
         return this.get(id);
       })
       .immediate();
@@ -322,11 +383,12 @@ export class HumanRequestStore {
           throw new ValidationError("This is not a command request");
         if (request.status !== "pending" || request.version !== version)
           throw new ConflictError("Command is stale or already started; reload it");
-        this.db
-          .query(
-            "UPDATE human_requests SET status='running',responded_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
-          )
-          .run(this.now(), id, version);
+        this.updateStatus(
+          "UPDATE human_requests SET status='running',responded_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+          this.now(),
+          id,
+          version,
+        );
         return this.get(id);
       })
       .immediate();
@@ -334,11 +396,13 @@ export class HumanRequestStore {
 
   completeCommand(id: string, version: number, raw: unknown): HumanRequest {
     const result = CommandResultSchema.parse(raw);
-    const changed = this.db
-      .query(
-        "UPDATE human_requests SET status='answered',response=?,answered_at=?,version=version+1 WHERE id=? AND status='running' AND version=?",
-      )
-      .run(JSON.stringify(result), this.now(), id, version);
+    const changed = this.updateStatus(
+      "UPDATE human_requests SET status='answered',response=?,answered_at=?,version=version+1 WHERE id=? AND status='running' AND version=?",
+      JSON.stringify(result),
+      this.now(),
+      id,
+      version,
+    );
     if (!changed.changes) throw new ConflictError("Command execution no longer owns this request");
     return this.get(id);
   }
@@ -349,11 +413,12 @@ export class HumanRequestStore {
         const request = this.get(id);
         if (request.status !== "answered" || request.version !== version)
           throw new ConflictError("Response is stale or already delivered");
-        this.db
-          .query(
-            "UPDATE human_requests SET status='delivered',delivered_at=?,version=version+1 WHERE id=? AND status='answered' AND version=?",
-          )
-          .run(this.now(), id, version);
+        this.updateStatus(
+          "UPDATE human_requests SET status='delivered',delivered_at=?,version=version+1 WHERE id=? AND status='answered' AND version=?",
+          this.now(),
+          id,
+          version,
+        );
         return this.get(id);
       })
       .immediate();
@@ -375,9 +440,8 @@ export class HumanRequestStore {
   dismissObsolete(sessionId: string, backend: string, toolCallId?: string): void {
     // Continuation is not proof that an undelivered answer was consumed. Preserve
     // the audit record as cancelled, and never turn it into an approval/delivery.
-    this.db
-      .query(
-        `UPDATE human_requests SET status='cancelled',version=version+1
+    this.updateStatus(
+      `UPDATE human_requests SET status='cancelled',version=version+1
          WHERE status IN (${toolCallId === undefined ? "'pending','answered','unavailable'" : "'pending','unavailable'"})
          AND json_extract(payload,'$.origin.session_id')=?
          AND json_extract(payload,'$.origin.backend')=?
@@ -385,8 +449,8 @@ export class HumanRequestStore {
          AND push_state IS NOT 'pushing' AND push_state IS NOT 'interrupted'
          AND NOT (status='answered' AND seen_at IS NOT NULL)
          ${toolCallId === undefined ? "" : "AND json_extract(payload,'$.origin.tool_call_id')=?"}`,
-      )
-      .run(...(toolCallId === undefined ? [sessionId, backend] : [sessionId, backend, toolCallId]));
+      ...(toolCallId === undefined ? [sessionId, backend] : [sessionId, backend, toolCallId]),
+    );
   }
 
   acknowledgeDeniedAtStop(sessionId: string, backend: string): void {
@@ -409,11 +473,11 @@ export class HumanRequestStore {
         const request = this.get(id);
         if (!["pending", "answered"].includes(request.status) || request.version !== version)
           throw new ConflictError("Request is stale or no longer deliverable");
-        this.db
-          .query(
-            "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime is unavailable; response was not delivered',version=version+1 WHERE id=? AND version=?",
-          )
-          .run(id, version);
+        this.updateStatus(
+          "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime is unavailable; response was not delivered',version=version+1 WHERE id=? AND version=?",
+          id,
+          version,
+        );
         return this.get(id);
       })
       .immediate();
@@ -436,11 +500,11 @@ export class HumanRequestStore {
           throw new ConflictError(
             "The agent may already have this answer; it can no longer be dismissed",
           );
-        this.db
-          .query(
-            "UPDATE human_requests SET status='cancelled',version=version+1 WHERE id=? AND version=?",
-          )
-          .run(id, version);
+        this.updateStatus(
+          "UPDATE human_requests SET status='cancelled',version=version+1 WHERE id=? AND version=?",
+          id,
+          version,
+        );
         return this.get(id);
       })
       .immediate();

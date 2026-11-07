@@ -9,15 +9,16 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 | Area | Contents |
 | --- | --- |
 | Sidebar | Activity, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
-| Project picker | Scopes most pages to one project, all projects, or unassigned items |
+| Project picker | Scopes most pages to one project, all projects, or unassigned items. A project with sessions waiting on you shows how many. |
 | Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; other agents run through ACPX. |
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
+| Next session | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing. |
 
 Pages are grouped in the sidebar:
 
 | Group | Pages |
 | --- | --- |
-| Activity | Activity, Attention needed, Sessions, Jobs, Webhooks, Audit |
+| Activity | Activity, Sessions, Jobs, Webhooks, Audit |
 | Tasks | Tasks |
 | Knowledge | Knowledge base, Memories |
 | Terminals | Terminals |
@@ -29,6 +30,30 @@ Projects has its own page at `/projects`. Every page has a shareable URL.
 The sun and moon button in the header switches between the dark and light themes:
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
+
+## Full-width sessions view
+
+Open the chat panel and click **Full screen chat** to work with every agent session in one place. The same view opens from the full-screen button on **Sessions** (on the page or on a row) and in the **Terminals** session list.
+
+- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
+- **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
+- **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
+- Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
+- The sidebar shows as its collapsed rail while the view is open. **Exit full screen chat** returns to the page you came from.
+- The URL keeps the selected session and which panels are open, so reload and Back restore them.
+- The header shows the recorded project and session title. Unlinked terminal agents
+  show **Unknown** until agent activity supplies a state; they appear only in All projects
+  while project ownership is unavailable. The Activity session list uses the same
+  compact row design, retaining search, filters, task links and resume actions.
+
+On a phone the list opens full screen from **Sessions** in the chat header and the inspector opens as a sheet.
+Opening the list sets `sessionList=show` in the URL, so reload and Back restore it.
+Exit full screen also returns to the original page after navigating Back and Forward.
+
+![Session home with its inspector and demo data](/screens/session-home-desktop.png)
+
+<img src="/screens/session-home-phone.png" alt="Phone conversation with compact composer controls" width="260">
+<img src="/screens/session-list-phone.png" alt="Full-screen session list on a phone" width="260">
 
 ## Activity
 
@@ -55,6 +80,10 @@ Open a task to see its body, status, comments, linked sessions and Git links, an
 ![Sessions](/screens/sessions.png)
 
 Live and archived sessions from Claude Code, Codex, Cursor, Gemini CLI and OpenCode on this machine or the selected host. Working sessions update live; waiting sessions stay available to resume in a terminal or in chat. Search across archived conversations. See [Live sessions](./live-sessions.md).
+
+Filter the list by state with **All**, **Needs you**, **Working** and **Done**. Each filter shows its count, and failed sessions count as Needs you. A session that finished after you last opened it shows **Done** until you open it. This browser remembers what you have seen. The chat session history has the same filters.
+
+While your pointer is over the list, or a row has keyboard focus, rows stay where they are. States still update in place. When the order would change, an **N updated** button appears. Click it, or move away from the list, to apply the new order.
 
 ## Terminals
 
@@ -86,26 +115,25 @@ Scheduled and on-demand automation. A job runs a shell command, an agent or crea
 
 Inbound event sources. Configure a webhook once, then connect it to one or more jobs, each with its own event filters and action.
 
-## Attention needed
-
-Questions and approval requests from your agents in one queue. Answer here and the reply goes back to the waiting session. See [Human requests](./human-requests.md).
-
-## Agent notifications
+## Notifications
 
 When a session you are not viewing needs your approval, has a question or fails,
 ORC shows a **Needs you** notification and plays a short chime. Notifications
 settle for about one second before appearing and repeated snapshots do not repeat
-the alert. **Open Attention** takes you to the queue, closing any open chat. A
-single pending approval also offers **Approve** and **Deny**.
+the alert. The header bell opens a menu containing generic notifications, including
+human requests, agent outcomes and job results. Open a request to answer or review
+its action. Read and dismissed state is shared across clients.
 
 Desktop browsers show toasts. Needs-you toasts stay until dismissed or resolved;
 **Done** toasts are silent and close after six seconds, pausing on hover or focus.
 Sessions finishing together collapse into one notification. Use **Alt+N** or
-**Focus notifications** in the command palette to reach notifications.
+**Open notifications** in the command palette to reach notifications.
 
-On phones, the bell in the workspace and chat headers shows an unread count.
+On all screens, the bell in workspace and chat headers shows an unread count.
 New notifications never open the panel automatically. Tap the bell to read or
-dismiss them; Done updates remain there until dismissed or opened.
+dismiss them. History remains until dismissed or expired (30 days by default).
+Configure notification and audit retention in Settings → Storage.
+See [Notifications](./notifications.md) and [Human requests](./human-requests.md).
 
 **Settings → Notifications → Sound** controls the browser chime, volume and
 per-project sound mute. Preferences are saved in this browser. Audio starts after
@@ -119,7 +147,10 @@ destination. Done notifications are silent; native Needs-you sound follows the O
 
 ## Audit
 
-Recorded session summaries and events. Use Sessions to read full conversations or resume an agent.
+Lifecycle and knowledge events with filters and expandable details. Recorded
+session summaries remain in collapsed history. Audit retention defaults to 90
+days and is configurable in Settings → Storage. Use Sessions to read full
+conversations or resume an agent.
 
 ## Skills
 
@@ -169,22 +200,76 @@ Enabled agents, including custom ACPX ids, appear in the chat agent picker:
 
 ![Chat agent picker](/screens/chat-agent-picker.png)
 
+## Chat turn progress
+
+Finished turns fold tool calls and intermediate narration into one expandable line;
+your message and the final reply remain visible. Expand it to inspect file diffs,
+commands and output, reads, and searches. Failed tools stay marked.
+
+During a response, a quiet status line shows elapsed time and the current tool.
+Scrolling up pauses automatic following; **Jump to latest** returns to the bottom.
+Stop remains beside Send. Working indicators are static.
+
+Each turn keeps its duration and completed, stopped, or failed outcome across reloads.
+Duration uses the agent's reported value when available, otherwise server elapsed
+time, including waits for input. Older turns without timing show counts only.
+Stopped turns retain partial work; unfinished tool calls read **Incomplete**.
+Individual tool durations are not shown.
+
+## Composer controls
+
+The composer groups folder, branch, agent/model and permissions into compact
+controls. Phones and narrow desktop panels use icons; wide composers show labels.
+Every icon has an accessible name and opens its picker with the full details;
+phone touch targets are at least 44px. Send stays visible at the right.
+
+The folder picker shows the full path, copy action, recent folders, host choices
+when configured, and browsing. Branch/worktree controls appear for Git folders.
+Folder and branch controls hide after launch; conversation details show the working folder.
+Changing agent after launch starts a separate session. The model picker disables
+changes during a response or when the backend selects its own model. Effort stays
+in agent options. The permissions control appears for a non-default mode only when
+the backend supports changing it live.
+
+Pasting at least 16 KiB or 200 lines attaches the text as `pasted-text-N.txt`.
+Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach files.
+
+<img src="/screens/chat-composer-390.png" alt="Compact composer icons on a phone" width="260">
+
 ## Desktop app only
 
 The desktop app is an Electron shell around the same dashboard. On top of the browser experience it:
 
 | Capability | Detail |
 | --- | --- |
-| Runs the daemon for you | Starts the bundled `orc` daemon, or attaches to one already running on the configured port |
-| Configures auth | Generates an API secret when none is set and sends it on every request. No sign-in screen. |
+| Runs the daemon for you | Reuses a verified local daemon, including one on another port, or starts the bundled `orc` daemon |
+| Configures auth | Generates an API secret for a daemon it starts when none is set, and sends the configured secret automatically. No sign-in screen. |
 | Installs the CLI | `~/.orc/bin/orc`, added to your shell `PATH` |
 | Tray icon | **Open orc**, **Start at login** toggle, **Quit orc** |
 | Start at login | On by default, starts hidden in the tray |
 | Keeps running when closed | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits. |
-| Recovers from crashes | If the daemon stops, offers **Retry** or **Quit** |
+| Recovers from startup failures and crashes | Waits briefly for a starting daemon, then offers **Retry** or **Quit** if it cannot connect |
 | Remembers the window | Size, position and maximized state |
 
 Quitting the app (**Quit orc**) stops the daemon only if the app started it.
+
+If another application occupies the configured port, desktop automatically starts
+ORC on an available port bound to `127.0.0.1`. It saves the successful endpoint in
+`~/.orc/config.json`, so the CLI and stdio MCP use the same port by default.
+Explicit CLI flags, environment variables and project configuration keep their
+normal precedence; update pinned ports or URLs in external integrations yourself.
+
+Desktop checks the daemon's runtime identity, compatible version (same major and
+minor), database, configuration and authentication before attaching. It never
+starts another daemon while the daemon PID is alive, even if that daemon is
+unhealthy or uses different data. Authentication and configuration errors offer
+**Retry** or **Quit**, with the reason shown. It does not stop an existing daemon
+or the application occupying the preferred port.
+
+**Upgrading an already-running older daemon:** releases without `daemon.json`
+cannot provide this identity check. Stop that daemon once and start it with the
+updated ORC, then choose **Retry** in desktop. Desktop does not attach to an
+unverified daemon or send it the configured secret.
 
 Command-line flags for the app executable:
 

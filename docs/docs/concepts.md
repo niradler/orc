@@ -150,7 +150,7 @@ The older config-based gateway (`gateway.telegram`, `gateway.slack`) still suppo
 
 ## Human requests
 
-A human request is a question, approval or command an agent needs you to answer. It appears in **Activity → Attention needed**, can notify you through channels and push, and returns your answer to the waiting agent call. Managed agents create them automatically for structured questions and tool approvals; agents can also call `human_request`. Each request shows its execution host.
+A human request is a question, approval or command an agent needs you to answer. It appears in the header's **Notifications** menu, can notify you through configured human-request channels and push, and returns your answer to the waiting agent call. Managed agents create them automatically for structured questions and tool approvals; agents can also call `human_request`. Each request shows its execution host.
 
 See [Human requests](./human-requests.md) and [Command requests](./command-requests.md).
 
@@ -166,4 +166,4 @@ A skill is a `SKILL.md` folder of instructions, scripts and references that agen
 
 ## Audit
 
-ORC keeps a central audit log of knowledge changes: memory, skill, knowledge base and digest writes, each with action, actor, source and session. Read it with `audit_list` over MCP or `GET /api/audit`. Memories and skills also keep their own change history with revert.
+ORC keeps a central audit log of knowledge changes and notification, human-request, job-run and task lifecycle events. Read it in Activity → Audit or `GET /api/audit`; `audit_list` also exposes knowledge history over MCP. Audit retention defaults to 90 days, configurable independently from the 30-day notification history. See [Notifications](./notifications.md). Memories and skills also keep their own change history with revert.

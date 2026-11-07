@@ -44,6 +44,7 @@ export class OrcTaskProvider implements TaskProvider {
         `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
          FROM tasks t
          WHERE t.status = 'review'
+           AND (t.github_issue_id IS NULL OR t.auto_start = 1)
            AND t.claimed_by IS NULL
          ORDER BY
            CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,

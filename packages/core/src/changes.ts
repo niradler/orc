@@ -1,4 +1,5 @@
 export const CHANGE_RESOURCES = [
+  "notifications",
   "tasks",
   "sessions",
   "jobs",

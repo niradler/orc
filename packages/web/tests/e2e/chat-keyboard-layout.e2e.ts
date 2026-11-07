@@ -30,9 +30,25 @@ test.describe("phone keyboard composer", () => {
         await page.route("**/api/ssh", (route) =>
           route.fulfill({ json: { host: null, hosts: ["lab"], supported: true } }),
         );
+        await page.route("**/api/git/worktrees?**", (route) =>
+          route.fulfill({
+            json: {
+              root: "/workspace/product",
+              worktrees: [{ path: "/workspace/product", branch: "refs/heads/main", main: true }],
+            },
+          }),
+        );
         await page.addInitScript(() => {
           const viewport = new EventTarget();
-          Object.assign(viewport, { height: 844, offsetTop: 0, scale: 1 });
+          Object.assign(viewport, {
+            width: innerWidth,
+            height: 844,
+            offsetLeft: 0,
+            offsetTop: 0,
+            pageLeft: 0,
+            pageTop: 0,
+            scale: 1,
+          });
           Object.defineProperty(window, "visualViewport", { value: viewport });
           Object.assign(window, {
             setKeyboardHeight: (height: number) => {
@@ -52,10 +68,10 @@ test.describe("phone keyboard composer", () => {
         const sheet = page.getByTestId("mobile-chat-sheet");
         const input = sheet.getByTestId("chat-input");
         const send = sheet.getByTestId("chat-send-button");
-        const actions = sheet.getByTestId("chat-workspace-actions");
-        const selectors = sheet.getByTestId("chat-composer-selectors");
+        const actions = sheet.getByTestId("chat-composer-tools");
+        const selectors = sheet.getByTestId("chat-agent-model-button");
         await input.fill(draft);
-        await expect(sheet.getByTestId("chat-model-button")).toContainText(model);
+        await expect(sheet.getByTestId("chat-model-current")).toContainText(model);
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         await page.evaluate(() => document.fonts.ready);
         await expect
@@ -91,7 +107,7 @@ test.describe("phone keyboard composer", () => {
             scrollWidth: element.scrollWidth,
             height: element.clientHeight,
           }));
-          expect(geometry.scrollWidth).toBeGreaterThan(geometry.width);
+          expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width);
           expect(geometry.height).toBeLessThanOrEqual(52);
           const selectorBox = await selectors.boundingBox();
           const actionBox = await actions.boundingBox();
@@ -103,35 +119,10 @@ test.describe("phone keyboard composer", () => {
           expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(height);
           expect(sendBox.x + sendBox.width).toBeLessThanOrEqual(width);
           const sendX = sendBox.x;
-          if (height === 200) {
-            await input.focus();
-            const touch = await page.context().newCDPSession(page);
-            try {
-              const x = actionBox.x + actionBox.width - 8;
-              const y = actionBox.y + 22;
-              await touch.send("Input.dispatchTouchEvent", {
-                type: "touchStart",
-                touchPoints: [{ x, y }],
-              });
-              for (let step = 1; step <= 8; step++)
-                await touch.send("Input.dispatchTouchEvent", {
-                  type: "touchMove",
-                  touchPoints: [{ x: x - step * 8, y }],
-                });
-              await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-            } finally {
-              await touch.detach();
-            }
-            await expect
-              .poll(() => actions.evaluate((element) => element.scrollLeft))
-              .toBeGreaterThan(0);
-            await expect(input).toBeFocused();
-          }
           for (const id of [
-            "chat-workspace-host",
-            "chat-workspace-browse",
-            "chat-workspace-recent",
-            "chat-workspace-worktree",
+            "chat-agent-model-button",
+            "chat-workspace-folder",
+            "chat-workspace-branch",
           ]) {
             const control = sheet.getByTestId(id);
             await control.scrollIntoViewIfNeeded();
@@ -143,13 +134,16 @@ test.describe("phone keyboard composer", () => {
             expect(controlBox.height).toBeGreaterThanOrEqual(44);
             expect(fixedSendBox.x).toBe(sendX);
           }
-          await sheet.getByTestId("chat-workspace-host").focus();
+          await sheet.getByTestId("chat-workspace-folder").focus();
           await page.keyboard.press("Tab");
-          await expect(sheet.getByTestId("chat-workspace-browse")).toBeFocused();
-          await expect(sheet.getByTestId("chat-workspace-browse")).toBeInViewport();
-          const worktree = sheet.getByTestId("chat-workspace-worktree");
-          await worktree.tap();
-          await expect(worktree).toHaveAttribute("aria-pressed", height === 240 ? "true" : "false");
+          await expect(sheet.getByTestId("chat-workspace-branch")).toBeFocused();
+          await expect(sheet.getByTestId("chat-workspace-branch")).toBeInViewport();
+          const branch = sheet.getByTestId("chat-workspace-branch");
+          await branch.tap();
+          await page
+            .getByTestId(height === 240 ? "chat-workspace-worktree" : "chat-workspace-checkout")
+            .tap();
+          await expect(branch).toHaveAttribute("data-worktree", height === 240 ? "true" : "false");
           await expect(input).toHaveValue(draft);
         }
         await page.evaluate(() =>

@@ -7,21 +7,40 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+export type CommandRequestDraft = {
+  script: string;
+  editing: boolean;
+  values: Record<string, string>;
+};
+
 export function CommandRequestForm({
   request,
   actions,
+  draft,
+  onDraftChange,
 }: {
   request: HumanRequest;
   actions?: ReactNode;
+  draft?: CommandRequestDraft;
+  onDraftChange?: (update: Partial<CommandRequestDraft>) => void;
 }) {
   const spec = request.input.command;
-  const [script, setScript] = useState(
-    request.response?.kind === "command"
-      ? (request.response.script ?? spec?.script ?? "")
-      : (spec?.script ?? ""),
-  );
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [editing, setEditing] = useState(false);
+  const [localDraft, setLocalDraft] = useState<CommandRequestDraft>({
+    script:
+      request.response?.kind === "command"
+        ? (request.response.script ?? spec?.script ?? "")
+        : (spec?.script ?? ""),
+    editing: false,
+    values: {},
+  });
+  const { script, editing, values } = draft ?? localDraft;
+  const updateDraft = (update: Partial<CommandRequestDraft>) =>
+    onDraftChange ? onDraftChange(update) : setLocalDraft((current) => ({ ...current, ...update }));
+  const setScript = (script: string) => updateDraft({ script });
+  const setEditing = (editing: boolean) => updateDraft({ editing });
+  const setValues = (
+    update: Record<string, string> | ((previous: Record<string, string>) => Record<string, string>),
+  ) => updateDraft({ values: typeof update === "function" ? update(values) : update });
   const client = useQueryClient();
   const run = useMutation({
     mutationFn: async () => {

@@ -5,13 +5,14 @@ import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { ResumeActions } from "@/components/ResumeActions";
+import { SessionHomeLink } from "@/components/SessionHomeLink";
 import { ContinueInChat } from "@/components/terminals/ContinueInChat";
 import { NewTerminalMenu, useTerminalLaunchDraft } from "@/components/terminals/NewTerminalMenu";
 import { RenameTerminal } from "@/components/terminals/RenameTerminal";
 import { TerminalCheckout } from "@/components/terminals/TerminalCheckout";
 import { TerminalList } from "@/components/terminals/TerminalList";
 import { TerminalSelect } from "@/components/terminals/TerminalSelect";
-import { TerminalTouchControls } from "@/components/terminals/TerminalTouchControls";
+import { TerminalViewport } from "@/components/terminals/TerminalViewport";
 import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
 import { WorktreeManager } from "@/components/terminals/WorktreeManager";
 import { Button } from "@/components/ui/button";
@@ -29,38 +30,6 @@ import { workspaceDestination } from "@/lib/workspace-navigation";
 const SIDEBAR_DEFAULT = 256;
 const SIDEBAR_MIN = 160;
 const SIDEBAR_MAX = 480;
-
-function TerminalViewport({ terminalId }: { terminalId: string }) {
-  const { attach, detach, engineError } = useTerminals();
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = ref.current;
-    if (!container) return;
-    void attach(terminalId, container);
-    return () => detach(terminalId);
-  }, [terminalId, attach, detach]);
-
-  return (
-    <div className="flex flex-1 min-h-0 min-w-0 flex-col">
-      <div
-        ref={ref}
-        data-testid="terminal-viewport"
-        className="relative flex-1 min-h-0 min-w-0 bg-black"
-      >
-        {engineError && (
-          <p
-            role="alert"
-            className="absolute inset-0 flex items-center justify-center p-4 bg-surface text-error font-label text-xs text-center"
-          >
-            Terminal renderer failed to load: {engineError}
-          </p>
-        )}
-      </div>
-      <TerminalTouchControls terminalId={terminalId} />
-    </div>
-  );
-}
 
 const LINK_CLASS =
   "shrink-0 inline-flex min-h-11 items-center rounded-md font-label text-sm text-primary hover:text-on-surface";
@@ -378,6 +347,11 @@ export default function Terminals() {
         >
           <div className="flex shrink-0 items-center gap-1 px-3 py-1.5">
             <h2 className="min-w-0 flex-1 text-sm font-medium text-on-surface">Sessions</h2>
+            <SessionHomeLink
+              terminalId={terminalId}
+              label="Open sessions view"
+              testId="terminals-open-home"
+            />
             {worktreeManager}
             {newMenu}
           </div>

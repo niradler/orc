@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { browseWorkspace, chooseWorkspaceHost } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 const ROOT = "/srv/workspaces/a-very-long-folder-name-for-a-populated-picker/repositories";
@@ -74,7 +75,7 @@ async function openEntry(page: Page, entry: Entry) {
   if (entry === "chat") {
     await page.goto("/tasks?chat=open");
     await page.getByTestId("chat-input").fill("Preserve this chat draft while browsing folders");
-    await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+    await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
       "title",
       `build-box: ${ROOT}`,
     );
@@ -86,13 +87,14 @@ async function openEntry(page: Page, entry: Entry) {
 }
 
 async function browse(page: Page, entry: Entry) {
-  await page.getByTestId(entry === "chat" ? "chat-workspace-browse" : "terminal-browse").click();
+  if (entry === "chat") await browseWorkspace(page);
+  else await page.getByTestId("terminal-browse").click();
   await expect(page.getByTestId("folder-picker-dialog")).toBeVisible();
 }
 
 async function expectSelection(page: Page, entry: Entry, path: string, host = "build-box") {
   if (entry === "chat") {
-    await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+    await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
       "title",
       `${host}: ${path}`,
     );
@@ -238,8 +240,7 @@ for (const entry of ["chat", "terminal"] as const) {
     await expect(dialog).toBeHidden();
     await expectSelection(page, entry, CHILD);
     if (entry === "chat") {
-      await page.getByTestId("chat-workspace-host").click();
-      await page.getByTestId("chat-workspace-host-option").filter({ hasText: "other-box" }).click();
+      await chooseWorkspaceHost(page, "other-box");
     } else {
       await page.getByTestId("terminal-host-select").selectOption("other-box");
     }

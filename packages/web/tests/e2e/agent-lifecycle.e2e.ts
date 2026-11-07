@@ -71,7 +71,7 @@ test("registered agents share idle visibility, transcripts, task links and termi
       await expect(page.getByTestId("copy-resume")).toBeVisible();
       await page.keyboard.press("Escape");
     }
-    await row.click();
+    await row.getByRole("button", { name: `${backend} lifecycle parity` }).click();
     await expect(page.getByTestId("live-session-detail")).toBeVisible();
     await expect(page.getByTestId("transcript-turn")).toContainText(`Hello from ${backend}`);
     await page.keyboard.press("Escape");
@@ -105,11 +105,15 @@ test("registered agents share idle visibility, transcripts, task links and termi
   await apiPost(request, "/sessions/live/sync", {});
   for (const backend of agents) {
     await page.getByTestId("agent-filter").selectOption(backend);
-    await expect(
-      page
-        .locator(`[data-testid="live-session-row"][data-session-id="${prefix}-${backend}"]`)
-        .getByTestId("live-status"),
-    ).toHaveText("Ended");
+    const row = page.locator(
+      `[data-testid="live-session-row"][data-session-id="${prefix}-${backend}"]`,
+    );
+    await expect(row.getByTestId("live-status")).toHaveText("Done");
+    await row.getByRole("button", { name: `${backend} lifecycle parity` }).click();
+    await expect(page.getByTestId("transcript-unavailable")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("live-session-detail")).toBeHidden();
+    await expect(row.getByTestId("live-status")).toHaveText("Ended");
   }
   await page.getByTestId("show-ended").click();
   await expect(page.getByTestId("show-ended")).not.toBeChecked();

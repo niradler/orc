@@ -1,11 +1,41 @@
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
+import { NotFoundError } from "@orc/core/errors";
+import { GithubSyncStateSchema } from "@orc/core/github-sync";
+import { getDb } from "@orc/db/client";
+import { projects } from "@orc/db/schema";
+import { eq } from "drizzle-orm";
 import { githubFeed } from "../git/github.js";
+import { syncGithubProject } from "../git/issue-sync.js";
 import { createRouter } from "../lib/router.js";
 import { requireTerminals } from "../terminals/service.js";
 
-export function createGithubRouter(readFeed: typeof githubFeed = githubFeed): OpenAPIHono {
+export function createGithubRouter(
+  readFeed: typeof githubFeed = githubFeed,
+  syncProject: typeof syncGithubProject = syncGithubProject,
+): OpenAPIHono {
   const app = createRouter();
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/projects/{id}/github-sync",
+      tags: ["GitHub"],
+      summary: "Synchronize a project's GitHub issues and task statuses",
+      request: { params: z.object({ id: z.string() }) },
+      responses: {
+        200: {
+          description: "Sync result; error is non-null for incomplete sync",
+          content: { "application/json": { schema: GithubSyncStateSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const project = await getDb().query.projects.findFirst({ where: eq(projects.id, id) });
+      if (!project) throw new NotFoundError("Project", id);
+      return c.json(await syncProject(id), 200);
+    },
+  );
   const GithubItemSchema = z.object({
     repo: z.string(),
     number: z.number().int(),

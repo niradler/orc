@@ -572,6 +572,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -799,6 +806,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -969,6 +983,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1189,6 +1210,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1407,6 +1435,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1481,6 +1516,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1706,6 +1748,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -2472,7 +2521,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Attention needed: pending requests and undelivered answers */
+                /** @description Notifications: pending requests and undelivered answers */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2812,6 +2861,154 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
+                                    execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval" | "command";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host?: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        description?: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
+                                title?: string;
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View request details without acknowledging that its agent read the response */
         get: {
             parameters: {
                 query?: never;
@@ -3586,6 +3783,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List nonexpired notifications and the shared unread count */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    offset?: number | null;
+                    unread?: "true" | "false";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Notification result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationPage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change shared read or dismissal state without changing the source request */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        read?: boolean;
+                        dismissed?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Notification result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrcNotification"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all current notifications read across clients */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Notification result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {boolean} */
+                            ok: true;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/mcp": {
         parameters: {
             query?: never;
@@ -3791,6 +4112,8 @@ export interface paths {
                             theme?: "dark" | "light";
                             terminal_font?: string;
                             attention_retention_hours?: number;
+                            notification_retention_days?: number;
+                            audit_retention_days?: number;
                             chat?: {
                                 /** @default codex */
                                 agent: string;
@@ -3884,6 +4207,8 @@ export interface paths {
                         theme?: "dark" | "light";
                         terminal_font?: string;
                         attention_retention_hours?: number;
+                        notification_retention_days?: number;
+                        audit_retention_days?: number;
                         chat?: {
                             /** @default codex */
                             agent?: string;
@@ -3967,6 +4292,8 @@ export interface paths {
                             theme?: "dark" | "light";
                             terminal_font?: string;
                             attention_retention_hours?: number;
+                            notification_retention_days?: number;
+                            audit_retention_days?: number;
                             chat?: {
                                 /** @default codex */
                                 agent: string;
@@ -4156,6 +4483,198 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/notification-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read automatic notification forwarding policy */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @default false */
+                            enabled: boolean;
+                            /** @default  */
+                            base_url: string;
+                        };
+                    };
+                };
+            };
+        };
+        /** Enable or pause notification forwarding without disconnecting channels */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @default false */
+                        enabled?: boolean;
+                        /** @default  */
+                        base_url?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @default false */
+                            enabled: boolean;
+                            /** @default  */
+                            base_url: string;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/notification-deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect recent forwarding status and safe delivery errors */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            notification_id: string;
+                            connection_id: string;
+                            target_id: string;
+                            /** @enum {string} */
+                            status: "pending" | "sending" | "delivered" | "failed" | "unknown" | "skipped";
+                            attempts: number;
+                            next_at: number;
+                            error: string | null;
+                            receipt_id: string | null;
+                            created_at: number;
+                            expires_at: number;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/notification-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview draft notification filters without sending a message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        filter: {
+                            /** @default false */
+                            enabled?: boolean;
+                            /** @default [] */
+                            types?: string[];
+                            /** @default [] */
+                            categories?: ("human" | "agent" | "job")[];
+                            /** @default [] */
+                            levels?: ("needs-you" | "done")[];
+                            /** @default [] */
+                            outcomes?: ("waiting" | "success" | "failure")[];
+                            /** @default false */
+                            include_unknown?: boolean;
+                        };
+                        /** @default [] */
+                        project_ids?: string[];
+                        event: {
+                            type: string;
+                            /** @enum {string} */
+                            level: "needs-you" | "done";
+                            /** @default null */
+                            project_id?: string | null;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            matches: boolean;
+                            summary: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/providers": {
         parameters: {
             query?: never;
@@ -4290,6 +4809,20 @@ export interface paths {
                                 outbound: boolean;
                                 /** @default false */
                                 attention: boolean;
+                                notifications?: {
+                                    /** @default false */
+                                    enabled: boolean;
+                                    /** @default [] */
+                                    types: string[];
+                                    /** @default [] */
+                                    categories: ("human" | "agent" | "job")[];
+                                    /** @default [] */
+                                    levels: ("needs-you" | "done")[];
+                                    /** @default [] */
+                                    outcomes: ("waiting" | "success" | "failure")[];
+                                    /** @default false */
+                                    include_unknown: boolean;
+                                };
                             }[];
                             routes: {
                                 id: string;
@@ -4388,6 +4921,20 @@ export interface paths {
                             outbound?: boolean;
                             /** @default false */
                             attention?: boolean;
+                            notifications?: {
+                                /** @default false */
+                                enabled?: boolean;
+                                /** @default [] */
+                                types?: string[];
+                                /** @default [] */
+                                categories?: ("human" | "agent" | "job")[];
+                                /** @default [] */
+                                levels?: ("needs-you" | "done")[];
+                                /** @default [] */
+                                outcomes?: ("waiting" | "success" | "failure")[];
+                                /** @default false */
+                                include_unknown?: boolean;
+                            };
                         }[];
                         /** @default [] */
                         routes?: {
@@ -4443,6 +4990,20 @@ export interface paths {
                                 outbound: boolean;
                                 /** @default false */
                                 attention: boolean;
+                                notifications?: {
+                                    /** @default false */
+                                    enabled: boolean;
+                                    /** @default [] */
+                                    types: string[];
+                                    /** @default [] */
+                                    categories: ("human" | "agent" | "job")[];
+                                    /** @default [] */
+                                    levels: ("needs-you" | "done")[];
+                                    /** @default [] */
+                                    outcomes: ("waiting" | "success" | "failure")[];
+                                    /** @default false */
+                                    include_unknown: boolean;
+                                };
                             }[];
                             routes: {
                                 id: string;
@@ -4529,6 +5090,20 @@ export interface paths {
                             outbound: boolean;
                             /** @default false */
                             attention: boolean;
+                            notifications?: {
+                                /** @default false */
+                                enabled: boolean;
+                                /** @default [] */
+                                types: string[];
+                                /** @default [] */
+                                categories: ("human" | "agent" | "job")[];
+                                /** @default [] */
+                                levels: ("needs-you" | "done")[];
+                                /** @default [] */
+                                outcomes: ("waiting" | "success" | "failure")[];
+                                /** @default false */
+                                include_unknown: boolean;
+                            };
                         }[];
                     };
                 };
@@ -4712,6 +5287,20 @@ export interface paths {
                             outbound: boolean;
                             /** @default false */
                             attention: boolean;
+                            notifications?: {
+                                /** @default false */
+                                enabled: boolean;
+                                /** @default [] */
+                                types: string[];
+                                /** @default [] */
+                                categories: ("human" | "agent" | "job")[];
+                                /** @default [] */
+                                levels: ("needs-you" | "done")[];
+                                /** @default [] */
+                                outcomes: ("waiting" | "success" | "failure")[];
+                                /** @default false */
+                                include_unknown: boolean;
+                            };
                         };
                     };
                 };
@@ -11220,16 +11809,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the central knowledge audit log */
+        /** Read the central audit log */
         get: {
             parameters: {
                 query?: {
                     project_id?: string;
-                    scope?: "global";
-                    entity_type?: "memory" | "skill" | "kb";
+                    scope?: "global" | "all";
+                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task";
                     session_id?: string;
                     since?: number | null;
                     limit?: number;
+                    /** @description Preview substitutes a bounded metadata marker for stored snapshots larger than 4096 bytes. Full preserves the original snapshot; stored audit data is never truncated. */
+                    snapshot?: "preview" | "full";
                 };
                 header?: never;
                 path?: never;
@@ -15842,6 +16433,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/github-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronize a project's GitHub issues and task statuses */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sync result; error is non-null for incomplete sync */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            synced_at: string | null;
+                            error: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/github/items": {
         parameters: {
             query?: never;
@@ -16315,6 +16947,27 @@ export interface components {
             token: string;
             expires_at: number;
         };
+        NotificationPage: {
+            notifications: components["schemas"]["OrcNotification"][];
+            unread: number;
+            has_more: boolean;
+        };
+        OrcNotification: {
+            id: string;
+            type: string;
+            source_id: string;
+            title: string;
+            body: string;
+            /** @enum {string} */
+            level: "needs-you" | "done";
+            project_id: string | null;
+            path: string;
+            requires_action: boolean;
+            created_at: number;
+            expires_at: number;
+            read_at: number | null;
+            dismissed_at: number | null;
+        };
         SystemAbout: {
             version: string;
             platform: string;
@@ -16521,6 +17174,37 @@ export interface components {
             status: "active" | "archived" | "paused";
             scope: string | null;
             git_remote_url: string | null;
+            github_sync: {
+                enabled: boolean;
+                /**
+                 * @default {
+                 *       "todo": "status:todo",
+                 *       "queued": "status:queued",
+                 *       "doing": "status:doing",
+                 *       "review": "status:review",
+                 *       "changes_requested": "status:changes-requested",
+                 *       "blocked": "status:blocked",
+                 *       "paused": "status:paused",
+                 *       "done": "status:done",
+                 *       "cancelled": "status:cancelled"
+                 *     }
+                 */
+                status_labels: {
+                    todo: string;
+                    queued: string;
+                    doing: string;
+                    review: string;
+                    changes_requested: string;
+                    blocked: string;
+                    paused: string;
+                    done: string;
+                    cancelled: string;
+                };
+            } | null;
+            github_sync_state: {
+                synced_at: string | null;
+                error: string | null;
+            } | null;
             tags: string[] | null;
             obsidian_path: string | null;
             max_workers: number | null;
@@ -16540,6 +17224,33 @@ export interface components {
             status: "active" | "archived" | "paused";
             scope?: string;
             git_remote_url?: string | null;
+            github_sync?: {
+                enabled: boolean;
+                /**
+                 * @default {
+                 *       "todo": "status:todo",
+                 *       "queued": "status:queued",
+                 *       "doing": "status:doing",
+                 *       "review": "status:review",
+                 *       "changes_requested": "status:changes-requested",
+                 *       "blocked": "status:blocked",
+                 *       "paused": "status:paused",
+                 *       "done": "status:done",
+                 *       "cancelled": "status:cancelled"
+                 *     }
+                 */
+                status_labels: {
+                    todo: string;
+                    queued: string;
+                    doing: string;
+                    review: string;
+                    changes_requested: string;
+                    blocked: string;
+                    paused: string;
+                    done: string;
+                    cancelled: string;
+                };
+            } | null;
             tags?: string[];
             obsidian_path?: string;
             max_workers?: number;
@@ -16552,6 +17263,33 @@ export interface components {
             status?: "active" | "archived" | "paused";
             scope?: string | null;
             git_remote_url?: string | null;
+            github_sync?: {
+                enabled: boolean;
+                /**
+                 * @default {
+                 *       "todo": "status:todo",
+                 *       "queued": "status:queued",
+                 *       "doing": "status:doing",
+                 *       "review": "status:review",
+                 *       "changes_requested": "status:changes-requested",
+                 *       "blocked": "status:blocked",
+                 *       "paused": "status:paused",
+                 *       "done": "status:done",
+                 *       "cancelled": "status:cancelled"
+                 *     }
+                 */
+                status_labels: {
+                    todo: string;
+                    queued: string;
+                    doing: string;
+                    review: string;
+                    changes_requested: string;
+                    blocked: string;
+                    paused: string;
+                    done: string;
+                    cancelled: string;
+                };
+            } | null;
             tags?: string[] | null;
             obsidian_path?: string;
             max_workers?: number | null;
@@ -16846,6 +17584,18 @@ export interface components {
             git_worktree: string | null;
             github_issue: string | null;
             github_pr: string | null;
+            github_sync: {
+                issue_id: string;
+                repo: string;
+                number: number;
+                /** @enum {string} */
+                status: "todo" | "queued" | "doing" | "review" | "changes_requested" | "blocked" | "done" | "paused" | "cancelled";
+                remote_updated_at: string;
+                /** @enum {string|null} */
+                pending_status?: "todo" | "queued" | "doing" | "review" | "changes_requested" | "blocked" | "done" | "paused" | "cancelled" | null;
+                synced_at: string | null;
+                error: string | null;
+            } | null;
             id: string;
             project_id: string | null;
             title: string;

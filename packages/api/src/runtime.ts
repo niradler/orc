@@ -9,9 +9,11 @@ import {
   getKnowledgeService,
   startKnowledgeMaintenance,
 } from "@orc/knowledge";
+import { startGithubIssueSync } from "./git/issue-sync.js";
 import { startHumanRequestDelivery } from "./human-request-delivery.js";
 import { withKbJobHooks } from "./kb-jobs.js";
 import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
+import { startNotificationMaintenance } from "./notifications.js";
 import { startAttentionPush } from "./push/service.js";
 import { createApp } from "./server.js";
 import { startSessionWatcher } from "./session-watcher.js";
@@ -52,9 +54,16 @@ const server = Bun.serve<TerminalSocketData>({
   idleTimeout: 255,
 });
 
+if (server.port === undefined) throw new Error("ORC API did not bind a TCP port");
+// Keep callbacks and spawned clients on the bound port when the OS selected it.
+config.api.port = server.port;
+process.env.ORC_API_PORT = String(server.port);
+
 const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();
+const stopGithubIssueSync = startGithubIssueSync();
+const stopNotificationMaintenance = startNotificationMaintenance();
 const channels = startChannelRuntime().catch(() => {
   logger.error("Channels failed to start; inspect Channels in Settings");
   return async () => {};
@@ -81,6 +90,8 @@ async function shutdown(signal: string, exitCode = 0) {
   stopSessionWatcher();
   stopAttentionPush();
   stopHumanRequestDelivery();
+  stopNotificationMaintenance();
+  await stopGithubIssueSync();
   await (await channels)();
   shutdownTerminals();
   await runShutdownHooks();

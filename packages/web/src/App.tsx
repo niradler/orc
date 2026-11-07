@@ -6,7 +6,6 @@ import {
   Routes,
   useLocation,
   useNavigate,
-  useParams,
   useSearchParams,
 } from "react-router-dom";
 import { AgentNotifications } from "@/components/AgentNotifications";
@@ -16,7 +15,9 @@ import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
 import { CHAT_THREAD_PARAM, ChatProvider } from "@/hooks/useChat";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
+import { sessionHomeExitSteps, useSessionHomeEntry } from "@/hooks/useSessionHome";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
+import { clearSessionHome } from "@/lib/session-home";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,6 @@ const Scratchpads = lazy(() => import("@/views/Scratchpads"));
 
 const Sessions = lazy(() => import("@/views/Sessions"));
 const Audit = lazy(() => import("@/views/Audit"));
-const Attention = lazy(() => import("@/views/Attention"));
 
 const Settings = lazy(() => import("@/views/Settings"));
 const IntegrationCallback = lazy(() => import("@/views/IntegrationCallback"));
@@ -49,26 +49,6 @@ const Skills = lazy(() => import("@/views/Skills"));
 const Tasks = lazy(() => import("@/views/Tasks"));
 
 const Terminals = lazy(() => import("@/views/Terminals"));
-
-function LegacyAgentsRedirect() {
-  const { agentId } = useParams();
-  const { search, hash } = useLocation();
-  return (
-    <Navigate
-      replace
-      to={{
-        pathname: agentId ? `/packages/agents/${encodeURIComponent(agentId)}` : "/packages/agents",
-        search,
-        hash,
-      }}
-    />
-  );
-}
-
-function LegacyActivityRedirect() {
-  const { search, hash } = useLocation();
-  return <Navigate replace to={{ pathname: "/activity", search, hash }} />;
-}
 
 function DefaultWorkspaceRedirect() {
   const { search, hash } = useLocation();
@@ -96,14 +76,31 @@ export default function App() {
   const projectId = searchParams.get("project") ?? savedProjectId;
   const chatFullscreen = searchParams.get("chat") === "full";
   const chatRequested = searchParams.get("chat") === "open" || chatFullscreen;
+  useSessionHomeEntry(chatFullscreen);
   function setChatVisible(open: boolean, fullscreen = false): void {
-    const next = new URLSearchParams(window.location.search);
+    const current = new URLSearchParams(window.location.search);
+    const next = open ? current : clearSessionHome(current);
     if (open) next.set("chat", fullscreen ? "full" : "open");
     else {
       next.delete("chat");
       next.delete(CHAT_THREAD_PARAM);
     }
     if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
+    navigate({ search: next.toString(), hash: window.location.hash });
+  }
+  function minimizeChat(): void {
+    const steps = sessionHomeExitSteps();
+    if (steps > 0) navigate(-steps);
+    else {
+      const next = clearSessionHome(new URLSearchParams(window.location.search));
+      next.set("chat", "open");
+      navigate({ search: next.toString(), hash: window.location.hash }, { replace: true });
+    }
+  }
+  function closeChat(): void {
+    const next = clearSessionHome(new URLSearchParams(window.location.search));
+    next.delete("chat");
+    next.delete(CHAT_THREAD_PARAM);
     navigate({ search: next.toString(), hash: window.location.hash });
   }
   function setProjectId(nextProjectId: string): void {
@@ -124,6 +121,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const homeOpen = chatFullscreen;
   const navButtonRef = useRef<HTMLButtonElement>(null);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
   const chatDialogRef = useRef<HTMLDivElement>(null);
@@ -133,7 +131,7 @@ export default function App() {
     const navDesktop = window.matchMedia(`(min-width: ${BREAKPOINTS.md}px)`);
     const syncResponsiveChat = () => {
       if (navDesktop.matches) setMobileNavOpen(false);
-      setMobileChatOpen(chatRequested && (!desktop.matches || chatFullscreen));
+      setMobileChatOpen(chatRequested && !desktop.matches && !chatFullscreen);
       setChatOpen(chatRequested && desktop.matches && !chatFullscreen);
     };
     syncResponsiveChat();
@@ -199,13 +197,30 @@ export default function App() {
                 <Sidebar
                   projectId={projectId}
                   onProjectChange={setProjectId}
-                  collapsed={sidebarCollapsed}
-                  onToggle={() => setSidebarCollapsed((v) => !v)}
+                  collapsed={sidebarCollapsed || homeOpen}
+                  onToggle={homeOpen ? undefined : () => setSidebarCollapsed((v) => !v)}
                 />
               </div>
 
               {/* Main content - the only element that owns vertical scroll for page content. */}
-              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {homeOpen && (
+                <div data-testid="session-home" className="flex min-h-0 min-w-0 flex-1">
+                  <ChatPanel
+                    open
+                    embedded
+                    fullscreen
+                    onToggle={closeChat}
+                    onClose={closeChat}
+                    onToggleFullscreen={minimizeChat}
+                  />
+                </div>
+              )}
+              <div
+                className={cn(
+                  "relative flex min-h-0 min-w-0 flex-1 flex-col",
+                  homeOpen && "hidden",
+                )}
+              >
                 <WorkspaceHeader
                   onShowChat={() => setChatVisible(true)}
                   onProjectChange={setProjectId}
@@ -215,85 +230,88 @@ export default function App() {
                   onOpenNav={() => setMobileNavOpen(true)}
                   onOpenChat={() => setChatVisible(!chatRequested)}
                 />
-                <main
-                  className={cn(
-                    "relative flex-1 min-w-0 min-h-0",
-                    fullBleed ? "overflow-hidden" : "overflow-y-auto",
-                  )}
-                >
-                  <div
+                {!homeOpen && (
+                  <main
                     className={cn(
-                      fullBleed
-                        ? "absolute inset-0 flex"
-                        : "p-4 md:p-6 lg:p-8 min-h-full flex flex-col",
+                      "relative flex-1 min-w-0 min-h-0",
+                      fullBleed ? "overflow-hidden" : "overflow-y-auto",
                     )}
                   >
-                    <Suspense
-                      fallback={
-                        <div role="status" className="p-6 text-sm text-outline">
-                          Loading workspace…
-                        </div>
-                      }
+                    <div
+                      className={cn(
+                        fullBleed
+                          ? "absolute inset-0 flex"
+                          : "p-4 md:p-6 lg:p-8 min-h-full flex flex-col",
+                      )}
                     >
-                      <Routes>
-                        <Route path="/" element={<DefaultWorkspaceRedirect />} />
-                        <Route path="/activity" element={<Dashboard projectId={projectId} />} />
-                        <Route path="/attention" element={<Attention />} />
-                        <Route path="/overview" element={<LegacyActivityRedirect />} />
-                        <Route path="/dashboard" element={<LegacyActivityRedirect />} />
-                        <Route path="/tasks" element={<Tasks projectId={projectId} />} />
-                        <Route path="/tasks/:taskId" element={<Tasks projectId={projectId} />} />
-                        <Route path="/terminals" element={<Terminals />} />
-                        <Route path="/terminals/:terminalId" element={<Terminals />} />
-                        <Route path="/jobs" element={<Jobs projectId={projectId} />} />
-                        <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
-                        <Route path="/webhooks" element={<Webhooks projectId={projectId} />} />
-                        <Route path="/sessions" element={<Sessions projectId={projectId} />} />
-                        <Route path="/audit" element={<Audit projectId={projectId} />} />
-                        <Route path="/audit/:sessionId" element={<Audit projectId={projectId} />} />
-                        <Route path="/projects" element={<Projects />} />
-                        <Route path="/projects/:projectId" element={<Projects />} />
-                        <Route path="/knowledge" element={<KnowledgeRedirect />} />
-                        <Route
-                          path="/knowledge/base"
-                          element={<Knowledge projectId={projectId} />}
-                        />
-                        <Route
-                          path="/knowledge/memories"
-                          element={<Knowledge projectId={projectId} />}
-                        />
-                        <Route
-                          path="/knowledge/memories/:memoryProject/:memoryName"
-                          element={<Knowledge projectId={projectId} />}
-                        />
-                        <Route path="/skills" element={<Skills projectId={projectId} />} />
-                        <Route
-                          path="/skills/:skillName"
-                          element={<Skills projectId={projectId} />}
-                        />
-                        <Route path="/agents" element={<LegacyAgentsRedirect />} />
-                        <Route path="/agents/:agentId" element={<LegacyAgentsRedirect />} />
-                        <Route path="/packages" element={<Packages />} />
-                        <Route path="/packages/item" element={<Packages />} />
-                        <Route path="/packages/item/:packageName" element={<Packages />} />
-                        <Route path="/packages/agents" element={<Agents />} />
-                        <Route path="/packages/agents/:agentId" element={<Agents />} />
-                        <Route path="/settings" element={<Settings />} />
-                        <Route
-                          path="/integrations/oauth/:name/callback"
-                          element={<IntegrationCallback />}
-                        />
-                        <Route path="/rules" element={<Rules />} />
-                        <Route path="/scratchpad" element={<Scratchpads projectId={projectId} />} />
-                        <Route
-                          path="/scratchpad/:scratchpadId"
-                          element={<Scratchpads projectId={projectId} />}
-                        />
-                        <Route path="*" element={<Navigate to="/activity" replace />} />
-                      </Routes>
-                    </Suspense>
-                  </div>
-                </main>
+                      <Suspense
+                        fallback={
+                          <div role="status" className="p-6 text-sm text-outline">
+                            Loading workspace…
+                          </div>
+                        }
+                      >
+                        <Routes>
+                          <Route path="/" element={<DefaultWorkspaceRedirect />} />
+                          <Route path="/activity" element={<Dashboard projectId={projectId} />} />
+                          <Route path="/tasks" element={<Tasks projectId={projectId} />} />
+                          <Route path="/tasks/:taskId" element={<Tasks projectId={projectId} />} />
+                          <Route path="/terminals" element={<Terminals />} />
+                          <Route path="/terminals/:terminalId" element={<Terminals />} />
+                          <Route path="/jobs" element={<Jobs projectId={projectId} />} />
+                          <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
+                          <Route path="/webhooks" element={<Webhooks projectId={projectId} />} />
+                          <Route path="/sessions" element={<Sessions projectId={projectId} />} />
+                          <Route path="/audit" element={<Audit projectId={projectId} />} />
+                          <Route
+                            path="/audit/:sessionId"
+                            element={<Audit projectId={projectId} />}
+                          />
+                          <Route path="/projects" element={<Projects />} />
+                          <Route path="/projects/:projectId" element={<Projects />} />
+                          <Route path="/knowledge" element={<KnowledgeRedirect />} />
+                          <Route
+                            path="/knowledge/base"
+                            element={<Knowledge projectId={projectId} />}
+                          />
+                          <Route
+                            path="/knowledge/memories"
+                            element={<Knowledge projectId={projectId} />}
+                          />
+                          <Route
+                            path="/knowledge/memories/:memoryProject/:memoryName"
+                            element={<Knowledge projectId={projectId} />}
+                          />
+                          <Route path="/skills" element={<Skills projectId={projectId} />} />
+                          <Route
+                            path="/skills/:skillName"
+                            element={<Skills projectId={projectId} />}
+                          />
+                          <Route path="/packages" element={<Packages />} />
+                          <Route path="/packages/item" element={<Packages />} />
+                          <Route path="/packages/item/:packageName" element={<Packages />} />
+                          <Route path="/packages/agents" element={<Agents />} />
+                          <Route path="/packages/agents/:agentId" element={<Agents />} />
+                          <Route path="/settings" element={<Settings />} />
+                          <Route
+                            path="/integrations/oauth/:name/callback"
+                            element={<IntegrationCallback />}
+                          />
+                          <Route path="/rules" element={<Rules />} />
+                          <Route
+                            path="/scratchpad"
+                            element={<Scratchpads projectId={projectId} />}
+                          />
+                          <Route
+                            path="/scratchpad/:scratchpadId"
+                            element={<Scratchpads projectId={projectId} />}
+                          />
+                          <Route path="*" element={<Navigate to="/activity" replace />} />
+                        </Routes>
+                      </Suspense>
+                    </div>
+                  </main>
+                )}
               </div>
 
               <div className={cn("hidden xl:flex", !chatOpen && "xl:hidden")}>
@@ -335,10 +353,7 @@ export default function App() {
             </Dialog.Root>
 
             {/* Mobile chat sheet (full-screen on mobile). */}
-            <Dialog.Root
-              open={mobileChatOpen}
-              onOpenChange={(open) => setChatVisible(open, chatFullscreen)}
-            >
+            <Dialog.Root open={mobileChatOpen} onOpenChange={(open) => setChatVisible(open)}>
               <Dialog.Portal>
                 <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
                 <Dialog.Content
@@ -362,9 +377,8 @@ export default function App() {
                     open
                     onToggle={() => setChatVisible(false)}
                     embedded
-                    onClose={() => setChatVisible(false)}
-                    fullscreen={chatFullscreen}
-                    onToggleFullscreen={() => setChatVisible(true, !chatFullscreen)}
+                    onClose={closeChat}
+                    onToggleFullscreen={() => setChatVisible(true, true)}
                   />
                 </Dialog.Content>
               </Dialog.Portal>

@@ -6,6 +6,13 @@ import { ChatSettingsSchema } from "@orc/core/chat";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { expect, test } from "@playwright/test";
 import {
+  browseWorkspace,
+  closeWorkspaceFolder,
+  openWorkspaceFolder,
+  setWorkspaceFolder,
+  setWorkspaceWorktree,
+} from "./_chat-ui";
+import {
   API_SECRET,
   apiGet,
   apiPost,
@@ -31,7 +38,7 @@ test("should edit and run a masked command from Attention after reload", async (
       arguments: [{ name: "PASSWORD", label: "Service password" }],
     },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   await page.reload();
   const card = page.getByTestId(`attention-request-${entry.id}`);
   await reviewAttentionRequest(card);
@@ -122,22 +129,19 @@ test("should share recent folders and last selection between chat and terminal, 
   );
   await page.goto("/");
   await page.getByTestId("chat-open-button").click();
-  await page.getByTestId("chat-workspace-host").click();
-  await page.getByTestId("chat-workspace-host-option").filter({ hasText: "Local" }).click();
-  await page.getByTestId("chat-workspace-recent").click();
-  await page.getByTestId("chat-workspace-cwd").fill(cwd);
-  await page.getByTestId("chat-workspace-apply").click();
+  await setWorkspaceFolder(page, cwd);
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute("title", `Local: ${cwd}`);
   // Exercise the native chooser contract without opening an OS dialog in CI.
   await page.route("**/api/terminals/pick-folder", (route) => {
     expect(route.request().postDataJSON()).toEqual({ initial: cwd, host: null });
     return route.fulfill({ json: { path: cwd } });
   });
-  await page.getByTestId("chat-workspace-browse").click();
-  await page.getByTestId("chat-workspace-recent").click();
+  await browseWorkspace(page);
+  await openWorkspaceFolder(page);
   await expect(page.getByTestId("chat-workspace-recent-option")).toContainText([cwd]);
-  await page.keyboard.press("Escape");
+  await closeWorkspaceFolder(page);
   await page.reload();
-  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute("title", `Local: ${cwd}`);
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute("title", `Local: ${cwd}`);
   await gotoView(page, "terminals");
   await page.getByTestId("terminal-new").click();
   await page.getByTestId("terminal-host-select").selectOption("");
@@ -154,10 +158,9 @@ test("should share recent folders and last selection between chat and terminal, 
   await page.keyboard.press("Escape");
   const open = page.getByTestId("chat-open-button");
   if (await open.isVisible()) await open.click();
-  await page.getByTestId("chat-workspace-recent").click();
+  await openWorkspaceFolder(page);
   await page.getByTestId("chat-workspace-recent-option").filter({ hasText: cwd }).last().click();
-  await page.getByTestId("chat-workspace-worktree").click();
-  await expect(page.getByTestId("chat-workspace-worktree")).toHaveAttribute("aria-pressed", "true");
+  await setWorkspaceWorktree(page, true);
   await page.screenshot({ path: "/tmp/orc-chat-worktree.png", fullPage: true });
   const response = page.waitForResponse(
     (response) =>
@@ -178,7 +181,7 @@ test("should share recent folders and last selection between chat and terminal, 
   await expect(page.getByTestId("chat-workspace")).toHaveCount(0);
 });
 
-test("should collapse consecutive tools while retaining their input, results and separators", async ({
+test("should fold a turn's tools while retaining their input, results and separators", async ({
   page,
 }) => {
   const id = crypto.randomUUID();
@@ -230,16 +233,19 @@ test("should collapse consecutive tools while retaining their input, results and
     API_SECRET,
   );
   await page.goto(`/tasks?chat=open&chatThread=${id}`);
-  const group = page.getByTestId("chat-tool-group");
+  const group = page.getByTestId("chat-turn-fold");
+  const summary = page.getByTestId("chat-turn-fold-summary");
   await expect(group).toHaveCount(1);
   await expect(group).not.toHaveAttribute("open", "");
-  await expect(group.locator("summary").first()).toContainText("2 tool calls");
-  await expect(group.locator("summary").first()).toContainText("1 failed");
-  await group.locator("summary").first().click();
-  await expect(group.getByTestId("chat-tool")).toHaveCount(2);
+  await expect(page.getByTestId("chat-turn-fold-label")).toHaveText("Worked · 3 tools");
+  await expect(summary).toContainText("1 failed");
+  await summary.click();
+  await expect(group.getByTestId("chat-tool")).toHaveCount(3);
+  await expect(group.getByText("Next step")).toBeVisible();
   await group.getByTestId("chat-tool").first().locator("summary").click();
   await expect(group.getByTestId("chat-tool").first()).toContainText("first input");
   await expect(group.getByTestId("chat-tool").first()).toContainText("first result");
+  await expect(group.getByTestId("chat-tool").nth(1)).toContainText("Failed");
   await expect(page.getByTestId("chat-tool").last()).toBeVisible();
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });

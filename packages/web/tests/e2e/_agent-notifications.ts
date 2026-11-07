@@ -1,4 +1,5 @@
 import { type HumanRequest, HumanRequestSchema } from "@orc/core/human-requests";
+import type { OrcNotification } from "@orc/core/notifications";
 import type { Page } from "@playwright/test";
 import { API_SECRET } from "./_helpers";
 
@@ -66,6 +67,48 @@ export type ScenarioState = {
 /** Mocks every source the notifier reads and counts synthesized chime notes. */
 export async function notificationScenario(page: Page, initial: ScenarioState) {
   const state = { ...initial };
+  const notifications = new Map<string, OrcNotification>();
+  const snapshot = () => {
+    for (const request of state.requests) {
+      const id = `notification-${request.id}`;
+      const previous = notifications.get(id);
+      notifications.set(id, {
+        id,
+        type: "human.request",
+        source_id: request.id,
+        title: request.input.title || "Human request",
+        body: request.input.origin.session_title || "",
+        level: "needs-you",
+        project_id: null,
+        path: `/activity?notifications=open&request=${request.id}`,
+        requires_action: request.status === "pending",
+        created_at: now,
+        expires_at: now + 30 * 86400000,
+        read_at: previous?.read_at ?? null,
+        dismissed_at: previous?.dismissed_at ?? null,
+      });
+    }
+    for (const session of state.sessions.filter((session) => session.status === "idle")) {
+      const id = `notification-${session.id}`;
+      if (!notifications.has(id))
+        notifications.set(id, {
+          id,
+          type: "agent.finished",
+          source_id: session.id,
+          title: session.name,
+          body: "The agent finished its turn.",
+          level: "done",
+          project_id: null,
+          path: `/sessions?session=${session.id}&project=all`,
+          requires_action: false,
+          created_at: now,
+          expires_at: now + 30 * 86400000,
+          read_at: null,
+          dismissed_at: null,
+        });
+    }
+    return [...notifications.values()].filter((item) => !item.dismissed_at);
+  };
   const responses: Array<{ id: string; body: unknown }> = [];
   await page.addInitScript((secret) => {
     localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
@@ -108,6 +151,25 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
     route.fulfill({ json: { models: [], warning: null } }),
   );
   await page.route("**/api/chat/waiting", (route) => route.fulfill({ json: { waiting: [] } }));
+  await page.route("**/api/notifications?**", (route) => {
+    const notifications = snapshot();
+    return route.fulfill({
+      json: {
+        notifications,
+        unread: notifications.filter((item) => !item.read_at).length,
+        has_more: false,
+      },
+    });
+  });
+  await page.route("**/api/notifications/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1) ?? "";
+    const item = notifications.get(id);
+    if (!item) return route.fulfill({ status: 404, json: { error: "Unknown notification" } });
+    const update = route.request().postDataJSON();
+    if (update.read !== undefined) item.read_at = update.read ? now : null;
+    if (update.dismissed !== undefined) item.dismissed_at = update.dismissed ? now : null;
+    return route.fulfill({ json: item });
+  });
   await page.route("**/api/sessions/live?**", (route) =>
     route.fulfill({
       json: { sessions: state.sessions, total: state.sessions.length, has_more: false },
@@ -119,6 +181,10 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
   await page.route("**/api/human-requests", (route) =>
     route.fulfill({ json: state.requests.filter((request) => request.status === "pending") }),
   );
+  await page.route("**/api/human-requests/*/view", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-2);
+    return route.fulfill({ json: state.requests.find((item) => item.id === id) });
+  });
   await page.route("**/api/human-requests/*/respond", (route) => {
     const id = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
     const body = route.request().postDataJSON() as { version: number };
@@ -143,7 +209,7 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
 /** Waits for the first snapshot of every notifier source so later changes are real changes. */
 export function sourcesLoaded(page: Page) {
   return Promise.all(
-    ["/api/human-requests", "/api/chat/waiting", "/api/sessions/live?"].map((path) =>
+    ["/api/human-requests", "/api/notifications?", "/api/sessions/live?"].map((path) =>
       page.waitForResponse((response) => response.url().includes(path)),
     ),
   );

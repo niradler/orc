@@ -1,6 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { createRoute, z } from "@hono/zod-openapi";
-import { ConflictError, NotFoundError } from "@orc/core/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import {
+  GithubSyncConfigSchema,
+  GithubSyncStateSchema,
+  githubRepository,
+} from "@orc/core/github-sync";
 import { ulid } from "@orc/core/ids";
 import { UploadDirectorySchema } from "@orc/core/session-file-types";
 import { getDb } from "@orc/db/client";
@@ -56,6 +61,8 @@ const ProjectSchema = z
     status: z.enum(["active", "archived", "paused"]),
     scope: z.string().nullable(),
     git_remote_url: z.string().nullable(),
+    github_sync: GithubSyncConfigSchema.nullable(),
+    github_sync_state: GithubSyncStateSchema.nullable(),
     tags: z.array(z.string()).nullable(),
     obsidian_path: z.string().nullable(),
     max_workers: z.number().int().nullable(),
@@ -76,6 +83,7 @@ const CreateProjectSchema = z
     status: z.enum(["active", "archived", "paused"]).optional().default("active"),
     scope: z.string().optional(),
     git_remote_url: GitRemoteUrlSchema.optional(),
+    github_sync: GithubSyncConfigSchema.nullable().optional(),
     tags: z.array(z.string()).optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).optional(),
@@ -95,6 +103,7 @@ const UpdateProjectSchema = z
     status: z.enum(["active", "archived", "paused"]).optional(),
     scope: z.string().nullable().optional(),
     git_remote_url: GitRemoteUrlSchema.optional(),
+    github_sync: GithubSyncConfigSchema.nullable().optional(),
     tags: z.array(z.string()).nullable().optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).nullable().optional(),
@@ -248,6 +257,12 @@ function rawToDto(row: Record<string, unknown>) {
   return {
     ...row,
     tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    github_sync:
+      typeof row.github_sync === "string" ? JSON.parse(row.github_sync) : row.github_sync,
+    github_sync_state:
+      typeof row.github_sync_state === "string"
+        ? JSON.parse(row.github_sync_state)
+        : row.github_sync_state,
     created_at: new Date((row.created_at as number) * 1000).toISOString(),
     updated_at: new Date((row.updated_at as number) * 1000).toISOString(),
   };
@@ -360,6 +375,8 @@ app.openapi(getRoute, async (c) => {
 app.openapi(createRoute_, async (c) => {
   const db = getDb();
   const body = c.req.valid("json");
+  if (body.github_sync?.enabled && !githubRepository(body.git_remote_url))
+    throw new ValidationError("Issue sync requires a github.com repository URL");
   const now = new Date();
   const id = ulid();
 
@@ -370,6 +387,7 @@ app.openapi(createRoute_, async (c) => {
     status: body.status,
     scope: body.scope,
     git_remote_url: body.git_remote_url,
+    github_sync: body.github_sync,
     tags: body.tags,
     obsidian_path: body.obsidian_path,
     max_workers: body.max_workers,
@@ -395,6 +413,14 @@ app.openapi(updateRoute, async (c) => {
   });
   if (!existing) throw new NotFoundError("Project", id);
 
+  const nextSync = body.github_sync === undefined ? existing.github_sync : body.github_sync;
+  const nextRemote =
+    body.git_remote_url === undefined ? existing.git_remote_url : body.git_remote_url;
+  if (nextSync?.enabled && !githubRepository(nextRemote))
+    throw new ValidationError("Issue sync requires a github.com repository URL");
+  const syncChanged =
+    JSON.stringify(nextSync) !== JSON.stringify(existing.github_sync) ||
+    nextRemote !== existing.git_remote_url;
   await db
     .update(projects)
     .set({
@@ -403,6 +429,8 @@ app.openapi(updateRoute, async (c) => {
       ...(body.status !== undefined ? { status: body.status } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
       ...(body.git_remote_url !== undefined ? { git_remote_url: body.git_remote_url } : {}),
+      ...(body.github_sync !== undefined ? { github_sync: body.github_sync } : {}),
+      ...(syncChanged ? { github_sync_state: null } : {}),
       ...(body.tags !== undefined ? { tags: body.tags } : {}),
       ...(body.obsidian_path !== undefined ? { obsidian_path: body.obsidian_path } : {}),
       ...(body.max_workers !== undefined ? { max_workers: body.max_workers } : {}),

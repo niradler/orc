@@ -1,13 +1,24 @@
 import { expect, type Page } from "@playwright/test";
 
+export async function openChatAgentModel(page: Page): Promise<void> {
+  if (!(await page.getByTestId("chat-agent-model-picker").isVisible()))
+    await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+  await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+}
+
 export async function chooseChatAgent(page: Page, agent: string): Promise<void> {
-  await page.getByTestId("chat-agent-button").filter({ visible: true }).click();
-  await page.getByTestId(`chat-agent-option-${agent}`).click();
+  await openChatAgentModel(page);
+  const option = page.getByTestId(`chat-agent-option-${agent}`);
+  await option.click();
+  if (await page.getByTestId("chat-agent-model-picker").isVisible()) {
+    await expect(option).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+  }
+  await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
 }
 
 export async function openChatModel(page: Page): Promise<void> {
-  if (!(await page.getByTestId("chat-model-select").isVisible()))
-    await page.getByTestId("chat-model-button").filter({ visible: true }).click();
+  await openChatAgentModel(page);
   await expect(page.getByTestId("chat-model-select")).toBeVisible();
 }
 
@@ -15,6 +26,43 @@ export async function chooseChatModel(page: Page, model: string): Promise<void> 
   await openChatModel(page);
   await page.getByTestId(`chat-model-option-${model}`).click();
   await expect(page.getByTestId("chat-model-select")).toBeHidden();
+}
+
+export async function openWorkspaceFolder(page: Page): Promise<void> {
+  if (!(await page.getByTestId("chat-workspace-folder-picker").isVisible()))
+    await page.getByTestId("chat-workspace-folder").filter({ visible: true }).click();
+  await expect(page.getByTestId("chat-workspace-folder-picker")).toBeVisible();
+}
+
+export async function closeWorkspaceFolder(page: Page): Promise<void> {
+  if (await page.getByTestId("chat-workspace-folder-picker").isVisible())
+    await page.keyboard.press("Escape");
+  await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
+}
+
+export async function chooseWorkspaceHost(page: Page, host: string): Promise<void> {
+  await openWorkspaceFolder(page);
+  await page.getByTestId("chat-workspace-host-option").filter({ hasText: host }).click();
+  await closeWorkspaceFolder(page);
+}
+
+export async function setWorkspaceFolder(page: Page, cwd: string): Promise<void> {
+  await openWorkspaceFolder(page);
+  await page.getByTestId("chat-workspace-cwd").fill(cwd);
+  await page.getByTestId("chat-workspace-apply").click();
+  await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
+}
+
+export async function browseWorkspace(page: Page): Promise<void> {
+  await openWorkspaceFolder(page);
+  await page.getByTestId("chat-workspace-browse").click();
+}
+
+export async function setWorkspaceWorktree(page: Page, worktree: boolean): Promise<void> {
+  const branch = page.getByTestId("chat-workspace-branch");
+  await branch.click();
+  await page.getByTestId(worktree ? "chat-workspace-worktree" : "chat-workspace-checkout").click();
+  await expect(branch).toHaveAttribute("data-worktree", String(worktree));
 }
 
 export async function openChatActions(page: Page): Promise<void> {

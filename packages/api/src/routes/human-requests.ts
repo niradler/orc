@@ -41,7 +41,7 @@ app.openapi(
     tags: ["Human requests"],
     responses: {
       200: {
-        description: "Attention needed: pending requests and undelivered answers",
+        description: "Notifications: pending requests and undelivered answers",
         content: { "application/json": { schema: z.array(HumanRequestSchema) } },
       },
     },
@@ -99,6 +99,18 @@ app.openapi(
     if (owner) store().responseFetched(id, owner);
     return c.json(current(id), 200);
   },
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/human-requests/{id}/view",
+    tags: ["Human requests"],
+    summary: "View request details without acknowledging that its agent read the response",
+    request: { params },
+    responses: response,
+  }),
+  (c) => c.json(current(c.req.valid("param").id), 200),
 );
 
 app.openapi(

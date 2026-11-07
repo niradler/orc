@@ -16,23 +16,31 @@ for (const [width, height, theme] of [
     await request.patch("/api/settings", { headers: AUTH_HEADERS, data: { theme } });
     const state = await attentionState(page);
     await page.setViewportSize({ width, height });
-    await gotoView(page, "attention");
+    await gotoView(page, "notifications");
     const card = (id: string) => page.getByTestId(`attention-request-${id}`);
     const choice = card("choice"),
       free = card("free"),
       multi = card("multi");
-    await expect(page.getByTestId("view-title")).toHaveText("Attention needed");
     await expect(
-      page.getByTestId("attention-chat-70000000-0000-4000-8000-000000000001"),
+      page.getByTestId("notification-menu").getByRole("heading", { name: "Notifications" }),
     ).toBeVisible();
-    await expect(page.getByTestId("attention-session-observed-session")).toBeVisible();
+    await expect(
+      page.locator(
+        '[data-testid="notification-item"][data-source-id="70000000-0000-4000-8000-000000000001"]',
+      ),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="notification-item"][data-source-id="observed-session"]'),
+    ).toBeVisible();
     await expect(choice.getByTestId("attention-answer")).not.toBeVisible();
     await expect(multi.getByTestId("attention-answer")).not.toBeVisible();
     await expect(free.getByTestId("attention-answer")).not.toBeVisible();
     await reviewAttentionRequest(free);
     await expect(free.getByTestId("attention-answer")).toBeVisible();
     await expect(page.getByTestId("attention-answer").filter({ visible: true })).toHaveCount(1);
+    await reviewAttentionRequest(choice);
     await expect(choice.getByTestId("attention-send")).toBeDisabled();
+    await reviewAttentionRequest(card("delivery"));
     await expect(card("delivery")).toContainText(
       "The agent disconnected before the answer was delivered.",
     );
@@ -163,7 +171,7 @@ test("attention keeps the exact approval and failures visible while decisions an
     input: { ...approval.input, prompt: "Allow the agent to inspect package metadata?" },
   });
   const state = await attentionState(page, initial);
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId("attention-request-approval");
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-action")).toContainText(
@@ -214,7 +222,7 @@ test("attention keeps the exact approval and failures visible while decisions an
   await cancelled.getByTestId("attention-cancel").click();
   await expect(cancelled.getByRole("alert")).toContainText("The request could not be cancelled.");
   await cancelled.getByTestId("attention-cancel").click();
-  await expect(cancelled).toHaveCount(0);
+  await expect(cancelled).toContainText("Cancelled");
   expect(state.calls.slice(3)).toEqual([
     { id: "free", operation: "cancel", body: { version: 3 } },
     { id: "free", operation: "cancel", body: { version: 3 } },
@@ -225,7 +233,7 @@ test("attention custom reply disclosure works with the keyboard and preserves an
   page,
 }) => {
   const state = await attentionState(page);
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId("attention-request-choice"),
     toggle = card.getByTestId("attention-edit-answer");
   await reviewAttentionRequest(card);
@@ -252,8 +260,8 @@ test("attention responds to its available pane width and keeps an unsent draft w
     route.fulfill({ json: { models: [], warning: null } }),
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await gotoView(page, "attention");
-  const view = page.getByTestId("attention-view"),
+  await gotoView(page, "notifications");
+  const view = page.getByTestId("notification-menu"),
     card = page.getByTestId("attention-request-choice");
   await reviewAttentionRequest(card);
   await card.getByTestId("attention-edit-answer").click();
@@ -272,15 +280,18 @@ test("attention responds to its available pane width and keeps an unsent draft w
         overflow: element.scrollWidth > element.clientWidth,
       };
     });
-  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(896);
+  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(400);
   const wide = await layout();
   expect(wide.width).toBeGreaterThan(200);
   expect(wide.contained).toBe(true);
+  await page.getByRole("button", { name: "Close notifications", exact: true }).click();
   await page.getByTestId("chat-open-button").click();
   await expect(page.getByTestId("chat-input")).toBeVisible();
-  for (let step = 0; step < 16; step++)
-    await page.getByTestId("chat-panel-resize").press("ArrowLeft");
-  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeLessThan(896);
+  await expect(page.getByTestId("notification-menu")).toHaveCount(0);
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.getByTestId("mobile-chat-sheet").getByTestId("notification-bell").click();
+  await reviewAttentionRequest(card);
+  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeLessThan(320);
   const narrow = await layout();
   expect(narrow.width).toBeGreaterThan(0);
   expect(narrow.width).toBeLessThan(wide.width);
@@ -293,8 +304,8 @@ test("attention responds to its available pane width and keeps an unsent draft w
     path: info.outputPath("attention-1440-narrow-pane.png"),
     animations: "disabled",
   });
-  await page.getByTestId("chat-close-button").click();
-  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(896);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(400);
   const restored = await layout();
   expect(Math.abs(restored.width - wide.width)).toBeLessThan(2);
   expect(restored.contained).toBe(true);

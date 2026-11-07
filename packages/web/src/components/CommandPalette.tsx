@@ -10,7 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useProjects } from "@/hooks/useProjects";
-import { commandMatches, searchHitPath } from "@/lib/command-palette";
+import { useSessionJump } from "@/hooks/useSessionJump";
+import {
+  commandMatches,
+  isJumpShortcut,
+  JUMP_SHORTCUT,
+  STATE_FILTER_COMMANDS,
+  searchHitPath,
+} from "@/lib/command-palette";
 import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { TERMINAL_PALETTE_EVENT, type TerminalPaletteRequest } from "@/lib/terminal-palette";
 import { terminalStatus } from "@/lib/terminal-presentation";
@@ -26,6 +33,7 @@ type Entry = {
   tooltip?: string;
   group: string;
   run: () => void;
+  shortcut?: string;
 };
 const FILTERS = [
   "All",
@@ -82,6 +90,8 @@ export function CommandPalette({
   const recentTerminals = useRef<string[]>([]);
   const scope = scoped && projectId !== "all" ? projectId : undefined;
   const { data: projects } = useProjects({ status: "active" });
+  const sessionJump = useSessionJump({ projectId, onOpenChat });
+  const { jump } = sessionJump;
   const ssh = useQuery({
     queryKey: ["ssh"],
     queryFn: () => api.ssh.get(),
@@ -151,6 +161,24 @@ export function CommandPalette({
       window.removeEventListener("keydown", onKey);
     };
   }, [open, changeOpen]);
+  useEffect(() => {
+    const onJump = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.repeat || !isJumpShortcut(event))
+        return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.closest('input, textarea, select, [data-testid="terminal-viewport"]'))
+      )
+        return;
+      if (document.querySelector('[role="dialog"]')) return;
+      event.preventDefault();
+      jump();
+    };
+    window.addEventListener("keydown", onJump);
+    return () => window.removeEventListener("keydown", onJump);
+  }, [jump]);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 220);
     return () => window.clearTimeout(timer);
@@ -239,12 +267,13 @@ export function CommandPalette({
     group: string,
     run: () => void,
     keywords = "",
+    shortcut?: string,
   ) => {
     if (
       (filter === "All" || filter === group || (filter === "Actions" && group === "Navigation")) &&
       commandMatches(title, `${detail} ${keywords}`, query)
     )
-      entries.push({ id, title, detail, group, run });
+      entries.push({ id, title, detail, group, run, shortcut });
   };
   add(
     "new-task",
@@ -290,9 +319,30 @@ export function CommandPalette({
     "ask assistant",
   );
   add(
+    "next-needs-you",
+    "Next session that needs you",
+    sessionJump.needsYou
+      ? `${sessionJump.needsYou} waiting for your answer or approval`
+      : "Nothing needs you right now",
+    "Actions",
+    () => jump(),
+    "jump attention waiting approval question failed",
+    JUMP_SHORTCUT.label,
+  );
+  add(
+    "next-done",
+    "Next done session",
+    sessionJump.done
+      ? `${sessionJump.done} finished and not seen yet`
+      : "No unseen finished sessions",
+    "Actions",
+    () => jump("done"),
+    "jump finished unread unseen",
+  );
+  add(
     "notifications",
-    "Focus notifications",
-    `Jump to agent toasts (${NOTIFICATIONS_SHORTCUT})`,
+    "Open notifications",
+    `Open the notification menu (${NOTIFICATIONS_SHORTCUT})`,
     "Actions",
     () => {
       focusNotifications.current = true;
@@ -317,6 +367,15 @@ export function CommandPalette({
     },
     "reload sync",
   );
+  for (const command of STATE_FILTER_COMMANDS)
+    add(
+      command.id,
+      command.title,
+      "Filter agent sessions by state",
+      "Sessions",
+      () => go(command.path),
+      "filter state needs you working done",
+    );
   for (const section of WORKSPACE_SECTIONS)
     for (const page of section.pages)
       add(`nav-${page.id}`, `Go to ${page.label}`, section.label, "Navigation", () =>
@@ -596,6 +655,11 @@ export function CommandPalette({
                     <div className="truncate text-sm text-on-surface">{entry.title}</div>
                     <div className="truncate text-xs text-outline">{entry.detail}</div>
                   </div>
+                  {entry.shortcut && (
+                    <kbd className="hidden shrink-0 text-xs text-outline sm:inline">
+                      {entry.shortcut}
+                    </kbd>
+                  )}
                   {index === selected && (
                     <ArrowUpRight aria-hidden className="size-4 shrink-0 text-outline" />
                   )}

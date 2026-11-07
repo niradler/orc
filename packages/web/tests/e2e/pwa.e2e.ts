@@ -17,8 +17,16 @@ test("serves an installable manifest and public PWA files without auth", async (
   expect((await request.get("/badge-96.png")).status()).toBe(200);
 });
 
+test("manifest link sends credentials so auth proxies let it through", async ({ page }) => {
+  await gotoView(page, "activity");
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    "crossorigin",
+    "use-credentials",
+  );
+});
+
 test("service worker controls the app and serves the shell offline", async ({ page, context }) => {
-  await gotoView(page, "dashboard");
+  await gotoView(page, "activity");
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await expect
@@ -37,7 +45,7 @@ test("service worker controls the app and serves the shell offline", async ({ pa
 type Shown = { title: string; tag: string; url: string };
 
 test("push messages notify only when ORC is not focused", async ({ page, context }) => {
-  await gotoView(page, "dashboard");
+  await gotoView(page, "activity");
   await page.evaluate(() => navigator.serviceWorker.ready);
   const origin = new URL(page.url()).origin;
   const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
@@ -65,7 +73,12 @@ test("push messages notify only when ORC is not focused", async ({ page, context
     cdp.send("ServiceWorker.deliverPushMessage", {
       origin,
       registrationId,
-      data: JSON.stringify({ title: "Approval needed", body: "Run it?", url: "/attention", tag }),
+      data: JSON.stringify({
+        title: "Approval needed",
+        body: "Run it?",
+        url: "/activity?notifications=open",
+        tag,
+      }),
     });
   const shown = () =>
     worker.evaluate(() => (self as unknown as { shown: Shown[] }).shown.map((entry) => entry.tag));
@@ -77,7 +90,7 @@ test("push messages notify only when ORC is not focused", async ({ page, context
   expect(await worker.evaluate(() => (self as unknown as { shown: Shown[] }).shown[0])).toEqual({
     title: "Approval needed",
     tag: "while-away",
-    url: "/attention",
+    url: "/activity?notifications=open",
   });
 });
 

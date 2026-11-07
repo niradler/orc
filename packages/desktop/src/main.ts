@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { configuredApiSecret, globalConfigPath } from "@orc/core/config";
+import { daemonHome } from "@orc/core/daemon-runtime";
 import {
   app,
   BrowserWindow,
@@ -15,6 +17,7 @@ import {
   shell,
   Tray,
 } from "electron";
+import { loadDesktopConfig, saveDesktopConnection } from "./connection.js";
 import { type Daemon, ensureDaemon } from "./daemon.js";
 import {
   NOTIFY_CHANNEL,
@@ -24,38 +27,9 @@ import {
 } from "./notify.js";
 import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
 
-type OrcConfig = { api?: { port?: number; secret?: string } };
-
-const orcDir = join(homedir(), ".orc");
-const configPath = join(orcDir, "config.json");
+const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
 const QUIT_FLAG = "--quit";
-
-function readConfig(): OrcConfig {
-  try {
-    return JSON.parse(readFileSync(configPath, "utf-8")) as OrcConfig;
-  } catch {
-    return {};
-  }
-}
-
-function configuredPort(): number {
-  if (process.env.ORC_API_PORT) return Number(process.env.ORC_API_PORT);
-  return readConfig().api?.port ?? 7700;
-}
-
-function configuredSecret(): string | undefined {
-  return process.env.ORC_API_SECRET || readConfig().api?.secret || undefined;
-}
-
-function persistSecret(secret: string): void {
-  const config = readConfig();
-  config.api = { ...config.api, secret };
-  mkdirSync(orcDir, { recursive: true });
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
-    mode: 0o600,
-  });
-}
 
 function injectSecret(origin: string, secret: string): void {
   const host = new URL(origin).host;
@@ -131,6 +105,7 @@ let win: BrowserWindow | null = null;
 let quitting = false;
 let recovering = false;
 let tray: Tray | null = null;
+let daemonStopped = false;
 
 function openWindow(url: string): void {
   const origin = new URL(url).origin;
@@ -185,15 +160,24 @@ function openWindow(url: string): void {
 }
 
 async function bringUp(): Promise<Daemon> {
-  const configured = configuredSecret();
+  const config = loadDesktopConfig();
+  const configured = configuredApiSecret(config.api.secret);
   const generated = configured ? undefined : randomBytes(24).toString("hex");
   const up = await ensureDaemon({
-    port: configuredPort(),
+    port: config.api.port,
+    dbPath: config.db.path,
+    configPath: globalConfigPath(),
+    version: app.getVersion(),
     bin: orcBin(),
     logFile: join(orcDir, "desktop-daemon.log"),
-    ...(generated ? { secret: generated } : {}),
+    secret: configured ?? generated ?? "",
   });
-  if (generated && up.owned) persistSecret(generated);
+  try {
+    saveDesktopConnection(config, up, generated);
+  } catch (error) {
+    await up.stop();
+    throw error;
+  }
   const secret = configured ?? (up.owned ? generated : undefined);
   if (secret) injectSecret(up.url, secret);
   up.onExit(() => {
@@ -203,7 +187,7 @@ async function bringUp(): Promise<Daemon> {
   return up;
 }
 
-async function recover(reason: string): Promise<void> {
+async function recover(reason: string, open = true): Promise<void> {
   if (recovering) return;
   recovering = true;
   let message = reason;
@@ -217,6 +201,7 @@ async function recover(reason: string): Promise<void> {
       cancelId: 1,
     });
     if (response === 1) {
+      quitting = true;
       recovering = false;
       app.quit();
       return;
@@ -225,7 +210,7 @@ async function recover(reason: string): Promise<void> {
       const up = await bringUp();
       recovering = false;
       if (win) void win.loadURL(up.url);
-      else openWindow(up.url);
+      else if (open) openWindow(up.url);
       return;
     } catch (err) {
       message = err instanceof Error ? err.message : String(err);
@@ -264,7 +249,7 @@ function setAutostart(enabled: boolean): void {
 function showNeedsYou(title: string): void {
   const count = Number(/^\((\d+)\) /.exec(title)?.[1] ?? 0);
   app.setBadgeCount(count);
-  tray?.setToolTip(count ? `orc · ${count} need${count === 1 ? "s" : ""} you` : "orc");
+  tray?.setToolTip(count ? `orc · ${count} unread notification${count === 1 ? "" : "s"}` : "orc");
 }
 
 const notifications = new Set<Notification>();
@@ -351,15 +336,20 @@ function hardenSession(): void {
 }
 
 async function start(): Promise<void> {
+  hardenSession();
+  listenForNotifications();
   try {
-    hardenSession();
-    listenForNotifications();
-    const up = await bringUp();
+    await bringUp();
+  } catch (err) {
+    await recover(err instanceof Error ? err.message : String(err), false);
+  }
+  if (quitting || !daemon) return;
+  try {
     firstRunSetup();
     createTray();
     const startHidden =
       process.argv.includes(HIDDEN_FLAG) || app.getLoginItemSettings().wasOpenedAtLogin;
-    if (!startHidden) openWindow(up.url);
+    if (!startHidden) openWindow(daemon.url);
   } catch (err) {
     dialog.showErrorBox("orc failed to start", err instanceof Error ? err.message : String(err));
     app.quit();
@@ -385,15 +375,18 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   app.on("window-all-closed", () => {
     if (!tray && process.platform !== "darwin") app.quit();
   });
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
     quitting = true;
-    daemon?.stop();
+    if (daemon?.owned && !daemonStopped) {
+      event.preventDefault();
+      daemonStopped = true;
+      void Promise.resolve(daemon.stop()).finally(() => app.quit());
+    }
   });
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
       quitting = true;
-      daemon?.stop();
-      app.exit(0);
+      void Promise.resolve(daemon?.stop()).finally(() => app.exit(0));
     });
   }
   void app.whenReady().then(() => {

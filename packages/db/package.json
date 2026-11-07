@@ -4,6 +4,9 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./notification-deliveries": "./src/notification-deliveries.ts",
+    "./notifications": "./src/notifications.ts",
+    "./notification-producers": "./src/notification-producers.ts",
     "./channels": "./src/channels.ts",
     "./human-requests": "./src/human-requests.ts",
     "./push": "./src/push.ts",
@@ -22,7 +25,8 @@
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",
     "./agent-memory": "./src/agent-memory.ts",
-    "./memory-transfer": "./src/memory-transfer.ts"
+    "./memory-transfer": "./src/memory-transfer.ts",
+    "./task-audit": "./src/task-audit.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

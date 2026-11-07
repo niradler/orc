@@ -1,7 +1,7 @@
 # Commands that need user input
 
 Agents call the MCP tool `human_request` with `kind:"command"` to create an item
-in **Attention needed**. The same tool supports ordinary questions and approvals;
+in the **Notifications** menu. The same tool supports ordinary questions and approvals;
 `command_request` remains a compatible shortcut for commands.
 Provide `origin` (the requesting session/backend and an idempotent request ID),
 an optional short `title`, a `prompt` explaining why help is needed, and `command`
@@ -20,7 +20,7 @@ Use the execution host's shell syntax for environment variables, for example
 `my-cli login --password "$env:ORC_INPUT_PASSWORD"` in PowerShell.
 Do not include secrets in the tool call, script, prompt or argument labels.
 
-The request does not execute anything. Attention shows compact rows; opening a
+The request does not execute anything. Notifications show compact rows; opening a
 request reveals its purpose, host/folder, exact command and input descriptions.
 The command is read-only until **Edit command** is selected. The user fills the
 masked fields and clicks **Run command**, or cancels without running.

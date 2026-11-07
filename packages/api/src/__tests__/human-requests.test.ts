@@ -27,6 +27,7 @@ test("should authenticate every human request operation", async () => {
     ["GET", ""],
     ["POST", ""],
     ["GET", "/missing"],
+    ["GET", "/missing/view"],
     ["POST", "/missing/respond"],
     ["POST", "/missing/run"],
     ["POST", "/missing/acknowledge"],

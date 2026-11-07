@@ -17,6 +17,12 @@ test("desktop composer keeps the full workspace controls in both themes", async 
   await page.route("**/api/ssh", (route) =>
     route.fulfill({ json: { host: null, hosts: ["lab"], supported: true } }),
   );
+  await page.route("**/api/git/worktrees?**", (route) => {
+    const cwd = new URL(route.request().url()).searchParams.get("cwd") ?? "";
+    return route.fulfill({
+      json: { root: cwd, worktrees: [{ path: cwd, branch: "refs/heads/main", main: true }] },
+    });
+  });
   for (const theme of ["dark", "light"] as const) {
     const response = await request.patch("/api/settings", {
       headers: { Authorization: `Bearer ${API_SECRET}` },
@@ -32,18 +38,18 @@ test("desktop composer keeps the full workspace controls in both themes", async 
       .poll(() => panel.evaluate((element) => getComputedStyle(element).backgroundColor))
       .toBe(theme === "dark" ? "rgb(0, 0, 0)" : "rgb(250, 250, 250)");
     for (const id of [
-      "chat-workspace-host",
-      "chat-workspace-browse",
-      "chat-workspace-recent",
-      "chat-workspace-worktree",
-    ])
+      "chat-agent-model-button",
+      "chat-workspace-folder",
+      "chat-workspace-branch",
+    ]) {
       await expect(panel.getByTestId(id)).toBeInViewport();
+      await expect(panel.getByTestId(id)).toHaveAccessibleName(/\S/);
+    }
     await expect(panel.getByTestId("chat-send-button")).toBeInViewport();
-    expect(
-      await panel
-        .getByTestId("chat-workspace-actions")
-        .evaluate((element) => getComputedStyle(element).overflowX),
-    ).toBe("visible");
+    const tools = await panel
+      .getByTestId("chat-composer-tools")
+      .evaluate((element) => ({ width: element.clientWidth, scrollWidth: element.scrollWidth }));
+    expect(tools.scrollWidth).toBeLessThanOrEqual(tools.width);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: join(artifacts, `desktop-${theme}.png`) });
   }

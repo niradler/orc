@@ -7,6 +7,7 @@ import type {
   ChannelView,
 } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
+import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
 import type {
   KbCallSource,
@@ -43,6 +44,14 @@ import type {
   KbUsageStats,
   KnowledgeBase,
 } from "@orc/core/kb";
+import type {
+  NotificationDelivery,
+  NotificationFilter,
+  NotificationForwardingPolicy,
+  NotificationPage,
+  NotificationUpdate,
+  OrcNotification,
+} from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleTemplate } from "@orc/core/rule-catalog";
@@ -264,6 +273,13 @@ export function createOrcClient(options?: OrcClientOptions) {
       prepare: (id: string) =>
         c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
     },
+    notifications: {
+      list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
+        c<NotificationPage>("GET", "/notifications", undefined, query),
+      update: (id: string, update: NotificationUpdate) =>
+        c<OrcNotification>("PATCH", `/notifications/${e(id)}`, update),
+      markAllRead: () => c<{ ok: true }>("POST", "/notifications/read"),
+    },
     push: {
       config: () => c<PushConfig>("GET", "/push/config"),
       devices: () => c<PushDevice[]>("GET", "/push/subscriptions"),
@@ -279,6 +295,18 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
     },
     channels: {
+      notificationPolicy: () =>
+        c<NotificationForwardingPolicy>("GET", "/channels/notification-policy"),
+      saveNotificationPolicy: (input: NotificationForwardingPolicy) =>
+        c<NotificationForwardingPolicy>("PUT", "/channels/notification-policy", input),
+      notificationDeliveries: () =>
+        c<NotificationDelivery[]>("GET", "/channels/notification-deliveries"),
+      notificationPreview: (input: {
+        filter: NotificationFilter;
+        project_ids: string[];
+        event: { type: string; level: "needs-you" | "done"; project_id: string | null };
+      }) =>
+        c<{ matches: boolean; summary: string }>("POST", "/channels/notification-preview", input),
       list: (project_id?: string) =>
         c<ChannelView[]>("GET", "/channels", undefined, { project_id }),
       providers: () => c<ChannelProviderInfo[]>("GET", "/channels/providers"),
@@ -311,6 +339,7 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<unknown>("POST", `/channels/pairings/${encodeURIComponent(id)}/confirm`),
     },
     humanRequests: {
+      view: (id: string) => c<HumanRequest>("GET", `/human-requests/${e(id)}/view`),
       run: (id: string, version: number, script: string, values: Record<string, string>) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/run`, { version, script, values }),
       list: () => c<HumanRequest[]>("GET", "/human-requests"),
@@ -779,6 +808,8 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     projects: {
+      syncGithub: (id: string) =>
+        c<GithubSyncState>("POST", `/projects/${encodeURIComponent(id)}/github-sync`),
       list: (params?: { status?: string; tag?: string; limit?: number; offset?: number }) =>
         c<ProjectPage>(
           "GET",
@@ -944,8 +975,14 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     audit: {
-      list: (scope: ScopeQuery = {}) =>
-        c<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+      list: (
+        scope: Omit<ScopeQuery, "scope"> & {
+          scope?: "global" | "all";
+          entity_type?: string;
+          limit?: number;
+          snapshot?: "preview" | "full";
+        } = {},
+      ) => c<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
     },
 
     kb: {

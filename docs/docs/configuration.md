@@ -37,6 +37,21 @@ change; unavailable quota data does not prevent session history from loading.
 
 Where ORC keeps its config and data, every config key and environment variable you are likely to set, logs, running as a background service, and authentication.
 
+## Notification and audit retention
+
+Set these server-wide preferences in **Settings → Storage** or the JSON config:
+
+| Config key | Default | Allowed days |
+| --- | --- | --- |
+| `preferences.notification_retention_days` | 30 | 1–3650 |
+| `preferences.audit_retention_days` | 90 | 1–3650 |
+
+All notifications expire, including unresolved requests' alerts. Audit history
+retains the notification title and message independently until the audit event
+expires. Expiry filters apply immediately; the API performs bounded cleanup at
+startup and every minute. Freed SQLite pages are reusable but the file may not
+shrink. See [Notifications](./notifications.md).
+
 ## Files and directories
 
 | Path | Holds |
@@ -49,6 +64,7 @@ Where ORC keeps its config and data, every config key and environment variable y
 | `~/.orc/logs/orc.log` | Structured log |
 | `~/.orc/daemon.log` | Daemon stdout/stderr when run as a launchd or systemd service |
 | `~/.orc/daemon.pid` | PID of the running daemon |
+| `~/.orc/daemon.json` | Private runtime identity and current port of the running daemon; contains no credentials |
 | `~/.orc/desktop-daemon.log` | Daemon output when the desktop app started it |
 | `~/.orc/bin/` | CLI installed by the desktop app |
 
@@ -197,7 +213,7 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ORC_HOME` | `~/.orc` | Location of `daemon.pid` and `daemon.log` only. Config and database stay under `~/.orc`. |
+| `ORC_HOME` | `~/.orc` | Location of `daemon.pid`, `daemon.json`, `daemon.log` and `desktop-daemon.log`. Config and database stay under `~/.orc`. |
 | `ORC_API_BASE` | from `api.host`/`api.port` | ORC origin for the CLI, stdio MCP and hooks |
 | `ORC_SESSION_ID` | none | Session attribution for MCP and CLI writes |
 | `ORC_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
@@ -215,6 +231,18 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 | `7700` | REST API (`/api/*`), dashboard (`/`), MCP (`/mcp`), OpenAPI (`/openapi.json`), Swagger UI (`/docs`) |
 
 Change it with `api.port`, `ORC_API_PORT` or `orc --port <n> daemon start`. The desktop app reads the same setting.
+
+Desktop automatically chooses an available loopback port if another application
+occupies this port and no daemon is already running. It saves the selected port
+and loopback host in global config after a successful start, so default CLI and
+stdio MCP connections follow it. Explicit overrides still win. See
+[Desktop app](./desktop-and-web.md#desktop-app-only) for reuse and recovery behavior.
+
+The daemon writes `daemon.json` next to `daemon.pid` once its API is listening.
+The record contains its PID, bound port, instance ID, version, database/config
+paths, start time and whether authentication is enabled, never the secret.
+It is written atomically with user-only file permissions and removed on clean
+shutdown. Desktop ignores stale records whose PID is no longer the active daemon.
 
 Health check (no auth needed):
 

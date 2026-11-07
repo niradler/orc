@@ -7,6 +7,7 @@ import type {
   ChannelView,
 } from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
+import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
 import type {
   KbComment,
@@ -40,6 +41,14 @@ import type {
   KnowledgeBase,
 } from "@orc/core/kb";
 import type { McpServerSettings } from "@orc/core/mcp-prompts";
+import type {
+  NotificationDelivery,
+  NotificationFilter,
+  NotificationForwardingPolicy,
+  NotificationPage,
+  NotificationUpdate,
+  OrcNotification,
+} from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
@@ -623,6 +632,18 @@ export type UpdateScratchpadInput = {
 
 export const api = {
   channels: {
+    notificationPolicy: () =>
+      req<NotificationForwardingPolicy>("GET", "/channels/notification-policy"),
+    saveNotificationPolicy: (input: NotificationForwardingPolicy) =>
+      req<NotificationForwardingPolicy>("PUT", "/channels/notification-policy", input),
+    notificationDeliveries: () =>
+      req<NotificationDelivery[]>("GET", "/channels/notification-deliveries"),
+    notificationPreview: (input: {
+      filter: NotificationFilter;
+      project_ids: string[];
+      event: { type: string; level: "needs-you" | "done"; project_id: string | null };
+    }) =>
+      req<{ matches: boolean; summary: string }>("POST", "/channels/notification-preview", input),
     list: () => req<ChannelView[]>("GET", "/channels"),
     providers: () => req<ChannelProviderInfo[]>("GET", "/channels/providers"),
     save: (input: ChannelConnection) =>
@@ -660,6 +681,8 @@ export const api = {
       ),
   },
   humanRequests: {
+    view: (id: string) =>
+      req<HumanRequest>("GET", `/human-requests/${encodeURIComponent(id)}/view`),
     run: (id: string, version: number, script: string, values: Record<string, string>) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/run`, {
         version,
@@ -1059,6 +1082,8 @@ export const api = {
   },
 
   projects: {
+    syncGithub: (id: string) =>
+      req<GithubSyncState>("POST", `/projects/${encodeURIComponent(id)}/github-sync`),
     list: (params?: { status?: string; tag?: string; limit?: number; offset?: number }) =>
       req<ProjectPage>(
         "GET",
@@ -1332,8 +1357,21 @@ export const api = {
   },
 
   audit: {
-    list: (scope: ScopeQuery = {}) =>
-      req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+    list: (
+      scope: Omit<ScopeQuery, "scope"> & {
+        scope?: "global" | "all";
+        entity_type?: string;
+        limit?: number;
+        snapshot?: "preview" | "full";
+      } = {},
+    ) => req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+  },
+  notifications: {
+    list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
+      req<NotificationPage>("GET", "/notifications", undefined, query),
+    update: (id: string, update: NotificationUpdate) =>
+      req<OrcNotification>("PATCH", `/notifications/${encodeURIComponent(id)}`, update),
+    markAllRead: () => req<{ ok: true }>("POST", "/notifications/read"),
   },
 
   kb: {

@@ -45,7 +45,7 @@ test("should show dated unavailable questions and contextual help on desktop and
       seed.once("error", reject);
     }),
   ).toBe(0);
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${entry.id}`);
   await reviewAttentionRequest(card);
   await card.getByTestId("attention-details-toggle").click();
@@ -64,17 +64,20 @@ test("should show dated unavailable questions and contextual help on desktop and
       "datetime",
       new Date(entry.created_at).toISOString(),
     );
-    await expect(page.getByTestId("view-title")).toHaveText("Attention needed");
-    await page.mouse.move(0, 0);
-    await page.getByTestId("view-help").hover();
-    await expect(page.getByTestId("view-help-content")).toContainText(
-      "Live Codex questions can also appear as session notices.",
-    );
+    await expect(
+      page
+        .getByTestId("notification-menu")
+        .getByRole("heading", { name: "Notifications", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByTestId("nav-attention")).toHaveCount(0);
     await page.screenshot({
       path: `../../.claude/docs/attention-${width}-${theme}.png`,
       fullPage: true,
+      animations: "disabled",
     });
     await page.keyboard.press("Escape");
+    await expect(page.getByTestId("notification-menu")).toHaveCount(0);
+    await page.locator('[data-testid="notification-bell"]:visible').first().click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -93,7 +96,10 @@ test("should show dated unavailable questions and contextual help on desktop and
     }),
   ).toBe(0);
   await page.reload();
-  await expect(card).toHaveCount(0);
+  const history = page.locator(`[data-source-id="${entry.id}"]`);
+  await expect(history).toBeVisible();
+  await history.getByRole("button", { name: /Review request/ }).click();
+  await expect(card.getByTestId("attention-state")).toContainText("Cancelled");
   const cancelled = await apiGet<HumanRequest>(request, `/human-requests/${entry.id}`);
   expect(cancelled.status).toBe("cancelled");
   expect(cancelled.delivered_at).toBeNull();
@@ -153,7 +159,7 @@ test("should continue a waiting CLI after answering through the reloaded inbox",
   );
   child.stdin.end();
   try {
-    await gotoView(page, "attention");
+    await gotoView(page, "notifications");
     await expect
       .poll(async () => {
         if (child.exitCode !== null) throw new Error(`CLI exited ${child.exitCode}: ${errors}`);
@@ -185,7 +191,7 @@ test("should continue a waiting CLI after answering through the reloaded inbox",
     });
     expect(duplicate.status()).toBe(409);
     await apiPost(request, `/human-requests/${pending.id}/acknowledge`, { version: 2 });
-    await expect(card).toHaveCount(0);
+    await expect(card.getByTestId("attention-state")).toContainText("Delivered");
   } finally {
     if (child.exitCode === null) child.kill();
   }
@@ -201,7 +207,7 @@ test("should show exact approval action, retain denial after reload and allow fr
     origin: { backend: "claude", session_id: tid("approval"), request_id: "approval" },
     action: { tool: "Bash", input: { command: "pwd" }, cwd: "/workspace", host: "demo-host" },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${approval.id}`);
   await expect(card.getByTestId("attention-review")).toContainText("demo-host");
   await reviewAttentionRequest(card);
@@ -237,7 +243,7 @@ test("should preserve multiple selections and cancel a pending request", async (
     multi_select: true,
     origin: { backend: "claude", session_id: tid("multi"), request_id: "checks" },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${question.id}`);
   await reviewAttentionRequest(card);
   await card.getByTestId("attention-choice-Unit").click();
@@ -258,7 +264,7 @@ test("should preserve multiple selections and cancel a pending request", async (
   const cancelledCard = page.getByTestId(`attention-request-${pending.id}`);
   await reviewAttentionRequest(cancelledCard);
   await cancelledCard.getByTestId("attention-cancel").click();
-  await expect(cancelledCard).toHaveCount(0);
+  await expect(cancelledCard.getByTestId("attention-state")).toContainText("Cancelled");
   expect((await apiGet<HumanRequest>(request, `/human-requests/${pending.id}`)).status).toBe(
     "cancelled",
   );
@@ -274,14 +280,14 @@ test("should allow dismissing an answer its agent never collects", async ({ page
     version: entry.version,
     response: { kind: "question", answer: "Yes" },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${entry.id}`);
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-state")).toHaveText(
     "Answered · agent hasn't picked it up",
   );
   await card.getByTestId("attention-cancel").click();
-  await expect(card).toHaveCount(0);
+  await expect(card.getByTestId("attention-state")).toContainText("Cancelled");
   expect((await apiGet<HumanRequest>(request, `/human-requests/${entry.id}`)).status).toBe(
     "cancelled",
   );
@@ -314,7 +320,7 @@ test("should show whether ORC pushed an answer or the agent read it", async ({ p
       ),
     });
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const state = (id: string) =>
     page.getByTestId(`attention-request-${id}`).getByTestId("attention-state");
   await expect(state(read.id)).toHaveText("Answered · agent hasn't picked it up");

@@ -1,0 +1,531 @@
+import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  CheckCheck,
+  ChevronRight,
+  CircleAlert,
+  Clock,
+  Inbox,
+  LoaderCircle,
+  type LucideIcon,
+  MessageSquare,
+  Pencil,
+} from "lucide-react";
+import { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { api } from "@/api/client";
+import { type CommandRequestDraft, CommandRequestForm } from "@/components/CommandRequestForm";
+import { HelpPopover } from "@/components/HelpPopover";
+import { StateBadge } from "@/components/StateBadge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+
+type RequestState = { label: string; tone: string; Icon: LucideIcon; spin?: boolean };
+
+const REQUEST_STATUS: Record<HumanRequest["status"], RequestState> = {
+  pending: { label: "Needs you", tone: "text-warning", Icon: CircleAlert },
+  running: { label: "Running", tone: "text-muted-foreground", Icon: LoaderCircle, spin: true },
+  unavailable: { label: "Agent unavailable", tone: "text-error", Icon: CircleAlert },
+  answered: {
+    label: "Answered · agent hasn't picked it up",
+    tone: "text-muted-foreground",
+    Icon: Inbox,
+  },
+  delivered: { label: "Delivered", tone: "text-secondary", Icon: CheckCheck },
+  cancelled: { label: "Cancelled", tone: "text-muted-foreground", Icon: CircleAlert },
+  expired: { label: "Expired", tone: "text-muted-foreground", Icon: Clock },
+};
+
+function requestState(request: HumanRequest): RequestState {
+  if (request.status !== "answered") return REQUEST_STATUS[request.status];
+  if (request.push_state === "pushing")
+    return { label: "Pushing to session…", tone: "text-primary", Icon: LoaderCircle, spin: true };
+  if (request.seen_at)
+    return { label: "Delivered · agent read it", tone: "text-secondary", Icon: CheckCheck };
+  if (request.push_state === "interrupted")
+    return {
+      label: "Push interrupted · agent may have it",
+      tone: "text-warning",
+      Icon: CircleAlert,
+    };
+  if (request.push_state === "failed")
+    return {
+      label: "Couldn't push · agent can still read it",
+      tone: "text-error",
+      Icon: CircleAlert,
+    };
+  return REQUEST_STATUS.answered;
+}
+
+function requestHostLabel(request: HumanRequest): string | null {
+  if (request.input.kind === "command") return request.input.command?.host ?? "Local";
+  if (request.input.action) return request.input.action.host;
+  if (request.input.origin.execution_host === undefined) return null;
+  return request.input.origin.execution_host ?? "Local";
+}
+
+export type RequestDraft = {
+  answer: string;
+  selected: string[];
+  editingAnswer: boolean;
+  command?: CommandRequestDraft;
+};
+
+export function RequestCard({
+  request,
+  expanded,
+  onToggle,
+  draft,
+  onDraftChange,
+  onNavigate,
+}: {
+  request: HumanRequest;
+  expanded: boolean;
+  onToggle: () => void;
+  draft?: RequestDraft;
+  onDraftChange?: (update: Partial<RequestDraft>) => void;
+  onNavigate?: () => void;
+}) {
+  const [localDraft, setLocalDraft] = useState<RequestDraft>({
+    answer: "",
+    selected: [],
+    editingAnswer: request.input.choices.length === 0,
+  });
+  const { answer, selected, editingAnswer } = draft ?? localDraft;
+  const updateDraft = (update: Partial<RequestDraft>) =>
+    onDraftChange ? onDraftChange(update) : setLocalDraft((current) => ({ ...current, ...update }));
+  const setAnswer = (answer: string) => updateDraft({ answer });
+  const setSelected = (selected: string[]) => updateDraft({ selected });
+  const setEditingAnswer = (editingAnswer: boolean) => updateDraft({ editingAnswer });
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const respond = useMutation({
+    mutationFn: (response: HumanResponse) =>
+      api.humanRequests.respond(request.id, request.version, response),
+    onSettled: () => client.invalidateQueries({ queryKey: ["human-requests"] }),
+  });
+  const cancel = useMutation({
+    mutationFn: () => api.humanRequests.cancel(request.id, request.version),
+    onSettled: () => client.invalidateQueries({ queryKey: ["human-requests"] }),
+  });
+  const pending = request.status === "pending";
+  const status = requestState(request);
+  const hostLabel = requestHostLabel(request);
+  const busy = respond.isPending || cancel.isPending;
+  const secondaryActions = (
+    <>
+      {request.input.origin.chat_thread_id && (
+        <Button
+          data-testid="attention-open-chat"
+          size="sm"
+          variant="ghost"
+          type="button"
+          onClick={() => {
+            onNavigate?.();
+            const next = new URLSearchParams(params);
+            next.delete("notifications");
+            next.delete("request");
+            next.set("chat", "open");
+            next.set("chatThread", request.input.origin.chat_thread_id ?? "");
+            navigate({ search: next.toString() });
+          }}
+        >
+          <MessageSquare size={14} /> Open chat
+        </Button>
+      )}
+      {(pending ||
+        request.status === "unavailable" ||
+        (request.status === "answered" &&
+          !request.seen_at &&
+          (!request.push_state || request.push_state === "failed"))) && (
+        <Button
+          data-testid="attention-cancel"
+          size="sm"
+          variant="ghost"
+          type="button"
+          disabled={busy}
+          onClick={() => cancel.mutate()}
+        >
+          {cancel.isPending
+            ? pending
+              ? "Cancelling…"
+              : "Dismissing…"
+            : pending
+              ? "Cancel request"
+              : "Dismiss"}
+        </Button>
+      )}
+    </>
+  );
+  const actionInput = request.input.action?.input;
+  const nativeItem =
+    actionInput?.item && typeof actionInput.item === "object"
+      ? (actionInput.item as Record<string, unknown>)
+      : undefined;
+  const nativeDetails = typeof actionInput?.threadId === "string";
+  const reviewInput = nativeDetails
+    ? {
+        ...Object.fromEntries(
+          Object.entries(actionInput ?? {}).filter(
+            ([key]) =>
+              ![
+                "threadId",
+                "turnId",
+                "itemId",
+                "startedAtMs",
+                "item",
+                "availableDecisions",
+                "proposedExecpolicyAmendment",
+                "commandActions",
+                "kind",
+              ].includes(key),
+          ),
+        ),
+        ...(nativeItem?.changes ? { changes: nativeItem.changes } : {}),
+      }
+    : actionInput;
+  return (
+    <article
+      data-testid={`attention-request-${request.id}`}
+      className="min-w-0 border-b border-border"
+    >
+      <div className="flex min-h-11 items-center gap-3 py-1">
+        <h2 className="min-w-0 flex-1">
+          <button
+            type="button"
+            data-testid="attention-review"
+            aria-expanded={expanded}
+            aria-controls={`request-details-${request.id}`}
+            onClick={onToggle}
+            className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-sm py-1 text-left focus-visible:outline-2 focus-visible:outline-focus sm:min-h-9 [@media(pointer:coarse)]:min-h-11"
+          >
+            <ChevronRight
+              aria-hidden="true"
+              size={14}
+              className={`shrink-0 text-muted-foreground ${expanded ? "rotate-90" : ""}`}
+            />
+            <span className="min-w-0">
+              <span
+                className={`block text-sm font-medium wrap-anywhere ${expanded ? "whitespace-pre-wrap" : "line-clamp-1"}`}
+              >
+                {request.input.title ?? request.input.prompt}
+              </span>
+              <span className="block truncate text-xs font-normal text-muted-foreground">
+                {request.input.origin.session_title ?? request.input.origin.backend}
+                {hostLabel && ` · ${hostLabel}`}
+              </span>
+            </span>
+          </button>
+        </h2>
+        {pending ? (
+          <StateBadge state="needs-you" testId="attention-state" className="shrink-0" />
+        ) : (
+          <span
+            data-testid="attention-state"
+            className={`flex shrink-0 items-center gap-1 text-xs ${status.tone}`}
+          >
+            <status.Icon
+              aria-hidden="true"
+              size={13}
+              className={status.spin ? "motion-safe:animate-spin" : ""}
+            />
+            {status.label}
+          </span>
+        )}
+      </div>
+      <div
+        id={`request-details-${request.id}`}
+        hidden={!expanded}
+        className={expanded ? "max-w-3xl space-y-3 pb-3 pl-6" : "hidden"}
+      >
+        <div className="min-w-0 space-y-2">
+          {request.input.title && (
+            <p className="text-sm whitespace-pre-wrap wrap-anywhere">{request.input.prompt}</p>
+          )}
+          <details className="text-xs text-muted-foreground">
+            <summary
+              data-testid="attention-details-toggle"
+              className="min-h-8 cursor-pointer py-1 [@media(pointer:coarse)]:min-h-11"
+            >
+              Request details
+            </summary>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span className={pending ? "text-warning" : undefined}>
+                {request.input.kind === "command"
+                  ? "Command"
+                  : request.input.kind === "question"
+                    ? "Question"
+                    : "Approval"}{" "}
+                · {request.input.origin.backend}
+              </span>
+              {(request.input.rule_binding || request.input.rule_bindings?.length) && (
+                <span>ORC rule</span>
+              )}
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span
+                className="min-w-0 max-w-full truncate"
+                title={request.input.origin.session_title ?? request.input.origin.session_id}
+              >
+                {request.input.origin.session_title ?? `Session ${request.input.origin.session_id}`}
+                {request.input.origin.execution_host !== undefined &&
+                  ` · ${request.input.origin.execution_host ?? "Local"}`}
+              </span>
+              <span className="flex flex-wrap gap-x-2" data-testid="attention-date">
+                <span>
+                  Created{" "}
+                  <time
+                    dateTime={new Date(request.created_at).toISOString()}
+                    title={new Date(request.created_at).toLocaleString()}
+                  >
+                    {new Date(request.created_at).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </span>
+                {request.responded_at !== null && (
+                  <span>
+                    Answered{" "}
+                    <time
+                      dateTime={new Date(request.responded_at).toISOString()}
+                      title={new Date(request.responded_at).toLocaleString()}
+                    >
+                      {new Date(request.responded_at).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </time>
+                  </span>
+                )}
+              </span>
+            </div>
+          </details>
+          {request.input.kind === "command" && (
+            <CommandRequestForm
+              request={request}
+              actions={secondaryActions}
+              draft={(draft ?? localDraft).command}
+              onDraftChange={(update) =>
+                updateDraft({
+                  command: {
+                    ...((draft ?? localDraft).command ?? {
+                      script: request.input.command?.script ?? "",
+                      editing: false,
+                      values: {},
+                    }),
+                    ...update,
+                  },
+                })
+              }
+            />
+          )}
+          {request.input.action && (
+            <div className="min-w-0 space-y-2 text-sm">
+              <dl className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs">
+                <div className="flex min-w-0 gap-1">
+                  <dt className="text-muted-foreground">Host:</dt>
+                  <dd className="wrap-anywhere">{request.input.action.host}</dd>
+                </div>
+                <div className="flex min-w-0 gap-1">
+                  <dt className="text-muted-foreground">Folder:</dt>
+                  <dd className="wrap-anywhere">{request.input.action.cwd}</dd>
+                </div>
+              </dl>
+              <section
+                aria-label="Requested action"
+                // biome-ignore lint/a11y/noNoninteractiveTabindex: approval details must be keyboard-scrollable before a decision.
+                tabIndex={0}
+                className="max-h-64 overflow-auto whitespace-pre-wrap wrap-anywhere rounded-md border border-border p-2 font-mono text-xs focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                <pre data-testid="attention-action" className="whitespace-pre-wrap wrap-anywhere">
+                  {request.input.action.tool}
+                  {"\n"}
+                  {JSON.stringify(
+                    reviewInput && Object.keys(reviewInput).length ? reviewInput : actionInput,
+                    null,
+                    2,
+                  )}
+                </pre>
+              </section>
+              {nativeDetails && (
+                <details className="text-xs text-outline">
+                  <summary
+                    data-testid="attention-native-details-toggle"
+                    className="min-h-11 cursor-pointer py-1 sm:min-h-8 [@media(pointer:coarse)]:min-h-11"
+                  >
+                    Full request details
+                  </summary>
+                  <pre className="whitespace-pre-wrap break-all mt-2">
+                    {JSON.stringify(actionInput, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 space-y-2">
+          {pending && request.input.kind === "question" && (
+            <form
+              className="space-y-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                respond.mutate({
+                  kind: "question",
+                  answer,
+                  ...(selected.length ? { selected_choices: selected } : {}),
+                });
+              }}
+            >
+              <div className="grid gap-1 @xl/attention:grid-cols-2 @4xl/attention:grid-cols-1">
+                {request.input.choices.map((choice) => (
+                  <label
+                    key={choice}
+                    className={`flex min-h-11 min-w-0 cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm sm:min-h-8 [@media(pointer:coarse)]:min-h-11 hover:bg-surface ${
+                      (request.input.multi_select ? selected.includes(choice) : answer === choice)
+                        ? "bg-surface-highest"
+                        : ""
+                    }`}
+                    data-testid={`attention-choice-${choice}`}
+                  >
+                    <input
+                      type={request.input.multi_select ? "checkbox" : "radio"}
+                      name={`choice-${request.id}`}
+                      checked={
+                        request.input.multi_select ? selected.includes(choice) : answer === choice
+                      }
+                      disabled={busy}
+                      className="mt-1 size-3.5 shrink-0 accent-primary"
+                      onChange={() => {
+                        if (request.input.multi_select) {
+                          const next = selected.includes(choice)
+                            ? selected.filter((item) => item !== choice)
+                            : [...selected, choice];
+                          setSelected(next);
+                          setAnswer(next.join(", "));
+                        } else setAnswer(choice);
+                      }}
+                    />
+                    <span className="min-w-0 wrap-anywhere">
+                      <span>{choice}</span>
+                      {Object.keys(request.input.choice_descriptions).includes(choice) &&
+                        request.input.choice_descriptions[choice] && (
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            {request.input.choice_descriptions[choice]}
+                          </span>
+                        )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {request.input.choices.length > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  data-testid="attention-edit-answer"
+                  aria-expanded={editingAnswer}
+                  aria-controls={`answer-editor-${request.id}`}
+                  disabled={busy}
+                  onClick={() => setEditingAnswer(!editingAnswer)}
+                >
+                  <Pencil size={14} /> {editingAnswer ? "Hide editor" : "Write an answer"}
+                </Button>
+              )}
+              <label
+                id={`answer-editor-${request.id}`}
+                htmlFor={`answer-${request.id}`}
+                hidden={!editingAnswer}
+                className={editingAnswer ? "block text-sm space-y-1" : "hidden"}
+              >
+                <span>Your answer</span>
+                <Textarea
+                  id={`answer-${request.id}`}
+                  data-testid="attention-answer"
+                  value={answer}
+                  onChange={(event) => {
+                    setAnswer(event.target.value);
+                    setSelected([]);
+                  }}
+                  maxLength={16000}
+                  disabled={busy}
+                  rows={2}
+                  className="min-h-20 max-h-48 resize-y"
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-1">
+                <Button
+                  size="sm"
+                  data-testid="attention-send"
+                  type="submit"
+                  disabled={!answer.trim() || busy}
+                >
+                  {respond.isPending ? "Sending…" : "Send answer"}
+                </Button>
+                {secondaryActions}
+              </div>
+            </form>
+          )}
+          {pending && request.input.kind === "approval" && (
+            <div className="flex flex-wrap items-center gap-1">
+              <Button
+                size="sm"
+                data-testid="attention-approve"
+                disabled={busy}
+                onClick={() => respond.mutate({ kind: "approval", approved: true })}
+              >
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                data-testid="attention-deny"
+                variant="outline"
+                disabled={busy}
+                onClick={() => respond.mutate({ kind: "approval", approved: false })}
+              >
+                Deny
+              </Button>
+              <HelpPopover label="Approval permissions" testId="attention-approval-help">
+                Your approval lets this agent continue with its existing permissions.
+              </HelpPopover>
+              {secondaryActions}
+            </div>
+          )}
+          {request.response && request.response.kind !== "command" && (
+            <p
+              data-testid="attention-response"
+              className="text-sm whitespace-pre-wrap wrap-anywhere"
+            >
+              {request.response.kind === "question"
+                ? request.response.answer
+                : request.response.approved
+                  ? "Approved"
+                  : "Denied"}
+            </p>
+          )}
+          {!pending && <div className="flex flex-wrap items-center gap-1">{secondaryActions}</div>}
+        </div>
+      </div>
+      {(request.delivery_error || (request.push_state && request.push_error)) && (
+        <p
+          data-testid="attention-push-error"
+          role="status"
+          className="pb-2 pl-6 text-sm text-error"
+        >
+          {request.delivery_error ?? request.push_error}
+        </p>
+      )}
+      {cancel.error && <p role="alert">{cancel.error.message}</p>}
+      {respond.error && (
+        <p role="alert" data-testid="attention-error" className="text-sm text-destructive">
+          {respond.error.message}
+        </p>
+      )}
+    </article>
+  );
+}

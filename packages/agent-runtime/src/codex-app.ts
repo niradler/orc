@@ -425,7 +425,16 @@ export class CodexAppSession implements AgentSession {
       if (!this.pending.size) {
         this.push({
           type: "result",
-          data: { runtimeSessionId: this.runtimeId, usage: this.usage },
+          data: {
+            runtimeSessionId: this.runtimeId,
+            usage: this.usage,
+            outcome:
+              turn.status === "interrupted"
+                ? "stopped"
+                : turn.status === "failed"
+                  ? "failed"
+                  : "completed",
+          },
         });
         this.done = true;
       }
