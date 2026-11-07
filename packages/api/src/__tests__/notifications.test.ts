@@ -179,4 +179,13 @@ test("should publish real job outcomes according to notify_on and deduplicate re
       .get(`job:${runId}`);
     expect(row?.count).toBe(policy === "always" || (policy === "failure" && exit !== 0) ? 1 : 0);
   }
+  const failed = getSqlite()
+    .query<{ title: string; body: string; path: string }, []>(
+      "SELECT title, body, path FROM notifications WHERE title LIKE 'notification-failure-1 %'",
+    )
+    .get();
+  expect(failed?.title).toBe("notification-failure-1 failed");
+  expect(failed?.body).toMatch(/after \d+s, exit 1/);
+  expect(failed?.body).toContain("Open the run for logs.");
+  expect(failed?.path).toContain("run=");
 });

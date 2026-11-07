@@ -49,7 +49,7 @@ test("should keep a device's topics when it re-subscribes without choosing", () 
   const { store } = fixture();
   const { topics: _, ...resubscribe } = subscription;
   const device = store.subscribe(resubscribe);
-  expect(device.topics).toEqual(["attention", "chat"]);
+  expect(device.topics).toEqual(["attention", "chat", "jobs"]);
   store.updateTopics(device.id, ["chat"]);
   expect(store.subscribe({ ...resubscribe, label: "Phone 2" })).toMatchObject({
     id: device.id,
@@ -97,4 +97,41 @@ test("should update topics and reject unknown devices", () => {
   expect(() => store.remove("missing")).toThrow("Push device not found");
   store.remove(device.id);
   expect(() => store.get(device.id)).toThrow("Push device not found");
+});
+
+test("should add job pushes to devices that already received every topic", () => {
+  const db = new Database(":memory:");
+  db.exec(`CREATE TABLE push_subscriptions (
+    id TEXT PRIMARY KEY, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL,
+    label TEXT NOT NULL, topics TEXT NOT NULL, created_at INTEGER NOT NULL,
+    last_success_at INTEGER, failure_count INTEGER NOT NULL DEFAULT 0)`);
+  db.query(
+    `INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, label, topics, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    "all",
+    "https://fcm.googleapis.com/fcm/send/all",
+    "BPublicKey",
+    "secret",
+    "Phone",
+    JSON.stringify(["chat", "attention"]),
+    1,
+  );
+  db.query(
+    `INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, label, topics, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    "chat-only",
+    "https://fcm.googleapis.com/fcm/send/chat",
+    "BPublicKey",
+    "secret",
+    "Tablet",
+    JSON.stringify(["chat"]),
+    2,
+  );
+  const store = new PushStore(db, () => 1000);
+  expect(store.get("all").topics).toEqual(["attention", "chat", "jobs"]);
+  expect(store.get("chat-only").topics).toEqual(["chat"]);
+  store.updateTopics("all", ["attention", "chat"]);
+  expect(new PushStore(db, () => 2000).get("all").topics).toEqual(["attention", "chat"]);
 });
