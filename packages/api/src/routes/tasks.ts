@@ -2,6 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { parseFlowDefinition } from "@orc/core/flow";
 import { readFlow } from "@orc/core/flow-service";
+import { GithubTaskSyncSchema, validateGithubTaskEdit } from "@orc/core/github-sync";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import type { TaskStatus } from "@orc/core/types";
@@ -41,6 +42,7 @@ const OptionalTaskGitFields = {
 const TaskSchema = z
   .object({
     ...TaskGitFields,
+    github_sync: GithubTaskSyncSchema.nullable(),
     id: z.string(),
     project_id: z.string().nullable(),
     title: z.string(),
@@ -380,6 +382,8 @@ function rawToDto(row: Record<string, unknown>, commentsCount?: number) {
   return {
     ...row,
     tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    github_sync:
+      typeof row.github_sync === "string" ? JSON.parse(row.github_sync) : row.github_sync,
     // Lists never carry the inline graph — see toListDto.
     flow_override: null,
     comments_count: commentsCount ?? 0,
@@ -503,6 +507,7 @@ app.openapi(updateRoute, async (c) => {
   if (!existing) throw new NotFoundError("Task", id);
   validateFlowFields(body);
 
+  validateGithubTaskEdit(existing, body);
   if (body.status && body.status !== existing.status) {
     const result = await updateTaskStatus({
       taskId: id,

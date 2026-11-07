@@ -1,3 +1,4 @@
+import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/core/github-sync";
 import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 
 export type {
@@ -98,6 +99,7 @@ export type TaskGitLinks = {
 };
 
 export type Task = TaskGitLinks & {
+  github_sync?: GithubTaskSync | null;
   id: string;
   project_id: string | null;
   title: string;
@@ -284,6 +286,8 @@ export type SessionDetail = Session & {
 
 export type ProjectStatus = "active" | "archived" | "paused";
 export type Project = {
+  github_sync?: GithubSyncConfig | null;
+  github_sync_state?: GithubSyncState | null;
   upload_directory?: string | null;
   id: string;
   name: string;
@@ -508,6 +512,7 @@ export type CreateTaskLinkInput = {
 };
 
 export type CreateProjectInput = {
+  github_sync?: { enabled: boolean; status_labels?: GithubSyncConfig["status_labels"] } | null;
   upload_directory?: string | null;
   name: string;
   description?: string;
@@ -520,6 +525,7 @@ export type CreateProjectInput = {
 };
 
 export type UpdateProjectInput = {
+  github_sync?: { enabled: boolean; status_labels?: GithubSyncConfig["status_labels"] } | null;
   upload_directory?: string | null;
   name?: string;
   description?: string | null;

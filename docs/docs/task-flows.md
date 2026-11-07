@@ -24,6 +24,52 @@ to complete. A completed task does not merge code or deploy it. Task, workflow
 and knowledge history remain available after reopening. Backend preflight is a
 current readiness check; it does not establish native hook enforcement parity.
 
+## GitHub issues as tasks
+
+Save a `github.com` Git remote URL in **Projects → Configuration** and enable
+**Sync repository issues as tasks**. The API imports open issues into the project's
+ordinary task list and polls every minute. **Sync now** on the project's Tasks page
+runs a cycle immediately. API, MCP, CLI, search and workflow task references use the
+same stable ORC task ID. Pull requests are excluded. Existing tasks linked to the
+same issue are adopted; repeated imports do not create another task.
+
+Issue titles and descriptions are edited in GitHub. ORC retains its own priority,
+progress, due dates, comments, dependencies and workflow configuration. Ordinary
+issue labels are copied to tags on first import. Comments are not synchronized.
+Imported and newly adopted issues have automatic agent execution disabled, including
+automatic review. You can explicitly start a workflow from task detail.
+
+**Status labels** is collapsed by default in project configuration. Map each ORC
+status to one distinct repository label. Defaults are `status:todo`, `status:queued`,
+`status:doing`, `status:review`, `status:changes-requested`, `status:blocked`,
+`status:paused`, `status:done` and `status:cancelled`. An open issue without a mapped
+label is `todo`. Closed issues map to `done`, or `cancelled` when closed as
+`not_planned`. An ORC transition to either terminal status closes the issue with the
+matching reason; an active status reopens it. Outgoing writes change only mapped
+status labels, preserving other GitHub labels. Missing mapped labels are created
+in the repository when an ORC status change first needs them; existing label
+colors and descriptions are preserved.
+
+If multiple status labels conflict, or both sides changed to different statuses
+since the last sync, the task shows a sync error. Choose the same status on both
+sides, keep one status label on GitHub, then retry. Authentication, permission,
+rate-limit and partial-write failures remain visible and retry on the next cycle.
+Use existing `gh auth` credentials or the configured GitHub token with repository
+issue write access. The token stays on the API host.
+
+Existing projects remain opted out. Disabling sync keeps imported tasks; changing
+repositories keeps historical tasks and stops syncing those from the old repository.
+Initial import reads open issues, then incremental cycles detect closures and
+reopenings. Each cycle has a 45-second request budget and a 2,000-result pagination
+limit; incomplete cycles report an error and retain the previous successful cursor.
+
+REST configuration uses `github_sync: { enabled, status_labels }` on project
+create/update; omitting `status_labels` selects defaults. `github_sync_state` on
+projects and `github_sync` on tasks expose the latest outcome. Run
+`POST /api/projects/{id}/github-sync` for an immediate cycle; its `{synced_at,error}`
+response must have a null `error` to indicate success. Status changes from any ORC
+interface are reconciled on the next cycle. See [CLI](./cli.md) and [MCP](./mcp.md).
+
 ## Why flows
 
 ORC's task loop used to hardcode one shape: a worker runs the task's skill, a reviewer checks it, feedback loops back to the worker, and `max_review_rounds` pauses the task if it cycles too long. Every task got that shape whether it fitted or not, and the only way to change it was to patch `task-loop.ts`.
