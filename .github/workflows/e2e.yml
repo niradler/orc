@@ -8,12 +8,15 @@ permissions:
 
 jobs:
   e2e:
-    runs-on: [self-hosted, homelab]
+    if: github.actor == 'niradler' && github.repository == 'niradler/orc'
+    runs-on: homelab
     timeout-minutes: 60
     env:
       PW_SHARDS: "4"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:

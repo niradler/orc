@@ -1,9 +1,7 @@
 name: CI
 
 on:
-  pull_request:
-  push:
-    branches: [master]
+  # Automatic runner use stays disabled until public-PR isolation is verified.
   workflow_dispatch:
 
 permissions:
@@ -15,16 +13,19 @@ concurrency:
 
 jobs:
   pull-request:
-    if: github.event_name == 'pull_request'
-    runs-on: [self-hosted, homelab]
+    if: github.event_name == 'pull_request' && vars.ORC_ISOLATED_PR_RUNNER_READY == 'true'
+    runs-on: homelab
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Fetch the base branch
-        run: git fetch origin ${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch origin "$BASE_REF"
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -38,16 +39,20 @@ jobs:
         run: bunx playwright install chromium
 
       - name: Changed packages and sanity
-        run: bun scripts/ci-local.ts --changed origin/${{ github.base_ref }} --sanity
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bun scripts/ci-local.ts --changed "origin/$BASE_REF" --sanity
 
   full:
-    if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, homelab]
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'niradler' && github.repository == 'niradler/orc'
+    runs-on: homelab
     timeout-minutes: 60
     env:
       PW_SHARDS: "4"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:

@@ -24,6 +24,7 @@ export default defineConfig({
   // same shard would share that database, so each shard stays single-worker.
   workers: 1,
   reporter: [["list"]],
+  outputDir: process.env.PW_OUTPUT_DIR ?? "test-results",
   use: {
     baseURL: `http://127.0.0.1:${PW_API_PORT}`,
     // A controlling service worker makes page.route() miss requests; pwa.e2e.ts opts back in.

@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
+  changedFiles,
   dependentsByPackage,
   readPackageDomains,
   selectDomains,
@@ -71,4 +75,72 @@ test("should report a source file outside the owned trees", () => {
 test("should run every package when a hook changes", () => {
   const selection = selectDomains(["hooks/session-start.ts"], domains, dependents);
   expect(selection.runAll).toBe(true);
+});
+
+test("should run every package for root runtime and test configuration", () => {
+  for (const path of ["bunfig.toml", "biome.jsonc", "Dockerfile", ".dockerignore"])
+    expect(selectDomains([path], domains, dependents).runAll).toBe(true);
+});
+
+test("should test both sides of a cross-package rename and preserve unusual path names", () => {
+  const directory = mkdtempSync(join(tmpdir(), "orc-domain-diff-"));
+  const run = (...args: string[]): void => {
+    const result = Bun.spawnSync(["git", ...args], { cwd: directory, timeout: 10_000 });
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+  };
+  try {
+    run("init");
+    run("config", "user.name", "CI fixture");
+    run("config", "user.email", "ci@example.invalid");
+    mkdirSync(join(directory, "packages/web/src"), { recursive: true });
+    mkdirSync(join(directory, "packages/api/src"), { recursive: true });
+    const oldPath = "packages/web/src/ shared.ts";
+    const newPath = "packages/api/src/ shared.ts";
+    writeFileSync(join(directory, oldPath), "export const shared = true;\n");
+    run("add", ".");
+    run("-c", "core.hooksPath=", "commit", "-m", "fixture");
+    run("branch", "baseline");
+    renameSync(join(directory, oldPath), join(directory, newPath));
+    run("add", ".");
+    const paths = changedFiles(directory, "baseline");
+    expect(paths.sort()).toEqual([newPath, oldPath].sort());
+    const selected = selectDomains(paths, domains, dependents);
+    expect(selected.packageNames).toContain("@orc/api");
+    expect(selected.packageNames).toContain("@orc/web");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("should keep automatic runner execution disabled until public-PR isolation is implemented", () => {
+  const sdkRequire = createRequire(join(root, "packages/sdk/package.json"));
+  const openapiRequire = createRequire(sdkRequire.resolve("openapi-typescript"));
+  const redoclyRequire = createRequire(openapiRequire.resolve("@redocly/openapi-core"));
+  const yaml = redoclyRequire("js-yaml") as { load: (source: string) => unknown };
+  for (const name of ["ci.yml", "e2e.yml"]) {
+    const source = readFileSync(join(root, ".github/workflows", name), "utf8");
+    const workflow = yaml.load(source) as {
+      on: Record<string, unknown>;
+      permissions: Record<string, string>;
+      jobs: Record<string, { if?: string }>;
+    };
+    expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(source).not.toContain("secrets.");
+    for (const job of Object.values(workflow.jobs)) {
+      if (job.if?.includes("github.event_name == 'pull_request'")) {
+        expect(job.if).toContain("vars.ORC_ISOLATED_PR_RUNNER_READY == 'true'");
+      } else {
+        expect(job.if).toContain("github.actor == 'niradler'");
+        expect(job.if).toContain("github.repository == 'niradler/orc'");
+      }
+    }
+  }
+  const source = readFileSync(join(root, ".github/homelab-runner/compose.yml"), "utf8");
+  const compose = yaml.load(source) as {
+    services: { runner: { network_mode: string; profiles: string[] } };
+  };
+  expect(compose.services.runner.network_mode).toBe("none");
+  expect(compose.services.runner.profiles).toContain("security-review-required");
+  expect(source).not.toContain("ACCESS_TOKEN");
 });

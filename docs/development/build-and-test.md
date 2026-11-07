@@ -8,7 +8,7 @@ Commands to check, test and build ORC before opening a pull request.
 bun run ci:pr
 ```
 
-That is the pull-request gate. The pre-commit hook runs the same package selection without the browser sanity suite (`bun run ci:changed`). `bun run ci` still runs every package's unit tests and no browser tests. `bun run ci:full` runs those unit tests plus the full Playwright suite. Merging to master and `bun run release --check` both require that full suite.
+That is the local pull-request gate. The pre-commit hook runs the same package selection without the browser sanity suite (`bun run ci:changed`). `bun run ci` still runs every package's unit tests and no browser tests. `bun run ci:full` runs those unit tests plus the full Playwright suite. Run and record that full gate before every merge to master and before a release; the release check also runs all package and browser tests. Automatic homelab workflows remain disabled pending the security requirements below.
 
 | Command | What it runs |
 | --- | --- |
@@ -43,24 +43,21 @@ bun packages/web/scripts/run-e2e.ts --grep @sanity
 
 Feature tags such as `@chat` are not used. A change inside `packages/web` runs that package's browser tests.
 
-The full browser suite starts two isolated shards by default (`PW_SHARDS`, four on the homelab full job). Each shard has its own API, database and Playwright worker. Shards stay single-worker so those tests do not share one database. `PW_SHARDS=1` is the serial run. `--grep` stays on one shard unless `PW_SHARDS` is set.
+The full browser suite starts four isolated shards by default (`PW_SHARDS`). Each shard has its own API, database, home directory, result directory and Playwright worker. Shards stay single-worker so those tests do not share one database. `PW_SHARDS=1` is the serial run; set `PW_SHARDS=2` on smaller machines. `--grep` stays on one shard unless `PW_SHARDS` is set. Failure traces remain in `packages/web/test-results/shard-N`; temporary databases and homes are cleaned after children stop, including interrupted runs. Parallel runs reject a shared explicit port, database or `--output` path.
 
 ## Homelab runner
 
-Pull requests and pushes to `master` run on a self-hosted runner labeled `homelab`. Self-hosted runners are free on a public repository. A pull request from a fork still executes its code on that machine, so the runner is locked down:
+Automatic PR and master workflows are deliberately disabled. The owner can explicitly dispatch trusted code to the existing `homelab` runner; local `ci:pr` and `ci:full` are the normal gates. The checked-in `.github/homelab-runner` scaffold is inactive by default, has no network access and receives no registration credential. It is not an installation recipe for an untrusted-PR runner.
+
+Before enabling automatic runs, implement and verify all of these requirements:
 
 - Repository Settings → Actions → General → Fork pull request workflows: require approval for all outside collaborators.
-- Workflows use `pull_request`, not `pull_request_target`, and the jobs receive no secrets. `permissions` is `contents: read`.
-- The runner is ephemeral, one fresh container per job, with no Docker socket and no host mounts. It does not join other homelab networks.
-- Jobs run as the image's `runner` user (`RUN_AS_ROOT=false`). The extra label is `homelab`, so `runs-on: [self-hosted, homelab]` does not match other runners.
+- PR workflows use `pull_request`, never `pull_request_target`, with `permissions: contents: read`, no secrets and checkout credentials disabled after checkout.
+- A fresh runner for every job: non-root, no Docker socket, no host mounts or readable registration credential, and verified denial of LAN/host access. Merely choosing a separate Docker bridge does not isolate the homelab LAN.
+- Registration uses a short-lived credential outside the job's environment. Confirm the workflow's requested labels match the actual runner labels.
+- Add a successful full-suite gate on the candidate merge revision before merge, rather than relying on a run after a push to master. Keep `ci:full` as the local equivalent and the release gate.
 
-The stack is `.github/homelab-runner`. On the lab machine, copy that directory to `/opt/homelab/stacks/gha-runner`. Create a `.env` there with `ACCESS_TOKEN` set to a fine-grained personal access token that can register runners for this repository. Do not commit the token. Then:
-
-```bash
-docker compose up -d --build
-```
-
-The image installs Chromium and its libraries under `/opt/ms-playwright`. `ci:full` remains the local equivalent of the master job.
+Only after those checks pass should an isolated stack be installed under `/opt/homelab/stacks/gha-runner`, the PR readiness gate enabled, and automatic workflow triggers restored. This PR does not alter the live runner, repository approval settings, firewall or homelab services.
 
 ## Tests
 

@@ -1,7 +1,16 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const RUN_ALL_FILES = new Set(["package.json", "bun.lock", "bun.lockb", "biome.json"]);
+const RUN_ALL_FILES = new Set([
+  "package.json",
+  "bun.lock",
+  "bun.lockb",
+  "bunfig.toml",
+  "biome.json",
+  "biome.jsonc",
+  "Dockerfile",
+  ".dockerignore",
+]);
 const RUN_ALL_PREFIXES = ["patches/", "scripts/", "hooks/", ".github/", ".githooks/"];
 const OWNED_PREFIXES = ["scripts/", "hooks/", "docs/"];
 const SKIP_DIRECTORIES = new Set([
@@ -191,6 +200,7 @@ export function unownedSourceFiles(root: string): string[] {
 
 function git(root: string, args: string[]): string {
   const result = Bun.spawnSync(["git", ...args], {
+    timeout: 30_000,
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
@@ -204,6 +214,7 @@ function git(root: string, args: string[]): string {
 
 function refExists(root: string, ref: string): boolean {
   const result = Bun.spawnSync(["git", "rev-parse", "--verify", "--quiet", ref], {
+    timeout: 30_000,
     cwd: root,
     stdout: "ignore",
     stderr: "ignore",
@@ -219,8 +230,7 @@ export function defaultCompareBase(root: string): string {
 
 export function changedFiles(root: string, base: string): string[] {
   const mergeBase = git(root, ["merge-base", base, "HEAD"]).trim();
-  return git(root, ["diff", "--name-only", mergeBase])
-    .split("\n")
-    .map((line) => line.trim())
+  return git(root, ["diff", "--no-renames", "--name-only", "-z", mergeBase, "--"])
+    .split("\0")
     .filter((line) => line.length > 0);
 }

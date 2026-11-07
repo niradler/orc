@@ -92,7 +92,7 @@ if (!wantsChangeScope) {
     const webChanged = selection.packageNames.includes("@orc/web");
     let browser: "all" | "sanity" | "none" = "none";
     if (webChanged && (wantsE2e || wantsSanity)) browser = "all";
-    else if (wantsSanity) browser = "sanity";
+    else if (wantsSanity || wantsE2e) browser = "sanity";
     pushPackageTests(selection.packageNames, browser);
   }
 }
@@ -137,6 +137,7 @@ for (const [name, command] of steps) {
         }
       : env;
     const result = Bun.spawnSync(command, {
+      timeout: name.includes("e2e") ? 30 * 60_000 : 15 * 60_000,
       cwd: repoRoot,
       env: childEnv,
       stdout: "inherit",

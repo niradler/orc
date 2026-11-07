@@ -4,6 +4,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopOwnedProcess } from "./stop-process";
 
+const commands = new Set<Bun.Subprocess>();
+
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
     const server = createServer();
@@ -46,24 +48,7 @@ async function waitForReady(url: string, timeoutMs: number): Promise<void> {
 }
 
 async function run(cmd: string[], env: Record<string, string>, timeoutMs: number): Promise<void> {
-  const proc = Bun.spawn({
-    cmd,
-    cwd: `${import.meta.dir}/..`,
-    env,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-
-  const timeout = setTimeout(() => {
-    try {
-      proc.kill();
-    } catch {
-      /* ignore */
-    }
-  }, timeoutMs);
-
-  const exitCode = await proc.exited;
-  clearTimeout(timeout);
+  const exitCode = await runExit(cmd, env, timeoutMs);
   if (exitCode !== 0) {
     throw new Error(`${cmd.join(" ")} exited with code ${exitCode}`);
   }
@@ -90,7 +75,7 @@ function shardCount(playwrightArguments: string[]): number {
   ) {
     return 1;
   }
-  return 2;
+  return 4;
 }
 
 // Isolate ORC state without hiding the browser installed before this process starts.
@@ -116,8 +101,8 @@ type Shard = {
 async function createShard(index: number): Promise<Shard> {
   const port = process.env.PW_API_PORT ?? String(await freePort());
   await assertPortFree(Number(port));
-  const dbPath = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}-${index}.db`);
   const home = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
+  const dbPath = process.env.PW_DB_PATH ?? join(home, "state.db");
   return {
     port,
     dbPath,
@@ -144,6 +129,7 @@ async function createShard(index: number): Promise<Shard> {
       ORC_TERMINALS_ENABLED: "1",
       ORC_TERMINALS_ALLOW_WITHOUT_SECRET: "1",
       PW_NO_SERVER: "1",
+      PW_OUTPUT_DIR: join(import.meta.dir, "../test-results", `shard-${index + 1}`),
     },
   };
 }
@@ -160,16 +146,14 @@ async function runExit(
     stdout: "inherit",
     stderr: "inherit",
   });
-  const timeout = setTimeout(() => {
-    try {
-      proc.kill();
-    } catch {
-      /* ignore */
-    }
-  }, timeoutMs);
-  const exitCode = await proc.exited;
-  clearTimeout(timeout);
-  return exitCode;
+  commands.add(proc);
+  const timeout = setTimeout(() => void stopOwnedProcess(proc), timeoutMs);
+  try {
+    return await proc.exited;
+  } finally {
+    clearTimeout(timeout);
+    commands.delete(proc);
+  }
 }
 
 const count = shardCount(playwrightArgs);
@@ -177,6 +161,11 @@ const explicitPort = process.env.PW_API_PORT;
 const explicitDb = process.env.PW_DB_PATH;
 if (count > 1 && (explicitPort || explicitDb)) {
   throw new Error("PW_SHARDS greater than 1 cannot share PW_API_PORT or PW_DB_PATH");
+}
+if (count > 1 && playwrightArgs.some((argument) => argument.startsWith("--output"))) {
+  throw new Error(
+    "Parallel shards need separate output directories; omit --output or use PW_SHARDS=1",
+  );
 }
 const shards: Shard[] = [];
 
@@ -188,14 +177,28 @@ async function stopApis(): Promise<void> {
   );
 }
 
-process.once("SIGINT", async () => {
+async function cleanup(): Promise<void> {
+  await Promise.all([...commands].map((command) => stopOwnedProcess(command)));
   await stopApis();
-  process.exit(130);
-});
-process.once("SIGTERM", async () => {
-  await stopApis();
-  process.exit(143);
-});
+  for (const shard of shards) {
+    if (shard.api) await shard.api.exited;
+    try {
+      unlinkSync(shard.dbPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    rmSync(shard.home, { recursive: true, force: true });
+  }
+}
+
+for (const [signal, code] of [
+  ["SIGINT", 130],
+  ["SIGTERM", 143],
+] as const)
+  process.once(signal, async () => {
+    await cleanup();
+    process.exit(code);
+  });
 
 const repoRoot = join(import.meta.dir, "../../..");
 let exitCode = 0;
@@ -234,20 +237,7 @@ try {
   console.error(err instanceof Error ? err.message : err);
   exitCode = 1;
 } finally {
-  await stopApis();
-  for (const shard of shards) {
-    try {
-      if (shard.api) await shard.api.exited;
-    } catch {
-      /* ignore */
-    }
-    try {
-      unlinkSync(shard.dbPath);
-    } catch {
-      /* already gone */
-    }
-    rmSync(shard.home, { recursive: true, force: true });
-  }
+  await cleanup();
 }
 
 process.exit(exitCode);

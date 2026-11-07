@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import {
+  API_BASE,
   API_SECRET,
   apiDelete,
   apiGet,
@@ -27,7 +28,12 @@ async function seedSession(
 }
 
 test.describe("@sanity critical flows", () => {
-  test("the app loads, accepts the dev secret, and renders the main pages", async ({ page }) => {
+  test("the app loads, accepts the dev secret, and renders the main pages", async ({
+    page,
+    request,
+  }) => {
+    const unauthenticated = await request.get(`${API_BASE}/projects`);
+    expect(unauthenticated.status()).toBe(401);
     await gotoView(page, "dashboard");
     await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
     await expect(page.getByTestId("stat-card").first()).toBeVisible();
