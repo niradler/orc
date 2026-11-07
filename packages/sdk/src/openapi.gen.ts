@@ -4434,6 +4434,198 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/notification-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read automatic notification forwarding policy */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @default false */
+                            enabled: boolean;
+                            /** @default  */
+                            base_url: string;
+                        };
+                    };
+                };
+            };
+        };
+        /** Enable or pause notification forwarding without disconnecting channels */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @default false */
+                        enabled?: boolean;
+                        /** @default  */
+                        base_url?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @default false */
+                            enabled: boolean;
+                            /** @default  */
+                            base_url: string;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/notification-deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect recent forwarding status and safe delivery errors */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            notification_id: string;
+                            connection_id: string;
+                            target_id: string;
+                            /** @enum {string} */
+                            status: "pending" | "sending" | "delivered" | "failed" | "unknown" | "skipped";
+                            attempts: number;
+                            next_at: number;
+                            error: string | null;
+                            receipt_id: string | null;
+                            created_at: number;
+                            expires_at: number;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/notification-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview draft notification filters without sending a message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        filter: {
+                            /** @default false */
+                            enabled?: boolean;
+                            /** @default [] */
+                            types?: string[];
+                            /** @default [] */
+                            categories?: ("human" | "agent" | "job")[];
+                            /** @default [] */
+                            levels?: ("needs-you" | "done")[];
+                            /** @default [] */
+                            outcomes?: ("waiting" | "success" | "failure")[];
+                            /** @default false */
+                            include_unknown?: boolean;
+                        };
+                        /** @default [] */
+                        project_ids?: string[];
+                        event: {
+                            type: string;
+                            /** @enum {string} */
+                            level: "needs-you" | "done";
+                            /** @default null */
+                            project_id?: string | null;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            matches: boolean;
+                            summary: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/providers": {
         parameters: {
             query?: never;
@@ -4568,6 +4760,20 @@ export interface paths {
                                 outbound: boolean;
                                 /** @default false */
                                 attention: boolean;
+                                notifications?: {
+                                    /** @default false */
+                                    enabled: boolean;
+                                    /** @default [] */
+                                    types: string[];
+                                    /** @default [] */
+                                    categories: ("human" | "agent" | "job")[];
+                                    /** @default [] */
+                                    levels: ("needs-you" | "done")[];
+                                    /** @default [] */
+                                    outcomes: ("waiting" | "success" | "failure")[];
+                                    /** @default false */
+                                    include_unknown: boolean;
+                                };
                             }[];
                             routes: {
                                 id: string;
@@ -4666,6 +4872,20 @@ export interface paths {
                             outbound?: boolean;
                             /** @default false */
                             attention?: boolean;
+                            notifications?: {
+                                /** @default false */
+                                enabled?: boolean;
+                                /** @default [] */
+                                types?: string[];
+                                /** @default [] */
+                                categories?: ("human" | "agent" | "job")[];
+                                /** @default [] */
+                                levels?: ("needs-you" | "done")[];
+                                /** @default [] */
+                                outcomes?: ("waiting" | "success" | "failure")[];
+                                /** @default false */
+                                include_unknown?: boolean;
+                            };
                         }[];
                         /** @default [] */
                         routes?: {
@@ -4721,6 +4941,20 @@ export interface paths {
                                 outbound: boolean;
                                 /** @default false */
                                 attention: boolean;
+                                notifications?: {
+                                    /** @default false */
+                                    enabled: boolean;
+                                    /** @default [] */
+                                    types: string[];
+                                    /** @default [] */
+                                    categories: ("human" | "agent" | "job")[];
+                                    /** @default [] */
+                                    levels: ("needs-you" | "done")[];
+                                    /** @default [] */
+                                    outcomes: ("waiting" | "success" | "failure")[];
+                                    /** @default false */
+                                    include_unknown: boolean;
+                                };
                             }[];
                             routes: {
                                 id: string;
@@ -4807,6 +5041,20 @@ export interface paths {
                             outbound: boolean;
                             /** @default false */
                             attention: boolean;
+                            notifications?: {
+                                /** @default false */
+                                enabled: boolean;
+                                /** @default [] */
+                                types: string[];
+                                /** @default [] */
+                                categories: ("human" | "agent" | "job")[];
+                                /** @default [] */
+                                levels: ("needs-you" | "done")[];
+                                /** @default [] */
+                                outcomes: ("waiting" | "success" | "failure")[];
+                                /** @default false */
+                                include_unknown: boolean;
+                            };
                         }[];
                     };
                 };
@@ -4990,6 +5238,20 @@ export interface paths {
                             outbound: boolean;
                             /** @default false */
                             attention: boolean;
+                            notifications?: {
+                                /** @default false */
+                                enabled: boolean;
+                                /** @default [] */
+                                types: string[];
+                                /** @default [] */
+                                categories: ("human" | "agent" | "job")[];
+                                /** @default [] */
+                                levels: ("needs-you" | "done")[];
+                                /** @default [] */
+                                outcomes: ("waiting" | "success" | "failure")[];
+                                /** @default false */
+                                include_unknown: boolean;
+                            };
                         };
                     };
                 };

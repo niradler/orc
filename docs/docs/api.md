@@ -193,6 +193,9 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `POST` | `/webhooks/{token}` (no `/api`) | Receive a signed delivery |
 | `GET` | `/channels`, `/channels/providers` | Channels and providers |
 | `POST` | `/channels/messages` | Send a message |
+| `GET` `PUT` | `/channels/notification-policy` | Read/save global forwarding opt-in and ORC link origin |
+| `POST` | `/channels/notification-preview` | Test draft type/category/severity/outcome/project filters without sending |
+| `GET` | `/channels/notification-deliveries` | Recent delivery status and safe errors; `limit` 1–100 |
 | `GET` | `/gateway/status` | Gateway adapters and sessions; `POST /gateway/send` sends |
 
 ### Sessions, chat and terminals
