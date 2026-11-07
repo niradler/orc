@@ -178,7 +178,7 @@ test("should share recent folders and last selection between chat and terminal, 
   await expect(page.getByTestId("chat-workspace")).toHaveCount(0);
 });
 
-test("should collapse consecutive tools while retaining their input, results and separators", async ({
+test("should fold a turn's tools while retaining their input, results and separators", async ({
   page,
 }) => {
   const id = crypto.randomUUID();
@@ -230,16 +230,19 @@ test("should collapse consecutive tools while retaining their input, results and
     API_SECRET,
   );
   await page.goto(`/tasks?chat=open&chatThread=${id}`);
-  const group = page.getByTestId("chat-tool-group");
+  const group = page.getByTestId("chat-turn-fold");
+  const summary = page.getByTestId("chat-turn-fold-summary");
   await expect(group).toHaveCount(1);
   await expect(group).not.toHaveAttribute("open", "");
-  await expect(group.locator("summary").first()).toContainText("2 tool calls");
-  await expect(group.locator("summary").first()).toContainText("1 failed");
-  await group.locator("summary").first().click();
-  await expect(group.getByTestId("chat-tool")).toHaveCount(2);
+  await expect(page.getByTestId("chat-turn-fold-label")).toHaveText("Worked · 3 tools");
+  await expect(summary).toContainText("1 failed");
+  await summary.click();
+  await expect(group.getByTestId("chat-tool")).toHaveCount(3);
+  await expect(group.getByText("Next step")).toBeVisible();
   await group.getByTestId("chat-tool").first().locator("summary").click();
   await expect(group.getByTestId("chat-tool").first()).toContainText("first input");
   await expect(group.getByTestId("chat-tool").first()).toContainText("first result");
+  await expect(group.getByTestId("chat-tool").nth(1)).toContainText("Failed");
   await expect(page.getByTestId("chat-tool").last()).toBeVisible();
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });

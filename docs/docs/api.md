@@ -217,6 +217,14 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `GET` | `/terminals/{id}/git/status` | Git status of a terminal checkout |
 | `GET` | `/git/worktrees` | Checkouts of a repo |
 
+Chat streams include `turn` events with `startedAt` (Unix milliseconds), followed
+at completion by `finishedAt`, `durationMs` and `outcome` (`completed`, `stopped`,
+or `failed`). The same optional `turn` object is persisted on assistant messages.
+`durationMs` prefers the backend's reported duration and otherwise uses server
+elapsed time. Replay includes the original start; legacy messages may omit `turn`.
+Before a tool call, a `narration` event moves accumulated prose out of the current
+reply and into its folded activity. Its `text` preserves that prose for expansion.
+
 ### Human requests, rules and scratchpads
 
 | Method | Path | Purpose |

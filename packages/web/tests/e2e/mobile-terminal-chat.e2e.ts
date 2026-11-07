@@ -324,9 +324,7 @@ test("Android chat keeps a long draft and send control above the software keyboa
     await messages.evaluate((element) => {
       element.scrollTop = 0;
     });
-    await expect(
-      sheet.getByRole("button", { name: "Scroll to latest response", exact: true }),
-    ).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Jump to latest", exact: true })).toBeVisible();
     await expect
       .poll(async () => {
         const box = await send.boundingBox();

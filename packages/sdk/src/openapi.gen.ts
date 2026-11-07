@@ -572,6 +572,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -799,6 +806,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -969,6 +983,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1189,6 +1210,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1407,6 +1435,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1481,6 +1516,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */
@@ -1706,6 +1748,13 @@ export interface paths {
                                 role: "user" | "assistant";
                                 content: string;
                                 timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
                                 agent?: string;
                                 activity?: ({
                                     /** @enum {string} */

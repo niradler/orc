@@ -114,11 +114,20 @@ export const ChatActivitySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), id: z.string(), text: z.string() }),
 ]);
 export type ChatActivity = z.infer<typeof ChatActivitySchema>;
+export const ChatTurnSchema = z.object({
+  startedAt: z.number().finite().nonnegative(),
+  finishedAt: z.number().finite().nonnegative().optional(),
+  durationMs: z.number().finite().nonnegative().optional(),
+  outcome: z.enum(["completed", "stopped", "failed"]).optional(),
+});
+export type ChatTurn = z.infer<typeof ChatTurnSchema>;
+
 export const ChatMessageSchema = z.object({
   id: z.string(),
   role: z.enum(["user", "assistant"]),
   content: z.string(),
   timestamp: z.number(),
+  turn: ChatTurnSchema.optional(),
   agent: z.string().optional(),
   activity: z.array(ChatActivitySchema).optional(),
   attachments: z.array(SessionFileSchema).max(10).optional(),
@@ -167,6 +176,8 @@ export const ChatThreadSchema = z.object({
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;
 export const ChatEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("turn"), turn: ChatTurnSchema }),
+  z.object({ type: z.literal("narration"), text: z.string() }),
   z.object({ type: z.literal("capabilities"), capabilities: AgentCapabilitiesSchema }),
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({ type: z.literal("thinking"), text: z.string() }),
@@ -225,7 +236,7 @@ export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): 
       )
       .slice(-200);
   }
-  if (event.type === "system_status")
+  if (event.type === "system_status" || event.type === "narration")
     return [...activity, { type: "status", id: crypto.randomUUID(), text: event.text }].slice(
       -200,
     ) as ChatActivity[];
