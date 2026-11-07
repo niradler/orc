@@ -307,7 +307,9 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                           ? (projectName.get(session.project_id) ?? "Unknown project")
                           : "Unassigned"}
                       </span>
-                      {session.handoff?.status === "ready" && <span>Ready to resume</span>}
+                      {session.handoff?.status === "ready" && (
+                        <span data-testid="handoff-ready">Ready to resume</span>
+                      )}
                     </div>
                     {session.summary && session.summary !== session.name && (
                       <p className="truncate sm:col-start-1" title={session.summary}>
