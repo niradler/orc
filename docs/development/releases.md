@@ -23,7 +23,7 @@ it never pushes a branch.
 The tag triggers `release-desktop.yml`. Its matrix excludes the locally built
 desktop target and builds/smoke-tests the other targets: Windows x64, macOS ARM64,
 Linux x64 and Linux ARM64. The local command waits for those jobs, downloads their
-installers, and publishes nine assets plus SHA256 checksums to GitHub Releases.
+installers, and publishes the CLI binaries, desktop installers, electron-updater metadata (`latest.yml`, `latest-mac.yml`, `latest-linux.yml`, `latest-linux-arm64.yml`), the macOS zip and any blockmaps those metadata files reference, plus SHA256 checksums, to GitHub Releases.
 Only then does it publish npm and the `linux/amd64,linux/arm64` Docker image,
 tagged with the release version and `latest`.
 
@@ -51,7 +51,7 @@ Desktop relaunch ignores development port, API-base, database and web-dist
 environment overrides and uses the installed application's configuration.
 It starts in the installed application's directory so the repository's `.env`
 and project configuration are not reloaded by the standalone executable.
-Linux x64 installers use Electron's `x86_64` artifact suffix.
+Linux x64 installers use Electron's `x86_64` artifact suffix. The macOS zip and metadata are retained for future updater support; the DMG remains the installer. macOS automatic updates are disabled until Developer ID signing and an installed upgrade test are complete.
 
 Progress is checkpointed in ignored `.orc/release-state.json`. Resume from the
 same release commit and host. Failed steps stop immediately; successful publishes
