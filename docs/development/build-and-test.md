@@ -21,6 +21,15 @@ It runs the same gates as the pre-commit hook (`scripts/ci-local.ts`):
 
 `bun run ci:full` adds the Playwright e2e suite. `bun run check` fixes lint and format in place.
 
+### Manual homelab CI
+
+The Actions `CI` workflow runs these unit, type and security gates on the `homelab`
+runner when dispatched manually by `niradler` in `niradler/orc`. It uses Bun 1.4.4,
+runs package tests sequentially, grants read-only repository access and does not
+persist checkout credentials. Jobs stop after 60 minutes. Automatic PR runs stay
+disabled; this workflow does not establish isolation for running untrusted PR code.
+Browser tests remain a separate local or manual E2E check.
+
 ## Tests
 
 ```bash

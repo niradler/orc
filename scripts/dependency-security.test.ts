@@ -11,12 +11,51 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = mkdtempSync(join(tmpdir(), "orc-dependency-security-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const repo = resolve(import.meta.dir, "..");
 const runnerRequire = createRequire(join(repo, "packages/runner/package.json"));
 const chokidarRequire = createRequire(runnerRequire.resolve("chokidar"));
+
+test("should block query-based reads of denied files through the docs Vite dependency", async () => {
+  const vitepressRequire = createRequire(Bun.resolveSync("vitepress", repo));
+  const vitePath = vitepressRequire.resolve("vite");
+  expect(Bun.semver.satisfies(version(vitePath), ">=6.4.5")).toBe(true);
+  const viteEsm = join(
+    dirname(vitepressRequire.resolve("vite/package.json")),
+    "dist/node/index.js",
+  );
+  const vite = (await import(pathToFileURL(viteEsm).href)) as typeof import("vite");
+  const directory = join(root, "vite-denied-files");
+  mkdirSync(directory);
+  writeFileSync(join(directory, ".env"), "PRIVATE_FIXTURE=not-a-real-secret\n");
+  writeFileSync(join(directory, "public.txt"), "public fixture");
+  const server = await vite.createServer({
+    root: directory,
+    configFile: false,
+    logLevel: "silent",
+    server: { host: "127.0.0.1", port: 0, hmr: false },
+  });
+  try {
+    await server.listen();
+    const address = server.httpServer?.address();
+    if (!address || typeof address === "string") throw new Error("Vite listener unavailable");
+    expect(address.address).toBe("127.0.0.1");
+    const origin = `http://127.0.0.1:${address.port}`;
+    expect(
+      (await fetch(`${origin}/public.txt`, { signal: AbortSignal.timeout(5000) })).status,
+    ).toBe(200);
+    for (const query of ["", "?raw", "?import&raw", "?import&url&inline"]) {
+      const response = await fetch(`${origin}/.env${query}`, { signal: AbortSignal.timeout(5000) });
+      expect(response.status).toBe(403);
+      expect(await response.text()).not.toContain("PRIVATE_FIXTURE");
+    }
+  } finally {
+    await server.close();
+  }
+});
 
 test("should use patched minimatch while preserving SDK URL matching", async () => {
   const sdkRequire = createRequire(

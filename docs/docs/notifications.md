@@ -53,6 +53,8 @@ In **Settings → Channels → Notification forwarding**, enter the ORC origin r
 from your channel client (for example `https://orc.example.com`), enable forwarding
 and save. The URL must have no credentials, path, query or fragment. Links open the
 existing authenticated ORC app; forwarding supplies no login or approval authority.
+The forwarding switch and URL stay disabled while saved settings load or save.
+If loading fails, the form shows the error and stays disabled.
 
 Edit a connection, open **Recipients**, edit a recipient and select **Forward
 notifications**. Apply the recipient and save the connection. The connection and
