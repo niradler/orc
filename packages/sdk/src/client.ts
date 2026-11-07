@@ -7,6 +7,7 @@ import type {
   ChannelView,
 } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
+import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
 import type {
   KbCallSource,
@@ -807,6 +808,8 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     projects: {
+      syncGithub: (id: string) =>
+        c<GithubSyncState>("POST", `/projects/${encodeURIComponent(id)}/github-sync`),
       list: (params?: { status?: string; tag?: string; limit?: number; offset?: number }) =>
         c<ProjectPage>(
           "GET",

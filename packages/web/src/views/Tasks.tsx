@@ -16,7 +16,9 @@ import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { GithubBoard } from "@/components/GithubBoard";
+import { GithubTaskBadge } from "@/components/GithubTaskBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { ProjectGithubSync } from "@/components/ProjectGithubSync";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
@@ -261,6 +263,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
           {(updateTask.error ?? deleteTask.error)?.message}
         </p>
       )}
+      <ProjectGithubSync key={apiProjectId ?? "all"} projectId={apiProjectId} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1 lg:max-w-md">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outline" />
@@ -373,6 +376,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                       <span className="block text-sm font-medium leading-5 wrap-break-word">
                         {task.title}
                       </span>
+                      <GithubTaskBadge task={task} />
                       <span
                         id={`task-row-meta-${task.id}`}
                         className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-outline"
@@ -455,6 +459,9 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                           >
                             {task.title}
                           </button>
+                          <div>
+                            <GithubTaskBadge task={task} />
+                          </div>
                         </TableCell>
                         <TableCell>
                           {/** biome-ignore lint/a11y/noStaticElementInteractions: event stopper wrapping an interactive Select */}

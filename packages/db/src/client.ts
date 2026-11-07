@@ -333,6 +333,11 @@ function setupDb(sqlite: Database): void {
 
   const migrations = [
     "ALTER TABLE gateway_sessions ADD COLUMN tokens_version INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN github_sync TEXT",
+    "ALTER TABLE projects ADD COLUMN github_sync_state TEXT",
+    "ALTER TABLE tasks ADD COLUMN github_issue_id TEXT",
+    "ALTER TABLE tasks ADD COLUMN github_sync TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS tasks_github_issue_idx ON tasks(project_id, github_issue_id)",
     "ALTER TABLE tasks ADD COLUMN git_repo TEXT",
     "ALTER TABLE tasks ADD COLUMN git_branch TEXT",
     "ALTER TABLE tasks ADD COLUMN git_worktree TEXT",

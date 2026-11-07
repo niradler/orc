@@ -1,3 +1,4 @@
+import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/core/github-sync";
 import type { JobAction } from "@orc/core/job-actions";
 import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 import { sql } from "drizzle-orm";
@@ -30,6 +31,8 @@ export const projects = sqliteTable(
       .notNull(),
     scope: text("scope"),
     git_remote_url: text("git_remote_url"),
+    github_sync: text("github_sync", { mode: "json" }).$type<GithubSyncConfig>(),
+    github_sync_state: text("github_sync_state", { mode: "json" }).$type<GithubSyncState>(),
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     obsidian_path: text("obsidian_path"),
     max_workers: integer("max_workers"),
@@ -39,52 +42,58 @@ export const projects = sqliteTable(
   (t) => [uniqueIndex("projects_name_idx").on(t.name)],
 );
 
-export const tasks = sqliteTable("tasks", {
-  id: text("id").primaryKey(),
-  project_id: text("project_id").references(() => projects.id),
-  title: text("title").notNull(),
-  body: text("body"),
-  git_repo: text("git_repo"),
-  git_branch: text("git_branch"),
-  git_worktree: text("git_worktree"),
-  github_issue: text("github_issue"),
-  github_pr: text("github_pr"),
-  status: text("status", {
-    enum: [
-      "todo",
-      "queued",
-      "doing",
-      "review",
-      "changes_requested",
-      "blocked",
-      "done",
-      "paused",
-      "cancelled",
-    ],
-  })
-    .default("todo")
-    .notNull(),
-  priority: text("priority", { enum: ["low", "normal", "high", "critical"] })
-    .default("normal")
-    .notNull(),
-  progress: integer("progress").default(0).notNull(),
-  due_at: integer("due_at", { mode: "timestamp" }),
-  tags: text("tags", { mode: "json" }).$type<string[]>(),
-  author: text("author").default("human").notNull(),
-  claimed_by: text("claimed_by"),
-  claim_expires_at: integer("claim_expires_at", { mode: "timestamp" }),
-  skill_name: text("skill_name"),
-  required_review: integer("required_review", { mode: "boolean" }).default(true).notNull(),
-  agent_backend: text("agent_backend"),
-  agent_model: text("agent_model"),
-  max_review_rounds: integer("max_review_rounds").default(3).notNull(),
-  auto_start: integer("auto_start", { mode: "boolean" }).default(true).notNull(),
-  flow_name: text("flow_name"),
-  // An inline graph for this task alone, for work whose shape no named flow
-  // covers. Takes precedence over flow_name.
-  flow_override: text("flow_override", { mode: "json" }).$type<unknown>(),
-  ...timestamps,
-});
+export const tasks = sqliteTable(
+  "tasks",
+  {
+    id: text("id").primaryKey(),
+    project_id: text("project_id").references(() => projects.id),
+    title: text("title").notNull(),
+    body: text("body"),
+    git_repo: text("git_repo"),
+    git_branch: text("git_branch"),
+    git_worktree: text("git_worktree"),
+    github_issue: text("github_issue"),
+    github_issue_id: text("github_issue_id"),
+    github_sync: text("github_sync", { mode: "json" }).$type<GithubTaskSync>(),
+    github_pr: text("github_pr"),
+    status: text("status", {
+      enum: [
+        "todo",
+        "queued",
+        "doing",
+        "review",
+        "changes_requested",
+        "blocked",
+        "done",
+        "paused",
+        "cancelled",
+      ],
+    })
+      .default("todo")
+      .notNull(),
+    priority: text("priority", { enum: ["low", "normal", "high", "critical"] })
+      .default("normal")
+      .notNull(),
+    progress: integer("progress").default(0).notNull(),
+    due_at: integer("due_at", { mode: "timestamp" }),
+    tags: text("tags", { mode: "json" }).$type<string[]>(),
+    author: text("author").default("human").notNull(),
+    claimed_by: text("claimed_by"),
+    claim_expires_at: integer("claim_expires_at", { mode: "timestamp" }),
+    skill_name: text("skill_name"),
+    required_review: integer("required_review", { mode: "boolean" }).default(true).notNull(),
+    agent_backend: text("agent_backend"),
+    agent_model: text("agent_model"),
+    max_review_rounds: integer("max_review_rounds").default(3).notNull(),
+    auto_start: integer("auto_start", { mode: "boolean" }).default(true).notNull(),
+    flow_name: text("flow_name"),
+    // An inline graph for this task alone, for work whose shape no named flow
+    // covers. Takes precedence over flow_name.
+    flow_override: text("flow_override", { mode: "json" }).$type<unknown>(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("tasks_github_issue_idx").on(t.project_id, t.github_issue_id)],
+);
 
 export const comments = sqliteTable(
   "comments",

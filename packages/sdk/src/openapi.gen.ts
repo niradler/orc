@@ -16384,6 +16384,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/github-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronize a project's GitHub issues and task statuses */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sync result; error is non-null for incomplete sync */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            synced_at: string | null;
+                            error: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/github/items": {
         parameters: {
             query?: never;
@@ -17084,6 +17125,37 @@ export interface components {
             status: "active" | "archived" | "paused";
             scope: string | null;
             git_remote_url: string | null;
+            github_sync: {
+                enabled: boolean;
+                /**
+                 * @default {
+                 *       "todo": "status:todo",
+                 *       "queued": "status:queued",
+                 *       "doing": "status:doing",
+                 *       "review": "status:review",
+                 *       "changes_requested": "status:changes-requested",
+                 *       "blocked": "status:blocked",
+                 *       "paused": "status:paused",
+                 *       "done": "status:done",
+                 *       "cancelled": "status:cancelled"
+                 *     }
+                 */
+                status_labels: {
+                    todo: string;
+                    queued: string;
+                    doing: string;
+                    review: string;
+                    changes_requested: string;
+                    blocked: string;
+                    paused: string;
+                    done: string;
+                    cancelled: string;
+                };
+            } | null;
+            github_sync_state: {
+                synced_at: string | null;
+                error: string | null;
+            } | null;
             tags: string[] | null;
             obsidian_path: string | null;
             max_workers: number | null;
@@ -17103,6 +17175,33 @@ export interface components {
             status: "active" | "archived" | "paused";
             scope?: string;
             git_remote_url?: string | null;
+            github_sync?: {
+                enabled: boolean;
+                /**
+                 * @default {
+                 *       "todo": "status:todo",
+                 *       "queued": "status:queued",
+                 *       "doing": "status:doing",
+                 *       "review": "status:review",
+                 *       "changes_requested": "status:changes-requested",
+                 *       "blocked": "status:blocked",
+                 *       "paused": "status:paused",
+                 *       "done": "status:done",
+                 *       "cancelled": "status:cancelled"
+                 *     }
+                 */
+                status_labels: {
+                    todo: string;
+                    queued: string;
+                    doing: string;
+                    review: string;
+                    changes_requested: string;
+                    blocked: string;
+                    paused: string;
+                    done: string;
+                    cancelled: string;
+                };
+            } | null;
             tags?: string[];
             obsidian_path?: string;
             max_workers?: number;
@@ -17115,6 +17214,33 @@ export interface components {
             status?: "active" | "archived" | "paused";
             scope?: string | null;
             git_remote_url?: string | null;
+            github_sync?: {
+                enabled: boolean;
+                /**
+                 * @default {
+                 *       "todo": "status:todo",
+                 *       "queued": "status:queued",
+                 *       "doing": "status:doing",
+                 *       "review": "status:review",
+                 *       "changes_requested": "status:changes-requested",
+                 *       "blocked": "status:blocked",
+                 *       "paused": "status:paused",
+                 *       "done": "status:done",
+                 *       "cancelled": "status:cancelled"
+                 *     }
+                 */
+                status_labels: {
+                    todo: string;
+                    queued: string;
+                    doing: string;
+                    review: string;
+                    changes_requested: string;
+                    blocked: string;
+                    paused: string;
+                    done: string;
+                    cancelled: string;
+                };
+            } | null;
             tags?: string[] | null;
             obsidian_path?: string;
             max_workers?: number | null;
@@ -17409,6 +17535,18 @@ export interface components {
             git_worktree: string | null;
             github_issue: string | null;
             github_pr: string | null;
+            github_sync: {
+                issue_id: string;
+                repo: string;
+                number: number;
+                /** @enum {string} */
+                status: "todo" | "queued" | "doing" | "review" | "changes_requested" | "blocked" | "done" | "paused" | "cancelled";
+                remote_updated_at: string;
+                /** @enum {string|null} */
+                pending_status?: "todo" | "queued" | "doing" | "review" | "changes_requested" | "blocked" | "done" | "paused" | "cancelled" | null;
+                synced_at: string | null;
+                error: string | null;
+            } | null;
             id: string;
             project_id: string | null;
             title: string;

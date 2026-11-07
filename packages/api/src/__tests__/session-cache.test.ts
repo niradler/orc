@@ -166,7 +166,10 @@ test("should serve authenticated numeric cache data for the stored session path 
     "INSERT INTO gateway_sessions (id, chat_id, backend, mode) VALUES ('cache-missing', ?, 'codex', 'direct')",
     [LIVE_CHAT_ID],
   );
-  expect(await (await req(app, "GET", "/sessions/live/cache-missing/cache")).json()).toEqual({
+  const missing = SessionCacheUsageSchema.parse(
+    await (await req(app, "GET", "/sessions/live/cache-missing/cache")).json(),
+  );
+  expect(missing).toEqual({
     latest: null,
     totals: null,
   });

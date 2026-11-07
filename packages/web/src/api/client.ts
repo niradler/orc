@@ -7,6 +7,7 @@ import type {
   ChannelView,
 } from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
+import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
 import type {
   KbComment,
@@ -1081,6 +1082,8 @@ export const api = {
   },
 
   projects: {
+    syncGithub: (id: string) =>
+      req<GithubSyncState>("POST", `/projects/${encodeURIComponent(id)}/github-sync`),
     list: (params?: { status?: string; tag?: string; limit?: number; offset?: number }) =>
       req<ProjectPage>(
         "GET",
