@@ -22,7 +22,7 @@ gh issue create -R niradler/orc --label bug --title "..." --body "..."
 
 1. Fork the repo, or branch from `master` if you have write access. Never commit to `master`.
 2. Keep one PR per issue. Reference it in the body (`Fixes #123`).
-3. Run the [checks](./build-and-test.md#before-you-open-a-pr) locally. The pre-commit hook runs them for you.
+3. Run the [pull-request checks](./build-and-test.md#before-you-open-a-pr). The pre-commit hook runs the packages your branch changes. Run `bun run ci:full` before merging to master.
 4. Update the docs page your change affects, in the same PR (see [Docs](#docs)).
 5. Open the PR:
 

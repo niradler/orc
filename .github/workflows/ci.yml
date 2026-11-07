@@ -1,44 +1,64 @@
 name: CI
 
-# PR runs disabled (no Actions credit); the same gates run locally via
-# .githooks/pre-commit -> scripts/ci-local.ts. Run manually from the Actions tab if needed.
 on:
+  pull_request:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  ci:
-    runs-on: ubuntu-latest
+  pull-request:
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, homelab]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the base branch
+        run: git fetch origin ${{ github.base_ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        working-directory: packages/web
+        run: bunx playwright install chromium
+
+      - name: Changed packages and sanity
+        run: bun scripts/ci-local.ts --changed origin/${{ github.base_ref }} --sanity
+
+  full:
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, homelab]
+    timeout-minutes: 60
+    env:
+      PW_SHARDS: "4"
     steps:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint
-        run: bun run lint
+      - name: Install Playwright Chromium
+        working-directory: packages/web
+        run: bunx playwright install chromium
 
-      - name: Format check
-        run: bunx biome format ./packages
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Test
-        run: bun run --filter '!@orc/web' test
-
-      - name: Dependency security regressions
-        run: bun test scripts/dependency-security.test.ts
-
-      # @orc/web is excluded above because its `test` script drives Playwright,
-      # which needs a browser (see e2e.yml). Its browser-free unit tests still
-      # belong on every PR.
-      - name: Web unit tests
-        run: bun run --filter @orc/web test:unit
+      - name: Full suite
+        run: bun run ci:full
