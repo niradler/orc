@@ -17,7 +17,7 @@ Pages are grouped in the sidebar:
 
 | Group | Pages |
 | --- | --- |
-| Activity | Activity, Attention needed, Sessions, Jobs, Webhooks, Audit |
+| Activity | Activity, Sessions, Jobs, Webhooks, Audit |
 | Tasks | Tasks |
 | Knowledge | Knowledge base, Memories |
 | Terminals | Terminals |
@@ -86,26 +86,25 @@ Scheduled and on-demand automation. A job runs a shell command, an agent or crea
 
 Inbound event sources. Configure a webhook once, then connect it to one or more jobs, each with its own event filters and action.
 
-## Attention needed
-
-Questions and approval requests from your agents in one queue. Answer here and the reply goes back to the waiting session. See [Human requests](./human-requests.md).
-
-## Agent notifications
+## Notifications
 
 When a session you are not viewing needs your approval, has a question or fails,
 ORC shows a **Needs you** notification and plays a short chime. Notifications
 settle for about one second before appearing and repeated snapshots do not repeat
-the alert. **Open Attention** takes you to the queue, closing any open chat. A
-single pending approval also offers **Approve** and **Deny**.
+the alert. The header bell opens a menu containing generic notifications, including
+human requests, agent outcomes and job results. Open a request to answer or review
+its action. Read and dismissed state is shared across clients.
 
 Desktop browsers show toasts. Needs-you toasts stay until dismissed or resolved;
 **Done** toasts are silent and close after six seconds, pausing on hover or focus.
 Sessions finishing together collapse into one notification. Use **Alt+N** or
-**Focus notifications** in the command palette to reach notifications.
+**Open notifications** in the command palette to reach notifications.
 
-On phones, the bell in the workspace and chat headers shows an unread count.
+On all screens, the bell in workspace and chat headers shows an unread count.
 New notifications never open the panel automatically. Tap the bell to read or
-dismiss them; Done updates remain there until dismissed or opened.
+dismiss them. History remains until dismissed or expired (30 days by default).
+Configure notification and audit retention in Settings → Storage.
+See [Notifications](./notifications.md) and [Human requests](./human-requests.md).
 
 **Settings → Notifications → Sound** controls the browser chime, volume and
 per-project sound mute. Preferences are saved in this browser. Audio starts after
@@ -119,7 +118,10 @@ destination. Done notifications are silent; native Needs-you sound follows the O
 
 ## Audit
 
-Recorded session summaries and events. Use Sessions to read full conversations or resume an agent.
+Lifecycle and knowledge events with filters and expandable details. Recorded
+session summaries remain in collapsed history. Audit retention defaults to 90
+days and is configurable in Settings → Storage. Use Sessions to read full
+conversations or resume an agent.
 
 ## Skills
 

@@ -17,6 +17,11 @@ export type {
 
 export type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 export type {
+  NotificationPage,
+  NotificationUpdate,
+  OrcNotification,
+} from "@orc/core/notifications";
+export type {
   ArchiveSearchResult,
   ArchiveSession,
   ArchiveUpload,

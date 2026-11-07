@@ -41,6 +41,11 @@ import type {
   KnowledgeBase,
 } from "@orc/core/kb";
 import type { McpServerSettings } from "@orc/core/mcp-prompts";
+import type {
+  NotificationPage,
+  NotificationUpdate,
+  OrcNotification,
+} from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
@@ -661,6 +666,8 @@ export const api = {
       ),
   },
   humanRequests: {
+    view: (id: string) =>
+      req<HumanRequest>("GET", `/human-requests/${encodeURIComponent(id)}/view`),
     run: (id: string, version: number, script: string, values: Record<string, string>) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/run`, {
         version,
@@ -1335,8 +1342,21 @@ export const api = {
   },
 
   audit: {
-    list: (scope: ScopeQuery = {}) =>
-      req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+    list: (
+      scope: Omit<ScopeQuery, "scope"> & {
+        scope?: "global" | "all";
+        entity_type?: string;
+        limit?: number;
+        snapshot?: "preview" | "full";
+      } = {},
+    ) => req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+  },
+  notifications: {
+    list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
+      req<NotificationPage>("GET", "/notifications", undefined, query),
+    update: (id: string, update: NotificationUpdate) =>
+      req<OrcNotification>("PATCH", `/notifications/${encodeURIComponent(id)}`, update),
+    markAllRead: () => req<{ ok: true }>("POST", "/notifications/read"),
   },
 
   kb: {

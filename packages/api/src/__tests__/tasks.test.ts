@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { AuditLog } from "@orc/db/audit";
 import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -344,4 +345,34 @@ describe("POST /tasks/batch", () => {
     });
     expect(taskCount().n).toBe(before);
   });
+});
+
+test("should audit API lifecycle without task content or progress noise", async () => {
+  const response = await req(app, "POST", "/tasks", {
+    title: "Private title",
+    body: "Private body",
+  });
+  expect(response.status).toBe(201);
+  const task = await response.json();
+  const audit = new AuditLog(getSqlite());
+  const events = () =>
+    audit
+      .list({ entityType: "task", limit: 100 })
+      .filter((entry) => entry.subject_ids.includes(task.id));
+  expect(events()).toHaveLength(1);
+  expect(events()[0]?.action).toBe("task.created");
+  expect(events()[0]?.actor).toBeNull();
+  expect(events()[0]?.snapshot).toEqual({ status: "todo" });
+  expect(
+    (await req(app, "PATCH", `/tasks/${task.id}`, { progress: 50, title: "Revised private title" }))
+      .status,
+  ).toBe(200);
+  expect(events()).toHaveLength(1);
+  expect((await req(app, "PATCH", `/tasks/${task.id}`, { status: "doing" })).status).toBe(200);
+  expect(events()[0]?.snapshot).toEqual({ from: "todo", status: "doing" });
+  expect(JSON.stringify(events())).not.toContain("Private");
+  expect(
+    (await req(app, "PATCH", `/tasks/${task.id}`, { status: "doing", progress: 60 })).status,
+  ).toBe(200);
+  expect(events()).toHaveLength(2);
 });

@@ -17,6 +17,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { flow_runs, gateway_sessions } from "@orc/db/schema";
 import type { EffectiveSkill } from "@orc/db/skill-history";
 import { SkillHistory } from "@orc/db/skill-history";
+import { withTaskAudit } from "@orc/db/task-audit";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
 const logger = createLogger("runner:flow");
@@ -1983,11 +1984,13 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
     } else if (session.task_id) {
       // A session with no node run predates flows (or its run was deleted):
       // release the task the way the old loop did so it is not stuck claimed.
-      sqlite
-        .query(
-          "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
-        )
-        .run(session.task_id);
+      withTaskAudit(sqlite, [session.task_id], () => {
+        sqlite
+          .query(
+            "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
+          )
+          .run(session.task_id);
+      });
     }
     logger.warn(`Cleaned up stale ${session.role} session ${session.id} (${reason})`);
   }

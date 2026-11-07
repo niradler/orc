@@ -13,6 +13,7 @@ import { startGithubIssueSync } from "./git/issue-sync.js";
 import { startHumanRequestDelivery } from "./human-request-delivery.js";
 import { withKbJobHooks } from "./kb-jobs.js";
 import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
+import { startNotificationMaintenance } from "./notifications.js";
 import { startAttentionPush } from "./push/service.js";
 import { createApp } from "./server.js";
 import { startSessionWatcher } from "./session-watcher.js";
@@ -57,6 +58,7 @@ const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();
 const stopGithubIssueSync = startGithubIssueSync();
+const stopNotificationMaintenance = startNotificationMaintenance();
 const channels = startChannelRuntime().catch(() => {
   logger.error("Channels failed to start; inspect Channels in Settings");
   return async () => {};
@@ -83,6 +85,7 @@ async function shutdown(signal: string, exitCode = 0) {
   stopSessionWatcher();
   stopAttentionPush();
   stopHumanRequestDelivery();
+  stopNotificationMaintenance();
   await stopGithubIssueSync();
   await (await channels)();
   shutdownTerminals();

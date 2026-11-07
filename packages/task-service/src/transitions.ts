@@ -3,6 +3,7 @@ import { createLogger } from "@orc/core/logger";
 import { TASK_STATUS_TRANSITIONS, type TaskStatus } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, tasks } from "@orc/db/schema";
+import { withTaskAudit } from "@orc/db/task-audit";
 import { and, eq } from "drizzle-orm";
 import { notifyReview } from "./notifications.js";
 
@@ -114,16 +115,23 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     updates.claimed_by = null;
   }
 
-  const [changed] = await db
-    .update(tasks)
-    .set(updates)
-    .where(
-      and(
-        eq(tasks.id, opts.taskId),
-        opts.expectedStatus === undefined ? undefined : eq(tasks.status, opts.expectedStatus),
-      ),
-    )
-    .returning({ id: tasks.id });
+  const changed = withTaskAudit(
+    getSqlite(),
+    [opts.taskId],
+    () =>
+      db
+        .update(tasks)
+        .set(updates)
+        .where(
+          and(
+            eq(tasks.id, opts.taskId),
+            opts.expectedStatus === undefined ? undefined : eq(tasks.status, opts.expectedStatus),
+          ),
+        )
+        .returning({ id: tasks.id })
+        .get(),
+    { actor: opts.author },
+  );
   if (!changed)
     return {
       ok: false,
@@ -171,9 +179,11 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
           status: string;
         } | null;
         if (depTask?.status === "blocked") {
-          sqlite
-            .query("UPDATE tasks SET status = 'todo', updated_at = unixepoch() WHERE id = ?")
-            .run(dep.id);
+          withTaskAudit(sqlite, [dep.id], () => {
+            sqlite
+              .query("UPDATE tasks SET status = 'todo', updated_at = unixepoch() WHERE id = ?")
+              .run(dep.id);
+          });
         }
       }
     }
@@ -199,11 +209,13 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
             .query("SELECT status FROM tasks WHERE id = ?")
             .get(parentLink.to_task_id) as { status: string } | null;
           if (parent && !["done", "cancelled", "review"].includes(parent.status)) {
-            sqlite
-              .query(
-                "UPDATE tasks SET status = 'review', claimed_by = NULL, updated_at = unixepoch() WHERE id = ?",
-              )
-              .run(parentLink.to_task_id);
+            withTaskAudit(sqlite, [parentLink.to_task_id], () => {
+              sqlite
+                .query(
+                  "UPDATE tasks SET status = 'review', claimed_by = NULL, updated_at = unixepoch() WHERE id = ?",
+                )
+                .run(parentLink.to_task_id);
+            });
             await addTaskComment(
               parentLink.to_task_id,
               "All subtasks complete - auto-promoted to review",
@@ -232,10 +244,12 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
         .query("UPDATE gateway_sessions SET review_rounds = ? WHERE id = ?")
         .run(newRounds, session.id);
       if (newRounds >= maxRounds) {
-        await db
-          .update(tasks)
-          .set({ status: "paused", claimed_by: null, updated_at: now })
-          .where(eq(tasks.id, opts.taskId));
+        withTaskAudit(sqlite, [opts.taskId], () => {
+          db.update(tasks)
+            .set({ status: "paused", claimed_by: null, updated_at: now })
+            .where(eq(tasks.id, opts.taskId))
+            .run();
+        });
         await addTaskComment(
           opts.taskId,
           `Task exceeded max review rounds (${maxRounds}). Paused for manual attention.`,

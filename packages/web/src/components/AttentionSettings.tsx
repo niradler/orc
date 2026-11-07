@@ -23,8 +23,9 @@ export function AttentionSettings() {
         Questions and approvals
       </h2>
       <p className="text-sm text-outline">
-        Requests leave Attention needed after this many hours from creation. Session continuation
-        clears obsolete requests when reported by a supported hook. Saved history is kept.
+        Requests stop accepting replies after this many hours from creation. Session continuation
+        clears obsolete requests when reported by a supported hook. Notification and audit history
+        have separate cleanup periods.
       </p>
       {preferences.error && <p role="alert">{preferences.error.message}</p>}
       <form

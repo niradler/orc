@@ -64,17 +64,20 @@ test("should show dated unavailable questions and contextual help on desktop and
       "datetime",
       new Date(entry.created_at).toISOString(),
     );
-    await expect(page.getByTestId("view-title")).toHaveText("Attention needed");
-    await page.mouse.move(0, 0);
-    await page.getByTestId("view-help").hover();
-    await expect(page.getByTestId("view-help-content")).toContainText(
-      "Live Codex questions can also appear as session notices.",
-    );
+    await expect(
+      page
+        .getByTestId("notification-menu")
+        .getByRole("heading", { name: "Notifications", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByTestId("nav-attention")).toHaveCount(0);
     await page.screenshot({
       path: `../../.claude/docs/attention-${width}-${theme}.png`,
       fullPage: true,
+      animations: "disabled",
     });
     await page.keyboard.press("Escape");
+    await expect(page.getByTestId("notification-menu")).toHaveCount(0);
+    await page.locator('[data-testid="notification-bell"]:visible').first().click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -93,7 +96,10 @@ test("should show dated unavailable questions and contextual help on desktop and
     }),
   ).toBe(0);
   await page.reload();
-  await expect(card).toHaveCount(0);
+  const history = page.locator(`[data-source-id="${entry.id}"]`);
+  await expect(history).toBeVisible();
+  await history.getByRole("button", { name: /Review request/ }).click();
+  await expect(card.getByTestId("attention-state")).toContainText("Cancelled");
   const cancelled = await apiGet<HumanRequest>(request, `/human-requests/${entry.id}`);
   expect(cancelled.status).toBe("cancelled");
   expect(cancelled.delivered_at).toBeNull();
@@ -185,7 +191,7 @@ test("should continue a waiting CLI after answering through the reloaded inbox",
     });
     expect(duplicate.status()).toBe(409);
     await apiPost(request, `/human-requests/${pending.id}/acknowledge`, { version: 2 });
-    await expect(card).toHaveCount(0);
+    await expect(card.getByTestId("attention-state")).toContainText("Delivered");
   } finally {
     if (child.exitCode === null) child.kill();
   }
@@ -258,7 +264,7 @@ test("should preserve multiple selections and cancel a pending request", async (
   const cancelledCard = page.getByTestId(`attention-request-${pending.id}`);
   await reviewAttentionRequest(cancelledCard);
   await cancelledCard.getByTestId("attention-cancel").click();
-  await expect(cancelledCard).toHaveCount(0);
+  await expect(cancelledCard.getByTestId("attention-state")).toContainText("Cancelled");
   expect((await apiGet<HumanRequest>(request, `/human-requests/${pending.id}`)).status).toBe(
     "cancelled",
   );
@@ -281,7 +287,7 @@ test("should allow dismissing an answer its agent never collects", async ({ page
     "Answered · agent hasn't picked it up",
   );
   await card.getByTestId("attention-cancel").click();
-  await expect(card).toHaveCount(0);
+  await expect(card.getByTestId("attention-state")).toContainText("Cancelled");
   expect((await apiGet<HumanRequest>(request, `/human-requests/${entry.id}`)).status).toBe(
     "cancelled",
   );

@@ -494,6 +494,18 @@ describe("GitHub issues as native tasks", () => {
     expect(
       getSqlite().query("SELECT count(*) as n FROM comments WHERE resource_id=?").get(task.id),
     ).toEqual({ n: 0 });
+    const audit = getSqlite().query(
+      "SELECT count(*) as n FROM audit_log a, json_each(a.subject_ids) s WHERE a.action='task.status_changed' AND s.value=?",
+    );
+    expect(audit.get(task.id)).toEqual({ n: 0 });
+    const accepted = await updateTaskStatus({
+      taskId: task.id,
+      expectedStatus: "todo",
+      status: "doing",
+      author: "merge-verification",
+    });
+    expect(accepted.ok).toBe(true);
+    expect(audit.get(task.id)).toEqual({ n: 1 });
   });
 
   test("should create a missing custom status label when first needed and preserve ordinary labels", async () => {
