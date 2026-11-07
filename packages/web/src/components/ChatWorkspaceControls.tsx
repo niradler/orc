@@ -1,20 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, FolderOpen, GitBranch, History, LoaderCircle, Monitor } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  Folder,
+  FolderOpen,
+  GitBranch,
+  GitBranchPlus,
+  LoaderCircle,
+  Server,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, getApiUrl } from "@/api/client";
-import { ActionHelp } from "@/components/ActionHelp";
+import {
+  chipHeading,
+  chipOption,
+  composerChip,
+  focusChipOption,
+  onChipListKeyDown,
+} from "@/components/ComposerChip";
 import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
+import {
+  branchChipLabel,
+  branchName,
+  currentWorktree,
+  folderChipLabel,
+  pathName,
+} from "@/lib/composer-chips";
 import { folderHistory, rememberFolder, useFolderHistory } from "@/lib/folder-history";
 import { cn } from "@/lib/utils";
-
-const iconButton =
-  "inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 sm:size-8 [@media(pointer:coarse)]:size-11";
-const optionButton =
-  "flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40";
 
 export function ChatWorkspaceControls() {
   const {
@@ -29,16 +47,12 @@ export function ChatWorkspaceControls() {
     workspacePickerSession,
   } = useChat();
   const { data: ssh } = useSsh();
-  const [hostOpen, setHostOpen] = useState(false);
-  const [recentOpen, setRecentOpen] = useState(false);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [pathDraft, setPathDraft] = useState<string | null>(null);
-  const [pathOpen, setPathOpen] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
-  const pathClose = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const keyboardPath = useRef(false);
-  const pathDetails = useRef<HTMLDivElement>(null);
   const host = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
   const history = useFolderHistory(host);
   const cwd = workspace?.cwd ?? history.last;
@@ -50,30 +64,37 @@ export function ChatWorkspaceControls() {
     retry: false,
   });
   const displayPath = cwd || defaultFolder.data?.path || "~";
+  const gitPath = cwd || defaultFolder.data?.path || "";
+  const git = useQuery({
+    queryKey: ["chat-workspace-git", host, gitPath],
+    queryFn: () => api.git.worktrees(gitPath, host),
+    enabled: !!ssh && !!gitPath && !thread,
+    staleTime: 30_000,
+    retry: false,
+  });
   const copied = copiedPath === displayPath;
   const worktree = workspace?.worktree ?? false;
   const disabled = streaming || !ssh || picking;
   const current = useRef({ host, thread, streaming, activeKey });
   const mounted = useRef(true);
   const folderTrigger = useRef<HTMLButtonElement>(null);
-  const copyTrigger = useRef<HTMLButtonElement>(null);
+  const folderList = useRef<HTMLDivElement>(null);
+  const branchList = useRef<HTMLDivElement>(null);
   const previousConversation = useRef(activeKey);
   current.current = { host, thread, streaming, activeKey };
   useEffect(() => {
     if (previousConversation.current === activeKey) return;
     previousConversation.current = activeKey;
-    setHostOpen(false);
-    setRecentOpen(false);
+    setFolderOpen(false);
+    setBranchOpen(false);
     setBrowse(false);
     setPathDraft(null);
     setError("");
-    setPathOpen(false);
   }, [activeKey, setBrowse]);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      if (pathClose.current) clearTimeout(pathClose.current);
     };
   }, []);
   useEffect(() => {
@@ -81,6 +102,14 @@ export function ChatWorkspaceControls() {
       setWorkspace({ host: ssh.host, cwd: folderHistory(ssh.host).last, worktree: false });
   }, [ssh, workspace, thread, streaming, setWorkspace]);
   if (thread) return null;
+
+  const hosts = [null, ...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])];
+  const listing = git.data;
+  const folderName = cwd ? folderChipLabel(cwd, listing) : pathName(displayPath) || "Home";
+  const folderLabel = host ? `${host} · ${folderName}` : folderName;
+  const location = `${host ?? "Local"}: ${displayPath}`;
+  const branch = branchName(currentWorktree(listing, gitPath));
+  const showBranch = worktree || !!listing?.root || git.isError;
 
   const choose = (path: string) => {
     setWorkspace({ host, cwd: path, worktree: worktree && !!path.trim() });
@@ -131,267 +160,296 @@ export function ChatWorkspaceControls() {
       setPicking(false);
     }
   };
-  const keepPathOpen = () => {
-    if (pathClose.current) clearTimeout(pathClose.current);
-    setPathOpen(true);
+  const applyDraft = () => {
+    choose((pathDraft ?? cwd).trim());
+    setFolderOpen(false);
   };
-  const closePathSoon = () => {
-    if (pathClose.current) clearTimeout(pathClose.current);
-    pathClose.current = setTimeout(() => {
-      if (!pathDetails.current?.contains(document.activeElement)) setPathOpen(false);
-    }, 180);
-  };
+
   return (
-    <div data-testid="chat-workspace" className="chat-workspace-controls min-w-0">
-      <fieldset
-        data-testid="chat-workspace-actions"
-        aria-label="Workspace controls"
-        className="chat-workspace-actions flex min-w-0 flex-wrap items-center gap-0.5"
-      >
-        <Popover open={hostOpen} onOpenChange={setHostOpen}>
-          <ActionHelp
-            label="Choose workspace host"
-            description={`Workspace host: ${host ?? "Local"}`}
-          >
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                data-testid="chat-workspace-host"
-                aria-label={`Choose workspace host, current ${host ?? "Local"}`}
-                disabled={disabled}
-                className={iconButton}
-              >
-                <Monitor size={16} />
-              </button>
-            </PopoverTrigger>
-          </ActionHelp>
-          <PopoverContent side="top" align="start" className="w-64 p-2" aria-label="Workspace host">
-            <p className="px-2 py-1 text-xs text-muted-foreground">Workspace host</p>
-            {[null, ...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])].map(
-              (alias) => (
-                <button
-                  type="button"
-                  key={alias ?? "local"}
-                  data-testid="chat-workspace-host-option"
-                  aria-pressed={host === alias}
-                  disabled={disabled}
-                  className={optionButton}
-                  onClick={() => {
-                    const nextCwd = folderHistory(alias).last;
-                    setWorkspace({
-                      host: alias,
-                      cwd: nextCwd,
-                      worktree: worktree && !!nextCwd.trim(),
-                    });
-                    setHostOpen(false);
-                    setBrowse(false);
-                    setPathDraft(null);
-                    setError("");
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate">{alias ?? "Local"}</span>
-                  {host === alias && <Check size={14} />}
-                </button>
-              ),
-            )}
-          </PopoverContent>
-        </Popover>
-        <ActionHelp
-          label="Browse workspace folder"
-          description={`Choose folder on ${host ?? "Local"}: ${cwd || "Default folder"}`}
-        >
+    <fieldset
+      data-testid="chat-workspace"
+      aria-label="Workspace"
+      className="chat-workspace-controls m-0 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0"
+    >
+      <Popover open={folderOpen} onOpenChange={setFolderOpen}>
+        <PopoverTrigger asChild>
           <button
             type="button"
-            data-testid="chat-workspace-browse"
             ref={folderTrigger}
-            aria-label={`Browse workspace folder, current ${host ?? "Local"}: ${cwd || "Default folder"}`}
+            data-testid="chat-workspace-folder"
+            aria-label={`Workspace folder ${folderLabel}, ${location}`}
+            title={location}
             disabled={disabled}
-            onClick={() => void pick()}
-            className={iconButton}
+            className={cn(composerChip, "max-w-56")}
           >
             {picking ? (
-              <LoaderCircle size={16} className="animate-spin" />
+              <LoaderCircle size={14} aria-hidden="true" className="shrink-0 animate-spin" />
+            ) : host ? (
+              <Server size={14} aria-hidden="true" className="shrink-0" />
             ) : (
-              <FolderOpen size={16} />
+              <Folder size={14} aria-hidden="true" className="shrink-0" />
             )}
+            <span
+              data-chip-label
+              data-testid="chat-workspace-folder-name"
+              className="min-w-0 truncate"
+            >
+              {folderLabel}
+            </span>
+            <ChevronDown
+              data-chip-label
+              size={12}
+              aria-hidden="true"
+              className="shrink-0 opacity-60"
+            />
           </button>
-        </ActionHelp>
-        <Popover open={recentOpen} onOpenChange={setRecentOpen}>
-          <ActionHelp label="Recent workspace folders">
-            <PopoverTrigger asChild>
+        </PopoverTrigger>
+        <PopoverContent
+          data-testid="chat-workspace-folder-picker"
+          aria-label="Workspace folder"
+          side="top"
+          align="start"
+          className="w-80 p-1.5"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            focusChipOption(folderList.current, false);
+          }}
+          onKeyDown={onChipListKeyDown}
+        >
+          <div ref={folderList} className="space-y-1">
+            <div className="flex min-w-0 items-start gap-1 px-2 pt-1">
+              <span
+                data-testid="chat-workspace-full-path"
+                className="min-w-0 flex-1 self-center break-all font-mono text-xs text-on-surface-variant"
+              >
+                {displayPath}
+              </span>
               <button
                 type="button"
-                data-testid="chat-workspace-recent"
-                aria-label="Recent workspace folders"
-                disabled={disabled}
-                className={iconButton}
+                data-chip-option
+                data-testid="chat-workspace-copy-path"
+                aria-label={copied ? "Folder path copied" : "Copy folder path"}
+                title={copied ? "Folder path copied" : "Copy folder path"}
+                disabled={!cwd && !defaultFolder.data?.path}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(displayPath);
+                    setCopiedPath(displayPath);
+                  } catch {
+                    setError(
+                      "Could not copy the folder path. Select and copy the full path above.",
+                    );
+                  }
+                }}
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 max-sm:size-11 pointer-coarse:size-11"
               >
-                <History size={16} />
+                {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
-            </PopoverTrigger>
-          </ActionHelp>
-          <PopoverContent
-            side="top"
-            align="start"
-            className="w-80 p-2"
-            aria-label="Recent workspace folders"
-          >
-            <p className="px-2 py-1 text-xs text-muted-foreground">
-              Recent folders · {host ?? "Local"}
-            </p>
-            <div data-testid="recent-folders" className="max-h-48 overflow-y-auto">
-              {history.recent.map((path) => (
-                <button
-                  type="button"
-                  key={path}
-                  data-testid="chat-workspace-recent-option"
-                  title={path}
-                  disabled={disabled}
-                  className={optionButton}
-                  onClick={() => {
-                    choose(path);
-                    setRecentOpen(false);
-                  }}
-                >
-                  <span className="min-w-0 truncate">{path}</span>
-                </button>
-              ))}
-              {!history.recent.length && (
-                <p className="px-2 py-3 text-sm text-muted-foreground">No recent folders</p>
-              )}
             </div>
-            <div className="mt-2 space-y-2 border-t border-border pt-2">
-              <label
-                htmlFor="chat-workspace-folder"
-                className="block px-2 text-xs text-muted-foreground"
-              >
-                Folder path
-              </label>
+            {hosts.length > 1 && (
+              <div role="menu" aria-label="Workspace host">
+                <p className={chipHeading}>Host</p>
+                {hosts.map((alias) => (
+                  <button
+                    type="button"
+                    key={alias ?? "local"}
+                    role="menuitemradio"
+                    data-chip-option
+                    data-testid="chat-workspace-host-option"
+                    aria-checked={host === alias}
+                    disabled={disabled}
+                    className={chipOption}
+                    onClick={() => {
+                      const nextCwd = folderHistory(alias).last;
+                      setWorkspace({
+                        host: alias,
+                        cwd: nextCwd,
+                        worktree: worktree && !!nextCwd.trim(),
+                      });
+                      setPathDraft(null);
+                      setError("");
+                    }}
+                  >
+                    {alias ? (
+                      <Server size={14} aria-hidden="true" />
+                    ) : (
+                      <Folder size={14} aria-hidden="true" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate">{alias ?? "Local"}</span>
+                    {host === alias && <Check size={14} aria-hidden="true" />}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div>
+              <p className={chipHeading}>Recent folders</p>
+              <div data-testid="recent-folders" className="max-h-48 overflow-y-auto">
+                {history.recent.map((path) => (
+                  <button
+                    type="button"
+                    key={path}
+                    data-chip-option
+                    data-testid="chat-workspace-recent-option"
+                    aria-current={path === cwd ? "true" : undefined}
+                    aria-label={`${pathName(path)}, ${path}`}
+                    title={path}
+                    disabled={disabled}
+                    className={chipOption}
+                    onClick={() => {
+                      choose(path);
+                      setFolderOpen(false);
+                    }}
+                  >
+                    <Folder size={14} aria-hidden="true" className="shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{pathName(path)}</span>
+                      <span
+                        dir="rtl"
+                        className="block truncate text-left text-xs text-muted-foreground"
+                      >
+                        <bdi dir="ltr">{path}</bdi>
+                      </span>
+                    </span>
+                    {path === cwd && <Check size={14} aria-hidden="true" />}
+                  </button>
+                ))}
+                {!history.recent.length && (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">No recent folders</p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              data-chip-option
+              data-testid="chat-workspace-browse"
+              disabled={disabled}
+              className={chipOption}
+              onClick={() => {
+                setFolderOpen(false);
+                void pick();
+              }}
+            >
+              <FolderOpen size={14} aria-hidden="true" />
+              <span className="flex-1">Browse folders…</span>
+            </button>
+            <form
+              className="flex min-w-0 gap-1 border-t border-border px-1 pt-1.5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                applyDraft();
+              }}
+            >
               <Input
-                id="chat-workspace-folder"
                 data-testid="chat-workspace-cwd"
+                aria-label="Folder path"
+                placeholder="Folder path"
                 maxLength={4096}
                 value={pathDraft ?? cwd}
                 disabled={disabled}
                 onChange={(event) => setPathDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    choose((pathDraft ?? cwd).trim());
-                    setRecentOpen(false);
-                  }
-                }}
+                className="min-w-0 font-mono text-xs"
               />
               <button
-                type="button"
+                type="submit"
                 data-testid="chat-workspace-apply"
                 disabled={disabled}
-                className={optionButton}
-                onClick={() => {
-                  choose((pathDraft ?? cwd).trim());
-                  setRecentOpen(false);
-                }}
+                className="inline-flex min-h-8 shrink-0 items-center rounded-md px-2 text-sm hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 max-sm:min-h-11 pointer-coarse:min-h-11"
               >
-                Apply folder
+                Apply
               </button>
-            </div>
-          </PopoverContent>
-        </Popover>
-        <ActionHelp
-          label="New git worktree"
-          description={
-            worktree
-              ? "New git worktree enabled"
-              : "Create a new git worktree for this conversation"
-          }
-        >
-          <button
-            type="button"
-            data-testid="chat-workspace-worktree"
-            aria-label="New git worktree"
-            aria-pressed={worktree}
-            disabled={disabled || !cwd.trim()}
-            onClick={() => setWorkspace({ host, cwd, worktree: !worktree })}
-            className={cn(
-              iconButton,
-              worktree &&
-                !disabled &&
-                !!cwd.trim() &&
-                "bg-surface-highest text-progress hover:text-progress",
-            )}
-          >
-            <GitBranch size={16} />
-          </button>
-        </ActionHelp>
-        <Popover open={pathOpen} onOpenChange={setPathOpen}>
+            </form>
+          </div>
+        </PopoverContent>
+      </Popover>
+      {showBranch && (
+        <Popover open={branchOpen} onOpenChange={setBranchOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
-              data-testid="chat-workspace-path"
-              title={`${host ?? "Local"}: ${displayPath}`}
-              aria-label={`Workspace folder: ${displayPath}`}
-              onMouseEnter={() => {
-                if (recentOpen) return;
-                keyboardPath.current = false;
-                keepPathOpen();
-              }}
-              onMouseLeave={closePathSoon}
-              onBlur={closePathSoon}
-              onClick={(event) => {
-                event.preventDefault();
-                keyboardPath.current = event.detail === 0;
-                keepPathOpen();
-                if (keyboardPath.current) copyTrigger.current?.focus();
-              }}
-              className="workspace-path-trigger min-h-11 min-w-0 flex-1 rounded-md px-1 text-left text-xs text-muted-foreground hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus sm:min-h-8"
+              data-testid="chat-workspace-branch"
+              data-worktree={worktree ? "true" : "false"}
+              aria-label={`Branch: ${branchChipLabel({ branch, worktree })}`}
+              title={branchChipLabel({ branch, worktree })}
+              disabled={disabled}
+              className={cn(composerChip, "max-w-56")}
             >
-              <span dir="rtl" className="block truncate text-left">
-                <bdi dir="ltr">{displayPath}</bdi>
+              {worktree ? (
+                <GitBranchPlus size={14} aria-hidden="true" className="shrink-0" />
+              ) : (
+                <GitBranch size={14} aria-hidden="true" className="shrink-0" />
+              )}
+              <span data-chip-label className="min-w-0 truncate">
+                {branchChipLabel({ branch, worktree })}
               </span>
+              <ChevronDown
+                data-chip-label
+                size={12}
+                aria-hidden="true"
+                className="shrink-0 opacity-60"
+              />
             </button>
           </PopoverTrigger>
           <PopoverContent
-            data-testid="chat-workspace-path-details"
-            ref={pathDetails}
+            data-testid="chat-workspace-branch-picker"
+            aria-label="Branch"
             side="top"
-            align="end"
-            className="flex w-max max-w-[calc(100vw-2rem)] items-start gap-2 p-2"
+            align="start"
+            className="w-72 p-1.5"
             onOpenAutoFocus={(event) => {
               event.preventDefault();
-              if (keyboardPath.current) copyTrigger.current?.focus();
+              focusChipOption(branchList.current);
             }}
-            onMouseEnter={keepPathOpen}
-            onMouseLeave={closePathSoon}
-            onFocusCapture={keepPathOpen}
-            onBlurCapture={closePathSoon}
           >
-            <span
-              className="min-w-0 self-center break-all font-mono text-xs"
-              data-testid="chat-workspace-full-path"
+            <div
+              ref={branchList}
+              role="menu"
+              aria-label="Where the session runs"
+              onKeyDown={onChipListKeyDown}
             >
-              {displayPath}
-            </span>
-            <button
-              type="button"
-              data-testid="chat-workspace-copy-path"
-              ref={copyTrigger}
-              aria-label={copied ? "Folder path copied" : "Copy folder path"}
-              className={iconButton}
-              disabled={!cwd && !defaultFolder.data?.path}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(displayPath);
-                  setCopiedPath(displayPath);
-                } catch {
-                  setError("Could not copy the folder path. Select and copy the full path above.");
-                }
-              }}
-            >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-            </button>
+              <p className={chipHeading}>Run in</p>
+              {[false, true].map((next) => (
+                <button
+                  type="button"
+                  key={String(next)}
+                  role="menuitemradio"
+                  data-chip-option
+                  data-testid={next ? "chat-workspace-worktree" : "chat-workspace-checkout"}
+                  aria-checked={worktree === next}
+                  disabled={disabled || (next && !cwd.trim())}
+                  className={chipOption}
+                  onClick={() => {
+                    setWorkspace({ host, cwd, worktree: next });
+                    setBranchOpen(false);
+                  }}
+                >
+                  {next ? (
+                    <GitBranchPlus size={14} aria-hidden="true" />
+                  ) : (
+                    <GitBranch size={14} aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">
+                      {next
+                        ? branchChipLabel({ branch, worktree: true })
+                        : `Current checkout${branch ? ` · ${branch}` : ""}`}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {next ? "Isolated checkout for this session" : "Work in the folder as it is"}
+                    </span>
+                  </span>
+                  {worktree === next && <Check size={14} aria-hidden="true" />}
+                </button>
+              ))}
+              {git.isError && (
+                <p className="px-2 pt-1 text-xs text-muted-foreground">
+                  Git details are unavailable for this folder.
+                </p>
+              )}
+            </div>
           </PopoverContent>
         </Popover>
-      </fieldset>
+      )}
       {picking && (
         <span role="status" className="basis-full px-2 text-xs text-muted-foreground">
           Choose a folder in the native dialog…
@@ -421,6 +479,6 @@ export function ChatWorkspaceControls() {
         onPick={choose}
         returnFocusRef={folderTrigger}
       />
-    </div>
+    </fieldset>
   );
 }

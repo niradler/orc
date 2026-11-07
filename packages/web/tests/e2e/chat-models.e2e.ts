@@ -30,13 +30,20 @@ for (const width of [320, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "dashboard");
     await page.goto("/?chat=open");
-    const agent = page.getByTestId("chat-agent-button").filter({ visible: true });
-    const modelButton = page.getByTestId("chat-model-button").filter({ visible: true });
-    const agentBox = await agent.boundingBox();
+    const pill = page.getByTestId("chat-agent-model-button").filter({ visible: true });
+    const modelButton = page.getByTestId("chat-model-current").filter({ visible: true });
+    const pillBox = await pill.boundingBox();
     const modelBox = await modelButton.boundingBox();
-    expect(Math.abs((agentBox?.y ?? 0) - (modelBox?.y ?? 0))).toBeLessThan(2);
-    expect(modelBox?.x).toBeGreaterThan(agentBox?.x ?? 0);
-    expect(modelBox?.y).toBeGreaterThan(
+    expect(modelBox?.y).toBeGreaterThanOrEqual(pillBox?.y ?? 0);
+    expect((modelBox?.y ?? 0) + (modelBox?.height ?? 0)).toBeLessThanOrEqual(
+      (pillBox?.y ?? 0) + (pillBox?.height ?? 0),
+    );
+    if (width >= 640) {
+      const agentBox = await page.getByTestId("chat-agent-current").boundingBox();
+      expect(Math.abs((agentBox?.y ?? 0) - (modelBox?.y ?? 0))).toBeLessThan(2);
+      expect(modelBox?.x).toBeGreaterThan(agentBox?.x ?? 0);
+    }
+    expect(pillBox?.y).toBeGreaterThan(
       (await page.getByTestId("chat-input").boundingBox())?.y ?? 0,
     );
     await openChatModel(page);
@@ -108,7 +115,7 @@ test("choosing a custom model does not submit an existing composer draft", async
   await page.getByTestId("chat-custom-model").fill("fixture-custom");
   await page.getByTestId("chat-custom-model-apply").click();
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("chat-model-button")).toHaveText("fixture-custom");
+  await expect(page.getByTestId("chat-model-current")).toHaveText("fixture-custom");
   await expect(page.getByTestId("chat-input")).toHaveValue("Unsent draft while choosing a model");
   expect(posts).toBe(0);
 });

@@ -45,6 +45,8 @@ let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
 let failedTurn = false;
 let resultIdentity: string | undefined;
+let resultDurationMs: number | undefined;
+let narrateBeforeTool = false;
 let closed = 0;
 let decision: string | undefined;
 let liveMode: string | undefined;
@@ -94,6 +96,7 @@ function session(call: (typeof calls)[number]): AgentSession {
         return;
       }
       yield { type: "thinking", data: "Visible provider reasoning summary" };
+      if (narrateBeforeTool) yield { type: "text", data: "First I will inspect the workspace." };
       yield {
         type: "tool_use",
         data: { id: "tool-1", name: "context", input: '{"project":"orc"}' },
@@ -139,7 +142,10 @@ function session(call: (typeof calls)[number]): AgentSession {
       }
       yield {
         type: "result",
-        data: { runtimeSessionId: resultIdentity ?? call.id ?? "native-fixture" },
+        data: {
+          runtimeSessionId: resultIdentity ?? call.id ?? "native-fixture",
+          durationMs: resultDurationMs,
+        },
       };
     },
   };
@@ -210,6 +216,55 @@ afterAll(() => {
 });
 
 describe("native chat runtime", () => {
+  test("should fold pre-tool narration separately from the final reply", async () => {
+    narrateBeforeTool = true;
+    try {
+      const result = await turn({ messages: [{ role: "user", content: "Inspect and summarize" }] });
+      const opened = result.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      const stored = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(stored.messages.at(-1)?.content).toBe("Hello from the native session");
+      expect(stored.messages.at(-1)?.activity).toContainEqual({
+        type: "status",
+        id: expect.any(String),
+        text: "First I will inspect the workspace.",
+      });
+    } finally {
+      narrateBeforeTool = false;
+      calls.length = 0;
+    }
+  });
+  test("should persist native duration or server timing fallback and replay turn start", async () => {
+    for (const duration of [42_000, undefined, -1, Number.NaN]) {
+      resultDurationMs = duration;
+      try {
+        const result = await turn({ messages: [{ role: "user", content: "Measure one turn" }] });
+        const opened = result.events.find((event) => event.type === "thread");
+        if (opened?.type !== "thread") throw new Error("Missing thread");
+        const timings = result.events.filter((event) => event.type === "turn");
+        expect(timings).toHaveLength(2);
+        const start = timings[0]?.turn;
+        const end = timings[1]?.turn;
+        if (!start || !end || end.finishedAt === undefined) throw new Error("Missing turn timing");
+        expect(start?.finishedAt).toBeUndefined();
+        expect(end?.startedAt).toBe(start?.startedAt);
+        expect(end?.outcome).toBe("completed");
+        expect(end?.durationMs).toBe(
+          duration === 42_000 ? duration : end.finishedAt - end.startedAt,
+        );
+        const stored = ChatThreadSchema.parse(
+          await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+        );
+        expect(stored.messages.at(-1)?.turn).toEqual(end);
+        expect(stored.messages.at(-1)?.timestamp).toBe(end?.finishedAt);
+      } finally {
+        resultDurationMs = undefined;
+      }
+    }
+    calls.length = 0;
+  });
   test("should connect Cursor chat to ORC MCP and resume its selected provider", async () => {
     const originalAcpx = createBackend("acpx");
     const cursorCalls: { id: string | null; opts: SessionOpts; prompt?: string }[] = [];
@@ -382,17 +437,19 @@ describe("native chat runtime", () => {
     expect(result.response.status).toBe(200);
     expect(result.events.map((event) => event.type)).toEqual([
       "thread",
+      "turn",
       "capabilities",
       "thinking",
       "tool_use",
       "tool_result",
       "text",
       "session",
+      "turn",
       "done",
     ]);
     const opened = result.events[0];
     if (opened?.type !== "thread") throw new Error("No conversation identity");
-    expect(result.events.at(-2)).toMatchObject({ type: "session", runtimeId: "native-fixture" });
+    expect(result.events.at(-3)).toMatchObject({ type: "session", runtimeId: "native-fixture" });
     expect(calls[0]?.opts).toMatchObject({
       model: "fixture-selected",
       autoApprove: false,
@@ -1174,6 +1231,11 @@ describe("native chat runtime", () => {
     expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(409);
     reader.releaseLock();
     expect(closed).toBeGreaterThan(previousClosed);
+    const stoppedThread = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+    );
+    expect(stoppedThread.messages.at(-1)?.turn?.outcome).toBe("stopped");
+    expect(stoppedThread.messages.at(-1)?.turn?.durationMs).toBeGreaterThanOrEqual(0);
     expect(
       ((await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread).runtimeId,
     ).toBe("early-native-fixture");

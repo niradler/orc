@@ -69,6 +69,8 @@ export const OrcConfigSchema = z.object({
       theme: z.enum(["dark", "light"]).optional(),
       terminal_font: z.string().max(200).optional(),
       attention_retention_hours: z.number().int().min(1).max(8760).optional(),
+      notification_retention_days: z.number().int().min(1).max(3650).optional(),
+      audit_retention_days: z.number().int().min(1).max(3650).optional(),
       chat: ChatSettingsSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
     })

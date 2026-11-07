@@ -2,6 +2,13 @@
 
 The Sessions view uses the same working, waiting and ended states, task links, search and conversation viewer for all agents. Waiting sessions stay in the active view; inactivity alone does not end a registered session.
 
+Activity and full-width session history share compact title/provider/state rows.
+An ORC terminal agent without observed session activity shows **Unknown**, rather
+than assuming it is idle. Terminals without recorded project ownership remain in
+All projects until that association is available.
+
+![Compact Activity session rows with demo data](/screens/activity-session-rows.png)
+
 Open a Codex or Claude session to see its last reported cached-input percentage.
 Expand that compact row for input, cached reads, cache writes when reported, and
 recorded session totals. Cached input is a share of **input** tokens, not output

@@ -1,4 +1,5 @@
 import { shortId } from "@orc/core/ids";
+import type { GithubTaskSync } from "@orc/core/github-sync";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { isJson, jsonErr, jsonOut } from "../output.js";
@@ -451,6 +452,7 @@ function formatTask(
     status: string;
     priority: string;
     project_id?: string | null;
+    github_sync?: GithubTaskSync | null;
   },
   projectNames?: Map<string, string>,
 ): string {
@@ -459,6 +461,8 @@ function formatTask(
   const id = shortId(t.id);
   const title = t.title.length > 40 ? `${t.title.slice(0, 39)}…` : t.title;
   let line = `  ${colorStatus(si, t.status)} ${pi} [${id}] ${title.padEnd(40)}`;
+  if (t.github_sync)
+    line += `  GitHub #${t.github_sync.number}${t.github_sync.error ? " (sync error)" : t.status !== t.github_sync.status ? " (status pending)" : ""}`;
   if (projectNames && t.project_id) {
     line += `  ${color(projectNames.get(t.project_id) ?? shortId(t.project_id), "2")}`;
   }

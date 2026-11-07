@@ -9,7 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { AgentNotifications } from "@/components/AgentNotifications";
+import { AgentNotifications, NotificationLink } from "@/components/AgentNotifications";
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
@@ -41,7 +41,6 @@ const Scratchpads = lazy(() => import("@/views/Scratchpads"));
 
 const Sessions = lazy(() => import("@/views/Sessions"));
 const Audit = lazy(() => import("@/views/Audit"));
-const Attention = lazy(() => import("@/views/Attention"));
 
 const Settings = lazy(() => import("@/views/Settings"));
 const IntegrationCallback = lazy(() => import("@/views/IntegrationCallback"));
@@ -276,7 +275,8 @@ export default function App() {
                         <Routes>
                           <Route path="/" element={<DefaultWorkspaceRedirect />} />
                           <Route path="/activity" element={<Dashboard projectId={projectId} />} />
-                          <Route path="/attention" element={<Attention />} />
+                          <Route path="/attention" element={<NotificationLink />} />
+                          <Route path="/notifications" element={<NotificationLink />} />
                           <Route path="/overview" element={<LegacyActivityRedirect />} />
                           <Route path="/dashboard" element={<LegacyActivityRedirect />} />
                           <Route path="/tasks" element={<Tasks projectId={projectId} />} />

@@ -1,19 +1,19 @@
-import { ChatModelSchema } from "@orc/core/chat";
-import { agentLabel } from "@orc/core/coding-agents";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
 import { History, PanelLeftClose, PanelLeftOpen, Plus, SquareTerminal, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
-import claudeIcon from "@/assets/providers/claude.svg?no-inline";
-import codexIcon from "@/assets/providers/codex.svg?no-inline";
-import copilotIcon from "@/assets/providers/copilot.svg?no-inline";
-import cursorIcon from "@/assets/providers/cursor.svg?no-inline";
 import { ActionHelp } from "@/components/ActionHelp";
+import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
+import {
+  SessionRowContent,
+  sessionRowButtonClass,
+  sessionRowClass,
+} from "@/components/SessionRowContent";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,21 +24,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
-import { useEnabledAgents } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import type { SessionHomeNav } from "@/hooks/useSessionHome";
+import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionSeen } from "@/hooks/useSessionSeen";
-import { useSsh } from "@/hooks/useSsh";
 import { useStableOrder } from "@/hooks/useStableOrder";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
@@ -47,13 +37,6 @@ import { markSeen } from "@/lib/session-seen";
 import { terminalPath } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
-
-const providerIcons: Record<string, string> = {
-  claude: claudeIcon,
-  codex: codexIcon,
-  copilot: copilotIcon,
-  cursor: cursorIcon,
-};
 
 const FILTER_KEY = "orc_chat_history_filter";
 
@@ -65,15 +48,14 @@ function storedFilter(): SessionFilter {
   }
 }
 
-const DEFAULT_MODEL = "__default__";
-const CUSTOM_MODEL = "__custom__";
-
 export function ChatSessionPicker({
+  enabled = true,
   docked = false,
   rail = false,
   wide = false,
   home,
 }: {
+  enabled?: boolean;
   docked?: boolean;
   rail?: boolean;
   wide?: boolean;
@@ -83,8 +65,9 @@ export function ChatSessionPicker({
   const navigate = useNavigate();
   const { terminals } = useTerminals();
   const projectScope = chat.projectScope;
-  const [dialogOpen, setOpen] = useState(false);
-  const open = docked || rail || dialogOpen;
+  const navigation = useSessionHome();
+  const setOpen = (next: boolean) => navigation.go({ listOpen: next });
+  const open = enabled && (docked || rail || navigation.listOpen);
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);
@@ -274,7 +257,7 @@ export function ChatSessionPicker({
     <SessionHistoryFrame
       docked={docked}
       wide={wide}
-      open={dialogOpen}
+      open={open}
       onOpenChange={setOpen}
       onCollapse={home ? () => home.go({ listHidden: true }) : undefined}
       onNew={() => home?.go({ terminalId: null })}
@@ -448,6 +431,7 @@ function SessionHistoryFrame({
       variant="ghost"
       size="icon"
       data-testid="chat-history-new"
+      className="max-sm:size-11 pointer-coarse:size-11"
       aria-label="New session"
       disabled={newDisabled}
       onClick={() => {
@@ -535,9 +519,10 @@ function SessionHistoryFrame({
       <DialogContent
         ref={content}
         data-testid="chat-sessions-dialog"
+        data-session-list-wide={wide || undefined}
         className={cn(
           "chat-history-drawer left-0 top-[var(--app-top,0px)] flex h-[var(--app-height,100dvh)] max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-4 rounded-none p-4",
-          wide ? "w-screen" : "w-[min(340px,calc(100vw-24px))]",
+          wide ? "w-screen" : "w-[min(340px,calc(100vw-24px))] max-sm:w-screen",
         )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -563,33 +548,13 @@ function entryAgent(entry: ChatHistoryEntry): string {
 
 function ProviderMark({ agent }: { agent: string }) {
   return (
-    <span
-      role="img"
-      aria-label={agent || "Unknown provider"}
-      title={agent || "Unknown provider"}
-      className="inline-flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold text-muted-foreground"
-    >
-      {agent && providerIcons[agent] ? (
-        <span
-          aria-hidden="true"
-          data-testid="chat-session-provider"
-          data-provider={agent}
-          className="size-4 bg-current"
-          style={{
-            mask: `url(${providerIcons[agent]}) center / contain no-repeat`,
-            WebkitMask: `url(${providerIcons[agent]}) center / contain no-repeat`,
-          }}
-        />
-      ) : (
-        <span
-          aria-hidden="true"
-          data-testid="chat-session-provider"
-          data-provider={agent || "unknown"}
-        >
-          {agent ? agent.slice(0, 2).toUpperCase() : "?"}
-        </span>
-      )}
-    </span>
+    <AgentIcon
+      agent={agent}
+      title={agentDisplayName(agent)}
+      data-testid="chat-session-provider"
+      data-provider={agent || "unknown"}
+      className="size-5 text-muted-foreground"
+    />
   );
 }
 
@@ -631,7 +596,7 @@ function HistoryRow({
       data-history-open={open ? "true" : "false"}
       data-active={selected ? "true" : "false"}
       data-state={state}
-      className={`group flex min-w-0 items-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+      className={`${sessionRowClass} ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
     >
       <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
         <button
@@ -640,22 +605,22 @@ function HistoryRow({
           aria-current={selected ? "true" : undefined}
           disabled={pending}
           onClick={onSelect}
-          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60"
+          className={sessionRowButtonClass}
         >
-          <ProviderMark agent={agent} />
-          <span className="min-w-0 flex-1 truncate text-[13px]">{entry.title}</span>
-          {terminal && (
-            <SquareTerminal
-              size={13}
-              aria-hidden="true"
-              className="shrink-0 text-muted-foreground"
-            />
-          )}
-          <StateBadge
+          <SessionRowContent
+            agent={agent}
+            title={entry.title}
             state={state}
-            compact
-            context={agent || undefined}
-            testId="chat-session-status"
+            stateTestId="chat-session-status"
+            marker={
+              terminal && (
+                <SquareTerminal
+                  size={13}
+                  aria-hidden="true"
+                  className="shrink-0 text-muted-foreground"
+                />
+              )
+            }
           />
           <span className="sr-only">
             {agent ? ` · ${agent}` : ""}
@@ -680,179 +645,13 @@ function HistoryRow({
             data-testid="chat-tab-close"
             aria-label={`Close ${entry.title} from open sessions`}
             onClick={() => chat.closeTab(tab.key)}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
           >
             <X size={13} />
           </button>
         </ActionHelp>
       )}
     </div>
-  );
-}
-
-export function ChatAgentPicker() {
-  const chat = useChat();
-  const agents = Array.from(new Set([...useEnabledAgents(), chat.config.agent]));
-  return (
-    <Select
-      value={chat.config.agent}
-      disabled={!chat.ready}
-      onValueChange={(agent) => {
-        if (chat.thread || chat.streaming) chat.startAgentConversation(agent);
-        else chat.setConfig({ ...chat.config, agent, model: "" });
-      }}
-    >
-      <SelectTrigger
-        data-testid="chat-agent-button"
-        aria-label="Chat agent"
-        title={
-          chat.thread
-            ? "Changing agents starts a new session; this session stays in history"
-            : "Choose agent"
-        }
-        className="w-auto min-w-0 max-w-36"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent data-testid="chat-agent-select" side="top" align="start">
-        {agents.map((agent) => (
-          <SelectItem key={agent} value={agent} data-testid={`chat-agent-option-${agent}`}>
-            {agentLabel(agent)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-export function ChatModelPicker() {
-  const { config, setConfig, streaming, thread, ready } = useChat();
-  const { data: ssh } = useSsh();
-  const capabilities = useAgentCapabilities(config.agent, thread);
-  const [custom, setCustom] = useState(false);
-  const [model, setModel] = useState("");
-  const [error, setError] = useState("");
-  const catalog = useQuery({
-    queryKey: ["chat-models", config.agent, thread?.id, thread ? thread.host : ssh?.host],
-    queryFn: () => api.chat.models(config.agent, thread?.id),
-    enabled: ready,
-    staleTime: 120_000,
-    retry: false,
-  });
-  const choices = new Map((catalog.data?.models ?? []).map((model) => [model.id, model.label]));
-  for (const model of config.models.filter((model) => model.agent === config.agent))
-    if (!choices.has(model.id)) choices.set(model.id, model.id);
-  if (config.model && !choices.has(config.model)) choices.set(config.model, config.model);
-  const warning = catalog.isError
-    ? "Models could not be loaded. Saved and custom models are available."
-    : catalog.data?.warning;
-  const current = choices.get(config.model) || config.model || "Agent default";
-  return (
-    <Popover
-      open={custom}
-      onOpenChange={(open) => {
-        setCustom(open);
-        if (!open) setError("");
-      }}
-    >
-      <Select
-        value={config.model || DEFAULT_MODEL}
-        disabled={streaming || !ready || capabilities?.modelSelection === false}
-        onValueChange={(value) => {
-          setError("");
-          if (value === CUSTOM_MODEL) {
-            setModel(config.model);
-            setCustom(true);
-          } else setConfig({ ...config, model: value === DEFAULT_MODEL ? "" : value });
-        }}
-      >
-        <PopoverAnchor asChild>
-          <SelectTrigger
-            data-testid="chat-model-button"
-            aria-label={`Choose model, current ${current}`}
-            title={streaming ? "Available after the current response" : "Choose model"}
-            className="w-auto min-w-0 max-w-48"
-          >
-            <SelectValue>{current}</SelectValue>
-          </SelectTrigger>
-        </PopoverAnchor>
-        <SelectContent
-          data-testid="chat-model-select"
-          side="top"
-          align="start"
-          onCloseAutoFocus={(event) => {
-            if (custom) event.preventDefault();
-          }}
-        >
-          <SelectItem value={DEFAULT_MODEL} data-testid="chat-model-option-default">
-            Agent default
-          </SelectItem>
-          {[...choices].map(([id, label]) => (
-            <SelectItem key={id} value={id} data-testid={`chat-model-option-${id}`}>
-              {label}
-            </SelectItem>
-          ))}
-          <SelectItem value={CUSTOM_MODEL} data-testid="chat-model-option-custom">
-            Custom model…
-          </SelectItem>
-          {catalog.isFetching && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading models…</p>
-          )}
-          {warning && (
-            <p
-              data-testid="chat-model-warning"
-              role="status"
-              className="max-w-72 px-2 py-1.5 text-xs text-muted-foreground wrap-break-word"
-            >
-              {warning}
-            </p>
-          )}
-        </SelectContent>
-      </Select>
-      <PopoverContent
-        aria-label="Custom model"
-        side="top"
-        align="start"
-        className="w-80 max-w-[calc(100vw-2rem)]"
-      >
-        <form
-          className="flex min-w-0 gap-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const parsed = ChatModelSchema.safeParse(model);
-            if (!parsed.success) {
-              setError("Enter a valid model ID (up to 200 characters).");
-              return;
-            }
-            setConfig({ ...config, model: parsed.data });
-            setCustom(false);
-          }}
-        >
-          <Input
-            data-testid="chat-custom-model"
-            aria-label="Custom model ID"
-            value={model}
-            disabled={streaming}
-            onChange={(event) => setModel(event.target.value)}
-            className="min-w-0"
-          />
-          <Button
-            type="submit"
-            data-testid="chat-custom-model-apply"
-            disabled={streaming}
-            className="min-h-8 px-2"
-          >
-            Use
-          </Button>
-        </form>
-        {error && (
-          <p role="alert" className="mt-2 text-xs text-error wrap-break-word">
-            {error}
-          </p>
-        )}
-      </PopoverContent>
-    </Popover>
   );
 }
 

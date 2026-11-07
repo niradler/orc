@@ -17,12 +17,7 @@ export function StateBadge({
   const { label, help, Icon, tone } = AGENT_STATES[state];
   const name = context ? `${context} · ${label}` : label;
   const icon = (
-    <Icon
-      aria-hidden="true"
-      size={14}
-      strokeWidth={2.25}
-      className={cn("shrink-0", tone, state === "working" && "motion-safe:animate-spin")}
-    />
+    <Icon aria-hidden="true" size={14} strokeWidth={2.25} className={cn("shrink-0", tone)} />
   );
   if (compact)
     return (

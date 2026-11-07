@@ -166,7 +166,7 @@ test("an agent running in an ORC terminal joins the list once and shell terminal
   expect(own.id).toBe("terminal:term-1");
   expect(own.kind === "terminal" && own.terminal).toBe(terminal);
   expect(own.terminalId).toBe("term-1");
-  expect(historyEntryState(own, { since: 0, seen: {} })).toBe("idle");
+  expect(historyEntryState(own, { since: 0, seen: {} })).toBe("unknown");
   expect(chatHistoryList([], [], [], [], "", "project-a", [terminal])).toHaveLength(0);
   expect(chatHistoryList([], [], [], [], "claude", "all", [terminal])).toHaveLength(1);
   expect(chatHistoryList([], [], [], [], "nomatch", "all", [terminal])).toHaveLength(0);

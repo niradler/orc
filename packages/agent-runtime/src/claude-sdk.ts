@@ -479,7 +479,11 @@ class ClaudeSDKSession implements AgentSession {
           } else {
             this.push({
               type: "result",
-              data: { runtimeSessionId: msg.session_id, usage: msg.usage },
+              data: {
+                runtimeSessionId: msg.session_id,
+                usage: msg.usage,
+                durationMs: msg.duration_ms,
+              },
             });
           }
           break;

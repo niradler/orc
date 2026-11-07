@@ -267,7 +267,7 @@ export function historyEntryState(
       : entry.kind === "native"
         ? liveSessionState(entry.session)
         : entry.kind === "terminal"
-          ? "idle"
+          ? "unknown"
           : "ended";
   const state = entry.observedState ? moreUrgent(own, entry.observedState) : own;
   if (selected || entry.kind === "terminal" || entry.id.startsWith("draft:")) return state;

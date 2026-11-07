@@ -11,6 +11,7 @@ test("reads the full-width session view state from the URL and ignores unknown v
     terminalId: null,
     liveId: null,
     listHidden: false,
+    listOpen: false,
     inspector: null,
     drawer: false,
   });
@@ -20,7 +21,14 @@ test("reads the full-width session view state from the URL and ignores unknown v
         "sessionTerminal=t1&sessionLive=l1&sessionList=hide&inspector=diff&drawer=terminal",
       ),
     ),
-  ).toEqual({ terminalId: "t1", liveId: "l1", listHidden: true, inspector: "diff", drawer: true });
+  ).toEqual({
+    terminalId: "t1",
+    liveId: "l1",
+    listHidden: true,
+    listOpen: false,
+    inspector: "diff",
+    drawer: true,
+  });
   expect(readSessionHome(new URLSearchParams("inspector=terminal&drawer=1")).inspector).toBeNull();
   expect(readSessionHome(new URLSearchParams("drawer=1")).drawer).toBe(false);
 });
@@ -50,4 +58,14 @@ test("links from other pages keep only the project scope and prefer the terminal
   expect(sessionHomeSearch("?project=p", { terminalId: "t1", liveId: "l1" })).toBe(
     "?project=p&chat=full&sessionTerminal=t1",
   );
+});
+
+test("phone list visibility survives URL round trips without overwriting a collapsed desktop list", () => {
+  const base = new URLSearchParams("project=p&chat=full&sessionList=hide");
+  expect(patchSessionHome(base, { listOpen: false }).get("sessionList")).toBe("hide");
+  const opened = patchSessionHome(base, { listOpen: true });
+  expect(readSessionHome(opened).listOpen).toBe(true);
+  expect(readSessionHome(opened).listHidden).toBe(false);
+  expect(patchSessionHome(opened, { listOpen: false }).has("sessionList")).toBe(false);
+  expect(clearSessionHome(opened).get("project")).toBe("p");
 });

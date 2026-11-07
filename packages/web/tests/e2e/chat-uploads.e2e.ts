@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
+import { setWorkspaceFolder } from "./_chat-ui";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
@@ -53,9 +54,7 @@ for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await gotoView(page, "tasks");
       await page.goto(`/tasks?project=${project.id}&chat=full`);
-      await page.getByTestId("chat-workspace-recent").click();
-      await page.getByTestId("chat-workspace-cwd").fill(cwd);
-      await page.getByTestId("chat-workspace-apply").click();
+      await setWorkspaceFolder(page, cwd);
       await page.getByTestId("chat-input").fill("Read the uploaded report");
       let uploadRequests = 0;
       page.on("request", (req) => {
@@ -154,9 +153,7 @@ test("queued attachments remain bound to their message and can warn before losin
   try {
     await gotoView(page, "tasks");
     await page.goto("/tasks?chat=full");
-    await page.getByTestId("chat-workspace-recent").click();
-    await page.getByTestId("chat-workspace-cwd").fill(cwd);
-    await page.getByTestId("chat-workspace-apply").click();
+    await setWorkspaceFolder(page, cwd);
     await page.getByTestId("chat-input").fill("Respond after 1000ms");
     await page.getByTestId("chat-send-button").click();
     await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "true");

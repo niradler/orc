@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { API_SECRET } from "./_helpers";
 import { HOME, mockSessionHome } from "./_session-home-demo";
 
 const rowIds = [
@@ -189,4 +190,160 @@ test.describe("session home on desktop", () => {
     await page.getByTestId("chat-fullscreen-button").click();
     await expect(page).toHaveURL(new RegExp(`/terminals/${HOME.terminal}\\?project=all$`));
   });
+});
+
+for (const width of [1440, 390])
+  for (const theme of ["dark", "light"]) {
+    test(`populated session rows and home remain usable in ${theme} at ${width}px`, async ({
+      page,
+      request,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await request.patch("/api/settings", {
+        headers: { Authorization: `Bearer ${API_SECRET}` },
+        data: { theme },
+      });
+      const data = await mockSessionHome(page);
+      data.chats[0].projectId = "home-project";
+      await page.route(/\/api\/projects(\?.*)?$/, (route) =>
+        route.fulfill({ json: { projects: [{ id: "home-project", name: "Shop" }], total: 1 } }),
+      );
+      await page.goto("/sessions?project=all");
+      await expect(page.getByTestId("live-session-list")).toBeVisible();
+      await expect(page.getByTestId("live-session-row")).toHaveCount(2);
+      await page.screenshot({
+        path: test.info().outputPath(`activity-sessions-${theme}-${width}.png`),
+      });
+      await page
+        .getByTestId("live-session-row")
+        .filter({ hasText: "Upgrade the payments SDK" })
+        .getByTestId("live-session-open-home")
+        .click();
+      await expect(page.getByText("Resumed.").first()).toBeVisible();
+      const list = await sessionList(page, width < 1280);
+      await row(list, `chat:${HOME.chatA}`).locator("button").first().click();
+      await expect(
+        page.getByTestId("session-project-breadcrumb").filter({ visible: true }),
+      ).toHaveText("Shop");
+      if (width === 1440) {
+        await page.getByTestId("session-inspector-toggle").click();
+        await expect(page.getByTestId("session-inspector")).toBeVisible();
+        await expect(page.getByTestId("session-inspector-folder")).toContainText(
+          "/home/demo/acme-shop",
+        );
+      }
+      await page.screenshot({ path: test.info().outputPath(`session-home-${theme}-${width}.png`) });
+      if (width === 390) {
+        await sessionList(page, true);
+        await expect(page.getByTestId("chat-sessions-dialog")).toBeVisible();
+        await expect(
+          page
+            .getByTestId("chat-sessions-dialog")
+            .getByTestId("chat-session-list")
+            .locator("[data-history-id]"),
+        ).toHaveCount(4);
+        await page.screenshot({
+          path: test.info().outputPath(`session-list-${theme}-${width}.png`),
+        });
+        await page.keyboard.press("Escape");
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+  }
+
+test("phone session list is full screen and URL, reload, Back and Escape preserve its visibility", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockSessionHome(page);
+  await page.goto(`/tasks?project=all&chat=full&chatThread=${HOME.chatA}`);
+  await sessionList(page, true);
+  await expect(page).toHaveURL(/sessionList=show/);
+  const dialog = page.getByTestId("chat-sessions-dialog");
+  const box = await dialog.boundingBox();
+  expect(box?.x).toBe(0);
+  expect(box?.width).toBe(390);
+  for (const control of [
+    dialog.getByRole("button", { name: "Close", exact: true }),
+    dialog.getByTestId("chat-history-new"),
+  ]) {
+    const target = await control.boundingBox();
+    expect(target?.width).toBeGreaterThanOrEqual(44);
+    expect(target?.height).toBeGreaterThanOrEqual(44);
+  }
+  await page.reload();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page).not.toHaveURL(/sessionList=show/);
+  await page.goBack();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
+test("Exit full screen returns to its source after Back and Forward", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockSessionHome(page);
+  await page.goto("/sessions?project=all");
+  await page
+    .getByTestId("live-session-row")
+    .filter({ hasText: "Upgrade the payments SDK" })
+    .getByTestId("live-session-open-home")
+    .click();
+  await expect(page.getByText("Resumed.").first()).toBeVisible();
+  await page.getByTestId("session-inspector-toggle").click();
+  await page.goBack();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/sessions\?project=all$/);
+  await page.goForward();
+  await expect(page.getByTestId("session-home")).toBeVisible();
+  await page.getByTestId("chat-fullscreen-button").filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/sessions\?project=all$/);
+});
+
+test("breadcrumb uses recorded project ownership and unlinked terminal state stays unknown", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const data = await mockSessionHome(page);
+  data.chats[0].projectId = "home-project";
+  await page.route(/\/api\/projects(\?.*)?$/, (route) =>
+    route.fulfill({ json: { projects: [{ id: "home-project", name: "Shop" }], total: 1 } }),
+  );
+  await page.route(/\/api\/terminals(\?.*)?$/, (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        ready: true,
+        host: null,
+        launchers: ["shell", "claude"],
+        terminals: [
+          data.terminal,
+          {
+            ...data.terminal,
+            id: "unlinked-terminal",
+            name: "Unobserved agent",
+            live_session_id: null,
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto(`/tasks?project=all&chat=full&chatThread=${HOME.chatA}`);
+  await expect(page.getByTestId("session-project-breadcrumb").filter({ visible: true })).toHaveText(
+    "Shop",
+  );
+  const unknown = page.locator('[data-history-id="terminal:unlinked-terminal"]');
+  await expect(unknown).toHaveAttribute("data-state", "unknown");
+  await expect(unknown.getByTestId("chat-session-status")).toHaveAttribute("aria-label", /Unknown/);
+  await row(page.getByTestId("chat-session-list"), `chat:${HOME.chatB}`)
+    .locator("button")
+    .first()
+    .click();
+  await expect(page.getByTestId("session-project-breadcrumb").filter({ visible: true })).toHaveText(
+    "Unknown project",
+  );
 });

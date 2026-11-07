@@ -18,7 +18,7 @@ import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
 const iconButton =
-  "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface aria-pressed:bg-surface-highest aria-pressed:text-on-surface";
+  "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface aria-pressed:bg-surface-highest aria-pressed:text-on-surface max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const reveal = "motion-safe:animate-in motion-safe:duration-150";
 
 export interface SessionContext {

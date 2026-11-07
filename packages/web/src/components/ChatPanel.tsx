@@ -22,17 +22,15 @@ import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { ChatActivityList } from "@/components/ChatActivityList";
+import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
 import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
 } from "@/components/ChatContinueInTerminal";
-import {
-  ChatAgentPicker,
-  ChatConversationInfo,
-  ChatModelPicker,
-  ChatSessionPicker,
-} from "@/components/ChatControls";
+import { ChatConversationInfo, ChatSessionPicker } from "@/components/ChatControls";
+import { ChatLiveAnnouncer, ChatLiveStatus } from "@/components/ChatLiveStatus";
+import { ChatPermissionChip } from "@/components/ChatPermissionSelect";
 import {
   ChatPromptMenu,
   chatCommandOptionId,
@@ -52,8 +50,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { usePinnedScroll } from "@/hooks/usePinnedScroll";
+import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
 import { commandSegments } from "@/lib/chat-commands";
+import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -101,6 +102,9 @@ export function ChatPanel({
     refreshing,
     refresh,
     streamingAgent,
+    streamText,
+    activity,
+    turn,
     error,
     config,
     ready,
@@ -115,6 +119,7 @@ export function ChatPanel({
     respondQuestion,
     responding,
     activeKey,
+    tabs,
     draft,
     files,
     addFiles,
@@ -150,6 +155,7 @@ export function ChatPanel({
   };
   const terminalControl = useChatContinueInTerminal();
   const desktop = useBreakpoint("xl");
+  const phone = !useBreakpoint("sm");
   const home = useSessionHome();
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
@@ -157,8 +163,22 @@ export function ChatPanel({
   const terminalCenter = fullscreen && !!home.terminalId;
   const linkError = useSessionLiveLink(home, fullscreen);
   const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
+  const projects = useProjects();
+  const owner = terminalCenter
+    ? context.session?.project_id
+    : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
+  const projectName =
+    owner === null
+      ? "Unassigned"
+      : (projects.data?.find((project) => project.id === owner)?.name ?? "Unknown project");
+  const scroll = usePinnedScroll({
+    resetKey: `${activeKey}:${thread?.id ?? ""}`,
+    count: messages.length + (streaming ? 1 : 0),
+    restoring: loadingHistory,
+  });
   const submit = () => {
     if (!ready || (!draft.trim() && !files.length)) return;
+    if (!streaming) scroll.pinToBottom();
     void send(draft);
     setDraft("");
   };
@@ -177,6 +197,7 @@ export function ChatPanel({
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const inputBackdrop = useRef<HTMLDivElement>(null);
+  const plainPaste = useRef(false);
   const draftSegments = useMemo(
     () => commandSegments(draft, promptMenu.commandNames),
     [draft, promptMenu.commandNames],
@@ -209,16 +230,6 @@ export function ChatPanel({
   useLayoutEffect(() => {
     if (open && editingQueuedId && queueDetails.current) queueDetails.current.open = true;
   }, [editingQueuedId, open]);
-  const viewport = useRef<HTMLDivElement>(null);
-  const historyAnchor = useRef<{ height: number; top: number; threadId: string } | null>(null);
-  useLayoutEffect(() => {
-    const anchor = historyAnchor.current;
-    const element = viewport.current;
-    if (loadingHistory || !anchor || !element) return;
-    if (anchor.threadId === thread?.id)
-      element.scrollTop = anchor.top + element.scrollHeight - anchor.height;
-    historyAnchor.current = null;
-  }, [loadingHistory, thread?.id]);
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
     initial: 384,
@@ -258,6 +269,7 @@ export function ChatPanel({
         />
       )}
       <ChatSessionPicker
+        enabled={open}
         docked={docked}
         rail={rail}
         wide={fullscreen && !desktop}
@@ -271,9 +283,25 @@ export function ChatPanel({
             !docked && !rail && "pl-40",
           )}
         >
-          {title ? (
-            <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={title}>
-              {title}
+          {!(fullscreen && phone) && (title || fullscreen) ? (
+            <h2
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
+              title={fullscreen ? `${projectName} / ${title ?? "New session"}` : title}
+            >
+              {fullscreen && (
+                <>
+                  <span
+                    data-testid="session-project-breadcrumb"
+                    className="max-w-[40%] truncate text-muted-foreground"
+                  >
+                    {projectName}
+                  </span>
+                  <span aria-hidden="true" className="text-muted-foreground">
+                    /
+                  </span>
+                </>
+              )}
+              <span className="min-w-0 truncate">{title ?? "New session"}</span>
             </h2>
           ) : (
             <div className="min-w-0 flex-1" aria-hidden="true" />
@@ -282,7 +310,7 @@ export function ChatPanel({
             <LoaderCircle
               size={14}
               aria-hidden="true"
-              className="chat-compact-activity shrink-0 animate-spin"
+              className="chat-compact-activity shrink-0 text-progress"
             />
           )}
           {terminalCenter ? null : headerWide ? (
@@ -374,7 +402,7 @@ export function ChatPanel({
               </PopoverContent>
             </Popover>
           )}
-          {fullscreen && <SessionHomeToggles home={home} />}
+          {fullscreen && !phone && <SessionHomeToggles home={home} />}
           {onToggleFullscreen && (
             <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
               <button
@@ -401,6 +429,26 @@ export function ChatPanel({
             </button>
           </ActionHelp>
         </header>
+        {fullscreen && phone && (
+          <div className="flex min-w-0 shrink-0 items-center gap-1 px-4 pb-1">
+            <h2
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]"
+              title={`${projectName} / ${title ?? "New session"}`}
+            >
+              <span
+                data-testid="session-project-breadcrumb"
+                className="max-w-[40%] truncate text-muted-foreground"
+              >
+                {projectName}
+              </span>
+              <span aria-hidden="true" className="text-muted-foreground">
+                /
+              </span>
+              <span className="min-w-0 truncate">{title ?? "New session"}</span>
+            </h2>
+            <SessionHomeToggles home={home} />
+          </div>
+        )}
         {linkError && (
           <p role="alert" className="px-4 py-1 text-xs text-error">
             {linkError}
@@ -418,88 +466,119 @@ export function ChatPanel({
               Connection interrupted. Reconnecting…
             </p>
           )}
-          <ThreadPrimitive.Viewport
-            ref={viewport}
-            data-testid="chat-messages"
-            className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
-          >
-            {historyBefore !== null && (
-              <button
-                type="button"
-                data-testid="chat-load-older"
-                disabled={loadingHistory || streaming}
-                className="mx-auto mb-4 block min-h-8 rounded-md border border-border px-3 text-sm text-primary hover:bg-surface disabled:opacity-50"
-                onClick={() => {
-                  const element = viewport.current;
-                  if (element && thread)
-                    historyAnchor.current = {
-                      height: element.scrollHeight,
-                      top: element.scrollTop,
-                      threadId: thread.id,
-                    };
-                  void loadOlder();
-                }}
-              >
-                {loadingHistory ? "Loading older messages…" : "Load older messages"}
-              </button>
-            )}
-            {messages.length === 0 && !streaming && (
-              <div className="chat-empty-state mx-auto flex h-full w-full max-w-3xl flex-col justify-center gap-2">
-                <h3 className="text-lg font-medium">What are you working on?</h3>
-                <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
-                  Ask about your tasks, review agent activity, or work through a coding question.
-                </p>
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <ThreadPrimitive.Viewport
+              ref={scroll.viewportRef}
+              autoScroll={false}
+              scrollToBottomOnRunStart={false}
+              scrollToBottomOnInitialize={false}
+              scrollToBottomOnThreadSwitch={false}
+              data-testid="chat-messages"
+              data-pinned={scroll.pinned}
+              className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
+            >
+              <div ref={scroll.contentRef} className="flex min-h-full flex-col">
+                {historyBefore !== null && (
+                  <button
+                    type="button"
+                    data-testid="chat-load-older"
+                    disabled={loadingHistory || streaming}
+                    className="mx-auto mb-4 block min-h-8 rounded-md border border-border px-3 text-sm text-primary hover:bg-surface disabled:opacity-50"
+                    onClick={() => {
+                      scroll.keepPosition();
+                      void loadOlder();
+                    }}
+                  >
+                    {loadingHistory ? "Loading older messages…" : "Load older messages"}
+                  </button>
+                )}
+                {messages.length === 0 && !streaming && (
+                  <div className="chat-empty-state mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-2">
+                    <h3 className="text-lg font-medium">What are you working on?</h3>
+                    <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
+                      Ask about your tasks, review agent activity, or work through a coding
+                      question.
+                    </p>
+                  </div>
+                )}
+                <ThreadPrimitive.Messages>
+                  {({ message }) => (
+                    <MessagePrimitive.Root
+                      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
+                      data-testid="chat-message"
+                      data-role={message.role}
+                      className="mx-auto mb-6 w-full max-w-3xl min-w-0 text-base leading-[1.65]"
+                    >
+                      <div
+                        className={
+                          message.role === "user"
+                            ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
+                            : undefined
+                        }
+                      >
+                        <div
+                          data-testid="chat-message-agent"
+                          className={
+                            message.role === "user"
+                              ? "sr-only"
+                              : "mb-2 text-xs font-medium text-on-surface-variant"
+                          }
+                        >
+                          {message.role === "user"
+                            ? "You"
+                            : typeof message.metadata.custom.agent === "string"
+                              ? message.metadata.custom.agent
+                              : "Assistant"}
+                        </div>
+                        <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
+                          <ChatActivityList
+                            value={message.metadata.custom.activity}
+                            turn={message.metadata.custom.turn}
+                            live={message.metadata.custom.live === true}
+                          />
+                          <ChatAttachments value={message.metadata.custom.attachments} />
+                          <MessagePrimitive.Parts components={textParts} />
+                        </div>
+                      </div>
+                    </MessagePrimitive.Root>
+                  )}
+                </ThreadPrimitive.Messages>
+              </div>
+            </ThreadPrimitive.Viewport>
+            {!scroll.pinned && messages.length > 0 && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center px-4">
+                <button
+                  type="button"
+                  data-testid="chat-jump-latest"
+                  aria-label={
+                    scroll.newCount ? `Jump to latest, ${scroll.newCount} new` : "Jump to latest"
+                  }
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={scroll.pinToBottom}
+                  className="pointer-events-auto flex min-h-8 items-center gap-1.5 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface shadow-sm hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11"
+                >
+                  <ArrowDown aria-hidden="true" size={14} />
+                  Jump to latest
+                  {scroll.newCount > 0 && (
+                    <span className="text-on-surface-variant">· {scroll.newCount} new</span>
+                  )}
+                </button>
               </div>
             )}
-            <ThreadPrimitive.Messages>
-              {({ message }) => (
-                <MessagePrimitive.Root
-                  style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
-                  data-testid="chat-message"
-                  data-role={message.role}
-                  className="mx-auto mb-6 w-full max-w-3xl min-w-0 text-base leading-[1.65]"
-                >
-                  <div
-                    className={
-                      message.role === "user"
-                        ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
-                        : undefined
-                    }
-                  >
-                    <div
-                      data-testid="chat-message-agent"
-                      className={
-                        message.role === "user"
-                          ? "sr-only"
-                          : "mb-2 text-xs font-medium text-on-surface-variant"
-                      }
-                    >
-                      {message.role === "user"
-                        ? "You"
-                        : typeof message.metadata.custom.agent === "string"
-                          ? message.metadata.custom.agent
-                          : "Assistant"}
-                    </div>
-                    <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
-                      <ChatActivityList value={message.metadata.custom.activity} />
-                      <ChatAttachments value={message.metadata.custom.attachments} />
-                      <MessagePrimitive.Parts components={textParts} />
-                    </div>
-                  </div>
-                </MessagePrimitive.Root>
-              )}
-            </ThreadPrimitive.Messages>
-          </ThreadPrimitive.Viewport>
+          </div>
           {streaming && (
-            <p
-              role="status"
-              data-testid="chat-activity-status"
-              className="chat-activity-status flex shrink-0 items-center gap-2 px-4 py-2 text-xs text-on-surface-variant"
-            >
-              <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />
-              {streamingAgent} is responding…
-            </p>
+            <ChatLiveStatus
+              agent={streamingAgent}
+              startedAt={turn?.startedAt}
+              activity={activity}
+            />
           )}
+          <ChatLiveAnnouncer
+            streaming={streaming}
+            agent={streamingAgent}
+            text={streamText}
+            last={messages[messages.length - 1]}
+          />
           {error && (
             <div
               role="alert"
@@ -619,15 +698,6 @@ export function ChatPanel({
             </details>
           )}
           <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
-            {messages.length > 0 && (
-              <ThreadPrimitive.ScrollToBottom
-                aria-label="Scroll to latest response"
-                className="chat-scroll-latest mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
-              >
-                <ArrowDown size={14} />
-                Latest response
-              </ThreadPrimitive.ScrollToBottom>
-            )}
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -702,7 +772,7 @@ export function ChatPanel({
                   aria-activedescendant={
                     activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                   }
-                  placeholder="Message your agent… (/ for prompts and skills)"
+                  placeholder="Ask anything. / for prompts and skills"
                   disabled={!ready}
                   value={draft}
                   onChange={(event) => {
@@ -715,12 +785,24 @@ export function ChatPanel({
                       inputBackdrop.current.scrollTop = event.currentTarget.scrollTop;
                   }}
                   onPaste={(event) => {
+                    const plain = plainPaste.current;
+                    plainPaste.current = false;
                     if (event.clipboardData.files.length) {
                       event.preventDefault();
                       addFiles(Array.from(event.clipboardData.files));
+                      return;
                     }
+                    const text = event.clipboardData.getData("text/plain");
+                    if (plain || !shouldAttachPaste(text)) return;
+                    event.preventDefault();
+                    const name = pastedTextName(files.map((file) => file.name));
+                    addFiles([new File([text], name, { type: "text/plain" })]);
                   }}
                   onKeyDown={(event) => {
+                    plainPaste.current =
+                      (event.ctrlKey || event.metaKey) &&
+                      event.shiftKey &&
+                      event.key.toLowerCase() === "v";
                     if (promptMenu.onKeyDown(event)) return;
                     if (
                       event.key === "Enter" &&
@@ -737,7 +819,10 @@ export function ChatPanel({
                 />
               </div>
               <div className="flex items-center justify-between gap-2">
-                <div className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+                <div
+                  data-testid="chat-composer-tools"
+                  className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5"
+                >
                   <label
                     className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 focus-within:ring-2 focus-within:ring-focus`}
                     aria-label="Attach files"
@@ -758,14 +843,9 @@ export function ChatPanel({
                       }}
                     />
                   </label>
-                  <div
-                    data-testid="chat-composer-selectors"
-                    className="chat-composer-selectors flex min-w-0 items-center"
-                  >
-                    <ChatAgentPicker />
-                    <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
-                  </div>
+                  <ChatAgentModelPicker key={thread?.id ?? "new"} />
                   <ChatWorkspaceControls />
+                  <ChatPermissionChip />
                 </div>
                 <div className="flex items-center gap-1">
                   {streaming && thread?.capabilities?.steering && (

@@ -2,8 +2,64 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type GitStatus } from "@/api/client";
-import { diffLines, pairDiffLines } from "@/lib/git-diff";
+import { type DiffLine, diffLines, pairDiffLines } from "@/lib/git-diff";
 import { fileChangeState } from "@/lib/git-status";
+
+export function DiffLines({
+  lines,
+  sideBySide = false,
+}: {
+  lines: DiffLine[];
+  sideBySide?: boolean;
+}) {
+  if (sideBySide)
+    return (
+      <div data-testid="git-diff-side-by-side" className="min-w-[640px]">
+        <div className="grid grid-cols-2 border-b border-outline-variant text-on-surface-variant">
+          <span className="px-3 py-1">Before</span>
+          <span className="border-l border-outline-variant px-3 py-1">After</span>
+        </div>
+        {pairDiffLines(lines).map((pair) =>
+          pair.full ? (
+            <div key={pair.id} className="whitespace-pre bg-surface px-3 text-on-surface-variant">
+              {pair.full.text || " "}
+            </div>
+          ) : (
+            <div key={pair.id} className="grid grid-cols-2">
+              {(["left", "right"] as const).map((side) => {
+                const line = pair[side];
+                return (
+                  <div
+                    key={side}
+                    data-testid={line ? `git-diff-${line.kind}` : "git-diff-empty"}
+                    className={`flex min-w-0 whitespace-pre ${side === "right" ? "border-l border-outline-variant" : ""} ${line?.kind === "remove" ? "bg-error/10 text-error" : line?.kind === "add" ? "bg-secondary/10 text-secondary" : ""}`}
+                  >
+                    <span className="w-12 shrink-0 pr-2 text-right select-none text-on-surface-variant">
+                      {side === "left" ? line?.old : line?.next}
+                    </span>
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-all pr-3">
+                      {line?.text.slice(1) || " "}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ),
+        )}
+      </div>
+    );
+  return lines.map((line) => (
+    <div
+      key={line.id}
+      data-testid={`git-diff-${line.kind}`}
+      className={`flex min-w-max whitespace-pre ${line.kind === "add" ? "bg-secondary/10 text-secondary" : line.kind === "remove" ? "bg-error/10 text-error" : line.kind === "hunk" ? "bg-surface text-on-surface-variant" : line.kind === "meta" ? "text-on-surface-variant" : ""}`}
+    >
+      <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">{line.old}</span>
+      <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">{line.next}</span>
+      <span className="pr-3">{line.text || " "}</span>
+    </div>
+  ));
+}
 
 function DiffSection({
   terminalId,
@@ -70,59 +126,8 @@ function DiffSection({
           <p className="p-3 text-on-surface-variant">Loading diff…</p>
         ) : !lines.length ? (
           <p className="p-3 text-on-surface-variant">No text changes in this view.</p>
-        ) : sideBySide ? (
-          <div data-testid="git-diff-side-by-side" className="min-w-[640px]">
-            <div className="grid grid-cols-2 border-b border-outline-variant text-on-surface-variant">
-              <span className="px-3 py-1">Before</span>
-              <span className="border-l border-outline-variant px-3 py-1">After</span>
-            </div>
-            {pairDiffLines(lines).map((pair) =>
-              pair.full ? (
-                <div
-                  key={pair.id}
-                  className="whitespace-pre bg-surface px-3 text-on-surface-variant"
-                >
-                  {pair.full.text || " "}
-                </div>
-              ) : (
-                <div key={pair.id} className="grid grid-cols-2">
-                  {(["left", "right"] as const).map((side) => {
-                    const line = pair[side];
-                    return (
-                      <div
-                        key={side}
-                        data-testid={line ? `git-diff-${line.kind}` : "git-diff-empty"}
-                        className={`flex min-w-0 whitespace-pre ${side === "right" ? "border-l border-outline-variant" : ""} ${line?.kind === "remove" ? "bg-error/10 text-error" : line?.kind === "add" ? "bg-secondary/10 text-secondary" : ""}`}
-                      >
-                        <span className="w-12 shrink-0 pr-2 text-right select-none text-on-surface-variant">
-                          {side === "left" ? line?.old : line?.next}
-                        </span>
-                        <span className="min-w-0 flex-1 whitespace-pre-wrap break-all pr-3">
-                          {line?.text.slice(1) || " "}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ),
-            )}
-          </div>
         ) : (
-          lines.map((line) => (
-            <div
-              key={line.id}
-              data-testid={`git-diff-${line.kind}`}
-              className={`flex min-w-max whitespace-pre ${line.kind === "add" ? "bg-secondary/10 text-secondary" : line.kind === "remove" ? "bg-error/10 text-error" : line.kind === "hunk" ? "bg-surface text-on-surface-variant" : line.kind === "meta" ? "text-on-surface-variant" : ""}`}
-            >
-              <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">
-                {line.old}
-              </span>
-              <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">
-                {line.next}
-              </span>
-              <span className="pr-3">{line.text || " "}</span>
-            </div>
-          ))
+          <DiffLines lines={lines} sideBySide={sideBySide} />
         )}
       </div>
       {diff.data?.truncated && (

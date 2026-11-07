@@ -10,6 +10,7 @@ export interface SessionHomeState {
   terminalId: string | null;
   liveId: string | null;
   listHidden: boolean;
+  listOpen: boolean;
   inspector: InspectorTab | null;
   drawer: boolean;
 }
@@ -28,6 +29,7 @@ export function readSessionHome(params: URLSearchParams): SessionHomeState {
     terminalId: params.get(SESSION_TERMINAL_PARAM) || null,
     liveId: params.get(SESSION_LIVE_PARAM) || null,
     listHidden: params.get(SESSION_LIST_PARAM) === "hide",
+    listOpen: params.get(SESSION_LIST_PARAM) === "show",
     inspector: inspector === "overview" || inspector === "diff" ? inspector : null,
     drawer: params.get(DRAWER_PARAM) === "terminal",
   };
@@ -46,6 +48,10 @@ export function patchSessionHome(
   if ("terminalId" in patch) put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
   if ("liveId" in patch) put(next, SESSION_LIVE_PARAM, patch.liveId ?? null);
   if ("listHidden" in patch) put(next, SESSION_LIST_PARAM, patch.listHidden ? "hide" : null);
+  if ("listOpen" in patch) {
+    if (patch.listOpen) next.set(SESSION_LIST_PARAM, "show");
+    else if (next.get(SESSION_LIST_PARAM) === "show") next.delete(SESSION_LIST_PARAM);
+  }
   if ("inspector" in patch) put(next, INSPECTOR_PARAM, patch.inspector ?? null);
   if ("drawer" in patch) put(next, DRAWER_PARAM, patch.drawer ? "terminal" : null);
   return next;

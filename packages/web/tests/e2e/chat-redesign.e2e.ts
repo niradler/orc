@@ -92,8 +92,16 @@ test("stopping a chunked response preserves partial text and a new send finishes
   await page.getByTestId("chat-input").fill("Respond after 10000ms with a chunked response");
   await page.getByTestId("chat-send-button").click();
   await expect(page.getByTestId("chat-message-content").last()).toContainText("Partial response ✓");
-  await expect(page.getByTestId("chat-model-button")).toBeDisabled();
-  await expect(page.getByRole("status").filter({ hasText: "codex is responding" })).toBeVisible();
+  await page.getByTestId("chat-agent-model-button").click();
+  await expect(page.getByTestId("chat-model-option-default")).toBeDisabled();
+  await expect(page.getByTestId("chat-model-option-custom")).toBeDisabled();
+  await expect(page.getByTestId("chat-agent-model-note")).toContainText(
+    "Model changes are available after the current response",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("chat-activity-status")).toContainText(
+    /codex\s*Working for \d+:\d{2}/,
+  );
   await page.screenshot({ path: testInfo.outputPath("chat-loading-partial.png") });
   await page.getByTestId("chat-cancel-button").click();
   await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
@@ -147,7 +155,7 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await page.goto("/tasks");
   await page.getByTestId("chat-open-button").click();
   const panel = page.getByTestId("chat-panel");
-  await expect(panel.getByTestId("chat-agent-button")).toHaveText("Codex");
+  await expect(panel.getByTestId("chat-agent-current")).toHaveText("Codex");
   await panel.getByTestId("chat-input").fill("First request");
   await panel.getByTestId("chat-send-button").click();
   await expect(panel).toHaveAttribute("data-streaming", "true");
@@ -172,7 +180,7 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await saveClaudeDefault(page);
   await page.reload();
   await expect(page.getByTestId("chat-panel")).toBeVisible();
-  await expect(page.getByTestId("mobile-chat-sheet").getByTestId("chat-agent-button")).toHaveText(
+  await expect(page.getByTestId("mobile-chat-sheet").getByTestId("chat-agent-current")).toHaveText(
     "Claude Code",
   );
 });
@@ -217,8 +225,8 @@ for (const theme of ["dark", "light"] as const) {
       await page.goto("/tasks");
       await page.getByTestId("chat-open-button").click();
       const panel = page.getByTestId("chat-panel");
-      const picker = panel.getByTestId("chat-agent-button");
-      await expect(picker).toHaveText("Codex");
+      const picker = panel.getByTestId("chat-agent-model-button");
+      await expect(panel.getByTestId("chat-agent-current")).toHaveText("Codex");
       expect((await picker.boundingBox())?.y).toBeGreaterThan(
         (await panel.getByTestId("chat-input").boundingBox())?.y ?? 0,
       );
@@ -257,7 +265,7 @@ for (const theme of ["dark", "light"] as const) {
       await saveClaudeDefault(page);
       await page.reload();
       await expect(page.getByTestId("chat-panel")).toBeVisible();
-      await expect(page.getByTestId("chat-agent-button")).toHaveText("Claude Code");
+      await expect(page.getByTestId("chat-agent-current")).toHaveText("Claude Code");
     });
   }
 }

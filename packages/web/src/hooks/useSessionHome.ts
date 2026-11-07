@@ -1,5 +1,5 @@
-import { useCallback, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { CHAT_THREAD_PARAM } from "@/hooks/useChat";
 import { patchSessionHome, readSessionHome, type SessionHomeState } from "@/lib/session-home";
 
@@ -27,7 +27,7 @@ export function useSessionHome() {
   return { ...readSessionHome(params), go };
 }
 
-const ENTRY_KEY = "orc_session_home_entry";
+const ENTRY_KEY = "orcSessionHomeEntry";
 
 function historyIndex(): number {
   return (window.history.state as { idx?: number } | null)?.idx ?? 0;
@@ -35,21 +35,32 @@ function historyIndex(): number {
 
 /** Remembers where full width began so Minimize can return to the page before it. */
 export function useSessionHomeEntry(active: boolean) {
+  const location = useLocation();
+  const entry = useRef<number | null>(null);
   useEffect(() => {
-    try {
-      if (!active) sessionStorage.removeItem(ENTRY_KEY);
-      else if (sessionStorage.getItem(ENTRY_KEY) === null)
-        sessionStorage.setItem(ENTRY_KEY, String(historyIndex()));
-    } catch {}
-  }, [active]);
+    if (!active) {
+      entry.current = null;
+      return;
+    }
+    const state = window.history.state;
+    if (state?.key && state.key !== location.key) return;
+    const stored: unknown = state?.[ENTRY_KEY];
+    if (
+      typeof stored === "number" &&
+      Number.isInteger(stored) &&
+      stored >= 0 &&
+      stored <= historyIndex()
+    )
+      entry.current = stored;
+    entry.current ??= historyIndex();
+    window.history.replaceState({ ...state, [ENTRY_KEY]: entry.current }, "");
+  }, [active, location.key]);
 }
 
 export function sessionHomeExitSteps(): number {
   const current = historyIndex();
-  let entry = current;
-  try {
-    const stored = Number(sessionStorage.getItem(ENTRY_KEY) ?? Number.NaN);
-    if (Number.isInteger(stored)) entry = stored;
-  } catch {}
-  return entry > 0 && entry <= current ? current - entry + 1 : 0;
+  const entry: unknown = window.history.state?.[ENTRY_KEY];
+  return typeof entry === "number" && Number.isInteger(entry) && entry > 0 && entry <= current
+    ? current - entry + 1
+    : 0;
 }

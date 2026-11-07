@@ -1,5 +1,6 @@
 import { PUSH_TOPICS, type PushDevice, type PushTopic } from "@orc/core/push";
 import { Bell, BellOff, Send, Trash2, Volume2 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useProjects } from "@/hooks/useProjects";
@@ -21,12 +22,12 @@ import {
 import { type PushSupport, pushSupport } from "@/lib/pwa";
 
 const TOPIC_LABELS: Record<PushTopic, string> = {
-  attention: "Attention needed (approvals and questions from agents)",
+  attention: "Human requests (approvals and questions from agents)",
   chat: "Chat replies and chat approvals",
 };
 
 const UNSUPPORTED_REASONS: Record<Exclude<PushSupport, "supported">, string> = {
-  insecure: "Notifications need HTTPS. Open ORC through an https:// address to enable them.",
+  insecure: "Push notifications need HTTPS. Open ORC through an https:// address to enable them.",
   "install-required":
     "On iPhone and iPad, add ORC to the Home Screen (Share → Add to Home Screen), then open it from there.",
   unsupported: "This browser does not support push notifications.",
@@ -84,8 +85,8 @@ function SoundSettings() {
       <div>
         <h3 className="text-sm font-medium">Sound</h3>
         <p className="text-sm text-muted-foreground">
-          A short chime plays in this browser when an agent needs you. Finished sessions stay
-          silent; every alert also shows a toast.
+          A short chime plays in this browser when work needs you. Completed work stays silent;
+          updates remain in the notification menu.
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm">
@@ -95,7 +96,7 @@ function SoundSettings() {
           checked={prefs.sound}
           onChange={(event) => setNotificationPrefs({ sound: event.target.checked })}
         />
-        Play a sound when an agent needs you
+        Play a sound for Needs-you notifications
       </label>
       <div className="flex flex-wrap items-center gap-3">
         <label htmlFor="notification-volume" className="text-sm">
@@ -165,10 +166,16 @@ export function NotificationSettings() {
         Notifications
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
-        Agent updates appear as toasts on desktop and in the notification bell on phones. Customize
-        the Needs-you chime below. Enable push for background approvals, questions and chat replies;
-        push notifications are skipped while ORC is open and focused.
+        The bell holds agent requests, session updates and job results. Customize the Needs-you
+        chime below. Enable push for background approvals, questions and chat replies; push
+        notifications are skipped while ORC is open and focused.
       </p>
+      <Link
+        to="/settings?settingsSection=storage"
+        className="mb-4 inline-block text-sm underline underline-offset-2"
+      >
+        Notification and audit cleanup settings
+      </Link>
       <Separator className="mb-4" />
       {support !== "supported" ? (
         <p data-testid="push-unsupported" className="text-sm text-muted-foreground">

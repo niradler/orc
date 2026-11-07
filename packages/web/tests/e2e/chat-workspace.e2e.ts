@@ -2,7 +2,14 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { chooseChatModel, openChatSettings } from "./_chat-ui";
+import {
+  browseWorkspace,
+  chooseChatModel,
+  chooseWorkspaceHost,
+  openChatSettings,
+  openWorkspaceFolder,
+  setWorkspaceWorktree,
+} from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -32,6 +39,12 @@ async function workspaceFixture(page: import("@playwright/test").Page, hosts = [
   await page.route("**/api/ssh", (route) =>
     route.fulfill({ json: { host: null, hosts, supported: true } }),
   );
+  await page.route("**/api/git/worktrees?**", (route) => {
+    const cwd = new URL(route.request().url()).searchParams.get("cwd") ?? "";
+    return route.fulfill({
+      json: { root: cwd, worktrees: [{ path: cwd, branch: "refs/heads/main", main: true }] },
+    });
+  });
   await page.addInitScript(() => {
     localStorage.setItem(
       "orc_folder_history",
@@ -47,7 +60,7 @@ async function workspaceFixture(page: import("@playwright/test").Page, hosts = [
 }
 
 for (const width of [1440, 390]) {
-  test(`workspace path keeps its ending and exposes a copyable full path at ${width}px`, async ({
+  test(`workspace folder chip names the project and exposes a copyable full path at ${width}px`, async ({
     page,
     request,
   }, testInfo) => {
@@ -55,22 +68,19 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     await openChat(page);
-    const path = page.getByTestId("chat-workspace-path");
+    const chip = page.getByTestId("chat-workspace-folder");
     const fullPath = "/local/projects/a-long-project-name/packages/application";
-    await expect(path).toBeVisible();
-    await expect(path).toHaveText(fullPath);
-    const truncation = await path.locator("span").evaluate((element) => ({
-      direction: getComputedStyle(element).direction,
-      overflow: getComputedStyle(element).textOverflow,
-      clipped: element.scrollWidth > element.clientWidth,
-    }));
-    expect(truncation).toMatchObject({ direction: "rtl", overflow: "ellipsis" });
-    expect(truncation.clipped).toBe(true);
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveText("application");
+    await expect(chip).toHaveAttribute("title", `Local: ${fullPath}`);
+    await expect(chip).toHaveAccessibleName(new RegExp(fullPath));
+    const chipBounds = await chip.boundingBox();
+    expect(chipBounds && chipBounds.x >= 0 && chipBounds.x + chipBounds.width <= width).toBe(true);
     for (const theme of ["dark", "light"]) {
       await request.patch("/api/settings", { headers, data: { theme } });
       await page.reload();
-      await path.hover();
-      const details = page.getByTestId("chat-workspace-path-details");
+      await chip.click();
+      const details = page.getByTestId("chat-workspace-folder-picker");
       await expect(details).toBeVisible();
       await expect(page.getByTestId("chat-workspace-full-path")).toHaveText(fullPath);
       await page.getByTestId("chat-workspace-copy-path").click();
@@ -84,10 +94,11 @@ for (const width of [1440, 390]) {
       await page.screenshot({ path: testInfo.outputPath(`workspace-path-${theme}-${width}.png`) });
       await page.keyboard.press("Escape");
       await expect(details).toBeHidden();
+      await expect(chip).toBeFocused();
     }
-    await path.focus();
+    await chip.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("chat-workspace-path-details")).toBeVisible();
+    await expect(page.getByTestId("chat-workspace-folder-picker")).toBeVisible();
     await expect(page.getByTestId("chat-workspace-copy-path")).toBeFocused();
   });
 }
@@ -103,13 +114,17 @@ test("an unset workspace shows and copies the resolved default folder", async ({
   );
   await page.addInitScript(() => localStorage.removeItem("orc_folder_history"));
   await openChat(page);
-  await expect(page.getByTestId("chat-workspace-path")).toHaveText("C:\\Users\\Nir");
-  await page.getByTestId("chat-workspace-path").click();
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveText("Nir");
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
+    "title",
+    "Local: C:\\Users\\Nir",
+  );
+  await page.getByTestId("chat-workspace-folder").click();
   await expect(page.getByTestId("chat-workspace-full-path")).toHaveText("C:\\Users\\Nir");
   await expect(page.getByTestId("chat-workspace-copy-path")).toBeEnabled();
 });
 
-test("workspace icons stay inside the composer and preserve draft and host-scoped selections", async ({
+test("workspace chips stay inside the composer and preserve draft and host-scoped selections", async ({
   page,
   request,
 }, testInfo) => {
@@ -121,53 +136,49 @@ test("workspace icons stay inside the composer and preserve draft and host-scope
   await openChat(page);
   const composer = page.getByTestId("chat-composer-box");
   const workspace = composer.getByTestId("chat-workspace");
+  const folder = workspace.getByTestId("chat-workspace-folder");
+  const branch = workspace.getByTestId("chat-workspace-branch");
   await expect(workspace).toBeVisible();
-  await expect(composer.getByTestId("chat-model-button")).toBeVisible();
+  await expect(composer.getByTestId("chat-agent-model-button")).toBeVisible();
   await page.getByTestId("chat-input").fill("Keep this unsent draft while choosing a workspace");
   await expect(page.getByTestId("chat-workspace-cwd")).toBeHidden();
-  const worktree = workspace.getByTestId("chat-workspace-worktree");
-  await expect(worktree).toHaveAttribute("aria-pressed", "false");
-  await worktree.click();
-  await expect(worktree).toHaveAttribute("aria-pressed", "true");
+  await expect(branch).toHaveText("main");
+  await expect(branch).toHaveAttribute("data-worktree", "false");
+  await setWorkspaceWorktree(page, true);
+  await expect(branch).toHaveText("New worktree from main");
 
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const name of ["host", "browse", "recent", "worktree"]) {
-      const icon = workspace.getByTestId(`chat-workspace-${name}`);
-      await expect(icon).toBeVisible();
-      const bounds = await icon.boundingBox();
+    for (const chip of [folder, branch, composer.getByTestId("chat-agent-model-button")]) {
+      await expect(chip).toBeVisible();
+      const bounds = await chip.boundingBox();
       expect(bounds).not.toBeNull();
-      if (width < 640) {
-        expect(bounds?.width).toBeGreaterThanOrEqual(44);
-        expect(bounds?.height).toBeGreaterThanOrEqual(44);
-      }
+      expect(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width).toBe(true);
+      if (width < 640) expect(bounds?.height).toBeGreaterThanOrEqual(44);
     }
-    await workspace.getByTestId("chat-workspace-host").click();
+    await openWorkspaceFolder(page);
     await expect(page.getByTestId("chat-workspace-host-option")).toHaveCount(2);
     await page.screenshot({ path: testInfo.outputPath(`workspace-host-${width}.png`) });
     await page.getByTestId("chat-workspace-host-option").filter({ hasText: "lab" }).click();
-    await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
+    await expect(folder).toHaveAttribute(
       "title",
       `lab: ${width === 1440 ? "/remote/current" : "/remote/older"}`,
     );
-    await workspace.getByTestId("chat-workspace-recent").click();
+    await expect(folder).toContainText("lab");
     const recent = page.getByTestId("chat-workspace-recent-option");
-    await expect(recent).toHaveText(
+    await expect(recent).toContainText(
       width === 1440 ? ["/remote/current", "/remote/older"] : ["/remote/older", "/remote/current"],
     );
     await page.screenshot({ path: testInfo.outputPath(`workspace-recent-${width}.png`) });
     await recent.filter({ hasText: "/remote/older" }).click();
-    await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
-      "title",
-      "lab: /remote/older",
-    );
-    await workspace.getByTestId("chat-workspace-host").click();
-    await page.getByTestId("chat-workspace-host-option").filter({ hasText: "Local" }).click();
-    await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
+    await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
+    await expect(folder).toHaveAttribute("title", "lab: /remote/older");
+    await chooseWorkspaceHost(page, "Local");
+    await expect(folder).toHaveAttribute(
       "title",
       "Local: /local/projects/a-long-project-name/packages/application",
     );
-    await expect(worktree).toHaveAttribute("aria-pressed", "true");
+    await expect(branch).toHaveAttribute("data-worktree", "true");
     await expect(page.getByTestId("chat-input")).toHaveValue(
       "Keep this unsent draft while choosing a workspace",
     );
@@ -176,19 +187,25 @@ test("workspace icons stay inside the composer and preserve draft and host-scope
     );
     await page.screenshot({ path: testInfo.outputPath(`workspace-toolbar-${width}.png`) });
   }
-  await workspace.getByTestId("chat-workspace-recent").click();
+  await openWorkspaceFolder(page);
   await page.getByTestId("chat-workspace-cwd").fill("/local/not-applied-yet");
   await page.keyboard.press("Escape");
-  await expect(workspace.getByTestId("chat-workspace-path")).toHaveAttribute(
+  await expect(folder).toHaveAttribute(
     "title",
     "Local: /local/projects/a-long-project-name/packages/application",
   );
-  await workspace.getByTestId("chat-workspace-recent").click();
+  await openWorkspaceFolder(page);
   await expect(page.getByTestId("chat-workspace-cwd")).toHaveValue("/local/not-applied-yet");
   await page.getByTestId("chat-workspace-cwd").fill("");
   await page.getByTestId("chat-workspace-apply").click();
-  await expect(worktree).toBeDisabled();
-  await expect(worktree).toHaveAttribute("aria-pressed", "false");
+  await expect(branch).toHaveAttribute("data-worktree", "false");
+  await branch.click();
+  await expect(page.getByTestId("chat-workspace-worktree")).toBeDisabled();
+  await expect(page.getByTestId("chat-workspace-worktree")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await page.keyboard.press("Escape");
   await page.screenshot({ path: testInfo.outputPath("workspace-disabled-320.png") });
   let launch: unknown;
   await page.route("**/api/chat/stream", (route) => {
@@ -214,17 +231,21 @@ test("switching to a host without folder history turns off worktree and preserve
   );
   await openChat(page);
   await page.getByTestId("chat-input").fill("Draft for a new execution host");
-  const worktree = page.getByTestId("chat-workspace-worktree");
-  await worktree.click();
-  await expect(worktree).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("chat-workspace-host").click();
-  await page.getByTestId("chat-workspace-host-option").filter({ hasText: "empty-host" }).click();
-  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+  const branch = page.getByTestId("chat-workspace-branch");
+  await setWorkspaceWorktree(page, true);
+  await chooseWorkspaceHost(page, "empty-host");
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
     "empty-host: /home/empty-host",
   );
-  await expect(worktree).toBeDisabled();
-  await expect(worktree).toHaveAttribute("aria-pressed", "false");
+  await expect(branch).toHaveAttribute("data-worktree", "false");
+  await branch.click();
+  await expect(page.getByTestId("chat-workspace-worktree")).toBeDisabled();
+  await expect(page.getByTestId("chat-workspace-worktree")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("chat-input")).toHaveValue("Draft for a new execution host");
   let launch: unknown;
   await page.route("**/api/chat/stream", (route) => {
@@ -257,29 +278,28 @@ test("native folder choice preserves cancellation and surfaces genuine picker er
   });
   await openChat(page);
   await page.getByTestId("chat-input").fill("Preserve the draft");
-  const browse = page.getByTestId("chat-workspace-browse");
-  const path = page.getByTestId("chat-workspace-path");
-  await browse.click();
+  const folder = page.getByTestId("chat-workspace-folder");
+  await browseWorkspace(page);
   await expect.poll(() => picks).toBe(1);
-  await expect(browse).toBeEnabled();
-  await expect(path).toHaveAttribute(
+  await expect(folder).toBeEnabled();
+  await expect(folder).toHaveAttribute(
     "title",
     "Local: /local/projects/a-long-project-name/packages/application",
   );
   await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
   result = "error";
-  await browse.click();
+  await browseWorkspace(page);
   await expect(page.getByTestId("chat-workspace-error")).toContainText(
     "Folder dialog failed to open",
   );
   await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
-  await expect(path).toHaveAttribute(
+  await expect(folder).toHaveAttribute(
     "title",
     "Local: /local/projects/a-long-project-name/packages/application",
   );
   result = "chosen";
-  await browse.click();
-  await expect(path).toHaveAttribute("title", "Local: /local/chosen");
+  await browseWorkspace(page);
+  await expect(folder).toHaveAttribute("title", "Local: /local/chosen");
   await expect(page.getByTestId("chat-workspace-error")).toBeHidden();
   await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the draft");
 });
@@ -300,9 +320,9 @@ test("a delayed native folder result cannot change a newly selected conversation
   });
   await openChat(page);
   await page.getByTestId("chat-input").fill("First conversation draft");
-  await page.getByTestId("chat-workspace-browse").click();
+  await browseWorkspace(page);
   await expect.poll(() => requested).toBe(true);
-  await expect(page.getByTestId("chat-workspace-host")).toBeDisabled();
+  await expect(page.getByTestId("chat-workspace-folder")).toBeDisabled();
   await page.getByTestId("chat-clear-button").filter({ visible: true }).click();
   await expect(page.getByTestId("chat-input")).toHaveValue("");
   await page.getByTestId("chat-input").fill("Second conversation draft");
@@ -311,8 +331,8 @@ test("a delayed native folder result cannot change a newly selected conversation
   );
   finishPicker();
   await (await completed).finished();
-  await expect(page.getByTestId("chat-workspace-browse")).toBeEnabled();
-  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+  await expect(page.getByTestId("chat-workspace-folder")).toBeEnabled();
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
     "Local: /local/projects/a-long-project-name/packages/application",
   );
@@ -347,31 +367,30 @@ test("headless local browsing falls back safely and remote browsing stays on its
   });
   await openChat(page);
   await page.getByTestId("chat-input").fill("Preserve the remote draft");
-  await page.getByTestId("chat-workspace-browse").click();
+  await browseWorkspace(page);
   await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
   await expect.poll(() => nativePicks).toBe(1);
   await expect.poll(() => browseRequests.length).toBeGreaterThan(0);
   expect(browseRequests.at(-1)).toBe("");
   await page.getByTestId("remote-folder-browser").getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
     "Local: /local/projects/a-long-project-name/packages/application",
   );
-  await page.getByTestId("chat-workspace-host").click();
-  await page.getByTestId("chat-workspace-host-option").filter({ hasText: "lab" }).click();
-  await page.getByTestId("chat-workspace-browse").click();
+  await chooseWorkspaceHost(page, "lab");
+  await browseWorkspace(page);
   await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
   await expect.poll(() => browseRequests.at(-1)).toBe("lab");
   expect(nativePicks).toBe(1);
   await page.getByTestId("remote-folder-name-child").dblclick();
   await expect(page.getByTestId("remote-folder-selection")).toHaveValue("/remote/current/child");
   await page.getByTestId("remote-folder-pick").click();
-  await expect(page.getByTestId("chat-workspace-path")).toHaveAttribute(
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
     "lab: /remote/current/child",
   );
   await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the remote draft");
-  await page.getByTestId("chat-workspace-worktree").click();
+  await setWorkspaceWorktree(page, true);
   let launch: unknown;
   await page.route("**/api/chat/stream", (route) => {
     launch = route.request().postDataJSON();
@@ -487,14 +506,19 @@ test("provider activity is collapsed, readable, safe and retained after completi
   await openChat(page);
   await page.getByTestId("chat-input").fill("Show activity");
   await page.getByTestId("chat-send-button").click();
-  const group = page.getByTestId("chat-tool-group");
+  const fold = page.getByTestId("chat-turn-fold");
   const thinking = page.getByTestId("chat-thinking");
   const tool = page.getByTestId("chat-tool");
-  await expect(group.locator("summary").first()).toContainText("1 tool call · 1 thought");
-  await group.locator("summary").first().click();
+  await expect(fold).toHaveCount(1);
+  await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(
+    /^Worked( for \d+s)? · 1 tool$/,
+  );
+  await expect(fold).not.toHaveAttribute("open");
+  await page.getByTestId("chat-turn-fold-summary").click();
   await expect(thinking).toBeVisible();
   await expect(thinking).not.toHaveAttribute("open");
-  await expect(tool).toContainText("Completed");
+  await expect(tool).toContainText("Read workspace");
+  await expect(tool).not.toContainText("Running");
   await thinking.locator("summary").click();
   await expect(thinking).toContainText("Provider supplied summary");
   await tool.locator("summary").click();
@@ -519,7 +543,7 @@ test("chat defaults save and reload through Settings", async ({ page }) => {
     "Saved from the mobile settings form",
   );
   await openChat(page);
-  await expect(page.getByTestId("chat-model-button")).toHaveText("fixture-settings-model");
+  await expect(page.getByTestId("chat-model-current")).toHaveText("fixture-settings-model");
 });
 
 test("coding-session selection opens native history before sending a continuation", async ({
@@ -574,7 +598,7 @@ test("coding-session selection opens native history before sending a continuatio
   await page.getByTestId("chat-session-search").fill("Imported coding work");
   await page.getByTestId("chat-resume-live").filter({ hasText: "Imported coding work" }).click();
   await expect(page.getByTestId("chat-message-content")).toContainText("Earlier native answer");
-  await expect(page.getByTestId("chat-agent-button")).toHaveText("Codex");
+  await expect(page.getByTestId("chat-agent-current")).toHaveText("Codex");
   await openChatSettings(page);
   await expect(page.getByTestId("chat-config-dialog")).toContainText("/fixture/repository");
 });

@@ -3,6 +3,7 @@
   "version": "0.1.60",
   "type": "module",
   "exports": {
+    "./notifications": "./src/notifications.ts",
     ".": "./src/service.ts",
     "./providers": "./src/providers.ts",
     "./routing": "./src/routing.ts",

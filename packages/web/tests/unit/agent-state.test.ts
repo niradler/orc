@@ -17,17 +17,27 @@ describe("agent state language", () => {
     expect(liveSessionState({ status: "stopped" })).toBe("ended");
   });
 
-  test("should rank Needs you > Failed > Done > Working > Idle > Ended", () => {
-    expect(AGENT_STATE_ORDER).toEqual(["needs-you", "failed", "done", "working", "idle", "ended"]);
+  test("should prioritize actionable states ahead of quiet and unknown states", () => {
+    expect(AGENT_STATE_ORDER).toEqual([
+      "needs-you",
+      "failed",
+      "done",
+      "working",
+      "idle",
+      "ended",
+      "unknown",
+    ]);
     expect(moreUrgent("working", "needs-you")).toBe("needs-you");
     expect(moreUrgent("failed", "done")).toBe("failed");
     expect(moreUrgent("idle", "ended")).toBe("idle");
+    expect(moreUrgent("unknown", "working")).toBe("working");
   });
 
   test("should roll a group up to its most urgent child and stay quiet when nothing happens", () => {
     expect(rollupState(["idle", "working", "failed"])).toBe("failed");
     expect(rollupState(["idle", "ended", null])).toBeNull();
     expect(rollupState([])).toBeNull();
+    expect(rollupState(["unknown", "idle"])).toBeNull();
   });
 
   test("should give each state a distinct word and icon so color is never the only signal", () => {

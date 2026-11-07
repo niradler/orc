@@ -26,7 +26,7 @@ describe("database change notifications", () => {
         "owner",
       );
       await Bun.sleep(50);
-      expect(events).toEqual([{ resources: ["human-requests"] }]);
+      expect(events).toEqual([{ resources: ["audit", "human-requests"] }]);
       events.length = 0;
       now += 1000;
       store.heartbeat(request.id, "owner");
@@ -34,7 +34,7 @@ describe("database change notifications", () => {
       expect(events).toEqual([]);
       store.respond(request.id, 1, { kind: "question", answer: "Blue" });
       await Bun.sleep(50);
-      expect(events).toEqual([{ resources: ["human-requests"] }]);
+      expect(events).toEqual([{ resources: ["audit", "human-requests"] }]);
     } finally {
       unsubscribe();
       sqlite.close();

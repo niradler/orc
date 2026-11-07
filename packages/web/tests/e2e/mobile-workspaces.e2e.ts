@@ -66,7 +66,7 @@ for (const theme of ["dark", "light"] as const) {
         await fitsViewport(page, sheet);
         const input = sheet.getByTestId("chat-input");
         await input.fill("A question from my phone");
-        await touchTarget(sheet.getByTestId("chat-agent-button"));
+        await touchTarget(sheet.getByTestId("chat-agent-model-button"));
         await touchTarget(sheet.getByTestId("chat-send-button"));
         await sheet.getByTestId("chat-send-button").tap();
         await expect(sheet.getByTestId("chat-activity-status")).toBeVisible();
