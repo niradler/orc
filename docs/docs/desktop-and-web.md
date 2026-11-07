@@ -242,16 +242,34 @@ The desktop app is an Electron shell around the same dashboard. On top of the br
 
 | Capability | Detail |
 | --- | --- |
-| Runs the daemon for you | Starts the bundled `orc` daemon, or attaches to one already running on the configured port |
-| Configures auth | Generates an API secret when none is set and sends it on every request. No sign-in screen. |
+| Runs the daemon for you | Reuses a verified local daemon, including one on another port, or starts the bundled `orc` daemon |
+| Configures auth | Generates an API secret for a daemon it starts when none is set, and sends the configured secret automatically. No sign-in screen. |
 | Installs the CLI | `~/.orc/bin/orc`, added to your shell `PATH` |
 | Tray icon | **Open orc**, **Start at login** toggle, **Quit orc** |
 | Start at login | On by default, starts hidden in the tray |
 | Keeps running when closed | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits. |
-| Recovers from crashes | If the daemon stops, offers **Retry** or **Quit** |
+| Recovers from startup failures and crashes | Waits briefly for a starting daemon, then offers **Retry** or **Quit** if it cannot connect |
 | Remembers the window | Size, position and maximized state |
 
 Quitting the app (**Quit orc**) stops the daemon only if the app started it.
+
+If another application occupies the configured port, desktop automatically starts
+ORC on an available port bound to `127.0.0.1`. It saves the successful endpoint in
+`~/.orc/config.json`, so the CLI and stdio MCP use the same port by default.
+Explicit CLI flags, environment variables and project configuration keep their
+normal precedence; update pinned ports or URLs in external integrations yourself.
+
+Desktop checks the daemon's runtime identity, compatible version (same major and
+minor), database, configuration and authentication before attaching. It never
+starts another daemon while the daemon PID is alive, even if that daemon is
+unhealthy or uses different data. Authentication and configuration errors offer
+**Retry** or **Quit**, with the reason shown. It does not stop an existing daemon
+or the application occupying the preferred port.
+
+**Upgrading an already-running older daemon:** releases without `daemon.json`
+cannot provide this identity check. Stop that daemon once and start it with the
+updated ORC, then choose **Retry** in desktop. Desktop does not attach to an
+unverified daemon or send it the configured secret.
 
 Command-line flags for the app executable:
 
