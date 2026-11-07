@@ -7,6 +7,10 @@ describe("desktop update metadata", () => {
     expect(updateInfoFileName("mac-arm64")).toBe("latest-mac.yml");
     expect(updateInfoFileName("linux-x64")).toBe("latest-linux.yml");
     expect(updateInfoFileName("linux-arm64")).toBe("latest-linux-arm64.yml");
+    expect(updateInfoFileName("windows-x64", "0.1.61-beta.1")).toBe("beta.yml");
+    expect(updateInfoFileName("mac-arm64", "0.1.61-beta.1")).toBe("beta-mac.yml");
+    expect(updateInfoFileName("linux-x64", "0.1.61-beta.1")).toBe("beta-linux.yml");
+    expect(updateInfoFileName("linux-arm64", "0.1.61-beta.1")).toBe("beta-linux-arm64.yml");
     expect(() => updateInfoFileName("windows-arm64")).toThrow("Unsupported desktop target");
   });
 

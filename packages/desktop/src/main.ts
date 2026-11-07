@@ -406,9 +406,9 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
         quitting = true;
       },
       restoreOwnedDaemon: async () => {
+        quitting = false;
         if (!daemonStopped) return;
         daemonStopped = false;
-        quitting = false;
         await bringUp();
       },
     });

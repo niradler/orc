@@ -139,7 +139,21 @@ export function applyEvent(
 ): UpdateSnapshot {
   switch (event.type) {
     case "preferences":
-      return { ...state, channel: event.channel, checksEnabled: event.checksEnabled };
+      if (event.channel !== state.channel) {
+        if (state.phase === "checking" || state.phase === "downloading")
+          throw new Error("Wait for the current update check or download before changing channel");
+        return {
+          ...state,
+          channel: event.channel,
+          checksEnabled: event.checksEnabled,
+          phase: state.packaged ? "idle" : "unavailable",
+          availableVersion: null,
+          releaseNotes: null,
+          progress: null,
+          error: null,
+        };
+      }
+      return { ...state, checksEnabled: event.checksEnabled };
     case "checking":
       return { ...state, phase: "checking", error: null };
     case "available":
@@ -238,15 +252,17 @@ export function settingsToStore(
   previous: StoredUpdateSettings,
 ): StoredUpdateSettings {
   const lastResult =
-    state.phase === "current"
-      ? "current"
-      : state.phase === "downloaded"
-        ? "available"
-        : state.phase === "error"
-          ? "error"
-          : state.availableVersion
-            ? "available"
-            : previous.lastResult;
+    state.channel !== previous.channel
+      ? null
+      : state.phase === "current"
+        ? "current"
+        : state.phase === "downloaded"
+          ? "available"
+          : state.phase === "error"
+            ? "error"
+            : state.availableVersion
+              ? "available"
+              : previous.lastResult;
   return {
     channel: state.channel,
     checksEnabled: state.checksEnabled,
@@ -256,6 +272,28 @@ export function settingsToStore(
       lastResult === "available" ? (state.availableVersion ?? previous.lastVersion) : null,
     lastError: lastResult === "error" ? (state.error ?? previous.lastError) : null,
   };
+}
+
+export function persistUpdateSnapshot(
+  current: UpdateSnapshot,
+  next: UpdateSnapshot,
+  previous: StoredUpdateSettings,
+  write: (text: string) => void,
+): { snapshot: UpdateSnapshot; stored: StoredUpdateSettings } {
+  const stored = settingsToStore(next, previous);
+  try {
+    write(`${JSON.stringify(stored, null, 2)}\n`);
+    return { snapshot: next, stored };
+  } catch {
+    return {
+      snapshot: applyEvent(current, {
+        type: "error",
+        message:
+          "Update settings could not be saved. Check available disk space and folder permissions, then try again.",
+      }),
+      stored: previous,
+    };
+  }
 }
 
 function displayVersion(version: string): string {

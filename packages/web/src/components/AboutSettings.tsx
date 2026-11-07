@@ -48,10 +48,19 @@ function Row({ id, label, value }: { id: string; label: string; value: string | 
 
 function DesktopUpdates({ state }: { state: DesktopUpdateState }) {
   const updates = desktopBridge()?.updates;
+  const [actionError, setActionError] = useState<string | null>(null);
+  const run = async (action: () => Promise<unknown>) => {
+    setActionError(null);
+    try {
+      await action();
+    } catch {
+      setActionError("The update action failed. Please try again.");
+    }
+  };
   const checked = formatCheckedAt(state.lastCheckedAt);
   const busy = state.phase === "checking" || state.phase === "downloading";
   const save = (channel: DesktopUpdateChannel, checksEnabled: boolean) => {
-    void updates?.setPreferences({ channel, checksEnabled }).catch(() => undefined);
+    if (updates) void run(() => updates.setPreferences({ channel, checksEnabled }));
   };
   return (
     <div className="mt-8 max-w-3xl" data-testid="about-updates">
@@ -59,6 +68,11 @@ function DesktopUpdates({ state }: { state: DesktopUpdateState }) {
       <p className="text-sm text-muted-foreground" data-testid="about-update-status">
         {updateStatusText(state)}
       </p>
+      {actionError && (
+        <p role="alert" className="mt-2 text-sm text-error" data-testid="about-update-error">
+          {actionError}
+        </p>
+      )}
       {checked && (
         <p className="mt-1 text-xs text-muted-foreground" data-testid="about-update-checked">
           Last check {checked}
@@ -109,7 +123,7 @@ function DesktopUpdates({ state }: { state: DesktopUpdateState }) {
           variant="outline"
           disabled={!state.packaged || busy}
           data-testid="about-update-check"
-          onClick={() => void updates?.check()}
+          onClick={() => updates && void run(() => updates.check())}
         >
           Check now
         </Button>
@@ -117,7 +131,7 @@ function DesktopUpdates({ state }: { state: DesktopUpdateState }) {
           <Button
             type="button"
             data-testid="about-update-install"
-            onClick={() => void updates?.install()}
+            onClick={() => updates && void run(() => updates.install())}
           >
             Restart to update
           </Button>
@@ -133,12 +147,18 @@ export function AboutSettings() {
   const desktop = desktopVersions(navigator.userAgent);
   const updates = desktopBridge()?.updates;
   const [update, setUpdate] = useState<DesktopUpdateState | null>(null);
+  const [updateUnavailable, setUpdateUnavailable] = useState(false);
   useEffect(() => {
     if (!updates) return;
     let live = true;
-    void updates.state().then((next) => {
-      if (live) setUpdate(next);
-    });
+    void updates
+      .state()
+      .then((next) => {
+        if (live) setUpdate(next);
+      })
+      .catch(() => {
+        if (live) setUpdateUnavailable(true);
+      });
     const stop = updates.onChange(setUpdate);
     return () => {
       live = false;
@@ -174,6 +194,11 @@ export function AboutSettings() {
         </p>
       )}
       {update && <DesktopUpdates state={update} />}
+      {updateUnavailable && (
+        <p role="alert" className="mt-3 text-sm text-error">
+          Desktop update settings are unavailable. Reload to try again.
+        </p>
+      )}
       <h3 className="mt-8 mb-2 text-sm font-medium">Links</h3>
       <ul className="max-w-3xl space-y-0.5">
         {LINKS.map((link) => (

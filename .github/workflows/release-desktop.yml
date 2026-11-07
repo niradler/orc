@@ -57,6 +57,6 @@ jobs:
             packages/desktop/release/*.${{ matrix.extension }}
             packages/desktop/release/*.zip
             packages/desktop/release/*.blockmap
-            packages/desktop/release/latest*.yml
+            packages/desktop/release/*.yml
           if-no-files-found: error
           retention-days: 14

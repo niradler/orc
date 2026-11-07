@@ -4,8 +4,10 @@ import {
   initialSnapshot,
   installDownloadedUpdate,
   parseStoredSettings,
+  persistUpdateSnapshot,
   plainReleaseNotes,
   preferencesFromUser,
+  settingsToStore,
   withAppVersion,
 } from "./update-policy.js";
 
@@ -23,6 +25,80 @@ const current = initialSnapshot(
 );
 
 describe("desktop update policy", () => {
+  test("keeps stored preferences unchanged when persistence fails", () => {
+    const stored = parseStoredSettings("");
+    const changed = applyEvent(current, {
+      type: "preferences",
+      channel: "preview",
+      checksEnabled: false,
+    });
+    const failed = persistUpdateSnapshot(current, changed, stored, () => {
+      throw new Error("Disk full");
+    });
+    expect(failed.snapshot).toMatchObject({
+      channel: "stable",
+      checksEnabled: true,
+      phase: "error",
+    });
+    expect(failed.snapshot.error).toContain("could not be saved");
+    expect(failed.stored).toBe(stored);
+    expect(stored).toMatchObject({ channel: "stable", checksEnabled: true });
+    let written = "";
+    const committed = persistUpdateSnapshot(current, changed, stored, (text) => {
+      written = text;
+    });
+    expect(JSON.parse(written)).toEqual(committed.stored);
+    expect(committed.stored).toMatchObject({ channel: "preview", checksEnabled: false });
+  });
+
+  test("prevents an old channel download from installing after a channel switch", async () => {
+    const preview = applyEvent(current, {
+      type: "preferences",
+      channel: "preview",
+      checksEnabled: true,
+    });
+    const downloading = applyEvent(preview, {
+      type: "available",
+      version: "0.1.61-beta.1",
+      notes: null,
+    });
+    expect(() =>
+      applyEvent(downloading, { type: "preferences", channel: "stable", checksEnabled: true }),
+    ).toThrow("Wait for the current");
+    const ready = applyEvent(downloading, {
+      type: "downloaded",
+      version: "0.1.61-beta.1",
+      notes: null,
+    });
+    const stable = applyEvent(ready, {
+      type: "preferences",
+      channel: "stable",
+      checksEnabled: false,
+    });
+    expect(stable).toMatchObject({ channel: "stable", phase: "idle", availableVersion: null });
+    const reloaded = initialSnapshot(
+      "0.1.60",
+      settingsToStore(stable, settingsToStore(ready, parseStoredSettings('{"channel":"preview"}'))),
+      true,
+    );
+    expect(reloaded).toMatchObject({
+      channel: "stable",
+      availableVersion: null,
+      releaseNotes: null,
+    });
+    let stopped = false;
+    await expect(
+      installDownloadedUpdate({
+        phase: stable.phase,
+        stopOwnedDaemon: async () => {
+          stopped = true;
+        },
+        quitAndInstall: () => {},
+      }),
+    ).rejects.toThrow("No update is ready");
+    expect(stopped).toBe(false);
+  });
+
   test("keeps automatic checks on the stable channel until the user changes them", () => {
     expect(parseStoredSettings("")).toMatchObject({ channel: "stable", checksEnabled: true });
     expect(parseStoredSettings('{"channel":"preview","checksEnabled":false}')).toMatchObject({

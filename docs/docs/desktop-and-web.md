@@ -285,4 +285,6 @@ An installed app checks [GitHub Releases](https://github.com/niradler/orc/releas
 
 **Stable** uses the latest GitHub release. **Preview** also accepts a newer prerelease. Uncheck **Check for updates** to stop automatic checks; **Check now** still works. These choices are stored in the desktop app's own settings, not in `~/.orc/config.json`. Source runs and `electron .` do not download updates.
 
+Wait for an active check or download to finish before changing channels. Changing channels discards the previous channel's ready update. Failed settings saves retain the prior preferences and show an error; failed update actions can be retried.
+
 Windows installs the NSIS package. Linux replaces the AppImage. macOS downloads a zip of the app. Current macOS builds are ad-hoc signed, so macOS refuses to apply the update until a Developer ID signature is configured. Manual upgrade steps remain in [Upgrading](./install.md#upgrading).

@@ -13,16 +13,17 @@ export type UpdateInfo = {
   files: UpdateFile[];
 };
 
-export function updateInfoFileName(targetId: string): string {
+export function updateInfoFileName(targetId: string, version?: string): string {
+  const channel = version?.match(/^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/)?.[1] ?? "latest";
   switch (targetId) {
     case "windows-x64":
-      return "latest.yml";
+      return `${channel}.yml`;
     case "mac-arm64":
-      return "latest-mac.yml";
+      return `${channel}-mac.yml`;
     case "linux-x64":
-      return "latest-linux.yml";
+      return `${channel}-linux.yml`;
     case "linux-arm64":
-      return "latest-linux-arm64.yml";
+      return `${channel}-linux-arm64.yml`;
     default:
       throw new Error(`Unsupported desktop target: ${targetId}`);
   }

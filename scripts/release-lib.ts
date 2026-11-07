@@ -63,7 +63,7 @@ export function collectDesktopUpdateAssets(input: {
   const added: string[] = [];
   const names = new Set(input.included);
   for (const entry of input.directories) {
-    const metadataName = updateInfoFileName(entry.id);
+    const metadataName = updateInfoFileName(entry.id, input.version);
     const metadataPath = join(entry.directory, metadataName);
     if (!input.exists(metadataPath))
       throw new Error(`Missing update metadata ${metadataName} for ${entry.id}`);

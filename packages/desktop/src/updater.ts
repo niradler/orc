@@ -9,10 +9,10 @@ import {
   initialSnapshot,
   installDownloadedUpdate,
   parseStoredSettings,
+  persistUpdateSnapshot,
   plainReleaseNotes,
   preferencesFromUser,
   START_CHECK_DELAY_MS,
-  settingsToStore,
   UPDATE_CHECK_CHANNEL,
   UPDATE_EVENT_CHANNEL,
   UPDATE_INSTALL_CHANNEL,
@@ -37,13 +37,23 @@ export function startDesktopUpdates(host: UpdateHost): void {
   let running: Promise<UpdateSnapshot> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let startup: ReturnType<typeof setTimeout> | null = null;
+  let installing = false;
+
+  async function restoreAfterInstallFailure(): Promise<void> {
+    if (!installing) return;
+    installing = false;
+    await host.restoreOwnedDaemon();
+  }
 
   const publish = (next: UpdateSnapshot, persist = false): UpdateSnapshot => {
-    snapshot = next;
     if (persist) {
-      stored = settingsToStore(snapshot, stored);
-      writeFileSync(host.settingsPath, `${JSON.stringify(stored, null, 2)}\n`);
+      const result = persistUpdateSnapshot(snapshot, next, stored, (text) =>
+        writeFileSync(host.settingsPath, text),
+      );
+      stored = result.stored;
+      next = result.snapshot;
     }
+    snapshot = next;
     const window = host.getWindow();
     if (window && !window.isDestroyed()) window.webContents.send(UPDATE_EVENT_CHANNEL, snapshot);
     return snapshot;
@@ -121,6 +131,15 @@ export function startDesktopUpdates(host: UpdateHost): void {
     });
     autoUpdater.on("error", (error) => {
       publish(applyEvent(snapshot, { type: "error", message: updateErrorMessage(error) }), true);
+      void restoreAfterInstallFailure().catch(() => {
+        publish(
+          applyEvent(snapshot, {
+            type: "error",
+            message:
+              "The update failed and the daemon could not restart. Restart the app to recover.",
+          }),
+        );
+      });
     });
   }
 
@@ -143,6 +162,7 @@ export function startDesktopUpdates(host: UpdateHost): void {
   ipcMain.handle(UPDATE_INSTALL_CHANNEL, async (event) => {
     ownedWindow(event.sender.id);
     try {
+      installing = snapshot.phase === "downloaded";
       await installDownloadedUpdate({
         phase: snapshot.phase,
         stopOwnedDaemon: host.stopOwnedDaemon,
@@ -150,7 +170,7 @@ export function startDesktopUpdates(host: UpdateHost): void {
       });
     } catch (error) {
       publish(applyEvent(snapshot, { type: "error", message: updateErrorMessage(error) }), true);
-      await host.restoreOwnedDaemon();
+      await restoreAfterInstallFailure();
       throw error;
     }
   });
