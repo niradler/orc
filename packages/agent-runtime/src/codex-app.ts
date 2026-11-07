@@ -134,7 +134,11 @@ export class CodexAppSession implements AgentSession {
       const call = this.calls.get(message.id);
       if (message.error)
         call?.reject(new Error(String(object(message.error).message ?? "Codex request failed.")));
-      else call?.resolve(object(message.result));
+      else {
+        const result = object(message.result);
+        this.adoptStartedTurn(result);
+        call?.resolve(result);
+      }
       return;
     }
     const method = String(message.method ?? "");
