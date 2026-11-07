@@ -173,9 +173,7 @@ export function NotificationSettings() {
         Notifications
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
-        The bell holds agent requests, session updates and job results. Customize the Needs-you
-        chime below. Enable push for background approvals, questions, chat replies and job results;
-        push notifications are skipped while ORC is open and focused.
+        Choose alerts and sounds. Push stays quiet while ORC is focused.
       </p>
       <Link
         to="/settings?settingsSection=storage"

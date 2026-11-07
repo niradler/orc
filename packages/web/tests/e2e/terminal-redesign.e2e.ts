@@ -3,8 +3,36 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
-import { API_SECRET, apiGet, apiPost, splitTerminalPane } from "./_helpers";
+import { API_SECRET, apiGet, apiPost, repoRoot, splitTerminalPane } from "./_helpers";
 import { test } from "./_terminal-fixture";
+
+for (const width of [1440, 320]) {
+  test(`should restore a shared file after rapid Back navigation at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+      kind: "shell",
+      cwd: repoRoot(),
+    });
+    await page.addInitScript((secret) => {
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+    }, API_SECRET);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(
+      `/terminals/${terminal.id}?view=files&pane=shared-device-pane&paneTerminal=${terminal.id}&file=README.md&editorMode=read`,
+    );
+    await expect(page.getByTestId("markdown-preview")).toContainText("ORC");
+    for (let index = 0; index < 20; index++) {
+      await page.getByTestId("pane-view-git").evaluate((button) => {
+        (button as HTMLButtonElement).click();
+        window.history.back();
+      });
+      await expect(page).toHaveURL(/view=files/);
+      await expect(page.getByTestId("pane-view")).toHaveAttribute("data-view", "files");
+    }
+  });
+}
 
 for (const theme of ["dark", "light"] as const) {
   for (const width of [1440, 390, 320]) {

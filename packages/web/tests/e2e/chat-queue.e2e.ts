@@ -1,5 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { holdChatStream } from "./_chat-stream";
 import { closeChatHistory, openChatActions, openChatHistory } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
@@ -242,12 +243,18 @@ test("a rejected turn pauses the rest of the queue without retrying POST", async
 test("closing a conversation cannot dispatch its pending message", async ({ page }) => {
   const sent = posts(page);
   const panel = page.getByTestId("chat-panel");
-  await send(panel, "Respond after 1800ms. Reply with exactly: FIRST.");
-  await expect(page).toHaveURL(/chatThread=/);
-  await send(panel, "NEVER SENT");
-  await openChatHistory(page);
-  await page.getByTestId("chat-session-list").getByTestId("chat-tab-close").click();
-  await closeChatHistory(page);
+  const release = await holdChatStream(page);
+  try {
+    await send(panel, "Reply with exactly: FIRST.");
+    await expect(page).toHaveURL(/chatThread=/);
+    await send(panel, "NEVER SENT");
+    await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
+    await openChatHistory(page);
+    await page.getByTestId("chat-session-list").getByTestId("chat-tab-close").click();
+    await closeChatHistory(page);
+  } finally {
+    await release();
+  }
   await send(panel, "Respond after 2500ms. Reply with exactly: OTHER.");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("OTHER");
   expect(sent).toHaveLength(2);

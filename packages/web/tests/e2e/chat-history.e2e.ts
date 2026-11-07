@@ -10,6 +10,9 @@ for (const width of [1440, 390]) {
     page,
     request,
   }) => {
+    // This multi-stage import renders 1,105 turns; four loaded shards can spend
+    // most of the ordinary 60-second case budget rendering the history alone.
+    test.setTimeout(120_000);
     const cwd = mkdtempSync(join(tmpdir(), "orc-chat-history-"));
     const externalId = crypto.randomUUID();
     const transcript = join(cwd, "history.jsonl");
@@ -52,8 +55,12 @@ for (const width of [1440, 390]) {
     const prepared = page.waitForResponse(
       (response) =>
         response.url().endsWith("/api/chat/threads") && response.request().method() === "POST",
+      { timeout: 30_000 },
     );
-    await page.getByTestId("live-session-detail").getByTestId("open-chat-resume").click();
+    await page
+      .getByTestId("live-session-detail")
+      .getByTestId("open-chat-resume")
+      .click({ timeout: 30_000 });
     const thread = await (await prepared).json();
     expect(thread.historyBefore).toBe(605);
     await expect(page.getByTestId("chat-message")).toHaveCount(500);

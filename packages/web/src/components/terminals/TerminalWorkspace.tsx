@@ -10,7 +10,7 @@ import {
   TerminalSquare,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
@@ -400,7 +400,11 @@ function WorkspaceTree(props: TreeProps) {
 export function TerminalWorkspace(props: WorkspaceProps) {
   const desktop = useBreakpoint("lg");
   const [params, setParams] = useSearchParams();
-  const [layout, setLayout] = useState<Layout>(() => {
+  const requestedView = params.get("view");
+  const requestedPane = params.get("pane");
+  const requestedTerminal = params.get("paneTerminal");
+  const requestedFile = params.get("file");
+  const [storedLayout, setLayout] = useState<Layout>(() => {
     try {
       const stored = readLayout(JSON.parse(localStorage.getItem("orc_workspace_layout") ?? "null"));
       if (stored) return stored;
@@ -411,14 +415,31 @@ export function TerminalWorkspace(props: WorkspaceProps) {
       terminalId: props.selected.id,
     };
   });
+  // The URL controls the visible view. Mirroring it in an effect misses a rapid
+  // push/Back pair when the router never renders the intermediate query.
+  const layout = useMemo(() => {
+    const view = requestedView === "files" || requestedView === "git" ? requestedView : "terminal";
+    const panes = leaves(storedLayout);
+    const target = panes.find((pane) => pane.id === requestedPane) ?? panes[0];
+    if (!target) return storedLayout;
+    const terminalId = requestedTerminal ?? props.selected.id;
+    if (
+      view === "terminal" &&
+      panes.some(
+        (pane) =>
+          pane.id !== target.id && pane.kind === "terminal" && pane.terminalId === terminalId,
+      )
+    )
+      return storedLayout;
+    if (target.kind === view && target.terminalId === terminalId) return storedLayout;
+    return updateLayout(storedLayout, target.id, (node) =>
+      "kind" in node ? { ...node, kind: view, terminalId } : node,
+    );
+  }, [storedLayout, requestedView, requestedPane, requestedTerminal, props.selected.id]);
   const [active, setActive] = useState(() => leaves(layout)[0]?.id ?? layout.id);
   const [zoomed, setZoomed] = useState<string | null>(null);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const requestedView = params.get("view");
-  const requestedPane = params.get("pane");
-  const requestedTerminal = params.get("paneTerminal");
-  const requestedFile = params.get("file");
   const filesByPane = useRef(new Map<string, string>());
   useEffect(() => {
     if (requestedView !== "files") return;
@@ -450,15 +471,6 @@ export function TerminalWorkspace(props: WorkspaceProps) {
       return;
     }
     setActive(target.id);
-    setLayout((previous) => {
-      const latest = leaves(previous).find((pane) => pane.id === target.id);
-      if (!latest || (latest.kind === view && latest.terminalId === terminalId)) return previous;
-      const next = updateLayout(previous, target.id, (node) =>
-        "kind" in node ? { ...node, kind: view, terminalId } : node,
-      );
-      layoutRef.current = next;
-      return next;
-    });
   }, [requestedView, requestedPane, requestedTerminal, props.selected.id]);
 
   function publishPane(next: Layout, paneId: string) {
