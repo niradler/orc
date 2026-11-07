@@ -1,11 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { app, type BrowserWindow, ipcMain, Notification } from "electron";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 import { OPEN_CHANNEL, shouldNotifyNatively } from "./notify.js";
 import {
   allowsPrerelease,
   applyEvent,
   CHECK_INTERVAL_MS,
+  desktopUpdatesSupported,
   initialSnapshot,
   installDownloadedUpdate,
   parseStoredSettings,
@@ -31,7 +32,9 @@ type UpdateHost = {
   settingsPath: string;
 };
 
-export function startDesktopUpdates(host: UpdateHost): void {
+export function startDesktopUpdates(host: UpdateHost, platform = process.platform): void {
+  if (!desktopUpdatesSupported(platform)) return;
+  const { autoUpdater } = electronUpdater;
   let stored = parseStoredSettings(readSettings(host.settingsPath) ?? "");
   let snapshot = initialSnapshot(app.getVersion(), stored, app.isPackaged);
   let running: Promise<UpdateSnapshot> | null = null;

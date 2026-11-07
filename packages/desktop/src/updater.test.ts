@@ -33,8 +33,17 @@ test("should restore the daemon after an emitted installer failure and report fa
     },
     Notification: { isSupported: () => false },
   }));
-  mock.module("electron-updater", () => ({ autoUpdater: updater }));
+  let initialized = 0;
+  mock.module("electron-updater", () => ({
+    default: {
+      get autoUpdater() {
+        initialized++;
+        return updater;
+      },
+    },
+  }));
   const { startDesktopUpdates } = await import("./updater.js");
+  expect(initialized).toBe(0);
   const settingsPath = join(directory, "settings.json");
   writeFileSync(settingsPath, JSON.stringify({ checksEnabled: false }));
   let stopped = false;
@@ -45,7 +54,7 @@ test("should restore the daemon after an emitted installer failure and report fa
     isDestroyed: () => false,
     webContents: { id: 7, send: () => {} },
   } as unknown as BrowserWindow;
-  startDesktopUpdates({
+  const host = {
     getWindow: () => window,
     settingsPath,
     showWindow: () => {},
@@ -59,7 +68,13 @@ test("should restore the daemon after an emitted installer failure and report fa
       stopped = false;
       restored++;
     },
-  });
+  };
+  startDesktopUpdates(host, "darwin");
+  expect(initialized).toBe(0);
+  expect(handlers.size).toBe(0);
+  expect(emitter.listenerCount("error")).toBe(0);
+  startDesktopUpdates(host);
+  expect(initialized).toBe(1);
   const event = { sender: { id: 7 } };
   for (const shouldFail of [false, true]) {
     failRecovery = shouldFail;

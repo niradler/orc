@@ -399,11 +399,11 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
       showWindow,
       settingsPath: join(app.getPath("userData"), "update-settings.json"),
       stopOwnedDaemon: async () => {
+        quitting = true;
         if (daemon?.owned && !daemonStopped) {
           await daemon.stop();
           daemonStopped = true;
         }
-        quitting = true;
       },
       restoreOwnedDaemon: async () => {
         quitting = false;

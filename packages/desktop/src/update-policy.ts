@@ -1,4 +1,8 @@
 export const UPDATE_CHANNELS = ["stable", "preview"] as const;
+
+export function desktopUpdatesSupported(platform: string): boolean {
+  return platform === "win32" || platform === "linux";
+}
 export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
 
 export type UpdatePhase =

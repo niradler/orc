@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   applyEvent,
+  desktopUpdatesSupported,
   initialSnapshot,
   installDownloadedUpdate,
   parseStoredSettings,
@@ -25,6 +26,13 @@ const current = initialSnapshot(
 );
 
 describe("desktop update policy", () => {
+  test("offers desktop updates on Windows and Linux while macOS remains outside this feature", () => {
+    expect(desktopUpdatesSupported("win32")).toBe(true);
+    expect(desktopUpdatesSupported("linux")).toBe(true);
+    expect(desktopUpdatesSupported("darwin")).toBe(false);
+    expect(desktopUpdatesSupported("freebsd")).toBe(false);
+  });
+
   test("keeps stored preferences unchanged when persistence fails", () => {
     const stored = parseStoredSettings("");
     const changed = applyEvent(current, {
