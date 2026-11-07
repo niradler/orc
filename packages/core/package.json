@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./daemon-runtime": "./src/daemon-runtime.ts",
     "./notifications": "./src/notifications.ts",
     "./usage": "./src/usage.ts",
     "./session-files": "./src/session-files.ts",

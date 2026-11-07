@@ -9,9 +9,11 @@ import {
 } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { registerShutdownHook } from "@orc/api/lifecycle";
-import { loadConfig } from "@orc/core/config";
+import { instanceId, registerShutdownHook } from "@orc/api/lifecycle";
+import { configuredApiSecret, globalConfigPath, loadConfig } from "@orc/core/config";
+import { canonicalPath, clearDaemonRuntime, writeDaemonRuntime } from "@orc/core/daemon-runtime";
 import { superviseServer } from "@orc/core/process-supervisor";
+import { ORC_VERSION } from "@orc/core/version";
 import { startGateway, stopGateway } from "@orc/gateway";
 import {
   startScheduler,
@@ -269,11 +271,31 @@ export function daemonCommand() {
           await stopWatchers();
           await stopGateway();
         } finally {
-          removePid();
+          try {
+            clearDaemonRuntime(instanceId, ORC_HOME);
+          } finally {
+            removePid();
+          }
         }
         process.stdout.write("[orc] Stopped.\n");
       });
       await import("@orc/api");
+      writeDaemonRuntime(
+        {
+          pid: process.pid,
+          port: config.api.port,
+          instance_id: instanceId,
+          version: ORC_VERSION,
+          db_path: config.db.path === ":memory:" ? ":memory:" : canonicalPath(config.db.path),
+          config_path: canonicalPath(globalConfigPath()),
+          auth_enabled: Boolean(configuredApiSecret(config.api.secret)),
+          started_at: new Date().toISOString(),
+          ...(process.env.ORC_DESKTOP_LAUNCH_ID
+            ? { launch_id: process.env.ORC_DESKTOP_LAUNCH_ID }
+            : {}),
+        },
+        ORC_HOME,
+      );
       console.log(`[orc] home     ${ORC_HOME}`);
       console.log(`[orc] db       ${config.db.path}`);
       console.log(`[orc] API      http://${config.api.host}:${config.api.port}`);

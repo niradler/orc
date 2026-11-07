@@ -125,6 +125,7 @@
       "name": "@orc/desktop",
       "version": "0.1.60",
       "devDependencies": {
+        "@orc/core": "workspace:*",
         "electron": "45.0.0",
         "electron-builder": "^26.18.1",
       },

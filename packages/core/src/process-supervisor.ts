@@ -28,6 +28,19 @@ export async function superviseServer(): Promise<boolean> {
   const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
   if (process.platform === "win32") signals.push("SIGBREAK");
   for (const signal of signals) process.on(signal, stop);
+  const onMessage = (message: unknown): void => {
+    if (
+      message &&
+      typeof message === "object" &&
+      "type" in message &&
+      message.type === "orc-shutdown"
+    )
+      stop();
+  };
+  if (process.connected) {
+    process.on("message", onMessage);
+    process.once("disconnect", stop);
+  }
   try {
     while (true) {
       child = spawn(
@@ -51,5 +64,7 @@ export async function superviseServer(): Promise<boolean> {
   } finally {
     clearTimeout(killTimer);
     for (const signal of signals) process.off(signal, stop);
+    process.off("message", onMessage);
+    process.off("disconnect", stop);
   }
 }

@@ -54,6 +54,11 @@ const server = Bun.serve<TerminalSocketData>({
   idleTimeout: 255,
 });
 
+if (server.port === undefined) throw new Error("ORC API did not bind a TCP port");
+// Keep callbacks and spawned clients on the bound port when the OS selected it.
+config.api.port = server.port;
+process.env.ORC_API_PORT = String(server.port);
+
 const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();
