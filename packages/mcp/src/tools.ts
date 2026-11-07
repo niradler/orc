@@ -10,6 +10,11 @@ import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
+  GithubSyncConfigSchema,
+  type GithubSyncState,
+  validateGithubTaskEdit,
+} from "@orc/core/github-sync";
+import {
   CommandSpecSchema,
   HumanRequestInputSchema,
   HumanRequestSchema,
@@ -492,6 +497,16 @@ export const toolDefinitions = [
       ),
       tag: z.string().optional(),
       limit: z.number().int().min(1).max(100).optional().default(20),
+    }),
+  },
+  {
+    name: "github_sync",
+    description:
+      "Inspect or configure project GitHub issue sync and synchronize issues as native tasks. Status changes sync both ways; imports never auto-start agents. Requires the API process.",
+    inputSchema: z.object({
+      project: projectParam,
+      config: GithubSyncConfigSchema.optional(),
+      run: z.boolean().optional().default(true).describe("false: only inspect/save configuration"),
     }),
   },
   {
@@ -1727,6 +1742,9 @@ export async function executeTool(
         .map(
           (t) =>
             `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.progress}% ${t.title}` +
+            (t.github_sync
+              ? ` [GitHub #${t.github_sync.number}${t.github_sync.error ? "; sync error" : ""}]`
+              : "") +
             (options.projectScopes && options.projectScopes.length > 1
               ? ` [project: ${options.projectScopes.find((p) => p.id === t.project_id)?.name}]`
               : ""),
@@ -1764,6 +1782,8 @@ export async function executeTool(
             t.git_branch && `Branch: ${t.git_branch}`,
             t.github_pr && `PR: ${t.github_pr}`,
             t.github_issue && `Issue: ${t.github_issue}`,
+            t.github_sync &&
+              `GitHub sync: ${t.github_sync.error ?? (t.status !== t.github_sync.status ? "status pending" : "synced")}`,
           ].filter(Boolean);
           const thread = recent
             .reverse()
@@ -1778,6 +1798,37 @@ export async function executeTool(
         }),
       );
       return sections.join("\n\n");
+    }
+
+    case "github_sync": {
+      const input = args as {
+        project?: string;
+        config?: z.infer<typeof GithubSyncConfigSchema>;
+        run?: boolean;
+      };
+      const target = resolveProjectId(input.project ?? options.projectScopes?.[0]?.name);
+      if (
+        !target ||
+        (options.projectScopes &&
+          !options.projectScopes.some((project) => project.id === target.id))
+      )
+        throw new NotFoundError("Project", input.project ?? "active project");
+      if (input.config)
+        await orcApi("PATCH", `/projects/${encodeURIComponent(target.id)}`, {
+          body: { github_sync: input.config },
+        });
+      if (input.run !== false) {
+        const result = await orcApi<GithubSyncState>(
+          "POST",
+          `/projects/${encodeURIComponent(target.id)}/github-sync`,
+        );
+        return JSON.stringify(result);
+      }
+      const current = await db.query.projects.findFirst({ where: eq(projects.id, target.id) });
+      return JSON.stringify({
+        config: current?.github_sync ?? null,
+        state: current?.github_sync_state ?? null,
+      });
     }
 
     case "task_create": {
@@ -1868,6 +1919,7 @@ export async function executeTool(
       if (!existing) throw new NotFoundError("Task", id);
       if (options.projectScopes && !options.projectScopes.some((p) => p.id === existing.project_id))
         throw new NotFoundError("Task", id);
+      validateGithubTaskEdit(existing, fields);
       if (status && status !== existing.status) {
         const result = await updateTaskStatus({
           taskId: id,

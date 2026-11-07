@@ -9,6 +9,7 @@ import {
   getKnowledgeService,
   startKnowledgeMaintenance,
 } from "@orc/knowledge";
+import { startGithubIssueSync } from "./git/issue-sync.js";
 import { startHumanRequestDelivery } from "./human-request-delivery.js";
 import { withKbJobHooks } from "./kb-jobs.js";
 import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
@@ -56,6 +57,7 @@ const server = Bun.serve<TerminalSocketData>({
 const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();
+const stopGithubIssueSync = startGithubIssueSync();
 const stopNotificationMaintenance = startNotificationMaintenance();
 const channels = startChannelRuntime().catch(() => {
   logger.error("Channels failed to start; inspect Channels in Settings");
@@ -84,6 +86,7 @@ async function shutdown(signal: string, exitCode = 0) {
   stopAttentionPush();
   stopHumanRequestDelivery();
   stopNotificationMaintenance();
+  await stopGithubIssueSync();
   await (await channels)();
   shutdownTerminals();
   await runShutdownHooks();

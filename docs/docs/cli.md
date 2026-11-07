@@ -41,6 +41,20 @@ Commands that take a project (`task`, `job`, `mem`, `kb`) default to the active 
 
 ## Projects
 
+`orc project github-sync [name]` runs GitHub issue/task status sync for the named
+or active project. Configure a GitHub remote first, then use `--enable` to opt in,
+`--disable` to stop, `--status-label <status=label...>` to customize mappings, and
+`--config-only` to inspect/save settings without running sync. For example:
+
+```sh
+orc project github-sync my-app --enable --status-label doing=in-progress review=needs-review
+orc project github-sync my-app --config-only
+```
+
+`orc task list` includes imported issues with a GitHub issue number and sync-error
+or pending-status indicator. `--json` includes task sync metadata. Status updates
+use the existing task commands and reach GitHub on the next sync cycle.
+
 | Command | Main flags |
 | --- | --- |
 | `orc project list` | `--status <s>`, `-t, --tag <tag>`, `-l, --limit <n>` (1-100, default 20), `--offset <n>` |

@@ -4,7 +4,7 @@ import { TASK_STATUS_TRANSITIONS, type TaskStatus } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, tasks } from "@orc/db/schema";
 import { withTaskAudit } from "@orc/db/task-audit";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { notifyReview } from "./notifications.js";
 
 const logger = createLogger("task-service:transitions");
@@ -12,6 +12,7 @@ const logger = createLogger("task-service:transitions");
 export type TransitionOpts = {
   taskId: string;
   status: TaskStatus;
+  expectedStatus?: TaskStatus | undefined;
   comment?: string | undefined;
   author?: string | undefined;
   claimedBy?: string | undefined;
@@ -66,6 +67,11 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     where: eq(tasks.id, opts.taskId),
   });
   if (!task) return { ok: false, error: `Task not found: ${opts.taskId}` };
+  if (opts.expectedStatus !== undefined && task.status !== opts.expectedStatus)
+    return {
+      ok: false,
+      error: "Task status changed while reconciling; retry with the latest task",
+    };
 
   const currentStatus = task.status as TaskStatus;
   const allowed = TASK_STATUS_TRANSITIONS[currentStatus];
@@ -109,14 +115,28 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     updates.claimed_by = null;
   }
 
-  withTaskAudit(
+  const changed = withTaskAudit(
     getSqlite(),
     [opts.taskId],
-    () => {
-      db.update(tasks).set(updates).where(eq(tasks.id, opts.taskId)).run();
-    },
+    () =>
+      db
+        .update(tasks)
+        .set(updates)
+        .where(
+          and(
+            eq(tasks.id, opts.taskId),
+            opts.expectedStatus === undefined ? undefined : eq(tasks.status, opts.expectedStatus),
+          ),
+        )
+        .returning({ id: tasks.id })
+        .get(),
     { actor: opts.author },
   );
+  if (!changed)
+    return {
+      ok: false,
+      error: "Task status changed while reconciling; retry with the latest task",
+    };
 
   if (opts.comment) {
     await addTaskComment(opts.taskId, opts.comment, opts.author ?? "agent");

@@ -56,7 +56,7 @@ test("should expose notification audit entries after the alert expires without m
     ),
   ).toBe(true);
   const globalResponse = await req(app, "GET", "/audit?entity_type=notification&scope=global");
-  expect(await globalResponse.json()).toEqual({ entries: [] });
+  expect(await globalResponse.json<{ entries: unknown[] }>()).toEqual({ entries: [] });
   expect(cleanupAuditLog(sqlite, 90, Date.now())).toBe(0);
 });
 
