@@ -23,8 +23,8 @@
   ],
   "shortcuts": [
     {
-      "name": "Attention",
-      "url": "/attention",
+      "name": "Notifications",
+      "url": "/activity?notifications=open",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {

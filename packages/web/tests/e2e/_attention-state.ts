@@ -14,7 +14,7 @@ export async function attentionState(page: Page, initial = attentionRequests()) 
         source_id: request.id,
         title: request.input.title || "Human request",
         body: "",
-        path: `/attention?request=${request.id}`,
+        path: `/activity?notifications=open&request=${request.id}`,
         requires_action: request.status === "pending",
         level: "needs-you" as const,
       })),

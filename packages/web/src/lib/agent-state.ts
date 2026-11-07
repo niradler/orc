@@ -89,7 +89,3 @@ export function liveSessionState(
 ): AgentState {
   return session.waiting_for_human ? "needs-you" : LIVE_STATES[session.status];
 }
-
-export function titleWithNeedsYou(base: string, count: number): string {
-  return count > 0 ? `(${count}) ${base}` : base;
-}

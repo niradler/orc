@@ -60,10 +60,10 @@ export async function forwardChannelNotifications(
       }
       const path =
         event.type === "human.request"
-          ? `/notifications?request=${encodeURIComponent(event.source_id)}`
+          ? `/activity?notifications=open&request=${encodeURIComponent(event.source_id)}`
           : event.type.startsWith("job.") || event.type.startsWith("agent.")
             ? event.path
-            : "/notifications";
+            : "/activity?notifications=open";
       const link = new URL(path, policy.base_url);
       if (link.origin !== new URL(policy.base_url).origin) {
         store.finish(claim, "failed", "Unsafe source link");

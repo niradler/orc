@@ -16,7 +16,7 @@ for (const [width, height, theme] of [
     await request.patch("/api/settings", { headers: AUTH_HEADERS, data: { theme } });
     const state = await attentionState(page);
     await page.setViewportSize({ width, height });
-    await gotoView(page, "attention");
+    await gotoView(page, "notifications");
     const card = (id: string) => page.getByTestId(`attention-request-${id}`);
     const choice = card("choice"),
       free = card("free"),
@@ -171,7 +171,7 @@ test("attention keeps the exact approval and failures visible while decisions an
     input: { ...approval.input, prompt: "Allow the agent to inspect package metadata?" },
   });
   const state = await attentionState(page, initial);
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId("attention-request-approval");
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-action")).toContainText(
@@ -233,7 +233,7 @@ test("attention custom reply disclosure works with the keyboard and preserves an
   page,
 }) => {
   const state = await attentionState(page);
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId("attention-request-choice"),
     toggle = card.getByTestId("attention-edit-answer");
   await reviewAttentionRequest(card);
@@ -260,7 +260,7 @@ test("attention responds to its available pane width and keeps an unsent draft w
     route.fulfill({ json: { models: [], warning: null } }),
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const view = page.getByTestId("notification-menu"),
     card = page.getByTestId("attention-request-choice");
   await reviewAttentionRequest(card);

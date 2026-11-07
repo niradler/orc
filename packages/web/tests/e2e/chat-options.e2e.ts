@@ -16,7 +16,7 @@ for (const width of [390, 1440]) {
       route.fulfill({ json: { models: [], warning: null } }),
     );
     await page.setViewportSize({ width, height: 900 });
-    await gotoView(page, "dashboard");
+    await gotoView(page, "activity");
     await page.goto("/?chat=open");
     const editor = page.getByTestId("chat-agent-options-input");
     const apply = page.getByTestId("chat-agent-options-apply");

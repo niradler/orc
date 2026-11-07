@@ -5,7 +5,6 @@ import {
   liveSessionState,
   moreUrgent,
   rollupState,
-  titleWithNeedsYou,
 } from "../../src/lib/agent-state";
 
 describe("agent state language", () => {
@@ -44,10 +43,5 @@ describe("agent state language", () => {
     const states = Object.values(AGENT_STATES);
     expect(new Set(states.map((s) => s.label)).size).toBe(states.length);
     expect(new Set(states.map((s) => s.Icon)).size).toBe(states.length);
-  });
-
-  test("should prefix the tab title with the Needs you count", () => {
-    expect(titleWithNeedsYou("ORC", 2)).toBe("(2) ORC");
-    expect(titleWithNeedsYou("ORC", 0)).toBe("ORC");
   });
 });

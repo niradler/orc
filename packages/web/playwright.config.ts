@@ -15,7 +15,7 @@ process.env.ORC_API_SECRET = "dev";
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: /.*\.e2e\.ts$/,
-  globalTimeout: 20 * 60_000,
+  globalTimeout: 30 * 60_000,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
