@@ -1,7 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import {
+  assertUpdatePayload,
+  parseUpdateInfo,
+  updateInfoFileName,
+} from "../packages/desktop/src/update-metadata.js";
 
 export const TARGETS = [
   { id: "windows-x64", os: "win", arch: "x64", runner: "windows-latest", extension: "exe" },
@@ -46,6 +51,48 @@ export function installerName(version: string, target: string): string {
 
 export function sha256(file: string): string {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+export function collectDesktopUpdateAssets(input: {
+  version: string;
+  directories: readonly { id: string; directory: string }[];
+  included: ReadonlySet<string>;
+  read: (path: string) => string;
+  exists: (path: string) => boolean;
+}): string[] {
+  const added: string[] = [];
+  const names = new Set(input.included);
+  for (const entry of input.directories) {
+    const metadataName = updateInfoFileName(entry.id);
+    const metadataPath = join(entry.directory, metadataName);
+    if (!input.exists(metadataPath))
+      throw new Error(`Missing update metadata ${metadataName} for ${entry.id}`);
+    const info = parseUpdateInfo(input.read(metadataPath));
+    if (info.version !== input.version)
+      throw new Error(
+        `Update metadata ${metadataName} is ${info.version}, expected ${input.version}`,
+      );
+    assertUpdatePayload(entry.id, info);
+    remember(names, added, metadataName, metadataPath);
+    for (const file of info.files) {
+      const payload = join(entry.directory, file.url);
+      if (!input.exists(payload))
+        throw new Error(`Update metadata references missing file ${file.url}`);
+      remember(names, added, file.url, payload);
+      if (file.blockMapSize == null) continue;
+      const blockmap = `${file.url}.blockmap`;
+      const blockPath = join(entry.directory, blockmap);
+      if (!input.exists(blockPath)) throw new Error(`Missing update blockmap ${blockmap}`);
+      remember(names, added, blockmap, blockPath);
+    }
+  }
+  return added.sort((left, right) => basename(left).localeCompare(basename(right)));
+}
+
+function remember(names: Set<string>, added: string[], name: string, path: string): void {
+  if (names.has(name)) return;
+  names.add(name);
+  added.push(path);
 }
 
 export function desktopMatrix(

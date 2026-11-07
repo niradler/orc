@@ -16,6 +16,7 @@ import { publishDockerRelease } from "./release-docker.js";
 import {
   BINARIES,
   bumpPatch,
+  collectDesktopUpdateAssets,
   completeStep,
   desktopMatrix,
   hostTarget,
@@ -337,13 +338,25 @@ async function main(): Promise<void> {
     }
     command("gh", ["run", "download", String(state.runId), "--dir", artifacts]);
   });
+  const installers = TARGETS.map((t) =>
+    t.id === target
+      ? join(DESKTOP, "release", installerName(version, t.id))
+      : join(artifacts, `desktop-${t.id}`, installerName(version, t.id)),
+  );
+  const updateAssets = collectDesktopUpdateAssets({
+    version,
+    directories: TARGETS.map((t) => ({
+      id: t.id,
+      directory: t.id === target ? join(DESKTOP, "release") : join(artifacts, `desktop-${t.id}`),
+    })),
+    included: new Set([...BINARIES, ...installers.map((file) => basename(file))]),
+    read: (path) => readFileSync(path, "utf8"),
+    exists: existsSync,
+  });
   const files = [
     ...BINARIES.map((name) => join(CLI, "dist", name)),
-    ...TARGETS.map((t) =>
-      t.id === target
-        ? join(DESKTOP, "release", installerName(version, t.id))
-        : join(artifacts, `desktop-${t.id}`, installerName(version, t.id)),
-    ),
+    ...installers,
+    ...updateAssets,
   ];
   for (const file of files)
     if (!existsSync(file)) throw new Error(`Missing release artifact: ${file}`);

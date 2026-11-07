@@ -206,7 +206,7 @@ Database migrations run automatically when ORC opens the database. Back up `~/.o
 
 | Method | Upgrade |
 | --- | --- |
-| Desktop app | Quit from the tray (**Quit orc**), install the new installer over the old one, launch. The app replaces `~/.orc/bin/orc` on first launch. There is no auto-update. |
+| Desktop app | An installed app checks for updates on its own. **Settings → About** shows the channel and **Restart to update** after the download. You can still quit from the tray (**Quit orc**) and install the new installer over the old one. The app replaces `~/.orc/bin/orc` on first launch. macOS builds are ad-hoc signed, so install the new disk image until a Developer ID signature is configured. |
 | Binary | Re-run the `curl` command, then restart the daemon (`orc daemon stop`, then start it again or let the service restart it). |
 | npm | `npm install -g orc-ai@latest`, then restart the daemon. |
 | Docker | `docker pull niradler/orc:latest` and recreate the container, or `docker compose pull && docker compose up -d`. |

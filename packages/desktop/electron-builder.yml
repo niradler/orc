@@ -9,10 +9,16 @@ files:
   - dist/**
   - build/icon.png
   - package.json
+publish:
+  provider: github
+  owner: niradler
+  repo: orc
 mac:
   category: public.app-category.developer-tools
   identity: "-"
-  target: dmg
+  target:
+    - dmg
+    - zip
   extraResources:
     - from: ../cli/dist/orc-mac-${arch}
       to: orc

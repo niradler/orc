@@ -192,7 +192,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Knowledge | Parser, embeddings and knowledge defaults |
 | Terminals | Terminal font for new terminals |
 | Storage | Where settings are stored |
-| About | Server, desktop and Electron versions, platform, runtime, data folder, uptime and project links |
+| About | Server, desktop and Electron versions, platform, runtime, data folder, uptime, project links, and desktop update channel |
 
 ![Coding agents settings](/screens/settings-agents.png)
 
@@ -250,6 +250,7 @@ The desktop app is an Electron shell around the same dashboard. On top of the br
 | Keeps running when closed | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits. |
 | Recovers from startup failures and crashes | Waits briefly for a starting daemon, then offers **Retry** or **Quit** if it cannot connect |
 | Remembers the window | Size, position and maximized state |
+| Updates | On an installed app, checks GitHub Releases at startup and every four hours, downloads in the background, and offers **Restart to update** |
 
 Quitting the app (**Quit orc**) stops the daemon only if the app started it.
 
@@ -278,4 +279,10 @@ Command-line flags for the app executable:
 | `--hidden` | Start without opening a window |
 | `--quit` | Quit the running instance and the daemon it started |
 
-Links to other sites open in your system browser. The app has no auto-update; see [Upgrading](./install.md#upgrading).
+Links to other sites open in your system browser.
+
+An installed app checks [GitHub Releases](https://github.com/niradler/orc/releases) for updates when it starts and every four hours. The download runs in the background. **Settings → About** shows the current version, the update channel, **Check now**, and the last result. **Restart to update** installs the download. The app stops the daemon it started, then the new version starts that daemon again. Tasks and sessions stay in `~/.orc`. A daemon the app did not start is left running.
+
+**Stable** uses the latest GitHub release. **Preview** also accepts a newer prerelease. Uncheck **Check for updates** to stop automatic checks; **Check now** still works. These choices are stored in the desktop app's own settings, not in `~/.orc/config.json`. Source runs and `electron .` do not download updates.
+
+Windows installs the NSIS package. Linux replaces the AppImage. macOS downloads a zip of the app. Current macOS builds are ad-hoc signed, so macOS refuses to apply the update until a Developer ID signature is configured. Manual upgrade steps remain in [Upgrading](./install.md#upgrading).
