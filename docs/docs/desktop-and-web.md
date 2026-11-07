@@ -9,9 +9,10 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 | Area | Contents |
 | --- | --- |
 | Sidebar | Activity, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
-| Project picker | Scopes most pages to one project, all projects, or unassigned items |
+| Project picker | Scopes most pages to one project, all projects, or unassigned items. A project with sessions waiting on you shows how many. |
 | Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; other agents run through ACPX. |
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
+| Next session | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing. |
 
 Pages are grouped in the sidebar:
 
@@ -55,6 +56,10 @@ Open a task to see its body, status, comments, linked sessions and Git links, an
 ![Sessions](/screens/sessions.png)
 
 Live and archived sessions from Claude Code, Codex, Cursor, Gemini CLI and OpenCode on this machine or the selected host. Working sessions update live; waiting sessions stay available to resume in a terminal or in chat. Search across archived conversations. See [Live sessions](./live-sessions.md).
+
+Filter the list by state with **All**, **Needs you**, **Working** and **Done**. Each filter shows its count, and failed sessions count as Needs you. A session that finished after you last opened it shows **Done** until you open it. This browser remembers what you have seen. The chat session history has the same filters.
+
+While your pointer is over the list, or a row has keyboard focus, rows stay where they are. States still update in place. When the order would change, an **N updated** button appears. Click it, or move away from the list, to apply the new order.
 
 ## Terminals
 

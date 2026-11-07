@@ -3,6 +3,7 @@ import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
 import { type AgentState, liveSessionState, moreUrgent } from "./agent-state";
+import { lastSeen, type SeenRecord, unseenState } from "./session-seen";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   running: boolean;
@@ -23,6 +24,7 @@ export type ChatHistoryEntry = HistorySource & {
   observedState?: AgentState;
   provider?: string;
   projectId?: string | null;
+  seenKeys: string[];
 };
 
 function observe(entry: ChatHistoryEntry, state: AgentState) {
@@ -68,11 +70,13 @@ export function chatHistoryList(
     )
       continue;
     const title = tab.thread?.title || "New session";
+    const id = tab.thread ? `chat:${tab.thread.id}` : `draft:${tab.key}`;
     const entry: ChatHistoryEntry = {
       kind: "local",
       tab,
       projectId: tab.projectId,
-      id: tab.thread ? `chat:${tab.thread.id}` : `draft:${tab.key}`,
+      id,
+      seenKeys: [id],
       title,
       updatedAt: Math.max(
         timestamp(tab.thread?.updatedAt),
@@ -117,6 +121,7 @@ export function chatHistoryList(
       kind: "saved",
       thread,
       id: `chat:${thread.id}`,
+      seenKeys: [`chat:${thread.id}`],
       title: thread.title,
       updatedAt: timestamp(thread.updatedAt),
       observedState: thread.running ? "working" : "idle",
@@ -142,10 +147,12 @@ export function chatHistoryList(
       kind: "native",
       session,
       id: `native:${session.id}`,
+      seenKeys: [`native:${session.id}`],
       title: session.name || session.session_id || "Session",
       updatedAt: date,
     };
     if (!existing) entries.push(entry);
+    else existing.seenKeys.push(`native:${session.id}`);
     entry.provider ??= session.agent;
     entry.projectId = session.project_id;
     observe(entry, liveSessionState(session));
@@ -182,6 +189,7 @@ export function chatHistoryList(
       kind: "archive",
       session,
       id: `archive:${session.id}`,
+      seenKeys: [`archive:${session.id}`],
       title: session.title || session.native_id,
       updatedAt: date,
     };
@@ -208,4 +216,33 @@ export function chatHistoryList(
       (entry) => matches(keywords.get(entry.id) ?? entry.title) || archiveMatches.has(entry.id),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+}
+
+/** The row's state; finished activity this client has not seen reads Done until opened. */
+export function historyEntryState(
+  entry: ChatHistoryEntry,
+  seen: SeenRecord,
+  selected = false,
+): AgentState {
+  const tab = entry.kind === "local" ? entry.tab : null;
+  const own: AgentState = tab
+    ? tab.permissions.length || tab.questions.length
+      ? "needs-you"
+      : tab.error
+        ? "failed"
+        : tab.streaming
+          ? "working"
+          : tab.attention
+            ? "done"
+            : "idle"
+    : entry.kind === "saved"
+      ? entry.thread.running
+        ? "working"
+        : "idle"
+      : entry.kind === "native"
+        ? liveSessionState(entry.session)
+        : "ended";
+  const state = entry.observedState ? moreUrgent(own, entry.observedState) : own;
+  if (selected || entry.id.startsWith("draft:")) return state;
+  return unseenState(state, entry.updatedAt, lastSeen(seen, entry.seenKeys));
 }

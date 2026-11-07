@@ -12,6 +12,7 @@ import cursorIcon from "@/assets/providers/cursor.svg?no-inline";
 import { ActionHelp } from "@/components/ActionHelp";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,9 +35,13 @@ import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useEnabledAgents } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { useSessionSeen } from "@/hooks/useSessionSeen";
 import { useSsh } from "@/hooks/useSsh";
-import { AGENT_STATES, type AgentState, liveSessionState, moreUrgent } from "@/lib/agent-state";
-import { type ChatHistoryEntry, chatHistoryList } from "@/lib/chat-history-list";
+import { useStableOrder } from "@/hooks/useStableOrder";
+import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
+import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
+import { filterCounts, matchesFilter, parseFilter, type SessionFilter } from "@/lib/session-filter";
+import { markSeen } from "@/lib/session-seen";
 
 const providerIcons: Record<string, string> = {
   claude: claudeIcon,
@@ -44,6 +49,16 @@ const providerIcons: Record<string, string> = {
   copilot: copilotIcon,
   cursor: cursorIcon,
 };
+
+const FILTER_KEY = "orc_chat_history_filter";
+
+function storedFilter(): SessionFilter {
+  try {
+    return parseFilter(localStorage.getItem(FILTER_KEY));
+  } catch {
+    return "all";
+  }
+}
 
 const DEFAULT_MODEL = "__default__";
 const CUSTOM_MODEL = "__custom__";
@@ -110,6 +125,8 @@ export function ChatSessionPicker({
       setPending(false);
     }
   }
+  const seen = useSessionSeen();
+  const [filter, setFilter] = useState<SessionFilter>(storedFilter);
   const entries = chatHistoryList(
     chat.tabs,
     threads.data?.threads ?? [],
@@ -118,7 +135,35 @@ export function ChatSessionPicker({
     search,
     projectScope,
   );
+  const states = new Map(
+    entries.map((entry) => [
+      entry.id,
+      historyEntryState(entry, seen, entry.kind === "local" && entry.tab.key === chat.activeKey),
+    ]),
+  );
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const counts = filterCounts(states.values());
   const loading = threads.isLoading || live.isLoading || archive.isLoading;
+  const stable = useStableOrder({
+    items: entries.filter((entry) => matchesFilter(states.get(entry.id) ?? "idle", filter)),
+    id: (entry) => entry.id,
+    version: (entry) => String(entry.updatedAt),
+    lookup: (id) => byId.get(id),
+    resetKey: `${filter}\n${search}\n${projectScope}`,
+    loading,
+  });
+  const shown = stable.items.slice(0, visibleCount);
+  const active = entries.find(
+    (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
+  );
+  const activeKeys = active?.seenKeys.join("\n") ?? "";
+  const activeUpdated = active?.updatedAt ?? 0;
+  useEffect(() => {
+    if (!activeKeys) return;
+    const keys = activeKeys.split("\n");
+    markSeen(keys, Math.max(Date.now(), activeUpdated));
+    return () => markSeen(keys);
+  }, [activeKeys, activeUpdated]);
   return (
     <SessionHistoryFrame
       docked={docked}
@@ -190,39 +235,55 @@ export function ChatSessionPicker({
               setVisibleCount(50);
             }}
           />
-          <div data-testid="chat-session-list" className="min-w-0 space-y-1">
-            {entries.slice(0, visibleCount).map((entry) => (
-              <HistoryRow
-                key={entry.id}
-                entry={entry}
-                pending={pending}
-                onLocalSelect={() => setOpen(false)}
-                onSavedSelect={(id, projectId) => void select(() => api.chat.get(id), projectId)}
-                onNativeSelect={(id, projectId) =>
-                  void select(() => api.chat.resume(id), projectId)
-                }
-                onArchiveSelect={(session) => {
-                  setSelectedArchive(session);
-                  setRepository(session.metadata.repository ?? "");
-                  setBranch(session.metadata.branch ?? "");
-                  setCommit(session.metadata.commit ?? "");
-                  setSubdirectory(session.metadata.subdirectory ?? "");
-                  setError("");
-                }}
-              />
-            ))}
+          <div className="min-w-0 space-y-2" {...stable.listProps}>
+            <SessionStateFilters
+              value={filter}
+              counts={counts}
+              onChange={(next) => {
+                setFilter(next);
+                setVisibleCount(50);
+                try {
+                  localStorage.setItem(FILTER_KEY, next);
+                } catch {}
+              }}
+            >
+              <StableOrderPill pending={stable.pending} onApply={stable.apply} />
+            </SessionStateFilters>
+            <div data-testid="chat-session-list" className="min-w-0 space-y-1">
+              {shown.map((entry) => (
+                <HistoryRow
+                  key={entry.id}
+                  entry={entry}
+                  state={states.get(entry.id) ?? "idle"}
+                  pending={pending}
+                  onLocalSelect={() => setOpen(false)}
+                  onSavedSelect={(id, projectId) => void select(() => api.chat.get(id), projectId)}
+                  onNativeSelect={(id, projectId) =>
+                    void select(() => api.chat.resume(id), projectId)
+                  }
+                  onArchiveSelect={(session) => {
+                    setSelectedArchive(session);
+                    setRepository(session.metadata.repository ?? "");
+                    setBranch(session.metadata.branch ?? "");
+                    setCommit(session.metadata.commit ?? "");
+                    setSubdirectory(session.metadata.subdirectory ?? "");
+                    setError("");
+                  }}
+                />
+              ))}
+            </div>
           </div>
           {loading && (
             <p role="status" className="px-2 text-xs text-muted-foreground">
               Loading sessions…
             </p>
           )}
-          {!loading && !entries.length && (
+          {!loading && !shown.length && (
             <p className="px-2 text-sm text-muted-foreground">
-              {search ? "No sessions match." : "No sessions yet."}
+              {search || filter !== "all" ? "No sessions match." : "No sessions yet."}
             </p>
           )}
-          {entries.length > visibleCount && (
+          {stable.items.length > visibleCount && (
             <Button
               variant="ghost"
               data-testid="chat-history-more"
@@ -387,6 +448,7 @@ function SessionHistoryFrame({
 
 function HistoryRow({
   entry,
+  state,
   pending,
   onLocalSelect,
   onSavedSelect,
@@ -394,6 +456,7 @@ function HistoryRow({
   onArchiveSelect,
 }: {
   entry: ChatHistoryEntry;
+  state: AgentState;
   pending: boolean;
   onLocalSelect: () => void;
   onSavedSelect: (id: string, projectId?: string | null) => void;
@@ -404,24 +467,6 @@ function HistoryRow({
   const tab = entry.kind === "local" ? entry.tab : null;
   const selected = tab?.key === chat.activeKey;
   const open = !!tab && !tab.hidden;
-  const localState: AgentState = tab
-    ? tab.permissions.length || tab.questions.length
-      ? "needs-you"
-      : tab.error
-        ? "failed"
-        : tab.streaming
-          ? "working"
-          : tab.attention
-            ? "done"
-            : "idle"
-    : entry.kind === "saved"
-      ? entry.thread.running
-        ? "working"
-        : "idle"
-      : entry.kind === "native"
-        ? liveSessionState(entry.session)
-        : "ended";
-  const state = entry.observedState ? moreUrgent(localState, entry.observedState) : localState;
   const agent =
     tab?.config.agent ||
     (entry.kind === "saved"
@@ -431,6 +476,7 @@ function HistoryRow({
         : "");
   const status = AGENT_STATES[state].label;
   const selectRow = () => {
+    markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
     if (entry.kind === "local") {
       chat.selectTab(entry.tab.key);
       onLocalSelect();
