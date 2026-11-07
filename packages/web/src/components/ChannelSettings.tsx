@@ -1307,15 +1307,23 @@ export function ChannelSettings({ active }: { active: boolean }) {
         {channels.data?.map((c) => (
           <div key={c.id} className="py-2" data-testid={`channel-row-${c.id}`}>
             <div className="flex min-h-11 items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{c.name}</div>
-                <div className="text-xs text-muted-foreground">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium" title={c.name}>
+                  {c.name}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
                   {c.provider} · {c.identity?.name ?? c.status} · {c.targets.length}{" "}
                   {c.targets.length === 1 ? "recipient" : "recipients"}
                 </div>
               </div>
-              <Button variant="ghost" aria-expanded={selected === c.id} onClick={() => edit(c)}>
-                Edit {c.name}
+              <Button
+                variant="ghost"
+                className="h-11 min-w-11 shrink-0 px-3 sm:h-8"
+                aria-label={`Edit ${c.name}`}
+                aria-expanded={selected === c.id}
+                onClick={() => edit(c)}
+              >
+                Edit
               </Button>
             </div>
             {c.error && (

@@ -282,8 +282,16 @@ export function runSync(
       if (opts.force || due) results.push(await syncAdapter(adapter));
     }
     if (liveRegistryDir) {
-      for (const record of await lifecycleRecords(liveRegistryDir, hostRuntime(resolveExecHost())))
+      const synced = new Set(
+        results.filter((result) => !result.error).map((result) => result.backend),
+      );
+      for (const record of await lifecycleRecords(
+        liveRegistryDir,
+        hostRuntime(resolveExecHost()),
+      )) {
+        if (synced.has(record.backend)) continue;
         await upsertRecord(record, selectedHostAlias());
+      }
     }
     await synchronized?.();
     indexSessionsWhenEnabled();

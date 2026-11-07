@@ -98,6 +98,15 @@ export function truncate(text: string, max: number): string {
   return single.length <= max ? single : `${single.slice(0, max - 1)}…`;
 }
 
+export function sessionWaitingMessage(event: { id: string; backend: string }): PushMessage {
+  return {
+    title: "Waiting for you",
+    body: `${event.backend} is waiting for you.`,
+    url: `/sessions?session=${encodeURIComponent(event.id)}&project=all`,
+    tag: `waiting:${event.id}`,
+  };
+}
+
 export function attentionMessage(request: HumanRequest): PushMessage {
   const verb =
     request.input.kind === "command"

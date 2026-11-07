@@ -3,8 +3,11 @@ import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import {
+  findAgentOwner,
   LIVE_REGISTRY_DIR,
+  liveSessionWaiting,
   readRegistrations,
+  recordLiveSessionWait,
   writeRegistration,
 } from "../packages/core/src/live-session.js";
 
@@ -24,6 +27,7 @@ const Input = z.object({
   tool_response: z.unknown().optional(),
   tool_use_id: z.string().optional(),
   tool_call_id: z.string().optional(),
+  notification_type: z.string().max(100).optional(),
 });
 const EVENTS: Record<string, "running" | "idle" | "stopped"> = {
   SessionStart: "idle",
@@ -41,85 +45,25 @@ const EVENTS: Record<string, "running" | "idle" | "stopped"> = {
   postToolUse: "running",
 };
 
-type ProcessRow = { pid: number; parent: number; name: string; command: string };
-
-async function ownerPid(backend: string): Promise<{ pid: number; backend: string }> {
-  const command =
-    process.platform === "win32"
-      ? [
-          "powershell.exe",
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          `$all = Get-CimInstance Win32_Process; $ownerId = ${process.ppid}; $chain = @(); for ($i = 0; $i -lt 16; $i++) { $row = $all | Where-Object ProcessId -eq $ownerId | Select-Object -First 1; if (-not $row) { break }; $chain += $row; $ownerId = $row.ParentProcessId }; ConvertTo-Json -Compress -InputObject @($chain | Select-Object @{n='pid';e={$_.ProcessId}},@{n='parent';e={$_.ParentProcessId}},@{n='name';e={$_.Name}},@{n='command';e={$_.CommandLine}})`,
-        ]
-      : ["ps", "-eo", "pid=,ppid=,comm=,args="];
-  const child = Bun.spawn(command, {
-    stdout: "pipe",
-    stderr: "ignore",
-    timeout: 2500,
-    windowsHide: true,
-  });
-  const output = await new Response(child.stdout).text();
-  if ((await child.exited) !== 0) throw new Error("Unable to identify agent owner");
-  let windowsRows: ProcessRow[] = [];
-  if (process.platform === "win32") {
-    try {
-      windowsRows = JSON.parse(output);
-    } catch {
-      throw new Error("Unable to parse agent process inventory");
-    }
-  }
-  const rows: ProcessRow[] =
-    process.platform === "win32"
-      ? windowsRows
-      : output.split("\n").flatMap((line) => {
-          const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
-          return match
-            ? [
-                {
-                  pid: Number(match[1]),
-                  parent: Number(match[2]),
-                  name: match[3] ?? "",
-                  command: match[4] ?? "",
-                },
-              ]
-            : [];
-        });
-  const byPid = new Map(rows.map((row) => [row.pid, row]));
-  let pid = process.ppid;
-  const matcher =
-    backend === "gemini" ? /gemini/i : backend === "cursor-agent" ? /cursor-agent/i : /cursor/i;
-  for (let i = 0; i < 16; i++) {
-    const row = byPid.get(pid);
-    if (!row) break;
-    if (
-      !/^(cmd|powershell|pwsh|sh|bash|zsh)(\.exe)?$/i.test(row.name) &&
-      !row.command?.includes("hooks/live-session") &&
-      !row.command?.includes("hooks\\live-session") &&
-      matcher.test(`${row.name} ${row.command}`)
-    )
-      return {
-        pid: row.pid,
-        backend:
-          backend === "cursor" && /cursor-agent/i.test(row.command) ? "cursor-agent" : backend,
-      };
-    pid = row.parent;
-  }
-  throw new Error("Agent owner process was not found");
-}
-
 async function main(): Promise<void> {
   let backend = process.argv[2];
-  if (!backend || !["cursor", "cursor-agent", "gemini"].includes(backend))
+  if (!backend || !["cursor", "cursor-agent", "gemini", "claude"].includes(backend))
     throw new Error("Unsupported hook backend");
   const raw = await Bun.stdin.text();
   if (raw.length > 200_000) throw new Error("Hook input is too large");
   const input = Input.parse(JSON.parse(raw));
   const externalId = input.session_id ?? input.conversation_id;
   const event = process.argv[3] ?? input.hook_event_name ?? "";
+  const waiting = liveSessionWaiting(event, {
+    ...(input.notification_type !== undefined ? { notificationType: input.notification_type } : {}),
+    ...(input.tool_name !== undefined ? { toolName: input.tool_name } : {}),
+  });
   const status = EVENTS[event];
-  if (!externalId || !status) throw new Error("Missing session identity or lifecycle event");
+  if (!externalId) throw new Error("Missing session identity");
+  if (!status) {
+    if (waiting !== undefined) await recordLiveSessionWait(backend, event, input);
+    return;
+  }
   const records = readRegistrations();
   const previous = records.find(
     (record) =>
@@ -132,7 +76,7 @@ async function main(): Promise<void> {
   const owner =
     status === "stopped" && previous
       ? { pid: previous.pid, backend: previous.backend }
-      : await ownerPid(backend);
+      : await findAgentOwner(backend, externalId, previous?.pid);
   backend = owner.backend;
   const pid = owner.pid;
   const cwd = input.cwd ?? input.workspace_roots?.[0] ?? previous?.cwd;
@@ -170,11 +114,16 @@ async function main(): Promise<void> {
         { mode: 0o600 },
       );
   }
+  let retainedWaiting: boolean | undefined;
+  if (status === "stopped") retainedWaiting = false;
+  else if (waiting !== undefined) retainedWaiting = waiting;
+  else retainedWaiting = previous?.waiting;
   writeRegistration({
     backend,
     externalId,
     pid,
     status,
+    ...(retainedWaiting !== undefined ? { waiting: retainedWaiting } : {}),
     title:
       previous?.title ?? input.prompt?.replace(/\s+/g, " ").slice(0, 200) ?? `${backend} session`,
     createdAt: previous?.createdAt ?? now,

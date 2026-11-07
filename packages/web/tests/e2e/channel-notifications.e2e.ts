@@ -11,12 +11,13 @@ for (const width of [1440, 390])
       await page.setViewportSize({ width, height: 900 });
       await apiPatch(request, "/settings", { theme });
       const id = tid("notify-channel");
+      const name = `Notifications ${id} with a long review team name`;
       // Disabled fixture connections cannot contact a real messaging provider.
       const saved = await request.put(`${API_BASE}/channels/${id}`, {
         headers: AUTH_HEADERS,
         data: {
           id,
-          name: `Notifications ${id}`,
+          name,
           provider: "telegram",
           enabled: false,
           targets: [{ id: "me", name: "Notification recipient", chat_id: "123", outbound: true }],
@@ -27,6 +28,23 @@ for (const width of [1440, 390])
       expect(saved.ok()).toBe(true);
       await gotoView(page, "settings");
       await settingsSection(page, "channels");
+      const row = page.getByTestId(`channel-row-${id}`);
+      await expect(row).toBeVisible();
+      const edit = row.getByRole("button", { name: `Edit ${name}`, exact: true });
+      const editBounds = await edit.boundingBox();
+      expect(editBounds && editBounds.x >= 0 && editBounds.x + editBounds.width <= width).toBe(
+        true,
+      );
+      expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      if (width === 390) {
+        expect(editBounds?.width).toBeGreaterThanOrEqual(44);
+        expect(editBounds?.height).toBeGreaterThanOrEqual(44);
+      }
       const global = page.getByTestId("channel-notification-settings");
       await expect(global).not.toHaveAttribute("open", "");
       await global.locator("summary").first().click();
@@ -37,7 +55,7 @@ for (const width of [1440, 390])
       await expect(
         global.locator("summary").filter({ hasText: /Recent deliveries/ }),
       ).toBeVisible();
-      await page.getByRole("button", { name: `Edit Notifications ${id}`, exact: true }).click();
+      await edit.click();
       const editor = page.getByTestId("channel-editor").filter({ visible: true });
       await editor
         .locator("summary")
@@ -78,7 +96,7 @@ for (const width of [1440, 390])
       await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
       await page.reload();
       await settingsSection(page, "channels");
-      await page.getByRole("button", { name: `Edit Notifications ${id}`, exact: true }).click();
+      await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
       const reopened = page.getByTestId("channel-editor").filter({ visible: true });
       await reopened
         .locator("summary")
