@@ -134,6 +134,49 @@ export async function notifyPendingAttention(
   }
 }
 
+export function jobPushMessage(event: {
+  id: string;
+  title: string;
+  body: string;
+  path: string;
+}): PushMessage {
+  const base = "https://orc.invalid";
+  const link = new URL(event.path, base);
+  return {
+    title: event.title.slice(0, 200),
+    body: event.body.slice(0, 500),
+    url: link.origin === base ? `${link.pathname}${link.search}${link.hash}` : "/jobs",
+    tag: `job:${event.id}`,
+  };
+}
+
+export async function notifyPendingJobPushes(deps: PushDeps = defaultDeps()): Promise<void> {
+  for (const target of deps.store.targets("jobs")) {
+    const cursor = deps.store.claimJobCursor(target.id);
+    for (const event of deps.store.pendingJobPushes(target.id, cursor)) {
+      if (!deps.store.reserveJobPush(event.id, target.id)) continue;
+      const result = await sendPush(null, jobPushMessage(event), target.id, deps);
+      if (result.sent || result.expired) deps.store.finishJobPush(event.id, target.id);
+    }
+  }
+}
+
+export function startJobPush(): () => void {
+  const deps = defaultDeps();
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    notifyPendingJobPushes(deps)
+      .catch((err) => logger.error("Job push scan failed", err))
+      .finally(() => {
+        busy = false;
+      });
+  }, ATTENTION_SCAN_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 export function startAttentionPush(): () => void {
   const deps = defaultDeps();
   const humanRequests = new HumanRequestStore(getSqlite());

@@ -14,7 +14,7 @@ import { startHumanRequestDelivery } from "./human-request-delivery.js";
 import { withKbJobHooks } from "./kb-jobs.js";
 import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
 import { startNotificationMaintenance } from "./notifications.js";
-import { startAttentionPush } from "./push/service.js";
+import { startAttentionPush, startJobPush } from "./push/service.js";
 import { createApp } from "./server.js";
 import { startSessionWatcher } from "./session-watcher.js";
 import { closeSessionArchive } from "./sessions/archive.js";
@@ -61,6 +61,7 @@ process.env.ORC_API_PORT = String(server.port);
 
 const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
+const stopJobPush = startJobPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();
 const stopGithubIssueSync = startGithubIssueSync();
 const stopNotificationMaintenance = startNotificationMaintenance();
@@ -89,6 +90,7 @@ async function shutdown(signal: string, exitCode = 0) {
   forceExit.unref();
   stopSessionWatcher();
   stopAttentionPush();
+  stopJobPush();
   stopHumanRequestDelivery();
   stopNotificationMaintenance();
   await stopGithubIssueSync();

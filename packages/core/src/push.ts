@@ -29,7 +29,7 @@ const base64url = z
   .max(512)
   .regex(/^[A-Za-z0-9_-]+={0,2}$/, "Expected a base64url key");
 
-export const PushTopicSchema = z.enum(["attention", "chat"]);
+export const PushTopicSchema = z.enum(["attention", "chat", "jobs"]);
 export const PUSH_TOPICS = PushTopicSchema.options;
 
 export const PushSubscriptionInputSchema = z
@@ -41,12 +41,12 @@ export const PushSubscriptionInputSchema = z
     keys: z.object({ p256dh: base64url, auth: base64url }).strict(),
     label: z.string().trim().min(1).max(120),
     /** Omitted on re-subscribe to keep the device's current choice; new devices get every topic. */
-    topics: z.array(PushTopicSchema).max(2).optional(),
+    topics: z.array(PushTopicSchema).max(PUSH_TOPICS.length).optional(),
   })
   .strict();
 
 export const PushDeviceUpdateSchema = z
-  .object({ topics: z.array(PushTopicSchema).max(2) })
+  .object({ topics: z.array(PushTopicSchema).max(PUSH_TOPICS.length) })
   .strict();
 
 export const PushDeviceSchema = z.object({

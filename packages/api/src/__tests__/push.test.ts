@@ -1,9 +1,16 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { HumanRequestStore } from "@orc/db/human-requests";
+import { NotificationStore } from "@orc/db/notifications";
 import { PushStore } from "@orc/db/push";
 import webpush from "web-push";
-import { notifyPendingAttention, type PushDeps, sendPush } from "../push/service.js";
+import {
+  jobPushMessage,
+  notifyPendingAttention,
+  notifyPendingJobPushes,
+  type PushDeps,
+  sendPush,
+} from "../push/service.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
@@ -160,4 +167,188 @@ test("should retry attention pushes after a transient failure", async () => {
   await notifyPendingAttention(humanRequests, pushDeps);
   await notifyPendingAttention(humanRequests, pushDeps);
   expect(attempts).toBe(2);
+});
+
+test("should keep job push links inside ORC", () => {
+  expect(
+    jobPushMessage({
+      id: "n1",
+      title: "Nightly failed",
+      body: "Failed after 3s, exit 1. Open the run for logs.",
+      path: "/jobs/job?run=run-1&project=all",
+    }),
+  ).toEqual({
+    title: "Nightly failed",
+    body: "Failed after 3s, exit 1. Open the run for logs.",
+    url: "/jobs/job?run=run-1&project=all",
+    tag: "job:n1",
+  });
+  expect(
+    jobPushMessage({ id: "n1", title: "Nightly failed", body: "", path: "//evil.example" }).url,
+  ).toBe("/jobs");
+  expect(
+    jobPushMessage({ id: "n1", title: "Nightly failed", body: "", path: "/\\evil.example" }).url,
+  ).toBe("/jobs");
+});
+
+test("should push each new job outcome once and skip devices that opted out", async () => {
+  const db = new Database(":memory:");
+  let time = 5_000;
+  const store = new PushStore(db, () => time);
+  const calls: string[] = [];
+  const pushDeps: PushDeps = {
+    store,
+    fetch: (async (url: string) => {
+      calls.push(url);
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch,
+  };
+  store.subscribe({ ...subscription, topics: ["jobs"] });
+  store.subscribe({
+    ...subscription,
+    endpoint: "https://fcm.googleapis.com/fcm/send/chat-only",
+    topics: ["chat"],
+  });
+  const notes = new NotificationStore(db, () => time);
+  const event = (id: string, type: "job.failed" | "job.finished") =>
+    notes.publish({
+      type,
+      source_key: `job:${id}`,
+      source_id: id,
+      title: type === "job.failed" ? "Nightly failed" : "Nightly finished",
+      body: "Failed after 3s, exit 1. Open the run for logs.",
+      level: type === "job.failed" ? "needs-you" : "done",
+      project_id: null,
+      path: `/jobs/job?run=${id}&project=all`,
+      created_at: time,
+      expires_at: time + 86_400_000,
+    });
+  time = 3_000;
+  event("old", "job.failed");
+  time = 6_000;
+  await notifyPendingJobPushes(pushDeps);
+  expect(calls).toEqual([]);
+  time = 6_000;
+  event("failed", "job.failed");
+  event("done", "job.finished");
+  await notifyPendingJobPushes(pushDeps);
+  await notifyPendingJobPushes(pushDeps);
+  expect(calls).toEqual([subscription.endpoint, subscription.endpoint]);
+});
+
+test("should retry a job push after a transient failure", async () => {
+  const db = new Database(":memory:");
+  let time = 5_000;
+  let status = 500;
+  const store = new PushStore(db, () => time);
+  let attempts = 0;
+  const pushDeps: PushDeps = {
+    store,
+    fetch: (async () => {
+      attempts++;
+      return new Response(null, { status });
+    }) as unknown as typeof fetch,
+  };
+  store.subscribe({ ...subscription, topics: ["jobs"] });
+  await notifyPendingJobPushes(pushDeps);
+  time = 6_000;
+  new NotificationStore(db, () => time).publish({
+    type: "job.failed",
+    source_key: "job:retry",
+    source_id: "retry",
+    title: "Nightly failed",
+    body: "Failed after 3s, exit 1. Open the run for logs.",
+    level: "needs-you",
+    project_id: null,
+    path: "/jobs/job?run=retry&project=all",
+    created_at: time,
+    expires_at: time + 86_400_000,
+  });
+  await notifyPendingJobPushes(pushDeps);
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(1);
+  status = 201;
+  time += 31_000;
+  await notifyPendingJobPushes(pushDeps);
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(2);
+});
+
+test("should deliver jobs completed before the first scan, including second-resolution timestamps", async () => {
+  const db = new Database(":memory:");
+  let time = 5_500;
+  const store = new PushStore(db, () => time);
+  store.subscribe({ ...subscription, topics: ["jobs"] });
+  time = 5_700;
+  new NotificationStore(db, () => time).publish({
+    type: "job.failed",
+    source_key: "job:first",
+    source_id: "first",
+    title: "First failed",
+    body: "Failed after 0s, exit 1.",
+    level: "needs-you",
+    project_id: null,
+    path: "/jobs/job?run=first",
+    created_at: 5_000,
+    expires_at: 100_000,
+  });
+  let attempts = 0;
+  const pushDeps: PushDeps = {
+    store: new PushStore(db, () => time),
+    fetch: (async () => {
+      attempts++;
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch,
+  };
+  await notifyPendingJobPushes(pushDeps);
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(1);
+});
+
+test("should keep job pushes opted out after restart and resume without replaying paused runs", async () => {
+  const db = new Database(":memory:");
+  let time = 10_000;
+  let store = new PushStore(db, () => time);
+  const device = store.subscribe({ ...subscription, topics: ["attention", "chat", "jobs"] });
+  store.updateTopics(device.id, ["attention", "chat"]);
+  const notes = new NotificationStore(db, () => time);
+  const publish = (id: string) =>
+    notes.publish({
+      type: "job.failed",
+      source_key: `job:${id}`,
+      source_id: id,
+      title: "Nightly failed",
+      body: "Failed after 0s, exit 1.",
+      level: "needs-you",
+      project_id: null,
+      path: `/jobs/job?run=${id}`,
+      created_at: time,
+      expires_at: time + 100_000,
+    });
+  time++;
+  publish("paused");
+  store = new PushStore(db, () => time);
+  let attempts = 0;
+  const pushDeps: PushDeps = {
+    store,
+    fetch: (async () => {
+      attempts++;
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch,
+  };
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(0);
+  store.subscribe({ ...subscription, topics: ["jobs"] });
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(0);
+  publish("resumed");
+  await notifyPendingJobPushes(pushDeps);
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(1);
+  store.expire(device.id);
+  store.pendingJobPushes(device.id, 0);
+  expect(
+    db.query<{ count: number }, []>("SELECT count(*) AS count FROM notification_pushes").get()
+      ?.count,
+  ).toBe(0);
 });
