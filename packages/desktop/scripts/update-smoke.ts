@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -92,6 +92,8 @@ function freePort(): Promise<number> {
 
 const commands = new Map<string, string[]>();
 const requests: string[] = [];
+let inventoryActive = 0;
+let controlDuringInventory = 0;
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   if (url.pathname === "/fixture-control") {
@@ -99,6 +101,7 @@ const server = createServer((request, response) => {
       response.writeHead(403).end();
       return;
     }
+    if (inventoryActive > 0) controlDuringInventory++;
     response.end(commands.get(url.searchParams.get("version") ?? "")?.shift() ?? "");
     return;
   }
@@ -193,26 +196,33 @@ function alive(pid: number): boolean {
     throw error;
   }
 }
-function listenerAddresses(): string[] {
+function inventory(command: string, args: string[]): Promise<string> {
+  inventoryActive++;
+  return new Promise((accept, reject) => {
+    execFile(
+      command,
+      args,
+      { encoding: "utf8", timeout: 10_000, windowsHide: true },
+      (error, stdout) => {
+        inventoryActive--;
+        if (error) reject(error);
+        else accept(stdout);
+      },
+    );
+  });
+}
+async function listenerAddresses(): Promise<string[]> {
   const probe =
     process.platform === "win32"
-      ? spawnSync(
-          "powershell.exe",
-          [
-            "-NoProfile",
-            "-Command",
-            `ConvertTo-Json -Compress -InputObject @(Get-NetTCPConnection -State Listen -LocalPort ${apiPort} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalAddress)`,
-          ],
-          { encoding: "utf8", timeout: 10_000, windowsHide: true },
-        )
-      : spawnSync("ss", ["-H", "-ltn", "sport", "=", `:${apiPort}`], {
-          encoding: "utf8",
-          timeout: 10_000,
-        });
-  assert.equal(probe.status, 0, "Listener inventory failed");
+      ? await inventory("powershell.exe", [
+          "-NoProfile",
+          "-Command",
+          `ConvertTo-Json -Compress -InputObject @(Get-NetTCPConnection -State Listen -LocalPort ${apiPort} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalAddress)`,
+        ])
+      : await inventory("ss", ["-H", "-ltn", "sport", "=", `:${apiPort}`]);
   return process.platform === "win32"
-    ? JSON.parse(probe.stdout || "[]")
-    : probe.stdout
+    ? JSON.parse(probe || "[]")
+    : probe
         .trim()
         .split("\n")
         .filter(Boolean)
@@ -222,21 +232,17 @@ function withinRoot(path: string): boolean {
   const child = relative(root, resolve(path));
   return child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
-function verifiedProcess(pid: number): boolean {
+async function verifiedProcess(pid: number): Promise<boolean> {
   assert(Number.isSafeInteger(pid) && pid > 0);
   if (!alive(pid)) return false;
   try {
     if (process.platform === "win32") {
-      const probe = spawnSync(
-        "powershell.exe",
-        [
-          "-NoProfile",
-          "-Command",
-          `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').ExecutablePath`,
-        ],
-        { encoding: "utf8", timeout: 10_000, windowsHide: true },
-      );
-      return probe.status === 0 && !!probe.stdout.trim() && withinRoot(probe.stdout.trim());
+      const probe = await inventory("powershell.exe", [
+        "-NoProfile",
+        "-Command",
+        `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').ExecutablePath`,
+      ]);
+      return !!probe.trim() && withinRoot(probe.trim());
     }
     const executable = readlinkSync(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, "");
     if (withinRoot(executable)) return true;
@@ -264,9 +270,9 @@ async function identity(version: string): Promise<Record<string, unknown>> {
     Number.isSafeInteger(runtime.pid) && runtime.pid > 0 && alive(runtime.pid),
     "Private daemon PID is not alive",
   );
-  assert(verifiedProcess(runtime.pid), "Daemon executable is outside the private fixture");
+  assert(await verifiedProcess(runtime.pid), "Daemon executable is outside the private fixture");
   assert.equal(about.instance_id, runtime.instance_id);
-  const listeners = listenerAddresses();
+  const listeners = await listenerAddresses();
   assert(
     listeners.length > 0 && listeners.every((address) => address === "127.0.0.1"),
     "Private API is not loopback-only",
@@ -355,6 +361,8 @@ try {
   assert.deepEqual(await api(`/tasks/${task.id}`), beforeTask);
   assert.deepEqual(await api(`/chat/threads/${thread.id}`), beforeThread);
   assert.equal(readFileSync(configPath, "utf8"), configBefore);
+  if (process.platform === "win32")
+    assert(controlDuringInventory > 0, "Fixture control was not served during OS inventory");
   assert(
     requests.some((name) => /\.(exe|AppImage)$/.test(name)),
     "No update payload was served",
@@ -373,6 +381,7 @@ try {
     anonymous401: true,
     authenticated200: true,
     configPreserved: true,
+    controlRequestsDuringInventory: controlDuringInventory,
     previousDaemonPid: previous.pid,
     nextDaemonPid: next.pid,
     requests,
@@ -391,8 +400,8 @@ try {
         .filter((event) => event.event === "started")
         .map((event) => Number(event.pid)),
     ]);
-  const stopped = () =>
-    [...ownedPids()].every((pid) => !alive(pid)) && listenerAddresses().length === 0;
+  const stopped = async () =>
+    [...ownedPids()].every((pid) => !alive(pid)) && (await listenerAddresses()).length === 0;
   try {
     try {
       await until("fixture apps, daemons and listener shutdown", stopped, 20_000);
@@ -404,7 +413,7 @@ try {
         assert.equal(normalize(runtime.config_path), normalize(configPath));
         assert(Number.isSafeInteger(runtime.pid) && runtime.pid > 0);
         if (alive(runtime.pid)) {
-          assert(verifiedProcess(runtime.pid), "Refusing to stop an unverified daemon");
+          assert(await verifiedProcess(runtime.pid), "Refusing to stop an unverified daemon");
           daemonPids.add(runtime.pid);
         }
       }
@@ -413,7 +422,7 @@ try {
           if (!alive(pid)) continue;
           assert(
             (pid === app?.pid && app.exitCode === null && app.signalCode === null) ||
-              verifiedProcess(pid),
+              (await verifiedProcess(pid)),
             "Refusing to stop an unverified fixture process",
           );
           process.kill(pid, signal);
@@ -426,7 +435,7 @@ try {
         }
       }
     }
-    assert(stopped(), "Fixture processes or listener survived teardown");
+    assert(await stopped(), "Fixture processes or listener survived teardown");
     if (result) result.teardownVerified = true;
   } finally {
     server.closeAllConnections();
