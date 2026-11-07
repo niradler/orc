@@ -79,8 +79,15 @@ export function ChatPermissionChip() {
           className={cn(composerChip, mode === "bypassPermissions" && "text-warning")}
         >
           <Icon size={14} aria-hidden="true" />
-          <span className="truncate">{PERMISSION_LABELS[mode]}</span>
-          <ChevronDown size={12} aria-hidden="true" className="shrink-0 opacity-60" />
+          <span data-chip-label className="truncate">
+            {PERMISSION_LABELS[mode]}
+          </span>
+          <ChevronDown
+            data-chip-label
+            size={12}
+            aria-hidden="true"
+            className="shrink-0 opacity-60"
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent

@@ -90,6 +90,83 @@ for (const width of [1440, 390]) {
   });
 }
 
+for (const width of [320, 390, 820, 1440]) {
+  test(`compact controls fit a narrow composer and expand only with room at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    await request.patch("/api/settings", {
+      headers,
+      data: { chat: { ...defaults, permissionMode: "acceptEdits" } },
+    });
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["dark", "light"]) {
+      await request.patch("/api/settings", { headers, data: { theme } });
+      await openChat(page);
+      const input = page.getByTestId("chat-input");
+      await input.fill("Keep this draft while the composer changes size");
+      const folder = page.getByTestId("chat-workspace-folder");
+      const agent = page.getByTestId("chat-agent-model-button");
+      const branch = page.getByTestId("chat-workspace-branch");
+      const permission = page.getByTestId("chat-permission-chip");
+      await expect(permission).toBeVisible();
+      const compact = width !== 820;
+      for (const label of [
+        folder.getByTestId("chat-workspace-folder-name"),
+        agent.getByTestId("chat-agent-current"),
+        agent.getByTestId("chat-model-current"),
+      ]) {
+        if (compact) await expect(label).toBeHidden();
+        else await expect(label).toBeVisible();
+      }
+      const row = await agent.boundingBox();
+      for (const control of [folder, agent, branch, permission]) {
+        const bounds = await control.boundingBox();
+        expect(bounds).not.toBeNull();
+        if (compact) expect(bounds?.width).toBe(width < 640 ? 44 : 32);
+        else expect(bounds?.width).toBeGreaterThan(32);
+        expect(Math.abs((bounds?.y ?? 0) - (row?.y ?? 0))).toBeLessThanOrEqual(1);
+        if (width < 640) expect(bounds?.height).toBeGreaterThanOrEqual(44);
+      }
+      await folder.click();
+      await expect(page.getByTestId("chat-workspace-full-path")).toContainText(PROJECT);
+      await page.keyboard.press("Escape");
+      await expect(folder).toBeFocused();
+      await agent.click();
+      await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+      await expect(page.getByTestId("chat-model-option-default")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      await page.keyboard.press("Escape");
+      await expect(agent).toBeFocused();
+      await expect(input).toHaveValue("Keep this draft while the composer changes size");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await expect(page.getByTestId("chat-send-button")).toBeVisible();
+      if (width === 390)
+        await page.screenshot({ path: test.info().outputPath(`compact-${theme}-390.png`) });
+      if (width === 1440) {
+        await page.getByTestId("chat-fullscreen-button").click();
+        await expect(folder.getByTestId("chat-workspace-folder-name")).toBeVisible();
+        await expect(agent.getByTestId("chat-agent-current")).toBeVisible();
+        await expect(agent.getByTestId("chat-model-current")).toBeVisible();
+        await expect(input).toHaveValue("Keep this draft while the composer changes size");
+        await page.screenshot({ path: test.info().outputPath(`wide-${theme}-1440.png`) });
+        if (theme === "dark") {
+          await agent.click();
+          await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+          await page.screenshot({ path: test.info().outputPath("agent-model-picker.png") });
+          await page.keyboard.press("Escape");
+        }
+        await page.getByTestId("chat-fullscreen-button").click();
+        await expect(agent.getByTestId("chat-model-current")).toBeHidden();
+      }
+    }
+  });
+}
+
 test("folder changes in two clicks and agent+model change from one pill", async ({ page }) => {
   await openChat(page);
   const folder = page.getByTestId("chat-workspace-folder");
@@ -193,4 +270,44 @@ test("permission chip appears only when the mode is not the default", async ({ p
   await chip.click();
   await page.getByTestId("chat-permission-option-default").click();
   await expect(chip).toHaveCount(0);
+});
+
+test("backend capabilities lock the model column and hide the permission chip", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers,
+    data: { chat: { ...defaults, permissionMode: "acceptEdits" } },
+  });
+  await page.route("**/api/chat/capabilities?**", (route) =>
+    route.fulfill({
+      json: {
+        backend: "acpx",
+        capabilities: {
+          version: 1,
+          source: "adapter",
+          resume: false,
+          modelSelection: false,
+          images: false,
+          toolOutput: true,
+          approvals: false,
+          questions: false,
+          livePermissions: false,
+          interrupt: false,
+          steering: false,
+          mcp: false,
+          fork: false,
+          rollback: false,
+        },
+      },
+    }),
+  );
+  await openChat(page);
+  await page.getByTestId("chat-agent-model-button").click();
+  await expect(page.getByTestId("chat-model-option-default")).toBeDisabled();
+  await expect(page.getByTestId("chat-model-option-custom")).toBeDisabled();
+  await expect(page.getByTestId("chat-agent-model-note")).toContainText("picks its own model");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("chat-permission-chip")).toHaveCount(0);
 });

@@ -33,6 +33,23 @@ function makeTask(overrides: Partial<typeof tasks.$inferInsert> = {}): typeof ta
 }
 
 describe("OrcTaskProvider.pickWorkTasks()", () => {
+  test("should exclude imported GitHub issues from automatic work and review", async () => {
+    const db = getDb();
+    const id = ulid();
+    await db.insert(tasks).values(
+      makeTask({
+        id,
+        github_issue_id: "1234",
+        auto_start: false,
+        skill_name: "orc-sdlc",
+        tags: ["agent"],
+      }),
+    );
+    const provider = new OrcTaskProvider();
+    expect((await provider.pickWorkTasks()).some((task) => task.id === id)).toBe(false);
+    await db.update(tasks).set({ status: "review" }).where(eq(tasks.id, id));
+    expect((await provider.pickReviewTasks()).some((task) => task.id === id)).toBe(false);
+  });
   test("does not automatically pick opted-out tasks even with a configured skill and flow", async () => {
     const id = ulid();
     await getDb()

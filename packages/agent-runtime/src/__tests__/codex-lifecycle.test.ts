@@ -177,6 +177,7 @@ test("native image inputs, plans and token usage survive protocol normalization"
     data: {
       runtimeSessionId: "native",
       usage: { total: { totalTokens: 42 }, last: { totalTokens: 7 } },
+      outcome: "completed",
     },
   });
   const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
@@ -215,6 +216,10 @@ test("queued start acknowledgments wait for the native turn before interruption"
   await session.interrupt();
   const events = await collect(session);
   expect(events.some((e) => e.type === "system_status" && e.data.includes("stopped"))).toBe(true);
+  expect(events).toContainEqual({
+    type: "result",
+    data: { runtimeSessionId: "native", usage: undefined, outcome: "stopped" },
+  });
 });
 
 test("a non-retryable native error settles the consumer without requiring a completion frame", async () => {

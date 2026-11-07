@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NotificationFilterSchema } from "./notifications.js";
 
 export const ChannelProviderSchema = z.enum(["telegram", "slack"]);
 export const ChannelBuiltinCommands = [
@@ -222,6 +223,7 @@ export const ChannelTargetSchema = z
     inbound: z.boolean().default(false),
     outbound: z.boolean().default(true),
     attention: z.boolean().default(false),
+    notifications: NotificationFilterSchema.optional(),
   })
   .strict();
 

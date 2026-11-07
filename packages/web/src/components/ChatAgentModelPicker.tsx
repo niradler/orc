@@ -103,16 +103,21 @@ export function ChatAgentModelPicker() {
           className={cn(composerChip, "max-w-64 text-on-surface")}
         >
           <AgentIcon agent={config.agent} decorative size={14} />
-          <span data-testid="chat-agent-current" className="shrink-0 max-sm:sr-only">
+          <span data-chip-label data-testid="chat-agent-current" className="shrink-0">
             {name}
           </span>
-          <span aria-hidden="true" className="text-muted-foreground max-sm:hidden">
+          <span data-chip-label aria-hidden="true" className="text-muted-foreground">
             ·
           </span>
-          <span data-testid="chat-model-current" className="min-w-0 truncate">
+          <span data-chip-label data-testid="chat-model-current" className="min-w-0 truncate">
             {summary}
           </span>
-          <ChevronDown size={12} aria-hidden="true" className="shrink-0 opacity-60" />
+          <ChevronDown
+            data-chip-label
+            size={12}
+            aria-hidden="true"
+            className="shrink-0 opacity-60"
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent

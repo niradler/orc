@@ -99,7 +99,9 @@ test("stopping a chunked response preserves partial text and a new send finishes
     "Model changes are available after the current response",
   );
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("status").filter({ hasText: "codex is responding" })).toBeVisible();
+  await expect(page.getByTestId("chat-activity-status")).toContainText(
+    /codex\s*Working for \d+:\d{2}/,
+  );
   await page.screenshot({ path: testInfo.outputPath("chat-loading-partial.png") });
   await page.getByTestId("chat-cancel-button").click();
   await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");

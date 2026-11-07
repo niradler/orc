@@ -79,7 +79,12 @@ export type AgentEvent =
     }
   | {
       type: "result";
-      data: { runtimeSessionId?: string | undefined; usage?: unknown };
+      data: {
+        runtimeSessionId?: string | undefined;
+        usage?: unknown;
+        durationMs?: number | undefined;
+        outcome?: "completed" | "stopped" | "failed" | undefined;
+      };
     }
   | { type: "error"; data: string }
   | { type: "system_status"; data: string };

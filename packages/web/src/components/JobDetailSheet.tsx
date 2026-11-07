@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Pencil, Play, Power } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { Job, JobRun } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
 import { ErrorState } from "@/components/ErrorState";
@@ -53,7 +53,8 @@ export function JobDetailSheet({
   } = useJobRuns(job?.id ?? null);
   const triggerJob = useTriggerJob();
   const updateJob = useUpdateJob();
-  const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [expandedRun, setExpandedRun] = useState<string | null>(() => params.get("run"));
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>

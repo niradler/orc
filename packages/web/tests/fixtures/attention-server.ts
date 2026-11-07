@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "@orc/agent-runtime";
 
-const home = mkdtempSync(join(tmpdir(), "orc-attention-e2e-"));
+const home =
+  process.env.ORC_ATTENTION_FIXTURE_HOME ?? mkdtempSync(join(tmpdir(), "orc-attention-e2e-"));
 Object.assign(process.env, {
   HOME: home,
   USERPROFILE: home,

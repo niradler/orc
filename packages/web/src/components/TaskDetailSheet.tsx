@@ -172,6 +172,29 @@ export function TaskDetailSheet({
             ) : task ? (
               <div className="space-y-2 pr-6">
                 <SheetTitle>{task.title}</SheetTitle>
+                {task.github_sync && (
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <a
+                      data-testid="task-github-issue-link"
+                      href={task.github_issue ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                    >
+                      GitHub #{task.github_sync.number}
+                    </a>
+                    <p>
+                      Title, description and labels come from GitHub. Status changes sync both ways.
+                    </p>
+                    {task.github_sync.error ? (
+                      <p role="alert" className="text-error">
+                        {task.github_sync.error}
+                      </p>
+                    ) : task.status !== task.github_sync.status ? (
+                      <p>Status awaiting GitHub sync.</p>
+                    ) : null}
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <StatusBadge status={task.status} />
                   <PriorityBadge priority={task.priority} />
@@ -520,8 +543,7 @@ function EditTaskDialog({
     updateTask.mutate(
       {
         id: task.id,
-        title: title.trim(),
-        body: body.trim() || null,
+        ...(task.github_sync ? {} : { title: title.trim(), body: body.trim() || null }),
         status,
         priority,
         due_at: dueAt || null,
@@ -594,6 +616,7 @@ function EditTaskDialog({
                   aria-label="Title"
                   data-testid="edit-task-title"
                   value={title}
+                  readOnly={Boolean(task.github_sync)}
                   onChange={(e) => setTitle(e.target.value)}
                   className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
@@ -603,6 +626,7 @@ function EditTaskDialog({
                 aria-label="Body"
                 data-testid="edit-task-body"
                 value={body}
+                readOnly={Boolean(task.github_sync)}
                 onChange={setBody}
                 rows={4}
               />
@@ -660,6 +684,7 @@ function EditTaskDialog({
                   <Label className="font-label text-xs font-medium text-outline">Project</Label>
                   <Select
                     value={projectId || "__none__"}
+                    disabled={Boolean(task.github_sync)}
                     onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
                   >
                     <SelectTrigger

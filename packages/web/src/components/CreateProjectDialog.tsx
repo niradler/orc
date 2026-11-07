@@ -1,7 +1,9 @@
+import { DEFAULT_GITHUB_STATUS_LABELS, type GithubSyncConfig } from "@orc/core/github-sync";
 import { useState } from "react";
 import type { CreateProjectInput, ProjectStatus } from "@/api/client";
 import { api } from "@/api/client";
 import { FormDialog } from "@/components/FormDialog";
+import { GithubSyncFields } from "@/components/GithubSyncFields";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -40,6 +42,10 @@ export function CreateProjectDialog({
   const [tags, setTags] = useState("");
   const [scope, setScope] = useState("");
   const [gitRemoteUrl, setGitRemoteUrl] = useState("");
+  const [githubSync, setGithubSync] = useState<GithubSyncConfig>({
+    enabled: false,
+    status_labels: DEFAULT_GITHUB_STATUS_LABELS,
+  });
   const [maxWorkers, setMaxWorkers] = useState("");
   const createProject = useCreateProject();
   const [firstTask, setFirstTask] = useState(true);
@@ -54,7 +60,19 @@ export function CreateProjectDialog({
       gitRemoteUrl,
       maxWorkers,
       firstTask,
-    ]) !== JSON.stringify(["", "", "active", "", "", "", "", true]);
+      githubSync,
+    ]) !==
+    JSON.stringify([
+      "",
+      "",
+      "active",
+      "",
+      "",
+      "",
+      "",
+      true,
+      { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
+    ]);
   function resetForm() {
     steps.reset();
     setName("");
@@ -63,6 +81,7 @@ export function CreateProjectDialog({
     setTags("");
     setScope("");
     setGitRemoteUrl("");
+    setGithubSync({ enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS });
     setMaxWorkers("");
     setFirstTask(true);
     setFolderError("");
@@ -84,6 +103,7 @@ export function CreateProjectDialog({
         : undefined,
       scope: scope.trim() || undefined,
       git_remote_url: gitRemoteUrl.trim() || undefined,
+      github_sync: githubSync,
       max_workers: maxWorkers ? Number(maxWorkers) : undefined,
     };
     createProject.mutate(input, {
@@ -250,6 +270,7 @@ export function CreateProjectDialog({
                     />
                     Create the first task after saving
                   </label>
+                  <GithubSyncFields value={githubSync} onChange={setGithubSync} />
                 </FormStepPanel>
                 {createProject.error && (
                   <p role="alert" className="text-sm text-destructive md:col-span-2">

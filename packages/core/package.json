@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./notifications": "./src/notifications.ts",
     "./usage": "./src/usage.ts",
     "./session-files": "./src/session-files.ts",
     "./session-file-types": "./src/session-file-types.ts",
@@ -21,6 +22,7 @@
     "./mcp-settings": "./src/mcp-settings.ts",
     "./process-supervisor": "./src/process-supervisor.ts",
     "./github-auth": "./src/github-auth.ts",
+    "./github-sync": "./src/github-sync.ts",
     "./job-actions": "./src/job-actions.ts",
     "./changes": "./src/changes.ts",
     ".": "./src/index.ts",

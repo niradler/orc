@@ -1,11 +1,10 @@
-import { Bell, Menu, MessageSquare } from "lucide-react";
+import { Menu, MessageSquare } from "lucide-react";
 import { type Ref, useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { useNeedsYouCount, useNeedsYouTitle } from "@/hooks/useNeedsYouCount";
 import { useProjects } from "@/hooks/useProjects";
 import { persistTheme, useTheme } from "@/lib/theme";
 import { workspaceDestination, workspacePage, workspaceSection } from "@/lib/workspace-navigation";
@@ -41,8 +40,6 @@ export function WorkspaceHeader({
     }
   }, [pathname]);
   const { data: projects } = useProjects({ status: "active" });
-  const totalAttention = useNeedsYouCount();
-  useNeedsYouTitle(totalAttention);
   const { theme, setTheme, error: themeError } = useTheme();
   const section = workspaceSection(pathname);
   const name =
@@ -75,21 +72,6 @@ export function WorkspaceHeader({
           <span className="mx-2">/</span>
           {workspacePage(pathname)?.label ?? "Projects"}
         </div>
-        <NavLink
-          data-testid="attention-indicator"
-          to={workspaceDestination("/attention", projectId, search)}
-          aria-label={`Attention needed: ${totalAttention} requests`}
-          className={`hidden md:inline-flex ${buttonVariants({
-            variant: totalAttention ? "outline" : "ghost",
-            size: "sm",
-          })}`}
-        >
-          <Bell size={16} />
-          <span className="hidden sm:inline">Attention</span>
-          {totalAttention > 0 && (
-            <span className="rounded bg-surface-highest px-1.5 text-xs">{totalAttention}</span>
-          )}
-        </NavLink>
         <AgentNotificationBell />
         <CommandPalette
           projectId={projectId}

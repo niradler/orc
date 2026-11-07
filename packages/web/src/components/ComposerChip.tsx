@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from "react";
 
 export const composerChip =
-  "inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border px-2 text-xs text-on-surface-variant hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 data-[state=open]:bg-surface-highest data-[state=open]:text-on-surface max-sm:h-11 pointer-coarse:h-11";
+  "composer-chip inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border px-2 text-xs text-on-surface-variant hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 data-[state=open]:bg-surface-highest data-[state=open]:text-on-surface max-sm:h-11 pointer-coarse:h-11";
 
 export const chipOption =
   "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 aria-checked:bg-surface-highest max-sm:min-h-11 pointer-coarse:min-h-11";

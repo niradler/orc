@@ -21,6 +21,10 @@ import {
   ChannelConditionBuilder,
   channelConditionSummary,
 } from "@/components/ChannelConditionBuilder";
+import {
+  ChannelNotificationFilters,
+  ChannelNotificationSettings,
+} from "@/components/ChannelNotificationSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useEnabledAgents } from "@/hooks/useAgents";
@@ -149,11 +153,16 @@ function TargetEditor({
           onChange={(v) => setTarget({ ...target, inbound: v })}
         />
         <Check
-          label="Questions and approvals"
+          label="Interactive questions and approvals"
           checked={target.attention}
           onChange={(v) => setTarget({ ...target, attention: v })}
         />
       </div>
+      <ChannelNotificationFilters
+        target={target}
+        projects={projects}
+        onChange={(notifications) => setTarget({ ...target, notifications })}
+      />
       <details>
         <summary className="min-h-11 cursor-pointer py-3 text-sm">
           Project restrictions ({target.project_ids.length || "all projects"})
@@ -1282,6 +1291,7 @@ export function ChannelSettings({ active }: { active: boolean }) {
       <p className="text-sm text-muted-foreground">
         Send messages to approved recipients and route incoming messages to agents.
       </p>
+      <ChannelNotificationSettings active={active} />
       {(error || channels.error || providers.error) && (
         <p role="alert" className="break-words text-sm text-error">
           {error || channels.error?.message || providers.error?.message}

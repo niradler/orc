@@ -91,7 +91,10 @@ test("should show queued ORC answers and rebuild the chat when its session chang
   await expect(refresh).toHaveClass(/text-warning/);
   await expect(refresh).toHaveAccessibleName("Refresh session: it changed outside this chat");
   await refresh.click();
-  await expect(page.getByText("Token expired; renew it.")).toBeVisible();
+  await expect(
+    page.getByTestId("chat-messages").getByText("Token expired; renew it."),
+  ).toBeVisible();
+  await expect(page.getByTestId("chat-live-announcer")).toContainText("Token expired; renew it.");
   expect(rebuilt).toBe(1);
   await expect(refresh).not.toHaveAttribute("data-stale", "true");
   await expect(refresh).toHaveAccessibleName("Refresh session");

@@ -10,6 +10,16 @@ import {
   ChannelViewSchema,
 } from "@orc/core/channels";
 import { ValidationError } from "@orc/core/errors";
+import {
+  NotificationDeliverySchema,
+  NotificationFilterSchema,
+  NotificationForwardingPolicySchema,
+  NotificationTypeSchema,
+  notificationMatches,
+  notificationSummary,
+} from "@orc/core/notifications";
+import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
+import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
 
 export function createChannelsRouter(service: () => ChannelService = getChannelService) {
@@ -27,6 +37,88 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
     candidate: z.object({ chat_id: z.string(), user_id: z.string(), name: z.string() }).nullable(),
     confirmed: z.boolean(),
   });
+
+  const forwarding = () => new NotificationDeliveryStore(service().store.db);
+  app.use("/channels/notification-policy", bodyLimit({ maxSize: 4096 }));
+  app.use("/channels/notification-preview", bodyLimit({ maxSize: 16384 }));
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/channels/notification-policy",
+      tags: ["Channels"],
+      summary: "Read automatic notification forwarding policy",
+      responses: { 200: json(NotificationForwardingPolicySchema) },
+    }),
+    (c) => c.json(forwarding().policy(), 200),
+  );
+  app.openapi(
+    createRoute({
+      method: "put",
+      path: "/channels/notification-policy",
+      tags: ["Channels"],
+      summary: "Enable or pause notification forwarding without disconnecting channels",
+      request: {
+        body: { content: { "application/json": { schema: NotificationForwardingPolicySchema } } },
+      },
+      responses: { 200: json(NotificationForwardingPolicySchema) },
+    }),
+    (c) => {
+      const store = forwarding();
+      store.syncDestinations(service().connections());
+      return c.json(store.savePolicy(c.req.valid("json")), 200);
+    },
+  );
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/channels/notification-deliveries",
+      tags: ["Channels"],
+      summary: "Inspect recent forwarding status and safe delivery errors",
+      request: { query: z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) }) },
+      responses: { 200: json(z.array(NotificationDeliverySchema)) },
+    }),
+    (c) => c.json(forwarding().list(c.req.valid("query").limit), 200),
+  );
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/channels/notification-preview",
+      tags: ["Channels"],
+      summary: "Preview draft notification filters without sending a message",
+      request: {
+        body: {
+          content: {
+            "application/json": {
+              schema: z
+                .object({
+                  filter: NotificationFilterSchema,
+                  project_ids: z.array(z.string().min(1).max(100)).max(100).default([]),
+                  event: z
+                    .object({
+                      type: NotificationTypeSchema,
+                      level: z.enum(["needs-you", "done"]),
+                      project_id: z.string().min(1).max(100).nullable().default(null),
+                    })
+                    .strict(),
+                })
+                .strict(),
+            },
+          },
+        },
+      },
+      responses: { 200: json(z.object({ matches: z.boolean(), summary: z.string() })) },
+    }),
+    (c) => {
+      const input = c.req.valid("json");
+      return c.json(
+        {
+          matches: notificationMatches(input.event, input.filter, input.project_ids),
+          summary: notificationSummary(input.event),
+        },
+        200,
+      );
+    },
+  );
 
   app.openapi(
     createRoute({

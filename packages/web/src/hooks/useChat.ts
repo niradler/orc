@@ -12,6 +12,7 @@ import {
   type ChatQuestion,
   ChatSettingsSchema,
   type ChatThread,
+  type ChatTurn,
   type ChatWorkspace,
 } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
@@ -109,6 +110,7 @@ export interface ChatTab {
   refreshing: boolean;
   streamText: string;
   activity: ChatActivity[];
+  turn?: ChatTurn | undefined;
   error: string | null;
   permissions: PendingPermission[];
   questions: ChatQuestion[];
@@ -325,12 +327,18 @@ function useChatController() {
               : message,
           ),
         }));
-      } else if (event.type === "capabilities")
+      } else if (event.type === "turn") update(key, () => ({ turn: event.turn }));
+      else if (event.type === "capabilities")
         update(key, (tab) => ({
           thread: tab.thread ? { ...tab.thread, capabilities: event.capabilities } : tab.thread,
         }));
       else if (event.type === "text")
         update(key, (tab) => ({ streamText: tab.streamText + event.text }));
+      else if (event.type === "narration")
+        update(key, (tab) => ({
+          streamText: "",
+          activity: appendChatActivity(tab.activity, event),
+        }));
       else if (event.type === "error") update(key, () => ({ error: event.message }));
       else if (event.type === "session")
         update(key, (tab) => ({
@@ -360,7 +368,7 @@ function useChatController() {
     (key: string) =>
       update(key, (tab) => ({
         messages:
-          tab.streamText || tab.activity.length
+          tab.streamText || tab.activity.length || tab.turn?.outcome
             ? [
                 ...tab.messages,
                 {
@@ -370,6 +378,7 @@ function useChatController() {
                   activity: tab.activity,
                   timestamp: Date.now(),
                   agent: tab.respondingAgent,
+                  turn: tab.turn,
                 },
               ]
             : tab.messages,
@@ -377,6 +386,7 @@ function useChatController() {
         reconnecting: false,
         streamText: "",
         activity: [],
+        turn: undefined,
         permissions: [],
         questions: [],
         attention: tab.attention || (tab.streaming && key !== activeRef.current),
@@ -740,7 +750,7 @@ function useChatController() {
       let accepted = false;
       update(key, (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== userMessage.id),
-        messages: [...tab.messages, userMessage],
+        messages: [...tab.messages, { ...userMessage, timestamp: Date.now() }],
         streaming: true,
         streamText: "",
         activity: [],
@@ -748,6 +758,7 @@ function useChatController() {
         runId: "",
         assistantId: crypto.randomUUID(),
         respondingAgent: config.agent,
+        turn: undefined,
       }));
       await follow(
         key,
@@ -1149,6 +1160,7 @@ function useChatController() {
     cancel,
     streamingId: tab.assistantId,
     streamingAgent: tab.respondingAgent,
+    turn: tab.turn,
   };
 }
 const ChatContext = createContext<ReturnType<typeof useChatController> | null>(null);
@@ -1190,26 +1202,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChatController();
   useChatLink(chat);
   const messages = useMemo<ThreadMessageLike[]>(() => {
-    const history: ThreadMessageLike[] = chat.messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: [{ type: "text", text: message.content }],
-      createdAt: new Date(message.timestamp),
-      metadata: {
-        custom: {
-          agent: message.agent,
-          activity: message.activity,
-          attachments: message.attachments,
+    const history: ThreadMessageLike[] = chat.messages.map((message) => {
+      return {
+        id: message.id,
+        role: message.role,
+        content: [{ type: "text", text: message.content }],
+        createdAt: new Date(message.timestamp),
+        metadata: {
+          custom: {
+            agent: message.agent,
+            activity: message.activity,
+            attachments: message.attachments,
+            turn: message.turn,
+          },
         },
-      },
-    }));
+      };
+    });
     if (chat.streaming)
       history.push({
         id: chat.streamingId,
         role: "assistant",
         content: [{ type: "text", text: chat.streamText }],
         status: { type: "running" },
-        metadata: { custom: { agent: chat.streamingAgent, activity: chat.activity } },
+        metadata: {
+          custom: {
+            agent: chat.streamingAgent,
+            activity: chat.activity,
+            turn: chat.turn,
+            live: true,
+          },
+        },
       });
     return history;
   }, [
@@ -1219,6 +1241,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     chat.streamingAgent,
     chat.streamText,
     chat.activity,
+    chat.turn,
   ]);
   const runtime = useExternalStoreRuntime({
     messages,

@@ -189,10 +189,19 @@ export function ChatWorkspaceControls() {
             ) : (
               <Folder size={14} aria-hidden="true" className="shrink-0" />
             )}
-            <span data-testid="chat-workspace-folder-name" className="min-w-0 truncate">
+            <span
+              data-chip-label
+              data-testid="chat-workspace-folder-name"
+              className="min-w-0 truncate"
+            >
               {folderLabel}
             </span>
-            <ChevronDown size={12} aria-hidden="true" className="shrink-0 opacity-60" />
+            <ChevronDown
+              data-chip-label
+              size={12}
+              aria-hidden="true"
+              className="shrink-0 opacity-60"
+            />
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -370,8 +379,15 @@ export function ChatWorkspaceControls() {
               ) : (
                 <GitBranch size={14} aria-hidden="true" className="shrink-0" />
               )}
-              <span className="min-w-0 truncate">{branchChipLabel({ branch, worktree })}</span>
-              <ChevronDown size={12} aria-hidden="true" className="shrink-0 opacity-60" />
+              <span data-chip-label className="min-w-0 truncate">
+                {branchChipLabel({ branch, worktree })}
+              </span>
+              <ChevronDown
+                data-chip-label
+                size={12}
+                aria-hidden="true"
+                className="shrink-0 opacity-60"
+              />
             </button>
           </PopoverTrigger>
           <PopoverContent
