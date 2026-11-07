@@ -540,7 +540,7 @@ test.describe("Scratchpads", () => {
   });
 
   test("the command palette opens the new scratchpad dialog", async ({ page }) => {
-    await gotoView(page, "dashboard");
+    await gotoView(page, "activity");
     await page.getByTestId("command-palette-open").click();
     await page.getByTestId("command-palette-input").fill("new scratchpad");
     await page.locator('[data-command-id="new-scratchpad"]').click();

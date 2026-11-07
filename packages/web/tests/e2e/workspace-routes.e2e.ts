@@ -94,25 +94,18 @@ test("Chat is generic and its open view restores from the URL across breakpoints
   await expect(page.getByTestId("chat-panel")).toBeVisible();
 });
 
-test("root and legacy Activity links preserve shared state and mobile navigation returns focus", async ({
-  page,
-}) => {
+test("root link preserves shared state and mobile navigation returns focus", async ({ page }) => {
   await gotoView(page, "tasks");
   await page.goto("/?project=unassigned&chat=open#shared-view");
   await expect(page.getByTestId("chat-panel")).toBeVisible();
+  await expect(page.getByTestId("view-title")).toHaveText("Activity");
   expect(new URL(page.url()).pathname).toBe("/activity");
   expect(new URL(page.url()).searchParams.get("project")).toBe("unassigned");
   expect(new URL(page.url()).hash).toBe("#shared-view");
   await expect(
     page.getByTestId("workspace-sidebar").locator("nav > button").first(),
   ).toHaveAttribute("data-testid", "nav-activity");
-  await page.goto("/overview?project=unassigned#shared-view");
-  await expect(page).toHaveURL(/\/activity\?/);
-  await page.goto("/dashboard?project=unassigned#shared-view");
-  await expect(page.getByTestId("view-title")).toHaveText("Activity");
-  expect(new URL(page.url()).pathname).toBe("/activity");
-  expect(new URL(page.url()).searchParams.get("project")).toBe("unassigned");
-  expect(new URL(page.url()).hash).toBe("#shared-view");
+  await page.goto("/activity?project=unassigned");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("mobile-nav-open").click();
   await expect(page.getByTestId("mobile-nav-drawer")).toBeVisible();

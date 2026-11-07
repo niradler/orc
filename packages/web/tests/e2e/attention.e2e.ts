@@ -45,7 +45,7 @@ test("should show dated unavailable questions and contextual help on desktop and
       seed.once("error", reject);
     }),
   ).toBe(0);
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${entry.id}`);
   await reviewAttentionRequest(card);
   await card.getByTestId("attention-details-toggle").click();
@@ -159,7 +159,7 @@ test("should continue a waiting CLI after answering through the reloaded inbox",
   );
   child.stdin.end();
   try {
-    await gotoView(page, "attention");
+    await gotoView(page, "notifications");
     await expect
       .poll(async () => {
         if (child.exitCode !== null) throw new Error(`CLI exited ${child.exitCode}: ${errors}`);
@@ -207,7 +207,7 @@ test("should show exact approval action, retain denial after reload and allow fr
     origin: { backend: "claude", session_id: tid("approval"), request_id: "approval" },
     action: { tool: "Bash", input: { command: "pwd" }, cwd: "/workspace", host: "demo-host" },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${approval.id}`);
   await expect(card.getByTestId("attention-review")).toContainText("demo-host");
   await reviewAttentionRequest(card);
@@ -243,7 +243,7 @@ test("should preserve multiple selections and cancel a pending request", async (
     multi_select: true,
     origin: { backend: "claude", session_id: tid("multi"), request_id: "checks" },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${question.id}`);
   await reviewAttentionRequest(card);
   await card.getByTestId("attention-choice-Unit").click();
@@ -280,7 +280,7 @@ test("should allow dismissing an answer its agent never collects", async ({ page
     version: entry.version,
     response: { kind: "question", answer: "Yes" },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${entry.id}`);
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-state")).toHaveText(
@@ -320,7 +320,7 @@ test("should show whether ORC pushed an answer or the agent read it", async ({ p
       ),
     });
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const state = (id: string) =>
     page.getByTestId(`attention-request-${id}`).getByTestId("attention-state");
   await expect(state(read.id)).toHaveText("Answered · agent hasn't picked it up");

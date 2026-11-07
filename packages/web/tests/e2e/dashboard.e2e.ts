@@ -18,7 +18,7 @@ test.describe("Dashboard", () => {
       priority: "normal",
     });
     try {
-      await gotoView(page, "dashboard");
+      await gotoView(page, "activity");
       await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
 
       // Stat cards are present
@@ -55,7 +55,7 @@ test.describe("Dashboard", () => {
       status: "active",
     });
     try {
-      await gotoView(page, "dashboard");
+      await gotoView(page, "activity");
       await selectProject(page, project.id);
       // meta shows project name when scoped to a specific project
       await expect(page.getByTestId("view-meta")).toContainText(name);
@@ -79,7 +79,7 @@ test.describe("Dashboard", () => {
           description: `Dashboard ${name} memory`,
           content: "Counted on the dashboard",
         });
-      await gotoView(page, "dashboard");
+      await gotoView(page, "activity");
       await selectProject(page, project.id);
       const memoriesCard = page.locator(`[data-testid="stat-card"][data-stat-label="Memories"]`);
       await expect(memoriesCard.getByTestId("stat-card-value")).toHaveText("2");
