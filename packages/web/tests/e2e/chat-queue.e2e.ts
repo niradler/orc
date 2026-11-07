@@ -316,7 +316,9 @@ for (const width of [390, 1440]) {
     ]);
   });
 
-  test(`should keep the queue compact and collapsed by default at ${width}px`, async ({ page }) => {
+  test(`should keep the queue compact and collapsed by default at ${width}px`, async ({
+    page,
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const panel = page.getByTestId("chat-panel").filter({ visible: true });
     await send(panel, "Respond after 10000ms. Reply with exactly: FIRST.");
@@ -327,6 +329,7 @@ for (const width of [390, 1440]) {
     await expect(toggle).toHaveText("2 pending");
     await expect(queue).not.toHaveAttribute("open");
     expect((await queue.boundingBox())?.height).toBeLessThanOrEqual(46);
+    await page.screenshot({ path: testInfo.outputPath("pending-collapsed.png") });
     await toggle.focus();
     await page.keyboard.press("Enter");
     await expect(queue).toHaveAttribute("open");
@@ -336,6 +339,14 @@ for (const width of [390, 1440]) {
     expect(await queue.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
+    if (width < 640) {
+      for (const action of ["up", "down", "edit", "force", "remove"]) {
+        const box = await rows.first().getByTestId(`chat-queued-${action}`).boundingBox();
+        expect(box?.width).toBeGreaterThanOrEqual(44);
+        expect(box?.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    await page.screenshot({ path: testInfo.outputPath("pending-expanded.png") });
     await toggle.focus();
     await page.keyboard.press("Enter");
     await expect(queue).not.toHaveAttribute("open");
@@ -415,6 +426,35 @@ test("a busy session keeps later messages queued and sends them in order", async
     "Reply with exactly: SECOND.",
     "Reply with exactly: THIRD.",
   ]);
+});
+
+test("should send again after removing the last busy-held message", async ({ page }) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await page.route("**/api/chat/stream", async (route) => {
+    if (route.request().postDataJSON()?.messages?.[0]?.content === "REMOVE BUSY") {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "All chat workers are busy. Try again when a response finishes.",
+        }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await send(panel, "REMOVE BUSY");
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  await expandQueue(panel);
+  await panel.getByTestId("chat-queued-remove").click();
+  await expect(panel.getByTestId("chat-message-queue")).toHaveCount(0);
+  // Let the previous hold's poll observe the emptied queue before submitting again.
+  await page.waitForTimeout(1500);
+  await send(panel, "Reply with exactly: RECOVERED.");
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("RECOVERED");
+  expect(sent).toEqual(["REMOVE BUSY", "Reply with exactly: RECOVERED."]);
+  await expect(panel.getByTestId("chat-error")).toHaveCount(0);
 });
 
 test("a full worker pool retries the queued message without an error", async ({ page }) => {

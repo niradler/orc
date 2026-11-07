@@ -993,6 +993,7 @@ function useChatController() {
     (id: string) =>
       update(activeRef.current, (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== id),
+        queueHeld: tab.queued.some((entry) => entry.id !== id) && tab.queueHeld,
         queuedFiles: Object.fromEntries(
           Object.entries(tab.queuedFiles).filter(([key]) => key !== id),
         ),

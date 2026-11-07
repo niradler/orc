@@ -944,7 +944,7 @@ function QueuedMessage({
         data-testid="chat-queued-remove"
         aria-label="Remove pending message"
         onClick={onRemove}
-        className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+        className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
       >
         <Trash2 size={14} />
       </button>
@@ -1003,7 +1003,7 @@ function QueuedMessage({
               disabled={!canMoveUp}
               aria-label="Move pending message up"
               onClick={onMoveUp}
-              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+              className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
             >
               <ArrowUp size={14} />
             </button>
@@ -1015,7 +1015,7 @@ function QueuedMessage({
               disabled={!canMoveDown}
               aria-label="Move pending message down"
               onClick={onMoveDown}
-              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+              className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
             >
               <ArrowDown size={14} />
             </button>
@@ -1026,7 +1026,7 @@ function QueuedMessage({
               data-testid="chat-queued-edit"
               onClick={onEdit}
               aria-label="Edit pending message"
-              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+              className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
             >
               <Pencil size={14} />
             </button>
@@ -1041,7 +1041,7 @@ function QueuedMessage({
               disabled={forceDisabled}
               aria-label="Force send pending message"
               onClick={onForce}
-              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+              className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
             >
               <ArrowUp size={14} />
             </button>
