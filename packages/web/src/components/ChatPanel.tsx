@@ -132,6 +132,7 @@ export function ChatPanel({
     setQueuedDraft,
     editQueued,
     removeQueued,
+    moveQueued,
     forceQueued,
     send,
     steer,
@@ -679,15 +680,19 @@ export function ChatPanel({
                     <span className="min-w-0 truncate">{answer.title}</span>
                   </li>
                 ))}
-                {queued.map((entry) => (
+                {queued.map((entry, index) => (
                   <QueuedMessage
                     key={entry.id}
                     content={entry.content}
                     editing={editingQueuedId === entry.id}
                     draft={queuedDraft}
                     onDraftChange={setQueuedDraft}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < queued.length - 1}
                     forceDisabled={refreshing || !!editingQueuedId}
                     onEdit={() => editQueued(entry.id)}
+                    onMoveUp={() => moveQueued(entry.id, -1)}
+                    onMoveDown={() => moveQueued(entry.id, 1)}
                     onSave={(content) => editQueued(entry.id, content)}
                     onCancel={() => editQueued(null)}
                     onForce={() => forceQueued(entry.id)}
@@ -906,8 +911,12 @@ function QueuedMessage({
   editing,
   draft,
   onDraftChange,
+  canMoveUp,
+  canMoveDown,
   forceDisabled,
   onEdit,
+  onMoveUp,
+  onMoveDown,
   onSave,
   onCancel,
   onForce,
@@ -917,8 +926,12 @@ function QueuedMessage({
   editing: boolean;
   draft: string;
   onDraftChange: (draft: string) => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   forceDisabled: boolean;
   onEdit: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onSave: (content: string) => void;
   onCancel: () => void;
   onForce: () => void;
@@ -983,6 +996,30 @@ function QueuedMessage({
           >
             {content}
           </p>
+          <ActionHelp label="Move pending message up">
+            <button
+              type="button"
+              data-testid="chat-queued-up"
+              disabled={!canMoveUp}
+              aria-label="Move pending message up"
+              onClick={onMoveUp}
+              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+            >
+              <ArrowUp size={14} />
+            </button>
+          </ActionHelp>
+          <ActionHelp label="Move pending message down">
+            <button
+              type="button"
+              data-testid="chat-queued-down"
+              disabled={!canMoveDown}
+              aria-label="Move pending message down"
+              onClick={onMoveDown}
+              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+            >
+              <ArrowDown size={14} />
+            </button>
+          </ActionHelp>
           <ActionHelp label="Edit pending message">
             <button
               type="button"

@@ -103,6 +103,7 @@ export interface ChatTab {
   editingQueuedId: string | null;
   queuedDraft: string;
   queuePaused: boolean;
+  queueHeld: boolean;
   historyBefore: number | null;
   loadingHistory: boolean;
   streaming: boolean;
@@ -136,6 +137,7 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     editingQueuedId: null,
     queuedDraft: "",
     queuePaused: false,
+    queueHeld: false,
     historyBefore: null,
     loadingHistory: false,
     streaming: false,
@@ -186,6 +188,16 @@ function savePreferences(config: ChatConfig): void {
 }
 const message = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
+
+const BUSY_CONFLICTS = new Set([
+  "This session is already responding.",
+  "All chat workers are busy. Try again when a response finishes.",
+  "All upload workers are busy. Try again shortly.",
+]);
+
+function waitingConflict(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.status === 409 && BUSY_CONFLICTS.has(cause.message);
+}
 
 function useChatController() {
   const [params] = useSearchParams();
@@ -238,6 +250,7 @@ function useChatController() {
   const streams = useRef(
     new Map<string, { controller: AbortController; cancel: boolean; closed: boolean }>(),
   );
+  const queueHolds = useRef(new Map<string, AbortController>());
   const defaults = useRef(initial.config);
 
   const mutate = useCallback((change: (tabs: ChatTab[]) => ChatTab[]) => {
@@ -291,6 +304,8 @@ function useChatController() {
     () => () => {
       for (const stream of streams.current.values()) stream.controller.abort();
       streams.current.clear();
+      for (const hold of queueHolds.current.values()) hold.abort();
+      queueHolds.current.clear();
     },
     [],
   );
@@ -402,7 +417,7 @@ function useChatController() {
       key: string,
       open: (signal: AbortSignal) => Promise<Response>,
       onOpen?: () => void,
-    ): Promise<boolean> => {
+    ): Promise<boolean | "busy"> => {
       streams.current.get(key)?.controller.abort();
       const stream = { controller: new AbortController(), cancel: false, closed: false };
       streams.current.set(key, stream);
@@ -410,6 +425,7 @@ function useChatController() {
       let connect = open;
       let retried = false;
       let failures = 0;
+      let busy = false;
       try {
         while (current() && !stream.controller.signal.aborted) {
           const connection = new AbortController();
@@ -513,6 +529,10 @@ function useChatController() {
         }
         return true;
       } catch (cause) {
+        if (current() && !stream.controller.signal.aborted && waitingConflict(cause)) {
+          busy = true;
+          return "busy";
+        }
         if (current() && !stream.controller.signal.aborted)
           update(key, () => ({
             error: `${message(cause, "The chat connection failed.")} Use Refresh to reconnect.`,
@@ -521,7 +541,7 @@ function useChatController() {
       } finally {
         if (current()) {
           streams.current.delete(key);
-          finish(key);
+          if (!busy) finish(key);
         }
       }
     },
@@ -730,6 +750,43 @@ function useChatController() {
     }
   }, [update, find]);
 
+  const releaseQueue = useCallback(
+    (key: string) => {
+      queueHolds.current.get(key)?.abort();
+      const controller = new AbortController();
+      queueHolds.current.set(key, controller);
+      const signal = controller.signal;
+      const owns = () => queueHolds.current.get(key) === controller;
+      void (async () => {
+        try {
+          while (!signal.aborted && owns()) {
+            await waitToReconnect(1000, signal, wakeOnConnectivity);
+            if (signal.aborted || !owns()) return;
+            const tab = find(key);
+            if (!tab?.queueHeld || tab.queued.length === 0) return;
+            if (tab.queuePaused || tab.streaming || tab.refreshing) continue;
+            const threadId = tab.thread?.id;
+            if (threadId) {
+              try {
+                const session = await api.chat.session(threadId);
+                if (signal.aborted || !owns()) return;
+                if (session.running) continue;
+              } catch {
+                if (signal.aborted || !owns()) return;
+              }
+            }
+            if (!owns()) return;
+            update(key, (current) => (current.queueHeld ? { queueHeld: false } : {}));
+            return;
+          }
+        } finally {
+          if (owns()) queueHolds.current.delete(key);
+        }
+      })();
+    },
+    [find, update],
+  );
+
   const sendQueued = useCallback(
     async (key: string, userMessage: ChatMessage) => {
       const current = find(key);
@@ -739,6 +796,7 @@ function useChatController() {
         current.streaming ||
         current.refreshing ||
         current.queuePaused ||
+        current.queueHeld ||
         current.editingQueuedId ||
         current.error ||
         current.queued[0]?.id !== userMessage.id ||
@@ -760,7 +818,7 @@ function useChatController() {
         respondingAgent: config.agent,
         turn: undefined,
       }));
-      await follow(
+      const followed = await follow(
         key,
         async (signal) => {
           let workspace = current.workspace;
@@ -804,6 +862,23 @@ function useChatController() {
           accepted = true;
         },
       );
+      if (followed === "busy") {
+        update(key, (tab) => ({
+          messages: tab.messages.filter((entry) => entry.id !== userMessage.id),
+          queued: tab.queued.some((entry) => entry.id === userMessage.id)
+            ? tab.queued
+            : [userMessage, ...tab.queued],
+          streaming: false,
+          streamText: "",
+          activity: [],
+          error: null,
+          queueHeld: true,
+          runId: "",
+          turn: undefined,
+        }));
+        releaseQueue(key);
+        return;
+      }
       update(key, (tab) => ({
         queuedFiles: Object.fromEntries(
           Object.entries(tab.queuedFiles).filter(([id]) => id !== userMessage.id),
@@ -811,7 +886,7 @@ function useChatController() {
         ...(!accepted && pendingFiles.length ? { files: [...pendingFiles, ...tab.files] } : {}),
       }));
     },
-    [ready, follow, update, find],
+    [ready, follow, update, find, releaseQueue],
   );
   // Reserve a turn synchronously before opening its stream. Background tabs drain their
   // own queues, and an error or explicit Stop leaves remaining messages pending.
@@ -824,6 +899,7 @@ function useChatController() {
         !tab.refreshing &&
         !tab.error &&
         !tab.queuePaused &&
+        !tab.queueHeld &&
         !tab.editingQueuedId &&
         !streams.current.has(tab.key)
       ) {
@@ -935,14 +1011,32 @@ function useChatController() {
       const tab = find(key);
       const entry = tab?.queued.find((entry) => entry.id === id);
       if (!tab || !entry || tab.refreshing || tab.editingQueuedId) return;
+      queueHolds.current.get(key)?.abort();
       update(key, () => ({
         queued: [entry, ...tab.queued.filter((item) => item.id !== id)],
         queuePaused: false,
+        queueHeld: false,
         error: null,
       }));
       stop(key);
     },
     [find, stop, update],
+  );
+  const moveQueued = useCallback(
+    (id: string, direction: -1 | 1) => {
+      update(activeRef.current, (tab) => {
+        const index = tab.queued.findIndex((entry) => entry.id === id);
+        const target = index + direction;
+        if (index < 0 || target < 0 || target >= tab.queued.length) return {};
+        const queued = [...tab.queued];
+        const moved = queued[index];
+        if (!moved) return {};
+        queued.splice(index, 1);
+        queued.splice(target, 0, moved);
+        return { queued };
+      });
+    },
+    [update],
   );
 
   const steeringRequest = useRef<{
@@ -1120,6 +1214,7 @@ function useChatController() {
     setQueuedDraft,
     editQueued,
     removeQueued,
+    moveQueued,
     forceQueued,
     streaming: tab.streaming,
     reconnecting: tab.reconnecting,
