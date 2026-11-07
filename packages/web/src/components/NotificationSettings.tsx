@@ -51,10 +51,13 @@ function TopicToggles({ device }: { device: PushDevice }) {
     update.mutate({ id: device.id, topics });
   };
   return (
-    <fieldset className="space-y-2" disabled={update.isPending}>
+    <fieldset className="space-y-0 sm:space-y-2" disabled={update.isPending}>
       <legend className="mb-1 text-sm font-medium">Notify this device about</legend>
       {PUSH_TOPICS.map((topic) => (
-        <label key={topic} className="flex items-center gap-2 text-sm">
+        <label
+          key={topic}
+          className="flex min-h-11 items-center gap-2 text-sm sm:min-h-0 [@media(pointer:coarse)]:min-h-11"
+        >
           <input
             type="checkbox"
             data-testid={`push-topic-${topic}`}
@@ -90,7 +93,7 @@ function SoundSettings() {
           updates remain in the notification menu.
         </p>
       </div>
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex min-h-11 items-center gap-2 text-sm sm:min-h-0 [@media(pointer:coarse)]:min-h-11">
         <input
           type="checkbox"
           data-testid="notification-sound-enabled"
@@ -130,10 +133,13 @@ function SoundSettings() {
         </Button>
       </div>
       {(projects.data?.length ?? 0) > 0 && (
-        <fieldset className="space-y-1.5" disabled={!prefs.sound}>
+        <fieldset className="space-y-0 sm:space-y-1.5" disabled={!prefs.sound}>
           <legend className="mb-1 text-sm font-medium">Mute projects</legend>
           {projects.data?.map((project) => (
-            <label key={project.id} className="flex items-center gap-2 text-sm">
+            <label
+              key={project.id}
+              className="flex min-h-11 items-center gap-2 text-sm sm:min-h-0 [@media(pointer:coarse)]:min-h-11"
+            >
               <input
                 type="checkbox"
                 data-testid={`notification-mute-${project.id}`}

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
-import { gotoView } from "./_helpers";
+import { gotoView, repoRoot } from "./_helpers";
 
 test.use({ serviceWorkers: "allow" });
 
@@ -100,3 +100,95 @@ test("settings explains and offers device notifications", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
   await expect(page.getByTestId("push-enable")).toBeVisible();
 });
+
+for (const width of [1440, 390]) {
+  test.describe(`subscribed notification settings at ${width}px`, () => {
+    test.use({
+      serviceWorkers: "block",
+      viewport: { width, height: 900 },
+      hasTouch: width < 640,
+      isMobile: width < 640,
+    });
+
+    test("should show and persist the selected Jobs notification topic", async ({ page }) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(Notification, "permission", { get: () => "granted" });
+        Object.defineProperty(navigator.serviceWorker, "getRegistration", {
+          value: async () => ({
+            pushManager: {
+              getSubscription: async () => ({
+                endpoint: "https://fcm.googleapis.com/fcm/send/demo-device",
+                getKey: () => new Uint8Array([1, 2, 3]).buffer,
+              }),
+            },
+          }),
+        });
+      });
+      let device = {
+        id: "demo-notification-device",
+        label: "Demo browser",
+        endpoint_host: "fcm.googleapis.com",
+        topics: ["attention", "chat", "jobs"],
+        created_at: Date.now(),
+        last_success_at: null,
+        failure_count: 0,
+      };
+      const updates: string[][] = [];
+      await page.route("**/api/push/subscriptions**", async (route) => {
+        const method = route.request().method();
+        if (method === "PATCH") {
+          const payload = route.request().postDataJSON() as { topics: string[] };
+          updates.push(payload.topics);
+          device = { ...device, topics: payload.topics };
+        }
+        await route.fulfill({ json: method === "GET" ? [device] : device });
+      });
+      await page.route("**/api/projects**", (route) =>
+        route.fulfill({
+          json: {
+            projects: [{ id: "demo-project", name: "Demo project", status: "active" }],
+            total: 1,
+            has_more: false,
+          },
+        }),
+      );
+      await gotoView(page, "settings");
+      await settingsSection(page, "notifications");
+      const jobs = page.getByTestId("push-topic-jobs");
+      await expect(jobs).toBeChecked();
+      await expect(
+        page.getByText("Job results you asked to be notified about", { exact: true }),
+      ).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      const topics = ["attention", "chat", "jobs"].map((topic) => `push-topic-${topic}`);
+      for (const id of [
+        ...topics,
+        "notification-sound-enabled",
+        "notification-mute-demo-project",
+      ]) {
+        const label = page.locator("label").filter({ has: page.getByTestId(id) });
+        await expect(label).toBeVisible();
+        const box = await label.boundingBox();
+        if (!box) throw new Error(`Missing checkbox label bounds: ${id}`);
+        if (width < 640) {
+          expect(box.height, id).toBeGreaterThanOrEqual(44);
+          expect(box.width, id).toBeGreaterThanOrEqual(44);
+        } else expect(box.height, id).toBeLessThanOrEqual(32);
+      }
+      if (process.env.PW_REVIEW_SCREENSHOTS === "1")
+        await page.screenshot({
+          path: `${repoRoot()}/.claude/docs/pr222-jobs-notifications-${width}.png`,
+          fullPage: true,
+        });
+      await jobs.click();
+      await expect.poll(() => updates).toEqual([["attention", "chat"]]);
+      await expect(jobs).not.toBeChecked();
+      await page.reload();
+      await expect(page.getByTestId("push-topic-jobs")).not.toBeChecked();
+      await expect(page.getByTestId("push-topic-attention")).toBeChecked();
+      await expect(page.getByTestId("push-topic-chat")).toBeChecked();
+    });
+  });
+}

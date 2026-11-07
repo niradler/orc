@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopOwnedProcess } from "./stop-process";
+import { resolveTestDatabasePath } from "./test-database.js";
 
 const commands = new Set<Bun.Subprocess>();
 
@@ -102,11 +103,7 @@ async function createShard(index: number): Promise<Shard> {
   const port = process.env.PW_API_PORT ?? String(await freePort());
   await assertPortFree(Number(port));
   const home = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
-  const dbPath = process.env.PW_DB_PATH ?? join(home, "state.db");
-  if (process.env.PW_DB_PATH && existsSync(dbPath)) {
-    rmSync(home, { recursive: true, force: true });
-    throw new Error("PW_DB_PATH must name a new test database; existing paths are never adopted");
-  }
+  const dbPath = explicitDb ?? join(home, "state.db");
   return {
     port,
     dbPath,
@@ -162,7 +159,7 @@ async function runExit(
 
 const count = shardCount(playwrightArgs);
 const explicitPort = process.env.PW_API_PORT;
-const explicitDb = process.env.PW_DB_PATH;
+const explicitDb = resolveTestDatabasePath(process.env.PW_DB_PATH);
 if (count > 1 && (explicitPort || explicitDb)) {
   throw new Error("PW_SHARDS greater than 1 cannot share PW_API_PORT or PW_DB_PATH");
 }
