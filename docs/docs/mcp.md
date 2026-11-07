@@ -1,5 +1,18 @@
 # MCP
 
+The `github_sync` tool synchronizes a project's GitHub issues into ordinary ORC
+tasks. Pass `project` (name), optional `config: { enabled, status_labels }`, and
+`run` (default `true`). Set `run: false` to inspect or save configuration only.
+Omitting `status_labels` uses the defaults; custom maps must contain every status
+with distinct labels. The tool respects the connection's selected projects and
+requires the running API for configuration writes and sync. The result's `error`
+is non-null for incomplete sync.
+
+Imported issues use existing `task_list`, `task_get` and `task_update`; list/detail
+output identifies GitHub issues and sync errors. Titles/descriptions stay managed
+in GitHub. Status changes reconcile both ways on the next API sync cycle. See
+[GitHub task synchronization](./task-flows.md#github-issues-as-tasks).
+
 How agents connect to ORC's MCP server, how tool discovery works, and every tool it serves.
 
 ## Transports

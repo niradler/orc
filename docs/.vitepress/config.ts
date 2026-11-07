@@ -38,6 +38,7 @@ const sidebar = [
       { text: "Session handoff", link: "/docs/session-handoff" },
       { text: "Terminal workspace", link: "/docs/terminal-workspace" },
       { text: "Questions and approvals", link: "/docs/human-requests" },
+      { text: "Notifications", link: "/docs/notifications" },
       { text: "Commands needing input", link: "/docs/command-requests" },
       { text: "Agent rules", link: "/docs/agent-rules" },
       { text: "Agent packages", link: "/docs/agent-packages" },
@@ -57,7 +58,8 @@ const sidebar = [
 export default withMermaid(
   defineConfig({
     title: "ORC",
-    description: "One hub for every coding agent: tasks, sessions, memory and knowledge across Claude Code, Codex and Cursor.",
+    description:
+      "One hub for every coding agent: tasks, sessions, memory and knowledge across Claude Code, Codex and Cursor.",
     base: "/orc/",
     cleanUrls: true,
     srcExclude: ["internal/**", "screenshots/**"],

@@ -6,6 +6,7 @@ import { createLogger } from "@orc/core/logger";
 
 const logger = createLogger("db:changes");
 const TABLE_RESOURCES: Record<string, ChangeResource> = {
+  notifications: "notifications",
   tasks: "tasks",
   comments: "tasks",
   task_links: "tasks",

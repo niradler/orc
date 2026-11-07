@@ -6,8 +6,13 @@ import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
 import { useProjects } from "@/hooks/useProjects";
+import { AGENT_STATES, liveSessionState } from "@/lib/agent-state";
+import { needsUser } from "@/lib/session-filter";
 import { workspaceDestination } from "@/lib/workspace-navigation";
+
+const NeedsYouIcon = AGENT_STATES["needs-you"].Icon;
 
 export function ProjectPicker({
   projectId,
@@ -29,6 +34,13 @@ export function ProjectPicker({
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [firstTask, setFirstTask] = useState<string | null>(null);
+  const { data: live } = useActiveLiveSessions();
+  const waiting = new Map<string, number>();
+  for (const session of live ?? []) {
+    if (!needsUser(liveSessionState(session))) continue;
+    for (const key of ["all", session.project_id ?? "unassigned"])
+      waiting.set(key, (waiting.get(key) ?? 0) + 1);
+  }
   const name =
     projectId === "all"
       ? "All projects"
@@ -117,6 +129,18 @@ export function ProjectPicker({
                     className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-surface-highest"
                   >
                     <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                    {!!waiting.get(p.id) && (
+                      <span
+                        data-testid="project-needs-you"
+                        role="img"
+                        aria-label={`${waiting.get(p.id)} need you`}
+                        title={`${waiting.get(p.id)} need you`}
+                        className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-warning"
+                      >
+                        <NeedsYouIcon aria-hidden="true" size={14} strokeWidth={2.25} />
+                        {waiting.get(p.id)}
+                      </span>
+                    )}
                     {p.id === projectId && <Check className="size-4 text-primary" />}
                   </button>
                 ))}

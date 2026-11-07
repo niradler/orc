@@ -28,6 +28,7 @@ import { knowledgeRouter } from "./routes/knowledge.js";
 import { mcpRouter } from "./routes/mcp.js";
 import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
+import { notificationsRouter } from "./routes/notifications.js";
 import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
 import { pushRouter } from "./routes/push.js";
@@ -132,6 +133,7 @@ export function createApp() {
   app.route("/api", healthRouter);
   app.route("/api", authRouter);
   app.route("/api", humanRequestsRouter);
+  app.route("/api", notificationsRouter);
   app.route("/api", settingsRouter);
   app.route("/api", usageRouter);
   app.route("/api", channelsRouter);

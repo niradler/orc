@@ -2,6 +2,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
+import { DEFAULT_GITHUB_STATUS_LABELS, GithubSyncConfigSchema } from "@orc/core/github-sync";
+import { TaskStatusSchema } from "@orc/core/types";
 import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
@@ -75,6 +77,82 @@ function writeConfigFile(cfg: Record<string, unknown>): void {
 
 export function projectCommand() {
   const cmd = new Command("project").description("Manage projects");
+
+  cmd
+    .command("github-sync [name]")
+    .description("Configure or run two-way GitHub issue/task status sync")
+    .option("--enable", "Enable sync for the saved GitHub repository")
+    .option("--disable", "Disable sync; keep imported tasks")
+    .option("--status-label <status=label...>", "Map statuses to repository labels")
+    .option("--config-only", "Save or inspect configuration without syncing")
+    .action(async (name: string | undefined, opts) => {
+      const client = createOrcClient();
+      const resolved = await resolveProject(client, { project: name });
+      if (!resolved) return;
+      const { data: project, error } = await client.projects.get(resolved.id);
+      if (error || !project) {
+        console.error("Could not read project");
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.enable && opts.disable) {
+        console.error("Choose --enable or --disable");
+        process.exitCode = 1;
+        return;
+      }
+      if (opts.enable || opts.disable || opts.statusLabel) {
+        const labels = { ...DEFAULT_GITHUB_STATUS_LABELS, ...project.github_sync?.status_labels };
+        for (const mapping of (opts.statusLabel ?? []) as string[]) {
+          const separator = mapping.indexOf("=");
+          const status = TaskStatusSchema.safeParse(mapping.slice(0, separator));
+          if (separator < 1 || !status.success) {
+            console.error(`Invalid status mapping: ${mapping}`);
+            process.exitCode = 1;
+            return;
+          }
+          labels[status.data] = mapping.slice(separator + 1);
+        }
+        const config = GithubSyncConfigSchema.safeParse({
+          enabled: opts.enable
+            ? true
+            : opts.disable
+              ? false
+              : (project.github_sync?.enabled ?? false),
+          status_labels: labels,
+        });
+        if (!config.success) {
+          console.error(config.error.issues.map((issue) => issue.message).join("; "));
+          process.exitCode = 1;
+          return;
+        }
+        const updated = await client.projects.update(project.id, { github_sync: config.data });
+        if (updated.error) {
+          console.error(updated.error.error);
+          process.exitCode = 1;
+          return;
+        }
+      }
+      if (opts.configOnly || opts.disable) {
+        const current = await client.projects.get(project.id);
+        if (isJson()) return jsonOut(current.data);
+        console.log(
+          JSON.stringify(
+            { config: current.data?.github_sync, state: current.data?.github_sync_state },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+      const result = await client.projects.syncGithub(project.id);
+      if (result.error || result.data?.error) process.exitCode = 1;
+      if (isJson()) return jsonOut(result.data ?? result.error);
+      console.log(
+        result.error?.error ??
+          result.data?.error ??
+          `GitHub issues synced at ${result.data?.synced_at}`,
+      );
+    });
 
   cmd
     .command("list")

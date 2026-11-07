@@ -109,11 +109,11 @@ export class HumanRequestChannels {
         if (!this.store.reserveNotification(request, target.platform, key, canReply)) continue;
         const command = `/attention ${request.id} ${request.version}`;
         const instructions = !canReply
-          ? "Open Attention needed in ORC to review and respond."
+          ? "Open Notifications in ORC to review and respond."
           : request.input.kind === "approval"
             ? `${command} approve\n${command} deny`
             : `${command} answer Your answer here`;
-        const text = `Attention needed · ${sensitive ? "ORC" : request.input.origin.backend}\n${detail.slice(0, 2800)}${canReply ? "" : "\n[Full request in ORC]"}\n\n${instructions}`;
+        const text = `Notifications · ${sensitive ? "ORC" : request.input.origin.backend}\n${detail.slice(0, 2800)}${canReply ? "" : "\n[Full request in ORC]"}\n\n${instructions}`;
         try {
           const buttons = !canReply
             ? []
@@ -167,7 +167,7 @@ export class HumanRequestChannels {
     });
     if (!pending.length) return null;
     if (pending.length !== 1)
-      return "More than one question is waiting. Use the response instructions on the question you want to answer, or open Attention needed in ORC.";
+      return "More than one question is waiting. Use the response instructions on the question you want to answer, or open Notifications in ORC.";
     const request = pending[0];
     if (!request) return null;
     return this.reply(
@@ -187,7 +187,7 @@ export class HumanRequestChannels {
       .trim()
       .match(/^\/attention(?:@\w+)?\s+(\S+)\s+(\d+)\s+(approve|deny|answer)(?:\s+([\s\S]+))?$/);
     if (!match)
-      return "Use /attention <request-id> <version> answer <text>, approve, or deny. Open Attention needed in ORC for request details.";
+      return "Use /attention <request-id> <version> answer <text>, approve, or deny. Open Notifications in ORC for request details.";
     const [, id = "", rawVersion, operation, answer] = match;
     const version = Number(rawVersion);
     try {
@@ -199,7 +199,7 @@ export class HumanRequestChannels {
           destination(message.chatId, message.threadId),
         )
       )
-        return "This request was not offered for replies in this chat/thread. Open Attention needed in ORC.";
+        return "This request was not offered for replies in this chat/thread. Open Notifications in ORC.";
       const request: HumanRequest = currentHumanRequest(this.store, id);
       if (
         policy?.project_ids.length &&
@@ -215,9 +215,9 @@ export class HumanRequestChannels {
         if (operation === "answer") return "This action needs approve or deny.";
         this.store.respond(id, version, { kind: "approval", approved: operation === "approve" });
       }
-      return "Response saved. ORC will deliver it to the originating agent; check Attention needed for delivery status.";
+      return "Response saved. ORC will deliver it to the originating agent; check Notifications for delivery status.";
     } catch {
-      return "This request is stale, cancelled, expired, or already answered. Reload Attention needed in ORC.";
+      return "This request is stale, cancelled, expired, or already answered. Reload Notifications in ORC.";
     }
   }
 }

@@ -37,6 +37,21 @@ change; unavailable quota data does not prevent session history from loading.
 
 Where ORC keeps its config and data, every config key and environment variable you are likely to set, logs, running as a background service, and authentication.
 
+## Notification and audit retention
+
+Set these server-wide preferences in **Settings → Storage** or the JSON config:
+
+| Config key | Default | Allowed days |
+| --- | --- | --- |
+| `preferences.notification_retention_days` | 30 | 1–3650 |
+| `preferences.audit_retention_days` | 90 | 1–3650 |
+
+All notifications expire, including unresolved requests' alerts. Audit history
+retains the notification title and message independently until the audit event
+expires. Expiry filters apply immediately; the API performs bounded cleanup at
+startup and every minute. Freed SQLite pages are reusable but the file may not
+shrink. See [Notifications](./notifications.md).
+
 ## Files and directories
 
 | Path | Holds |

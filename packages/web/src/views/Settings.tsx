@@ -11,6 +11,7 @@ import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { McpSettingsForm } from "@/components/McpSettingsForm";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { RetentionSettings } from "@/components/RetentionSettings";
 import { SecuritySettings } from "@/components/SecuritySettings";
 import { ServerSettings } from "@/components/ServerSettings";
 import { SshHostSettings } from "@/components/SshHostSettings";
@@ -281,6 +282,7 @@ export default function Settings() {
               <code>~/.orc/config.json</code>. The API address is stored in this browser; sign-in
               uses an HttpOnly cookie, never the API secret.
             </p>
+            <RetentionSettings />
           </section>
           <section hidden={section !== "about"} aria-label="About ORC">
             <AboutSettings />

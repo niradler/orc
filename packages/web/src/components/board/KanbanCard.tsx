@@ -3,6 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, MessageSquare, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { Task } from "@/api/client";
+import { GithubTaskBadge } from "@/components/GithubTaskBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { mappedStatusLabel } from "./board-utils";
 
@@ -83,10 +84,13 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
         >
           {task.title}
         </button>
+        <GithubTaskBadge task={task} />
         {(task.git_branch || task.github_issue || task.github_pr) && (
           <p data-testid="task-git-badge" className="text-xs text-primary truncate">
             {task.git_branch}
-            {task.github_issue && ` · Issue #${task.github_issue.split("/").pop()}`}
+            {task.github_issue &&
+              !task.github_sync &&
+              ` · Issue #${task.github_issue.split("/").pop()}`}
             {task.github_pr && ` · PR #${task.github_pr.split("/").pop()}`}
           </p>
         )}

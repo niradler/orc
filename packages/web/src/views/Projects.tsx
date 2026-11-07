@@ -1,3 +1,4 @@
+import { DEFAULT_GITHUB_STATUS_LABELS } from "@orc/core/github-sync";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -10,6 +11,7 @@ import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
+import { GithubSyncFields } from "@/components/GithubSyncFields";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
@@ -532,6 +534,9 @@ function EditProjectDialog({
   const [tags, setTags] = useState((project.tags ?? []).join(", "));
   const [scope, setScope] = useState(project.scope ?? "");
   const [gitRemoteUrl, setGitRemoteUrl] = useState(project.git_remote_url ?? "");
+  const [githubSync, setGithubSync] = useState(
+    project.github_sync ?? { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
+  );
   const [uploadDirectory, setUploadDirectory] = useState(project.upload_directory ?? "");
   const [maxWorkers, setMaxWorkers] = useState(
     project.max_workers != null ? String(project.max_workers) : "",
@@ -546,6 +551,7 @@ function EditProjectDialog({
       tags,
       scope,
       gitRemoteUrl,
+      githubSync,
       maxWorkers,
       uploadDirectory,
     ]) !==
@@ -556,6 +562,7 @@ function EditProjectDialog({
       (project.tags ?? []).join(", "),
       project.scope ?? "",
       project.git_remote_url ?? "",
+      project.github_sync ?? { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
       project.max_workers != null ? String(project.max_workers) : "",
       project.upload_directory ?? "",
     ]);
@@ -576,6 +583,7 @@ function EditProjectDialog({
         : null,
       scope: scope.trim() || null,
       git_remote_url: gitRemoteUrl.trim() || null,
+      github_sync: githubSync,
       max_workers: maxWorkers ? Number(maxWorkers) : null,
       upload_directory: uploadDirectory.trim() || null,
     };
@@ -729,6 +737,11 @@ function EditProjectDialog({
                       .orc/sessions.
                     </p>
                   </div>
+                  <GithubSyncFields
+                    value={githubSync}
+                    onChange={setGithubSync}
+                    state={project.github_sync_state}
+                  />
                   <div className="space-y-1.5">
                     <Label className="font-label text-sm  text-muted-foreground">Max workers</Label>
                     <Input

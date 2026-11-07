@@ -7,6 +7,7 @@ import {
 } from "@orc/core/channels";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { installNotificationReceiptPins } from "./notification-deliveries.js";
 
 type ReceiptRow = { payload: string; request_hash: string; updated_at: number };
 export type ChannelPairing = {
@@ -24,6 +25,9 @@ export class ChannelStore {
     readonly db: Database,
     private readonly now = Date.now,
   ) {
+    installNotificationReceiptPins(db);
+    db.exec(`CREATE TABLE IF NOT EXISTS channel_target_notifications (
+      channel_id TEXT NOT NULL,target_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(channel_id,target_id))`);
     db.exec(`CREATE TABLE IF NOT EXISTS channel_receipts (
       id TEXT PRIMARY KEY, connection TEXT NOT NULL, idem TEXT, request_hash TEXT NOT NULL, payload TEXT NOT NULL, updated_at INTEGER NOT NULL,
       UNIQUE(connection,idem));
@@ -85,9 +89,11 @@ export class ChannelStore {
               attention: number;
               user_ids: string;
               project_ids: string;
+              notifications: string | null;
             },
             [string]
-          >("SELECT * FROM channel_targets WHERE channel_id=? ORDER BY position")
+          >(`SELECT t.*,n.payload AS notifications FROM channel_targets t LEFT JOIN channel_target_notifications n
+            ON n.channel_id=t.channel_id AND n.target_id=t.id WHERE t.channel_id=? ORDER BY t.position`)
           .all(row.id)
           .map((t) => ({
             id: t.id,
@@ -99,6 +105,7 @@ export class ChannelStore {
             attention: !!t.attention,
             user_ids: JSON.parse(t.user_ids),
             project_ids: JSON.parse(t.project_ids),
+            ...(t.notifications ? { notifications: JSON.parse(t.notifications) } : {}),
           })),
         routes: this.db
           .query<
@@ -140,6 +147,12 @@ export class ChannelStore {
           );
         this.db.query("DELETE FROM channel_targets WHERE channel_id=?").run(c.id);
         this.db.query("DELETE FROM channel_routes WHERE channel_id=?").run(c.id);
+        this.db.query("DELETE FROM channel_target_notifications WHERE channel_id=?").run(c.id);
+        for (const target of c.targets)
+          if (target.notifications)
+            this.db
+              .query("INSERT INTO channel_target_notifications VALUES(?,?,?)")
+              .run(c.id, target.id, JSON.stringify(target.notifications));
         for (const [position, t] of c.targets.entries())
           this.db
             .query("INSERT INTO channel_targets VALUES (?,?,?,?,?,?,?,?,?,?,?)")
@@ -393,7 +406,10 @@ export class ChannelStore {
   }
   prune() {
     const cutoff = this.now() - 30 * 86400000;
-    this.db.query("DELETE FROM channel_receipts WHERE updated_at<?").run(cutoff);
+    this.db
+      .query(`DELETE FROM channel_receipts WHERE updated_at<? AND NOT EXISTS (
+      SELECT 1 FROM notification_receipt_pins p WHERE p.connection=channel_receipts.connection AND p.idem=channel_receipts.idem AND p.expires_at>?)`)
+      .run(cutoff, this.now());
     this.db.query("DELETE FROM channel_inbound WHERE created_at<?").run(cutoff);
     this.db.query("DELETE FROM channel_pairings WHERE expires_at<?").run(this.now() - 86400000);
     this.db.query("DELETE FROM channel_actions WHERE expires_at<?").run(this.now() - 86400000);

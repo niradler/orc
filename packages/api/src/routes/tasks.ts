@@ -2,12 +2,14 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { parseFlowDefinition } from "@orc/core/flow";
 import { readFlow } from "@orc/core/flow-service";
+import { GithubTaskSyncSchema, validateGithubTaskEdit } from "@orc/core/github-sync";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema, TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
+import { withTaskAudit } from "@orc/db/task-audit";
 import { withTx } from "@orc/db/tx";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq, isNull } from "drizzle-orm";
@@ -41,6 +43,7 @@ const OptionalTaskGitFields = {
 const TaskSchema = z
   .object({
     ...TaskGitFields,
+    github_sync: GithubTaskSyncSchema.nullable(),
     id: z.string(),
     project_id: z.string().nullable(),
     title: z.string(),
@@ -380,6 +383,8 @@ function rawToDto(row: Record<string, unknown>, commentsCount?: number) {
   return {
     ...row,
     tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    github_sync:
+      typeof row.github_sync === "string" ? JSON.parse(row.github_sync) : row.github_sync,
     // Lists never carry the inline graph — see toListDto.
     flow_override: null,
     comments_count: commentsCount ?? 0,
@@ -460,30 +465,34 @@ app.openapi(createRoute_, async (c) => {
   const now = new Date();
   const id = ulid();
 
-  await db.insert(tasks).values({
-    id,
-    title: body.title,
-    git_repo: body.git_repo,
-    git_branch: body.git_branch,
-    git_worktree: body.git_worktree,
-    github_issue: body.github_issue,
-    github_pr: body.github_pr,
-    body: body.body,
-    project_id: body.project_id,
-    status: body.status,
-    priority: body.priority,
-    ...(body.due_at ? { due_at: new Date(body.due_at) } : {}),
-    tags: body.tags,
-    author: body.author,
-    skill_name: body.skill_name,
-    required_review: body.required_review ?? true,
-    agent_backend: body.agent_backend as string | undefined,
-    agent_model: body.agent_model,
-    max_review_rounds: body.max_review_rounds ?? 3,
-    flow_name: body.flow_name,
-    flow_override: body.flow_override,
-    created_at: now,
-    updated_at: now,
+  withTaskAudit(getSqlite(), [id], () => {
+    db.insert(tasks)
+      .values({
+        id,
+        title: body.title,
+        git_repo: body.git_repo,
+        git_branch: body.git_branch,
+        git_worktree: body.git_worktree,
+        github_issue: body.github_issue,
+        github_pr: body.github_pr,
+        body: body.body,
+        project_id: body.project_id,
+        status: body.status,
+        priority: body.priority,
+        ...(body.due_at ? { due_at: new Date(body.due_at) } : {}),
+        tags: body.tags,
+        author: body.author,
+        skill_name: body.skill_name,
+        required_review: body.required_review ?? true,
+        agent_backend: body.agent_backend as string | undefined,
+        agent_model: body.agent_model,
+        max_review_rounds: body.max_review_rounds ?? 3,
+        flow_name: body.flow_name,
+        flow_override: body.flow_override,
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
   });
 
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
@@ -503,6 +512,7 @@ app.openapi(updateRoute, async (c) => {
   if (!existing) throw new NotFoundError("Task", id);
   validateFlowFields(body);
 
+  validateGithubTaskEdit(existing, body);
   if (body.status && body.status !== existing.status) {
     const result = await updateTaskStatus({
       taskId: id,
@@ -675,7 +685,14 @@ app.openapi(batchCreateRoute, async (c) => {
   });
 
   withTx((tx) => {
-    if (taskRows.length) tx.insert(tasks).values(taskRows).run();
+    if (taskRows.length)
+      withTaskAudit(
+        getSqlite(),
+        taskRows.map((task) => task.id),
+        () => {
+          tx.insert(tasks).values(taskRows).run();
+        },
+      );
     if (linkRows.length) tx.insert(task_links).values(linkRows).run();
   }, db);
 

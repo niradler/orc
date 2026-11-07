@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession } from "../../src/api/client";
-import { chatHistoryList } from "../../src/lib/chat-history-list";
+import { chatHistoryList, historyEntryState } from "../../src/lib/chat-history-list";
 
 const saved = {
   id: "90000000-0000-4000-8000-000000000001",
@@ -112,4 +112,29 @@ test("only explicit null sources belong to Unassigned while aliases stay dedupli
   expect(entries).toHaveLength(1);
   expect(entries[0].id).toBe(`chat:${saved.id}`);
   expect(entries[0].projectId).toBeNull();
+});
+
+test("a merged native session is seen through any of its aliases and reads Done until then", () => {
+  const [entry] = chatHistoryList([], [saved], [{ ...live, status: "idle" }], []);
+  expect(entry.seenKeys).toEqual([`chat:${saved.id}`, "native:live-source"]);
+  const finished = entry.updatedAt;
+  expect(historyEntryState(entry, { since: finished - 1, seen: {} })).toBe("done");
+  expect(
+    historyEntryState(entry, { since: finished - 1, seen: { "native:live-source": finished } }),
+  ).toBe("idle");
+  expect(historyEntryState(entry, { since: finished + 1, seen: {} })).toBe("idle");
+  expect(historyEntryState(entry, { since: finished - 1, seen: {} }, true)).toBe("idle");
+});
+
+test("unseen Done never hides a session that needs you or is working", () => {
+  const waiting = chatHistoryList(
+    [],
+    [],
+    [{ ...live, status: "running", waiting_for_human: true }],
+    [],
+  )[0];
+  const working = chatHistoryList([], [], [{ ...live, status: "running" }], [])[0];
+  const empty = { since: 0, seen: {} };
+  expect(historyEntryState(waiting, empty)).toBe("needs-you");
+  expect(historyEntryState(working, empty)).toBe("working");
 });
