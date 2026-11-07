@@ -87,10 +87,8 @@ export function tid(prefix: string): string {
 export async function gotoView(
   page: Page,
   view:
-    | "dashboard"
-    | "overview"
     | "activity"
-    | "attention"
+    | "notifications"
     | "tasks"
     | "jobs"
     | "memories"
@@ -112,14 +110,14 @@ export async function gotoView(
       API_SECRET,
     );
   }
-  const path =
-    view === "memories"
-      ? "knowledge/memories"
-      : view === "knowledge"
-        ? "knowledge/base"
-        : view === "scratchpads"
-          ? "scratchpad"
-          : view;
+  const paths: Partial<Record<typeof view, string>> = {
+    notifications: "activity?notifications=open",
+    memories: "knowledge/memories",
+    knowledge: "knowledge/base",
+    agents: "packages/agents",
+    scratchpads: "scratchpad",
+  };
+  const path = paths[view] ?? view;
   await page.goto(`/${path}`);
 }
 

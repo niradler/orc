@@ -117,7 +117,7 @@ export function attentionMessage(request: HumanRequest): PushMessage {
   return {
     title: `${verb} · ${request.input.origin.backend}`,
     body: truncate(request.input.prompt, 180),
-    url: "/attention",
+    url: `/activity?notifications=open&request=${encodeURIComponent(request.id)}`,
     tag: `attention:${request.id}`,
   };
 }

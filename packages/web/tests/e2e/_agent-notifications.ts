@@ -80,7 +80,7 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
         body: request.input.origin.session_title || "",
         level: "needs-you",
         project_id: null,
-        path: `/attention?request=${request.id}`,
+        path: `/activity?notifications=open&request=${request.id}`,
         requires_action: request.status === "pending",
         created_at: now,
         expires_at: now + 30 * 86400000,

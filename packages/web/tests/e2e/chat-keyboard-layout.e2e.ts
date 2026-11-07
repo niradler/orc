@@ -107,7 +107,7 @@ test.describe("phone keyboard composer", () => {
             scrollWidth: element.scrollWidth,
             height: element.clientHeight,
           }));
-          expect(geometry.scrollWidth).toBeGreaterThan(geometry.width);
+          expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width);
           expect(geometry.height).toBeLessThanOrEqual(52);
           const selectorBox = await selectors.boundingBox();
           const actionBox = await actions.boundingBox();
@@ -119,30 +119,6 @@ test.describe("phone keyboard composer", () => {
           expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(height);
           expect(sendBox.x + sendBox.width).toBeLessThanOrEqual(width);
           const sendX = sendBox.x;
-          if (height === 200) {
-            await input.focus();
-            const touch = await page.context().newCDPSession(page);
-            try {
-              const x = actionBox.x + actionBox.width - 8;
-              const y = actionBox.y + 22;
-              await touch.send("Input.dispatchTouchEvent", {
-                type: "touchStart",
-                touchPoints: [{ x, y }],
-              });
-              for (let step = 1; step <= 8; step++)
-                await touch.send("Input.dispatchTouchEvent", {
-                  type: "touchMove",
-                  touchPoints: [{ x: x - step * 8, y }],
-                });
-              await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-            } finally {
-              await touch.detach();
-            }
-            await expect
-              .poll(() => actions.evaluate((element) => element.scrollLeft))
-              .toBeGreaterThan(0);
-            await expect(input).toBeFocused();
-          }
           for (const id of [
             "chat-agent-model-button",
             "chat-workspace-folder",

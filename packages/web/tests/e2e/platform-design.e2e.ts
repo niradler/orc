@@ -275,11 +275,11 @@ for (const width of [1440, 390]) {
     expect(Math.abs((messageColumn?.x ?? 0) - (composerColumn?.x ?? 0))).toBeLessThan(2);
     expect(Math.abs((messageColumn?.width ?? 0) - (composerColumn?.width ?? 0))).toBeLessThan(2);
     if (width < 1280) await expect(page.getByTestId("chat-fullscreen-button")).toBeHidden();
-    const agent = await page.getByTestId("chat-agent-model-button").boundingBox();
-    const model = await page.getByTestId("chat-model-current").boundingBox();
+    const pill = page.getByTestId("chat-agent-model-button");
+    const agent = await pill.boundingBox();
     const input = await page.getByTestId("chat-input").boundingBox();
     expect(agent?.y).toBeGreaterThan(input?.y ?? 0);
-    expect(model?.y).toBeGreaterThan(input?.y ?? 0);
+    await expect(pill).toHaveAccessibleName(/retained-model/);
     await page.getByTestId("chat-clear-button").click();
     await openChatHistory(page);
     await page.getByTestId("chat-session-search").fill(marker);
@@ -293,7 +293,7 @@ for (const width of [1440, 390]) {
     await page.getByTestId("chat-session-list").getByTestId("chat-session-select").click();
     await waitHistoryClosed(page);
     await expect(page.getByTestId("chat-input")).toHaveValue("Keep my unsent follow-up");
-    await expect(page.getByTestId("chat-model-current")).toHaveText("retained-model");
+    await expect(pill).toHaveAccessibleName(/retained-model/);
     await expect(page.getByTestId("chat-message-content").last()).toContainText(marker);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,

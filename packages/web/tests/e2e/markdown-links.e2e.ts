@@ -8,7 +8,7 @@ for (const width of [390, 1440]) {
       route.fulfill({ contentType: "text/html", body: "<title>Confirmed chat link</title>" }),
     );
     await page.setViewportSize({ width, height: 900 });
-    await gotoView(page, "overview");
+    await gotoView(page, "activity");
     const open = page.getByTestId("chat-open-button");
     await expect(open).toBeVisible();
     await open.click();

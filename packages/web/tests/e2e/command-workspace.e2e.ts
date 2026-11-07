@@ -38,7 +38,7 @@ test("should edit and run a masked command from Attention after reload", async (
       arguments: [{ name: "PASSWORD", label: "Service password" }],
     },
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   await page.reload();
   const card = page.getByTestId(`attention-request-${entry.id}`);
   await reviewAttentionRequest(card);
