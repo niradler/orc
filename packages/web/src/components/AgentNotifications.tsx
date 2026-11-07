@@ -53,6 +53,13 @@ type Center = {
 };
 const CenterContext = createContext<Center | null>(null);
 
+/** Adding the default project scope to the URL does not leave the page the menu was opened on. */
+function menuPlace({ pathname, search }: { pathname: string; search: string }): string {
+  const params = new URLSearchParams(search);
+  params.delete("project");
+  return `${pathname}?${params}`;
+}
+
 export function AgentNotifications({ children }: { children: ReactNode }) {
   const client = useQueryClient();
   const location = useLocation();
@@ -254,11 +261,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     [navigate],
   );
   useEffect(() => {
-    if (
-      menuLocation.current.pathname !== location.pathname ||
-      menuLocation.current.search !== location.search
-    )
-      setExpanded(false);
+    if (menuPlace(menuLocation.current) !== menuPlace(location)) setExpanded(false);
     menuLocation.current = location;
   }, [location]);
   const linkParams = new URLSearchParams(location.search);
