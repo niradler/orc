@@ -56,7 +56,7 @@ const needsYou = {
   dismissed_at: null,
 };
 
-async function mockSessions(page: Page) {
+async function mockSessions(page: Page, backend = "claude") {
   await page.addInitScript((secret) => {
     localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
   }, API_SECRET);
@@ -64,13 +64,27 @@ async function mockSessions(page: Page) {
     r.fulfill({ json: { models: [], warning: null } }),
   );
   await page.route("**/api/sessions/live?**", (r) =>
-    r.fulfill({ json: { sessions, total: sessions.length, has_more: false } }),
+    r.fulfill({
+      json: {
+        sessions: sessions.map((session) => ({ ...session, agent: backend })),
+        total: sessions.length,
+        has_more: false,
+      },
+    }),
   );
   await page.route("**/api/sessions/archive?**", (r) =>
     r.fulfill({ json: { sessions: [], has_more: false } }),
   );
   await page.route("**/api/notifications?**", (r) =>
-    r.fulfill({ json: { notifications: [needsYou], unread: 1, has_more: false } }),
+    r.fulfill({
+      json: {
+        notifications: [
+          { ...needsYou, body: `${backend} · local. Reply in the original session.` },
+        ],
+        unread: 1,
+        has_more: false,
+      },
+    }),
   );
 }
 
@@ -114,3 +128,30 @@ test("Watch: every session surface speaks the same state word and icon, and the 
   }
   await expect(page).toHaveTitle("(1) Notifications · ORC");
 });
+
+for (const backend of ["claude", "gemini"]) {
+  for (const width of [1440, 390]) {
+    test(`${backend} waiting status remains visible at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await mockSessions(page, backend);
+      await page.goto("/sessions");
+      const row = page.locator(
+        `[data-testid="live-session-row"][data-session-id="${sessions[0].session_id}"]`,
+      );
+      await expect(row).toBeVisible();
+      await expect(row).toContainText("Approve database migration");
+      await expect(row.getByTestId("live-status")).toHaveAttribute("data-state", "needs-you");
+      await expect(row.getByTestId("live-status")).toHaveText("Needs you");
+      await expect(row.getByTestId("live-status")).toBeVisible();
+      await expect(page).toHaveTitle("(1) Notifications · ORC");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      if (process.env.ORC_REVIEW_SCREENSHOTS_DIR) {
+        await page.screenshot({
+          path: `${process.env.ORC_REVIEW_SCREENSHOTS_DIR}/pr226-${backend}-${width}.png`,
+        });
+      }
+    });
+  }
+}

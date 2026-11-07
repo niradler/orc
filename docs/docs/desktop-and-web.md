@@ -220,6 +220,10 @@ Individual tool durations are not shown.
 
 The composer groups folder, branch, agent/model and permissions into compact
 controls. Phones and narrow desktop panels use icons; wide composers show labels.
+Send queues the next message while a reply is running. If this session is already
+responding, or every chat worker is busy, that message stays queued and sends when
+the turn ends, without an error. Open the pending list to edit a message, move it
+up or down, remove it, or send it ahead of the current reply.
 Every icon has an accessible name and opens its picker with the full details;
 phone touch targets are at least 44px. Send stays visible at the right.
 

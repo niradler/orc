@@ -85,6 +85,26 @@ test("ignores stale native turn completion and correlates the active turn", asyn
   expect(events.filter((e) => e.type === "result")).toHaveLength(1);
 });
 
+test("ignores unmatched RPC turn results in the same read as the active start reply", async () => {
+  const { session } = fixture(`if(m.method==='turn/start') {
+ process.stdout.write([
+   {id:m.id,result:{turn:{id:'current'}}},
+   {id:m.id+1000,result:{turn:{id:'stale'}}},
+   {method:'turn/completed',params:{threadId:'native',turn:{id:'stale',status:'completed'}}}
+ ].map(JSON.stringify).join('\\n')+'\\n');
+ setTimeout(()=>{notify('item/agentMessage/delta',{turnId:'current',itemId:'a',delta:'actual response'});notify('turn/completed',{turn:{id:'current',status:'completed'}})},25);
+ }`);
+  await session.send("hello");
+  const events = await collect(session);
+  expect(
+    events
+      .filter((event) => event.type === "text")
+      .map((event) => event.data)
+      .join(""),
+  ).toBe("actual response");
+  expect(events.filter((event) => event.type === "result")).toHaveLength(1);
+});
+
 test("rejects concurrent sends before asynchronous startup launches a second process", async () => {
   let launches = 0;
   const { session } = fixture(

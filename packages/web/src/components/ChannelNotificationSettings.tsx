@@ -14,10 +14,12 @@ import { Input } from "@/components/ui/input";
 function Toggle({
   label,
   checked,
+  disabled,
   onChange,
 }: {
   label: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
@@ -26,6 +28,7 @@ function Toggle({
         type="checkbox"
         className="size-4 accent-primary"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
       {label}
@@ -226,6 +229,7 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const value = draft ?? policy.data ?? { enabled: false, base_url: "" };
+  const disabled = pending || policy.isPending || !!policy.error;
   return (
     <details
       data-testid="channel-notification-settings"
@@ -244,6 +248,7 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
         <Toggle
           label="Enable channel notification forwarding"
           checked={value.enabled}
+          disabled={disabled}
           onChange={(enabled) => setDraft({ ...value, enabled })}
         />
         <label htmlFor={urlId} className="grid gap-1 text-sm">
@@ -254,6 +259,7 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
             type="url"
             placeholder="https://orc.example.com"
             value={value.base_url}
+            disabled={disabled}
             onChange={(event) => setDraft({ ...value, base_url: event.target.value })}
           />
         </label>
@@ -265,7 +271,7 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
           type="button"
           size="sm"
           data-testid="notification-policy-save"
-          disabled={pending || policy.isPending || !!policy.error}
+          disabled={disabled}
           onClick={async () => {
             setPending(true);
             setError("");
