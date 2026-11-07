@@ -159,6 +159,31 @@ test("private questions expose only a chat notice and clear after answering", as
     .toBe(0);
 });
 
+test("a later turn can reuse a backend question ID without losing its new notification", async ({
+  page,
+}) => {
+  await page.getByTestId("chat-open-button").click();
+  for (const turn of [1, 2]) {
+    await page.getByTestId("chat-input").fill(`private fixture turn ${turn}`);
+    await page.getByTestId("chat-input").press("Enter");
+    await expect(page.getByLabel("Secret: Private fixture question")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const data = await (
+          await page.request.get(`${base}/api/notifications`, { headers })
+        ).json();
+        return data.notifications.filter(
+          (item: { type: string; requires_action: boolean }) =>
+            item.type === "agent.question" && item.requires_action,
+        ).length;
+      })
+      .toBe(1);
+    await page.getByLabel("Secret: Private fixture question").fill("fixture answer");
+    await page.getByRole("button", { name: "Send answer", exact: true }).click();
+    await expect(page.getByLabel("Secret: Private fixture question")).toHaveCount(0);
+  }
+});
+
 test("an observed external question disappears when the session continues", async ({
   page,
   request,

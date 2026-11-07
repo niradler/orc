@@ -864,7 +864,7 @@ app.openapi(
       throw new ConflictError("This permission request is no longer pending.");
     run.session.respondPermission(requestId, decision);
     run.permissions.delete(requestId);
-    resolveChatNotification(run.thread.id, requestId);
+    resolveChatNotification(run.thread.id, `${c.req.valid("param").id}:${requestId}`);
     changes.publish("human-requests");
     return c.json({ ok: true });
   },
@@ -961,7 +961,7 @@ app.openapi(
       run.questions.set(requestId, question);
       throw error;
     }
-    resolveChatNotification(run.thread.id, requestId);
+    resolveChatNotification(run.thread.id, `${c.req.valid("param").id}:${requestId}`);
     changes.publish("human-requests");
     return c.json({ ok: true });
   },
@@ -1388,7 +1388,7 @@ async function beginTurn(
             await emit({ type: event.type, text: event.data });
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
-            recordChatNotification(thread, event.data.requestId, "approval");
+            recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
             run.permissions.add(event.data.requestId);
             changes.publish("human-requests");
             await emit(event);
@@ -1397,13 +1397,13 @@ async function beginTurn(
               chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
             );
           } else if (event.type === "question_request") {
-            recordChatNotification(thread, event.data.requestId, "question");
+            recordChatNotification(thread, `${runId}:${event.data.requestId}`, "question");
             run.questions.set(event.data.requestId, event.data);
             changes.publish("human-requests");
             await emit(event);
             notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
           } else if (event.type === "request_resolved") {
-            resolveChatNotification(thread.id, event.data.requestId);
+            resolveChatNotification(thread.id, `${runId}:${event.data.requestId}`);
             run.permissions.delete(event.data.requestId);
             run.questions.delete(event.data.requestId);
             changes.publish("human-requests");
@@ -1443,7 +1443,7 @@ async function beginTurn(
       }
       thread.updatedAt = Date.now();
       for (const requestId of [...run.permissions, ...run.questions.keys()])
-        resolveChatNotification(thread.id, requestId);
+        resolveChatNotification(thread.id, `${runId}:${requestId}`);
       if (!stopped && (completed || failure))
         recordChatNotification(thread, runId, failure ? "failed" : "finished");
       try {
