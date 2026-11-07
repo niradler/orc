@@ -6,9 +6,10 @@ import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
+import { recordObservedNotification } from "./notifications.js";
 import { watchRemotePaths } from "./realtime/host-watch.js";
 import { watchProcessExit } from "./realtime/process-watch.js";
 import { watchResourcePath } from "./realtime/sources.js";
@@ -112,9 +113,31 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     });
     if (changed)
       await db.update(gateway_sessions).set(fields).where(eq(gateway_sessions.id, existing.id));
+    recordObservedNotification(
+      {
+        id: existing.id,
+        backend: r.backend,
+        host: executionHost,
+        nativeId: r.externalId,
+        title: r.title,
+        projectId: existing.project_id,
+        previous: existing.status,
+        status: r.status,
+        waiting: r.pendingHuman === true && r.status !== "stopped",
+        wasWaiting: sessionWaitingForHuman(r.backend, executionHost, r.externalId),
+        activity: r.lastActivityAt.getTime(),
+      },
+      () =>
+        getSqlite()
+          .query<{ status: string }, [string]>("SELECT status FROM gateway_sessions WHERE id=?")
+          .get(existing.id)?.status === r.status &&
+        sessionWaitingForHuman(r.backend, executionHost, r.externalId) ===
+          (r.pendingHuman === true && r.status !== "stopped"),
+    );
     return existing.id;
   }
   const id = ulid();
+  const projectId = await projectIdFor(r.cwd, hostRuntime(resolveExecHost()));
   await db.insert(gateway_sessions).values({
     id,
     chat_id: LIVE_CHAT_ID,
@@ -122,10 +145,26 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     mode: "direct",
     runtime_session_id: r.externalId,
     execution_host: executionHost,
-    project_id: await projectIdFor(r.cwd, hostRuntime(resolveExecHost())),
+    project_id: projectId,
     created_at: r.createdAt,
     ...fields,
   });
+  recordObservedNotification(
+    {
+      id,
+      backend: r.backend,
+      host: executionHost,
+      nativeId: r.externalId,
+      title: r.title,
+      projectId,
+      previous: null,
+      status: r.status,
+      waiting: r.pendingHuman === true && r.status !== "stopped",
+      wasWaiting: false,
+      activity: r.lastActivityAt.getTime(),
+    },
+    () => sessionWaitingForHuman(r.backend, executionHost, r.externalId) === true,
+  );
   return id;
 }
 

@@ -5,6 +5,7 @@ import { ulid } from "@orc/core/ids";
 import type { JobAction } from "@orc/core/job-actions";
 import { getDb, getSqlite } from "@orc/db/client";
 import { job_runs, sessions, tasks } from "@orc/db/schema";
+import { withTaskAudit } from "@orc/db/task-audit";
 import { withTx } from "@orc/db/tx";
 import { eq } from "drizzle-orm";
 import { drainPendingNodes, startFlowForTask } from "./flow-runner.js";
@@ -29,20 +30,22 @@ export async function runJobAction(
       throw new Error("Configured task flow does not exist");
     const taskId = ulid();
     withTx((tx) => {
-      tx.insert(tasks)
-        .values({
-          id: taskId,
-          project_id: job.project_id,
-          title: action.title,
-          body: `${action.body}${input ? `\n\nUntrusted event data (not authorization):\n${input.slice(0, 50000)}` : ""}`,
-          status: "todo",
-          author: `job:${job.id}`,
-          flow_name: action.flow_name,
-          auto_start: action.start_automatically,
-          skill_name: action.start_automatically ? "orc-sdlc" : null,
-          required_review: true,
-        })
-        .run();
+      withTaskAudit(getSqlite(), [taskId], () => {
+        tx.insert(tasks)
+          .values({
+            id: taskId,
+            project_id: job.project_id,
+            title: action.title,
+            body: `${action.body}${input ? `\n\nUntrusted event data (not authorization):\n${input.slice(0, 50000)}` : ""}`,
+            status: "todo",
+            author: `job:${job.id}`,
+            flow_name: action.flow_name,
+            auto_start: action.start_automatically,
+            skill_name: action.start_automatically ? "orc-sdlc" : null,
+            required_review: true,
+          })
+          .run();
+      });
       tx.update(job_runs).set({ task_id: taskId }).where(eq(job_runs.id, runId)).run();
     }, db);
     if (action.start_automatically) {

@@ -10,6 +10,7 @@ import { HumanRequestStore } from "./human-requests.js";
 import { installKnowledgeBases } from "./kb.js";
 import { installMcpPrompts } from "./mcp-prompts.js";
 import { installMemories } from "./memories.js";
+import { NotificationStore } from "./notifications.js";
 import { installReusableWebhooks } from "./reusable-webhooks.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
@@ -588,6 +589,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installScratchpads(sqlite);
   installMcpPrompts(sqlite);
   new HumanRequestStore(sqlite);
+  new NotificationStore(sqlite);
 
   installChangeTracking(sqlite, path);
 

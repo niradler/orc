@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { withTaskAudit } from "@orc/db/task-audit";
 
 type BlockerInfo = { id: string; title: string; status: string };
 
@@ -44,9 +45,11 @@ export function unblockDependents(sqlite: Database, completedTaskId: string): st
         .query<{ status: string }, string>("SELECT status FROM tasks WHERE id = ?")
         .get(id);
       if (task?.status === "blocked") {
-        sqlite
-          .query("UPDATE tasks SET status = 'todo', updated_at = unixepoch() WHERE id = ?")
-          .run(id);
+        withTaskAudit(sqlite, [id], () => {
+          sqlite
+            .query("UPDATE tasks SET status = 'todo', updated_at = unixepoch() WHERE id = ?")
+            .run(id);
+        });
         unblocked.push(id);
       }
     }
@@ -89,9 +92,11 @@ export function rollupParentProgress(sqlite: Database, taskId: string): string |
       .query<{ status: string }, string>("SELECT status FROM tasks WHERE id = ?")
       .get(parentId);
     if (parent && !["done", "cancelled", "review"].includes(parent.status)) {
-      sqlite
-        .query("UPDATE tasks SET status = 'review', updated_at = unixepoch() WHERE id = ?")
-        .run(parentId);
+      withTaskAudit(sqlite, [parentId], () => {
+        sqlite
+          .query("UPDATE tasks SET status = 'review', updated_at = unixepoch() WHERE id = ?")
+          .run(parentId);
+      });
     }
   }
 

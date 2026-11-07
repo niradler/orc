@@ -116,6 +116,8 @@ for (const theme of ["dark", "light"] as const) {
       await page.goForward();
       await expect(page.getByTestId("nav-audit")).toHaveAttribute("aria-current", "page");
       await page.reload();
+      await expect(page.getByTestId("audit-session-history")).not.toHaveAttribute("open", "");
+      await page.getByTestId("audit-session-history").locator("summary").click();
       await expect(page.getByTestId("logged-sessions")).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath("sessions.png"), fullPage: true });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

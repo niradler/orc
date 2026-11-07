@@ -3,6 +3,7 @@ import { ChatSettingsSchema } from "@orc/core/chat";
 import { AGENT_ID_PATTERN } from "@orc/core/coding-agents";
 import { loadConfig, OrcConfigSchema, updateGlobalConfig } from "@orc/core/config";
 import { McpServerSettingsSchema } from "@orc/core/mcp-prompts";
+import { AuditLog } from "@orc/db/audit";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { createRouter } from "../lib/router.js";
@@ -106,6 +107,8 @@ const PreferencesSchema = z
     theme: z.enum(["dark", "light"]).optional(),
     terminal_font: z.string().trim().max(200).optional(),
     attention_retention_hours: z.number().int().min(1).max(8760).optional(),
+    notification_retention_days: z.number().int().min(1).max(3650).optional(),
+    audit_retention_days: z.number().int().min(1).max(3650).optional(),
     chat: ChatSettingsSchema.optional(),
     agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
   })
@@ -139,10 +142,30 @@ app.openapi(
   }),
   (c) => {
     const preferences = c.req.valid("json");
+    const previous = loadConfig().preferences;
     const config = updateGlobalConfig((raw) => {
       const existing = PreferencesSchema.parse(raw.preferences ?? {});
       raw.preferences = { ...existing, ...preferences };
     });
+    const before = {
+      notification_retention_days: previous.notification_retention_days ?? 30,
+      audit_retention_days: previous.audit_retention_days ?? 90,
+    };
+    const after = {
+      notification_retention_days: config.preferences.notification_retention_days ?? 30,
+      audit_retention_days: config.preferences.audit_retention_days ?? 90,
+    };
+    if (
+      before.notification_retention_days !== after.notification_retention_days ||
+      before.audit_retention_days !== after.audit_retention_days
+    )
+      new AuditLog(getSqlite()).record({
+        action: "settings.retention_changed",
+        subject_ids: [],
+        actor: c.req.header("x-orc-actor-name")?.slice(0, 80) ?? null,
+        session_id: c.req.header("x-orc-session-id")?.slice(0, 200) ?? null,
+        snapshot: { before, after },
+      });
     return c.json(PreferencesSchema.parse(config.preferences));
   },
 );

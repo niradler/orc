@@ -38,7 +38,7 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
     id: "orc-native-questions",
     name: "ORC · Agent questions",
     category: "Guidance",
-    description: "Send Claude and Codex questions and non-secret MCP forms to Attention needed.",
+    description: "Send Claude and Codex questions and non-secret MCP forms to Notifications.",
     configuration:
       "For ORC-managed Claude/Codex sessions. Native tool choices override template choices. Enable optional channel notifications in the action.",
     rule: {
@@ -54,7 +54,7 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
     id: "orc-native-approvals",
     name: "ORC · Agent tool approvals",
     category: "Protection",
-    description: "Review native command, file and permission requests in Attention needed.",
+    description: "Review native command, file and permission requests in Notifications.",
     configuration:
       "For ORC-managed Claude/Codex sessions. Select default permissions so the agent emits native approvals. Existing agent permissions still apply.",
     rule: {
@@ -101,8 +101,7 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
     id: "orc-claude-hook-approvals",
     name: "ORC · External Claude approvals",
     category: "Protection",
-    description:
-      "Route an independently launched Claude's permission prompts into Attention needed.",
+    description: "Route an independently launched Claude's permission prompts into Notifications.",
     configuration:
       "Install Claude PermissionRequest hooks with --timeout-seconds 1815. Native permission prompts must be enabled. This does not grant additional OS privileges.",
     rule: {

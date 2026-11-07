@@ -219,7 +219,8 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` `POST` | `/human-requests` | List / create |
-| `GET` | `/human-requests/{id}` | Read |
+| `GET` | `/human-requests/{id}` | Agent read; marks an answered response seen |
+| `GET` | `/human-requests/{id}/view` | Human review without delivery/read side effects |
 | `POST` | `/human-requests/{id}/respond`, `/acknowledge`, `/cancel` | Answer and close |
 | `GET` | `/rules` | Active policy |
 | `GET` | `/rules/catalog` | Rule templates |
@@ -242,9 +243,36 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `GET` | `/system/about` | Server version, platform, runtime, data folder, start time |
 | `POST` | `/system/restart` | Restart ORC |
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |
-| `GET` | `/audit` | Knowledge audit log |
+| `GET` | `/audit` | Central lifecycle and knowledge audit log |
 | `GET` `POST` | `/integrations/connections` | spec-cli connections |
 
+
+### Notifications and audit
+
+All paths below use the `/api` prefix and the normal API authentication.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/notifications` | Current history, shared unread count and `has_more` |
+| `PATCH` | `/notifications/{id}` | Shared `{read?: boolean, dismissed?: boolean}` |
+| `POST` | `/notifications/read` | Mark all current notifications read |
+
+Listing accepts `limit` (1–100, default50), `offset` (default0) and
+`unread=true|false` (defaultfalse). Each notification includes a generic `type`,
+`source_id`, `title`, `body`, `level` (`needs-you` or `done`), nullable `project_id`,
+internal `path`, `requires_action`, and millisecond timestamps `created_at`,
+`expires_at`, `read_at`, `dismissed_at` (the last two nullable).
+Expiry and dismissal do not mutate the source request. SDK methods are
+`client.notifications.list`, `.update` and `.markAllRead`.
+
+`GET /audit` accepts `entity_type` (`notification`, `human_request`, `job_run`,
+`task`, `settings`, `memory`, `skill`, `kb`), `session_id`, `since` (Unix seconds),
+`limit` (1–100, default50), and `project_id` or `scope=global|all`.
+`scope=all` includes project and global entries. `snapshot=preview` substitutes
+a bounded marker for snapshots larger than4096 bytes; default `full` preserves
+the original snapshot. The Audit UI uses previews and displays the latest100
+matching events. Audit timestamps use Unix seconds. Both notification and audit
+reads enforce their configured retention periods; see [Notifications](./notifications.md).
 
 ### Agent capabilities and steering
 

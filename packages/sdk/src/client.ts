@@ -43,6 +43,11 @@ import type {
   KbUsageStats,
   KnowledgeBase,
 } from "@orc/core/kb";
+import type {
+  NotificationPage,
+  NotificationUpdate,
+  OrcNotification,
+} from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleTemplate } from "@orc/core/rule-catalog";
@@ -264,6 +269,13 @@ export function createOrcClient(options?: OrcClientOptions) {
       prepare: (id: string) =>
         c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
     },
+    notifications: {
+      list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
+        c<NotificationPage>("GET", "/notifications", undefined, query),
+      update: (id: string, update: NotificationUpdate) =>
+        c<OrcNotification>("PATCH", `/notifications/${e(id)}`, update),
+      markAllRead: () => c<{ ok: true }>("POST", "/notifications/read"),
+    },
     push: {
       config: () => c<PushConfig>("GET", "/push/config"),
       devices: () => c<PushDevice[]>("GET", "/push/subscriptions"),
@@ -311,6 +323,7 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<unknown>("POST", `/channels/pairings/${encodeURIComponent(id)}/confirm`),
     },
     humanRequests: {
+      view: (id: string) => c<HumanRequest>("GET", `/human-requests/${e(id)}/view`),
       run: (id: string, version: number, script: string, values: Record<string, string>) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/run`, { version, script, values }),
       list: () => c<HumanRequest[]>("GET", "/human-requests"),
@@ -944,8 +957,14 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     audit: {
-      list: (scope: ScopeQuery = {}) =>
-        c<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+      list: (
+        scope: Omit<ScopeQuery, "scope"> & {
+          scope?: "global" | "all";
+          entity_type?: string;
+          limit?: number;
+          snapshot?: "preview" | "full";
+        } = {},
+      ) => c<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
     },
 
     kb: {

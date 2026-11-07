@@ -291,8 +291,8 @@ export function CommandPalette({
   );
   add(
     "notifications",
-    "Focus notifications",
-    `Jump to agent toasts (${NOTIFICATIONS_SHORTCUT})`,
+    "Open notifications",
+    `Open the notification menu (${NOTIFICATIONS_SHORTCUT})`,
     "Actions",
     () => {
       focusNotifications.current = true;

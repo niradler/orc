@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ulid } from "@orc/core/ids";
-import { closeDb, createTestDb, getDb } from "@orc/db/client";
+import { AuditLog } from "@orc/db/audit";
+import { closeDb, createTestDb, getDb, getSqlite } from "@orc/db/client";
 import { comments, gateway_sessions, task_links, tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { addTaskComment, updateTaskStatus } from "../transitions.js";
@@ -141,6 +142,9 @@ describe("updateTaskStatus", () => {
       where: eq(tasks.id, blockedId),
     });
     expect(blocked?.status).toBe("todo");
+    expect(
+      new AuditLog(getSqlite()).findLatest(blockedId, ["task.status_changed"])?.snapshot,
+    ).toEqual({ from: "blocked", status: "todo" });
   });
 
   test("queued → doing transition works", async () => {
@@ -184,6 +188,10 @@ describe("max_review_rounds", () => {
     const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
     expect(task?.status).toBe("paused");
     expect(task?.claimed_by).toBeNull();
+    expect(new AuditLog(getSqlite()).findLatest(id, ["task.status_changed"])?.snapshot).toEqual({
+      from: "changes_requested",
+      status: "paused",
+    });
   });
 
   test("does not pause when under max review rounds", async () => {
@@ -223,4 +231,21 @@ describe("addTaskComment", () => {
     expect(row?.author).toBe("human");
     expect(row?.resource_type).toBe("task");
   });
+});
+
+test("should audit automatic parent review separately from progress rollup", async () => {
+  const db = getDb();
+  const parent = await createTask();
+  const child = await createTask();
+  await db.insert(task_links).values({
+    id: ulid(),
+    from_task_id: child,
+    to_task_id: parent,
+    link_type: "subtask_of",
+    created_at: new Date(),
+  });
+  await updateTaskStatus({ taskId: child, status: "done" });
+  const entry = new AuditLog(getSqlite()).findLatest(parent, ["task.status_changed"]);
+  expect(entry?.snapshot).toEqual({ from: "todo", status: "review" });
+  expect(entry?.actor).toBeNull();
 });

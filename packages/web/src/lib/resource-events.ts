@@ -20,6 +20,7 @@ export function setResourceConnection(next: ResourceConnection): void {
 }
 
 const QUERY_ROOTS: Record<ChangeResource, string[]> = {
+  notifications: ["notifications"],
   tasks: [
     "sessions",
     "session",

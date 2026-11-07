@@ -728,7 +728,7 @@ export async function startChannelRuntime(
         await reply(
           message,
           target,
-          "This button expired or was already used. Use /status for fresh chat controls, or open Attention needed in ORC for approvals.",
+          "This button expired or was already used. Use /status for fresh chat controls, or open Notifications in ORC for approvals.",
           "plain",
         );
         return true;
