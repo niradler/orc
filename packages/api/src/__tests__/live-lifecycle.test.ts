@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type HostRuntime, hostRuntime } from "@orc/core/exec-host";
-import { writeRegistration } from "@orc/core/live-session";
+import { readRegistrations, writeRegistration } from "@orc/core/live-session";
 import { getSqlite } from "@orc/db/client";
 import webpush from "web-push";
 import { runSync, startSessionWatcher } from "../session-watcher.js";
@@ -415,108 +415,129 @@ test("session notices appear for a pending question and clear when the session c
   );
 });
 
-test("should show a hooked Claude session as waiting without replacing its native status", async () => {
-  const registry = join(root, "claude-waiting");
-  const now = new Date();
-  writeRegistration(
-    {
-      backend: "claude",
-      externalId: "claude-wait",
-      pid: process.pid,
-      title: "Hook",
-      status: "idle",
-      waiting: true,
-      createdAt: now.getTime(),
-      updatedAt: now.getTime(),
-    },
-    registry,
-  );
-  const adapter = withLifecycle(
-    {
-      backend: "claude",
-      minIntervalMs: 0,
-      async list() {
-        return [
-          {
-            backend: "claude",
-            externalId: "claude-wait",
-            title: "Native title",
-            status: "running" as const,
-            createdAt: now,
-            lastActivityAt: now,
-          },
-        ];
-      },
-    },
-    registry,
-  );
-  const calls: string[] = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (url: string | URL | Request) => {
-    calls.push(String(url));
-    return new Response(null, { status: 201 });
-  }) as typeof fetch;
-  const browserKeys = webpush.generateVAPIDKeys();
-  const subscribed = await req(app, "POST", "/push/subscriptions", {
-    endpoint: "https://fcm.googleapis.com/fcm/send/waiting-device",
-    keys: {
-      p256dh: browserKeys.publicKey,
-      auth: Buffer.alloc(16, 7).toString("base64url"),
-    },
-    label: "Phone",
-    topics: ["attention"],
-  });
-  expect(subscribed.status).toBe(200);
-  const stop = startSessionWatcher({
-    adapters: [adapter],
-    registryDir: null,
-    liveRegistryDir: registry,
-  });
-  try {
-    await runSync([adapter], { force: true });
-    const listed = async () =>
-      (await (await req(app, "GET", "/sessions/live?agent=claude")).json()).sessions.find(
-        (row: { session_id: string }) => row.session_id === "claude-wait",
-      );
-    expect(await listed()).toMatchObject({
-      status: "running",
-      waiting_for_human: true,
-      name: "Native title",
-    });
-    const notes = () =>
-      getSqlite()
-        .query<{ count: number }, [string]>(
-          "SELECT count(*) AS count FROM notifications WHERE type='agent.question' AND requires_action=1 AND body LIKE ?",
-        )
-        .get("claude %");
-    for (let attempt = 0; attempt < 20 && !notes()?.count; attempt++) await Bun.sleep(100);
-    expect(notes()?.count).toBe(1);
-    expect(calls.filter((url) => url.includes("fcm.googleapis.com"))).toHaveLength(1);
+test.each(["claude", "gemini"])(
+  "should show hooked %s waits and push once per episode across watcher restarts",
+  async (backend) => {
+    const registry = join(root, `${backend}-waiting`);
+    const now = new Date();
     writeRegistration(
       {
-        backend: "claude",
+        backend,
         externalId: "claude-wait",
         pid: process.pid,
         title: "Hook",
         status: "idle",
-        waiting: false,
+        waiting: true,
         createdAt: now.getTime(),
-        updatedAt: Date.now(),
+        updatedAt: now.getTime(),
       },
       registry,
     );
-    await runSync([adapter], { force: true });
-    const cleared = await listed();
-    expect(cleared?.waiting_for_human).toBe(false);
-    expect(cleared?.status).toBe("running");
-    await Bun.sleep(1200);
-    expect(notes()?.count).toBe(0);
-    expect(calls.filter((url) => url.includes("fcm.googleapis.com"))).toHaveLength(1);
-  } finally {
-    globalThis.fetch = originalFetch;
-    stop();
-  }
-});
+    const adapter = withLifecycle(
+      {
+        backend,
+        minIntervalMs: 0,
+        async list() {
+          return [
+            {
+              backend,
+              externalId: "claude-wait",
+              title: "Native title",
+              status: "running" as const,
+              createdAt: now,
+              lastActivityAt: now,
+            },
+          ];
+        },
+      },
+      registry,
+    );
+    const calls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response(null, { status: 201 });
+    }) as typeof fetch;
+    const browserKeys = webpush.generateVAPIDKeys();
+    const subscribed = await req(app, "POST", "/push/subscriptions", {
+      endpoint: "https://fcm.googleapis.com/fcm/send/waiting-device",
+      keys: {
+        p256dh: browserKeys.publicKey,
+        auth: Buffer.alloc(16, 7).toString("base64url"),
+      },
+      label: "Phone",
+      topics: ["attention"],
+    });
+    expect(subscribed.status).toBe(200);
+    let stop = startSessionWatcher({
+      adapters: [adapter],
+      registryDir: null,
+      liveRegistryDir: registry,
+    });
+    try {
+      await runSync([adapter], { force: true });
+      const listed = async () =>
+        (await (await req(app, "GET", `/sessions/live?agent=${backend}`)).json()).sessions.find(
+          (row: { session_id: string }) => row.session_id === "claude-wait",
+        );
+      expect(await listed()).toMatchObject({
+        status: backend === "claude" ? "running" : "idle",
+        waiting_for_human: true,
+        name: "Native title",
+      });
+      const notes = () =>
+        getSqlite()
+          .query<{ count: number }, [string]>(
+            "SELECT count(*) AS count FROM notifications WHERE type='agent.question' AND requires_action=1 AND body LIKE ?",
+          )
+          .get(`${backend} %`);
+      for (let attempt = 0; attempt < 20 && !notes()?.count; attempt++) await Bun.sleep(100);
+      expect(notes()?.count).toBe(1);
+      expect(calls.filter((url) => url.includes("fcm.googleapis.com"))).toHaveLength(1);
+      stop();
+      stop = startSessionWatcher({
+        adapters: [adapter],
+        registryDir: null,
+        liveRegistryDir: registry,
+      });
+      await runSync([adapter], { force: true });
+      await Bun.sleep(1200);
+      expect(notes()?.count).toBe(1);
+      expect(calls.filter((url) => url.includes("fcm.googleapis.com"))).toHaveLength(1);
+      writeRegistration(
+        {
+          backend,
+          externalId: "claude-wait",
+          pid: process.pid,
+          title: "Hook",
+          status: "idle",
+          waiting: false,
+          createdAt: now.getTime(),
+          updatedAt: Date.now(),
+        },
+        registry,
+      );
+      await runSync([adapter], { force: true });
+      const cleared = await listed();
+      expect(cleared?.waiting_for_human).toBe(false);
+      expect(cleared?.status).toBe(backend === "claude" ? "running" : "idle");
+      await Bun.sleep(1200);
+      expect(notes()?.count).toBe(0);
+      expect(calls.filter((url) => url.includes("fcm.googleapis.com"))).toHaveLength(1);
+      const registration = readRegistrations(registry)[0];
+      if (!registration) throw new Error("Missing waiting registration fixture");
+      writeRegistration({ ...registration, waiting: true, updatedAt: Date.now() }, registry);
+      await runSync([adapter], { force: true });
+      for (let attempt = 0; attempt < 20 && !notes()?.count; attempt++) await Bun.sleep(100);
+      expect(notes()?.count).toBe(1);
+      expect(calls.filter((url) => url.includes("fcm.googleapis.com"))).toHaveLength(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      stop();
+    }
+  },
+  15000,
+);
 
 test("should discover Cursor CLI chat metadata", async () => {
   const rootPath = join(root, "cursor-cli", "workspace", "chat-one");

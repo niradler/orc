@@ -33,6 +33,31 @@ function fixture() {
 }
 
 describe("live session waiting", () => {
+  test("should install question and wait-clearing events in the Claude template", () => {
+    const settings = JSON.parse(
+      readFileSync(new URL("../../../hooks/claude-code/settings.json", import.meta.url), "utf8"),
+    );
+    expect(settings.hooks.PreToolUse).toEqual([
+      expect.objectContaining({ matcher: "AskUserQuestion" }),
+    ]);
+    for (const event of [
+      "PermissionRequest",
+      "PostToolUse",
+      "PostToolUseFailure",
+      "PermissionDenied",
+      "UserPromptSubmit",
+      "ElicitationResult",
+      "SessionEnd",
+      "Stop",
+    ]) {
+      expect(settings.hooks[event]).toEqual([
+        expect.objectContaining({
+          hooks: [expect.objectContaining({ command: `orc rules hook claude ${event}` })],
+        }),
+      ]);
+    }
+  });
+
   test("should treat permission prompts and questions as waiting", () => {
     expect(liveSessionWaiting("PermissionRequest")).toBe(true);
     expect(liveSessionWaiting("Notification", { notificationType: "permission_prompt" })).toBe(
@@ -50,6 +75,8 @@ describe("live session waiting", () => {
     expect(liveSessionWaiting("Stop")).toBe(false);
     expect(liveSessionWaiting("AfterTool")).toBe(false);
     expect(liveSessionWaiting("ElicitationResult")).toBe(false);
+    expect(liveSessionWaiting("PermissionDenied")).toBe(false);
+    expect(liveSessionWaiting("UserPromptSubmit")).toBe(false);
     expect(liveSessionWaiting("Notification", { notificationType: "elicitation_response" })).toBe(
       false,
     );

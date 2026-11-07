@@ -35,7 +35,12 @@ function install(
         : {
             ...(matchers[event] ? { matcher: matchers[event] } : {}),
             hooks: [
-              { type: "command", name: "orc-live-session", command: hookCommand, timeout: 5000 },
+              {
+                type: "command",
+                name: "orc-live-session",
+                command: hookCommand,
+                timeout: backend === "claude" ? 5 : 5000,
+              },
             ],
           };
     hooks[event] = [...previous, hook];
@@ -68,6 +73,8 @@ install(
     "Stop",
     "PostToolUse",
     "PostToolUseFailure",
+    "UserPromptSubmit",
+    "PermissionDenied",
     "PreToolUse",
     "ElicitationResult",
     "SessionEnd",
