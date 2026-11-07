@@ -17,6 +17,14 @@ test("serves an installable manifest and public PWA files without auth", async (
   expect((await request.get("/badge-96.png")).status()).toBe(200);
 });
 
+test("manifest link sends credentials so auth proxies let it through", async ({ page }) => {
+  await gotoView(page, "dashboard");
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    "crossorigin",
+    "use-credentials",
+  );
+});
+
 test("service worker controls the app and serves the shell offline", async ({ page, context }) => {
   await gotoView(page, "dashboard");
   await page.evaluate(() => navigator.serviceWorker.ready);
