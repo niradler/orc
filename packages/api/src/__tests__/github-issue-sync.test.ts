@@ -121,6 +121,36 @@ async function taskRow() {
 }
 
 describe("GitHub issues as native tasks", () => {
+  test("should retain a concurrent GitHub status change during an interrupted-write retry", async () => {
+    await syncGithubProject(projectId, deps);
+    const task = await taskRow();
+    await getDb()
+      .update(tasks)
+      .set({ status: "review", github_sync: { ...task.github_sync, pending_status: "review" } })
+      .where(eq(tasks.id, task.id));
+    requests = [];
+    const result = await syncGithubProject(projectId, {
+      ...deps,
+      fetch: (async (input, init) => {
+        if (String(input).endsWith("/issues/1") && (init?.method ?? "GET") === "GET") {
+          primaryIssue.labels = [{ name: "bug" }, { name: "status:blocked" }];
+          primaryIssue.updated_at = "2026-11-07T09:00:00Z";
+        }
+        const response = await deps.fetch?.(input, init);
+        if (!response) throw new Error("Fixture response missing");
+        return response;
+      }) as typeof fetch,
+    });
+    expect(result.error).not.toBeNull();
+    expect(primaryIssue.labels.map((label) => label.name)).toEqual(["bug", "status:blocked"]);
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+    expect((await taskRow()).status).toBe("review");
+    expect((await taskRow()).github_sync.pending_status).toBe("review");
+    requests = [];
+    expect((await syncGithubProject(projectId, deps)).error).not.toBeNull();
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+    expect(primaryIssue.labels.map((label) => label.name)).toEqual(["bug", "status:blocked"]);
+  });
   test("should retain connected sessions, comments, dependencies and workflow settings across issue resync", async () => {
     await syncGithubProject(projectId, deps);
     const task = await taskRow();

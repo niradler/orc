@@ -261,7 +261,7 @@ async function syncProject(projectId: string, deps: GithubSyncDeps): Promise<Git
         if (localChanged && task.status !== remoteStatus) {
           // Fetch again immediately before writing; unrelated labels are never replaced.
           const fresh = IssueSchema.parse(await request(`/issues/${issue.number}`));
-          if (fresh.updated_at !== issue.updated_at && !sync.pending_status)
+          if (fresh.updated_at !== issue.updated_at)
             throw new SyncError(
               "GitHub issue changed during sync; retry to reconcile the latest status",
             );
