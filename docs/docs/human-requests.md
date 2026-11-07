@@ -140,9 +140,12 @@ such as “Should I continue?” is not a structured pause event.
 
 The session watcher also detects a live Codex `request_user_input` question from
 its transcript and shows a read-only session notice until the matching answer or
-turn cancellation is recorded. Open its existing ORC terminal when available, or
-view the session and answer in its original interface. The watcher does not infer
-approval prompts from unfinished tools or deliver answers through transcripts.
+turn cancellation is recorded. With the lifecycle hooks installed, a Claude
+permission prompt or question and a Gemini tool-permission prompt set the same
+**Waiting for you** state and send one attention push. Open its existing ORC
+terminal when available, or view the session and answer in its original
+interface. The watcher does not infer approval prompts from unfinished tools or
+deliver answers through transcripts.
 Live Codex ownership is also refreshed every 30 seconds on local and remote hosts,
 so a process exiting without a final file write clears its stale status and notice.
 Other independent prompts need the explicit MCP/CLI request or qualified native

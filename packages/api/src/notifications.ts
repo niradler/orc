@@ -9,6 +9,7 @@ import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { publishNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
+import { notify, sessionWaitingMessage } from "./push/service.js";
 import { activeTurns, turnKey } from "./sessions/turns.js";
 
 const logger = createLogger("notifications");
@@ -116,6 +117,15 @@ export function recordObservedNotification(
         )
       )
         return;
+      if (
+        kind === "question" &&
+        sqlite
+          .query(
+            "SELECT 1 FROM notifications WHERE type='agent.question' AND source_id=? AND requires_action=1 LIMIT 1",
+          )
+          .get(event.id)
+      )
+        return;
       publishNotification(sqlite, {
         type: `agent.${kind}`,
         source_key: `observed:${event.id}:${kind}:${transitionId}`,
@@ -127,6 +137,7 @@ export function recordObservedNotification(
         project_id: event.projectId,
         path: `/sessions?session=${encodeURIComponent(event.id)}&project=all`,
       });
+      if (kind === "question") notify("attention", sessionWaitingMessage(event));
     } catch (error) {
       logger.error("Could not record session notification", error);
     }

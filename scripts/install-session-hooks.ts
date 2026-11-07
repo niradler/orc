@@ -9,7 +9,12 @@ const Root = z
 const command = `"${process.execPath}" "${resolve(import.meta.dir, "../hooks/live-session.ts")}"`;
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-function install(path: string, backend: string, events: string[]): void {
+function install(
+  path: string,
+  backend: string,
+  events: string[],
+  matchers: Record<string, string> = {},
+): void {
   const existingText = existsSync(path) ? readFileSync(path, "utf8") : null;
   const existing = Root.parse(existingText ? JSON.parse(existingText) : {});
   const hooks = existing.hooks ?? {};
@@ -28,6 +33,7 @@ function install(path: string, backend: string, events: string[]): void {
       backend === "cursor"
         ? { command: hookCommand, timeout: 5 }
         : {
+            ...(matchers[event] ? { matcher: matchers[event] } : {}),
             hooks: [
               { type: "command", name: "orc-live-session", command: hookCommand, timeout: 5000 },
             ],
@@ -53,11 +59,27 @@ install(join(homedir(), ".cursor/hooks.json"), "cursor", [
   "stop",
   "sessionEnd",
 ]);
+install(
+  join(homedir(), ".claude", "settings.json"),
+  "claude",
+  [
+    "PermissionRequest",
+    "Notification",
+    "Stop",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PreToolUse",
+    "ElicitationResult",
+    "SessionEnd",
+  ],
+  { PreToolUse: "AskUserQuestion" },
+);
 install(join(homedir(), ".gemini/settings.json"), "gemini", [
   "SessionStart",
   "BeforeAgent",
   "BeforeTool",
   "AfterTool",
   "AfterAgent",
+  "Notification",
   "SessionEnd",
 ]);

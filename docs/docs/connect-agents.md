@@ -141,10 +141,10 @@ It returns the project's active tasks and its memories by priority.
 
 | Agent | How sessions reach ORC |
 | --- | --- |
-| Claude Code | Discovered from its local session files. No setup. |
+| Claude Code | Discovered from its local session files. Waiting on a permission prompt or question needs the lifecycle hooks. |
 | Codex | Discovered from its local session files and writer locks. No setup. |
 | Cursor (IDE and CLI) | History is discovered; live state needs lifecycle hooks |
-| Gemini CLI | History is discovered; live state needs lifecycle hooks |
+| Gemini CLI | History is discovered; live state and permission waits need lifecycle hooks |
 | OpenCode | History is read from its SQLite store. No setup; no live state. |
 
 Install the Cursor and Gemini lifecycle hooks from a clone of the repository (needs Bun):
@@ -153,7 +153,7 @@ Install the Cursor and Gemini lifecycle hooks from a clone of the repository (ne
 bun scripts/install-session-hooks.ts
 ```
 
-It adds hooks to `~/.cursor/hooks.json` and `~/.gemini/settings.json`, keeps existing entries and writes a dated backup of each file. Details: [Live sessions](./live-sessions.md).
+It adds hooks to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.gemini/settings.json`, keeps existing entries and writes a dated backup of each file. Details: [Live sessions](./live-sessions.md).
 
 ## Rule hooks
 
