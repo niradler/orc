@@ -1,5 +1,5 @@
-import { shortId } from "@orc/core/ids";
 import type { GithubTaskSync } from "@orc/core/github-sync";
+import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { isJson, jsonErr, jsonOut } from "../output.js";

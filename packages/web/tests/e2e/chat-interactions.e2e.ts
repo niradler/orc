@@ -152,7 +152,7 @@ for (const width of [390, 1440]) {
     );
     await page.route("**/api/chat/threads", (route) => route.fulfill({ json: thread }));
     await page.setViewportSize({ width, height: 900 });
-    await gotoView(page, "dashboard");
+    await gotoView(page, "activity");
     await page.goto("/?chat=open");
     await openChatSettings(page);
     await page.getByTestId("chat-permission-mode").selectOption("bypassPermissions");
@@ -230,7 +230,7 @@ test("switching to an ACPX agent keeps its native permission policy", async ({ p
       body: 'data: {"type":"text","text":"Native policy"}\n\ndata: {"type":"done"}\n\n',
     });
   });
-  await gotoView(page, "dashboard");
+  await gotoView(page, "activity");
   await page.goto("/?chat=open");
   await chooseChatAgent(page, "gemini");
   await page.getByTestId("chat-input").filter({ visible: true }).fill("Use native policy");

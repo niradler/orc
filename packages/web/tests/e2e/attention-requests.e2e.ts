@@ -49,7 +49,7 @@ test("should review compact requests, preserve masked drafts and return redacted
   page.on("request", (sent) => {
     if (sent.method() === "POST" && /\/human-requests\/[^/]+\/run$/.test(sent.url())) runs++;
   });
-  await gotoView(page, "attention");
+  await gotoView(page, "notifications");
   const card = page.getByTestId(`attention-request-${entries[0]?.id}`);
   const other = page.getByTestId(`attention-request-${entries[1]?.id}`);
   for (const width of [1440, 390]) {
@@ -158,7 +158,7 @@ for (const width of [320, 390])
           ],
         },
       });
-      await gotoView(page, "attention");
+      await gotoView(page, "notifications");
       const card = page.getByTestId(`attention-request-${entry.id}`);
       await card.getByTestId("attention-review").tap();
       await card.getByTestId("attention-argument-ACCOUNT").fill("private-touch-account");
