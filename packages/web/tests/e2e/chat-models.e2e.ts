@@ -31,18 +31,9 @@ for (const width of [320, 1440]) {
     await gotoView(page, "dashboard");
     await page.goto("/?chat=open");
     const pill = page.getByTestId("chat-agent-model-button").filter({ visible: true });
-    const modelButton = page.getByTestId("chat-model-current").filter({ visible: true });
     const pillBox = await pill.boundingBox();
-    const modelBox = await modelButton.boundingBox();
-    expect(modelBox?.y).toBeGreaterThanOrEqual(pillBox?.y ?? 0);
-    expect((modelBox?.y ?? 0) + (modelBox?.height ?? 0)).toBeLessThanOrEqual(
-      (pillBox?.y ?? 0) + (pillBox?.height ?? 0),
-    );
-    if (width >= 640) {
-      const agentBox = await page.getByTestId("chat-agent-current").boundingBox();
-      expect(Math.abs((agentBox?.y ?? 0) - (modelBox?.y ?? 0))).toBeLessThan(2);
-      expect(modelBox?.x).toBeGreaterThan(agentBox?.x ?? 0);
-    }
+    await expect(pill.getByTestId("chat-model-current")).toBeHidden();
+    await expect(pill).toHaveAccessibleName(/Agent default/);
     expect(pillBox?.y).toBeGreaterThan(
       (await page.getByTestId("chat-input").boundingBox())?.y ?? 0,
     );
@@ -52,9 +43,9 @@ for (const width of [320, 1440]) {
     await expect(page.getByTestId("chat-model-option-saved-codex")).toBeVisible();
     await page.getByTestId("chat-model-option-codex-native").click();
     await expect(page.getByTestId("chat-model-select")).toBeHidden();
-    await expect(modelButton).toContainText("codex discovered model");
+    await expect(pill).toHaveAccessibleName(/codex discovered model/);
     await chooseChatAgent(page, "claude");
-    await expect(modelButton).toContainText("Agent default");
+    await expect(pill).toHaveAccessibleName(/Agent default/);
     await openChatModel(page);
     await expect(page.getByTestId("chat-model-option-claude-native")).toBeVisible();
     await expect(page.getByTestId("chat-model-option-codex-native")).toHaveCount(0);
@@ -69,7 +60,7 @@ for (const width of [320, 1440]) {
     await page.getByTestId("chat-custom-model").fill("provider/custom-model");
     await page.getByTestId("chat-custom-model-apply").click();
     await expect(page.getByTestId("chat-custom-model")).toBeHidden();
-    await expect(modelButton).toContainText("provider/custom-model");
+    await expect(pill).toHaveAccessibleName(/provider\/custom-model/);
     await chooseChatAgent(page, "codex");
     await chooseChatModel(page, "codex-native");
     await page.screenshot({ path: testInfo.outputPath(`chat-models-${width}.png`) });
