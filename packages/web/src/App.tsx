@@ -6,10 +6,9 @@ import {
   Routes,
   useLocation,
   useNavigate,
-  useParams,
   useSearchParams,
 } from "react-router-dom";
-import { AgentNotifications, NotificationLink } from "@/components/AgentNotifications";
+import { AgentNotifications } from "@/components/AgentNotifications";
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
@@ -50,26 +49,6 @@ const Skills = lazy(() => import("@/views/Skills"));
 const Tasks = lazy(() => import("@/views/Tasks"));
 
 const Terminals = lazy(() => import("@/views/Terminals"));
-
-function LegacyAgentsRedirect() {
-  const { agentId } = useParams();
-  const { search, hash } = useLocation();
-  return (
-    <Navigate
-      replace
-      to={{
-        pathname: agentId ? `/packages/agents/${encodeURIComponent(agentId)}` : "/packages/agents",
-        search,
-        hash,
-      }}
-    />
-  );
-}
-
-function LegacyActivityRedirect() {
-  const { search, hash } = useLocation();
-  return <Navigate replace to={{ pathname: "/activity", search, hash }} />;
-}
 
 function DefaultWorkspaceRedirect() {
   const { search, hash } = useLocation();
@@ -275,10 +254,6 @@ export default function App() {
                         <Routes>
                           <Route path="/" element={<DefaultWorkspaceRedirect />} />
                           <Route path="/activity" element={<Dashboard projectId={projectId} />} />
-                          <Route path="/attention" element={<NotificationLink />} />
-                          <Route path="/notifications" element={<NotificationLink />} />
-                          <Route path="/overview" element={<LegacyActivityRedirect />} />
-                          <Route path="/dashboard" element={<LegacyActivityRedirect />} />
                           <Route path="/tasks" element={<Tasks projectId={projectId} />} />
                           <Route path="/tasks/:taskId" element={<Tasks projectId={projectId} />} />
                           <Route path="/terminals" element={<Terminals />} />
@@ -312,8 +287,6 @@ export default function App() {
                             path="/skills/:skillName"
                             element={<Skills projectId={projectId} />}
                           />
-                          <Route path="/agents" element={<LegacyAgentsRedirect />} />
-                          <Route path="/agents/:agentId" element={<LegacyAgentsRedirect />} />
                           <Route path="/packages" element={<Packages />} />
                           <Route path="/packages/item" element={<Packages />} />
                           <Route path="/packages/item/:packageName" element={<Packages />} />

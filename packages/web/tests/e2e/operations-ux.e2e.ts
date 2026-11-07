@@ -45,7 +45,7 @@ for (const theme of ["dark", "light"] as const) {
         description: "Scoped memory",
         content: "Counted on the project dashboard",
       });
-      await gotoView(page, "dashboard");
+      await gotoView(page, "activity");
       await selectProject(page, project.id);
       await expect(page.getByTestId("view-title")).toHaveText("Activity");
       // Project bootstrap can also create an enabled Learnings digest job.
@@ -163,9 +163,9 @@ test("overview drilldowns preserve shared project scope independently of the sav
     status: "doing",
     project_id: shared.id,
   });
-  await gotoView(page, "dashboard");
+  await gotoView(page, "activity");
   await selectProject(page, saved.id);
-  await page.goto(`/dashboard?project=${shared.id}`);
+  await page.goto(`/activity?project=${shared.id}`);
   await expect(
     page.locator('[data-stat-label="Doing"] [data-testid="stat-card-value"]'),
   ).toHaveText("1");
@@ -176,7 +176,7 @@ test("overview drilldowns preserve shared project scope independently of the sav
   await expect(page.getByTestId("task-row")).toHaveCount(1);
 });
 
-for (const view of ["tasks", "jobs", "sessions", "dashboard"] as const) {
+for (const view of ["tasks", "jobs", "sessions", "activity"] as const) {
   test(`${view} distinguishes loading, empty results and request failures`, async ({
     page,
   }, testInfo) => {
@@ -185,7 +185,7 @@ for (const view of ["tasks", "jobs", "sessions", "dashboard"] as const) {
       release = resolve;
     });
     let failing = false;
-    const endpoint = view === "dashboard" ? "tasks" : view === "sessions" ? "sessions/live" : view;
+    const endpoint = view === "activity" ? "tasks" : view === "sessions" ? "sessions/live" : view;
     const pattern = new RegExp(`/api/${endpoint}(?:[?].*)?$`);
     await page.route(pattern, async (route) => {
       await gate;
@@ -210,7 +210,7 @@ for (const view of ["tasks", "jobs", "sessions", "dashboard"] as const) {
     ).toBeVisible();
     release();
     const emptyText =
-      view === "tasks" || view === "dashboard"
+      view === "tasks" || view === "activity"
         ? "No tasks"
         : view === "jobs"
           ? "No jobs configured"
@@ -220,7 +220,7 @@ for (const view of ["tasks", "jobs", "sessions", "dashboard"] as const) {
     failing = true;
     await page.reload();
     await expect(
-      page.getByText(`${view} temporarily unavailable`, { exact: view !== "dashboard" }),
+      page.getByText(`${view} temporarily unavailable`, { exact: view !== "activity" }),
     ).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`${view}-error.png`), fullPage: true });
     failing = false;

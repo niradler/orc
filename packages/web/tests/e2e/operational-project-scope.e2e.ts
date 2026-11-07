@@ -48,10 +48,10 @@ for (const width of [1440, 390]) {
     await page.route("**/api/sessions/live?**", (route) =>
       route.fulfill({ json: { sessions: [] } }),
     );
-    await gotoView(page, "dashboard");
+    await gotoView(page, "activity");
     for (const scope of ["unassigned", first.id]) {
       requestScopes.clear();
-      await page.goto(`/dashboard?project=${scope}`);
+      await page.goto(`/activity?project=${scope}`);
       for (const resource of ["/api/jobs", "/api/tasks", "/api/sessions/live"])
         await expect.poll(() => requestScopes.get(resource)).toBe(scope);
     }

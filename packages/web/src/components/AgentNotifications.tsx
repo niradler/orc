@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
+import { RequestCard, type RequestDraft } from "@/components/RequestCard";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { activeLiveSessionsQuery } from "@/hooks/useActiveLiveSessions";
@@ -30,7 +31,6 @@ import {
   unlockNotificationSound,
 } from "@/lib/notification-sound";
 import { cn } from "@/lib/utils";
-import { RequestCard, type RequestDraft } from "@/views/Attention";
 
 export const FOCUS_NOTIFICATIONS_EVENT = "orc-focus-notifications";
 export const NOTIFICATIONS_SHORTCUT = "Alt+N";
@@ -52,6 +52,13 @@ type Center = {
   show: (anchor: HTMLElement) => void;
 };
 const CenterContext = createContext<Center | null>(null);
+
+/** Adding the default project scope to the URL does not leave the page the menu was opened on. */
+function menuPlace({ pathname, search }: { pathname: string; search: string }): string {
+  const params = new URLSearchParams(search);
+  params.delete("project");
+  return `${pathname}?${params}`;
+}
 
 export function AgentNotifications({ children }: { children: ReactNode }) {
   const client = useQueryClient();
@@ -254,11 +261,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     [navigate],
   );
   useEffect(() => {
-    if (
-      menuLocation.current.pathname !== location.pathname ||
-      menuLocation.current.search !== location.search
-    )
-      setExpanded(false);
+    if (menuPlace(menuLocation.current) !== menuPlace(location)) setExpanded(false);
     menuLocation.current = location;
   }, [location]);
   const linkParams = new URLSearchParams(location.search);
@@ -708,15 +711,4 @@ function NotificationToast({
       </Button>
     </article>
   );
-}
-
-/** Old and external links open the same menu; there is no separate inbox page. */
-export function NotificationLink() {
-  const navigate = useNavigate();
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    params.set("notifications", "open");
-    navigate({ pathname: "/activity", search: params.toString() }, { replace: true });
-  }, [navigate]);
-  return null;
 }

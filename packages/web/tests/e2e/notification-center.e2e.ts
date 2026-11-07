@@ -124,7 +124,7 @@ test("a dismissed notification's old link still opens its source request", async
   });
   expect(response.ok()).toBe(true);
   await gotoView(page, "tasks");
-  await page.goto(`/attention?request=${source.id}`);
+  await page.goto(`/activity?notifications=open&request=${source.id}`);
   const card = page.getByTestId(`attention-request-${source.id}`);
   await expect(card.getByTestId("attention-answer")).toBeVisible();
   await card.getByTestId("attention-answer").fill("Yes");

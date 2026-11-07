@@ -176,7 +176,7 @@ export class HumanRequestStore {
         body: request.input.origin.session_title ?? "An agent needs your response.",
         level: "needs-you",
         project_id: request.input.project_id,
-        path: `/notifications?request=${encodeURIComponent(request.id)}`,
+        path: `/activity?notifications=open&request=${encodeURIComponent(request.id)}`,
         requires_action: true,
         created_at: request.created_at,
       });

@@ -4,7 +4,7 @@ import { parseNotifyRequest, shouldNotifyNatively } from "./notify";
 const valid = {
   title: "Fix tests",
   body: "Needs you: claude · Fix tests",
-  path: "/attention",
+  path: "/activity?notifications=open",
   level: "needs-you" as const,
 };
 

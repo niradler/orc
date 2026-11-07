@@ -161,7 +161,7 @@ for (const agent of ["claude", "codex"] as const) {
       `[data-testid="live-session-row"][data-session-id="${ready.session_id}"]`,
     );
     await expect(row).toBeVisible();
-    await expect(row.getByTestId("live-status")).toContainText("Ready");
+    await expect(row.getByTestId("handoff-ready")).toHaveText("Ready to resume");
     await row.getByTestId("resume-actions-menu").click();
     await page.getByTestId("resume-actions-dropdown").getByTestId("open-terminal-resume").click();
     await page.waitForURL(/\/terminals\/[^/]+$/);
