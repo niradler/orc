@@ -210,6 +210,8 @@ the backend supports changing it live.
 Pasting at least 16 KiB or 200 lines attaches the text as `pasted-text-N.txt`.
 Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach files.
 
+<img src="/screens/chat-composer-390.png" alt="Compact composer icons on a phone" width="260">
+
 ## Desktop app only
 
 The desktop app is an Electron shell around the same dashboard. On top of the browser experience it:
