@@ -7,6 +7,7 @@ import {
 } from "@orc/core/channels";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { installNotificationReceiptPins } from "./notification-deliveries.js";
 
 type ReceiptRow = { payload: string; request_hash: string; updated_at: number };
 export type ChannelPairing = {
@@ -24,6 +25,7 @@ export class ChannelStore {
     readonly db: Database,
     private readonly now = Date.now,
   ) {
+    installNotificationReceiptPins(db);
     db.exec(`CREATE TABLE IF NOT EXISTS channel_target_notifications (
       channel_id TEXT NOT NULL,target_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(channel_id,target_id))`);
     db.exec(`CREATE TABLE IF NOT EXISTS channel_receipts (
@@ -404,7 +406,10 @@ export class ChannelStore {
   }
   prune() {
     const cutoff = this.now() - 30 * 86400000;
-    this.db.query("DELETE FROM channel_receipts WHERE updated_at<?").run(cutoff);
+    this.db
+      .query(`DELETE FROM channel_receipts WHERE updated_at<? AND NOT EXISTS (
+      SELECT 1 FROM notification_receipt_pins p WHERE p.connection=channel_receipts.connection AND p.idem=channel_receipts.idem AND p.expires_at>?)`)
+      .run(cutoff, this.now());
     this.db.query("DELETE FROM channel_inbound WHERE created_at<?").run(cutoff);
     this.db.query("DELETE FROM channel_pairings WHERE expires_at<?").run(this.now() - 86400000);
     this.db.query("DELETE FROM channel_actions WHERE expires_at<?").run(this.now() - 86400000);

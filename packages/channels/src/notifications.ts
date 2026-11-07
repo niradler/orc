@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   NotificationFilterSchema,
   notificationMatches,
@@ -69,15 +69,12 @@ export async function forwardChannelNotifications(
         store.finish(claim, "failed", "Unsafe source link");
         continue;
       }
-      const key = createHash("sha256")
-        .update(JSON.stringify([event.id, connection.id, target.id]))
-        .digest("hex");
       try {
         const receipt = await service.send({
           connection: connection.id,
           target: target.id,
           project_id: event.project_id,
-          idempotency_key: `notification:${key}:${claim.attempts}`,
+          idempotency_key: claim.idempotency_key,
           message: {
             text: notificationSummary(event),
             format: "plain",

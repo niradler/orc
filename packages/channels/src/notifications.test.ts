@@ -287,6 +287,8 @@ test("should reclaim interrupted work using the same transport idempotency key w
       links: [{ label: "Open in ORC", url: "https://orc.example/activity" }],
     },
   });
+  f.db.query("UPDATE channel_receipts SET updated_at=?").run(f.now() - 31 * 86400000);
+  new ChannelStore(f.db, f.now).prune();
   f.advance(120001);
   await f.tick();
   expect(f.payloads).toHaveLength(1);

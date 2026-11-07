@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import type { ChannelConnection, ChannelTarget } from "@orc/core/channels";
 import { loadConfig } from "@orc/core/config";
 import {
@@ -16,7 +17,13 @@ export type DeliveryClaim = NotificationDelivery & {
   destination: string;
   owner: string;
   lease_until: number;
+  idempotency_key: string;
 };
+type ClaimRow = Omit<DeliveryClaim, "idempotency_key">;
+export function installNotificationReceiptPins(db: Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS notification_receipt_pins (
+    connection TEXT NOT NULL,idem TEXT NOT NULL,expires_at INTEGER NOT NULL,PRIMARY KEY(connection,idem))`);
+}
 type Destination = { connection: string; target: string; fingerprint: string; since: number };
 export function notificationDestination(
   connection: ChannelConnection,
@@ -30,6 +37,7 @@ export class NotificationDeliveryStore {
     readonly db: Database,
     readonly now: () => number = Date.now,
   ) {
+    installNotificationReceiptPins(db);
     new NotificationStore(db);
     db.exec(`CREATE TABLE IF NOT EXISTS notification_forwarding_policy (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL, since INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS notification_destinations (connection TEXT NOT NULL,target TEXT NOT NULL,fingerprint TEXT NOT NULL,since INTEGER NOT NULL,PRIMARY KEY(connection,target));
@@ -88,6 +96,11 @@ export class NotificationDeliveryStore {
   }
   enqueue(connections: readonly ChannelConnection[]): void {
     this.syncDestinations(connections);
+    this.db
+      .query(
+        "DELETE FROM notification_receipt_pins WHERE rowid IN (SELECT rowid FROM notification_receipt_pins WHERE expires_at<=? LIMIT 1000)",
+      )
+      .run(this.now());
     this.db
       .query(`DELETE FROM notification_deliveries WHERE rowid IN (SELECT d.rowid FROM notification_deliveries d
       WHERE d.expires_at<=? OR NOT EXISTS(SELECT 1 FROM notifications n WHERE n.id=d.notification_id) LIMIT 1000)`)
@@ -180,17 +193,27 @@ export class NotificationDeliveryStore {
     return this.db
       .transaction(() => {
         const row = this.db
-          .query<DeliveryClaim, [number, number]>(`SELECT * FROM notification_deliveries
+          .query<ClaimRow, [number, number]>(`SELECT * FROM notification_deliveries
         WHERE (status='pending' AND next_at<=?) OR (status='sending' AND lease_until<=?) ORDER BY next_at LIMIT 1`)
           .get(now, now);
         if (!row) return null;
-        return this.db
+        const claim = this.db
           .query<
-            DeliveryClaim,
+            ClaimRow,
             [string, number, string, string, string]
           >(`UPDATE notification_deliveries SET status='sending',owner=?,lease_until=?,
         attempts=attempts+CASE WHEN status='pending' THEN 1 ELSE 0 END WHERE notification_id=? AND connection_id=? AND target_id=? RETURNING *`)
           .get(owner, now + 120000, row.notification_id, row.connection_id, row.target_id);
+        if (!claim) return null;
+        const hash = createHash("sha256")
+          .update(JSON.stringify([claim.notification_id, claim.connection_id, claim.target_id]))
+          .digest("hex");
+        const key = `notification:${hash}:${claim.attempts}`;
+        // Keep reconciliation evidence even when normal channel receipt retention is shorter.
+        this.db
+          .query("INSERT OR REPLACE INTO notification_receipt_pins VALUES(?,?,?)")
+          .run(claim.connection_id, key, claim.expires_at);
+        return { ...claim, idempotency_key: key };
       })
       .immediate();
   }
