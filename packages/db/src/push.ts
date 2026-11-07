@@ -202,10 +202,11 @@ export class PushStore {
           .query("INSERT INTO push_job_cursors (device_id, cursor_at) VALUES (?, ?)")
           .run(deviceId, since);
         this.db
-          .query(`INSERT OR IGNORE INTO notification_pushes
+          .query(`INSERT INTO notification_pushes
       (notification_id, device_id, sent, leased_until)
       SELECT id, ?, 1, 0 FROM notifications
-      WHERE type IN ('job.failed','job.finished') AND created_at >= ?`)
+      WHERE type IN ('job.failed','job.finished') AND created_at >= ?
+      ON CONFLICT(notification_id, device_id) DO UPDATE SET sent = 1, leased_until = 0`)
           .run(deviceId, since);
         return since;
       })

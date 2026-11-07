@@ -352,3 +352,40 @@ test("should keep job pushes opted out after restart and resume without replayin
       ?.count,
   ).toBe(0);
 });
+
+test("should stop an in-flight job batch on opt-out and skip its leased events when resumed", async () => {
+  const db = new Database(":memory:");
+  let time = 10_000;
+  const store = new PushStore(db, () => time);
+  const device = store.subscribe({ ...subscription, topics: ["jobs"] });
+  const notes = new NotificationStore(db, () => time);
+  time++;
+  for (const id of ["first", "second"])
+    notes.publish({
+      type: "job.failed",
+      source_key: `job:${id}`,
+      source_id: id,
+      title: "Nightly failed",
+      body: "Failed after 0s, exit 1.",
+      level: "needs-you",
+      project_id: null,
+      path: `/jobs/job?run=${id}`,
+      created_at: time,
+      expires_at: time + 100_000,
+    });
+  let attempts = 0;
+  const pushDeps: PushDeps = {
+    store,
+    fetch: (async () => {
+      attempts++;
+      store.updateTopics(device.id, []);
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch,
+  };
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(1);
+  store.updateTopics(device.id, ["jobs"]);
+  time += 31_000;
+  await notifyPendingJobPushes(pushDeps);
+  expect(attempts).toBe(1);
+});

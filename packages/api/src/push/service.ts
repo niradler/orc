@@ -155,7 +155,7 @@ export async function notifyPendingJobPushes(deps: PushDeps = defaultDeps()): Pr
     const cursor = deps.store.claimJobCursor(target.id);
     for (const event of deps.store.pendingJobPushes(target.id, cursor)) {
       if (!deps.store.reserveJobPush(event.id, target.id)) continue;
-      const result = await sendPush(null, jobPushMessage(event), target.id, deps);
+      const result = await sendPush("jobs", jobPushMessage(event), target.id, deps);
       if (result.sent || result.expired) deps.store.finishJobPush(event.id, target.id);
     }
   }
