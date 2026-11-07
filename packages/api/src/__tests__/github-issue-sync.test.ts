@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_GITHUB_STATUS_LABELS, GithubSyncConfigSchema } from "@orc/core/github-sync";
 import { getDb, getSqlite } from "@orc/db/client";
-import { projects, tasks } from "@orc/db/schema";
+import { bridge_chats, gateway_sessions, projects, tasks } from "@orc/db/schema";
 import { executeTool } from "@orc/mcp";
 import { createOrcClient } from "@orc/sdk/client";
 import { updateTaskStatus } from "@orc/task-service";
 import { eq } from "drizzle-orm";
 import { type GithubSyncDeps, syncGithubProject } from "../git/issue-sync.js";
+import { LIVE_CHAT_ID } from "../sessions/common.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
@@ -120,6 +121,85 @@ async function taskRow() {
 }
 
 describe("GitHub issues as native tasks", () => {
+  test("should retain connected sessions, comments, dependencies and workflow settings across issue resync", async () => {
+    await syncGithubProject(projectId, deps);
+    const task = await taskRow();
+    await getDb()
+      .insert(bridge_chats)
+      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: LIVE_CHAT_ID })
+      .onConflictDoNothing();
+    await getDb().insert(gateway_sessions).values({
+      id: "linked-issue-session",
+      chat_id: LIVE_CHAT_ID,
+      backend: "codex",
+      mode: "direct",
+      runtime_session_id: "issue-session-probe",
+      title: "Session-link verification",
+      project_id: projectId,
+      status: "stopped",
+    });
+    const linked = await req(app, "PATCH", "/sessions/live/linked-issue-session", {
+      task_id: task.id,
+    });
+    expect(linked.status).toBe(200);
+    expect((await linked.json()).task.id).toBe(task.id);
+    const edited = await req(app, "PATCH", `/tasks/${task.id}`, {
+      priority: "high",
+      progress: 35,
+      flow_name: "orc-default",
+      agent_backend: "codex",
+    });
+    expect(edited.status).toBe(200);
+    expect(
+      (
+        await req(app, "POST", `/tasks/${task.id}/comments`, {
+          content: "Local evidence stays attached",
+        })
+      ).status,
+    ).toBe(201);
+    const other = await (
+      await req(app, "POST", "/tasks", { title: "Native dependency", project_id: projectId })
+    ).json();
+    expect(
+      (
+        await req(app, "POST", `/tasks/${task.id}/links`, {
+          to_task_id: other.id,
+          link_type: "relates_to",
+        })
+      ).status,
+    ).toBe(201);
+    primaryIssue.title = "Updated upstream issue title";
+    expect((await syncGithubProject(projectId, deps)).error).toBeNull();
+    const refreshed = await taskRow();
+    expect(refreshed).toMatchObject({
+      id: task.id,
+      title: primaryIssue.title,
+      priority: "high",
+      progress: 35,
+      flow_name: "orc-default",
+      agent_backend: "codex",
+      auto_start: false,
+    });
+    const sessions = await (
+      await req(app, "GET", `/sessions/live?task_id=${task.id}&active=false`)
+    ).json();
+    expect(sessions.sessions).toHaveLength(1);
+    expect(sessions.sessions[0]).toMatchObject({
+      id: "linked-issue-session",
+      task: { id: task.id, title: primaryIssue.title },
+    });
+    expect(
+      (await (await req(app, "GET", `/tasks/${task.id}/comments`)).json()).comments[0].content,
+    ).toBe("Local evidence stays attached");
+    expect((await (await req(app, "GET", `/tasks/${task.id}/links`)).json()).links).toHaveLength(1);
+    expect(
+      (await req(app, "PATCH", "/sessions/live/linked-issue-session", { task_id: null })).status,
+    ).toBe(200);
+    expect(
+      (await (await req(app, "GET", `/sessions/live?task_id=${task.id}&active=false`)).json())
+        .sessions,
+    ).toHaveLength(0);
+  });
   test("should import once, adopt an existing link, filter PRs, and expose the same task via API", async () => {
     const created = await req(app, "POST", "/tasks", {
       project_id: projectId,

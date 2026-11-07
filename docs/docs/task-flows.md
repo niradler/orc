@@ -39,6 +39,10 @@ issue labels are copied to tags on first import. Comments are not synchronized.
 Imported and newly adopted issues have automatic agent execution disabled, including
 automatic review. You can explicitly start a workflow from task detail.
 
+Connected sessions use the same task ID and the normal **Sessions** task picker.
+Session links, local comments, related-task links, priority, progress and workflow
+settings survive GitHub issue resync. Titles and descriptions remain managed in GitHub.
+
 **Status labels** is collapsed by default in project configuration. Map each ORC
 status to one distinct repository label. Defaults are `status:todo`, `status:queued`,
 `status:doing`, `status:review`, `status:changes-requested`, `status:blocked`,
