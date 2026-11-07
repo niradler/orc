@@ -96,6 +96,7 @@ export function ChatPanel({
     streamingAgent,
     streamText,
     activity,
+    turn,
     error,
     config,
     ready,
@@ -152,9 +153,6 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
-  const turnStartedAt = [...messages]
-    .reverse()
-    .find((message) => message.role === "user")?.timestamp;
   const submit = () => {
     if (!ready || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
@@ -464,8 +462,7 @@ export function ChatPanel({
                       <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
                         <ChatActivityList
                           value={message.metadata.custom.activity}
-                          startedAt={message.metadata.custom.startedAt}
-                          finishedAt={message.metadata.custom.finishedAt}
+                          turn={message.metadata.custom.turn}
                           live={message.metadata.custom.live === true}
                         />
                         <ChatAttachments value={message.metadata.custom.attachments} />
@@ -499,7 +496,7 @@ export function ChatPanel({
           )}
         </div>
         {streaming && (
-          <ChatLiveStatus agent={streamingAgent} startedAt={turnStartedAt} activity={activity} />
+          <ChatLiveStatus agent={streamingAgent} startedAt={turn?.startedAt} activity={activity} />
         )}
         <ChatLiveAnnouncer
           streaming={streaming}

@@ -176,6 +176,22 @@ Enabled agents, including custom ACPX ids, appear in the chat agent picker:
 
 ![Chat agent picker](/screens/chat-agent-picker.png)
 
+## Chat turn progress
+
+Finished turns fold tool calls and intermediate narration into one expandable line;
+your message and the final reply remain visible. Expand it to inspect file diffs,
+commands and output, reads, and searches. Failed tools stay marked.
+
+During a response, a quiet status line shows elapsed time and the current tool.
+Scrolling up pauses automatic following; **Jump to latest** returns to the bottom.
+Stop remains beside Send. Working indicators are static.
+
+Each turn keeps its duration and completed, stopped, or failed outcome across reloads.
+Duration uses the agent's reported value when available, otherwise server elapsed
+time, including waits for input. Older turns without timing show counts only.
+Stopped turns retain partial work; unfinished tool calls read **Incomplete**.
+Individual tool durations are not shown.
+
 ## Desktop app only
 
 The desktop app is an Electron shell around the same dashboard. On top of the browser experience it:

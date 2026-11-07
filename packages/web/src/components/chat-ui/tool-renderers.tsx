@@ -46,7 +46,7 @@ export function DiffStat({ added, removed }: { added: number; removed: number })
   );
 }
 
-function ToolState({ tool }: { tool: ChatTool }) {
+function ToolState({ tool, live }: { tool: ChatTool; live: boolean }) {
   if (tool.isError)
     return (
       <span className="flex shrink-0 items-center gap-1 text-error">
@@ -54,7 +54,9 @@ function ToolState({ tool }: { tool: ChatTool }) {
         Failed
       </span>
     );
-  return tool.result === undefined ? <span className="shrink-0">Running</span> : null;
+  return tool.result === undefined ? (
+    <span className="shrink-0">{live ? "Running" : "Incomplete"}</span>
+  ) : null;
 }
 
 function CommandBody({
@@ -129,7 +131,7 @@ function GenericBody({ tool }: { tool: ChatTool }) {
   );
 }
 
-export function ToolRow({ tool }: { tool: ChatTool }) {
+export function ToolRow({ tool, live = false }: { tool: ChatTool; live?: boolean }) {
   const view = useMemo(() => toolView(tool), [tool]);
   const Icon = toolIcon(tool, view);
   const detail = toolDetail(view);
@@ -147,7 +149,7 @@ export function ToolRow({ tool }: { tool: ChatTool }) {
             removed={view.files.reduce((sum, file) => sum + file.removed, 0)}
           />
         )}
-        <ToolState tool={tool} />
+        <ToolState tool={tool} live={live} />
         <ChevronRight
           aria-hidden="true"
           size={14}
@@ -169,8 +171,8 @@ export function ToolRow({ tool }: { tool: ChatTool }) {
   );
 }
 
-export function ActivityRow({ item }: { item: ChatActivity }) {
-  if (item.type === "tool") return <ToolRow tool={item} />;
+export function ActivityRow({ item, live = false }: { item: ChatActivity; live?: boolean }) {
+  if (item.type === "tool") return <ToolRow tool={item} live={live} />;
   if (item.type === "status")
     return <p className="px-1.5 py-1 wrap-break-word text-on-surface-variant">{item.text}</p>;
   return (

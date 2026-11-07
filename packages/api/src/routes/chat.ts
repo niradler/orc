@@ -1246,6 +1246,7 @@ async function beginTurn(
     timestamp: Date.now(),
   });
   if (thread.title === "New chat") thread.title = input.slice(0, 100);
+  const startedAt = Date.now();
   const assistant: ChatMessage = {
     id: crypto.randomUUID(),
     role: "assistant",
@@ -1253,6 +1254,7 @@ async function beginTurn(
     timestamp: Date.now(),
     agent: thread.config.agent,
     activity: [],
+    turn: { startedAt },
   };
   thread.updatedAt = Date.now();
   try {
@@ -1265,10 +1267,22 @@ async function beginTurn(
   let failure: string | null = null;
   let completed = false;
   let responded = false;
+  let agentDurationMs: number | undefined;
+  let agentOutcome: "completed" | "stopped" | "failed" | undefined;
   const execute = async () => {
     const timer = setTimeout(run.stop, 15 * 60000);
     const emit = async (event: ChatEvent) => {
-      if (event.type !== "thread" && event.type !== "error" && event.type !== "capabilities")
+      if (event.type === "tool_use" && assistant.content) {
+        const narration = assistant.content;
+        assistant.content = "";
+        await emit({ type: "narration", text: narration });
+      }
+      if (
+        event.type !== "thread" &&
+        event.type !== "turn" &&
+        event.type !== "error" &&
+        event.type !== "capabilities"
+      )
         responded = true;
       if (event.type === "text") assistant.content += event.text;
       if (event.type === "error") failure ??= event.message;
@@ -1277,6 +1291,7 @@ async function beginTurn(
     };
     try {
       await emit({ type: "thread", thread, runId });
+      await emit({ type: "turn", turn: { startedAt } });
       if (mock) {
         await Promise.race([
           Bun.sleep(Math.min(Number(input.match(/after (\d+)ms/i)?.[1] ?? 75), 10000)),
@@ -1366,6 +1381,12 @@ async function beginTurn(
             continue;
           }
           if (event.type === "result") {
+            const duration = event.data.durationMs;
+            if (typeof duration === "number" && Number.isFinite(duration) && duration >= 0)
+              agentDurationMs = duration;
+            agentOutcome = event.data.outcome;
+            if (agentOutcome === "stopped") stopped = true;
+            if (agentOutcome === "failed") failure ??= "The agent could not complete the response.";
             if (
               event.data.runtimeSessionId &&
               !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(event.data.runtimeSessionId)
@@ -1432,11 +1453,24 @@ async function beginTurn(
       if (!stopped) await emit({ type: "error", message }).catch(() => {});
     } finally {
       clearTimeout(timer);
+      const finishedAt = Date.now();
+      assistant.turn = {
+        startedAt,
+        finishedAt,
+        durationMs: agentDurationMs ?? Math.max(0, finishedAt - startedAt),
+        outcome:
+          stopped || agentOutcome === "stopped"
+            ? "stopped"
+            : failure || agentOutcome === "failed"
+              ? "failed"
+              : "completed",
+      };
+      assistant.timestamp = finishedAt;
       const nativeId = run.session?.getRuntimeSessionId?.();
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
       await run.session?.close().catch(() => {});
-      if (assistant.content || assistant.activity?.length) thread.messages.push(assistant);
+      thread.messages.push(assistant);
       if (synced) {
         const mark = await transcriptMark(thread).catch(() => null);
         if (mark) thread.transcriptMark = mark;
@@ -1462,6 +1496,7 @@ async function beginTurn(
         active.delete(key);
         runs.delete(runId);
         changes.publish("human-requests");
+        publish(run, { type: "turn", turn: assistant.turn });
         publish(run, { type: "done" });
         for (const listener of run.listeners) listener(null);
         finish(

@@ -49,6 +49,7 @@ type ClaudeStdoutMsg = {
   input?: unknown;
   is_error?: boolean | undefined;
   usage?: unknown;
+  duration_ms?: number | undefined;
 };
 
 type StreamState = {
@@ -286,7 +287,11 @@ export class ClaudeSession implements AgentSession {
       if (msg.session_id) this.runtimeSessionId = msg.session_id;
       this.push({
         type: "result",
-        data: { runtimeSessionId: this.runtimeSessionId, usage: msg.usage },
+        data: {
+          runtimeSessionId: this.runtimeSessionId,
+          usage: msg.usage,
+          durationMs: msg.duration_ms,
+        },
       });
       this.done = true;
       this.resolveNext?.();

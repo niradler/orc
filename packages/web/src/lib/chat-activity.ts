@@ -1,7 +1,7 @@
-import type { ChatActivity } from "@orc/core/chat";
+import type { ChatActivity, ChatTurn } from "@orc/core/chat";
 import { type ChatTool, toolView } from "./chat-tools";
 
-export type TurnTiming = { startedAt?: number | undefined; finishedAt?: number | undefined };
+export type TurnTiming = Partial<ChatTurn>;
 export type TurnFold = {
   tools: number;
   thoughts: number;
@@ -43,7 +43,10 @@ export function foldTurn(activity: ChatActivity[], timing: TurnTiming = {}): Tur
     if (view.kind === "edit") for (const file of view.files) files.add(file.path);
   }
   const elapsed =
-    timing.startedAt && timing.finishedAt ? timing.finishedAt - timing.startedAt : null;
+    timing.durationMs ??
+    (timing.startedAt !== undefined && timing.finishedAt !== undefined
+      ? timing.finishedAt - timing.startedAt
+      : null);
   const pending = tools.filter((tool) => tool.result === undefined);
   return {
     tools: tools.length,
@@ -64,11 +67,12 @@ export function foldCounts(fold: TurnFold): string[] {
   ].filter(Boolean);
 }
 
-export function foldLabel(fold: TurnFold, live = false): string {
-  const head = live
-    ? "Working"
-    : fold.durationMs !== null
-      ? `Worked for ${formatDuration(fold.durationMs)}`
-      : "Worked";
+export function foldLabel(fold: TurnFold, live = false, outcome?: ChatTurn["outcome"]): string {
+  let head = "Worked";
+  if (live) head = "Working";
+  else if (outcome === "stopped") head = "Stopped";
+  else if (outcome === "failed") head = "Failed";
+  if (!live && fold.durationMs !== null)
+    head += `${outcome === "stopped" || outcome === "failed" ? " after" : " for"} ${formatDuration(fold.durationMs)}`;
   return [head, ...foldCounts(fold)].join(" · ");
 }

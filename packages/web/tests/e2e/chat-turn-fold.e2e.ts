@@ -115,7 +115,13 @@ function seedThread(id: string, started: number) {
         id: "assistant",
         role: "assistant",
         content: "Refactor finished: the panel now follows only while pinned.",
-        timestamp: started + 42_000,
+        timestamp: started + 90_000,
+        turn: {
+          startedAt: started,
+          finishedAt: started + 90_000,
+          durationMs: 42_000,
+          outcome: "completed",
+        },
         activity: longTurnActivity(),
       },
     ],
@@ -149,6 +155,7 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
     await expect(page.getByText("Refactor the chat scroll")).toBeVisible();
     await expect(page.getByText("Refactor finished: the panel now follows")).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`fold-${width}.png`) });
     await expect(page.getByTestId("chat-tool").first()).toBeHidden();
 
     await page.getByTestId("chat-turn-fold-summary").click();
@@ -178,6 +185,25 @@ for (const width of [1440, 390]) {
     );
   });
 }
+
+test("server turn timing and stopped outcome survive reload on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?chat=open");
+  await page.getByTestId("chat-input").fill("Reply after 10000ms: wait for cancellation");
+  await page.getByTestId("chat-send-button").click();
+  await expect(page.getByTestId("chat-working-timer")).toBeVisible();
+  await expect.poll(() => page.getByTestId("chat-working-timer").textContent()).not.toBe("0:00");
+  await page.reload();
+  await expect(page.getByTestId("chat-working-timer")).toBeVisible();
+  await expect(page.getByTestId("chat-working-timer")).not.toHaveText("0:00");
+  await page.getByTestId("chat-cancel-button").click();
+  await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
+  await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(/^Stopped/);
+  const label = await page.getByTestId("chat-turn-fold-label").textContent();
+  await page.reload();
+  await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(label ?? "");
+  await page.screenshot({ path: test.info().outputPath("stopped-390.png") });
+});
 
 async function installStreamControl(page: Page) {
   await page.addInitScript(() => {
@@ -226,6 +252,33 @@ async function distanceFromBottom(page: Page) {
     .getByTestId("chat-messages")
     .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight);
 }
+
+test("pre-tool narration folds while the final reply stays visible", async ({ page }) => {
+  await installStreamControl(page);
+  await page.goto("/?chat=open");
+  await page.getByTestId("chat-input").fill("Inspect then summarize");
+  await page.getByTestId("chat-send-button").click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as StreamWindow).chatStreams))
+    .toBe(1);
+  await push(page, 0, [{ type: "text", text: "First I will inspect the workspace." }]);
+  const messages = page.getByTestId("chat-messages");
+  await expect(
+    messages.getByText("First I will inspect the workspace.", { exact: true }),
+  ).toBeVisible();
+  await push(page, 0, [
+    { type: "narration", text: "First I will inspect the workspace." },
+    { type: "tool_use", data: { id: "read", name: "Read", input: '{"path":"README.md"}' } },
+    { type: "tool_result", data: { toolUseId: "read", content: "Read complete", isError: false } },
+    { type: "text", text: "The workspace is ready." },
+    { type: "done" },
+  ]);
+  await expect(messages.getByText("The workspace is ready.", { exact: true })).toBeVisible();
+  const narration = messages.getByText("First I will inspect the workspace.", { exact: true });
+  await expect(narration).toBeHidden();
+  await page.getByTestId("chat-turn-fold-summary").click();
+  await expect(narration).toBeVisible();
+});
 
 test("streaming follows only while pinned and Jump to latest returns with a new count", async ({
   page,

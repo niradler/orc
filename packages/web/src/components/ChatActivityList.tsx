@@ -1,22 +1,16 @@
-import { ChatActivitySchema } from "@orc/core/chat";
+import { ChatActivitySchema, ChatTurnSchema } from "@orc/core/chat";
 import { ChevronRight, CircleAlert } from "lucide-react";
 import { useMemo } from "react";
 import { ActivityRow } from "@/components/chat-ui/tool-renderers";
 import { foldLabel, foldTurn } from "@/lib/chat-activity";
 
-function finite(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 export function ChatActivityList({
   value,
-  startedAt,
-  finishedAt,
+  turn,
   live = false,
 }: {
   value: unknown;
-  startedAt?: unknown;
-  finishedAt?: unknown;
+  turn?: unknown;
   live?: boolean;
 }) {
   const items = useMemo(
@@ -29,14 +23,22 @@ export function ChatActivityList({
         : [],
     [value],
   );
-  const start = finite(startedAt);
-  const end = finite(finishedAt);
+  const timing = ChatTurnSchema.safeParse(turn);
+  const start = timing.success ? timing.data.startedAt : undefined;
+  const end = timing.success ? timing.data.finishedAt : undefined;
+  const durationMs = timing.success ? timing.data.durationMs : undefined;
+  const outcome = timing.success ? timing.data.outcome : undefined;
   const fold = useMemo(
-    () => foldTurn(items, { startedAt: start, finishedAt: end }),
-    [items, start, end],
+    () =>
+      foldTurn(items, {
+        ...(start !== undefined ? { startedAt: start } : {}),
+        ...(end !== undefined ? { finishedAt: end } : {}),
+        ...(durationMs !== undefined ? { durationMs } : {}),
+      }),
+    [items, start, end, durationMs],
   );
-  if (!items.length) return null;
-  const label = foldLabel(fold, live);
+  if (!items.length && outcome !== "stopped" && outcome !== "failed") return null;
+  const label = foldLabel(fold, live, outcome);
   return (
     <details
       data-testid="chat-turn-fold"
@@ -69,7 +71,7 @@ export function ChatActivityList({
         className="mt-1 ml-2 max-h-[min(28rem,60dvh)] overflow-y-auto border-l border-outline-variant pl-1"
       >
         {items.map((item) => (
-          <ActivityRow key={item.id} item={item} />
+          <ActivityRow key={item.id} item={item} live={live} />
         ))}
       </section>
     </details>

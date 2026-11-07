@@ -80,6 +80,10 @@ export function ChatLiveAnnouncer({
   const wasStreaming = useRef(streaming);
 
   useEffect(() => {
+    if (text.length < spoken.current) spoken.current = 0;
+  }, [text]);
+
+  useEffect(() => {
     if (!streaming) return;
     spoken.current = 0;
     setMessage(`${agent} is working`);
@@ -102,7 +106,10 @@ export function ChatLiveAnnouncer({
     wasStreaming.current = false;
     if (last?.role !== "assistant") return;
     const rest = last.content.slice(spoken.current).trim();
-    const summary = last.activity?.length ? foldLabel(foldTurn(last.activity)) : "";
+    const summary =
+      last.activity?.length || last.turn?.outcome
+        ? foldLabel(foldTurn(last.activity ?? [], last.turn), false, last.turn?.outcome)
+        : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
   }, [streaming, last]);
 
