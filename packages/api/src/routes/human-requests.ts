@@ -41,7 +41,7 @@ app.openapi(
     tags: ["Human requests"],
     responses: {
       200: {
-        description: "Attention needed: pending requests and undelivered answers",
+        description: "Notifications: pending requests and undelivered answers",
         content: { "application/json": { schema: z.array(HumanRequestSchema) } },
       },
     },

@@ -2472,7 +2472,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Attention needed: pending requests and undelivered answers */
+                /** @description Notifications: pending requests and undelivered answers */
                 200: {
                     headers: {
                         [name: string]: unknown;

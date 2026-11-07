@@ -61,6 +61,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const requests = useHumanRequests();
   const sessions = useQuery(activeLiveSessionsQuery);
   const [expanded, setExpanded] = useState(false);
+  const menuLocation = useRef(location);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, RequestDraft>>({});
@@ -253,12 +254,20 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     [navigate],
   );
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    if (params.get("notifications") !== "open" || location.pathname !== "/activity") {
+    if (
+      menuLocation.current.pathname !== location.pathname ||
+      menuLocation.current.search !== location.search
+    )
       setExpanded(false);
-      return;
-    }
-    setSelected(params.get("request"));
+    menuLocation.current = location;
+  }, [location]);
+  const linkParams = new URLSearchParams(location.search);
+  const notificationLink =
+    location.pathname === "/activity" && linkParams.get("notifications") === "open";
+  const linkedRequest = linkParams.get("request");
+  useEffect(() => {
+    if (!notificationLink) return;
+    setSelected(linkedRequest);
     const timer = window.setTimeout(() => {
       const button =
         document.querySelector<HTMLButtonElement>(
@@ -270,7 +279,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [location.pathname, location.search]);
+  }, [notificationLink, linkedRequest]);
 
   const open = (item: OrcNotification) => {
     if (!item.read_at) update.mutate({ id: item.id, read: true });

@@ -595,7 +595,7 @@ export default function Attention() {
   return (
     <div data-testid="attention-view" className="@container/attention min-w-0">
       <ViewHeader
-        title="Attention needed"
+        title="Notifications"
         meta={
           state.data ? state.data.length + observed.data.length + chatWaits.data.length : undefined
         }

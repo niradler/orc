@@ -79,6 +79,7 @@ test.describe("Sessions", () => {
 
     await gotoView(page, "sessions");
     await page.getByTestId("nav-audit").click();
+    await page.getByTestId("audit-session-history").locator("summary").click();
     await expect(page.getByTestId("view-title")).toHaveText("Audit");
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`);
@@ -92,6 +93,7 @@ test.describe("Sessions", () => {
 
     await gotoView(page, "sessions");
     await page.getByTestId("nav-audit").click();
+    await page.getByTestId("audit-session-history").locator("summary").click();
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`);
     await expect(row).toBeVisible();
@@ -112,6 +114,7 @@ test.describe("Sessions", () => {
 
     await gotoView(page, "sessions");
     await page.getByTestId("nav-audit").click();
+    await page.getByTestId("audit-session-history").locator("summary").click();
     await expect(page.getByTestId("view-title")).toHaveText("Audit");
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`);
@@ -125,7 +128,6 @@ test.describe("Sessions", () => {
     await expect(page.getByTestId("logged-sessions")).toHaveCount(0);
     await expect(page.locator('nav[aria-label="Activity pages"] a')).toHaveText([
       "Activity",
-      "Attention needed",
       "Sessions",
       "Jobs",
       "Webhooks",
@@ -133,6 +135,7 @@ test.describe("Sessions", () => {
     ]);
 
     await page.getByTestId("nav-audit").click();
+    await page.getByTestId("audit-session-history").locator("summary").click();
     await expect(page.getByTestId("logged-sessions")).toBeVisible();
     await expect(page.getByTestId("live-sessions")).toHaveCount(0);
     await expect(page).toHaveURL(/\/audit/);
@@ -149,6 +152,7 @@ test.describe("Sessions", () => {
     await gotoView(page, "sessions");
     await page.getByTestId("nav-audit").click();
     await expect(page.getByTestId("session-row")).toHaveCount(25);
+    await page.getByTestId("audit-session-history").locator("summary").click();
 
     await page.getByTestId("pager-next").click();
     await expect(page.getByTestId("pager")).toContainText("Page 2");
