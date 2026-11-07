@@ -12,11 +12,11 @@ test.describe("Chat panel - end-to-end SSE round-trip", () => {
       API_SECRET,
     );
     await page.goto("/");
+    const panel = page.getByTestId("chat-panel");
     const openBtn = page.getByTestId("chat-open-button");
-    if (await openBtn.isVisible().catch(() => false)) {
-      await openBtn.click();
-    }
-    await expect(page.getByTestId("chat-panel")).toBeVisible();
+    await expect(panel.or(openBtn).first()).toBeVisible();
+    if (!(await panel.isVisible())) await openBtn.click();
+    await expect(panel).toBeVisible();
   });
 
   test("sending a message streams an assistant reply while keeping input available", async ({

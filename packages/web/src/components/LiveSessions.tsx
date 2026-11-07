@@ -3,6 +3,7 @@ import { RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
+import { AgentIcon } from "@/components/AgentIcon";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Highlight } from "@/components/Highlight";
@@ -293,7 +294,10 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                         />
                       </button>
                       <div className="flex flex-wrap gap-3 text-xs text-outline">
-                        <span className="text-primary">{session.agent}</span>
+                        <span className="inline-flex items-center gap-1 text-primary">
+                          <AgentIcon agent={session.agent} decorative size={14} />
+                          {session.agent}
+                        </span>
                         <span
                           data-testid="live-status"
                           className="inline-flex items-center gap-1.5"
@@ -375,7 +379,10 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                           </span>
                         </TableCell>
                         <TableCell className="font-label text-xs font-medium text-primary">
-                          {s.agent}
+                          <span className="inline-flex items-center gap-1">
+                            <AgentIcon agent={s.agent} decorative size={14} />
+                            {s.agent}
+                          </span>
                         </TableCell>
                         <TableCell className="max-w-md">
                           <button

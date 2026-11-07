@@ -22,18 +22,15 @@ import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { ChatActivityList } from "@/components/ChatActivityList";
+import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
 import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
 } from "@/components/ChatContinueInTerminal";
-import {
-  ChatAgentPicker,
-  ChatConversationInfo,
-  ChatModelPicker,
-  ChatSessionPicker,
-} from "@/components/ChatControls";
+import { ChatConversationInfo, ChatSessionPicker } from "@/components/ChatControls";
 import { ChatLiveAnnouncer, ChatLiveStatus } from "@/components/ChatLiveStatus";
+import { ChatPermissionChip } from "@/components/ChatPermissionSelect";
 import {
   ChatPromptMenu,
   chatCommandOptionId,
@@ -47,6 +44,7 @@ import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { commandSegments } from "@/lib/chat-commands";
+import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -174,6 +172,7 @@ export function ChatPanel({
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const inputBackdrop = useRef<HTMLDivElement>(null);
+  const plainPaste = useRef(false);
   const draftSegments = useMemo(
     () => commandSegments(draft, promptMenu.commandNames),
     [draft, promptMenu.commandNames],
@@ -694,7 +693,7 @@ export function ChatPanel({
                 aria-activedescendant={
                   activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                 }
-                placeholder="Message your agent… (/ for prompts and skills)"
+                placeholder="Ask anything. / for prompts and skills"
                 disabled={!ready}
                 value={draft}
                 onChange={(event) => {
@@ -707,12 +706,24 @@ export function ChatPanel({
                     inputBackdrop.current.scrollTop = event.currentTarget.scrollTop;
                 }}
                 onPaste={(event) => {
+                  const plain = plainPaste.current;
+                  plainPaste.current = false;
                   if (event.clipboardData.files.length) {
                     event.preventDefault();
                     addFiles(Array.from(event.clipboardData.files));
+                    return;
                   }
+                  const text = event.clipboardData.getData("text/plain");
+                  if (plain || !shouldAttachPaste(text)) return;
+                  event.preventDefault();
+                  const name = pastedTextName(files.map((file) => file.name));
+                  addFiles([new File([text], name, { type: "text/plain" })]);
                 }}
                 onKeyDown={(event) => {
+                  plainPaste.current =
+                    (event.ctrlKey || event.metaKey) &&
+                    event.shiftKey &&
+                    event.key.toLowerCase() === "v";
                   if (promptMenu.onKeyDown(event)) return;
                   if (
                     event.key === "Enter" &&
@@ -729,7 +740,10 @@ export function ChatPanel({
               />
             </div>
             <div className="flex items-center justify-between gap-2">
-              <div className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
+              <div
+                data-testid="chat-composer-tools"
+                className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5"
+              >
                 <label
                   className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 focus-within:ring-2 focus-within:ring-focus`}
                   aria-label="Attach files"
@@ -750,14 +764,9 @@ export function ChatPanel({
                     }}
                   />
                 </label>
-                <div
-                  data-testid="chat-composer-selectors"
-                  className="chat-composer-selectors flex min-w-0 items-center"
-                >
-                  <ChatAgentPicker />
-                  <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
-                </div>
+                <ChatAgentModelPicker key={thread?.id ?? "new"} />
                 <ChatWorkspaceControls />
+                <ChatPermissionChip />
               </div>
               <div className="flex items-center gap-1">
                 {streaming && thread?.capabilities?.steering && (

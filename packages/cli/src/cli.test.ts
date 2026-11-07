@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,9 @@ import { resetConfig } from "@orc/core/config";
 
 const CLI = join(import.meta.dir, "index.ts");
 const SECRET = "cli-test-secret";
+
+// Each test chains several cold `bun` CLI spawns (15 s each); 5 s default overruns under CI load.
+setDefaultTimeout(60_000);
 
 let server: ReturnType<typeof Bun.serve>;
 let port: number;

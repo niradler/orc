@@ -161,8 +161,44 @@
 }
 
 @utility chat-composer-box {
+  container-type: inline-size;
+  container-name: chat-composer;
   html[data-compact-viewport="true"] & {
     padding: 4px;
+  }
+}
+
+@container chat-composer (width < 640px) {
+  .composer-chip {
+    width: 32px;
+    flex-shrink: 0;
+    justify-content: center;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .composer-chip [data-chip-label] {
+    display: none;
+  }
+
+  .chat-composer-tools,
+  .chat-workspace-controls {
+    flex-wrap: nowrap;
+  }
+
+  .chat-composer-tools {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .chat-composer-tools > * {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 639px), (pointer: coarse) {
+  .composer-chip {
+    min-width: 44px;
   }
 }
 
@@ -178,21 +214,12 @@
 @utility chat-composer-tools {
   html[data-compact-viewport="true"] & {
     flex-wrap: nowrap;
-  }
-}
+    overflow-x: auto;
+    scrollbar-width: none;
 
-@utility chat-composer-selectors {
-  html[data-compact-viewport="true"] & {
-    flex: 0 1 auto;
-    max-width: 60%;
-
-    & > :first-child {
+    & > *,
+    & .chat-workspace-controls > * {
       flex-shrink: 0;
-    }
-
-    & button {
-      max-width: 100%;
-      min-height: 44px;
     }
   }
 }
@@ -212,20 +239,7 @@
 
 @utility chat-workspace-controls {
   html[data-compact-viewport="true"] & {
-    flex: 1 1 11rem;
-    min-width: 44px;
-  }
-}
-
-@utility chat-workspace-actions {
-  html[data-compact-viewport="true"] & {
     flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: thin;
-
-    & > :not(.workspace-path-trigger) {
-      flex-shrink: 0;
-    }
   }
 }
 

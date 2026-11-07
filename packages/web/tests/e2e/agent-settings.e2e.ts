@@ -40,7 +40,7 @@ for (const width of [1440, 390]) {
 
       await gotoView(page, "tasks");
       await page.goto("/tasks?chat=full");
-      await page.getByTestId("chat-agent-button").filter({ visible: true }).click();
+      await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
       await expect(page.getByTestId("chat-agent-option-opencode")).toHaveText("OpenCode");
       await expect(page.getByTestId("chat-agent-option-qoder")).toHaveText("qoder");
       await expect(page.getByTestId("chat-agent-option-copilot")).toHaveCount(0);

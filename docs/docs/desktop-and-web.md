@@ -192,6 +192,26 @@ time, including waits for input. Older turns without timing show counts only.
 Stopped turns retain partial work; unfinished tool calls read **Incomplete**.
 Individual tool durations are not shown.
 
+## Composer controls
+
+The composer groups folder, branch, agent/model and permissions into compact
+controls. Phones and narrow desktop panels use icons; wide composers show labels.
+Every icon has an accessible name and opens its picker with the full details;
+phone touch targets are at least 44px. Send stays visible at the right.
+
+The folder picker shows the full path, copy action, recent folders, host choices
+when configured, and browsing. Branch/worktree controls appear for Git folders.
+Folder and branch controls hide after launch; conversation details show the working folder.
+Changing agent after launch starts a separate session. The model picker disables
+changes during a response or when the backend selects its own model. Effort stays
+in agent options. The permissions control appears for a non-default mode only when
+the backend supports changing it live.
+
+Pasting at least 16 KiB or 200 lines attaches the text as `pasted-text-N.txt`.
+Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach files.
+
+<img src="/screens/chat-composer-390.png" alt="Compact composer icons on a phone" width="260">
+
 ## Desktop app only
 
 The desktop app is an Electron shell around the same dashboard. On top of the browser experience it:
