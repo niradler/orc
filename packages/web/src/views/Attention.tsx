@@ -14,7 +14,7 @@ import {
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type LiveSession } from "@/api/client";
-import { CommandRequestForm } from "@/components/CommandRequestForm";
+import { type CommandRequestDraft, CommandRequestForm } from "@/components/CommandRequestForm";
 import { HelpPopover } from "@/components/HelpPopover";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
@@ -119,18 +119,39 @@ function ObservedSessionCard({ session }: { session: LiveSession }) {
   );
 }
 
-function RequestCard({
+export type RequestDraft = {
+  answer: string;
+  selected: string[];
+  editingAnswer: boolean;
+  command?: CommandRequestDraft;
+};
+
+export function RequestCard({
   request,
   expanded,
   onToggle,
+  draft,
+  onDraftChange,
+  onNavigate,
 }: {
   request: HumanRequest;
   expanded: boolean;
   onToggle: () => void;
+  draft?: RequestDraft;
+  onDraftChange?: (update: Partial<RequestDraft>) => void;
+  onNavigate?: () => void;
 }) {
-  const [answer, setAnswer] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [editingAnswer, setEditingAnswer] = useState(request.input.choices.length === 0);
+  const [localDraft, setLocalDraft] = useState<RequestDraft>({
+    answer: "",
+    selected: [],
+    editingAnswer: request.input.choices.length === 0,
+  });
+  const { answer, selected, editingAnswer } = draft ?? localDraft;
+  const updateDraft = (update: Partial<RequestDraft>) =>
+    onDraftChange ? onDraftChange(update) : setLocalDraft((current) => ({ ...current, ...update }));
+  const setAnswer = (answer: string) => updateDraft({ answer });
+  const setSelected = (selected: string[]) => updateDraft({ selected });
+  const setEditingAnswer = (editingAnswer: boolean) => updateDraft({ editingAnswer });
   const client = useQueryClient();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -156,7 +177,10 @@ function RequestCard({
           variant="ghost"
           type="button"
           onClick={() => {
+            onNavigate?.();
             const next = new URLSearchParams(params);
+            next.delete("notifications");
+            next.delete("request");
             next.set("chat", "open");
             next.set("chatThread", request.input.origin.chat_thread_id ?? "");
             navigate({ search: next.toString() });
@@ -338,7 +362,23 @@ function RequestCard({
             </div>
           </details>
           {request.input.kind === "command" && (
-            <CommandRequestForm request={request} actions={secondaryActions} />
+            <CommandRequestForm
+              request={request}
+              actions={secondaryActions}
+              draft={(draft ?? localDraft).command}
+              onDraftChange={(update) =>
+                updateDraft({
+                  command: {
+                    ...((draft ?? localDraft).command ?? {
+                      script: request.input.command?.script ?? "",
+                      editing: false,
+                      values: {},
+                    }),
+                    ...update,
+                  },
+                })
+              }
+            />
           )}
           {request.input.action && (
             <div className="min-w-0 space-y-2 text-sm">

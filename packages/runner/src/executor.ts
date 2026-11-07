@@ -1,8 +1,10 @@
 import { type HostProcess, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
-import { getDb } from "@orc/db/client";
+import { AuditLog } from "@orc/db/audit";
+import { getDb, getSqlite } from "@orc/db/client";
 import { kbDigestKbId } from "@orc/db/kb-digest";
+import { publishJobNotification } from "@orc/db/notification-producers";
 import { job_run_logs, job_runs, jobs, sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { runJobAction } from "./job-actions.js";
@@ -33,6 +35,34 @@ export async function executeJob(opts: RunOptions): Promise<string> {
   // us, so a row to mark "failed" exists even if setup below throws.
   let runRowExists = Boolean(opts.runId);
 
+  const mutateRun = (mutation: () => unknown): void => {
+    const sqlite = getSqlite(db);
+    sqlite
+      .transaction(() => {
+        const previous = sqlite
+          .query<{ status: string }, [string]>("SELECT status FROM job_runs WHERE id=?")
+          .get(runId);
+        mutation();
+        const row = sqlite
+          .query<
+            { status: string; job_id: string; project_id: string | null; exit_code: number | null },
+            [string]
+          >(
+            "SELECT r.status,r.job_id,j.project_id,r.exit_code FROM job_runs r JOIN jobs j ON j.id=r.job_id WHERE r.id=?",
+          )
+          .get(runId);
+        if (!row || row.status === previous?.status) return;
+        if (!["running", "success", "failed", "timeout"].includes(row.status)) return;
+        new AuditLog(sqlite).record({
+          action: row.status === "running" ? "job_run.started" : `job_run.${row.status}`,
+          subject_ids: [runId],
+          project_id: row.project_id,
+          snapshot: { job_id: row.job_id, status: row.status, exit_code: row.exit_code },
+        });
+      })
+      .immediate();
+  };
+
   try {
     const job = await db.query.jobs.findFirst({
       where: eq(jobs.id, opts.jobId),
@@ -43,19 +73,27 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     const now = new Date();
 
     if (opts.runId) {
-      await db
-        .update(job_runs)
-        .set({ status: "running", started_at: now })
-        .where(eq(job_runs.id, runId));
+      mutateRun(() =>
+        db
+          .update(job_runs)
+          .set({ status: "running", started_at: now })
+          .where(eq(job_runs.id, runId))
+          .run(),
+      );
     } else {
-      await db.insert(job_runs).values({
-        id: runId,
-        job_id: job.id,
-        status: "running",
-        trigger_by: opts.triggerBy ?? "manual",
-        started_at: now,
-        created_at: now,
-      });
+      mutateRun(() =>
+        db
+          .insert(job_runs)
+          .values({
+            id: runId,
+            job_id: job.id,
+            status: "running",
+            trigger_by: opts.triggerBy ?? "manual",
+            started_at: now,
+            created_at: now,
+          })
+          .run(),
+      );
       runRowExists = true;
     }
 
@@ -74,10 +112,13 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         triggerBy: opts.triggerBy ?? "manual",
         timeoutMs: (job.timeout_secs ?? 1800) * 1000,
       });
-      await db
-        .update(job_runs)
-        .set({ status: "success", ended_at: new Date(), exit_code: 0, stdout: summary })
-        .where(eq(job_runs.id, runId));
+      mutateRun(() =>
+        db
+          .update(job_runs)
+          .set({ status: "success", ended_at: new Date(), exit_code: 0, stdout: summary })
+          .where(eq(job_runs.id, runId))
+          .run(),
+      );
       return runId;
     }
 
@@ -86,10 +127,13 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       await db
         .insert(job_run_logs)
         .values({ run_id: runId, ts: new Date(), stream: "stdout", line: output });
-      await db
-        .update(job_runs)
-        .set({ status: "success", ended_at: new Date(), exit_code: 0, stdout: output })
-        .where(eq(job_runs.id, runId));
+      mutateRun(() =>
+        db
+          .update(job_runs)
+          .set({ status: "success", ended_at: new Date(), exit_code: 0, stdout: output })
+          .where(eq(job_runs.id, runId))
+          .run(),
+      );
       return runId;
     }
 
@@ -243,16 +287,19 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         return runId;
       }
 
-      await db
-        .update(job_runs)
-        .set({
-          status: success ? "success" : "failed",
-          exit_code: exitCode,
-          ended_at: endedAt,
-          stdout: stdoutLines.join("\n").slice(0, 65536),
-          stderr: stderrLines.join("\n").slice(0, 16384),
-        })
-        .where(eq(job_runs.id, runId));
+      mutateRun(() =>
+        db
+          .update(job_runs)
+          .set({
+            status: success ? "success" : "failed",
+            exit_code: exitCode,
+            ended_at: endedAt,
+            stdout: stdoutLines.join("\n").slice(0, 65536),
+            stderr: stderrLines.join("\n").slice(0, 16384),
+          })
+          .where(eq(job_runs.id, runId))
+          .run(),
+      );
 
       const durSecs = Math.round((endedAt.getTime() - now.getTime()) / 1000);
       await db.insert(sessions).values({
@@ -282,10 +329,13 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     // so guard it — a failed status update must not mask the original error.
     if (runRowExists) {
       try {
-        await db
-          .update(job_runs)
-          .set({ status: "failed", ended_at: new Date(), error_msg: msg })
-          .where(eq(job_runs.id, runId));
+        mutateRun(() =>
+          db
+            .update(job_runs)
+            .set({ status: "failed", ended_at: new Date(), error_msg: msg })
+            .where(eq(job_runs.id, runId))
+            .run(),
+        );
       } catch (markErr) {
         const markMsg = markErr instanceof Error ? markErr.message : String(markErr);
         logger.error(`Failed to mark run ${runId} as failed: ${markMsg}`);
@@ -293,5 +343,13 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     }
     logger.error(`Job run ${runId} crashed: ${msg}`);
     throw err;
+  } finally {
+    if (runRowExists) {
+      try {
+        publishJobNotification(getSqlite(db), runId);
+      } catch (error) {
+        logger.error("Could not record job notification", error);
+      }
+    }
   }
 }

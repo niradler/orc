@@ -570,7 +570,7 @@ export function EventRuleEditor({
               </>
             )}
             <p className="text-xs text-outline">
-              Waits in Attention needed. Approval lets the agent act with its existing permissions.
+              Waits in Notifications. Approval lets the agent act with its existing permissions.
             </p>
             <div className="flex gap-4 text-sm">
               {(["telegram", "slack"] as const).map((channel) => (

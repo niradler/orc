@@ -68,6 +68,7 @@ import { getHandoffService } from "../handoffs/service.js";
 import { queuedAnswers } from "../human-request-delivery.js";
 import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
+import { recordChatNotification, resolveChatNotification } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
@@ -863,6 +864,7 @@ app.openapi(
       throw new ConflictError("This permission request is no longer pending.");
     run.session.respondPermission(requestId, decision);
     run.permissions.delete(requestId);
+    resolveChatNotification(run.thread.id, requestId);
     changes.publish("human-requests");
     return c.json({ ok: true });
   },
@@ -959,6 +961,7 @@ app.openapi(
       run.questions.set(requestId, question);
       throw error;
     }
+    resolveChatNotification(run.thread.id, requestId);
     changes.publish("human-requests");
     return c.json({ ok: true });
   },
@@ -1385,6 +1388,7 @@ async function beginTurn(
             await emit({ type: event.type, text: event.data });
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
+            recordChatNotification(thread, event.data.requestId, "approval");
             run.permissions.add(event.data.requestId);
             changes.publish("human-requests");
             await emit(event);
@@ -1393,11 +1397,13 @@ async function beginTurn(
               chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
             );
           } else if (event.type === "question_request") {
+            recordChatNotification(thread, event.data.requestId, "question");
             run.questions.set(event.data.requestId, event.data);
             changes.publish("human-requests");
             await emit(event);
             notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
           } else if (event.type === "request_resolved") {
+            resolveChatNotification(thread.id, event.data.requestId);
             run.permissions.delete(event.data.requestId);
             run.questions.delete(event.data.requestId);
             changes.publish("human-requests");
@@ -1436,6 +1442,10 @@ async function beginTurn(
         if (mark) thread.transcriptMark = mark;
       }
       thread.updatedAt = Date.now();
+      for (const requestId of [...run.permissions, ...run.questions.keys()])
+        resolveChatNotification(thread.id, requestId);
+      if (!stopped && (completed || failure))
+        recordChatNotification(thread, runId, failure ? "failed" : "finished");
       try {
         store().save(thread);
         if (!stopped) publish(run, { type: "session", runtimeId: thread.runtimeId });

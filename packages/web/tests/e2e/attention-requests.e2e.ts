@@ -127,7 +127,8 @@ test("should review compact requests, preserve masked drafts and return redacted
   );
   await reviewAttentionRequest(other);
   await other.getByTestId("attention-cancel").click();
-  await expect(other).toHaveCount(0);
+  await expect(other.getByTestId("attention-state")).toContainText("Cancelled");
+  await expect(page.locator(`[data-source-id="${entries[1]?.id}"]`)).toBeVisible();
   expect(runs).toBe(1);
 });
 

@@ -26,13 +26,29 @@ app.openapi(
     method: "get",
     path: "/audit",
     tags: ["Audit"],
-    summary: "Read the central knowledge audit log",
+    summary: "Read the central audit log",
     request: {
       query: ScopeQuerySchema.extend({
-        entity_type: z.enum(["memory", "skill", "kb"]).optional(),
+        scope: z.enum(["global", "all"]).optional(),
+        entity_type: z
+          .enum([
+            "memory",
+            "skill",
+            "kb",
+            "notification",
+            "human_request",
+            "job_run",
+            "settings",
+            "task",
+          ])
+          .optional(),
         session_id: z.string().min(1).max(200).optional(),
         since: z.coerce.number().int().min(0).optional(),
         limit: z.coerce.number().int().min(1).max(100).default(50),
+        snapshot: z.enum(["preview", "full"]).default("full").openapi({
+          description:
+            "Preview substitutes a bounded metadata marker for stored snapshots larger than 4096 bytes. Full preserves the original snapshot; stored audit data is never truncated.",
+        }),
       }),
     },
     responses: {
@@ -48,11 +64,15 @@ app.openapi(
     const input = c.req.valid("query");
     return c.json({
       entries: new AuditLog(getSqlite()).list({
-        projectId: resolveScopeProject(input),
+        projectId:
+          input.scope === "all"
+            ? undefined
+            : resolveScopeProject({ project_id: input.project_id, scope: input.scope }),
         entityType: input.entity_type,
         sessionId: input.session_id,
         since: input.since,
         limit: input.limit,
+        snapshot: input.snapshot,
       }),
     });
   },

@@ -69,6 +69,7 @@ import {
 } from "@orc/db/schema";
 import { ScratchpadStore } from "@orc/db/scratchpads";
 import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
+import { withTaskAudit } from "@orc/db/task-audit";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
@@ -1808,22 +1809,26 @@ export async function executeTool(
       const resolved = resolveProjectId(project);
       const id = ulid();
       const now = new Date();
-      await db.insert(tasks).values({
-        id,
-        title,
-        body,
-        project_id: resolved?.id,
-        priority: (priority ?? "normal") as "low" | "normal" | "high" | "critical",
-        author: author ?? "agent",
-        status: "todo",
-        tags,
-        skill_name,
-        required_review: required_review ?? true,
-        agent_backend: agent_backend as string | undefined,
-        agent_model,
-        max_review_rounds: max_review_rounds ?? 3,
-        created_at: now,
-        updated_at: now,
+      withTaskAudit(getSqlite(), [id], () => {
+        db.insert(tasks)
+          .values({
+            id,
+            title,
+            body,
+            project_id: resolved?.id,
+            priority: (priority ?? "normal") as "low" | "normal" | "high" | "critical",
+            author: author ?? "agent",
+            status: "todo",
+            tags,
+            skill_name,
+            required_review: required_review ?? true,
+            agent_backend: agent_backend as string | undefined,
+            agent_model,
+            max_review_rounds: max_review_rounds ?? 3,
+            created_at: now,
+            updated_at: now,
+          })
+          .run();
       });
       const proj = resolved ? ` (${resolved.name})` : "";
       import("@orc/runner/task-loop")
@@ -2359,25 +2364,27 @@ export async function executeTool(
         for (const item of items) {
           const id = ulid();
           mapping[item.ref] = id;
-          db.insert(tasks)
-            .values({
-              id,
-              title: item.title,
-              body: item.body,
-              project_id: resolved?.id,
-              priority: (item.priority ?? "normal") as "low" | "normal" | "high" | "critical",
-              author: author ?? "agent",
-              status: "todo",
-              tags: item.tags,
-              skill_name: item.skill_name,
-              required_review: item.required_review ?? true,
-              agent_backend: item.agent_backend as string | undefined,
-              agent_model: item.agent_model,
-              max_review_rounds: item.max_review_rounds ?? 3,
-              created_at: now,
-              updated_at: now,
-            })
-            .run();
+          withTaskAudit(sqlite, [id], () => {
+            db.insert(tasks)
+              .values({
+                id,
+                title: item.title,
+                body: item.body,
+                project_id: resolved?.id,
+                priority: (item.priority ?? "normal") as "low" | "normal" | "high" | "critical",
+                author: author ?? "agent",
+                status: "todo",
+                tags: item.tags,
+                skill_name: item.skill_name,
+                required_review: item.required_review ?? true,
+                agent_backend: item.agent_backend as string | undefined,
+                agent_model: item.agent_model,
+                max_review_rounds: item.max_review_rounds ?? 3,
+                created_at: now,
+                updated_at: now,
+              })
+              .run();
+          });
         }
 
         for (const item of items) {

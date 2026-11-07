@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.install();
 });
 
-test("Needs you: a permission prompt raises a toast with Approve and Deny, chimes and announces, and Approve answers it", async ({
+test("Needs you: a permission prompt chimes without stealing focus and opens its review form", async ({
   page,
 }) => {
   const scenario = await notificationScenario(page, {
@@ -30,14 +30,10 @@ test("Needs you: a permission prompt raises a toast with Approve and Deny, chime
   const toast = page.getByTestId("agent-toast");
   await expect(toast).toHaveCount(1, { timeout: 2_000 });
   await expect(toast).toHaveAttribute("data-level", "needs-you");
-  await expect(toast.getByTestId("agent-toast-state")).toHaveAttribute("data-state", "needs-you");
-  await expect(toast).toContainText("codex");
-  await expect(toast.getByTestId("agent-toast-title")).toHaveText("Migrate billing tables");
+  await expect(toast).toContainText("Migrate billing tables");
   await expect(toast).toContainText("Run the database migration");
-  await expect(toast.getByTestId("agent-toast-approve")).toBeVisible();
-  await expect(toast.getByTestId("agent-toast-deny")).toBeVisible();
   await expect(page.getByTestId("agent-notification-live")).toHaveText(
-    "Needs you: codex · Migrate billing tables",
+    "Run the database migration",
   );
   await expect(page.getByTestId("agent-notification-live")).toHaveAttribute("aria-live", "polite");
   expect(await scenario.chimeNotes()).toBe(2);
@@ -49,9 +45,11 @@ test("Needs you: a permission prompt raises a toast with Approve and Deny, chime
   await expect(toast).toHaveCount(1);
 
   await page.keyboard.press("Alt+KeyN");
-  await expect(toast.getByTestId("agent-toast-approve")).toBeFocused();
-
-  await toast.getByTestId("agent-toast-approve").click();
+  await expect(page.getByTestId("notification-menu")).toBeVisible();
+  const card = page.getByTestId("attention-request-notify-approval-0");
+  await card.getByTestId("attention-review").click();
+  await card.getByTestId("attention-approve").click();
+  await poll(page);
   await expect(toast).toHaveCount(0);
   expect(scenario.responses).toEqual([
     {
@@ -98,11 +96,9 @@ test("Done: a finished session gives one silent toast that pauses on hover and c
   const toast = page.getByTestId("agent-toast");
   await expect(toast).toHaveCount(1, { timeout: 2_000 });
   await expect(toast).toHaveAttribute("data-level", "done");
-  await expect(toast.getByTestId("agent-toast-title")).toHaveText("Fix flaky login test");
+  await expect(toast).toContainText("Fix flaky login test");
   await expect(toast.getByTestId("agent-toast-approve")).toHaveCount(0);
-  await expect(page.getByTestId("agent-notification-live")).toHaveText(
-    "Done: codex · Fix flaky login test",
-  );
+  await expect(page.getByTestId("agent-notification-live")).toHaveText("Fix flaky login test");
   expect(await scenario.chimeNotes()).toBe(0);
 
   await toast.hover();
@@ -135,14 +131,14 @@ test("Done: sessions finishing together collapse into one toast", async ({ page 
 
   const toast = page.getByTestId("agent-toast");
   await expect(toast).toHaveCount(1, { timeout: 2_000 });
-  await expect(toast.getByTestId("agent-toast-title")).toHaveText("3 sessions finished");
-  await expect(toast.getByTestId("agent-toast-subject")).toHaveCount(3);
-  await expect(page.getByTestId("agent-notification-live")).toHaveText("3 sessions finished");
+  await expect(toast).toContainText("3 updates finished");
+  await expect(page.getByTestId("agent-notification-live")).toHaveText("3 new notifications");
   expect(await scenario.chimeNotes()).toBe(0);
 
-  await toast.getByTestId("agent-toast-subject").first().click();
+  await toast.getByTestId("agent-toast-open").click();
+  await expect(page.getByTestId("notification-menu")).toBeVisible();
+  await page.getByTestId("notification-menu").getByTestId("notification-open").first().click();
   await expect(page).toHaveURL(/\/sessions\?.*session=notify-live-1/);
-  await expect(toast).toHaveCount(0);
 });
 
 test("phone bell keeps updates closed, retains Done updates, and works inside chat", async ({
@@ -163,7 +159,7 @@ test("phone bell keeps updates closed, retains Done updates, and works inside ch
   await poll(page);
   await page.clock.runFor(1500);
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
-  await expect(page.getByTestId("agent-toasts")).toHaveCount(0);
+  await expect(page.getByTestId("agent-toasts")).not.toBeVisible();
   await expect(chat.getByTestId("notification-bell")).toHaveAccessibleName(
     "Notifications: 2 unread",
   );
@@ -171,7 +167,7 @@ test("phone bell keeps updates closed, retains Done updates, and works inside ch
   await chat.getByTestId("notification-bell").click();
   const menu = page.getByTestId("notification-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.getByTestId("agent-toast")).toHaveCount(2);
+  await expect(menu.getByTestId("notification-item")).toHaveCount(2);
   await page.screenshot({
     path: "../../output/playwright/notifications-phone-dark.png",
     animations: "disabled",
@@ -186,12 +182,12 @@ test("phone bell keeps updates closed, retains Done updates, and works inside ch
     path: "../../output/playwright/notifications-phone-light.png",
     animations: "disabled",
   });
-  await menu.getByTestId("agent-toast-open").filter({ hasText: "Open Attention" }).click();
-  await expect(page).toHaveURL(/\/attention\?project=all$/);
+  await menu.getByTestId("notification-open").filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/sessions\?session=notify-live-1&project=all$/);
   await expect(chat).toHaveCount(0);
 });
 
-test("toast uses the latest approval when a session stays Needs you", async ({ page }) => {
+test("review uses the current approval version after source changes", async ({ page }) => {
   const scenario = await notificationScenario(page, {
     sessions: [liveSession(0, "running")],
     requests: [],
@@ -203,12 +199,16 @@ test("toast uses the latest approval when a session stays Needs you", async ({ p
   scenario.state.requests = [approvalRequest(0)];
   await poll(page);
   await expect(page.getByTestId("agent-toast")).toHaveCount(1);
-  const replacement = { ...approvalRequest(0), id: "replacement", version: 2 };
+  const replacement = { ...approvalRequest(0), version: 2 };
   scenario.state.requests = [replacement];
   await poll(page);
-  await page.getByTestId("agent-toast-approve").click();
+  await page.getByTestId("agent-toast-open").click();
+  await page
+    .getByTestId("attention-request-notify-approval-0")
+    .getByTestId("attention-approve")
+    .click();
   expect(scenario.responses[0]).toEqual({
-    id: "replacement",
+    id: "notify-approval-0",
     body: { version: 2, response: { kind: "approval", approved: true } },
   });
 });
@@ -227,8 +227,7 @@ test("phone bell preserves access to requests that already exist at startup", as
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
   await page.keyboard.press("Alt+KeyN");
   await expect(page.getByTestId("notification-menu")).toBeVisible();
-  await page.getByTestId("notification-open-attention").click();
-  await expect(page).toHaveURL(/\/attention\?project=all$/);
+  await expect(page.getByTestId("attention-request-notify-approval-0")).toBeVisible();
 });
 
 test("an unfocused desktop still receives updates for its selected session", async ({ page }) => {
@@ -285,7 +284,7 @@ test("opening a Done update from phone chat reveals the finished session", async
   await poll(page);
   await page.clock.runFor(1500);
   await page.getByTestId("mobile-chat-sheet").getByTestId("notification-bell").click();
-  await page.getByTestId("notification-menu").getByTestId("agent-toast-open").click();
+  await page.getByTestId("notification-menu").getByTestId("notification-open").click();
   await expect(page).toHaveURL(/\/sessions\?session=notify-live-1&project=all$/);
   await expect(page.getByTestId("mobile-chat-sheet")).toHaveCount(0);
 });

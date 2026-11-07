@@ -12,6 +12,8 @@ export type BrowserSession = {
 
 export type WorkspacePreferences = {
   attention_retention_hours?: number;
+  notification_retention_days?: number;
+  audit_retention_days?: number;
   theme?: "dark" | "light";
   terminal_font?: string;
   chat?: ChatSettings;

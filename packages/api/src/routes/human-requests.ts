@@ -103,6 +103,18 @@ app.openapi(
 
 app.openapi(
   createRoute({
+    method: "get",
+    path: "/human-requests/{id}/view",
+    tags: ["Human requests"],
+    summary: "View request details without acknowledging that its agent read the response",
+    request: { params },
+    responses: response,
+  }),
+  (c) => c.json(current(c.req.valid("param").id), 200),
+);
+
+app.openapi(
+  createRoute({
     method: "post",
     path: "/human-requests/{id}/respond",
     tags: ["Human requests"],

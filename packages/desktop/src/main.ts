@@ -264,7 +264,7 @@ function setAutostart(enabled: boolean): void {
 function showNeedsYou(title: string): void {
   const count = Number(/^\((\d+)\) /.exec(title)?.[1] ?? 0);
   app.setBadgeCount(count);
-  tray?.setToolTip(count ? `orc · ${count} need${count === 1 ? "s" : ""} you` : "orc");
+  tray?.setToolTip(count ? `orc · ${count} unread notification${count === 1 ? "" : "s"}` : "orc");
 }
 
 const notifications = new Set<Notification>();
