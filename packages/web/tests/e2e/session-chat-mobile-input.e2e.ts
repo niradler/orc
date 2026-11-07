@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect } from "@playwright/test";
 import { API_SECRET, apiPost, gotoView } from "./_helpers";
@@ -36,7 +37,8 @@ test("phone keyboard text reaches a real terminal without keydown", async ({
     await page.goto(`/terminals/${terminal.id}?project=all`);
     const canvas = page.locator("canvas").first();
     await expect(canvas).toBeVisible();
-    await expect.poll(() => output.length).toBeGreaterThan(0);
+    // replay-end and the window title can arrive before the shell accepts input.
+    await expect.poll(() => stripVTControlCharacters(output)).toMatch(/[>$#%][ \t]*$/);
     // On a phone the selectable text lies over the canvas, so the tap lands on the surface.
     await page.getByTestId("terminal-surface").first().tap();
     const input = page.locator("textarea[aria-label='Terminal input']").first();
