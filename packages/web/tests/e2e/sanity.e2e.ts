@@ -34,7 +34,7 @@ test.describe("@sanity critical flows", () => {
   }) => {
     const unauthenticated = await request.get(`${API_BASE}/projects`);
     expect(unauthenticated.status()).toBe(401);
-    await gotoView(page, "dashboard");
+    await gotoView(page, "activity");
     await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
     await expect(page.getByTestId("stat-card").first()).toBeVisible();
     await gotoView(page, "projects");
@@ -90,7 +90,7 @@ test.describe("@sanity critical flows", () => {
       origin: { backend: "claude", session_id: tid("sanity-approval"), request_id: "approval" },
       action: { tool: "Bash", input: { command: "pwd" }, cwd: "/workspace", host: "demo-host" },
     });
-    await gotoView(page, "attention");
+    await gotoView(page, "notifications");
     const card = page.getByTestId(`attention-request-${approval.id}`);
     await reviewAttentionRequest(card);
     await card.getByTestId("attention-approve").click();
@@ -159,7 +159,7 @@ test.describe("@sanity critical flows", () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
     test("navigation opens and reaches knowledge", async ({ page }) => {
-      await gotoView(page, "dashboard");
+      await gotoView(page, "activity");
       await page.getByTestId("mobile-nav-open").click();
       const drawer = page.getByTestId("mobile-nav-drawer");
       await expect(drawer).toBeVisible();

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -103,6 +103,10 @@ async function createShard(index: number): Promise<Shard> {
   await assertPortFree(Number(port));
   const home = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
   const dbPath = process.env.PW_DB_PATH ?? join(home, "state.db");
+  if (process.env.PW_DB_PATH && existsSync(dbPath)) {
+    rmSync(home, { recursive: true, force: true });
+    throw new Error("PW_DB_PATH must name a new test database; existing paths are never adopted");
+  }
   return {
     port,
     dbPath,
@@ -169,26 +173,28 @@ if (count > 1 && playwrightArgs.some((argument) => argument.startsWith("--output
 }
 const shards: Shard[] = [];
 
-async function stopApis(): Promise<void> {
-  await Promise.all(
-    shards.map(async (shard) => {
-      if (shard.api) await stopOwnedProcess(shard.api);
-    }),
-  );
-}
-
 async function cleanup(): Promise<void> {
-  await Promise.all([...commands].map((command) => stopOwnedProcess(command)));
-  await stopApis();
+  const failures: unknown[] = [];
+  const stops = await Promise.allSettled([
+    ...[...commands].map((command) => stopOwnedProcess(command)),
+    ...shards.flatMap((shard) => (shard.api ? [stopOwnedProcess(shard.api)] : [])),
+  ]);
+  for (const result of stops) if (result.status === "rejected") failures.push(result.reason);
   for (const shard of shards) {
-    if (shard.api) await shard.api.exited;
     try {
-      unlinkSync(shard.dbPath);
+      if (shard.api) await shard.api.exited;
+      if (explicitDb)
+        rmSync(shard.dbPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      failures.push(error);
     }
-    rmSync(shard.home, { recursive: true, force: true });
+    try {
+      rmSync(shard.home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch (error) {
+      failures.push(error);
+    }
   }
+  if (failures.length) throw new AggregateError(failures, "Browser fixture cleanup failed");
 }
 
 for (const [signal, code] of [
