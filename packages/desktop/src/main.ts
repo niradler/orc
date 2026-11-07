@@ -26,6 +26,8 @@ import {
   shouldNotifyNatively,
 } from "./notify.js";
 import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
+import { withAppVersion } from "./update-policy.js";
+import { startDesktopUpdates } from "./updater.js";
 
 const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
@@ -129,6 +131,7 @@ function openWindow(url: string): void {
   if (state.maximized) win.maximize();
   win.on("page-title-updated", (_event, title) => showNeedsYou(title));
   win.on("focus", closeNotifications);
+  win.webContents.setUserAgent(withAppVersion(win.webContents.getUserAgent(), app.getVersion()));
   win.once("ready-to-show", () => win?.show());
   win.on("session-end", () => {
     quitting = true;
@@ -391,6 +394,24 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   }
   void app.whenReady().then(() => {
     if (process.platform === "darwin" && !app.isPackaged) app.dock?.setIcon(iconPath);
+    startDesktopUpdates({
+      getWindow: () => win,
+      showWindow,
+      settingsPath: join(app.getPath("userData"), "update-settings.json"),
+      stopOwnedDaemon: async () => {
+        quitting = true;
+        if (daemon?.owned && !daemonStopped) {
+          await daemon.stop();
+          daemonStopped = true;
+        }
+      },
+      restoreOwnedDaemon: async () => {
+        quitting = false;
+        if (!daemonStopped) return;
+        daemonStopped = false;
+        await bringUp();
+      },
+    });
     return start();
   });
 }

@@ -202,11 +202,13 @@ bun run --filter @orc/desktop dev         # run the app from source
 
 ## Upgrading
 
+To start using Windows or Linux automatic desktop updates, manually install a build that contains the updater once. Earlier desktop builds cannot update themselves into this feature.
+
 Database migrations run automatically when ORC opens the database. Back up `~/.orc/orc.db` first if you want a rollback point.
 
 | Method | Upgrade |
 | --- | --- |
-| Desktop app | Quit from the tray (**Quit orc**), install the new installer over the old one, launch. The app replaces `~/.orc/bin/orc` on first launch. There is no auto-update. |
+| Desktop app | Installed Windows and Linux apps check for updates on their own. **Settings → About** shows the channel and **Restart to update** after the download. You can still quit from the tray (**Quit orc**) and install the new installer over the old one. The app replaces `~/.orc/bin/orc` on first launch. Automatic updates are not offered on macOS yet; install the new disk image manually. |
 | Binary | Re-run the `curl` command, then restart the daemon (`orc daemon stop`, then start it again or let the service restart it). |
 | npm | `npm install -g orc-ai@latest`, then restart the daemon. |
 | Docker | `docker pull niradler/orc:latest` and recreate the container, or `docker compose pull && docker compose up -d`. |
