@@ -7,7 +7,7 @@ Buildx installed and authenticated. Docker must be running and able to push to
 
 ```sh
 bun run release                 # show the next patch release plan; no changes
-bun run release --check         # lint, typecheck, release tests and full test suite
+bun run release --check         # lint, typecheck, release tests and the full suite, including browser e2e
 bun run release --verify        # verify the existing release; no publish/install
 bun run release --prepare --yes # checks, patch bump and local builds; no publication
 bun run release --yes           # execute the release, then update this desktop

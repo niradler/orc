@@ -20,6 +20,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   retries: 0,
+  // run-e2e.ts starts one API and database per shard. A second worker in the
+  // same shard would share that database, so each shard stays single-worker.
   workers: 1,
   reporter: [["list"]],
   use: {
