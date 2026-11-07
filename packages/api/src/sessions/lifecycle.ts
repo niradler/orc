@@ -7,17 +7,21 @@ export async function lifecycleRecords(
   runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): Promise<SessionRecord[]> {
   return Promise.all(
-    readRegistrations(dir).map(async (record) => ({
-      backend: record.backend,
-      externalId: record.externalId,
-      title: record.title,
-      ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
-      ...(record.transcriptPath !== undefined ? { transcriptPath: record.transcriptPath } : {}),
-      pid: record.pid,
-      status: (await runtime.processAlive(record.pid)) ? record.status : "stopped",
-      createdAt: new Date(record.createdAt),
-      lastActivityAt: new Date(record.updatedAt),
-    })),
+    readRegistrations(dir).map(async (record) => {
+      const alive = await runtime.processAlive(record.pid);
+      return {
+        backend: record.backend,
+        externalId: record.externalId,
+        title: record.title,
+        ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
+        ...(record.transcriptPath !== undefined ? { transcriptPath: record.transcriptPath } : {}),
+        pid: record.pid,
+        status: alive ? record.status : "stopped",
+        ...(record.waiting !== undefined ? { pendingHuman: record.waiting === true && alive } : {}),
+        createdAt: new Date(record.createdAt),
+        lastActivityAt: new Date(record.updatedAt),
+      };
+    }),
   );
 }
 
@@ -35,14 +39,22 @@ export function withLifecycle(
       for (const live of await lifecycleRecords(dir, runtime)) {
         if (live.backend !== adapter.backend) continue;
         const previous = records.get(live.externalId);
+        const keepNativeStatus =
+          previous !== undefined &&
+          (adapter.backend === "claude" || adapter.backend === "codex") &&
+          live.status !== "stopped";
         records.set(live.externalId, {
           ...previous,
           ...live,
+          status: keepNativeStatus ? previous.status : live.status,
           title: previous?.title ?? live.title,
           transcriptPath: live.transcriptPath ?? previous?.transcriptPath ?? null,
           lastActivityAt: new Date(
             Math.max(previous?.lastActivityAt.getTime() ?? 0, live.lastActivityAt.getTime()),
           ),
+          ...(live.pendingHuman === undefined && previous?.pendingHuman !== undefined
+            ? { pendingHuman: previous.pendingHuman }
+            : {}),
         });
       }
       return [...records.values()];

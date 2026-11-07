@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { runHumanRuleActions } from "@orc/core/human-request-client";
+import { recordLiveSessionWait } from "@orc/core/live-session";
 import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
 import { copyRuleTemplate, RULE_CATALOG } from "@orc/core/rule-catalog";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
@@ -78,7 +79,15 @@ export function rulesCommand(): Command {
           throw new Error("Unsupported hook backend");
         const raw = readFileSync(0, "utf8");
         if (Buffer.byteLength(raw) > 1_100_000) throw new Error("Rule hook input too large");
-        const normalized = normalizeRuleHook(backend as RuleHookBackend, event, JSON.parse(raw));
+        const parsed = JSON.parse(raw);
+        try {
+          await recordLiveSessionWait(backend, event, parsed);
+        } catch (error) {
+          console.error(
+            `[orc live-session] ${error instanceof Error ? error.message : "Hook failed"}`,
+          );
+        }
+        const normalized = normalizeRuleHook(backend as RuleHookBackend, event, parsed);
         if (normalized.phase === "post_tool" || normalized.phase === "post_tool_failure")
           new HumanRequestStore(getSqlite()).acknowledgeToolResults(
             normalized.session_id,

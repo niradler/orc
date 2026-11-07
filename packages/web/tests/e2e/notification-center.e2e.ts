@@ -1,16 +1,57 @@
 import type { HumanRequest } from "@orc/core/human-requests";
 import type { NotificationPage } from "@orc/core/notifications";
-import { expect, test } from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
 
+async function dismissNotifications(request: APIRequestContext): Promise<void> {
+  const dismissed = new Set<string>();
+  for (let batch = 0; batch <= 20; batch++) {
+    const page = await apiGet<NotificationPage>(request, "/notifications?limit=100");
+    if (page.notifications.length === 0) return;
+    if (page.notifications.some((item) => dismissed.has(item.id)))
+      throw new Error("Notification cleanup made no progress after dismissing a page");
+    if (batch === 20) break;
+    for (const item of page.notifications) {
+      const response = await request.patch(`${API_BASE}/notifications/${item.id}`, {
+        headers: AUTH_HEADERS,
+        data: { dismissed: true },
+      });
+      expect(response.ok()).toBe(true);
+      dismissed.add(item.id);
+    }
+  }
+  throw new Error("Notification cleanup did not empty after 20 pages of 100 entries");
+}
+
 test.beforeEach(async ({ request }) => {
-  const page = await apiGet<NotificationPage>(request, "/notifications?limit=100");
-  for (const item of page.notifications) {
-    const response = await request.patch(`${API_BASE}/notifications/${item.id}`, {
-      headers: AUTH_HEADERS,
-      data: { dismissed: true },
-    });
-    expect(response.ok()).toBe(true);
+  await dismissNotifications(request);
+});
+
+test("should clean notifications across more than one page", async ({ request }) => {
+  const created: HumanRequest[] = [];
+  try {
+    for (let index = 0; index < 101; index++)
+      created.push(
+        await apiPost<HumanRequest>(request, "/human-requests", {
+          kind: "question",
+          title: `Cleanup fixture ${index}`,
+          prompt: "Fixture notification for pagination coverage",
+          origin: { backend: "test", session_id: tid("cleanup"), request_id: String(index) },
+        }),
+      );
+    const populated = await apiGet<NotificationPage>(request, "/notifications?limit=100");
+    expect(populated.notifications).toHaveLength(100);
+    expect(populated.has_more).toBe(true);
+    expect(populated.unread).toBe(101);
+    await dismissNotifications(request);
+    const empty = await apiGet<NotificationPage>(request, "/notifications?limit=100");
+    expect(empty.notifications).toHaveLength(0);
+    expect(empty.unread).toBe(0);
+    expect(empty.has_more).toBe(false);
+  } finally {
+    for (const item of created)
+      await apiPost(request, `/human-requests/${item.id}/cancel`, { version: item.version });
+    await dismissNotifications(request);
   }
 });
 

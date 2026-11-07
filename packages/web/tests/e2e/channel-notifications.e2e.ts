@@ -11,12 +11,13 @@ for (const width of [1440, 390])
       await page.setViewportSize({ width, height: 900 });
       await apiPatch(request, "/settings", { theme });
       const id = tid("notify-channel");
+      const name = `Notifications ${id} with a long review team name`;
       // Disabled fixture connections cannot contact a real messaging provider.
       const saved = await request.put(`${API_BASE}/channels/${id}`, {
         headers: AUTH_HEADERS,
         data: {
           id,
-          name: `Notifications ${id}`,
+          name,
           provider: "telegram",
           enabled: false,
           targets: [{ id: "me", name: "Notification recipient", chat_id: "123", outbound: true }],
@@ -27,6 +28,23 @@ for (const width of [1440, 390])
       expect(saved.ok()).toBe(true);
       await gotoView(page, "settings");
       await settingsSection(page, "channels");
+      const row = page.getByTestId(`channel-row-${id}`);
+      await expect(row).toBeVisible();
+      const edit = row.getByRole("button", { name: `Edit ${name}`, exact: true });
+      const editBounds = await edit.boundingBox();
+      expect(editBounds && editBounds.x >= 0 && editBounds.x + editBounds.width <= width).toBe(
+        true,
+      );
+      expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      if (width === 390) {
+        expect(editBounds?.width).toBeGreaterThanOrEqual(44);
+        expect(editBounds?.height).toBeGreaterThanOrEqual(44);
+      }
       const global = page.getByTestId("channel-notification-settings");
       await expect(global).not.toHaveAttribute("open", "");
       await global.locator("summary").first().click();
@@ -37,7 +55,7 @@ for (const width of [1440, 390])
       await expect(
         global.locator("summary").filter({ hasText: /Recent deliveries/ }),
       ).toBeVisible();
-      await page.getByRole("button", { name: `Edit Notifications ${id}`, exact: true }).click();
+      await edit.click();
       const editor = page.getByTestId("channel-editor").filter({ visible: true });
       await editor
         .locator("summary")
@@ -78,7 +96,7 @@ for (const width of [1440, 390])
       await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
       await page.reload();
       await settingsSection(page, "channels");
-      await page.getByRole("button", { name: `Edit Notifications ${id}`, exact: true }).click();
+      await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
       const reopened = page.getByTestId("channel-editor").filter({ visible: true });
       await reopened
         .locator("summary")
@@ -104,3 +122,97 @@ for (const width of [1440, 390])
       ).toBe(false);
     });
   }
+
+for (const width of [1440, 390]) {
+  test(`should reserve channel policy controls while loading and saving at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    let releaseLoad = () => {};
+    let releaseSave = () => {};
+    let saveStarted = () => {};
+    const load = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const save = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    const saving = new Promise<void>((resolve) => {
+      saveStarted = resolve;
+    });
+    await page.route("**/api/channels/notification-policy", async (route) => {
+      if (route.request().method() === "GET") {
+        await load;
+        await route.fulfill({ json: { enabled: false, base_url: "https://saved.orc.example" } });
+      } else if (route.request().method() === "PUT") {
+        saveStarted();
+        await save;
+        await route.continue();
+      } else await route.continue();
+    });
+    try {
+      await gotoView(page, "settings");
+      await settingsSection(page, "channels");
+      const policy = page.getByTestId("channel-notification-settings");
+      await policy.locator("summary").first().click();
+      const input = policy.getByTestId("notification-base-url");
+      const toggle = policy.getByLabel("Enable channel notification forwarding", { exact: true });
+      const submit = policy.getByTestId("notification-policy-save");
+      await expect(input).toBeVisible();
+      expect(await input.isDisabled()).toBe(true);
+      expect(await toggle.isDisabled()).toBe(true);
+      expect(await submit.isDisabled()).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("channel-policy-loading.png") });
+      releaseLoad();
+      await expect(input).toHaveValue("https://saved.orc.example");
+      await expect(input).toBeEnabled();
+      await expect(toggle).toBeEnabled();
+      await input.fill("https://draft.orc.example");
+      await toggle.check();
+      await expect(input).toHaveValue("https://draft.orc.example");
+      await page.screenshot({ path: testInfo.outputPath("channel-policy-ready.png") });
+      await submit.click();
+      await saving;
+      expect(await input.isDisabled()).toBe(true);
+      expect(await toggle.isDisabled()).toBe(true);
+      expect(await submit.isDisabled()).toBe(true);
+      releaseSave();
+      await expect(policy.getByRole("status")).toHaveText("Notification forwarding enabled.");
+      await expect(input).toBeEnabled();
+      await expect(input).toHaveValue("https://draft.orc.example");
+      await expect(toggle).toBeChecked();
+      const stored = await apiGet<{ base_url: string }>(request, "/channels/notification-policy");
+      expect(stored.base_url).toBe("https://draft.orc.example");
+    } finally {
+      releaseLoad();
+      releaseSave();
+      const restored = await request.put(`${API_BASE}/channels/notification-policy`, {
+        headers: AUTH_HEADERS,
+        data: { enabled: false, base_url: "" },
+      });
+      expect(restored.ok()).toBe(true);
+    }
+  });
+
+  test(`should keep channel policy controls disabled after a failed load at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route("**/api/channels/notification-policy", (route) =>
+      route.fulfill({ status: 503, json: { error: "Fixture policy unavailable." } }),
+    );
+    await gotoView(page, "settings");
+    await settingsSection(page, "channels");
+    const policy = page.getByTestId("channel-notification-settings");
+    await policy.locator("summary").first().click();
+    await expect(policy.getByRole("alert")).toContainText("Fixture policy unavailable.");
+    expect(await policy.getByTestId("notification-base-url").isDisabled()).toBe(true);
+    expect(
+      await policy
+        .getByLabel("Enable channel notification forwarding", { exact: true })
+        .isDisabled(),
+    ).toBe(true);
+    expect(await policy.getByTestId("notification-policy-save").isDisabled()).toBe(true);
+  });
+}

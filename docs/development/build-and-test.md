@@ -61,6 +61,15 @@ Before enabling automatic runs, implement and verify all of these requirements:
 
 Only after those checks pass should an isolated stack be installed under `/opt/homelab/stacks/gha-runner`, the PR readiness gate enabled, and automatic workflow triggers restored. This PR does not alter the live runner, repository approval settings, firewall or homelab services.
 
+### Manual homelab CI
+
+The Actions `CI` workflow runs these unit, type and security gates on the `homelab`
+runner when dispatched manually by `niradler` in `niradler/orc`. It uses Bun 1.4.4,
+runs package tests sequentially, grants read-only repository access and does not
+persist checkout credentials. Jobs stop after 60 minutes. Automatic PR runs stay
+disabled; this workflow does not establish isolation for running untrusted PR code.
+Browser tests remain a separate local or manual E2E check.
+
 ## Tests
 
 ```bash

@@ -34,13 +34,15 @@ Cursor IDE history, Cursor CLI (`agent` / `cursor-agent`) history and Gemini con
 
 OpenCode sessions are read from its SQLite store (`~/.local/share/opencode/opencode.db`) on the local machine or the selected SSH host. Top-level sessions appear with their folder, title and token count; the conversation viewer shows messages, reasoning and tool calls with their output. OpenCode has no lifecycle hooks, so its sessions are listed as ended. Resume opens `opencode --session <id>` in a terminal.
 
-Install lifecycle hooks for Cursor and Gemini from this checkout:
+A Claude permission prompt, Claude question, or Gemini tool-permission prompt sets that session to **Waiting for you** within a few seconds of the hook firing. ORC sends one browser push on the attention topic for that transition. Answering the prompt, or the turn ending, clears the flag. A session that stays waiting does not send another push. Codex questions continue to come from its transcript. Cursor's installed hooks do not include a permission event, so Cursor waits are unchanged.
+
+Install lifecycle hooks for Claude, Cursor and Gemini from this checkout:
 
 ```powershell
 bun scripts/install-session-hooks.ts
 ```
 
-The installer preserves existing hook entries and other settings, makes dated backups, and adds lifecycle events to `~/.cursor/hooks.json` and `~/.gemini/settings.json`. New/resumed sessions register their owner PID in `~/.orc/live-sessions/`. Start, prompt, response, tool and stop hooks update the shared state; session-end hooks and dead owner processes end it. Existing sessions may need to resume or reload hooks once before they register. Hook-captured conversations begin when hooks are installed; old native history is retained when its transcript exists.
+The installer preserves existing hook entries and other settings, makes dated backups, and adds lifecycle events to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.gemini/settings.json`. Claude gains permission, notification, question and stop hooks. Gemini gains the notification hook beside its existing lifecycle events. New/resumed sessions register their owner PID in `~/.orc/live-sessions/`. Start, prompt, response, tool and stop hooks update the shared state; session-end hooks and dead owner processes end it. Existing sessions may need to resume or reload hooks once before they register. Hook-captured conversations begin when hooks are installed; old native history is retained when its transcript exists.
 
 Hooks need Bun on the installation machine. They run a bounded owner lookup, write private local registry/transcript files, and never grant tool permissions or inject prompts. Native agent transcripts remain read-only. Full prompt/tool content belongs to the local conversation history and is not sent to external services by these hooks.
 
