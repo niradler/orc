@@ -1,13 +1,19 @@
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { History, PanelLeftClose, Plus, X } from "lucide-react";
+import { History, PanelLeftClose, PanelLeftOpen, Plus, SquareTerminal, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
+import {
+  SessionRowContent,
+  sessionRowButtonClass,
+  sessionRowClass,
+} from "@/components/SessionRowContent";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,12 +27,16 @@ import { Input } from "@/components/ui/input";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionSeen } from "@/hooks/useSessionSeen";
 import { useStableOrder } from "@/hooks/useStableOrder";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
 import { filterCounts, matchesFilter, parseFilter, type SessionFilter } from "@/lib/session-filter";
 import { markSeen } from "@/lib/session-seen";
+import { terminalPath } from "@/lib/terminal-links";
+import { useTerminals } from "@/lib/terminals";
+import { cn } from "@/lib/utils";
 
 const FILTER_KEY = "orc_chat_history_filter";
 
@@ -39,18 +49,25 @@ function storedFilter(): SessionFilter {
 }
 
 export function ChatSessionPicker({
+  enabled = true,
   docked = false,
-  onCollapse,
-  onExpand,
+  rail = false,
+  wide = false,
+  home,
 }: {
+  enabled?: boolean;
   docked?: boolean;
-  onCollapse?: () => void;
-  onExpand?: () => void;
+  rail?: boolean;
+  wide?: boolean;
+  home?: SessionHomeNav;
 }) {
   const chat = useChat();
+  const navigate = useNavigate();
+  const { terminals } = useTerminals();
   const projectScope = chat.projectScope;
-  const [dialogOpen, setOpen] = useState(false);
-  const open = docked || dialogOpen;
+  const navigation = useSessionHome();
+  const setOpen = (next: boolean) => navigation.go({ listOpen: next });
+  const open = enabled && (docked || rail || navigation.listOpen);
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);
@@ -109,12 +126,14 @@ export function ChatSessionPicker({
     archive.data?.sessions ?? [],
     search,
     projectScope,
+    terminals,
   );
+  const isSelected = (entry: ChatHistoryEntry) =>
+    home?.terminalId
+      ? entry.terminalId === home.terminalId
+      : entry.kind === "local" && entry.tab.key === chat.activeKey;
   const states = new Map(
-    entries.map((entry) => [
-      entry.id,
-      historyEntryState(entry, seen, entry.kind === "local" && entry.tab.key === chat.activeKey),
-    ]),
+    entries.map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
   );
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const counts = filterCounts(states.values());
@@ -139,13 +158,109 @@ export function ChatSessionPicker({
     markSeen(keys, Math.max(Date.now(), activeUpdated));
     return () => markSeen(keys);
   }, [activeKeys, activeUpdated]);
+  const selectEntry = (entry: ChatHistoryEntry) => {
+    markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
+    const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
+    if (terminalId) {
+      setOpen(false);
+      if (home) home.go({ terminalId });
+      else navigate(terminalPath(terminalId));
+    } else if (entry.kind === "local") {
+      chat.selectTab(entry.tab.key);
+      home?.go({ terminalId: null }, { chatThread: entry.tab.thread?.id });
+      setOpen(false);
+    } else if (entry.kind === "saved") {
+      if (home) {
+        home.go({ terminalId: null }, { chatThread: entry.thread.id });
+        setOpen(false);
+      } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
+    } else if (entry.kind === "native") {
+      home?.go({ terminalId: null });
+      void select(() => api.chat.resume(entry.session.id), entry.projectId);
+    } else if (entry.kind === "archive") {
+      const session = entry.session;
+      setSelectedArchive(session);
+      setRepository(session.metadata.repository ?? "");
+      setBranch(session.metadata.branch ?? "");
+      setCommit(session.metadata.commit ?? "");
+      setSubdirectory(session.metadata.subdirectory ?? "");
+      setError("");
+    }
+  };
+  if (rail)
+    return (
+      <aside
+        data-testid="session-rail"
+        aria-label="Sessions"
+        className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-border py-3"
+      >
+        <ActionHelp label="Show session list">
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="session-list-expand"
+            aria-label="Show session list"
+            onClick={() => home?.go({ listHidden: false })}
+          >
+            <PanelLeftOpen size={16} />
+          </Button>
+        </ActionHelp>
+        <ActionHelp label="New session">
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="chat-clear-button"
+            aria-label="New session"
+            disabled={pending}
+            onClick={() => {
+              chat.newTab();
+              home?.go({ terminalId: null });
+            }}
+          >
+            <Plus size={16} />
+          </Button>
+        </ActionHelp>
+        <div className="mt-2 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
+          {shown.map((entry) => {
+            const state = states.get(entry.id) ?? "idle";
+            const agent = entryAgent(entry);
+            const selected = isSelected(entry);
+            return (
+              <ActionHelp
+                key={entry.id}
+                label={entry.title}
+                description={`${agent || "Unknown provider"} · ${AGENT_STATES[state].label}`}
+              >
+                <button
+                  type="button"
+                  data-testid="session-rail-item"
+                  data-history-id={entry.id}
+                  data-state={state}
+                  aria-label={`${entry.title} · ${AGENT_STATES[state].label}`}
+                  aria-current={selected ? "true" : undefined}
+                  disabled={pending}
+                  onClick={() => selectEntry(entry)}
+                  className={`relative flex size-10 shrink-0 items-center justify-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+                >
+                  <ProviderMark agent={agent} />
+                  <span className="absolute right-0.5 bottom-0.5">
+                    <StateBadge state={state} compact context={agent || undefined} />
+                  </span>
+                </button>
+              </ActionHelp>
+            );
+          })}
+        </div>
+      </aside>
+    );
   return (
     <SessionHistoryFrame
       docked={docked}
-      open={dialogOpen}
+      wide={wide}
+      open={open}
       onOpenChange={setOpen}
-      onCollapse={onCollapse}
-      onExpand={onExpand}
+      onCollapse={home ? () => home.go({ listHidden: true }) : undefined}
+      onNew={() => home?.go({ terminalId: null })}
       newDisabled={pending}
     >
       {selectedArchive ? (
@@ -231,19 +346,9 @@ export function ChatSessionPicker({
                   entry={entry}
                   state={states.get(entry.id) ?? "idle"}
                   pending={pending}
-                  onLocalSelect={() => setOpen(false)}
-                  onSavedSelect={(id, projectId) => void select(() => api.chat.get(id), projectId)}
-                  onNativeSelect={(id, projectId) =>
-                    void select(() => api.chat.resume(id), projectId)
-                  }
-                  onArchiveSelect={(session) => {
-                    setSelectedArchive(session);
-                    setRepository(session.metadata.repository ?? "");
-                    setBranch(session.metadata.branch ?? "");
-                    setCommit(session.metadata.commit ?? "");
-                    setSubdirectory(session.metadata.subdirectory ?? "");
-                    setError("");
-                  }}
+                  selected={isSelected(entry)}
+                  terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                  onSelect={() => selectEntry(entry)}
                 />
               ))}
             </div>
@@ -280,19 +385,21 @@ export function ChatSessionPicker({
 
 function SessionHistoryFrame({
   docked,
+  wide,
   open,
   onOpenChange,
   onCollapse,
-  onExpand,
+  onNew,
   children,
   newDisabled,
 }: {
   newDisabled: boolean;
   docked: boolean;
+  wide: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCollapse?: () => void;
-  onExpand?: () => void;
+  onNew: () => void;
   children: ReactNode;
 }) {
   const chat = useChat();
@@ -324,10 +431,12 @@ function SessionHistoryFrame({
       variant="ghost"
       size="icon"
       data-testid="chat-history-new"
+      className="max-sm:size-11 pointer-coarse:size-11"
       aria-label="New session"
       disabled={newDisabled}
       onClick={() => {
         chat.newTab();
+        onNew();
         onOpenChange(false);
       }}
     >
@@ -343,7 +452,6 @@ function SessionHistoryFrame({
       aria-label={pending ? `Sessions, ${pending} need attention` : "Sessions, session history"}
       title="Session history"
       className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-surface"
-      onClick={onExpand}
     >
       <History size={16} />
       <span>Sessions</span>
@@ -375,14 +483,17 @@ function SessionHistoryFrame({
         <div className="mb-3 flex items-center justify-between">
           <h2 className="px-2 text-sm font-medium flex-1">Sessions</h2>
           {newSession}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Collapse session history"
-            onClick={onCollapse}
-          >
-            <PanelLeftClose size={16} />
-          </Button>
+          {onCollapse && (
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="session-list-collapse"
+              aria-label="Collapse session list"
+              onClick={onCollapse}
+            >
+              <PanelLeftClose size={16} />
+            </Button>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto space-y-4">{children}</div>
       </aside>
@@ -390,14 +501,17 @@ function SessionHistoryFrame({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <div className="absolute left-2 top-1 z-10 flex items-center gap-1">
-        {onExpand ? trigger : <DialogTrigger asChild>{trigger}</DialogTrigger>}
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
         <Button
           variant="ghost"
           size="icon"
           data-testid="chat-clear-button"
           aria-label="New session"
           disabled={newDisabled}
-          onClick={() => chat.newTab()}
+          onClick={() => {
+            chat.newTab();
+            onNew();
+          }}
         >
           <Plus size={16} />
         </Button>
@@ -405,7 +519,11 @@ function SessionHistoryFrame({
       <DialogContent
         ref={content}
         data-testid="chat-sessions-dialog"
-        className="chat-history-drawer left-0 top-[var(--app-top,0px)] flex h-[var(--app-height,100dvh)] w-[min(340px,calc(100vw-24px))] max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-4 rounded-none p-4"
+        data-session-list-wide={wide || undefined}
+        className={cn(
+          "chat-history-drawer left-0 top-[var(--app-top,0px)] flex h-[var(--app-height,100dvh)] max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-4 rounded-none p-4",
+          wide ? "w-screen" : "w-[min(340px,calc(100vw-24px))] max-sm:w-screen",
+        )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           content.current?.focus();
@@ -421,46 +539,48 @@ function SessionHistoryFrame({
   );
 }
 
+function entryAgent(entry: ChatHistoryEntry): string {
+  if (entry.kind === "local") return entry.tab.config.agent;
+  if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
+  if (entry.kind === "terminal") return entry.terminal.kind;
+  return entry.session.agent;
+}
+
+function ProviderMark({ agent }: { agent: string }) {
+  return (
+    <AgentIcon
+      agent={agent}
+      title={agentDisplayName(agent)}
+      data-testid="chat-session-provider"
+      data-provider={agent || "unknown"}
+      className="size-5 text-muted-foreground"
+    />
+  );
+}
+
 function HistoryRow({
   entry,
   state,
   pending,
-  onLocalSelect,
-  onSavedSelect,
-  onNativeSelect,
-  onArchiveSelect,
+  selected,
+  terminal,
+  onSelect,
 }: {
   entry: ChatHistoryEntry;
   state: AgentState;
   pending: boolean;
-  onLocalSelect: () => void;
-  onSavedSelect: (id: string, projectId?: string | null) => void;
-  onNativeSelect: (id: string, projectId?: string | null) => void;
-  onArchiveSelect: (session: ArchiveSession) => void;
+  selected: boolean;
+  terminal: boolean;
+  onSelect: () => void;
 }) {
   const chat = useChat();
   const tab = entry.kind === "local" ? entry.tab : null;
-  const selected = tab?.key === chat.activeKey;
   const open = !!tab && !tab.hidden;
-  const agent =
-    tab?.config.agent ||
-    (entry.kind === "saved"
-      ? entry.thread.agent || entry.provider
-      : entry.kind === "native" || entry.kind === "archive"
-        ? entry.session.agent
-        : "");
+  const agent = entryAgent(entry);
   const status = AGENT_STATES[state].label;
-  const selectRow = () => {
-    markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
-    if (entry.kind === "local") {
-      chat.selectTab(entry.tab.key);
-      onLocalSelect();
-    } else if (entry.kind === "saved") onSavedSelect(entry.thread.id, entry.projectId);
-    else if (entry.kind === "native") onNativeSelect(entry.session.id, entry.projectId);
-    else onArchiveSelect(entry.session);
-  };
-  const testId =
-    entry.kind === "local"
+  const testId = terminal
+    ? "chat-open-terminal"
+    : entry.kind === "local"
       ? "chat-session-select"
       : entry.kind === "saved"
         ? "chat-resume-thread"
@@ -476,7 +596,7 @@ function HistoryRow({
       data-history-open={open ? "true" : "false"}
       data-active={selected ? "true" : "false"}
       data-state={state}
-      className={`group flex min-w-0 items-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+      className={`${sessionRowClass} ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
     >
       <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
         <button
@@ -484,25 +604,27 @@ function HistoryRow({
           data-testid={testId}
           aria-current={selected ? "true" : undefined}
           disabled={pending}
-          onClick={selectRow}
-          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60"
+          onClick={onSelect}
+          className={sessionRowButtonClass}
         >
-          <AgentIcon
+          <SessionRowContent
             agent={agent}
-            title={agentDisplayName(agent)}
-            data-testid="chat-session-provider"
-            data-provider={agent || "unknown"}
-            className="size-5 text-muted-foreground"
-          />
-          <span className="min-w-0 flex-1 truncate text-[13px]">{entry.title}</span>
-          <StateBadge
+            title={entry.title}
             state={state}
-            compact
-            context={agent || undefined}
-            testId="chat-session-status"
+            stateTestId="chat-session-status"
+            marker={
+              terminal && (
+                <SquareTerminal
+                  size={13}
+                  aria-hidden="true"
+                  className="shrink-0 text-muted-foreground"
+                />
+              )
+            }
           />
           <span className="sr-only">
             {agent ? ` · ${agent}` : ""}
+            {terminal ? " · Terminal" : ""}
             {tab?.draft ? " · Draft" : ""}
             {entry.kind === "archive" ? " · Import and resume" : ""}
           </span>
@@ -523,7 +645,7 @@ function HistoryRow({
             data-testid="chat-tab-close"
             aria-label={`Close ${entry.title} from open sessions`}
             onClick={() => chat.closeTab(tab.key)}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
           >
             <X size={13} />
           </button>

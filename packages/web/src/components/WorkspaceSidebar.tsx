@@ -43,7 +43,7 @@ export function WorkspaceSidebar({
   projectId: string;
   onProjectChange: (id: string) => void;
   collapsed: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   embedded?: boolean;
   onNavigate?: () => void;
 }) {
@@ -132,7 +132,7 @@ export function WorkspaceSidebar({
             <span className="truncate">{connectionStatus}</span>
           </span>
         )}
-        {!embedded && (
+        {!embedded && onToggle && (
           <Button
             variant="ghost"
             size="icon"

@@ -1,6 +1,6 @@
 import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
-import type { LiveSession } from "@/api/client";
+import type { LiveSession, Terminal } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
 import { type AgentState, liveSessionState, moreUrgent } from "./agent-state";
 import { lastSeen, type SeenRecord, unseenState } from "./session-seen";
@@ -16,7 +16,8 @@ type HistorySource =
   | { kind: "local"; tab: ChatTab }
   | { kind: "saved"; thread: SavedChat }
   | { kind: "native"; session: LiveSession }
-  | { kind: "archive"; session: ArchiveSession };
+  | { kind: "archive"; session: ArchiveSession }
+  | { kind: "terminal"; terminal: Terminal };
 export type ChatHistoryEntry = HistorySource & {
   id: string;
   title: string;
@@ -24,6 +25,7 @@ export type ChatHistoryEntry = HistorySource & {
   observedState?: AgentState;
   provider?: string;
   projectId?: string | null;
+  terminalId?: string;
   seenKeys: string[];
 };
 
@@ -47,6 +49,7 @@ export function chatHistoryList(
   archived: readonly ArchiveSession[],
   query = "",
   projectScope = "all",
+  terminals: readonly Terminal[] = [],
 ): ChatHistoryEntry[] {
   const matches = (text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
   const entries: ChatHistoryEntry[] = [];
@@ -54,6 +57,7 @@ export function chatHistoryList(
   const identities = new Map<string, ChatHistoryEntry>();
   const sources = new Map<string, ChatHistoryEntry>();
   const archiveMatches = new Set<string>();
+  const liveEntries = new Map<string, ChatHistoryEntry>();
   const chatIds = new Set(tabs.flatMap((tab) => (tab.thread ? [tab.thread.id] : [])));
   const savedDates = new Map(saved.map((thread) => [thread.id, thread.updatedAt]));
   for (const tab of tabs) {
@@ -162,6 +166,27 @@ export function chatHistoryList(
       `${keywords.get(entry.id) ?? entry.title} ${session.name ?? ""} ${session.agent} ${session.cwd ?? ""}`,
     );
     if (key) identities.set(key, entry);
+    liveEntries.set(session.id, entry);
+  }
+  for (const terminal of terminals) {
+    if (terminal.status !== "running" || terminal.kind === "shell") continue;
+    const linked = terminal.live_session_id ? liveEntries.get(terminal.live_session_id) : undefined;
+    if (linked) {
+      if (linked.kind === "native") linked.terminalId ??= terminal.id;
+      continue;
+    }
+    const entry: ChatHistoryEntry = {
+      kind: "terminal",
+      terminal,
+      terminalId: terminal.id,
+      id: `terminal:${terminal.id}`,
+      seenKeys: [`terminal:${terminal.id}`],
+      title: terminal.name,
+      provider: terminal.kind,
+      updatedAt: timestamp(terminal.created_at),
+    };
+    entries.push(entry);
+    keywords.set(entry.id, `${terminal.name} ${terminal.kind} ${terminal.cwd ?? ""}`);
   }
   const candidates = new Map<string, Set<ChatHistoryEntry>>();
   for (const [identity, entry] of identities) {
@@ -241,8 +266,10 @@ export function historyEntryState(
         : "idle"
       : entry.kind === "native"
         ? liveSessionState(entry.session)
-        : "ended";
+        : entry.kind === "terminal"
+          ? "unknown"
+          : "ended";
   const state = entry.observedState ? moreUrgent(own, entry.observedState) : own;
-  if (selected || entry.id.startsWith("draft:")) return state;
+  if (selected || entry.kind === "terminal" || entry.id.startsWith("draft:")) return state;
   return unseenState(state, entry.updatedAt, lastSeen(seen, entry.seenKeys));
 }

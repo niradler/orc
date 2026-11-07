@@ -414,6 +414,18 @@
   .chat-history-drawer > * {
     flex-shrink: 0;
   }
+  .chat-history-drawer[data-session-list-wide="true"] {
+    width: 100vw;
+  }
+  @media (width < 640px) {
+    .chat-history-drawer {
+      width: 100vw;
+    }
+    .chat-history-drawer > button {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
   .work-form-dialog > :first-child {
     flex-shrink: 0;
     padding: 20px 24px;

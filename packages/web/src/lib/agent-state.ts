@@ -3,6 +3,7 @@ import {
   CircleAlert,
   CircleCheck,
   CircleDashed,
+  CircleHelp,
   CircleX,
   LoaderCircle,
   type LucideIcon,
@@ -16,6 +17,7 @@ export const AGENT_STATE_ORDER = [
   "working",
   "idle",
   "ended",
+  "unknown",
 ] as const;
 export type AgentState = (typeof AGENT_STATE_ORDER)[number];
 
@@ -54,6 +56,12 @@ export const AGENT_STATES: Record<
     Icon: CircleDashed,
     tone: "text-muted-foreground",
   },
+  unknown: {
+    label: "Unknown",
+    help: "No agent activity is available to determine its state",
+    Icon: CircleHelp,
+    tone: "text-muted-foreground",
+  },
 };
 
 const rank = (state: AgentState) => AGENT_STATE_ORDER.indexOf(state);
@@ -66,7 +74,7 @@ export function moreUrgent(a: AgentState, b: AgentState): AgentState {
 export function rollupState(states: Iterable<AgentState | null | undefined>): AgentState | null {
   let result: AgentState | null = null;
   for (const state of states) if (state) result = result ? moreUrgent(result, state) : state;
-  return result === "idle" || result === "ended" ? null : result;
+  return result === "idle" || result === "ended" || result === "unknown" ? null : result;
 }
 
 const LIVE_STATES: Record<LiveSession["status"], AgentState> = {
