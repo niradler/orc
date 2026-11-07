@@ -18,7 +18,7 @@ import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useViewParam } from "@/lib/view-params";
 import { workspaceDestination } from "@/lib/workspace-navigation";
 
-export default function Agents({ embedded = false }: { embedded?: boolean }) {
+export default function Agents() {
   const location = useLocation();
   const projectId = new URLSearchParams(location.search).get("project") ?? "all";
   const [editorMode, setEditorMode] = useViewParam<"read" | "edit" | "split">(
@@ -32,10 +32,7 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
     queryKey: ["agents"],
     queryFn: () => api.agents.list(),
   });
-  const { selectedId, openDetail, closeDetail } = useDetailRoute(
-    embedded ? "/packages/agents" : "/agents",
-    "agentId",
-  );
+  const { selectedId, openDetail, closeDetail } = useDetailRoute("/packages/agents", "agentId");
   const agent = useQuery({
     queryKey: ["agent", selectedId],
     queryFn: () => api.agents.get(selectedId as string),
@@ -86,8 +83,8 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className="space-y-4">
       <ViewHeader
-        title={embedded ? "Agent definitions" : "Agents"}
-        level={embedded ? 2 : 1}
+        title="Agents"
+        level={1}
         meta={agents.data?.agents.length ?? 0}
         help="Shared specialist instructions, models and tools for connected coding agents. Add definitions to packages for reuse."
         action={

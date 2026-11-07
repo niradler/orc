@@ -37,14 +37,19 @@ test("desktop composer keeps the full workspace controls in both themes", async 
     await expect
       .poll(() => panel.evaluate((element) => getComputedStyle(element).backgroundColor))
       .toBe(theme === "dark" ? "rgb(0, 0, 0)" : "rgb(250, 250, 250)");
-    for (const id of ["chat-agent-model-button", "chat-workspace-folder", "chat-workspace-branch"])
+    for (const id of [
+      "chat-agent-model-button",
+      "chat-workspace-folder",
+      "chat-workspace-branch",
+    ]) {
       await expect(panel.getByTestId(id)).toBeInViewport();
+      await expect(panel.getByTestId(id)).toHaveAccessibleName(/\S/);
+    }
     await expect(panel.getByTestId("chat-send-button")).toBeInViewport();
-    expect(
-      await panel
-        .getByTestId("chat-composer-tools")
-        .evaluate((element) => getComputedStyle(element).overflowX),
-    ).toBe("visible");
+    const tools = await panel
+      .getByTestId("chat-composer-tools")
+      .evaluate((element) => ({ width: element.clientWidth, scrollWidth: element.scrollWidth }));
+    expect(tools.scrollWidth).toBeLessThanOrEqual(tools.width);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: join(artifacts, `desktop-${theme}.png`) });
   }

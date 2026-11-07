@@ -40,6 +40,21 @@ const sessions = demo.map((s, i) => ({
   created_at: new Date(now - (i + 30) * 60_000).toISOString(),
   last_activity_at: new Date(now - (i + 1) * 60_000).toISOString(),
 }));
+const needsYou = {
+  id: "notification-needs-you",
+  type: "agent.question",
+  source_id: sessions[0].id,
+  title: sessions[0].name,
+  body: "claude · local. Reply in the original session.",
+  level: "needs-you",
+  project_id: null,
+  path: `/sessions?session=${sessions[0].id}&project=all`,
+  requires_action: true,
+  created_at: now - 60_000,
+  expires_at: now + 86_400_000,
+  read_at: null,
+  dismissed_at: null,
+};
 
 async function mockSessions(page: Page) {
   await page.addInitScript((secret) => {
@@ -54,21 +69,24 @@ async function mockSessions(page: Page) {
   await page.route("**/api/sessions/archive?**", (r) =>
     r.fulfill({ json: { sessions: [], has_more: false } }),
   );
+  await page.route("**/api/notifications?**", (r) =>
+    r.fulfill({ json: { notifications: [needsYou], unread: 1, has_more: false } }),
+  );
 }
 
-test("Watch: every session surface speaks the same state word and icon, and the tab title counts Needs you", async ({
+test("Watch: every session surface speaks the same state word and icon, and the tab title counts the unread Needs you notification", async ({
   page,
 }) => {
   await mockSessions(page);
   await page.goto("/sessions");
-  await expect(page).toHaveTitle(/^\(1\) /);
+  await expect(page).toHaveTitle("(1) Notifications · ORC");
 
   const icons = new Map<string, string>();
   for (const s of demo) {
     const row = page.locator(
       `[data-testid="live-session-row"][data-session-id="${sessions[demo.indexOf(s)].session_id}"]`,
     );
-    const badge = row.getByTestId("live-status").getByTestId("state-badge");
+    const badge = row.getByTestId("live-status");
     await expect(badge).toHaveAttribute("data-state", s.state);
     await expect(badge).toHaveText(s.label);
     icons.set(s.state, (await badge.locator("svg").getAttribute("class")) ?? "");
@@ -94,5 +112,5 @@ test("Watch: every session surface speaks the same state word and icon, and the 
         ?.at(-1),
     );
   }
-  await expect(page).toHaveTitle(/^\(1\) /);
+  await expect(page).toHaveTitle("(1) Notifications · ORC");
 });

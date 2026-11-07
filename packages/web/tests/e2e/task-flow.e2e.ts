@@ -374,7 +374,7 @@ test.describe("queued tasks on the board", () => {
       const pending = tasks.filter((t) => t.status === "todo" || t.status === "queued").length;
 
       await apiPatch<Task>(request, `/tasks/${task.id}`, { status: "queued" });
-      await gotoView(page, "dashboard");
+      await gotoView(page, "activity");
 
       // Moving todo → queued must not move the Doing tile, and must leave the
       // Todo tile where it was: both surfaces treat queued as pending.

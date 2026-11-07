@@ -94,6 +94,6 @@ The authenticated API exposes `GET/PUT /api/channels/notification-policy`,
 The preview body is `{filter, project_ids, event: {type, level, project_id}}`.
 These use the existing `channel_send` transport, destinations and secure credentials.
 
-Old `/attention` and `/notifications` links open the notification menu.
+Links to `/activity?notifications=open` (optionally with `&request=<id>`) open the notification menu.
 See [Human requests](./human-requests.md) for source request actions and timeouts,
 and [API reference](./api.md) for notification and audit routes.

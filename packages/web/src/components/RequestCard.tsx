@@ -13,19 +13,12 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, type LiveSession } from "@/api/client";
+import { api } from "@/api/client";
 import { type CommandRequestDraft, CommandRequestForm } from "@/components/CommandRequestForm";
 import { HelpPopover } from "@/components/HelpPopover";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ViewHeader } from "@/components/ViewHeader";
-import { useAttentionChatWaits } from "@/hooks/useAttentionChatWaits";
-import { useAttentionSessions } from "@/hooks/useAttentionSessions";
-import { useHumanRequests } from "@/hooks/useHumanRequests";
-import { scopedSessionPath } from "@/lib/live-sessions";
-import { runningTerminalForSession, terminalPath } from "@/lib/terminal-links";
-import { useTerminals } from "@/lib/terminals";
 
 type RequestState = { label: string; tone: string; Icon: LucideIcon; spin?: boolean };
 
@@ -69,54 +62,6 @@ function requestHostLabel(request: HumanRequest): string | null {
   if (request.input.action) return request.input.action.host;
   if (request.input.origin.execution_host === undefined) return null;
   return request.input.origin.execution_host ?? "Local";
-}
-
-function ObservedSessionCard({ session }: { session: LiveSession }) {
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const { terminals } = useTerminals();
-  const terminal = runningTerminalForSession(terminals, session.id);
-  return (
-    <article
-      data-testid={`attention-session-${session.id}`}
-      className="grid min-w-0 gap-2 border-b border-border py-3 @xl/attention:grid-cols-[minmax(0,1fr)_auto] @xl/attention:items-center"
-    >
-      <div className="min-w-0 space-y-1">
-        <h2 className="text-sm font-medium wrap-break-word">{session.name ?? "Coding session"}</h2>
-        <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <StateBadge state="needs-you" />
-          <span>Question</span>
-          <span>{session.agent}</span>
-          <span>{session.host ?? "Local"}</span>
-          <span>Reply in the original session</span>
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {terminal && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              navigate(scopedSessionPath(terminalPath(terminal.id), params.get("project")))
-            }
-          >
-            Open terminal
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            const next = new URLSearchParams(params);
-            next.set("session", session.id);
-            navigate({ pathname: "/sessions", search: next.toString() });
-          }}
-        >
-          View session
-        </Button>
-      </div>
-    </article>
-  );
 }
 
 export type RequestDraft = {
@@ -582,100 +527,5 @@ export function RequestCard({
         </p>
       )}
     </article>
-  );
-}
-
-export default function Attention() {
-  const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
-  const state = useHumanRequests();
-  const observed = useAttentionSessions();
-  const chatWaits = useAttentionChatWaits();
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
-  return (
-    <div data-testid="attention-view" className="@container/attention min-w-0">
-      <ViewHeader
-        title="Notifications"
-        meta={
-          state.data ? state.data.length + observed.data.length + chatWaits.data.length : undefined
-        }
-        help="Questions and approvals from your agents. Live Codex questions can also appear as session notices. Direct responses require an ORC connection or a supported hook; ACPX CLI does not expose pending approvals to ORC."
-      />
-      {state.isLoading && <p role="status">Loading requests…</p>}
-      {state.error && <p role="alert">{state.error.message}</p>}
-      {observed.error && (
-        <p role="alert">Could not check waiting sessions: {observed.error.message}</p>
-      )}
-      {chatWaits.error && (
-        <p role="alert">Could not check waiting chats: {chatWaits.error.message}</p>
-      )}
-      {state.data?.length === 0 &&
-        !state.error &&
-        !observed.isLoading &&
-        !observed.error &&
-        !chatWaits.isLoading &&
-        !chatWaits.error &&
-        observed.data.length === 0 &&
-        chatWaits.data.length === 0 && (
-          <p
-            data-testid="attention-empty"
-            className="grid min-h-[min(40dvh,20rem)] place-items-center text-sm text-muted-foreground"
-          >
-            Nothing needs your attention.
-          </p>
-        )}
-      {state.data?.length === 100 && (
-        <p className="text-sm text-outline mb-4">
-          Showing the first 100 requests, with pending requests first. Resolving or dismissing
-          entries reveals more.
-        </p>
-      )}
-      <div>
-        {chatWaits.data.map((wait) => (
-          <article
-            key={`${wait.thread_id}:${wait.request_key}`}
-            data-testid={`attention-chat-${wait.thread_id}`}
-            className="grid min-w-0 gap-2 border-b border-border py-3 @xl/attention:grid-cols-[minmax(0,1fr)_auto] @xl/attention:items-center"
-          >
-            <div className="min-w-0 space-y-1">
-              <h2 className="text-sm font-medium wrap-break-word">{wait.title}</h2>
-              <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                <StateBadge state="needs-you" />
-                <span>{wait.kind === "question" ? "Question" : "Approval"}</span>
-                <span>{wait.agent}</span>
-                <span>{wait.host ?? "Local"}</span>
-                <span>Chat</span>
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="justify-self-start @xl/attention:justify-self-end"
-              onClick={() => {
-                const next = new URLSearchParams(params);
-                next.set("chat", "open");
-                next.set("chatThread", wait.thread_id);
-                navigate({ search: next.toString() });
-              }}
-            >
-              Open chat
-            </Button>
-          </article>
-        ))}
-        {observed.data.map((session) => (
-          <ObservedSessionCard key={session.id} session={session} />
-        ))}
-        {state.data?.map((request) => (
-          <RequestCard
-            key={request.id}
-            request={request}
-            expanded={expandedRequest === request.id}
-            onToggle={() =>
-              setExpandedRequest((current) => (current === request.id ? null : request.id))
-            }
-          />
-        ))}
-      </div>
-    </div>
   );
 }

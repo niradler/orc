@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { strToU8, zipSync } from "fflate";
 import { MoreHorizontal, PackagePlus, Search, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   type AgentSetup,
   api,
@@ -40,13 +40,6 @@ type Editable = PackageFull & { revision: string; draftFiles: SkillFileInput[] }
 
 function download(filename: string, bytes: Uint8Array) {
   saveFile(new Blob([new Uint8Array(bytes)], { type: "application/zip" }), filename);
-}
-
-export function LegacyAgentsRedirect() {
-  const { agentId } = useParams();
-  return (
-    <Navigate replace to={`/packages/agents${agentId ? `/${encodeURIComponent(agentId)}` : ""}`} />
-  );
 }
 
 export default function PackageCatalog() {
