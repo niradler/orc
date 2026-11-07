@@ -24,6 +24,7 @@ import { type PushSupport, pushSupport } from "@/lib/pwa";
 const TOPIC_LABELS: Record<PushTopic, string> = {
   attention: "Human requests (approvals and questions from agents)",
   chat: "Chat replies and chat approvals",
+  jobs: "Job results you asked to be notified about",
 };
 
 const UNSUPPORTED_REASONS: Record<Exclude<PushSupport, "supported">, string> = {
@@ -167,8 +168,8 @@ export function NotificationSettings() {
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
         The bell holds agent requests, session updates and job results. Customize the Needs-you
-        chime below. Enable push for background approvals, questions and chat replies; push
-        notifications are skipped while ORC is open and focused.
+        chime below. Enable push for background approvals, questions, chat replies and job results;
+        push notifications are skipped while ORC is open and focused.
       </p>
       <Link
         to="/settings?settingsSection=storage"

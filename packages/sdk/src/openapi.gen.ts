@@ -2139,7 +2139,7 @@ export interface paths {
                             id: string;
                             label: string;
                             endpoint_host: string;
-                            topics: ("attention" | "chat")[];
+                            topics: ("attention" | "chat" | "jobs")[];
                             created_at: number;
                             last_success_at: number | null;
                             failure_count: number;
@@ -2165,7 +2165,7 @@ export interface paths {
                             auth: string;
                         };
                         label: string;
-                        topics?: ("attention" | "chat")[];
+                        topics?: ("attention" | "chat" | "jobs")[];
                     };
                 };
             };
@@ -2180,7 +2180,7 @@ export interface paths {
                             id: string;
                             label: string;
                             endpoint_host: string;
-                            topics: ("attention" | "chat")[];
+                            topics: ("attention" | "chat" | "jobs")[];
                             created_at: number;
                             last_success_at: number | null;
                             failure_count: number;
@@ -2239,7 +2239,7 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        topics: ("attention" | "chat")[];
+                        topics: ("attention" | "chat" | "jobs")[];
                     };
                 };
             };
@@ -2254,7 +2254,7 @@ export interface paths {
                             id: string;
                             label: string;
                             endpoint_host: string;
-                            topics: ("attention" | "chat")[];
+                            topics: ("attention" | "chat" | "jobs")[];
                             created_at: number;
                             last_success_at: number | null;
                             failure_count: number;
