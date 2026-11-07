@@ -49,6 +49,8 @@ The full browser suite starts four isolated shards by default (`PW_SHARDS`). Eac
 
 Automatic PR and master workflows are deliberately disabled. The owner can explicitly dispatch trusted code to the existing `homelab` runner; local `ci:pr` and `ci:full` are the normal gates. The checked-in `.github/homelab-runner` scaffold is inactive by default, has no network access and receives no registration credential. It is not an installation recipe for an untrusted-PR runner.
 
+The manual **CI** workflow retains the unit-only gates validated by the homelab setup: lint, format, typecheck, domain/security checks, sequential package tests and web unit tests. Browser tests are a separate manual **E2E** workflow; `ci:full` combines both locally and remains required before merge. Changing the runner's label does not by itself verify browser-system dependencies or full-suite timing on that image.
+
 Before enabling automatic runs, implement and verify all of these requirements:
 
 - Repository Settings → Actions → General → Fork pull request workflows: require approval for all outside collaborators.
