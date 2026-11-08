@@ -13,6 +13,7 @@ import {
   ORC_TASK_GUIDANCE,
 } from "@orc/core/chat";
 import { ChatAgentOptionsSchema, type ClaudeChatOptions } from "@orc/core/chat-options";
+import { localAgentBinary } from "@orc/core/config";
 import {
   type ExecHost,
   hostBinary,
@@ -31,6 +32,7 @@ import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { elicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
+import { claudeLimitEvent } from "./provider-limits.js";
 import { registerBackend } from "./registry.js";
 import { createRulesHook, sessionStartRuleContext } from "./rules-hook.js";
 import {
@@ -413,8 +415,18 @@ class ClaudeSDKSession implements AgentSession {
       // call runs together and breaks markdown such as a code fence opening mid-line.
       let wroteText = false;
       for await (const msg of q) {
+        if (msg.type === "rate_limit_event") {
+          const event = claudeLimitEvent(msg.rate_limit_info);
+          if (event) this.push(event);
+          continue;
+        }
         if (msg.type === "system" && msg.subtype === "init") {
           this.runtimeSessionId = msg.session_id;
+          continue;
+        }
+
+        if (msg.type === "system" && msg.subtype === "compact_boundary") {
+          this.push({ type: "system_status", data: "Context compacted." });
           continue;
         }
 
@@ -623,7 +635,7 @@ function createClaudeSDKBackend(): AgentBackend {
         // The SDK reuses the claude CLI's stored credentials, so the CLI has to
         // be there even though the agent itself runs in-process. An API key is
         // accepted as an alternative.
-        const claudePath = Bun.which("claude");
+        const claudePath = localAgentBinary("claude");
         if (!claudePath && !process.env.ANTHROPIC_API_KEY) {
           return {
             ok: false,
@@ -650,7 +662,7 @@ function createClaudeSDKBackend(): AgentBackend {
           version: null,
         };
       }
-      const claudePath = Bun.which("claude");
+      const claudePath = localAgentBinary("claude");
       return {
         kind: "in-process",
         requires:

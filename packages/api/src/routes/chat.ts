@@ -86,6 +86,7 @@ import { prepareSessionDirectory } from "../terminals/session-dir.js";
 const logger = createLogger("api:chat");
 
 function expandChatInput(input: string, projectId: string | null): string {
+  if (input.trim() === "/compact") return "/compact";
   const prompts = new McpPromptStore(getSqlite());
   const skills = new SkillHistory(getSqlite());
   return expandChatCommands(input, {
@@ -257,7 +258,12 @@ app.openapi(
     if (agent !== "codex" && agent !== "claude") return c.json({ models: [], warning: null });
     const host = thread ? execHostFor(thread.host) : resolveExecHost();
     const cwd = thread?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
-    const key = JSON.stringify([agent, host.kind === "ssh" ? host.alias : null, cwd]);
+    const key = JSON.stringify([
+      agent,
+      host.kind === "ssh" ? host.alias : null,
+      cwd,
+      host.kind === "local" ? loadConfig().preferences.provider_paths?.[agent] : null,
+    ]);
     const cached = modelCatalogs.get(key);
     if (cached && Date.now() - cached.at < 120_000) return c.json(await cached.result);
     if (modelRequests >= 2)
@@ -360,6 +366,8 @@ app.openapi(
     if (!run?.session?.steer || run.session.capabilities?.steering !== true)
       throw new ConflictError("This response cannot be steered. Queue a message instead.");
     const { input, requestId } = c.req.valid("json");
+    if (input.trim() === "/compact")
+      throw new ConflictError("Wait for this turn to finish before compacting context.");
     const previous = run.steering.get(requestId);
     if (previous) {
       if (previous.input !== input)
@@ -1141,6 +1149,8 @@ async function streamChat(
     .find((message) => message.role === "user")
     ?.content.trim();
   if (!input) throw new ValidationError("A user message is required.");
+  if (input === "/compact" && uploads.length)
+    throw new ValidationError("Send attachments separately from context compaction.");
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   if (body.permissionMode !== undefined) {
     if (createBackend(thread.backend).capabilities?.livePermissions === false)
@@ -1186,6 +1196,12 @@ async function beginTurn(
   input: string,
   setup: TurnSetup = {},
 ): Promise<{ run: ChatRun; done: Promise<void> }> {
+  if (input.trim() === "/compact") {
+    if (!thread.runtimeId)
+      throw new ValidationError("Start a conversation before compacting context.");
+    if (thread.backend !== "claude" && thread.backend !== "codex-cli")
+      throw new ValidationError("This integration does not support manual context compaction.");
+  }
   if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
     throw new ValidationError("This chat reached its history size limit. Start a new chat.");
   const key = thread.runtimeId ? turnKey(thread.host, thread.backend, thread.runtimeId) : thread.id;
@@ -1365,7 +1381,8 @@ async function beginTurn(
         if (stopped) return;
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
-        const sent = setup.context ? withOrcContext(turn, setup.context) : turn;
+        const sent =
+          setup.context && input.trim() !== "/compact" ? withOrcContext(turn, setup.context) : turn;
         const prompt =
           thread.backend === "acpx"
             ? [thread.config.system, sent].filter(Boolean).join("\n\n")

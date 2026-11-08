@@ -1,5 +1,58 @@
 # Configuration
 
+## Coding providers
+
+Open **Settings → Agents** to enable coding agents and select one to configure.
+Claude Code and Codex use native integrations; other agents use acpx. Provider
+selection and enablement are separate, so a disabled provider can be configured.
+Save agents commits the enabled list and executable paths together. Drafts survive
+switching providers and Settings sections.
+
+For Claude and Codex, **Executable path** overrides the binary on the local ORC
+API host for native sessions, model discovery and terminal/package launches. Enter
+an executable path without arguments, or leave it blank for the default installation
+(Codex on PATH; Claude's SDK default). Paths with
+spaces and `~/` are supported. SSH execution keeps using the remote installation.
+This setting affects new launches; an already-running process is not restarted.
+ORC reuses the CLI's existing login and configuration. Provider home directories
+continue to use `CODEX_HOME` and `CLAUDE_CONFIG_DIR` from the server environment.
+ORC does not create shadow accounts or store provider credentials in these settings.
+
+The corresponding non-secret JSON settings are `preferences.agents` and
+`preferences.provider_paths`, for example:
+
+```json
+{
+  "preferences": {
+    "agents": ["codex", "claude"],
+    "provider_paths": { "codex": "/opt/codex/bin/codex", "claude": "" }
+  }
+}
+```
+
+The authenticated `GET/PATCH /api/settings` routes expose these preferences.
+Only `claude` and `codex` path keys are accepted; control characters and paths
+longer than 2048 characters are rejected. Changes do not modify CLI configuration.
+
+**Account limits** starts collapsed. **Check limits** reuses the local-account
+quota reader described below, with no provider health polling. During native chat,
+Claude quota warnings/rejections and Codex usage-window warnings are also shown
+when supplied by the agent. Available reset times are included. Claude extra usage
+is distinguished from a blocked request. A failed turn leaves pending messages
+held by the existing chat error handling; retry is explicit after the limit resets.
+ORC does not switch accounts or schedule automatic quota retries.
+
+## Manual context compaction
+
+For an existing idle Claude or Codex chat, choose **Compact context** from session
+actions (an icon in the expanded desktop header), or send `/compact`. This uses the
+same native session: Claude's SDK command or Codex's `thread/compact/start` RPC.
+Progress, failures and completion use the normal conversation stream and history.
+Running turns, attachments and integrations without native support cannot be
+compacted this way. Keep automatic compaction under the agent's own control;
+there is no ORC idle-compaction timer. Compaction summarizes model context and may
+use provider quota; it does not erase the displayed ORC transcript.
+
 ## Usage in Settings
 
 Open **Settings → Usage** for session token history and account quotas. History

@@ -1,3 +1,29 @@
+import { z } from "zod";
+
+const ExecutablePathSchema = z
+  .string()
+  .trim()
+  .max(2048)
+  .refine(
+    (value) =>
+      Array.from(value).every(
+        (character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127,
+      ),
+    "Use an executable path without control characters",
+  );
+
+export const ProviderPathsSchema = z
+  .object({
+    claude: ExecutablePathSchema.optional(),
+    codex: ExecutablePathSchema.optional(),
+  })
+  .strict();
+export type ProviderPaths = z.infer<typeof ProviderPathsSchema>;
+
+export function supportsManualCompaction(agent: string): boolean {
+  return agent === "claude" || agent === "codex";
+}
+
 export type ChatRuntime = "claude" | "codex-cli" | "acpx";
 
 export type CodingAgent = {

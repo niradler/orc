@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { readAgent, renderAgentInstructions } from "./agent-service.js";
+import { localAgentBinary } from "./config.js";
 import { ConflictError, NotFoundError, ValidationError } from "./errors.js";
 import { readPackage } from "./package-service.js";
 import { validatePluginMcp } from "./plugin-service.js";
@@ -70,7 +71,7 @@ export function resolvePackageAgentBinary(name: string): string | null {
     const path = resolve(process.env.ORC_COPILOT_PATH);
     return existsSync(path) ? path : null;
   }
-  return Bun.which(name, { PATH: process.env.PATH ?? "" });
+  return localAgentBinary(name);
 }
 
 export function packageToolCommands(): {

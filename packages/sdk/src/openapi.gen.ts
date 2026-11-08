@@ -4182,6 +4182,10 @@ export interface paths {
                                 mcp: "orc" | "native";
                             };
                             agents?: string[];
+                            provider_paths?: {
+                                claude?: string;
+                                codex?: string;
+                            };
                         };
                     };
                 };
@@ -4277,6 +4281,10 @@ export interface paths {
                             mcp?: "orc" | "native";
                         };
                         agents?: string[];
+                        provider_paths?: {
+                            claude?: string;
+                            codex?: string;
+                        };
                     };
                 };
             };
@@ -4362,6 +4370,10 @@ export interface paths {
                                 mcp: "orc" | "native";
                             };
                             agents?: string[];
+                            provider_paths?: {
+                                claude?: string;
+                                codex?: string;
+                            };
                         };
                     };
                 };

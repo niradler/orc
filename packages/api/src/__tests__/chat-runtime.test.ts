@@ -216,6 +216,37 @@ afterAll(() => {
 });
 
 describe("native chat runtime", () => {
+  test("should reserve compact as a native command on the same existing session", async () => {
+    expect(
+      (await turn({ messages: [{ role: "user", content: "/compact" }] })).response.status,
+    ).toBe(400);
+    const first = await turn({ messages: [{ role: "user", content: "Start for compaction" }] });
+    const opened = first.events.find((event) => event.type === "thread");
+    if (opened?.type !== "thread") throw new Error("Missing thread");
+    const compact = await turn({
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "/compact" }],
+      context: { source: "webchat", route: "/tasks" },
+    });
+    expect(compact.response.status).toBe(200);
+    expect(calls.at(-1)?.prompt).toBe("/compact");
+    expect(calls.at(-1)?.id).toBe("native-fixture");
+    const key = turnKey(opened.thread.host, opened.thread.backend, "native-fixture");
+    activeTurns.add(key);
+    try {
+      expect(
+        (
+          await turn({
+            threadId: opened.thread.id,
+            messages: [{ role: "user", content: "/compact" }],
+          })
+        ).response.status,
+      ).toBe(409);
+    } finally {
+      activeTurns.delete(key);
+    }
+    calls.length = 0;
+  });
   test("should fold pre-tool narration separately from the final reply", async () => {
     narrateBeforeTool = true;
     try {
@@ -291,6 +322,14 @@ describe("native chat runtime", () => {
       expect(cursorCalls[0]?.opts).toMatchObject({ acpxAgent: "cursor", orcMcp: true });
       const thread = first.events.find((event) => event.type === "thread");
       if (thread?.type !== "thread") throw new Error("Missing Cursor thread");
+      expect(
+        (
+          await turn({
+            threadId: thread.thread.id,
+            messages: [{ role: "user", content: "/compact" }],
+          })
+        ).response.status,
+      ).toBe(400);
       const next = await turn({
         threadId: thread.thread.id,
         messages: [{ role: "user", content: "Cursor follow-up" }],

@@ -48,6 +48,37 @@ afterAll(() => {
   resetConfig();
 });
 
+test("should persist only validated provider executable paths without exposing credentials", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  const provider_paths = { codex: "C:\\Agent Tools\\codex.exe", claude: "~/bin/claude" };
+  const saved = await app.request("/api/settings", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ provider_paths }),
+  });
+  expect(saved.status).toBe(200);
+  resetConfig();
+  const read = await (await app.request("/api/settings", { headers })).json();
+  expect(read).toMatchObject({ provider_paths });
+  expect(JSON.stringify(read)).not.toContain("private-server-secret");
+  for (const invalid of [
+    { codex: "bad\0path" },
+    { codex: "bad\npath" },
+    { codex: "x".repeat(2049) },
+    { api_key: "hidden" },
+    { other: "tool" },
+  ]) {
+    const response = await app.request("/api/settings", {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ provider_paths: invalid }),
+    });
+    expect(response.status).toBe(400);
+  }
+  writeFileSync(globalConfigPath(), previous);
+  resetConfig();
+});
+
 test("should require authentication for reading and writing preferences", async () => {
   for (const method of ["GET", "PATCH"]) {
     expect((await app.request("/api/settings", { method })).status).toBe(401);

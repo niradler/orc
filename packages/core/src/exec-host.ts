@@ -16,7 +16,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path";
 import { CODING_AGENTS } from "./coding-agents.js";
-import { configuredApiSecret, loadConfig, type OrcConfig } from "./config.js";
+import { configuredApiSecret, loadConfig, localAgentBinary, type OrcConfig } from "./config.js";
 import { ConflictError, OrcError, ValidationError } from "./errors.js";
 import { ulid } from "./ids.js";
 import { createLogger } from "./logger.js";
@@ -1129,7 +1129,7 @@ export async function probeHost(host: SshExecHost, fresh = false): Promise<HostP
 }
 
 export async function hostBinary(host: ExecHost, name: string): Promise<string | null> {
-  if (host.kind === "local") return Bun.which(name, { PATH: process.env.PATH ?? "" });
+  if (host.kind === "local") return localAgentBinary(name);
   return (await probeHost(host)).binaries[name] ?? null;
 }
 

@@ -1,12 +1,13 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { loadConfig, localAgentBinary } from "@orc/core/config";
 
 /** The SDK's optional native executable is external to a Bun compiled binary. */
 export function resolveClaudeSdkLaunch(
   standalone = Bun.embeddedFiles.length > 0,
-  which: (name: string) => string | null = (name) => Bun.which(name),
+  which: (name: string) => string | null = localAgentBinary,
 ): { pathToClaudeCodeExecutable?: string; executable?: "node" | "bun" } {
-  if (!standalone) return {};
+  if (!standalone && !loadConfig().preferences.provider_paths?.claude) return {};
   const cli = which("claude");
   if (!cli) {
     throw new Error(
