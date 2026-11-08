@@ -45,6 +45,8 @@ Feature tags such as `@chat` are not used. Package-scoped unit tests plus `@sani
 
 The full browser suite starts four isolated shards by default (`PW_SHARDS`). Each shard has its own API, database, home directory, transform cache, result directory and Playwright worker. Ports stay reserved until API startup; an API exiting during readiness or browser tests fails the run. Shards stay single-worker so those tests do not share one database or contend on Windows transform-cache files. `PW_SHARDS=1` is the serial run; set `PW_SHARDS=2` on smaller machines. `--grep` stays on one shard unless `PW_SHARDS` is set. Failure traces remain in `packages/web/test-results/shard-N`; temporary databases and homes are cleaned after children stop, including interrupted runs. Parallel runs reject a shared explicit port, database or `--output` path.
 
+Windows browser fixtures explicitly launch real PowerShell with `-NoLogo -NoProfile` through their owned temporary configuration. Windows resolves Documents profiles independently of `HOME` and `USERPROFILE`, so changing those environment variables alone does not isolate personal shell integrations. Normal product shell defaults still load profiles. Large project fixtures bound cleanup to ten concurrent requests, await every batch and report all failures without retries.
+
 ## Homelab runner
 
 Automatic PR and master workflows are deliberately disabled. The owner can explicitly dispatch trusted code to the existing `homelab` runner; local `ci:pr` and `ci:full` are the normal gates. The checked-in `.github/homelab-runner` scaffold is inactive by default, has no network access and receives no registration credential. It is not an installation recipe for an untrusted-PR runner.

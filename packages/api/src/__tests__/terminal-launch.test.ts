@@ -203,6 +203,13 @@ describe("fresh launches", () => {
 });
 
 describe("platform shells", () => {
+  test("should preserve configured shell arguments literally without adding or parsing flags", () => {
+    const shell = ["C:\\Program Files\\PowerShell\\7\\pwsh.exe", "-NoProfile", "a & b", ""];
+    const argv = defaultShell(deps({ platform: "win32", shell }));
+    expect(argv).toEqual(shell);
+    expect(argv).not.toBe(shell);
+    expect(() => defaultShell(deps({ shell: [] }))).toThrow("needs an executable");
+  });
   test("windows prefers pwsh, then powershell, then COMSPEC", async () => {
     const win = { platform: "win32" as const };
     expect(defaultShell(deps(win))).toEqual(["C:\\pwsh.exe", "-NoLogo"]);

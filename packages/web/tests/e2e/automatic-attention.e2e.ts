@@ -9,6 +9,47 @@ let server: ChildProcess;
 let base: string;
 let fixtureHome: string;
 const headers = { Authorization: "Bearer attention-fixture-secret" };
+
+for (const width of [1440, 390]) {
+  test(`notification menu survives a new chat receiving its URL identity at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    let release = () => {};
+    let entered = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    await page.route("**/api/chat/stream", async (route) => {
+      entered();
+      await gate;
+      await route.continue();
+    });
+    try {
+      await page.getByTestId("chat-open-button").click();
+      await page.getByTestId("chat-input").fill("Menu identity approval fixture");
+      await page.getByTestId("chat-input").press("Enter");
+      await blocked;
+      await page.locator('[data-testid="notification-bell"]:visible').last().click();
+      const menu = page.getByTestId("notification-menu");
+      await expect(menu).toBeVisible();
+      release();
+      await expect.poll(() => new URL(page.url()).searchParams.get("chatThread")).not.toBeNull();
+      await expect(menu).toBeVisible();
+      const card = menu.locator('[data-testid^="attention-request-"]');
+      await expect(card).toHaveCount(1);
+      await reviewAttentionRequest(card);
+      await card.getByTestId("attention-deny").click();
+      await expect(card.getByTestId("attention-response")).toHaveText("Denied");
+    } finally {
+      release();
+    }
+  });
+}
+
 test.beforeAll(async () => {
   fixtureHome = mkdtempSync(join(tmpdir(), "orc-attention-e2e-"));
   server = spawn("bun", ["packages/web/tests/fixtures/attention-server.ts"], {

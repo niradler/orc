@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { inFixtureBatches } from "../fixtures/batches.js";
 import { settingsSection } from "./_chat-ui";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPost, gotoView, selectProject, tid } from "./_helpers";
@@ -88,7 +89,7 @@ for (const width of [1440, 390]) {
         path: `../../.claude/docs/channels-project-pagination-${width}.png`,
       });
     } finally {
-      await Promise.all(projects.map((project) => apiDelete(request, `/projects/${project.id}`)));
+      await inFixtureBatches(projects, (project) => apiDelete(request, `/projects/${project.id}`));
     }
   });
 }

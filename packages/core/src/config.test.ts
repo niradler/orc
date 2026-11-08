@@ -4,6 +4,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, OrcConfigSchema, resetConfig, resolveApiBase } from "./config.js";
 
+test("should accept literal shell argv while preserving executable string overrides", () => {
+  expect(OrcConfigSchema.parse({ terminals: { shell: "pwsh" } }).terminals.shell).toBe("pwsh");
+  const shell: [string, ...string[]] = [
+    "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "-NoProfile",
+    "",
+    "a & b",
+  ];
+  expect(OrcConfigSchema.parse({ terminals: { shell } }).terminals.shell).toEqual(shell);
+  for (const invalid of [
+    [],
+    [""],
+    ["pwsh", 7],
+    ["pwsh\0"],
+    ["pwsh", "bad\0arg"],
+    Array(65).fill("pwsh"),
+  ])
+    expect(OrcConfigSchema.safeParse({ terminals: { shell: invalid } }).success).toBe(false);
+});
+
 test("an explicitly empty environment secret overrides a stored secret", () => {
   const previousDirectory = process.cwd();
   const previousSecret = process.env.ORC_API_SECRET;
