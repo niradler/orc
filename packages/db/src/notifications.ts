@@ -18,8 +18,14 @@ type Row = Omit<OrcNotification, "requires_action"> & { requires_action: number 
 const ID_ATTEMPTS = 8;
 const COLUMNS =
   "id,type,source_id,title,body,level,project_id,path,requires_action,created_at,expires_at,read_at,dismissed_at";
+const RELATED_SOURCES = `SELECT related.source_id FROM notification_session_sources related
+  JOIN notification_session_sources current ON current.session_key=related.session_key
+  WHERE current.source_id=?`;
 const LATEST_FINISHED = `type<>'agent.finished' OR id=(SELECT latest.id FROM notifications latest
-  WHERE latest.type='agent.finished' AND latest.source_id=notifications.source_id
+  WHERE latest.type='agent.finished' AND (latest.source_id=notifications.source_id OR latest.source_id IN (
+    SELECT related.source_id FROM notification_session_sources related
+    JOIN notification_session_sources current ON current.session_key=related.session_key
+    WHERE current.source_id=notifications.source_id))
   ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)`;
 const notification = (row: Row, maximumAge: number): OrcNotification =>
   NotificationSchema.parse({
@@ -49,7 +55,19 @@ export class NotificationStore {
     CREATE INDEX IF NOT EXISTS notifications_created ON notifications(created_at DESC,id DESC);
     CREATE INDEX IF NOT EXISTS notifications_expiry ON notifications(expires_at);
     CREATE INDEX IF NOT EXISTS notifications_finished_source ON notifications(source_id,created_at DESC,id DESC)
-      WHERE type='agent.finished';`);
+      WHERE type='agent.finished';
+    CREATE TABLE IF NOT EXISTS notification_session_sources (source_id TEXT PRIMARY KEY,session_key TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS notification_session_key ON notification_session_sources(session_key,source_id);`);
+  }
+
+  associateSession(sourceId: string, sessionKey: string): void {
+    z.string().min(1).max(256).parse(sourceId);
+    z.string().min(1).max(2048).parse(sessionKey);
+    this.db
+      .query(`INSERT INTO notification_session_sources(source_id,session_key) VALUES(?,?)
+      ON CONFLICT(source_id) DO UPDATE SET session_key=excluded.session_key
+      WHERE session_key<>excluded.session_key`)
+      .run(sourceId, sessionKey);
   }
 
   publish(raw: NotificationInput): OrcNotification | null {
@@ -70,10 +88,11 @@ export class NotificationStore {
             : null;
         if (input.type === "agent.finished") {
           const latest = this.db
-            .query<{ created_at: number }, [string]>(
-              "SELECT created_at FROM notifications WHERE type='agent.finished' AND source_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+            .query<{ created_at: number }, [string, string]>(
+              `SELECT created_at FROM notifications WHERE type='agent.finished'
+               AND (source_id=? OR source_id IN (${RELATED_SOURCES})) ORDER BY created_at DESC,id DESC LIMIT 1`,
             )
-            .get(input.source_id);
+            .get(input.source_id, input.source_id);
           if (latest && latest.created_at >= input.created_at) return null;
         }
         const insert = this.db.query(`INSERT INTO notifications
@@ -117,10 +136,11 @@ export class NotificationStore {
             recordNotificationAudit(this.db, "notification.created", item, { now: () => now });
           if (inserted && input.type === "agent.finished") {
             const superseded = this.db
-              .query<Row, [string, string]>(
-                `DELETE FROM notifications WHERE type='agent.finished' AND source_id=? AND id<>? RETURNING ${COLUMNS}`,
+              .query<Row, [string, string, string]>(
+                `DELETE FROM notifications WHERE type='agent.finished'
+                 AND (source_id=? OR source_id IN (${RELATED_SOURCES})) AND id<>? RETURNING ${COLUMNS}`,
               )
-              .all(input.source_id, id);
+              .all(input.source_id, input.source_id, id);
             for (const previous of superseded)
               recordNotificationAudit(this.db, "notification.superseded", previous, {
                 now: () => now,
@@ -260,12 +280,12 @@ export class NotificationStore {
     return this.db
       .transaction(() => {
         const rows = this.db
-          .query<Row, [number, string, number, number]>(
-            `UPDATE notifications SET read_at=? WHERE source_id=? AND type='agent.finished'
+          .query<Row, [number, string, string, number, number]>(
+            `UPDATE notifications SET read_at=? WHERE (source_id=? OR source_id IN (${RELATED_SOURCES})) AND type='agent.finished'
              AND read_at IS NULL AND dismissed_at IS NULL AND expires_at>? AND created_at>?
              RETURNING ${COLUMNS}`,
           )
-          .all(now, sourceId, now, now - this.maximumAge());
+          .all(now, sourceId, sourceId, now, now - this.maximumAge());
         for (const row of rows)
           recordNotificationAudit(
             this.db,
@@ -306,6 +326,11 @@ export class NotificationStore {
           .all(now, batchSize - superseded.length);
         for (const row of expired)
           recordNotificationAudit(this.db, "notification.expired", row, { now: () => now });
+        this.db
+          .query(`DELETE FROM notification_session_sources WHERE source_id IN (
+          SELECT source_id FROM notification_session_sources sources WHERE NOT EXISTS (
+            SELECT 1 FROM notifications n WHERE n.type='agent.finished' AND n.source_id=sources.source_id) LIMIT ?)`)
+          .run(batchSize - superseded.length - expired.length);
         return superseded.length + expired.length;
       })
       .immediate();

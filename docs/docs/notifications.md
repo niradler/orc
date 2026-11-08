@@ -19,6 +19,10 @@ Each session keeps only its latest **Agent finished** notification. A newer fini
 physically replaces older completion notifications, including read and dismissed
 ones. Existing duplicates are cleaned automatically in bounded batches; lists and
 unread counts show only the latest even while cleanup is catching up.
+Saved chat views and the native session share that latest completion using the
+agent backend, execution host and native session ID. The alert opens where the
+latest turn ran; opening another read-only view creates no new completion alert.
+Matching native IDs on different hosts or agent backends stay separate.
 When a session continues, its latest completion alert is automatically marked read.
 This applies to workspace chats and observed agent sessions. **Show read** includes
 the retained latest completion, rather than a history of every turn.
