@@ -38,6 +38,22 @@ const DEFAULT_GATEWAY_PLATFORM = {
   streaming_preview: true,
 };
 
+const ShellArgumentSchema = z.string().refine((value) => !value.includes("\0"), {
+  message: "Shell arguments cannot contain NUL",
+});
+const ShellCommandSchema = z.union([
+  ShellArgumentSchema,
+  z
+    .tuple([
+      z
+        .string()
+        .min(1)
+        .refine((value) => !value.includes("\0")),
+    ])
+    .rest(ShellArgumentSchema)
+    .refine((argv) => argv.length <= 64, "Shell commands support at most 64 arguments"),
+]);
+
 export const SpeechProviderConfigSchema = z.object({
   api_key: z.string().optional(),
   base_url: z.string().optional(),
@@ -107,7 +123,7 @@ export const OrcConfigSchema = z.object({
     .object({
       enabled: z.boolean().default(true),
       max: z.number().int().min(1).max(64).default(8),
-      shell: z.string().optional(),
+      shell: ShellCommandSchema.optional(),
       scrollback_bytes: z.number().int().min(0).default(524288),
       allow_without_secret: z.boolean().default(false),
     })
