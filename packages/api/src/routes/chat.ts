@@ -68,7 +68,11 @@ import { getHandoffService } from "../handoffs/service.js";
 import { queuedAnswers } from "../human-request-delivery.js";
 import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
-import { recordChatNotification, resolveChatNotification } from "../notifications.js";
+import {
+  recordChatNotification,
+  resolveChatNotification,
+  retireChatFinishedNotifications,
+} from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
@@ -1259,6 +1263,7 @@ async function beginTurn(
   thread.updatedAt = Date.now();
   try {
     store().save(thread);
+    retireChatFinishedNotifications(thread);
   } catch (error) {
     active.delete(key);
     runs.delete(runId);

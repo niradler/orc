@@ -68,9 +68,11 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const requests = useHumanRequests();
   const sessions = useQuery(activeLiveSessionsQuery);
   const [expanded, setExpanded] = useState(false);
+  const [showRead, setShowRead] = useState(false);
   const menuLocation = useRef(location);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedDetails = useRef<HTMLDivElement>(null);
   const [drafts, setDrafts] = useState<Record<string, RequestDraft>>({});
   const [toasts, setToasts] = useState<NotificationToastEntry[]>([]);
   const [announcement, setAnnouncement] = useState("");
@@ -90,9 +92,10 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     sessions: sessions.data?.sessions,
   };
   const query = useInfiniteQuery({
-    queryKey: ["notifications"],
+    queryKey: ["notifications", { showRead }],
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => api.notifications.list({ limit: PAGE_SIZE, offset: pageParam }),
+    queryFn: ({ pageParam }) =>
+      api.notifications.list({ limit: PAGE_SIZE, offset: pageParam, unread: !showRead }),
     getNextPageParam: (last, _pages, offset) => (last.has_more ? offset + PAGE_SIZE : undefined),
     refetchInterval: 15_000,
   });
@@ -302,6 +305,10 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     }
   };
 
+  useEffect(() => {
+    if (expanded && selected) selectedDetails.current?.scrollIntoView({ block: "nearest" });
+  }, [expanded, selected]);
+
   return (
     <CenterContext.Provider value={{ unread, expanded, anchor, show }}>
       <Popover open={expanded} onOpenChange={setExpanded} modal>
@@ -324,7 +331,10 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
               variant="ghost"
               data-testid="notifications-mark-all-read"
               disabled={!unread || markAll.isPending}
-              onClick={() => markAll.mutate()}
+              onClick={() => {
+                setSelected(null);
+                markAll.mutate();
+              }}
             >
               <CheckCheck /> Mark all read
             </Button>
@@ -335,6 +345,17 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
               onClick={() => setExpanded(false)}
             >
               <X />
+            </Button>
+          </div>
+          <div className="flex items-center border-b border-border px-3 py-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="notifications-show-read"
+              aria-pressed={showRead}
+              onClick={() => setShowRead((current) => !current)}
+            >
+              {showRead && <Check />} Show read
             </Button>
           </div>
           <div className="@container/attention px-3">
@@ -359,7 +380,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
             )}
             {!query.isPending && !query.error && items.length === 0 && !selected && (
               <p data-testid="notifications-empty" className="py-5 text-sm text-outline">
-                No notifications.
+                {showRead ? "No notifications." : "No unread notifications."}
               </p>
             )}
             {items.map((item) => (
@@ -436,7 +457,10 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
                     data-testid="notification-mark-read"
                     aria-label={item.read_at ? "Mark unread" : "Mark read"}
                     disabled={update.isPending}
-                    onClick={() => update.mutate({ id: item.id, read: !item.read_at })}
+                    onClick={() => {
+                      if (selected === item.source_id) setSelected(null);
+                      update.mutate({ id: item.id, read: !item.read_at });
+                    }}
                   >
                     <Check className="size-4" />
                   </Button>
@@ -446,7 +470,10 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
                     data-testid="notification-dismiss"
                     aria-label="Dismiss notification"
                     disabled={update.isPending}
-                    onClick={() => update.mutate({ id: item.id, dismissed: true })}
+                    onClick={() => {
+                      if (selected === item.source_id) setSelected(null);
+                      update.mutate({ id: item.id, dismissed: true });
+                    }}
                   >
                     <X className="size-4" />
                   </Button>
@@ -454,16 +481,13 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
                 <p className="px-1 text-[11px] text-outline">
                   Expires {new Date(item.expires_at).toLocaleDateString()}
                 </p>
-                {item.type === "human.request" && (
+                {item.type === "human.request" && selected !== item.source_id && (
                   <RequestDetails
                     id={item.source_id}
                     summary={item.title}
                     onNavigate={() => setExpanded(false)}
-                    expanded={selected === item.source_id}
-                    onToggle={() => {
-                      if (selected === item.source_id) setSelected(null);
-                      else open(item);
-                    }}
+                    expanded={false}
+                    onToggle={() => open(item)}
                     drafts={drafts}
                     onDraft={(id, update) =>
                       setDrafts((current) => ({
@@ -478,30 +502,28 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
                 )}
               </div>
             ))}
-            {selected &&
-              !items.some(
-                (item) => item.type === "human.request" && item.source_id === selected,
-              ) && (
-                <div className="py-2">
-                  <RequestDetails
-                    id={selected}
-                    summary="Linked request"
-                    expanded
-                    onToggle={() => setSelected(null)}
-                    onNavigate={() => setExpanded(false)}
-                    drafts={drafts}
-                    onDraft={(id, update) =>
-                      setDrafts((current) => ({
-                        ...current,
-                        [id]: {
-                          ...(current[id] ?? { answer: "", selected: [], editingAnswer: true }),
-                          ...update,
-                        },
-                      }))
-                    }
-                  />
-                </div>
-              )}
+            {selected && (
+              <div ref={selectedDetails} className="py-2">
+                <RequestDetails
+                  key={selected}
+                  id={selected}
+                  summary="Linked request"
+                  expanded
+                  onToggle={() => setSelected(null)}
+                  onNavigate={() => setExpanded(false)}
+                  drafts={drafts}
+                  onDraft={(id, update) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [id]: {
+                        ...(current[id] ?? { answer: "", selected: [], editingAnswer: true }),
+                        ...update,
+                      },
+                    }))
+                  }
+                />
+              </div>
+            )}
             {query.hasNextPage && (
               <Button
                 variant="ghost"

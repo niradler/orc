@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { changes } from "@orc/core/changes";
 import type { ChatThread } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
@@ -14,6 +15,13 @@ import { activeTurns, turnKey } from "./sessions/turns.js";
 
 const logger = createLogger("notifications");
 const observedTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function retireChatFinishedNotifications(thread: ChatThread): void {
+  const notifications = new NotificationStore(getSqlite());
+  let count = notifications.markFinishedRead(thread.id);
+  if (thread.sourceId) count += notifications.markFinishedRead(thread.sourceId);
+  if (count) changes.publish("notifications");
+}
 
 export function recordChatNotification(
   thread: ChatThread,
@@ -69,6 +77,18 @@ export function recordObservedNotification(
   stillCurrent: () => boolean,
 ): void {
   const sqlite = getSqlite();
+  if (event.status === "running" && event.previous !== "running") {
+    const notifications = new NotificationStore(sqlite);
+    let count = notifications.markFinishedRead(event.id);
+    const backends =
+      event.backend === "codex" || event.backend === "codex-cli"
+        ? ["codex", "codex-cli"]
+        : [event.backend];
+    for (const backend of backends)
+      for (const thread of new ChatStore(sqlite).byRuntime(backend, event.host, event.nativeId))
+        count += notifications.markFinishedRead(thread.id);
+    if (count) changes.publish("notifications");
+  }
   if (!event.waiting) new NotificationStore(sqlite).resolveSource("agent.question", event.id);
   const kind =
     event.waiting && !event.wasWaiting

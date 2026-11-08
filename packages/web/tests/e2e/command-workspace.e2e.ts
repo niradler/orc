@@ -64,6 +64,7 @@ test("should edit and run a masked command from Attention after reload", async (
   expect(completed.status).toBe("answered");
   expect(JSON.stringify(completed)).not.toContain(secret);
   await page.reload();
+  await page.getByTestId("notifications-show-read").click();
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-command-result")).toContainText("edited:[REDACTED]");
   for (const width of [1440, 390]) {

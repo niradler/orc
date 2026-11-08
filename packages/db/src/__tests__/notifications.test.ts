@@ -84,3 +84,36 @@ test("should page history and resolve actions without changing read state", () =
   store.markAllRead();
   expect(store.list(50, 0, true).notifications).toEqual([]);
 });
+
+test("should retire only the continuing session's completions, preserving history and audit", () => {
+  const { db, store, input } = fixture();
+  for (const [key, type, source] of [
+    ["done:1", "agent.finished", "session"],
+    ["done:2", "agent.finished", "session"],
+    ["other", "agent.finished", "other-session"],
+    ["failure", "agent.failed", "session"],
+    ["question", "agent.question", "session"],
+    ["job", "job.finished", "session"],
+  ] as const)
+    store.publish({ ...input, source_key: key, type, source_id: source });
+  expect(store.markFinishedRead("session")).toBe(2);
+  expect(store.markFinishedRead("session")).toBe(0);
+  expect(store.list().notifications).toHaveLength(6);
+  expect(
+    store
+      .list(50, 0, true)
+      .notifications.map((item) => item.type)
+      .sort(),
+  ).toEqual(["agent.failed", "agent.finished", "agent.question", "job.finished"]);
+  expect(
+    db.query("SELECT count(*) AS count FROM audit_log WHERE action='notification.read'").get(),
+  ).toEqual({ count: 2 });
+  const next = store.publish({
+    ...input,
+    source_key: "done:3",
+    type: "agent.finished",
+    source_id: "session",
+  });
+  expect(next?.read_at).toBeNull();
+  expect(store.list(50, 0, true).unread).toBe(5);
+});

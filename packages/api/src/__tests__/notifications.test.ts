@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { type ChatEvent, ChatThreadSchema } from "@orc/core/chat";
 import type { HumanRequest } from "@orc/core/human-requests";
 import type { NotificationPage, OrcNotification } from "@orc/core/notifications";
 import { getSqlite } from "@orc/db/client";
 import { publishJobNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
 import { executeJob } from "@orc/runner/executor";
+import { recordObservedNotification } from "../notifications.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
@@ -12,6 +14,74 @@ beforeAll(() => {
   app = setupTestApp();
 });
 afterAll(teardownTestApp);
+
+test("should keep only the latest managed turn completion unread", async () => {
+  const previousMock = process.env.ORC_E2E_CHAT_MOCK;
+  process.env.ORC_E2E_CHAT_MOCK = "1";
+  try {
+    const first = await req(app, "POST", "/chat/stream", {
+      messages: [{ role: "user", content: "First turn" }],
+    });
+    expect(first.status).toBe(200);
+    const events = (await first.text())
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line): ChatEvent => JSON.parse(line.slice(5)));
+    const event = events.find((event) => event.type === "thread");
+    if (event?.type !== "thread") throw new Error("Missing thread event");
+    const thread = ChatThreadSchema.parse(event.thread);
+    const store = new NotificationStore(getSqlite());
+    const previous = store.list().notifications.find((item) => item.source_id === thread.id);
+    expect(previous?.type).toBe("agent.finished");
+    expect(previous?.read_at).toBeNull();
+    const next = await req(app, "POST", "/chat/stream", {
+      threadId: thread.id,
+      messages: [{ role: "user", content: "Continue" }],
+    });
+    expect(next.status).toBe(200);
+    await next.text();
+    const history = store.list().notifications.filter((item) => item.source_id === thread.id);
+    expect(history).toHaveLength(2);
+    expect(history.find((item) => item.id === previous?.id)?.read_at).not.toBeNull();
+    expect(history.filter((item) => item.read_at === null)).toHaveLength(1);
+  } finally {
+    if (previousMock === undefined) delete process.env.ORC_E2E_CHAT_MOCK;
+    else process.env.ORC_E2E_CHAT_MOCK = previousMock;
+  }
+});
+
+test("should retire observed completion alerts when the same session runs again", () => {
+  const store = new NotificationStore(getSqlite());
+  const now = Date.now();
+  const item = store.publish({
+    type: "agent.finished",
+    source_key: "observed:continued:old",
+    source_id: "continued",
+    title: "Finished",
+    level: "done",
+    path: "/sessions",
+    created_at: now,
+    expires_at: now + 60000,
+  });
+  recordObservedNotification(
+    {
+      id: "continued",
+      backend: "codex",
+      host: null,
+      nativeId: "native-continued",
+      title: "Continued",
+      projectId: null,
+      previous: "idle",
+      status: "running",
+      waiting: false,
+      wasWaiting: false,
+      activity: now,
+    },
+    () => true,
+  );
+  expect(store.list().notifications.find((entry) => entry.id === item?.id)?.read_at).not.toBeNull();
+  expect(store.list(50, 0, true).notifications.some((entry) => entry.id === item?.id)).toBe(false);
+});
 
 test("should authenticate notification operations and reject invalid inputs", async () => {
   for (const [method, path] of [

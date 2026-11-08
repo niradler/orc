@@ -230,6 +230,32 @@ export class NotificationStore {
       .immediate();
   }
 
+  markFinishedRead(sourceId: string): number {
+    z.string().min(1).max(256).parse(sourceId);
+    const now = this.now();
+    return this.db
+      .transaction(() => {
+        const rows = this.db
+          .query<Row, [number, string, number, number]>(
+            `UPDATE notifications SET read_at=? WHERE source_id=? AND type='agent.finished'
+             AND read_at IS NULL AND dismissed_at IS NULL AND expires_at>? AND created_at>?
+             RETURNING ${COLUMNS}`,
+          )
+          .all(now, sourceId, now, now - this.maximumAge());
+        for (const row of rows)
+          recordNotificationAudit(
+            this.db,
+            "notification.read",
+            notification(row, this.maximumAge()),
+            {
+              now: () => now,
+            },
+          );
+        return rows.length;
+      })
+      .immediate();
+  }
+
   cleanup(batchSize = 1000): number {
     z.number().int().min(1).max(10000).parse(batchSize);
     const maximumAge = this.maximumAge();

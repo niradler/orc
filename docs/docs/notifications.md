@@ -10,9 +10,19 @@ Request forms stay collapsed until opened; drafts survive closing and reopening
 the menu. Read and dismissed state is stored on the server and shared by clients.
 Dismissal does not approve, answer, cancel or delete a source request.
 
-![Notification menu on desktop with demo data](/screens/notification-center-light-1440.png)
+The menu shows **unread notifications** by default. Opening an item or choosing
+**Mark read** clears it from the inbox. **Show read** includes read history; use
+**Mark unread** to return an item to the inbox, or **Mark all read** to clear it.
+An opened human request stays available while you answer it.
 
-![Notification menu in phone chat with demo data](/screens/notification-center-dark-390.png)
+When a session continues, its earlier **Agent finished** alerts are automatically
+marked read. This applies to workspace chats and observed agent sessions, leaving
+completion history available through **Show read** without accumulating old alerts.
+Failures and pending questions or approvals are kept independently.
+
+![Read history on desktop with demo data](/screens/notification-center-light-1440.png)
+
+![Read history on phone with demo data](/screens/notification-center-dark-390.png)
 
 Job delivery follows `notify_on`: `never` creates no alert, `failure` reports
 failed runs, and `always` also reports successful runs. Notification types are
