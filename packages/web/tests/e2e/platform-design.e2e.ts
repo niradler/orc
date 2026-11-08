@@ -74,7 +74,13 @@ for (const width of [390, 320]) {
     });
     await page.setViewportSize({ width, height: 844 });
     await gotoView(page, "skills");
+    const searched = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/skills" && url.searchParams.get("q") === name;
+    });
     await page.getByTestId("skill-search-input").fill(name);
+    await expect(page).toHaveURL((url) => url.searchParams.get("skillQuery") === name);
+    expect((await searched).ok()).toBe(true);
     const row = page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`);
     await expect(row).toBeVisible();
     expect((await row.boundingBox())?.height).toBeLessThanOrEqual(104);
