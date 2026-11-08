@@ -3,9 +3,19 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { app, BrowserWindow, dialog, Notification } from "electron";
 import electronUpdater from "electron-updater";
 
+process.on("uncaughtException", (error) => {
+  console.error(error);
+  app.exit(1);
+});
+
 // This entry is packaged only by update-smoke.ts, never by the normal desktop build.
 const config = JSON.parse(
-  readFileSync(new URL("../update-fixture.json", import.meta.url), "utf8"),
+  readFileSync(
+    process.platform === "darwin"
+      ? join(process.resourcesPath, "update-fixture.json")
+      : new URL("../update-fixture.json", import.meta.url),
+    "utf8",
+  ),
 ) as {
   identity: string;
   roots: Record<string, string>;
@@ -89,7 +99,10 @@ app.setLoginItemSettings = () => {
 app.setAsDefaultProtocolClient = () => {
   throw new Error("Protocol registration is forbidden in the update fixture");
 };
-BrowserWindow.prototype.show = () => {};
+let showRequests = 0;
+BrowserWindow.prototype.show = () => {
+  showRequests++;
+};
 Notification.prototype.show = () => {};
 if (process.platform === "linux") app.commandLine.appendSwitch("no-sandbox");
 
@@ -102,12 +115,27 @@ const report = (event: string, details: Record<string, unknown> = {}) => {
 report("started", { packaged: app.isPackaged, data: env.ORC_HOME });
 if (!app.isPackaged) throw new Error("Update acceptance requires a packaged application");
 
-const { autoUpdater } = electronUpdater;
-const setFeedURL = autoUpdater.setFeedURL.bind(autoUpdater);
-autoUpdater.setFeedURL = () =>
-  setFeedURL({ provider: "generic", url: `http://127.0.0.1:${ports.feedPort}` });
-autoUpdater.on("error", (error: Error) => report("update-error", { message: error.message }));
-autoUpdater.on("update-downloaded", () => report("downloaded"));
+if (process.platform === "darwin") {
+  const request = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    (input: string | URL | Request, options?: RequestInit) => {
+      const url = String(input);
+      if (url === "https://api.github.com/repos/niradler/orc/releases?per_page=100")
+        return request(`http://127.0.0.1:${ports.feedPort}/releases.json`, options);
+      if (url.startsWith("https://github.com/niradler/orc/releases/download/"))
+        return request(`http://127.0.0.1:${ports.feedPort}/${basename(url)}`, options);
+      return request(input, options);
+    },
+    { preconnect: request.preconnect },
+  );
+} else {
+  const { autoUpdater } = electronUpdater;
+  const setFeedURL = autoUpdater.setFeedURL.bind(autoUpdater);
+  autoUpdater.setFeedURL = () =>
+    setFeedURL({ provider: "generic", url: `http://127.0.0.1:${ports.feedPort}` });
+  autoUpdater.on("error", (error: Error) => report("update-error", { message: error.message }));
+  autoUpdater.on("update-downloaded", () => report("downloaded"));
+}
 
 let timer: ReturnType<typeof setInterval> | undefined;
 app.on("before-quit", () => clearInterval(timer));
@@ -138,7 +166,22 @@ timer = setInterval(async () => {
     );
     const command = await response.text();
     if (command === "quit") app.quit();
-    else if ((command === "check" || command === "install") && window && !window.isDestroyed()) {
+    else if (command === "close-window" && window && !window.isDestroyed()) {
+      window.close();
+      report("window-close", { destroyed: window.isDestroyed() });
+    } else if (command === "activate") {
+      const before = showRequests;
+      app.emit("activate");
+      report("window-activate", { showRequested: showRequests > before });
+    } else if (process.platform === "darwin" && window && !window.isDestroyed()) {
+      const state = await window.webContents.executeJavaScript("window.orcDesktop.updates.state()");
+      if (state.phase === "downloaded") report("downloaded");
+      if (state.phase === "error") report("update-error", { message: state.error });
+      if (command === "check" || command === "install") {
+        report(`requested-${command}`);
+        await window.webContents.executeJavaScript(`window.orcDesktop.updates.${command}()`);
+      }
+    } else if ((command === "check" || command === "install") && window && !window.isDestroyed()) {
       report(`requested-${command}`);
       await window.webContents.executeJavaScript(`window.orcDesktop.updates.${command}()`);
     }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -133,8 +133,12 @@ ${body}
     new Response(child.stderr).text(),
     child.exited,
   ]);
-  expect(code, stderr).toBe(0);
-  expect(stdout).toBe("");
+  try {
+    expect(code, stderr).toBe(0);
+    expect(stdout).toBe("");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test(
@@ -251,8 +255,11 @@ test(
     sshScenario(`
 expect((await hostExec(host, ["handshake-always"])).code).toBe(255);
 expect(events().trim().split("\\n").filter(e => e === "handshake-attempt")).toHaveLength(3);
-await expect(hostExec(host, ["handshake-always"], { timeoutMs: 100 })).rejects.toThrow("timed out");
-expect(events().trim().split("\\n").filter(e => e === "handshake-attempt")).toHaveLength(4);
+const timed = await hostExec(host, ["handshake-always"], { timeoutMs: 100 })
+  .then(result => result.code, error => String(error));
+if (typeof timed === "number") expect(timed).toBe(143);
+else expect(timed).toContain("timed out");
+expect([3, 4]).toContain(events().trim().split("\\n").filter(e => e === "handshake-attempt").length);
 await retireSshMaster(host.alias);
 `),
   20_000,

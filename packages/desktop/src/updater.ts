@@ -1,6 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { app, type BrowserWindow, ipcMain, Notification } from "electron";
 import electronUpdater from "electron-updater";
+import type { AppUpdaterEvents } from "electron-updater/out/AppUpdater.js";
+import { MacUpdater } from "./mac-updater.js";
 import { OPEN_CHANNEL, shouldNotifyNatively } from "./notify.js";
 import {
   allowsPrerelease,
@@ -34,9 +37,23 @@ type UpdateHost = {
 
 export function startDesktopUpdates(host: UpdateHost, platform = process.platform): void {
   if (!desktopUpdatesSupported(platform)) return;
-  const { autoUpdater } = electronUpdater;
+  const autoUpdater =
+    platform === "darwin"
+      ? new MacUpdater({
+          version: app.getVersion(),
+          arch: process.arch,
+          cache: join(app.getPath("userData"), "mac-update"),
+          installedApp: dirname(dirname(dirname(process.execPath))),
+          quit: () => app.quit(),
+        })
+      : electronUpdater.autoUpdater;
+  const events: {
+    on<K extends keyof AppUpdaterEvents>(event: K, listener: AppUpdaterEvents[K]): unknown;
+  } = autoUpdater;
   let stored = parseStoredSettings(readSettings(host.settingsPath) ?? "");
   let snapshot = initialSnapshot(app.getVersion(), stored, app.isPackaged);
+  const installError = autoUpdater instanceof MacUpdater ? autoUpdater.installationError() : null;
+  if (installError) snapshot = applyEvent(snapshot, { type: "error", message: installError });
   let running: Promise<UpdateSnapshot> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let startup: ReturnType<typeof setTimeout> | null = null;
@@ -63,6 +80,7 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
   };
 
   const check = (): Promise<UpdateSnapshot> => {
+    if (installing) return Promise.resolve(snapshot);
     if (running) return running;
     running = runCheck().finally(() => {
       running = null;
@@ -106,7 +124,7 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowPrerelease = allowsPrerelease(snapshot.channel);
     autoUpdater.setFeedURL({ provider: "github", ...UPDATE_REPOSITORY });
-    autoUpdater.on("update-available", (info) => {
+    events.on("update-available", (info) => {
       publish(
         applyEvent(snapshot, {
           type: "available",
@@ -115,10 +133,10 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
         }),
       );
     });
-    autoUpdater.on("download-progress", (progress) => {
+    events.on("download-progress", (progress) => {
       publish(applyEvent(snapshot, { type: "progress", percent: progress.percent }));
     });
-    autoUpdater.on("update-downloaded", (info) => {
+    events.on("update-downloaded", (info) => {
       const next = publish(
         applyEvent(snapshot, {
           type: "downloaded",
@@ -129,10 +147,10 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
       );
       notifyReady(host, next);
     });
-    autoUpdater.on("update-not-available", () => {
+    events.on("update-not-available", () => {
       publish(applyEvent(snapshot, { type: "current" }), true);
     });
-    autoUpdater.on("error", (error) => {
+    events.on("error", (error) => {
       publish(applyEvent(snapshot, { type: "error", message: updateErrorMessage(error) }), true);
       void restoreAfterInstallFailure().catch(() => {
         publish(
@@ -152,6 +170,7 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
   });
   ipcMain.handle(UPDATE_SET_CHANNEL, (event, payload: unknown) => {
     ownedWindow(event.sender.id);
+    if (installing) throw new Error("Wait for update installation to finish");
     const preferences = preferencesFromUser(payload);
     publish(applyEvent(snapshot, { type: "preferences", ...preferences }), true);
     schedule();
@@ -164,12 +183,17 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
   });
   ipcMain.handle(UPDATE_INSTALL_CHANNEL, async (event) => {
     ownedWindow(event.sender.id);
+    if (installing) throw new Error("An update installation is already in progress");
     try {
       installing = snapshot.phase === "downloaded";
+      if (installing && autoUpdater instanceof MacUpdater) await autoUpdater.prepareInstall();
       await installDownloadedUpdate({
         phase: snapshot.phase,
         stopOwnedDaemon: host.stopOwnedDaemon,
-        quitAndInstall: () => autoUpdater.quitAndInstall(true, true),
+        quitAndInstall: () =>
+          autoUpdater instanceof MacUpdater
+            ? autoUpdater.quitAndInstall()
+            : autoUpdater.quitAndInstall(true, true),
       });
     } catch (error) {
       publish(applyEvent(snapshot, { type: "error", message: updateErrorMessage(error) }), true);

@@ -41,6 +41,9 @@ All previous versions and reasons remain stored. The dashboard's **Rules** page 
 shows an Applied rules table with Edit and Enable/Disable actions. Add rule opens one form. Select a template to autofill it, or fill the inputs manually. Settings manages workspace/project scope, agent
 assignments, connections and policy history. The editor retains the
 Scope → Filtering → Target definition; settings changes use the same validated policy revisions.
+After saving, the dashboard selects the server's canonical workspace path so
+saved rules remain visible when you entered a filesystem alias such as macOS
+`/var` rather than `/private/var`.
 
 API: `GET /api/rules`, `POST /api/rules/activate`, `POST /api/rules/revert` and
 `POST /api/rules/check`. Check accepts a normalized event and performs a dry run: it

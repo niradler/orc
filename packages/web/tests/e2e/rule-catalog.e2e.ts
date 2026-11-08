@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -19,15 +19,15 @@ test("should load a catalog rule as an editable draft and retain the customized 
   await expect(page.getByTestId("event-rule-id")).toHaveValue("rtk-git");
   await expect(page.getByTestId("rule-target")).toHaveValue("rewrite_command");
   const before = await apiGet<{ history: { workspace: string }[] }>(request, "/rules");
-  expect(before.history.some((entry) => entry.workspace === workspace)).toBe(false);
+  expect(before.history.some((entry) => entry.workspace === realpathSync(workspace))).toBe(false);
   await page.getByTestId("event-rule-id").fill("my-git-router");
   await page.getByTestId("rule-processor-argv").fill('["my-router", "{command}"]');
   await page.getByTestId("event-rule-save").click();
-  const revision = page.getByTestId("rule-revision").filter({ hasText: workspace });
+  const revision = page.getByTestId("rule-revision").filter({ hasText: realpathSync(workspace) });
   await expect(revision.getByTestId("saved-event-rule")).toContainText("my-git-router");
   await page.reload();
   await page.getByTestId("rules-settings-tab").click();
-  await page.getByTestId("rules-workspace").fill(workspace.split("\\").join("/"));
+  await page.getByTestId("rules-workspace").fill(realpathSync(workspace).split("\\").join("/"));
   await page.getByTestId("rules-applied-tab").click();
   await revision.getByTestId("event-rule-edit").click();
   await expect(page.getByTestId("event-rule-id")).toBeInViewport();
@@ -59,7 +59,7 @@ test("should save and reopen a customized built-in memory rule", async ({ page }
   await page.getByTestId("rule-memory-directory").fill(directory);
   await page.getByTestId("rule-orc-timeout").fill("1800");
   await page.getByTestId("event-rule-save").click();
-  const revision = page.getByTestId("rule-revision").filter({ hasText: workspace });
+  const revision = page.getByTestId("rule-revision").filter({ hasText: realpathSync(workspace) });
   await expect(revision.getByTestId("saved-event-rule")).toContainText("claude-share-memory");
   await page.reload();
   await revision.getByTestId("event-rule-edit").click();

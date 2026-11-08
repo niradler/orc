@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 import {
   API_BASE,
   AUTH_HEADERS,
@@ -23,17 +23,28 @@ test("one shared stream keeps two tabs fresh, stays idle, and resynchronizes aft
   });
   const second = await context.newPage();
   const requests: string[] = [];
+  const pending = new Set<Request>();
+  let lastActivity = Date.now();
   page.on("request", (event) => {
-    if (new URL(event.url()).pathname.startsWith("/api/"))
-      requests.push(new URL(event.url()).pathname);
+    const path = new URL(event.url()).pathname;
+    if (path.startsWith("/api/")) {
+      requests.push(path);
+      lastActivity = Date.now();
+      if (path !== "/api/events") pending.add(event);
+    }
   });
+  const completed = (event: Request) => {
+    if (pending.delete(event)) lastActivity = Date.now();
+  };
+  page.on("requestfinished", completed);
+  page.on("requestfailed", completed);
   for (const tab of [page, second]) {
     await gotoView(tab, "tasks");
     await selectProject(tab, project.id);
     await tab.getByTestId("tasks-view-table").click();
     await expect(tab.getByTestId("task-row")).toHaveCount(1);
   }
-  await page.waitForTimeout(700);
+  await expect.poll(() => pending.size === 0 && Date.now() - lastActivity >= 500).toBe(true);
   expect(requests.filter((path) => path === "/api/events")).toHaveLength(1);
   const baseline = requests.length;
   await page.waitForTimeout(6500);

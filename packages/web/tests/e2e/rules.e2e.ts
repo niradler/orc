@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -11,7 +11,7 @@ test("should save an all-agent regex rule and retain its scope/filter/target aft
   const workspace = mkdtempSync(join(tmpdir(), "orc-event-rule-browser-"));
   const savedRule = page
     .getByTestId("rule-revision")
-    .filter({ hasText: workspace })
+    .filter({ hasText: realpathSync(workspace) })
     .getByTestId("saved-event-rule");
   try {
     await gotoView(page, "rules");
@@ -97,7 +97,7 @@ test("should reuse filters for context, job, and both script targets while retai
   request,
 }) => {
   const workspace = mkdtempSync(join(tmpdir(), "orc-rule-targets-browser-"));
-  const policy = page.getByTestId("rule-revision").filter({ hasText: workspace });
+  const policy = page.getByTestId("rule-revision").filter({ hasText: realpathSync(workspace) });
   const savedRule = policy.getByTestId("saved-event-rule");
   try {
     const job = await apiPost<{ id: string }>(request, "/jobs", {
@@ -165,9 +165,9 @@ test("should reuse filters for context, job, and both script targets while retai
     await page.getByTestId("sheet-close").click();
     await page.getByTestId("rules-settings-tab").click();
     await page.getByTestId("rules-history").locator("summary").first().click();
-    await expect(page.getByTestId("rule-history-entry").filter({ hasText: workspace })).toHaveCount(
-      4,
-    );
+    await expect(
+      page.getByTestId("rule-history-entry").filter({ hasText: realpathSync(workspace) }),
+    ).toHaveCount(4);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

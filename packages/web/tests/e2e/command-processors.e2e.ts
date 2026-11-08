@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -28,7 +28,7 @@ test("should save a generic command processor, preview routing without execution
   await page.getByTestId("rule-processor-rewrite-codes").fill("[0]");
   await page.getByTestId("rule-processor-passthrough-codes").fill("[4]");
   await page.getByTestId("event-rule-save").click();
-  const revision = page.getByTestId("rule-revision").filter({ hasText: workspace });
+  const revision = page.getByTestId("rule-revision").filter({ hasText: realpathSync(workspace) });
   await expect(revision.getByTestId("saved-event-rule")).toContainText("rewrite command");
   const preview = await apiPost<{
     command_processors: { target: { argv: string[] } }[];

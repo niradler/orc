@@ -21,6 +21,7 @@ import {
 import { test } from "./_terminal-fixture";
 
 const execute = promisify(execFile);
+const python = process.platform === "win32" ? "python" : "python3";
 const nativeContent = (agent: "claude" | "codex", id: string, cwd: string, text: string) =>
   agent === "codex"
     ? `${JSON.stringify({ type: "session_meta", payload: { id, cwd, source: "cli" } })}\n${JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } })}\n`
@@ -87,7 +88,7 @@ test("all Claude histories map across projects, preserve partial successes and s
     "--source-id",
     one,
   ];
-  const result = await execute("python", args, {
+  const result = await execute(python, args, {
     timeout: 60_000,
     windowsHide: true,
     env: { ...process.env, ORC_API_SECRET: API_SECRET },
@@ -105,7 +106,7 @@ test("all Claude histories map across projects, preserve partial successes and s
   expect(
     (await apiGet<ArchiveSearchResult>(request, `/sessions/archive?project_id=${p2.id}`)).sessions,
   ).toHaveLength(1);
-  const retried = await execute("python", args, {
+  const retried = await execute(python, args, {
     timeout: 60_000,
     windowsHide: true,
     env: { ...process.env, ORC_API_SECRET: API_SECRET },
@@ -151,7 +152,7 @@ test("offline project sync via trusted helper is idempotent, incremental and sea
   const grantFile = join(root, "sync-grant.json");
   writeFileSync(grantFile, grant.result, { mode: 0o600 });
   expect(
-    (await execute("python", [script, "--help"], { timeout: 10_000, windowsHide: true })).stdout,
+    (await execute(python, [script, "--help"], { timeout: 10_000, windowsHide: true })).stdout,
   ).toContain("--project-map");
   const path = join(root, "native.jsonl");
   const id = randomUUID();
@@ -159,7 +160,7 @@ test("offline project sync via trusted helper is idempotent, incremental and sea
   writeFileSync(path, first);
   const sync = () =>
     execute(
-      "python",
+      python,
       [
         script,
         "--grant-file",

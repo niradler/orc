@@ -202,17 +202,26 @@ bun run --filter @orc/desktop dev         # run the app from source
 
 ## Upgrading
 
-To start using Windows or Linux automatic desktop updates, manually install a build that contains the updater once. Earlier desktop builds cannot update themselves into this feature.
+To start using automatic desktop updates, manually install a build that contains the updater once. Earlier desktop builds cannot update themselves into this feature.
 
 Database migrations run automatically when ORC opens the database. Back up `~/.orc/orc.db` first if you want a rollback point.
 
 | Method | Upgrade |
 | --- | --- |
-| Desktop app | Installed Windows and Linux apps check for updates on their own. **Settings → About** shows the channel and **Restart to update** after the download. You can still quit from the tray (**Quit orc**) and install the new installer over the old one. The app replaces `~/.orc/bin/orc` on first launch. Automatic updates are not offered on macOS yet; install the new disk image manually. |
+| Desktop app | Installed macOS, Windows and Linux apps check for updates on their own. **Settings → About** shows the channel and **Restart to update** after the download. Installation waits for that action; quitting alone does not apply the update. You can still quit from the tray (**Quit orc**) and install the new installer over the old one. The app replaces `~/.orc/bin/orc` on first launch. |
 | Binary | Re-run the `curl` command, then restart the daemon (`orc daemon stop`, then start it again or let the service restart it). |
 | npm | `npm install -g orc-ai@latest`, then restart the daemon. |
 | Docker | `docker pull niradler/orc:latest` and recreate the container, or `docker compose pull && docker compose up -d`. |
 | Source | `git pull`, `bun install`, `bun run build`. |
+
+On macOS, ORC downloads the release disk image, verifies its SHA256, and checks the
+app identity, version, architecture and bundle integrity before stopping its daemon.
+**Restart to update** replaces the installed app and relaunches it, retaining the
+previous app in a hidden sibling update folder for recovery. The installation
+folder must be writable by your user; move the app out of the disk image into
+`/Applications` or `~/Applications` first. This updater does not require an Apple
+developer account and does not change Gatekeeper settings. The normal first-open
+approval for an unnotarized app can still apply.
 
 From the dashboard, **Settings → Server → Restart ORC server** restarts the running server without losing settings. It closes active terminals.
 

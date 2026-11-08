@@ -46,9 +46,10 @@ for (const theme of ["dark", "light"] as const) {
       await revealFormField(page, action);
       const nativeImage = await nativeChevron(action);
       await action.focus();
-      await action.press("End");
+      await action.press("c");
+      await action.press("Enter");
       await expect(action).toHaveValue("task");
-      await action.press("Home");
+      await action.selectOption("command");
       await expect(action).toHaveValue("command");
       await revealFormField(page, trigger);
       await trigger.focus();
@@ -129,7 +130,8 @@ for (const theme of ["dark", "light"] as const) {
       const host = page.getByTestId("terminal-host-select");
       await nativeChevron(host);
       await host.focus();
-      await host.press("End");
+      await page.keyboard.type("long");
+      await host.press("Enter");
       await expect(host).toHaveValue(longName);
       await expect(host.locator("..").locator("svg")).toHaveCount(0);
       await page.screenshot({

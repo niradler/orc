@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test";
+import { isMacPlatform } from "../../src/lib/terminal-keys";
 import { apiPost, gotoView } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
@@ -35,7 +36,7 @@ test("select all copies the whole buffer, scrollback included, not just the olde
   await page.keyboard.press("Enter");
   await expect.poll(() => output).toContain("PROBE_200");
 
-  const mac = process.platform === "darwin";
+  const mac = await page.evaluate(isMacPlatform);
   await page.keyboard.press(mac ? "Meta+KeyA" : "Control+Shift+KeyA");
   await page.keyboard.press(mac ? "Meta+KeyC" : "Control+Shift+KeyC");
   // The first and last rows prove the copy spans scrollback and the visible screen.

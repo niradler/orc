@@ -428,7 +428,10 @@ test.describe("Scratchpads", () => {
       };
       await draw();
       await expect(status).toHaveText("Unsaved changes");
-      await page.keyboard.press("Control+z");
+      const undo = await page.evaluate(() =>
+        /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? "Meta+z" : "Control+z",
+      );
+      await page.keyboard.press(undo);
       await expect(status).toHaveText("Saved");
       await draw();
       await expect(status).toHaveText("Unsaved changes");

@@ -26,10 +26,10 @@ const current = initialSnapshot(
 );
 
 describe("desktop update policy", () => {
-  test("offers desktop updates on Windows and Linux while macOS remains outside this feature", () => {
+  test("offers the shared desktop update controls on Windows, Linux and macOS", () => {
     expect(desktopUpdatesSupported("win32")).toBe(true);
     expect(desktopUpdatesSupported("linux")).toBe(true);
-    expect(desktopUpdatesSupported("darwin")).toBe(false);
+    expect(desktopUpdatesSupported("darwin")).toBe(true);
     expect(desktopUpdatesSupported("freebsd")).toBe(false);
   });
 

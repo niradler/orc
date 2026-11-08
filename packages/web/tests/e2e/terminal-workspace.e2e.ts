@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
@@ -173,7 +173,7 @@ test("should keep the terminal picker compact and reveal checkout links only wit
   page,
   request,
 }) => {
-  const repo = mkdtempSync(join(tmpdir(), "orc-pane-context-"));
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "orc-pane-context-")));
   const git = (...args: string[]) =>
     execFileSync("git", ["-C", repo, ...args], { timeout: 15000, windowsHide: true });
   git("init", "-b", "main");
