@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
 import { API_BASE, AUTH_HEADERS, apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
+import { selectKnowledgeBase } from "./_knowledge-ui";
 
 type Kb = { id: string; name: string };
 type Doc = { id: string; revision: number; title: string };
@@ -14,10 +15,7 @@ async function createKb(request: Parameters<typeof apiPost>[0], name: string): P
 
 async function openKb(page: Page, name: string): Promise<void> {
   await gotoView(page, "knowledge");
-  // Initial default selection changes the view; finish it before clicking a sidebar row.
-  await expect(page.getByTestId("kb-overview-name")).toBeVisible();
-  await page.locator(`[data-testid="kb-row"][data-kb-name="${name}"]`).click();
-  await expect(page.getByTestId("kb-overview-name")).toHaveText(name);
+  await selectKnowledgeBase(page, name);
 }
 
 /** A row in the knowledge base home table. */

@@ -37,17 +37,22 @@ test("keeps accepting messages while running and drains edited messages in order
 }) => {
   const sent = posts(page);
   const panel = page.getByTestId("chat-panel");
-  await send(panel, "Respond after 2500ms. Reply with exactly: FIRST.");
-  await expect(panel).toHaveAttribute("data-streaming", "true");
-  await expect(panel.getByTestId("chat-input")).toBeEnabled();
-  await send(panel, "Reply with exactly: ORIGINAL.");
-  await send(panel, "Reply with exactly: THIRD.");
+  const release = await holdChatStream(page);
   const pending = panel.getByTestId("chat-queued-message");
-  await expect(pending).toHaveCount(2);
-  await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
-  await expandQueue(panel);
-  await pending.first().getByTestId("chat-queued-edit").click();
-  await pending.first().getByTestId("chat-queued-input").fill("Reply with exactly: EDITED.");
+  try {
+    await send(panel, "Respond after 2500ms. Reply with exactly: FIRST.");
+    await expect(panel).toHaveAttribute("data-streaming", "true");
+    await expect(panel.getByTestId("chat-input")).toBeEnabled();
+    await send(panel, "Reply with exactly: ORIGINAL.");
+    await send(panel, "Reply with exactly: THIRD.");
+    await expect(pending).toHaveCount(2);
+    await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
+    await expandQueue(panel);
+    await pending.first().getByTestId("chat-queued-edit").click();
+    await pending.first().getByTestId("chat-queued-input").fill("Reply with exactly: EDITED.");
+  } finally {
+    await release();
+  }
   await expect(panel).toHaveAttribute("data-streaming", "false");
   expect(sent).toHaveLength(1); // editing reserves the pending entry even when the turn finishes
   await pending.first().getByTestId("chat-queued-save").click();

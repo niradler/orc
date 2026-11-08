@@ -43,7 +43,7 @@ bun packages/web/scripts/run-e2e.ts --grep @sanity
 
 Feature tags such as `@chat` are not used. A change inside `packages/web` runs that package's browser tests.
 
-The full browser suite starts four isolated shards by default (`PW_SHARDS`). Each shard has its own API, database, home directory, result directory and Playwright worker. Ports stay reserved until API startup; an API exiting during readiness or browser tests fails the run. Shards stay single-worker so those tests do not share one database. `PW_SHARDS=1` is the serial run; set `PW_SHARDS=2` on smaller machines. `--grep` stays on one shard unless `PW_SHARDS` is set. Failure traces remain in `packages/web/test-results/shard-N`; temporary databases and homes are cleaned after children stop, including interrupted runs. Parallel runs reject a shared explicit port, database or `--output` path.
+The full browser suite starts four isolated shards by default (`PW_SHARDS`). Each shard has its own API, database, home directory, transform cache, result directory and Playwright worker. Ports stay reserved until API startup; an API exiting during readiness or browser tests fails the run. Shards stay single-worker so those tests do not share one database or contend on Windows transform-cache files. `PW_SHARDS=1` is the serial run; set `PW_SHARDS=2` on smaller machines. `--grep` stays on one shard unless `PW_SHARDS` is set. Failure traces remain in `packages/web/test-results/shard-N`; temporary databases and homes are cleaned after children stop, including interrupted runs. Parallel runs reject a shared explicit port, database or `--output` path.
 
 ## Homelab runner
 

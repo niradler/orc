@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { API_SECRET, apiDelete, apiPatch, apiPost, gotoView, selectProject, tid } from "./_helpers";
+import { selectKnowledgeBase } from "./_knowledge-ui";
 
 test("themes persist, grouped navigation works, and the mobile project shortcut opens one dialog", async ({
   page,
@@ -70,7 +71,7 @@ test("knowledge base document links use real documents and edits reopen after th
     await write(to, "# Agent backends\n\nOriginal content.");
     await gotoView(page, "knowledge");
     await selectProject(page, project.id);
-    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await selectKnowledgeBase(page, kb.name);
     await page.locator(`[data-testid="kb-document-row"][data-document-title="${from}"]`).click();
     await expect(page.getByTestId("markdown-preview")).toContainText("Task flows");
     await page.getByTestId(`wiki-link-${to}`).click();
@@ -177,9 +178,7 @@ test("a conflicting knowledge base document save keeps its draft and explicit di
       { title, content: "# Original note" },
     );
     await gotoView(page, "knowledge");
-    await expect(page.getByTestId("kb-overview-name")).toBeVisible();
-    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
-    await expect(page.getByTestId("kb-overview-name")).toHaveText(kb.name);
+    await selectKnowledgeBase(page, kb.name);
     await row.click();
     await page.getByTestId("markdown-mode-edit").click();
     await page.getByTestId("kb-document-content").fill("# My unsaved draft");

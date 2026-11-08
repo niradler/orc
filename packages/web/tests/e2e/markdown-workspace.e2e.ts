@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import { selectKnowledgeBase } from "./_knowledge-ui";
 
 for (const viewport of [
   { width: 1440, height: 900 },
@@ -166,7 +167,7 @@ test("should edit a copy of a registered folder file without writing it and keep
   try {
     await apiPost(request, `/kb/bases/${kb.id}/sources`, { root_path: directory });
     await gotoView(page, "knowledge");
-    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await selectKnowledgeBase(page, kb.name);
     await page.getByTestId("kb-search-input").fill("knowledgeeditororiginal");
     await page.getByTestId("kb-search-input").press("Enter");
     await page.getByTestId("kb-search-passage").first().click();

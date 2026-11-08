@@ -113,6 +113,7 @@ async function createShard(index: number): Promise<Shard> {
       ORC_TERMINALS_ALLOW_WITHOUT_SECRET: "1",
       PW_NO_SERVER: "1",
       PW_OUTPUT_DIR: join(import.meta.dir, "../test-results", `shard-${index + 1}`),
+      PWTEST_CACHE_DIR: join(home, "playwright-transform-cache"),
     },
   };
 }
