@@ -14,6 +14,8 @@ async function createKb(request: Parameters<typeof apiPost>[0], name: string): P
 
 async function openKb(page: Page, name: string): Promise<void> {
   await gotoView(page, "knowledge");
+  // Initial default selection changes the view; finish it before clicking a sidebar row.
+  await expect(page.getByTestId("kb-overview-name")).toBeVisible();
   await page.locator(`[data-testid="kb-row"][data-kb-name="${name}"]`).click();
   await expect(page.getByTestId("kb-overview-name")).toHaveText(name);
 }

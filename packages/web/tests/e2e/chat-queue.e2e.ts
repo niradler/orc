@@ -270,15 +270,20 @@ test("should retain mobile drafts and pending edits when hiding and reopening ch
   await panel.getByTestId("chat-close-button").click();
   await page.getByTestId("chat-open-button").click();
   await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent mobile draft");
-  await send(panel, "Respond after 1500ms. Reply with exactly: FIRST.");
-  await send(panel, "ORIGINAL");
-  await expandQueue(panel);
-  await panel.getByTestId("chat-queued-edit").click();
-  await panel.getByTestId("chat-queued-input").fill("Saved after reopening");
-  await panel.getByTestId("chat-close-button").click();
-  await page.getByTestId("chat-open-button").click();
-  await expect(panel.getByTestId("chat-queued-input")).toHaveValue("Saved after reopening");
-  await panel.getByTestId("chat-queued-save").click();
+  const release = await holdChatStream(page);
+  try {
+    await send(panel, "Respond after 1500ms. Reply with exactly: FIRST.");
+    await send(panel, "ORIGINAL");
+    await expandQueue(panel);
+    await panel.getByTestId("chat-queued-edit").click();
+    await panel.getByTestId("chat-queued-input").fill("Saved after reopening");
+    await panel.getByTestId("chat-close-button").click();
+    await page.getByTestId("chat-open-button").click();
+    await expect(panel.getByTestId("chat-queued-input")).toHaveValue("Saved after reopening");
+    await panel.getByTestId("chat-queued-save").click();
+  } finally {
+    await release();
+  }
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(
     "Saved after reopening",
   );
@@ -300,20 +305,25 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     const panel = page.getByTestId("chat-panel").filter({ visible: true });
     const sent = posts(page);
-    await send(panel, "Respond after 3000ms. Reply with exactly: FIRST.");
-    await send(panel, "REMOVE FIRST");
-    await send(panel, "REMOVE WHILE EDITING");
-    await send(panel, "Reply with exactly: KEEP ONE.");
-    await send(panel, "Reply with exactly: KEEP TWO.");
-    await expandQueue(panel);
+    const release = await holdChatStream(page);
     const pending = panel.getByTestId("chat-queued-message");
-    await pending.first().getByTestId("chat-queued-remove").click();
-    await expect(pending).toHaveCount(3);
-    await pending.first().getByTestId("chat-queued-edit").click();
-    await panel.getByTestId("chat-queued-input").fill("UNSAVED REMOVED EDIT");
-    await pending.first().getByTestId("chat-queued-remove").click();
-    await expect(panel.getByTestId("chat-queued-input")).toHaveCount(0);
-    await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
+    try {
+      await send(panel, "Respond after 3000ms. Reply with exactly: FIRST.");
+      await send(panel, "REMOVE FIRST");
+      await send(panel, "REMOVE WHILE EDITING");
+      await send(panel, "Reply with exactly: KEEP ONE.");
+      await send(panel, "Reply with exactly: KEEP TWO.");
+      await expandQueue(panel);
+      await pending.first().getByTestId("chat-queued-remove").click();
+      await expect(pending).toHaveCount(3);
+      await pending.first().getByTestId("chat-queued-edit").click();
+      await panel.getByTestId("chat-queued-input").fill("UNSAVED REMOVED EDIT");
+      await pending.first().getByTestId("chat-queued-remove").click();
+      await expect(panel.getByTestId("chat-queued-input")).toHaveCount(0);
+      await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
+    } finally {
+      await release();
+    }
     await expect(panel).toHaveAttribute("data-streaming", "false");
     await expect(pending).toHaveCount(0);
     expect(sent).toEqual([
@@ -367,19 +377,24 @@ for (const width of [390, 1440]) {
 test("reordering pending messages changes the order they are sent", async ({ page }) => {
   const sent = posts(page);
   const panel = page.getByTestId("chat-panel");
-  await send(panel, "Respond after 2500ms. Reply with exactly: FIRST.");
-  await expect(panel).toHaveAttribute("data-streaming", "true");
-  await send(panel, "Reply with exactly: AAA.");
-  await send(panel, "Reply with exactly: BBB.");
-  await expandQueue(panel);
+  const release = await holdChatStream(page);
   const pending = panel.getByTestId("chat-queued-message");
-  await expect(pending).toHaveCount(2);
-  await expect(pending.first().getByTestId("chat-queued-up")).toBeDisabled();
-  await expect(pending.nth(1).getByTestId("chat-queued-down")).toBeDisabled();
-  await pending.nth(1).getByTestId("chat-queued-up").click();
-  await expect(pending.first().getByTestId("chat-queued-content")).toHaveText(
-    "Reply with exactly: BBB.",
-  );
+  try {
+    await send(panel, "Respond after 2500ms. Reply with exactly: FIRST.");
+    await expect(panel).toHaveAttribute("data-streaming", "true");
+    await send(panel, "Reply with exactly: AAA.");
+    await send(panel, "Reply with exactly: BBB.");
+    await expandQueue(panel);
+    await expect(pending).toHaveCount(2);
+    await expect(pending.first().getByTestId("chat-queued-up")).toBeDisabled();
+    await expect(pending.nth(1).getByTestId("chat-queued-down")).toBeDisabled();
+    await pending.nth(1).getByTestId("chat-queued-up").click();
+    await expect(pending.first().getByTestId("chat-queued-content")).toHaveText(
+      "Reply with exactly: BBB.",
+    );
+  } finally {
+    await release();
+  }
   await expect(pending).toHaveCount(0);
   expect(sent).toEqual([
     "Respond after 2500ms. Reply with exactly: FIRST.",

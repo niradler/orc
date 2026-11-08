@@ -1,7 +1,7 @@
 import { CODING_AGENTS } from "@orc/core/coding-agents";
 import { RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -35,6 +35,7 @@ const PAGE_SIZE = 25;
 type Row = LiveSession & { snippets?: string[]; matched?: string[] };
 
 export function LiveSessions({ projectId }: { projectId: string }) {
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const agent = params.get("agent") ?? "";
   const showEnded = params.get("ended") !== "0";
@@ -66,9 +67,15 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   useEffect(() => setDraft(query), [query]);
   useEffect(() => {
     if (draft === query) return;
-    const t = setTimeout(() => setParam("q", draft.trim() || null), 350);
+    const source = `${location.pathname}${location.search}${location.hash}`;
+    const t = setTimeout(() => {
+      // A lazy destination can keep this view mounted after browser history has moved.
+      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== source)
+        return;
+      setParam("q", draft.trim() || null);
+    }, 350);
     return () => clearTimeout(t);
-  }, [draft, query, setParam]);
+  }, [draft, query, setParam, location.pathname, location.search, location.hash]);
 
   const searching = query.trim().length >= 2;
   const scopedProject = projectId === "all" ? undefined : projectId;
