@@ -1,0 +1,4 @@
+#!/bin/sh
+# Catch affected-package and critical-flow failures before GitHub Actions spends runner time.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+exec bun scripts/pre-push.ts

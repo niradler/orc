@@ -8,26 +8,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.triggering_actor }}
   cancel-in-progress: true
 
 jobs:
-  pull-request:
-    if: github.event_name == 'pull_request' && vars.ORC_ISOLATED_PR_RUNNER_READY == 'true'
+  changed:
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'niradler' && github.triggering_actor == 'niradler' && github.repository == 'niradler/orc'
     runs-on: homelab
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch the base branch
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: git fetch origin "$BASE_REF"
-
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.4
 
@@ -38,26 +33,5 @@ jobs:
         working-directory: packages/web
         run: bunx playwright install chromium
 
-      - name: Changed packages and sanity
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: bun scripts/ci-local.ts --changed "origin/$BASE_REF" --sanity
-
-  unit:
-    if: github.event_name == 'workflow_dispatch' && github.actor == 'niradler' && github.repository == 'niradler/orc'
-    runs-on: homelab
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Unit, type and security gates
-        run: bun run ci
+      - name: Changed packages, sanity, type and security gates
+        run: bun run ci:pr

@@ -1,5 +1,7 @@
 #!/bin/sh
-# Tests the packages changed since master, plus their dependents. Bypass once: git commit --no-verify
+# Keep commits quick; the pre-push hook runs changed-package tests and browser sanity.
 # Clear the git env so tests that create throwaway repos cannot touch this one.
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
-exec bun scripts/ci-local.ts --changed
+set -e
+bun run lint
+exec bun x biome format ./packages
