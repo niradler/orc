@@ -35,6 +35,7 @@ const steps: Step[] = [
   ["Format check", ["bun", "x", "biome", "format", "./packages"]],
   ["Typecheck", ["bun", "run", "typecheck"]],
   ["Domain ownership", ["bun", "test", "scripts/ci-domains.test.ts"]],
+  ["Push hook tests", ["bun", "test", "scripts/pre-push.test.ts"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],
 ];
 

@@ -204,9 +204,50 @@ test("should restrict every workflow job and rerun to Nir without automatic PR t
     );
     for (const job of Object.values(workflow.jobs)) {
       const conditions = job.if?.split(/\s*&&\s*/);
+      expect(job.if).not.toContain("||");
       expect(conditions).toContain("github.actor == 'niradler'");
       expect(conditions).toContain("github.triggering_actor == 'niradler'");
       expect(conditions).toContain("github.repository == 'niradler/orc'");
+    }
+  }
+});
+
+test("should pin action commits, avoid persisted credentials and scope deployment permissions", () => {
+  const sdkRequire = createRequire(join(root, "packages/sdk/package.json"));
+  const openapiRequire = createRequire(sdkRequire.resolve("openapi-typescript"));
+  const redoclyRequire = createRequire(openapiRequire.resolve("@redocly/openapi-core"));
+  const yaml = redoclyRequire("js-yaml") as { load: (source: string) => unknown };
+  for (const name of readdirSync(join(root, ".github/workflows"))) {
+    if (!name.endsWith(".yml") && !name.endsWith(".yaml")) continue;
+    const workflow = yaml.load(readFileSync(join(root, ".github/workflows", name), "utf8")) as {
+      permissions: Record<string, string>;
+      concurrency?: { group: string; "cancel-in-progress": boolean };
+      jobs: Record<
+        string,
+        {
+          permissions?: Record<string, string>;
+          steps: { uses?: string; with?: Record<string, unknown> }[];
+        }
+      >;
+    };
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    if (workflow.concurrency?.["cancel-in-progress"])
+      expect(workflow.concurrency.group).toContain("github.triggering_actor");
+    for (const [jobName, job] of Object.entries(workflow.jobs)) {
+      const permissions = job.permissions ?? workflow.permissions;
+      if (name === "docs.yml" && jobName === "deploy")
+        expect(permissions).toEqual({ pages: "write", "id-token": "write" });
+      else if (name === "docs.yml" && jobName === "build")
+        expect(permissions).toEqual({ contents: "read", pages: "read" });
+      else expect(permissions).toEqual({ contents: "read" });
+      for (const step of job.steps) {
+        if (!step.uses) continue;
+        expect(step.uses).toMatch(/^[\w.-]+\/[\w.-]+@[a-f0-9]{40}$/);
+        if (step.uses.startsWith("actions/checkout@"))
+          expect(step.with?.["persist-credentials"]).toBe(false);
+        if (step.uses.startsWith("oven-sh/setup-bun@"))
+          expect(String(step.with?.["bun-version"])).toBe("1.4.4");
+      }
     }
   }
 });
