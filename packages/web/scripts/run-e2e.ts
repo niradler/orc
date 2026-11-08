@@ -1,42 +1,16 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { reserveLoopbackPort, withRunningApis } from "./api-fixture.js";
 import { stopOwnedProcess } from "./stop-process";
 import { resolveTestDatabasePath } from "./test-database.js";
 
 const commands = new Set<Bun.Subprocess>();
 
-function freePort(): Promise<number> {
-  return new Promise((resolve) => {
-    const server = createServer();
-    server.listen(0, "127.0.0.1", () => {
-      const port = (server.address() as { port: number }).port;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-/** Throws immediately if something is already listening on the port. */
-function assertPortFree(port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer();
-    probe.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        reject(new Error(`Port ${port} is already in use - kill the process holding it and retry`));
-      } else {
-        reject(err);
-      }
-    });
-    probe.listen(port, "127.0.0.1", () => {
-      probe.close(() => resolve());
-    });
-  });
-}
-
-async function waitForReady(url: string, timeoutMs: number): Promise<void> {
+async function waitForReady(url: string, timeoutMs: number, signal: AbortSignal): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    signal.throwIfAborted();
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
       if (res.ok) return;
@@ -92,6 +66,7 @@ const browserCache =
   );
 
 type Shard = {
+  reservation: Awaited<ReturnType<typeof reserveLoopbackPort>>;
   port: string;
   dbPath: string;
   home: string;
@@ -100,11 +75,18 @@ type Shard = {
 };
 
 async function createShard(index: number): Promise<Shard> {
-  const port = process.env.PW_API_PORT ?? String(await freePort());
-  await assertPortFree(Number(port));
-  const home = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
+  const reservation = await reserveLoopbackPort(Number(process.env.PW_API_PORT ?? 0));
+  const port = String(reservation.port);
+  let home: string;
+  try {
+    home = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
+  } catch (error) {
+    await reservation.release();
+    throw error;
+  }
   const dbPath = explicitDb ?? join(home, "state.db");
   return {
+    reservation,
     port,
     dbPath,
     home,
@@ -173,6 +155,7 @@ const shards: Shard[] = [];
 async function cleanup(): Promise<void> {
   const failures: unknown[] = [];
   const stops = await Promise.allSettled([
+    ...shards.map((shard) => shard.reservation.release()),
     ...[...commands].map((command) => stopOwnedProcess(command)),
     ...shards.flatMap((shard) => (shard.api ? [stopOwnedProcess(shard.api)] : [])),
   ]);
@@ -213,6 +196,7 @@ try {
   // so browser workers do not write one SQLite file at the same time.
   await run(["bun", "x", "vite", "build"], buildShard.env, 5 * 60_000);
   for (const shard of shards) {
+    await shard.reservation.release();
     shard.api = Bun.spawn({
       cmd: ["bun", "packages/api/src/index.ts"],
       cwd: repoRoot,
@@ -222,20 +206,33 @@ try {
       stdin: "ignore",
     });
   }
-  await Promise.all(
-    shards.map((shard) => waitForReady(`http://127.0.0.1:${shard.port}/api/health`, 30_000)),
-  );
-  console.log(`Browser shards: ${shards.length} (${shards.map((shard) => shard.port).join(", ")})`);
-  const results = await Promise.all(
-    shards.map((shard, index) => {
-      const shardArgs =
-        shards.length === 1
-          ? playwrightArgs
-          : [...playwrightArgs, `--shard=${index + 1}/${shards.length}`];
-      return runExit(["bun", "x", "playwright", "test", ...shardArgs], shard.env, 25 * 60_000);
+  await withRunningApis(
+    shards.map((shard) => {
+      if (!shard.api) throw new Error("Browser shard API was not started");
+      return shard.api;
     }),
+    async (signal) => {
+      await Promise.all(
+        shards.map((shard) =>
+          waitForReady(`http://127.0.0.1:${shard.port}/api/health`, 30_000, signal),
+        ),
+      );
+      signal.throwIfAborted();
+      console.log(
+        `Browser shards: ${shards.length} (${shards.map((shard) => shard.port).join(", ")})`,
+      );
+      const results = await Promise.all(
+        shards.map((shard, index) => {
+          const shardArgs =
+            shards.length === 1
+              ? playwrightArgs
+              : [...playwrightArgs, `--shard=${index + 1}/${shards.length}`];
+          return runExit(["bun", "x", "playwright", "test", ...shardArgs], shard.env, 25 * 60_000);
+        }),
+      );
+      if (results.some((code) => code !== 0)) exitCode = 1;
+    },
   );
-  if (results.some((code) => code !== 0)) exitCode = 1;
 } catch (err) {
   console.error(err instanceof Error ? err.message : err);
   exitCode = 1;
