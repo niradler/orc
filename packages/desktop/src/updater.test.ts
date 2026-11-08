@@ -69,11 +69,11 @@ test("should restore the daemon after an emitted installer failure and report fa
       restored++;
     },
   };
-  startDesktopUpdates(host, "darwin");
+  startDesktopUpdates(host, "freebsd");
   expect(initialized).toBe(0);
   expect(handlers.size).toBe(0);
   expect(emitter.listenerCount("error")).toBe(0);
-  startDesktopUpdates(host);
+  startDesktopUpdates(host, "win32");
   expect(initialized).toBe(1);
   const event = { sender: { id: 7 } };
   for (const shouldFail of [false, true]) {

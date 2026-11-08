@@ -24,8 +24,6 @@ if (!values.root || !values.installer || !values.feed)
   throw new Error(
     "Pass --root <owned fixture root> --installer <old payload> --feed <update directory>",
   );
-if (process.platform !== "win32" && process.platform !== "linux")
-  throw new Error("Installed update smoke supports Windows and Linux only");
 const root = resolve(values.root);
 const meta = JSON.parse(readFileSync(join(root, "fixture-owned.json"), "utf8")) as {
   identity: string;
@@ -108,7 +106,7 @@ const server = createServer((request, response) => {
   const name = basename(url.pathname);
   const path = join(feed, name);
   if (
-    !/\.(?:exe|AppImage|blockmap|yml)$/.test(name) ||
+    !/\.(?:exe|AppImage|blockmap|yml|dmg|json)$/.test(name) ||
     !existsSync(path) ||
     !statSync(path).isFile()
   ) {
@@ -164,6 +162,12 @@ async function until<T>(
 ): Promise<T> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
+    const failure = events().find((event) =>
+      ["startup-error", "recovery-dialog", "update-error", "control-error"].includes(
+        String(event.event),
+      ),
+    );
+    if (failure) throw new Error(`Native update fixture failed: ${JSON.stringify(failure)}`);
     try {
       const result = await read();
       if (result) return result;
@@ -212,6 +216,23 @@ function inventory(command: string, args: string[]): Promise<string> {
   });
 }
 async function listenerAddresses(): Promise<string[]> {
+  if (process.platform === "darwin") {
+    try {
+      const output = await inventory("/usr/sbin/lsof", [
+        "-nP",
+        `-iTCP:${apiPort}`,
+        "-sTCP:LISTEN",
+        "-Fn",
+      ]);
+      return output
+        .split("\n")
+        .filter((line) => line.startsWith("n"))
+        .map((line) => line.slice(1).replace(/:\d+$/, ""));
+    } catch (error) {
+      if ((error as { code?: number }).code === 1) return [];
+      throw error;
+    }
+  }
   const probe =
     process.platform === "win32"
       ? await inventory("powershell.exe", [
@@ -236,6 +257,10 @@ async function verifiedProcess(pid: number): Promise<boolean> {
   assert(Number.isSafeInteger(pid) && pid > 0);
   if (!alive(pid)) return false;
   try {
+    if (process.platform === "darwin") {
+      const output = await inventory("/bin/ps", ["-p", String(pid), "-o", "comm="]);
+      return !!output.trim() && withinRoot(output.trim());
+    }
     if (process.platform === "win32") {
       const probe = await inventory("powershell.exe", [
         "-NoProfile",
@@ -300,6 +325,11 @@ try {
     const executable = join(installDirectory, `${meta.identity}.exe`);
     assert(existsSync(executable));
     app = spawn(executable, [], { env: fixtureEnv, stdio: "inherit", windowsHide: true });
+  } else if (process.platform === "darwin") {
+    const installed = join(installDirectory, "orc.app");
+    const copied = spawnSync("/usr/bin/ditto", [installer, installed], { timeout: 120_000 });
+    assert.equal(copied.status, 0);
+    app = spawn(join(installed, "Contents/MacOS/orc"), [], { env: fixtureEnv, stdio: "inherit" });
   } else {
     const installed = join(installDirectory, basename(installer));
     copyFileSync(installer, installed);
@@ -341,6 +371,7 @@ try {
     () => events().find((e) => e.event === "downloaded" && e.version === meta.oldVersion),
     180_000,
   );
+  await identity(meta.oldVersion);
   queue(meta.oldVersion, "install");
   await until(
     "new packaged window",
@@ -348,6 +379,16 @@ try {
     180_000,
   );
   const next = await identity(meta.newVersion);
+  if (process.platform === "darwin") {
+    await until(
+      "acknowledged Mac installation",
+      () =>
+        readFileSync(join(installDirectory, ".orc.app.orc-update/result"), "utf8").trim() ===
+        "installed",
+      10_000,
+    );
+    assert(existsSync(join(installDirectory, ".orc.app.orc-update/previous.app")));
+  }
   assert(
     !events().some((event) =>
       ["startup-error", "recovery-dialog", "update-error", "control-error"].includes(
@@ -364,7 +405,7 @@ try {
   if (process.platform === "win32")
     assert(controlDuringInventory > 0, "Fixture control was not served during OS inventory");
   assert(
-    requests.some((name) => /\.(exe|AppImage)$/.test(name)),
+    requests.some((name) => /\.(exe|AppImage|dmg)$/.test(name)),
     "No update payload was served",
   );
   result = {
@@ -374,6 +415,7 @@ try {
     from: meta.oldVersion,
     to: meta.newVersion,
     realPackagedInstaller: true,
+    explicitInstallRequired: true,
     oldDaemonStopped: true,
     newDaemonStarted: true,
     taskPreserved: true,

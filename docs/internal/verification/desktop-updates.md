@@ -1,8 +1,73 @@
-# Windows and Linux desktop update acceptance
+# Desktop update acceptance
+
+## macOS without a paid signing account — 2026-11-08
+
+The Mac adapter uses the existing About bridge, settings, state machine and
+Restart to update action. It verifies the GitHub asset SHA256, bundle identity,
+version, ad-hoc signature integrity and native architecture, then prepares a
+sibling bundle before stopping the owned daemon. The detached installer retains
+the previous app and waits for a version-specific startup acknowledgement after
+the new app brings up its daemon. Failed replacement/startup restores the previous
+app; a pre-replacement failure relaunches the existing app. No Gatekeeper settings
+or paid signing credentials are used.
+
+Native acceptance command (after building the host CLI):
+
+```sh
+PATH="$PWD/node_modules/.bin:$PATH" bun packages/desktop/scripts/mac-update-acceptance.ts --output /private/tmp/orc-mac-update-result.json
+```
+
+Run `25f1e237-688b-43af-84b5-7762be9302e0` passed on Apple Silicon macOS:
+
+```text
+PASS darwin: packaged 0.1.61 -> 0.1.62; daemon, tasks, session and auth preserved
+explicitInstallRequired: true
+previousDaemonPid: 992
+nextDaemonPid: 1086
+taskPreserved: true
+sessionPreserved: true
+configPreserved: true
+anonymous401: true
+authenticated200: true
+teardownVerified: true
+```
+
+The driver required the old version to remain active after download, the new
+version's daemon and window to start after explicit installation, the helper's
+`installed` acknowledgement, a retained previous bundle and loopback-only API
+listeners. Fixture apps, data, candidate binary and disk images were removed
+after verified process/listener teardown. Only concise result/log files remain.
+
+Additional native regressions use private bundles: version/symlink rejection,
+real ad-hoc signing/architecture validation, crash-on-start rollback, and
+relaunch after a pre-replacement failure. Download tests use real loopback HTTP
+and check bad checksums, channel/version ordering and untrusted URLs. The live
+GitHub releases response selected v0.1.61 from 0.1.60 with SHA256
+`c524e0acaa60c77eb1597a773797300e8a6f611684badc03627f6c28578fb61d`, and selected
+no update from 0.1.61.
+
+The native fixture substitutes GitHub discovery/download transport with its
+private loopback publisher; production has no test-feed environment flag. The
+fixture versions both contain the updater. Published 0.1.61 does not contain it
+and still requires one manual installation of a future updater-enabled build.
+This change has not published a release or modified the installed production app.
+Windows/Linux native acceptance below is historical; those native installers
+were not rerun on this Mac. Their updater remains electron-updater and its
+installer-error regression runs explicitly for Windows on every host.
+
+Review caught the missing startup acknowledgement and Intel architecture-name
+mapping; both were corrected. Native validation also caught and corrected the
+`lipo` argument order. The initial test package omitted its bootstrap resource;
+that failure was isolated to the fixture and corrected, with early exception
+reporting added to prevent modal test failures. The repository PR gate and docs
+build passed; audit reported no vulnerabilities. The local ORC service was stopped
+on both 7700 and 7701, so no live ORC task/session state was changed.
+
+## Windows and Linux acceptance
 
 PR #224 was exercised on 2026-11-08 with real packaged updater-enabled fixture
-builds from the reviewed source. macOS remains outside this feature pending
-Developer ID signing and native installed-update acceptance.
+builds from the reviewed source. These runs predate the Mac helper acceptance
+above and did not cover macOS.
 
 The acceptance was rerun after integrating master
 `fba793226f6398addd815cb186f0dd10ce51b260` (the approved #225/#226/#227 batch).
@@ -95,4 +160,5 @@ the focused updater regression.
   without this feature require one manual installation of an updater-enabled
   build; this test does not establish automatic bootstrap from those releases.
 - Real user installations and data, releases, tags and production services were
-  not changed. macOS installed-update/signing acceptance remains open in #193.
+  not changed. These Windows/Linux runs did not validate macOS; see the separate
+  Mac helper acceptance above.

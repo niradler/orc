@@ -19,6 +19,7 @@ import {
 } from "electron";
 import { loadDesktopConfig, saveDesktopConnection } from "./connection.js";
 import { type Daemon, ensureDaemon } from "./daemon.js";
+import { acknowledgeMacInstall } from "./mac-install.js";
 import {
   NOTIFY_CHANNEL,
   OPEN_CHANNEL,
@@ -350,6 +351,8 @@ async function start(): Promise<void> {
   try {
     firstRunSetup();
     createTray();
+    if (process.platform === "darwin" && app.isPackaged)
+      acknowledgeMacInstall(resolve(process.execPath, "../../.."), app.getVersion());
     const startHidden =
       process.argv.includes(HIDDEN_FLAG) || app.getLoginItemSettings().wasOpenedAtLogin;
     if (!startHidden) openWindow(daemon.url);

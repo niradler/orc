@@ -1,7 +1,7 @@
 export const UPDATE_CHANNELS = ["stable", "preview"] as const;
 
 export function desktopUpdatesSupported(platform: string): boolean {
-  return platform === "win32" || platform === "linux";
+  return platform === "win32" || platform === "linux" || platform === "darwin";
 }
 export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
 
@@ -244,11 +244,11 @@ export function updateErrorMessage(error: unknown): string {
 export async function installDownloadedUpdate(input: {
   phase: UpdatePhase;
   stopOwnedDaemon: () => Promise<void>;
-  quitAndInstall: () => void;
+  quitAndInstall: () => void | Promise<void>;
 }): Promise<void> {
   if (input.phase !== "downloaded") throw new Error("No update is ready to install");
   await input.stopOwnedDaemon();
-  input.quitAndInstall();
+  await input.quitAndInstall();
 }
 
 export function settingsToStore(
