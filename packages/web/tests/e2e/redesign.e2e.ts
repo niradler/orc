@@ -177,7 +177,9 @@ test("a conflicting knowledge base document save keeps its draft and explicit di
       { title, content: "# Original note" },
     );
     await gotoView(page, "knowledge");
+    await expect(page.getByTestId("kb-overview-name")).toBeVisible();
     await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await expect(page.getByTestId("kb-overview-name")).toHaveText(kb.name);
     await row.click();
     await page.getByTestId("markdown-mode-edit").click();
     await page.getByTestId("kb-document-content").fill("# My unsaved draft");
