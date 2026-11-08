@@ -70,6 +70,8 @@ interface ChatPanelProps {
 }
 const iconButton =
   "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
+const actionButton =
+  "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
 const textParts = {
   Text: ({ text }: { text: string }) => <AgentMessageText>{text}</AgentMessageText>,
 };
@@ -82,11 +84,6 @@ function attachmentKey(file: File): string {
   }
   return key;
 }
-function keepConversationDialog(event: Event) {
-  if (event.target instanceof Element && event.target.closest('[role="dialog"]'))
-    event.preventDefault();
-}
-
 export function ChatPanel({
   open,
   onToggle,
@@ -186,6 +183,10 @@ export function ChatPanel({
   const header = useRef<HTMLElement>(null);
   const [headerWide, setHeaderWide] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  useEffect(() => {
+    if (!open || headerWide) setActionsOpen(false);
+  }, [open, headerWide]);
   useLayoutEffect(() => {
     if (!open || !header.current) return;
     const observer = new ResizeObserver(([entry]) =>
@@ -357,7 +358,7 @@ export function ChatPanel({
               </ActionHelp>
             </div>
           ) : (
-            <Popover>
+            <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
               <PopoverTrigger asChild>
                 <button
                   type="button"
@@ -369,44 +370,51 @@ export function ChatPanel({
                 </button>
               </PopoverTrigger>
               <PopoverContent
+                data-testid="chat-actions-menu"
                 aria-label="Session actions"
                 align="end"
-                className="flex w-auto items-center gap-1"
-                onInteractOutside={keepConversationDialog}
-                onFocusOutside={keepConversationDialog}
+                className="flex w-52 flex-col gap-1 p-1"
               >
-                <ActionHelp label="Refresh session">
-                  <button
-                    type="button"
-                    data-testid="chat-refresh-button"
-                    onClick={() => void reload()}
-                    disabled={!thread || refreshing}
-                    className={cn(iconButton, sessionChanged && "text-warning")}
-                    data-stale={sessionChanged || undefined}
-                    aria-label={
-                      sessionChanged
-                        ? "Refresh session: it changed outside this chat"
-                        : "Refresh session"
-                    }
-                  >
-                    <RefreshCw
-                      size={17}
-                      className={refreshing || reconnecting ? "animate-spin" : undefined}
-                    />
-                  </button>
-                </ActionHelp>
-                <ChatContinueInTerminal control={terminalControl} />
-                <ActionHelp label="Session settings">
-                  <button
-                    type="button"
-                    data-testid="chat-config-button"
-                    aria-label="Session settings"
-                    className={iconButton}
-                    onClick={() => setSettingsOpen(true)}
-                  >
-                    <Settings2 size={17} />
-                  </button>
-                </ActionHelp>
+                <button
+                  type="button"
+                  data-testid="chat-refresh-button"
+                  onClick={() => {
+                    setActionsOpen(false);
+                    void reload();
+                  }}
+                  disabled={!thread || refreshing}
+                  className={cn(actionButton, sessionChanged && "text-warning")}
+                  data-stale={sessionChanged || undefined}
+                  aria-label={
+                    sessionChanged
+                      ? "Refresh session: it changed outside this chat"
+                      : "Refresh session"
+                  }
+                >
+                  <RefreshCw
+                    size={17}
+                    className={refreshing || reconnecting ? "animate-spin" : undefined}
+                  />
+                  Refresh session
+                </button>
+                <ChatContinueInTerminal
+                  control={terminalControl}
+                  onOpen={() => setActionsOpen(false)}
+                  labelled
+                />
+                <button
+                  type="button"
+                  data-testid="chat-config-button"
+                  aria-label="Session settings"
+                  className={actionButton}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                >
+                  <Settings2 size={17} />
+                  Session settings
+                </button>
               </PopoverContent>
             </Popover>
           )}

@@ -14,6 +14,11 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
 | Next session | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing. |
 
+Popup menus and pickers across the dashboard close when you tap outside or press
+Escape, including project, session, document and terminal actions. Tapping the
+terminal canvas also dismisses an open menu. Interacting inside a picker or its
+folder dialog keeps it usable without discarding your draft.
+
 Pages are grouped in the sidebar:
 
 | Group | Pages |
@@ -47,6 +52,11 @@ Open the chat panel and click **Full screen chat** to work with every agent sess
   compact row design, retaining search, filters, task links and resume actions.
 
 On a phone the list opens full screen from **Sessions** in the chat header and the inspector opens as a sheet.
+The three-dot **Session actions** menu shows labeled actions with touch-sized rows
+on phones. It closes when you tap elsewhere in the chat or
+press Escape. Choosing an action also closes the menu; opening Session settings
+keeps the conversation and your draft in place. Agent, workspace and branch
+pickers also close when you tap outside them.
 Opening the list sets `sessionList=show` in the URL, so reload and Back restore it.
 Exit full screen also returns to the original page after navigating Back and Forward.
 

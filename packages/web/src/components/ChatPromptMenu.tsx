@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { KeyboardEvent, RefObject } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { activeCommand, type CommandOption, rankCommands } from "@/lib/chat-commands";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,9 @@ export function useChatPromptMenu(
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const dismissKey = command ? `${command.start}:${draft}` : null;
+  useEffect(() => {
+    if (dismissed !== null && dismissed !== dismissKey) setDismissed(null);
+  }, [dismissed, dismissKey]);
   const promptOptions: CommandOption[] = (prompts.data?.prompts ?? []).map((prompt) => ({
     name: prompt.name,
     kind: "prompt",
@@ -104,7 +108,16 @@ export function useChatPromptMenu(
     return false;
   }
 
-  return { matches, index, choose, onKeyDown, syncCaret, commandNames };
+  return {
+    matches,
+    index,
+    choose,
+    onKeyDown,
+    syncCaret,
+    commandNames,
+    anchor: input,
+    dismiss: () => setDismissed(dismissKey),
+  };
 }
 
 export function chatCommandOptionId(option: CommandOption) {
@@ -115,53 +128,73 @@ export function ChatPromptMenu({
   matches,
   index,
   choose,
-}: Pick<ReturnType<typeof useChatPromptMenu>, "matches" | "index" | "choose">) {
+  anchor,
+  dismiss,
+}: Pick<
+  ReturnType<typeof useChatPromptMenu>,
+  "matches" | "index" | "choose" | "anchor" | "dismiss"
+>) {
   const activeId = matches[index] ? chatCommandOptionId(matches[index]) : null;
   useEffect(() => {
     if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: "nearest" });
   }, [activeId]);
   if (!matches.length) return null;
   return (
-    <div
-      id="chat-prompt-menu"
-      role="listbox"
-      aria-label="Prompts and skills"
-      data-testid="chat-prompt-menu"
-      className="mb-1 max-h-60 overflow-y-auto rounded-lg border border-border bg-background p-1"
+    <Popover
+      open
+      onOpenChange={(open) => {
+        if (!open) dismiss();
+      }}
     >
-      {matches.map((option, position) => (
-        <button
-          key={`${option.kind}:${option.name}`}
-          type="button"
-          tabIndex={-1}
-          id={chatCommandOptionId(option)}
-          role="option"
-          aria-selected={position === index}
-          data-testid="chat-prompt-option"
-          data-kind={option.kind}
-          className={cn(
-            "flex min-h-11 w-full cursor-pointer flex-col justify-center rounded-md px-3 py-1 text-left text-sm",
-            position === index ? "bg-surface-highest" : "hover:bg-surface",
-          )}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => choose(option)}
-        >
-          <span className="flex w-full min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate font-mono">/{option.name}</span>
-            {option.title && (
-              <span className="min-w-0 truncate text-on-surface-variant">{option.title}</span>
+      <PopoverAnchor virtualRef={anchor} />
+      <PopoverContent
+        id="chat-prompt-menu"
+        role="listbox"
+        aria-label="Prompts and skills"
+        data-testid="chat-prompt-menu"
+        side="top"
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] max-h-[min(15rem,var(--radix-popover-content-available-height))] p-1"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => {
+          if (anchor.current?.contains(event.target as Node)) event.preventDefault();
+        }}
+      >
+        {matches.map((option, position) => (
+          <button
+            key={`${option.kind}:${option.name}`}
+            type="button"
+            tabIndex={-1}
+            id={chatCommandOptionId(option)}
+            role="option"
+            aria-selected={position === index}
+            data-testid="chat-prompt-option"
+            data-kind={option.kind}
+            className={cn(
+              "flex min-h-11 w-full cursor-pointer flex-col justify-center rounded-md px-3 py-1 text-left text-sm",
+              position === index ? "bg-surface-highest" : "hover:bg-surface",
             )}
-            <span className="ml-auto shrink-0 rounded px-1.5 text-xs text-on-surface-variant ring-1 ring-border">
-              {option.kind}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => choose(option)}
+          >
+            <span className="flex w-full min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate font-mono">/{option.name}</span>
+              {option.title && (
+                <span className="min-w-0 truncate text-on-surface-variant">{option.title}</span>
+              )}
+              <span className="ml-auto shrink-0 rounded px-1.5 text-xs text-on-surface-variant ring-1 ring-border">
+                {option.kind}
+              </span>
             </span>
-          </span>
-          {option.description && (
-            <span className="w-full truncate text-xs text-on-surface-variant">
-              {option.description}
-            </span>
-          )}
-        </button>
-      ))}
-    </div>
+            {option.description && (
+              <span className="w-full truncate text-xs text-on-surface-variant">
+                {option.description}
+              </span>
+            )}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -84,3 +84,102 @@ test("should page history and resolve actions without changing read state", () =
   store.markAllRead();
   expect(store.list(50, 0, true).notifications).toEqual([]);
 });
+
+test("should retire only the continuing session's completions, preserving history and audit", () => {
+  const { db, store, input } = fixture();
+  for (const [key, type, source] of [
+    ["done:1", "agent.finished", "session"],
+    ["other", "agent.finished", "other-session"],
+    ["failure", "agent.failed", "session"],
+    ["question", "agent.question", "session"],
+    ["job", "job.finished", "session"],
+  ] as const)
+    store.publish({ ...input, source_key: key, type, source_id: source });
+  expect(store.markFinishedRead("session")).toBe(1);
+  expect(store.markFinishedRead("session")).toBe(0);
+  expect(store.list().notifications).toHaveLength(5);
+  expect(
+    store
+      .list(50, 0, true)
+      .notifications.map((item) => item.type)
+      .sort(),
+  ).toEqual(["agent.failed", "agent.finished", "agent.question", "job.finished"]);
+  expect(
+    db.query("SELECT count(*) AS count FROM audit_log WHERE action='notification.read'").get(),
+  ).toEqual({ count: 1 });
+  const next = store.publish({
+    ...input,
+    source_key: "done:3",
+    type: "agent.finished",
+    source_id: "session",
+    created_at: 1100,
+  });
+  expect(next?.read_at).toBeNull();
+  expect(store.list(50, 0, true).unread).toBe(5);
+});
+
+test("should physically replace older finishes and ignore replay without restoring read or dismissed alerts", () => {
+  const { db, store, input } = fixture();
+  const first = store.publish({ ...input, type: "agent.finished" });
+  const nextInput = {
+    ...input,
+    type: "agent.finished",
+    source_key: "producer:next",
+    created_at: 1100,
+  };
+  const next = store.publish(nextInput);
+  expect(next).not.toBeNull();
+  expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 1 });
+  expect(
+    db.query("SELECT id FROM notifications WHERE id=?").get(first?.id ?? "missing"),
+  ).toBeNull();
+  expect(store.publish({ ...input, type: "agent.finished" })).toBeNull();
+  const id = next?.id ?? "missing";
+  store.update(id, { read: true, dismissed: true });
+  expect(store.publish(nextInput)?.id).toBe(id);
+  expect(store.publish(nextInput)?.dismissed_at).not.toBeNull();
+  expect(store.list().notifications).toHaveLength(0);
+  expect(
+    db
+      .query("SELECT count(*) AS count FROM audit_log WHERE action='notification.superseded'")
+      .get(),
+  ).toEqual({ count: 1 });
+});
+
+test("should hide legacy duplicates immediately and physically drain them within the cleanup budget", () => {
+  const { db, store, input } = fixture();
+  const latest = store.publish({ ...input, type: "agent.finished", created_at: 1200 });
+  if (!latest) throw new Error("Missing latest finish");
+  const insert = db.query(`INSERT INTO notifications
+    SELECT ?,?,type,source_id,title,body,level,project_id,path,requires_action,1000,expires_at,NULL,NULL
+    FROM notifications WHERE id=?`);
+  db.transaction(() => {
+    for (let index = 0; index < 1005; index++)
+      insert.run(`old-${index}`, `legacy:${index}`, latest.id);
+  })();
+  expect(store.cleanup(2)).toBe(2);
+  expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 1004 });
+  store.update(latest.id, { read: true });
+  expect(store.list(50, 0, true)).toEqual({ notifications: [], unread: 0, has_more: false });
+  expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 4 });
+  expect(store.list().notifications.map((item) => item.id)).toEqual([latest.id]);
+  expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 1 });
+});
+
+test("should preserve the previous finish if recording its replacement fails", () => {
+  const { db, store, input } = fixture();
+  const previous = store.publish({ ...input, type: "agent.finished" });
+  if (!previous) throw new Error("Missing previous finish");
+  db.exec(`CREATE TRIGGER reject_supersession BEFORE INSERT ON audit_log
+    WHEN NEW.action='notification.superseded' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END`);
+  expect(() =>
+    store.publish({
+      ...input,
+      type: "agent.finished",
+      source_key: "replacement",
+      created_at: 1100,
+    }),
+  ).toThrow("audit unavailable");
+  expect(store.list().notifications.map((item) => item.id)).toEqual([previous.id]);
+  expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 1 });
+});

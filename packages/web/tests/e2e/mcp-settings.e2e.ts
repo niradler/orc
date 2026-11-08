@@ -82,6 +82,18 @@ for (const width of [1440, 390]) {
       await expect(menu).toContainText("/render-ui");
       await expect(menu.locator('[data-kind="skill"]').first()).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath(`chat-prompt-menu-${width}.png`) });
+      await page
+        .getByTestId("chat-messages")
+        .filter({ visible: true })
+        .click({ position: { x: 8, y: 8 } });
+      await expect(menu).toHaveCount(0);
+      await expect(input).toHaveValue("/");
+      await input.fill("/browser");
+      await expect(options.first()).toContainText("Browser example");
+      await options.first().click();
+      await expect(input).toHaveValue("/browser-example ");
+      await input.fill("/");
+      await expect(menu).toBeVisible();
       await input.press("Escape");
       await expect(menu).toHaveCount(0);
       expect(errors).toEqual([]);

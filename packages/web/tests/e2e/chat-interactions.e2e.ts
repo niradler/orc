@@ -182,9 +182,13 @@ for (const width of [390, 1440]) {
     const toTerminal = page.getByTestId("chat-continue-terminal").filter({ visible: true });
     await expect(toTerminal).toHaveAttribute("aria-label", "Continue in terminal");
     await toTerminal.focus();
-    await expect(page.getByTestId("action-help-content")).toContainText("Continue in terminal");
+    if (await page.getByTestId("chat-actions-menu").isVisible()) {
+      await expect(toTerminal).toHaveText("Continue in terminal");
+    } else {
+      await expect(page.getByTestId("action-help-content")).toContainText("Continue in terminal");
+      await expect(toTerminal).toHaveText("");
+    }
     await expect(toTerminal).toBeEnabled();
-    await expect(toTerminal).toHaveText("");
     await page.screenshot({ path: testInfo.outputPath(`chat-interactions-${width}.png`) });
     await toTerminal.click();
     await expect(page).toHaveURL(/\/terminals\/icon-terminal/);

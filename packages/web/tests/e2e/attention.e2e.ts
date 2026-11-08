@@ -96,6 +96,7 @@ test("should show dated unavailable questions and contextual help on desktop and
     }),
   ).toBe(0);
   await page.reload();
+  await page.getByTestId("notifications-show-read").click();
   const history = page.locator(`[data-source-id="${entry.id}"]`);
   await expect(history).toBeVisible();
   await history.getByRole("button", { name: /Review request/ }).click();
@@ -218,6 +219,7 @@ test("should show exact approval action, retain denial after reload and allow fr
   });
   await card.getByTestId("attention-deny").click();
   await page.reload();
+  await page.getByTestId("notifications-show-read").click();
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-response")).toHaveText("Denied");
   const question = await apiPost<HumanRequest>(request, "/human-requests", {

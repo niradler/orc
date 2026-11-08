@@ -8,7 +8,7 @@ import { getSqlite } from "@orc/db/client";
 import { NotificationStore } from "@orc/db/notifications";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
-import { syncRequestNotifications } from "../notifications.js";
+import { syncFinishedNotificationSessions, syncRequestNotifications } from "../notifications.js";
 
 const app = createRouter();
 const ApiNotificationSchema = z.object(NotificationSchema.shape).openapi("OrcNotification");
@@ -38,6 +38,7 @@ app.openapi(
     responses: { 200: json(ApiNotificationPageSchema) },
   }),
   (c) => {
+    syncFinishedNotificationSessions(getSqlite());
     syncRequestNotifications(getSqlite());
     const query = c.req.valid("query");
     return c.json(store().list(query.limit, query.offset, query.unread === "true"), 200);
