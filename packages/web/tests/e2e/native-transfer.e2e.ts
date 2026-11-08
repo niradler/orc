@@ -1,6 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
@@ -190,7 +198,7 @@ test("imports plain Codex notes and exports memories back as notes without an in
   request,
 }) => {
   const codexHome = process.env.CODEX_HOME;
-  if (!codexHome?.startsWith(tmpdir()))
+  if (!codexHome?.startsWith(`${realpathSync(tmpdir())}${sep}`))
     throw new Error("Run through scripts/run-e2e.ts so CODEX_HOME points at the temp home");
   const notes = join(codexHome, "memories", "extensions", "ad_hoc", "notes");
   mkdirSync(notes, { recursive: true });

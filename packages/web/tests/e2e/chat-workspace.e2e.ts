@@ -450,9 +450,11 @@ for (const width of [320, 820, 1440]) {
     await page.getByTestId("chat-sessions-button").click();
     await page.getByTestId("chat-session-search").fill(marker);
     await page.getByTestId("chat-session-select").filter({ hasText: marker }).click();
+    await expect(page.getByTestId("chat-sessions-dialog")).toHaveCount(0);
     await expect(page.getByTestId("chat-message-content").last()).toContainText(marker);
-    const continued = page.waitForRequest((req) => req.url().endsWith("/api/chat/stream"));
     await page.getByTestId("chat-input").fill("Follow up");
+    await expect(page.getByTestId("chat-input")).toHaveValue("Follow up");
+    const continued = page.waitForRequest((req) => req.url().endsWith("/api/chat/stream"));
     await page.getByTestId("chat-send-button").click();
     expect((await continued).postDataJSON().threadId).toMatch(/^[a-f0-9-]{36}$/);
     await expect(page.getByTestId("chat-message-content").last()).toContainText("Follow up");
