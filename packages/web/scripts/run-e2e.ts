@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { reserveLoopbackPort, withRunningApis } from "./api-fixture.js";
 import { stopOwnedProcess } from "./stop-process";
 import { resolveTestDatabasePath } from "./test-database.js";
+import { configureTestShell } from "./test-shell.js";
 
 const commands = new Set<Bun.Subprocess>();
 
@@ -84,6 +85,13 @@ async function createShard(index: number): Promise<Shard> {
     await reservation.release();
     throw error;
   }
+  try {
+    configureTestShell(home);
+  } catch (error) {
+    await reservation.release();
+    rmSync(home, { recursive: true, force: true });
+    throw error;
+  }
   const dbPath = explicitDb ?? join(home, "state.db");
   return {
     reservation,
@@ -109,6 +117,9 @@ async function createShard(index: number): Promise<Shard> {
       ORC_KNOWLEDGE_ROOT: join(home, "knowledge"),
       ORC_API_SECRET: "dev",
       ORC_E2E_CHAT_MOCK: "1",
+      // The owned Windows config must win over a personal shell override.
+      ORC_TERMINALS_SHELL:
+        process.platform === "win32" ? "" : (process.env.ORC_TERMINALS_SHELL ?? ""),
       ORC_TERMINALS_ENABLED: "1",
       ORC_TERMINALS_ALLOW_WITHOUT_SECRET: "1",
       PW_NO_SERVER: "1",

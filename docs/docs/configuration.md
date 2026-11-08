@@ -173,9 +173,11 @@ Most knowledge settings are also editable under **Settings → Knowledge**.
 | --- | --- | --- | --- |
 | `terminals.enabled` | `true` | `ORC_TERMINALS_ENABLED` | Browser terminals |
 | `terminals.max` | `8` | none | Concurrent terminals (1-64) |
-| `terminals.shell` | unset | `ORC_TERMINALS_SHELL` | Shell to launch |
+| `terminals.shell` | unset | `ORC_TERMINALS_SHELL` | Shell executable, or a JSON array of executable and literal arguments |
 | `ssh.host` | none | `ORC_SSH_HOST` | `~/.ssh/config` host alias to run agents, terminals and git on |
 | `ssh.remote_port` | none | `ORC_SSH_REMOTE_PORT` | Port the reverse tunnel opens on the SSH host so agents there reach ORC |
+
+In JSON configuration, `"terminals": { "shell": ["pwsh", "-NoLogo", "-NoProfile"] }` launches PowerShell without personal profiles. The first array entry must be a nonempty executable; up to 64 entries are supported. Arguments are passed literally, without shell parsing. Existing executable strings remain supported, including `ORC_TERMINALS_SHELL`; that environment variable accepts an executable, not a command line or JSON array. An unset shell keeps the platform default, including its usual profile loading.
 
 Pick the execution host from **Settings → Execution host**. Switching applies to new actions. When `ORC_SSH_HOST` is set, the selection is fixed.
 

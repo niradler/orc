@@ -35,7 +35,7 @@ export interface LaunchDeps {
   which: (command: string) => string | null;
   isDirectory: (path: string) => boolean | Promise<boolean>;
   home: string;
-  shell?: string | undefined;
+  shell?: string | readonly string[] | undefined;
 }
 
 export interface LiveSessionRef {
@@ -64,7 +64,11 @@ export function isValidSessionId(id: string): boolean {
 }
 
 export function defaultShell(deps: LaunchDeps): string[] | null {
-  if (deps.shell) return [deps.shell];
+  if (deps.shell) {
+    if (typeof deps.shell === "string") return [deps.shell];
+    if (!deps.shell.length) throw new ValidationError("A shell command needs an executable");
+    return [...deps.shell];
+  }
   if (deps.platform === "win32") {
     const pwsh = deps.which("pwsh");
     if (pwsh) return [pwsh, "-NoLogo"];
