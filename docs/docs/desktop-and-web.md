@@ -116,7 +116,8 @@ format support follows the operating system. PDF and Office previews are not inc
 
 The browser uses a separate, temporary session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
-and downloads are blocked. Browser logins last until the desktop app exits.
+and downloads are blocked. Browser logins are temporary and are not reused after
+closing the companion window.
 This companion window is desktop-only; the web and phone UI are unchanged.
 
 ![Terminals](/screens/terminals.png)
