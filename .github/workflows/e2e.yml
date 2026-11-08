@@ -1,7 +1,5 @@
 name: E2E
 
-# PR runs disabled (no Actions credit); the same gates run locally via
-# .githooks/pre-commit -> scripts/ci-local.ts. Run manually from the Actions tab if needed.
 on:
   workflow_dispatch:
 
@@ -10,21 +8,26 @@ permissions:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    if: github.actor == 'niradler' && github.repository == 'niradler/orc'
+    runs-on: homelab
+    timeout-minutes: 60
+    env:
+      PW_SHARDS: "4"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Install Playwright Chromium
         working-directory: packages/web
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install chromium
 
-      - name: E2E tests
-        working-directory: packages/web
-        run: bun run test
+      - name: Browser suite
+        run: bun packages/web/scripts/run-e2e.ts

@@ -2,6 +2,8 @@
 
 The Sessions view uses the same working, waiting and ended states, task links, search and conversation viewer for all agents. Waiting sessions stay in the active view; inactivity alone does not end a registered session.
 
+Opening a linked task keeps you on that task even while a session search is updating.
+
 Activity and full-width session history share compact title/provider/state rows.
 An ORC terminal agent without observed session activity shows **Unknown**, rather
 than assuming it is idle. Terminals without recorded project ownership remain in

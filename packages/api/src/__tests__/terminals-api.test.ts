@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import {
   chmodSync,
   existsSync,
@@ -67,11 +67,17 @@ const ptys: FakePty[] = [];
 const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-terminals-")));
 const binDir = join(root, "bin");
 const originalPath = process.env.PATH;
+const originalSshHost = process.env.ORC_SSH_HOST;
 let app: ReturnType<typeof createApp>;
 
-function installFakeBinary(name: string) {
+function installFakeBinary(name: string, exitCode = 0) {
   const file = join(binDir, process.platform === "win32" ? `${name}.cmd` : name);
-  writeFileSync(file, process.platform === "win32" ? "@echo off\r\n" : "#!/bin/sh\nexit 0\n");
+  writeFileSync(
+    file,
+    process.platform === "win32"
+      ? `@echo off\r\nexit /b ${exitCode}\r\n`
+      : `#!/bin/sh\nexit ${exitCode}\n`,
+  );
   if (process.platform !== "win32") chmodSync(file, 0o755);
 }
 
@@ -101,6 +107,8 @@ beforeAll(async () => {
   require("node:fs").mkdirSync(binDir, { recursive: true });
   installFakeBinary("claude");
   installFakeBinary("codex");
+  // The remote-unavailable case must not depend on real DNS or SSH timing.
+  installFakeBinary("ssh", 255);
   process.env.PATH = `${binDir}${delimiter}${originalPath}`;
   await getDb()
     .insert(bridge_chats)
@@ -131,6 +139,11 @@ afterAll(() => {
 });
 
 describe("per-terminal hosts", () => {
+  afterEach(() => {
+    if (originalSshHost === undefined) delete process.env.ORC_SSH_HOST;
+    else process.env.ORC_SSH_HOST = originalSshHost;
+    resetConfig();
+  });
   test("should not inspect another host's recorded session folders in the local checkout registry", async () => {
     const remoteFolder = "/remote-only/checkout/host-registry-regression";
     await seedLive("host-registry-regression", { cwd: remoteFolder, execution_host: "other-host" });

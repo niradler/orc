@@ -45,7 +45,13 @@ snapshots keep their original content until their retention period ends.
 Desktop browsers show settled toasts; Needs-you alerts can chime and Done alerts
 are silent. **Settings → Notifications → Sound** controls browser-local sound and
 project muting. Browser/PWA push remains separately opt-in for background human
-requests and chat replies; see [Installation](./install.md).
+requests, chat replies and job results; see [Installation](./install.md).
+A device receives job pushes only after **Job results** is enabled there.
+Existing devices subscribed to every topic receive this new topic on upgrade;
+you can turn it off independently, and that choice survives restarts.
+Enabling it does not replay older runs. Each alert follows `notify_on` and
+includes the job name, exit status, duration and a link to the run. `failure`
+sends failed runs, `always` also sends successful runs, and `never` sends nothing.
 
 ### Forward notifications to Telegram or Slack
 

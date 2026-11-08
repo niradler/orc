@@ -139,7 +139,8 @@ See [Notifications](./notifications.md) and [Human requests](./human-requests.md
 per-project sound mute. Preferences are saved in this browser. Audio starts after
 your first interaction. Browser/PWA push remains separately opt-in and requires
 HTTPS (and Home Screen installation on iOS); it delivers background approvals,
-questions and chat replies while ORC is unfocused. See [Installation](./install.md).
+questions, chat replies and job results while ORC is unfocused. Job pushes follow
+the job's notify setting and start with new runs. See [Installation](./install.md).
 
 The Electron desktop app also sends native notifications while its window is
 unfocused, minimized or hidden. Clicking one brings ORC forward and opens its
@@ -183,7 +184,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Appearance | Theme |
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
 | Server | **Restart ORC server** (closes terminals, keeps settings, reconnects) |
-| Notifications | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions and chat replies. Push needs HTTPS. |
+| Notifications | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions, chat replies and job results. Push needs HTTPS. |
 | Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code and Codex are native; Cursor, Gemini CLI, GitHub Copilot, OpenCode, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. The terminal launcher only lists enabled agents installed on the selected host. |
 | Channels | Telegram and Slack connections |
 | Chat | Default models, instructions, tools and permission mode for chat |
@@ -224,6 +225,8 @@ Send queues the next message while a reply is running. If this session is alread
 responding, or every chat worker is busy, that message stays queued and sends when
 the turn ends, without an error. Open the pending list to edit a message, move it
 up or down, remove it, or send it ahead of the current reply.
+An expanded pending list stays open across busy-worker retries. After it drains,
+the next list starts collapsed.
 Every icon has an accessible name and opens its picker with the full details;
 phone touch targets are at least 44px. Send stays visible at the right.
 

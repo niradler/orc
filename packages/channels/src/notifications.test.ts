@@ -391,7 +391,7 @@ test("should keep pending and successful deliveries across actual database close
 test("should forward only job events allowed by the common notify_on producer", async () => {
   const f = fixture();
   f.db.exec(
-    "CREATE TABLE jobs(id TEXT PRIMARY KEY,name TEXT,notify_on TEXT,project_id TEXT); CREATE TABLE job_runs(id TEXT PRIMARY KEY,job_id TEXT,status TEXT,ended_at INTEGER)",
+    "CREATE TABLE jobs(id TEXT PRIMARY KEY,name TEXT,notify_on TEXT,project_id TEXT); CREATE TABLE job_runs(id TEXT PRIMARY KEY,job_id TEXT,status TEXT,ended_at INTEGER,started_at INTEGER,exit_code INTEGER)",
   );
   for (const [index, policy, status] of [
     [1, "never", "failed"],
@@ -401,7 +401,9 @@ test("should forward only job events allowed by the common notify_on producer", 
   ] as const) {
     f.advance();
     f.db.query("INSERT INTO jobs VALUES(?,?,?,NULL)").run(String(index), "PRIVATE job", policy);
-    f.db.query("INSERT INTO job_runs VALUES(?,?,?,NULL)").run(String(index), String(index), status);
+    f.db
+      .query("INSERT INTO job_runs VALUES(?,?,?,NULL,NULL,NULL)")
+      .run(String(index), String(index), status);
     publishJobNotification(f.db, String(index));
   }
   // Production timestamps come from the producer's clock; advance the injected dispatcher accordingly.

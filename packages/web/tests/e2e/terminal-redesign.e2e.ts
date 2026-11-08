@@ -1,10 +1,201 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { expect } from "@playwright/test";
-import { API_SECRET, apiGet, apiPost, splitTerminalPane } from "./_helpers";
+import {
+  API_BASE,
+  API_SECRET,
+  AUTH_HEADERS,
+  apiGet,
+  apiPost,
+  repoRoot,
+  splitTerminalPane,
+} from "./_helpers";
 import { test } from "./_terminal-fixture";
+
+for (const width of [1440, 320]) {
+  test(`should preserve a shared file pane when focusing another saved pane at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    const home = process.env.HOME;
+    if (!home || process.env.PW_NO_SERVER !== "1")
+      throw new Error("The demo fixture requires the owned run-e2e.ts home");
+    const ownedHome = realpathSync(home);
+    if (
+      dirname(ownedHome) !== realpathSync(tmpdir()) ||
+      !basename(ownedHome).startsWith("orc-pw-home-")
+    )
+      throw new Error("The demo fixture is outside the runner's temporary home");
+    console.info("Owned terminal demo home:", ownedHome);
+    const repo = mkdtempSync(join(ownedHome, "orc-terminal-demo-"));
+    let terminal: { id: string; pid: number | null } | undefined;
+    try {
+      execFileSync("git", ["-C", repo, "init", "-b", "demo"], {
+        timeout: 15000,
+        windowsHide: true,
+      });
+      writeFileSync(
+        join(repo, "README.md"),
+        "# Demo workspace\n\nA shared Files pane stays open while focusing Git.\n",
+      );
+      execFileSync("git", ["-C", repo, "add", "README.md"], {
+        timeout: 15000,
+        windowsHide: true,
+      });
+      execFileSync(
+        "git",
+        [
+          "-C",
+          repo,
+          "-c",
+          "user.name=Demo User",
+          "-c",
+          "user.email=demo@example.invalid",
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "core.hooksPath=",
+          "commit",
+          "-m",
+          "Demo workspace",
+        ],
+        { timeout: 15000, windowsHide: true },
+      );
+      terminal = await apiPost<{ id: string; pid: number | null }>(request, "/terminals", {
+        kind: "shell",
+        name: "Demo shell",
+        cwd: repo,
+      });
+      await page.addInitScript(
+        ({ secret, terminalId }) => {
+          localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+          if (localStorage.getItem("orc_workspace_layout")) return;
+          localStorage.setItem(
+            "orc_workspace_layout",
+            JSON.stringify({
+              id: "saved-split",
+              direction: "row",
+              ratio: 50,
+              first: { id: "saved-file", kind: "terminal", terminalId },
+              second: { id: "saved-git", kind: "git", terminalId },
+            }),
+          );
+        },
+        { secret: API_SECRET, terminalId: terminal.id },
+      );
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/terminals/${terminal.id}?view=files&pane=saved-file&paneTerminal=${terminal.id}&file=README.md&editorMode=read`,
+      );
+      await expect(page.getByTestId("markdown-preview")).toContainText("Demo workspace");
+      if (width < 768)
+        await page.getByTestId("mobile-workspace-pane").filter({ hasText: /^Git/ }).click();
+      else
+        await page
+          .getByTestId("workspace-pane")
+          .filter({ has: page.getByTestId("terminal-git-panel") })
+          .getByTestId("terminal-name")
+          .click();
+      await expect(page).toHaveURL(/pane=saved-git/);
+      // Observe the inactive pane after the focus navigation has reached the next paint.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      await expect(page.locator('[data-testid="workspace-pane"][data-kind="files"]')).toHaveCount(
+        1,
+      );
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const layout = JSON.parse(localStorage.getItem("orc_workspace_layout") ?? "null");
+            return layout?.first?.kind;
+          }),
+        )
+        .toBe("files");
+      if (width < 768)
+        await page
+          .getByTestId("mobile-workspace-pane")
+          .filter({ hasText: /^Files/ })
+          .click();
+      else
+        await page
+          .locator('[data-testid="workspace-pane"][data-kind="files"]')
+          .getByTestId("pane-view-files")
+          .click();
+      await expect(page.getByTestId("markdown-preview")).toContainText("Demo workspace");
+      await page.reload();
+      await expect(page.locator('[data-testid="workspace-pane"][data-kind="files"]')).toHaveCount(
+        1,
+      );
+      await expect(page.getByTestId("markdown-preview")).toContainText("Demo workspace");
+      if (process.env.PW_REVIEW_SCREENSHOTS === "1")
+        await page.screenshot({
+          path: `${repoRoot()}/.claude/docs/pr222-terminal-preservation-${width}.jpeg`,
+          type: "jpeg",
+          quality: 90,
+          fullPage: true,
+        });
+    } finally {
+      if (terminal) {
+        const response = await request.delete(`${API_BASE}/terminals/${terminal.id}`, {
+          headers: AUTH_HEADERS,
+          timeout: 10000,
+        });
+        expect([204, 404], "Close the owned demo terminal before retiring its directory").toContain(
+          response.status(),
+        );
+        const pid = terminal.pid;
+        if (pid)
+          await expect
+            .poll(
+              () => {
+                try {
+                  process.kill(pid, 0);
+                  return true;
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+                  return false;
+                }
+              },
+              { timeout: 10000 },
+            )
+            .toBe(false);
+      }
+      // run-e2e.ts retires the owned home after API checkout watchers and children exit.
+    }
+  });
+
+  test(`should restore a shared file after rapid Back navigation at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+      kind: "shell",
+      cwd: repoRoot(),
+    });
+    await page.addInitScript((secret) => {
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+    }, API_SECRET);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(
+      `/terminals/${terminal.id}?view=files&pane=shared-device-pane&paneTerminal=${terminal.id}&file=README.md&editorMode=read`,
+    );
+    await expect(page.getByTestId("markdown-preview")).toContainText("ORC");
+    for (let index = 0; index < 20; index++) {
+      await page.getByTestId("pane-view-git").evaluate((button) => {
+        (button as HTMLButtonElement).click();
+        window.history.back();
+      });
+      await expect(page).toHaveURL(/view=files/);
+      await expect(page.getByTestId("pane-view")).toHaveAttribute("data-view", "files");
+    }
+  });
+}
 
 for (const theme of ["dark", "light"] as const) {
   for (const width of [1440, 390, 320]) {

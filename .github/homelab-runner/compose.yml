@@ -1,0 +1,19 @@
+services:
+  runner:
+    # Inert scaffold: do not activate until isolation and registration are implemented.
+    profiles: [security-review-required]
+    build: .
+    restart: "no"
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      REPO_URL: https://github.com/niradler/orc
+      RUNNER_NAME_PREFIX: orc
+      RUNNER_SCOPE: repo
+      LABELS: homelab
+      EPHEMERAL: "1"
+      DISABLE_AUTO_UPDATE: "1"
+      RUN_AS_ROOT: "false"
+      RUNNER_WORKDIR: /tmp/runner/work
+      PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright

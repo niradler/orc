@@ -16,6 +16,9 @@ Names survive browser reloads for the lifetime of the running API's in-memory te
 
 Files has open-file tabs, dirty markers and Git change badges. Switching between Files and Git or arranging panes preserves in-page file tabs and editor drafts. Drafts are not durable storage; save before closing the page. Saves detect conflicting disk changes and retain the draft for explicit resolution.
 
+Browser Back and Forward restore Files or Git, including shared links opened on another device.
+Restored views stay in place when you focus another pane or reload.
+
 Git opens with **Local changes**: a grouped file list, path and change-state filters, selected staging, unified or side-by-side diffs, and links into Files. The commit message stays full width at the bottom. Click the branch name to expand branch/worktree controls; use the task-link icon beside the file-sidebar toggle to link an ORC task. **New worktree** sits beside the worktree selector. The file list collapses into a picker in narrow panes. Opening a worktree preserves the selected terminal host.
 
 When space permits, the pane toolbar shows branch/changed-file count, a linked ORC task and the current branch's open PR. CI appears beside the PR when GitHub provides its current head-commit checks and statuses. Inaccessible or incomplete CI is hidden; no reported checks is shown separately from passing checks. CI refreshes while the workspace is open. The wider task and PR details disappear in narrow panes.

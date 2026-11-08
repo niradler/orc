@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
+import { selectKnowledgeBase } from "./_knowledge-ui";
 
 test("Knowledge base search and filters create history entries and reopen", async ({
   page,
@@ -16,7 +17,7 @@ test("Knowledge base search and filters create history entries and reopen", asyn
   });
   try {
     await gotoView(page, "knowledge");
-    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await selectKnowledgeBase(page, kb.name);
     await page.getByTestId("kb-label-filter").filter({ hasText: "history" }).click();
     await expect(page).toHaveURL(/label=history/);
     await page.getByTestId("kb-search-input").fill("kbhistoryneedle");
@@ -59,7 +60,7 @@ test("Knowledge base search, document selection and editor mode are shareable", 
   });
   try {
     await gotoView(page, "knowledge");
-    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await selectKnowledgeBase(page, kb.name);
     await page.getByTestId("kb-search-input").fill("kbbodyonlyneedle");
     await page.getByTestId("kb-search-submit").click();
     await expect(page).toHaveURL(/q=kbbodyonlyneedle/);

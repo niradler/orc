@@ -1,16 +1,50 @@
 name: CI
 
-# PR runs disabled (no Actions credit); the same gates run locally via
-# .githooks/pre-commit -> scripts/ci-local.ts. Run manually from the Actions tab if needed.
 on:
+  # Automatic runner use stays disabled until public-PR isolation is verified.
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ci:
-    if: github.actor == 'niradler' && github.repository == 'niradler/orc'
+  pull-request:
+    if: github.event_name == 'pull_request' && vars.ORC_ISOLATED_PR_RUNNER_READY == 'true'
+    runs-on: homelab
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch origin "$BASE_REF"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        working-directory: packages/web
+        run: bunx playwright install chromium
+
+      - name: Changed packages and sanity
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bun scripts/ci-local.ts --changed "origin/$BASE_REF" --sanity
+
+  unit:
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'niradler' && github.repository == 'niradler/orc'
     runs-on: homelab
     timeout-minutes: 60
     steps:
@@ -25,23 +59,5 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint
-        run: bun run lint
-
-      - name: Format check
-        run: bunx biome format ./packages
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Test
-        run: bun run --sequential --filter '!@orc/web' test
-
-      - name: Dependency security regressions
-        run: bun test scripts/dependency-security.test.ts
-
-      # @orc/web is excluded above because its `test` script drives Playwright,
-      # which needs a browser (see e2e.yml). Its browser-free unit tests still
-      # belong on every PR.
-      - name: Web unit tests
-        run: bun run --filter @orc/web test:unit
+      - name: Unit, type and security gates
+        run: bun run ci

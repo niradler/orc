@@ -20,8 +20,11 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   retries: 0,
+  // run-e2e.ts starts one API and database per shard. A second worker in the
+  // same shard would share that database, so each shard stays single-worker.
   workers: 1,
   reporter: [["list"]],
+  outputDir: process.env.PW_OUTPUT_DIR ?? "test-results",
   use: {
     baseURL: `http://127.0.0.1:${PW_API_PORT}`,
     // A controlling service worker makes page.route() miss requests; pwa.e2e.ts opts back in.

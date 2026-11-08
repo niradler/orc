@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { holdChatStream } from "./_chat-stream";
 import { API_SECRET } from "./_helpers";
 
 const ask = (marker: string) =>
@@ -29,13 +30,15 @@ test.describe("Chat panel - end-to-end SSE round-trip", () => {
     await expect(panel).toHaveAttribute("data-streaming", "false");
     await expect(input).toBeEnabled();
 
-    await input.fill(ask(marker));
-    await input.press("Enter");
-
-    // Streaming flag should flip on (within action timeout)
-    await expect(panel).toHaveAttribute("data-streaming", "true");
-    // Keep composing follow-ups while the current response streams.
-    await expect(input).toBeEnabled();
+    const release = await holdChatStream(page);
+    try {
+      await input.fill(ask(marker));
+      await input.press("Enter");
+      await expect(panel).toHaveAttribute("data-streaming", "true");
+      await expect(input).toBeEnabled();
+    } finally {
+      await release();
+    }
 
     // Wait for SSE 'done' -> flag flips back
     await expect(panel).toHaveAttribute("data-streaming", "false", {

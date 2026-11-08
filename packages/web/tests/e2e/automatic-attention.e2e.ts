@@ -38,6 +38,19 @@ test.beforeAll(async () => {
     });
     server.once("error", reject);
   });
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1000) });
+          return response.status;
+        } catch {
+          return 0;
+        }
+      },
+      { timeout: 10000 },
+    )
+    .toBe(200);
 });
 test.afterAll(async () => {
   if (server && server.exitCode === null && server.signalCode === null) {

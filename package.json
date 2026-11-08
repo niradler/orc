@@ -21,6 +21,8 @@
     "sdk:generate": "bun run --filter @orc/sdk generate",
     "test": "bun run --filter '*' test",
     "ci": "bun scripts/ci-local.ts",
+    "ci:changed": "bun scripts/ci-local.ts --changed",
+    "ci:pr": "bun scripts/ci-local.ts --changed --sanity",
     "ci:full": "bun scripts/ci-local.ts --e2e",
     "prepare": "git config core.hooksPath .githooks || true",
     "clean": "bun run --filter '*' clean",
