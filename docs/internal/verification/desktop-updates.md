@@ -17,14 +17,16 @@ Native acceptance command (after building the host CLI):
 PATH="$PWD/node_modules/.bin:$PATH" bun packages/desktop/scripts/mac-update-acceptance.ts --output /private/tmp/orc-mac-update-result.json
 ```
 
-Pre-merge run `aa864cd0-8517-4472-bbfc-9dd9ef6c9e5b` passed on Apple Silicon
+Pre-merge run `4d8f01fb-ec1c-4b1e-b029-400569a332ff` passed on Apple Silicon
 macOS after integrating master `9fe5b20a` and rebuilding both fixture daemons:
 
 ```text
 PASS darwin: packaged 0.1.61 -> 0.1.62; daemon, tasks, session and auth preserved
 explicitInstallRequired: true
-previousDaemonPid: 33893
-nextDaemonPid: 34443
+windowCloseKeepsDaemon: true
+activationShowsWindow: true
+previousDaemonPid: 95274
+nextDaemonPid: 95362
 taskPreserved: true
 sessionPreserved: true
 configPreserved: true
@@ -38,6 +40,13 @@ version's daemon and window to start after explicit installation, the helper's
 `installed` acknowledgement, a retained previous bundle and loopback-only API
 listeners. Fixture apps, data, candidate binary and disk images were removed
 after verified process/listener teardown. Only concise result/log files remain.
+
+For #176 the driver first closes the real BrowserWindow, verifies that it was
+hidden rather than destroyed and that the same authenticated daemon/PID remains
+healthy, then emits the activation event and requires the existing window's show
+request. The final quit still verifies app/daemon exit and listener closure.
+The production close/hide, activation and window-all-closed handlers were already
+present in the macOS stability changes; this adds packaged regression acceptance.
 
 Additional native regressions use private bundles: version/symlink rejection,
 real ad-hoc signing/architecture validation, crash-on-start rollback, and

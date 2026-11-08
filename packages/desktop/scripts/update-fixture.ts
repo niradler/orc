@@ -99,7 +99,10 @@ app.setLoginItemSettings = () => {
 app.setAsDefaultProtocolClient = () => {
   throw new Error("Protocol registration is forbidden in the update fixture");
 };
-BrowserWindow.prototype.show = () => {};
+let showRequests = 0;
+BrowserWindow.prototype.show = () => {
+  showRequests++;
+};
 Notification.prototype.show = () => {};
 if (process.platform === "linux") app.commandLine.appendSwitch("no-sandbox");
 
@@ -163,7 +166,14 @@ timer = setInterval(async () => {
     );
     const command = await response.text();
     if (command === "quit") app.quit();
-    else if (process.platform === "darwin" && window && !window.isDestroyed()) {
+    else if (command === "close-window" && window && !window.isDestroyed()) {
+      window.close();
+      report("window-close", { destroyed: window.isDestroyed() });
+    } else if (command === "activate") {
+      const before = showRequests;
+      app.emit("activate");
+      report("window-activate", { showRequested: showRequests > before });
+    } else if (process.platform === "darwin" && window && !window.isDestroyed()) {
       const state = await window.webContents.executeJavaScript("window.orcDesktop.updates.state()");
       if (state.phase === "downloaded") report("downloaded");
       if (state.phase === "error") report("update-error", { message: state.error });

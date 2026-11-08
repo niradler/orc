@@ -343,6 +343,22 @@ try {
     events().find((e) => e.event === "window-ready" && e.version === meta.oldVersion),
   );
   const previous = await identity(meta.oldVersion);
+  if (process.platform === "darwin") {
+    queue(meta.oldVersion, "close-window");
+    const closed = await until("Mac window close", () =>
+      events().find((event) => event.event === "window-close" && event.version === meta.oldVersion),
+    );
+    assert.equal(closed.destroyed, false);
+    assert.equal((await identity(meta.oldVersion)).pid, previous.pid);
+    queue(meta.oldVersion, "activate");
+    const activated = await until("Mac activation", () =>
+      events().find(
+        (event) => event.event === "window-activate" && event.version === meta.oldVersion,
+      ),
+    );
+    assert.equal(activated.showRequested, true);
+    assert.equal((await identity(meta.oldVersion)).pid, previous.pid);
+  }
   const task = await api("/tasks", "POST", {
     title: "Update fixture task",
     body: "Task data must survive replacement",
@@ -416,6 +432,9 @@ try {
     to: meta.newVersion,
     realPackagedInstaller: true,
     explicitInstallRequired: true,
+    ...(process.platform === "darwin"
+      ? { windowCloseKeepsDaemon: true, activationShowsWindow: true }
+      : {}),
     oldDaemonStopped: true,
     newDaemonStarted: true,
     taskPreserved: true,
