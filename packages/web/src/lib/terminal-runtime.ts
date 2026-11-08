@@ -320,19 +320,24 @@ function tapRuntime(runtime: TerminalRuntime, x: number, y: number): void {
   const box = canvas?.getBoundingClientRect();
   const onCanvas = box && x >= box.left && x < box.right && y >= box.top && y < box.bottom;
   const target = canvas && onCanvas ? canvas : element;
-  for (const type of ["mousedown", "mouseup", "click"])
-    target.dispatchEvent(
-      new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y,
-        button: 0,
-        buttons: type === "mousedown" ? 1 : 0,
-        detail: 1,
-        view: window,
-      }),
-    );
+  // Finish touchend propagation before replaying a click so outside-interaction layers
+  // see a completed gesture. Focus stays synchronous for the phone keyboard.
+  setTimeout(() => {
+    if (runtime.disposed || !target.isConnected) return;
+    for (const type of ["mousedown", "mouseup", "click"])
+      target.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          button: 0,
+          buttons: type === "mousedown" ? 1 : 0,
+          detail: 1,
+          view: window,
+        }),
+      );
+  }, 0);
   focusRuntime(runtime);
 }
 

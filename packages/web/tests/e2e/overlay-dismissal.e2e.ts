@@ -1,6 +1,7 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
-import { expect, test } from "@playwright/test";
-import { API_SECRET, gotoView } from "./_helpers";
+import { expect } from "@playwright/test";
+import { API_SECRET, apiDelete, apiPost, gotoView, repoRoot, tid } from "./_helpers";
+import { test } from "./_terminal-fixture";
 
 for (const width of [320, 390, 1440]) {
   for (const theme of ["dark", "light"] as const) {
@@ -135,4 +136,127 @@ for (const width of [320, 390, 1440]) {
       });
     });
   }
+}
+
+for (const width of [390, 1440]) {
+  test.describe(`global terminal menus at ${width}px`, () => {
+    test.use({ viewport: { width, height: 900 }, hasTouch: width < 1000 });
+
+    test("should dismiss pane actions outside and keep its terminal running", async ({
+      page,
+      request,
+    }, info) => {
+      const terminal = await apiPost<{ id: string; pid: number }>(request, "/terminals", {
+        kind: "shell",
+        host: null,
+        cwd: repoRoot(),
+      });
+      await gotoView(page, "terminals");
+      await page.goto(`/terminals/${terminal.id}`);
+      const viewport = page.getByTestId("terminal-viewport").filter({ visible: true }).first();
+      await expect(viewport).toBeVisible();
+      await page.getByTestId("pane-actions").filter({ visible: true }).first().click();
+      await expect(page.getByTestId("terminal-options").filter({ visible: true })).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`pane-menu-${width}.png`) });
+      if (width < 1000) await viewport.tap();
+      else await viewport.click();
+      await expect(page.getByTestId("pane-actions-menu")).toBeHidden();
+      await expect(viewport.getByRole("textbox", { name: "Terminal input" }).last()).toBeFocused();
+      const actions = page.getByTestId("pane-actions").filter({ visible: true }).first();
+      await actions.click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("pane-actions-menu")).toBeHidden();
+      await expect(actions).toBeFocused();
+
+      if (width === 1440) {
+        await page.getByTestId("terminal-actions").click();
+        await expect(page.getByTestId("terminal-actions-menu")).toBeVisible();
+        await viewport.click();
+        await expect(page.getByTestId("terminal-actions-menu")).toBeHidden();
+      }
+      const launcher = page.getByTestId("terminal-new").filter({ visible: true }).first();
+      await launcher.click();
+      await expect(page.getByTestId("terminal-launch-menu")).toBeVisible();
+      const folder = await page.getByTestId("terminal-cwd").inputValue();
+      const bounds = await viewport.boundingBox();
+      if (!bounds) throw new Error("Terminal has no visible bounds");
+      if (width < 1000) await page.touchscreen.tap(bounds.x + 8, bounds.y + bounds.height - 8);
+      else await viewport.click();
+      await expect(page.getByTestId("terminal-launch-menu")).toBeHidden();
+      await launcher.click();
+      await expect(page.getByTestId("terminal-cwd")).toHaveValue(folder);
+      await page.keyboard.press("Escape");
+      await expect(launcher).toBeFocused();
+
+      await page.getByTestId("pane-view-git").click();
+      const taskLink = page.getByTestId("terminal-task-link-toggle");
+      await taskLink.click();
+      await expect(page.getByTestId("terminal-task-link-menu")).toBeVisible();
+      await page.getByTestId("git-link-task").focus();
+      await expect(page.getByTestId("terminal-task-link-menu")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("terminal-task-link-menu")).toBeHidden();
+      await expect(taskLink).toBeFocused();
+      await taskLink.click();
+      await page.getByTestId("git-refresh").click();
+      await expect(page.getByTestId("terminal-task-link-menu")).toBeHidden();
+      const state = await request.get(`/api/terminals/${terminal.id}`, {
+        headers: { Authorization: `Bearer ${API_SECRET}` },
+      });
+      expect(state.ok()).toBe(true);
+      expect((await state.json()).pid).toBe(terminal.pid);
+    });
+
+    test("should dismiss project and document menus without losing their containing workspace", async ({
+      page,
+      request,
+    }) => {
+      await gotoView(page, "activity");
+      const drawer = page.getByTestId("mobile-nav-drawer");
+      if (width < 1000) await page.getByTestId("mobile-nav-open").tap();
+      const picker =
+        width < 1000
+          ? drawer.getByTestId("sidebar-project-select")
+          : page.getByTestId("sidebar-project-select").filter({ visible: true });
+      await picker.click();
+      await expect(page.getByTestId("project-picker-menu")).toBeVisible();
+      await page.getByTestId("project-picker-search").fill("All");
+      if (width < 1000) await page.touchscreen.tap(width - 4, 860);
+      else await page.mouse.click(width - 4, 860);
+      await expect(page.getByTestId("project-picker-menu")).toBeHidden();
+      if (width < 1000) {
+        await expect(drawer).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(drawer).toBeHidden();
+      }
+      const kb = await apiPost<{ id: string }>(request, "/kb/bases", {
+        name: tid("overlay-demo"),
+        project_id: null,
+      });
+      try {
+        const doc = await apiPost<{ id: string }>(request, `/kb/bases/${kb.id}/documents`, {
+          title: "Overlay menu demo",
+          content: "Keep this document while dismissing its menu.",
+        });
+        await page.goto(`/knowledge/base?kb=${kb.id}&document=${doc.id}`);
+        const document = page
+          .getByTestId("kb-document")
+          .getByTestId("markdown-preview")
+          .filter({ visible: true });
+        await expect(document).toContainText("Keep this document");
+        const menu = page.getByTestId("kb-doc-menu");
+        await menu.click();
+        await expect(page.getByTestId("kb-doc-actions-menu")).toBeVisible();
+        if (width < 1000) await document.tap();
+        else await document.click();
+        await expect(page.getByTestId("kb-doc-actions-menu")).toBeHidden();
+        await expect(document).toContainText("Keep this document");
+        await menu.click();
+        await page.keyboard.press("Escape");
+        await expect(menu).toBeFocused();
+      } finally {
+        await apiDelete(request, `/kb/bases/${kb.id}`);
+      }
+    });
+  });
 }

@@ -14,6 +14,11 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
 | Next session | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing. |
 
+Popup menus and pickers across the dashboard close when you tap outside or press
+Escape, including project, session, document and terminal actions. Tapping the
+terminal canvas also dismisses an open menu. Interacting inside a picker or its
+folder dialog keeps it usable without discarding your draft.
+
 Pages are grouped in the sidebar:
 
 | Group | Pages |

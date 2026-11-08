@@ -1,9 +1,9 @@
 import { nativeChatResumeUnavailableReason } from "@orc/core/chat";
-import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, Copy, Link2, MessageSquare, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type LiveSession } from "@/api/client";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { resumeCommand, resumeUnavailableReason, scopedSessionPath } from "@/lib/live-sessions";
 import {
@@ -105,8 +105,8 @@ export function ResumeActions({ session }: { session: LiveSession }) {
           <MessageSquare size={13} />
           {chatPending ? "Resuming…" : "Resume"}
         </button>
-        <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
-          <Popover.Trigger asChild>
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger asChild>
             <button
               type="button"
               data-testid="resume-actions-menu"
@@ -115,62 +115,61 @@ export function ResumeActions({ session }: { session: LiveSession }) {
             >
               <ChevronDown size={13} />
             </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content
-              align="end"
-              sideOffset={4}
-              collisionPadding={8}
-              aria-label="Session actions"
-              data-testid="resume-actions-dropdown"
-              className="z-50 w-56 rounded-md border border-border bg-surface-high p-1 shadow-lg"
+          </PopoverTrigger>
+
+          <PopoverContent
+            align="end"
+            sideOffset={4}
+            collisionPadding={8}
+            aria-label="Session actions"
+            data-testid="resume-actions-dropdown"
+            className="z-50 w-56 rounded-md border border-border bg-surface-high p-1 shadow-lg"
+          >
+            <button
+              type="button"
+              data-testid="open-terminal-resume"
+              disabled={pending || chatPending || (!existing && !info?.ready)}
+              title={
+                !existing && !info?.ready
+                  ? (info?.reason ?? "Integrated terminals are unavailable")
+                  : "Resume in terminal"
+              }
+              onClick={() => void open()}
+              className={`${ACTION} min-h-11 w-full justify-start border-0`}
             >
+              <SquareTerminal size={13} />
+              {pending ? "Resuming…" : "Terminal"}
+            </button>
+            {command && (
               <button
                 type="button"
-                data-testid="open-terminal-resume"
-                disabled={pending || chatPending || (!existing && !info?.ready)}
-                title={
-                  !existing && !info?.ready
-                    ? (info?.reason ?? "Integrated terminals are unavailable")
-                    : "Resume in terminal"
-                }
-                onClick={() => void open()}
-                className={`${ACTION} min-h-11 w-full justify-start border-0`}
-              >
-                <SquareTerminal size={13} />
-                {pending ? "Resuming…" : "Terminal"}
-              </button>
-              {command && (
-                <button
-                  type="button"
-                  data-testid="copy-resume"
-                  className={`${ACTION} w-full justify-start border-0`}
-                  title={command}
-                  onClick={() => void copy(command, "Resume command copied")}
-                >
-                  {copied === "Resume command copied" ? <Check size={13} /> : <Copy size={13} />}
-                  Copy resume command
-                </button>
-              )}
-              <button
-                type="button"
-                data-testid="copy-terminal-link"
+                data-testid="copy-resume"
                 className={`${ACTION} w-full justify-start border-0`}
-                aria-label="Copy terminal link"
-                title="Copy terminal link"
-                onClick={() =>
-                  void copy(
-                    absoluteUrl(scopedSessionPath(sessionTerminalPath(session.id), scope)),
-                    "Terminal link copied",
-                  )
-                }
+                title={command}
+                onClick={() => void copy(command, "Resume command copied")}
               >
-                <Link2 size={13} />
-                Copy terminal link
+                {copied === "Resume command copied" ? <Check size={13} /> : <Copy size={13} />}
+                Copy resume command
               </button>
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+            )}
+            <button
+              type="button"
+              data-testid="copy-terminal-link"
+              className={`${ACTION} w-full justify-start border-0`}
+              aria-label="Copy terminal link"
+              title="Copy terminal link"
+              onClick={() =>
+                void copy(
+                  absoluteUrl(scopedSessionPath(sessionTerminalPath(session.id), scope)),
+                  "Terminal link copied",
+                )
+              }
+            >
+              <Link2 size={13} />
+              Copy terminal link
+            </button>
+          </PopoverContent>
+        </Popover>
       </fieldset>
       {chatUnavailable && (
         <p data-testid="chat-resume-unavailable" className="text-xs text-outline">

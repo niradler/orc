@@ -1,4 +1,3 @@
-import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronsUpDown, Folder, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -6,6 +5,7 @@ import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
 import { useProjects } from "@/hooks/useProjects";
 import { AGENT_STATES, liveSessionState } from "@/lib/agent-state";
@@ -66,7 +66,7 @@ export function ProjectPicker({
   }, [shortcutEnabled]);
   return (
     <>
-      <Popover.Root
+      <Popover
         modal
         open={open}
         onOpenChange={(value) => {
@@ -74,7 +74,7 @@ export function ProjectPicker({
           if (!value) setSearch("");
         }}
       >
-        <Popover.Trigger asChild>
+        <PopoverTrigger asChild>
           <Button
             variant="ghost"
             data-testid="sidebar-project-select"
@@ -92,91 +92,91 @@ export function ProjectPicker({
               </>
             )}
           </Button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            align="start"
-            sideOffset={8}
-            className="z-60 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface-high p-2 text-on-surface shadow-xl"
-            aria-label="Switch project"
-          >
-            <Input
-              data-testid="project-picker-search"
-              aria-label="Find a project"
-              placeholder="Find a project…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="mb-2"
-            />
-            <div className="max-h-64 overflow-auto">
-              {[
-                { id: "all", name: "All projects" },
-                { id: "unassigned", name: "Unassigned" },
-                ...(projects ?? []),
-              ]
-                .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
-                .map((p) => (
-                  <button
-                    key={p.id}
-                    data-testid={`project-option-${p.id}`}
-                    type="button"
-                    aria-pressed={projectId === p.id}
-                    onClick={() => {
-                      onProjectChange(p.id);
-                      setOpen(false);
-                      setSearch("");
-                    }}
-                    className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-surface-highest"
-                  >
-                    <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                    {!!waiting.get(p.id) && (
-                      <span
-                        data-testid="project-needs-you"
-                        role="img"
-                        aria-label={`${waiting.get(p.id)} need you`}
-                        title={`${waiting.get(p.id)} need you`}
-                        className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-warning"
-                      >
-                        <NeedsYouIcon aria-hidden="true" size={14} strokeWidth={2.25} />
-                        {waiting.get(p.id)}
-                      </span>
-                    )}
-                    {p.id === projectId && <Check className="size-4 text-primary" />}
-                  </button>
-                ))}
-              {isLoading && <p className="p-3 text-sm text-outline">Loading projects…</p>}
-              {isError && (
-                <p role="alert" className="p-3 text-sm text-error">
-                  Projects could not be loaded.
-                </p>
-              )}
-            </div>
-            <div className="mt-2 border-t border-border pt-2">
-              <Button
-                data-testid="project-picker-create"
-                variant="ghost"
-                className="w-full justify-start"
-                onClick={create}
-              >
-                <Plus />
-                Create project<span className="ml-auto text-xs text-outline">⌘/Ctrl ⇧ P</span>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start"
-                data-testid="nav-projects"
-                onClick={() => {
-                  setOpen(false);
-                  navigate(workspaceDestination("/projects", projectId, routeSearch));
-                  onNavigate?.();
-                }}
-              >
-                Manage projects
-              </Button>
-            </div>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+        </PopoverTrigger>
+
+        <PopoverContent
+          data-testid="project-picker-menu"
+          align="start"
+          sideOffset={8}
+          className="z-60 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface-high p-2 text-on-surface shadow-xl"
+          aria-label="Switch project"
+        >
+          <Input
+            data-testid="project-picker-search"
+            aria-label="Find a project"
+            placeholder="Find a project…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="mb-2"
+          />
+          <div className="max-h-64 overflow-auto">
+            {[
+              { id: "all", name: "All projects" },
+              { id: "unassigned", name: "Unassigned" },
+              ...(projects ?? []),
+            ]
+              .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+              .map((p) => (
+                <button
+                  key={p.id}
+                  data-testid={`project-option-${p.id}`}
+                  type="button"
+                  aria-pressed={projectId === p.id}
+                  onClick={() => {
+                    onProjectChange(p.id);
+                    setOpen(false);
+                    setSearch("");
+                  }}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-surface-highest"
+                >
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  {!!waiting.get(p.id) && (
+                    <span
+                      data-testid="project-needs-you"
+                      role="img"
+                      aria-label={`${waiting.get(p.id)} need you`}
+                      title={`${waiting.get(p.id)} need you`}
+                      className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-warning"
+                    >
+                      <NeedsYouIcon aria-hidden="true" size={14} strokeWidth={2.25} />
+                      {waiting.get(p.id)}
+                    </span>
+                  )}
+                  {p.id === projectId && <Check className="size-4 text-primary" />}
+                </button>
+              ))}
+            {isLoading && <p className="p-3 text-sm text-outline">Loading projects…</p>}
+            {isError && (
+              <p role="alert" className="p-3 text-sm text-error">
+                Projects could not be loaded.
+              </p>
+            )}
+          </div>
+          <div className="mt-2 border-t border-border pt-2">
+            <Button
+              data-testid="project-picker-create"
+              variant="ghost"
+              className="w-full justify-start"
+              onClick={create}
+            >
+              <Plus />
+              Create project<span className="ml-auto text-xs text-outline">⌘/Ctrl ⇧ P</span>
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              data-testid="nav-projects"
+              onClick={() => {
+                setOpen(false);
+                navigate(workspaceDestination("/projects", projectId, routeSearch));
+                onNavigate?.();
+              }}
+            >
+              Manage projects
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
       {creating && (
         <CreateProjectDialog
           open

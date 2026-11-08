@@ -309,7 +309,9 @@ export default function Terminals() {
       className={label ? "w-full justify-start" : "min-h-11 min-w-11 sm:min-h-8 sm:min-w-8"}
       onClick={(event) => {
         optionsButtonRef.current =
-          event.currentTarget.closest("details")?.querySelector("summary") ?? event.currentTarget;
+          event.currentTarget
+            .closest("[data-pane-menu]")
+            ?.querySelector('[data-testid="pane-actions"]') ?? event.currentTarget;
         setOptionsTerminalId(terminal?.id ?? null);
         setOptionsOpen(true);
       }}
