@@ -531,8 +531,8 @@ export class CodexAppSession implements AgentSession {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "ignore",
-        env,
-        passEnv: ["ORC_CODEX_MCP_TOKEN"],
+        env: { ...env, ...this.opts.env },
+        passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.env ?? {})],
       });
       const child = this.child;
       if (this.closed || this.closing) {

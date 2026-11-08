@@ -27,6 +27,8 @@ export type SessionOpts = {
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;
   ruleGuard?: SessionRuleGuard;
+  env?: Record<string, string> | undefined;
+  redactOutput?: ((text: string) => string) | undefined;
   cwd: string;
   model?: string | undefined;
   runtimeSessionId?: string | undefined;
@@ -145,7 +147,7 @@ export interface AgentBackend {
   startSession(opts: SessionOpts): Promise<AgentSession>;
   resumeSession(runtimeSessionId: string, opts: SessionOpts): Promise<AgentSession>;
   preflight(
-    opts?: Pick<SessionOpts, "executionHost" | "acpAgent" | "acpxAgent">,
+    opts?: Pick<SessionOpts, "executionHost" | "acpAgent" | "acpxAgent" | "env">,
   ): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;
   /**

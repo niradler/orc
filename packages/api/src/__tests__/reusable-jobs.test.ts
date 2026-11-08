@@ -1,9 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AgentEvent, type AgentSession, registerBackend } from "@orc/agent-runtime";
+import {
+  type AgentEvent,
+  type AgentSession,
+  registerBackend,
+  type SessionOpts,
+} from "@orc/agent-runtime";
 import { createFlow, reloadFlows } from "@orc/core/flow-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { tasks } from "@orc/db/schema";
@@ -15,6 +20,7 @@ const originalHome = process.env.HOME;
 const originalProfile = process.env.USERPROFILE;
 let fixtureHome: string;
 let lastPrompt = "";
+let lastOptions: SessionOpts | undefined;
 let closed = 0;
 let mode: "success" | "error" | "hang" = "success";
 let permission = "";
@@ -31,7 +37,8 @@ beforeAll(() => {
     resumeSession: async () => {
       throw new Error("No resume expected");
     },
-    startSession: async (): Promise<AgentSession> => {
+    startSession: async (options): Promise<AgentSession> => {
+      lastOptions = options;
       const behavior = mode;
       let finish: () => void = () => {};
       const finished = new Promise<void>((resolve) => {
@@ -63,7 +70,10 @@ beforeAll(() => {
             type: "permission_request",
             data: { requestId: "request", tool: "shell", command: "example" },
           };
-          yield { type: "text", data: "Agent action completed" };
+          yield {
+            type: "text",
+            data: `Agent action completed${options.env?.FIXTURE_SECRET ?? ""}`,
+          };
           yield { type: "result", data: { runtimeSessionId: "fixture-runtime" } };
         },
       };
@@ -344,4 +354,59 @@ test("should report partial fan-out failure while allowing another subscribed jo
   const history = await (await req(app, "GET", `/webhooks/${hook.id}/deliveries`)).json();
   expect(history.deliveries[0].status).toBe("failed");
   expect(history.deliveries[0].runs).toHaveLength(2);
+});
+
+test("should execute an agent in an isolated worktree with pinned host, environment and launch options", async () => {
+  mode = "success";
+  const repository = join(fixtureHome, "job-repository");
+  mkdirSync(repository);
+  function git(args: string[]): void {
+    const result = Bun.spawnSync(["git", ...args], {
+      cwd: repository,
+      timeout: 10000,
+      windowsHide: true,
+    });
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+  }
+  git(["init"]);
+  git(["config", "user.name", "Fixture"]);
+  git(["config", "user.email", "fixture@example.invalid"]);
+  writeFileSync(join(repository, "fixture.txt"), "base");
+  git(["add", "fixture.txt"]);
+  git(["commit", "-m", "Fixture"]);
+  const options: NonNullable<SessionOpts["chatAgentOptions"]> = {
+    runtime: "acpx",
+    args: ["--timeout", "120"],
+  };
+  const response = await req(app, "POST", "/jobs", {
+    name: "isolated-agent",
+    action: {
+      type: "agent",
+      backend: "job-fixture",
+      prompt: "Inspect only",
+      model: "fixture-model",
+      options,
+    },
+    trigger_type: "manual",
+    working_dir: repository,
+    settings: {
+      host: null,
+      workspace: { mode: "worktree", base_ref: "HEAD", cleanup_on_success: true },
+    },
+    environment: [{ name: "FIXTURE_SECRET", value: "private-fixture-value", secret: true }],
+  });
+  expect(response.status).toBe(201);
+  const job = await response.json();
+  const trigger = await (await req(app, "POST", `/jobs/${job.id}/trigger`)).json();
+  const run = await waitRun(trigger.run_id);
+  expect(run.status).toBe("success");
+  expect(lastOptions?.executionHost).toBeNull();
+  expect(lastOptions?.model).toBe("fixture-model");
+  expect(lastOptions?.chatAgentOptions).toEqual(options);
+  expect(lastOptions?.env?.FIXTURE_SECRET).toBe("private-fixture-value");
+  expect(lastOptions?.cwd.replaceAll("\\", "/")).toContain("/.orc/worktrees/job-");
+  expect(lastOptions?.cwd && existsSync(lastOptions.cwd)).toBe(false);
+  expect(run.stdout).toContain("[REDACTED]");
+  expect(run.stdout).toContain("Clean worktree removed");
+  expect(run.stdout).not.toContain("private-fixture-value");
 });

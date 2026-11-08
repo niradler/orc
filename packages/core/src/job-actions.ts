@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChatAgentOptionsSchema } from "./chat-options.js";
 
 export const JobActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("command"), command: z.string().trim().min(1) }).strict(),
@@ -7,10 +8,49 @@ export const JobActionSchema = z.discriminatedUnion("type", [
       type: z.literal("agent"),
       prompt: z.string().trim().min(1).max(100000),
       backend: z.string().trim().min(1).max(64),
+      options: ChatAgentOptionsSchema.optional(),
       model: z.string().trim().min(1).max(128).optional(),
       auto_approve: z.boolean().default(false),
     })
-    .strict(),
+    .strict()
+    .superRefine((action, context) => {
+      if (!action.options) return;
+      if (["claude-cli", "a2a", "agentapi"].includes(action.backend))
+        context.addIssue({
+          code: "custom",
+          path: ["options"],
+          message:
+            "This backend does not support job launch options. Choose Claude SDK, Codex CLI or ACPX.",
+        });
+      const runtime =
+        action.backend === "claude"
+          ? "claude-sdk"
+          : action.backend === "codex-cli"
+            ? "codex"
+            : "acpx";
+      if (action.options.runtime !== runtime)
+        context.addIssue({
+          code: "custom",
+          path: ["options"],
+          message: "Launch options do not match this backend",
+        });
+      if (
+        !action.auto_approve &&
+        ((action.options.runtime === "claude-sdk" &&
+          ["acceptEdits", "bypassPermissions"].includes(
+            action.options.options.permissionMode ?? "",
+          )) ||
+          (action.options.runtime === "acpx" &&
+            action.options.args.some((argument) =>
+              ["--approve-all", "--approve-reads"].includes(argument),
+            )))
+      )
+        context.addIssue({
+          code: "custom",
+          path: ["options"],
+          message: "Automatic tool approval must be enabled explicitly",
+        });
+    }),
   z
     .object({
       type: z.literal("task"),

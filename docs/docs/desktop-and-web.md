@@ -121,6 +121,38 @@ Knowledge bases: upload PDFs, Office files, HTML, CSV and Markdown, write Markdo
 
 Scheduled and on-demand automation. A job runs a shell command, an agent or creates a task, triggered manually, by cron, by a file watch, once, or by a webhook. Each job keeps its run history with logs and linked agent sessions.
 
+The job editor uses **Trigger**, **Destination** and **Settings** tabs. Choose Manual,
+Webhook or Schedule; schedules offer time/day controls and **Advanced cron**, with an
+explicit timezone. Existing watch, one-shot and bridge-message jobs keep their trigger.
+New jobs stay disabled until you enable them; a disabled job can still run manually.
+
+Destination selects the project, working directory and execution host (local or a
+configured SSH host). Commands offer sh, bash, zsh, fish, PowerShell and cmd presets,
+plus a custom executable and one argument per line. The script is appended as the
+final argument, so a custom interpreter needs its command option, such as `-c`.
+The interpreter must be installed on the destination. Host default uses sh on Unix
+and Windows PowerShell on Windows; jobs saved before this setting retain sh.
+
+Agent jobs save a prompt, backend, optional model, explicit automatic tool approval
+and supported launch options. New agent jobs default to an isolated, detached Git
+worktree for each run. `HEAD` inherits the project checkout's current commit; override
+it with a branch or remote-tracking ref. ORC does not fetch, reset or push the base.
+**Clean up worktree after a successful run** is off by default. When enabled, cleanup
+removes only a successful, clean worktree with no commits absent from its starting
+base; failed runs, untracked/ignored files and new commits are retained. Run history
+records the path and cleanup result. HTTP-only agent backends cannot use these local
+host, worktree or environment settings.
+
+Environment variables live under Settings. Mark a value **Secret** to mask its input,
+encrypt it at rest and omit its value from read responses. After saving, leave a saved
+secret blank to keep it; enter a replacement to rotate it. Exact secret values are
+redacted from job output and saved agent summaries, including across output chunks.
+This does not scrub transformed values or files and logs written by the script itself.
+Values are single-line; `ORC_` names are reserved. Back up `~/.orc/secret.key` with the
+database: saved secrets cannot be decrypted without that machine key.
+
+![Job schedule editor](/screens/jobs-editor.png)
+
 ## Webhooks
 
 Inbound event sources. Configure a webhook once, then connect it to one or more jobs, each with its own event filters and action.

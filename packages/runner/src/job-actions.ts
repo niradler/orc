@@ -1,14 +1,17 @@
 import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
+import { execHostFor, hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import { readFlow } from "@orc/core/flow-service";
 import { ulid } from "@orc/core/ids";
 import type { JobAction } from "@orc/core/job-actions";
+import type { JobSettings } from "@orc/core/job-settings";
 import { getDb, getSqlite } from "@orc/db/client";
 import { job_runs, sessions, tasks } from "@orc/db/schema";
 import { withTaskAudit } from "@orc/db/task-audit";
 import { withTx } from "@orc/db/tx";
 import { eq } from "drizzle-orm";
 import { drainPendingNodes, startFlowForTask } from "./flow-runner.js";
+import { type JobWorkspace, prepareJobWorkspace } from "./job-workspace.js";
 
 type ActionJob = {
   id: string;
@@ -16,6 +19,7 @@ type ActionJob = {
   project_id: string | null;
   working_dir: string | null;
   timeout_secs: number;
+  settings?: JobSettings | null;
 };
 
 export async function runJobAction(
@@ -23,6 +27,8 @@ export async function runJobAction(
   action: Exclude<JobAction, { type: "command" }>,
   runId: string,
   input?: string,
+  env?: Record<string, string>,
+  redact: (text: string) => string = (text) => text,
 ): Promise<string> {
   const db = getDb();
   if (action.type === "task") {
@@ -63,7 +69,11 @@ export async function runJobAction(
         .get(job.project_id)
     : null;
   const sessionId = ulid();
-  const cwd = job.working_dir ?? project?.scope ?? process.cwd();
+  const host =
+    job.settings?.host === undefined ? resolveExecHost() : execHostFor(job.settings.host);
+  const repository = job.working_dir ?? project?.scope ?? process.cwd();
+  let cwd = repository;
+  let workspace: JobWorkspace = { cwd, base: "", managed: false, cleanup: async () => "" };
   sqlite
     .transaction(() => {
       const active =
@@ -76,9 +86,17 @@ export async function runJobAction(
         throw new Error("Agent capacity is full; retry when an agent slot is available");
       sqlite
         .query(
-          "INSERT INTO gateway_sessions(id,backend,mode,cwd,title,chat_id,status,role,project_id,pid) VALUES(?,?,'job',?,?,'__task-loop__','running','worker',?,?)",
+          "INSERT INTO gateway_sessions(id,backend,mode,cwd,title,chat_id,status,role,project_id,pid,execution_host) VALUES(?,?,'job',?,?,'__task-loop__','running','worker',?,?,?)",
         )
-        .run(sessionId, action.backend, cwd, job.name, job.project_id, process.pid);
+        .run(
+          sessionId,
+          action.backend,
+          cwd,
+          job.name,
+          job.project_id,
+          process.pid,
+          hostAlias(host),
+        );
       sqlite
         .query("INSERT INTO sessions(id,agent,project_id,job_run_id,summary) VALUES(?,?,?,?,?)")
         .run(sessionId, action.backend, job.project_id, runId, `Running job: ${job.name}`);
@@ -98,8 +116,21 @@ export async function runJobAction(
     }, job.timeout_secs * 1000);
   });
   const work = async (): Promise<void> => {
+    workspace = await prepareJobWorkspace(host, repository, runId, job.settings?.workspace);
+    cwd = workspace.cwd;
+    sqlite.query("UPDATE gateway_sessions SET cwd=? WHERE id=?").run(cwd, sessionId);
+    if (expired) {
+      const retained = await workspace.cleanup(false);
+      if (retained)
+        sqlite.query("UPDATE gateway_sessions SET summary=? WHERE id=?").run(retained, sessionId);
+      return;
+    }
     session = await openAgentSession(action.backend, {
       cwd,
+      env,
+      redactOutput: redact,
+      executionHost: hostAlias(host),
+      chatAgentOptions: action.options,
       model: action.model,
       autoApprove: action.auto_approve,
       systemPromptAppend:
@@ -124,6 +155,8 @@ export async function runJobAction(
           );
         if (event.type === "error") throw new Error(event.data);
         if (event.type === "result") {
+          if (event.data.outcome === "failed" || event.data.outcome === "stopped")
+            throw new Error("Agent did not complete successfully");
           runtimeId = event.data.runtimeSessionId ?? null;
           completed = true;
           break;
@@ -151,6 +184,14 @@ export async function runJobAction(
         failure ??= `Could not close agent: ${error instanceof Error ? error.message : String(error)}`;
       }
     }
+    trace = redact(trace);
+    failure = failure ? redact(failure) : null;
+    try {
+      const cleanup = await workspace.cleanup(!failure);
+      if (cleanup) trace += `\n${cleanup}`;
+    } catch {
+      trace += `\nWorktree retained; cleanup failed: ${cwd}`;
+    }
     sqlite
       .query(
         "UPDATE gateway_sessions SET status=?,runtime_session_id=?,summary=?,last_error=?,updated_at=unixepoch() WHERE id=?",
@@ -161,6 +202,9 @@ export async function runJobAction(
       .set({ summary: failure ? `Failed: ${failure}` : trace || "Agent completed" })
       .where(eq(sessions.id, sessionId));
   }
-  if (failure) throw new Error(failure);
+  if (failure)
+    throw new Error(
+      `${failure}${workspace.managed ? `\nWorktree retained: ${workspace.cwd}` : ""}`,
+    );
   return trace || "Agent completed";
 }
