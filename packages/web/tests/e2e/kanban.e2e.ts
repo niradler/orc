@@ -45,25 +45,29 @@ async function dragCardTo(page: Page, taskId: string, targetStatus: string): Pro
     if (targetBox) {
       const centerX = targetBox.x + targetBox.width / 2;
       const inView = centerX >= 0 && centerX <= viewport.width;
-      if (inView) {
-        await page.mouse.move(centerX, targetBox.y + targetBox.height / 2, {
+      const top = Math.max(targetBox.y, 80);
+      const bottom = Math.min(targetBox.y + targetBox.height, viewport.height - 32);
+      if (inView && bottom > top) {
+        await page.mouse.move(centerX, (top + bottom) / 2, {
           steps: 10,
         });
-        await page.mouse.up();
-        dropped = true;
-        break;
+        if ((await target.getAttribute("data-drop-target")) === "true") {
+          await page.mouse.up();
+          dropped = true;
+          break;
+        }
+      } else {
+        // Re-measure after autoScroll; moving the pointer can shift the board beneath it.
+        const edgeX = centerX < 0 ? 20 : viewport.width - 20;
+        await page.mouse.move(edgeX, viewport.height / 2, { steps: 3 });
       }
-      // Hold the pointer near the edge toward the target - dnd-kit autoScroll
-      // only kicks in while an active drag pointer sits in the edge region.
-      const edgeX = centerX < 0 ? 20 : viewport.width - 20;
-      await page.mouse.move(edgeX, viewport.height / 2, { steps: 3 });
     }
     await page.waitForTimeout(250);
   }
 
   if (!dropped) {
     await page.mouse.up();
-    throw new Error(`target column "${targetStatus}" never came into view during drag`);
+    throw new Error(`target column "${targetStatus}" never became the active drop target`);
   }
 }
 
@@ -82,7 +86,16 @@ test.describe("Kanban drag & drop", () => {
       status: "todo",
       priority: "normal",
     });
+    const ownedTasks = [task.id];
     try {
+      for (let index = 0; index < 12; index++) {
+        const context = await apiPost<Task>(request, "/tasks", {
+          title: `${title}-context-${index}`,
+          status: "todo",
+          priority: "normal",
+        });
+        ownedTasks.push(context.id);
+      }
       await page.reload();
       const card = page.locator(`[data-testid="kanban-card"][data-task-id="${task.id}"]`);
       await expect(card).toHaveAttribute("data-task-status", "todo");
@@ -99,7 +112,7 @@ test.describe("Kanban drag & drop", () => {
         )
         .toBe("doing");
     } finally {
-      await apiDelete(request, `/tasks/${task.id}`);
+      for (const id of ownedTasks) await apiDelete(request, `/tasks/${id}`);
     }
   });
 

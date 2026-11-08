@@ -28,7 +28,7 @@ extra agents, production changes, publication, or imply hook enforcement.
   not explain non-obvious intent. Run checks appropriate to the change.
   Package domains and the `@sanity` tag are described in
   [docs/development/build-and-test.md](docs/development/build-and-test.md):
-  `ci:changed` for the pre-commit hook, `ci:pr` for a pull request, and
+  lint/format for the pre-commit hook, `ci:pr` for the pre-push hook and a pull request, and
   `ci:full` before merging to master or releasing.
 - Create worktrees under `.orc/worktrees/<name>`, `.claude/worktrees/<name>`,
   or the agent's native `~/.codex/worktrees/`. Do not create them beside the

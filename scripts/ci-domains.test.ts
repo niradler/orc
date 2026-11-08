@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -11,6 +19,7 @@ import {
   unownedSourceFiles,
   unownedSourcePaths,
 } from "./ci-domains.js";
+import { packageTestSteps } from "./ci-plan.js";
 
 const root = resolve(import.meta.dir, "..");
 const domains = readPackageDomains(root);
@@ -53,6 +62,43 @@ test("should leave package tests out of a docs-only change", () => {
   expect(selection.runAll).toBe(false);
   expect(selection.packageNames).toEqual([]);
   expect(selection.reasons.some((reason) => reason.includes("build-and-test.md"))).toBe(true);
+});
+
+test("should run affected web units and sanity without the full browser suite before push", () => {
+  const selection = selectDomains(["packages/web/src/App.tsx"], domains, dependents);
+  const steps = packageTestSteps(root, selection, { sanity: true, e2e: false });
+  expect(steps.map(([name]) => name)).toEqual(["Test orc-ai", "Web unit tests", "Sanity e2e"]);
+  expect(steps.at(-1)?.[1]).toEqual([
+    "bun",
+    "packages/web/scripts/run-e2e.ts",
+    "--grep",
+    "@sanity",
+  ]);
+});
+
+test("should keep sanity always on and full browser coverage explicit", () => {
+  for (const paths of [
+    [],
+    ["docs/development/build-and-test.md"],
+    ["bun.lock"],
+    ["packages/core/src/ids.ts"],
+  ]) {
+    const selection = selectDomains(paths, domains, dependents);
+    const names = packageTestSteps(root, selection, { sanity: true, e2e: false }).map(
+      ([name]) => name,
+    );
+    expect(names).toContain("Sanity e2e");
+    expect(names).not.toContain("Web e2e");
+    const full = packageTestSteps(root, selection, { sanity: false, e2e: true }).map(
+      ([name]) => name,
+    );
+    expect(full.at(-1)).toBe(
+      selection.packageNames.includes("@orc/web") ? "Web e2e" : "Sanity e2e",
+    );
+  }
+  expect(packageTestSteps(root, undefined, { sanity: false, e2e: true }).at(-1)?.[0]).toBe(
+    "Web e2e",
+  );
 });
 
 test("should treat a package manifest as that package", () => {
@@ -128,12 +174,9 @@ test("should keep automatic runner execution disabled until public-PR isolation 
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(source).not.toContain("secrets.");
     for (const job of Object.values(workflow.jobs)) {
-      if (job.if?.includes("github.event_name == 'pull_request'")) {
-        expect(job.if).toContain("vars.ORC_ISOLATED_PR_RUNNER_READY == 'true'");
-      } else {
-        expect(job.if).toContain("github.actor == 'niradler'");
-        expect(job.if).toContain("github.repository == 'niradler/orc'");
-      }
+      expect(job.if).toContain("github.actor == 'niradler'");
+      expect(job.if).toContain("github.triggering_actor == 'niradler'");
+      expect(job.if).toContain("github.repository == 'niradler/orc'");
     }
   }
   const source = readFileSync(join(root, ".github/homelab-runner/compose.yml"), "utf8");
@@ -143,4 +186,68 @@ test("should keep automatic runner execution disabled until public-PR isolation 
   expect(compose.services.runner.network_mode).toBe("none");
   expect(compose.services.runner.profiles).toContain("security-review-required");
   expect(source).not.toContain("ACCESS_TOKEN");
+});
+
+test("should restrict every workflow job and rerun to Nir without automatic PR triggers", () => {
+  const sdkRequire = createRequire(join(root, "packages/sdk/package.json"));
+  const openapiRequire = createRequire(sdkRequire.resolve("openapi-typescript"));
+  const redoclyRequire = createRequire(openapiRequire.resolve("@redocly/openapi-core"));
+  const yaml = redoclyRequire("js-yaml") as { load: (source: string) => unknown };
+  for (const name of readdirSync(join(root, ".github/workflows"))) {
+    if (!name.endsWith(".yml") && !name.endsWith(".yaml")) continue;
+    const workflow = yaml.load(readFileSync(join(root, ".github/workflows", name), "utf8")) as {
+      on: Record<string, unknown>;
+      jobs: Record<string, { if?: string }>;
+    };
+    expect(Object.keys(workflow.on)).toEqual(
+      name === "release-desktop.yml" ? ["push"] : ["workflow_dispatch"],
+    );
+    for (const job of Object.values(workflow.jobs)) {
+      const conditions = job.if?.split(/\s*&&\s*/);
+      expect(job.if).not.toContain("||");
+      expect(conditions).toContain("github.actor == 'niradler'");
+      expect(conditions).toContain("github.triggering_actor == 'niradler'");
+      expect(conditions).toContain("github.repository == 'niradler/orc'");
+    }
+  }
+});
+
+test("should pin action commits, avoid persisted credentials and scope deployment permissions", () => {
+  const sdkRequire = createRequire(join(root, "packages/sdk/package.json"));
+  const openapiRequire = createRequire(sdkRequire.resolve("openapi-typescript"));
+  const redoclyRequire = createRequire(openapiRequire.resolve("@redocly/openapi-core"));
+  const yaml = redoclyRequire("js-yaml") as { load: (source: string) => unknown };
+  for (const name of readdirSync(join(root, ".github/workflows"))) {
+    if (!name.endsWith(".yml") && !name.endsWith(".yaml")) continue;
+    const workflow = yaml.load(readFileSync(join(root, ".github/workflows", name), "utf8")) as {
+      permissions: Record<string, string>;
+      concurrency?: { group: string; "cancel-in-progress": boolean };
+      jobs: Record<
+        string,
+        {
+          permissions?: Record<string, string>;
+          steps: { uses?: string; with?: Record<string, unknown> }[];
+        }
+      >;
+    };
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    if (workflow.concurrency?.["cancel-in-progress"])
+      expect(workflow.concurrency.group).toContain("github.triggering_actor");
+    for (const [jobName, job] of Object.entries(workflow.jobs)) {
+      const permissions = job.permissions ?? workflow.permissions;
+      if (name === "docs.yml" && jobName === "deploy")
+        expect(permissions).toEqual({ pages: "write", "id-token": "write" });
+      else if (name === "docs.yml" && jobName === "build")
+        expect(permissions).toEqual({ contents: "read", pages: "read" });
+      else expect(permissions).toEqual({ contents: "read" });
+      for (const step of job.steps) {
+        if (!step.uses) continue;
+        expect(step.uses).toMatch(/^[\w.-]+\/[\w.-]+@[a-f0-9]{40}$/);
+        if (step.uses.startsWith("actions/checkout@"))
+          expect(step.with?.["persist-credentials"]).toBe(false);
+        if (step.uses.startsWith("oven-sh/setup-bun@"))
+          expect(String(step.with?.["bun-version"])).toBe("1.4.4");
+      }
+    }
+  }
 });

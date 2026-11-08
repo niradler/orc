@@ -6,7 +6,7 @@
  *   bun run ci:pr        # changed packages plus the @sanity browser flows
  *   bun run ci:full      # every unit test plus the full browser suite
  *
- * The pre-commit hook runs `ci:changed`. Merging to master and releasing run `ci:full`.
+ * The pre-push hook runs `ci:pr`. Run `ci:full` before merging to master or releasing.
  */
 
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -14,13 +14,13 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   changedFiles,
+  type DomainSelection,
   defaultCompareBase,
   dependentsByPackage,
   readPackageDomains,
   selectDomains,
 } from "./ci-domains.js";
-
-type Step = [string, string[]];
+import { packageTestSteps, type Step } from "./ci-plan.js";
 
 const args = process.argv.slice(2);
 const changedFlag = args.indexOf("--changed");
@@ -35,47 +35,16 @@ const steps: Step[] = [
   ["Format check", ["bun", "x", "biome", "format", "./packages"]],
   ["Typecheck", ["bun", "run", "typecheck"]],
   ["Domain ownership", ["bun", "test", "scripts/ci-domains.test.ts"]],
+  ["Push hook tests", ["bun", "test", "scripts/pre-push.test.ts"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],
 ];
 
 const repoRoot = resolve(import.meta.dir, "..");
-const webUnit: Step = ["Web unit tests", ["bun", "run", "--filter", "@orc/web", "test:unit"]];
-const webE2e: Step = ["Web e2e", ["bun", "packages/web/scripts/run-e2e.ts"]];
-const sanityE2e: Step = [
-  "Sanity e2e",
-  ["bun", "packages/web/scripts/run-e2e.ts", "--grep", "@sanity"],
-];
-const allPackageTests: Step = [
-  "Test",
-  ["bun", "run", "--sequential", "--filter", "!@orc/web", "test"],
-];
-
-function pushPackageTests(packageNames: string[], browser: "all" | "sanity" | "none"): void {
-  const domains = readPackageDomains(repoRoot);
-  const selected = new Set(packageNames);
-  for (const domain of domains) {
-    if (!selected.has(domain.name) || domain.name === "@orc/web") continue;
-    if (!domain.hasTestScript) {
-      console.log(`\n— ${domain.name} has no test script`);
-      continue;
-    }
-    steps.push([`Test ${domain.name}`, ["bun", "run", "--filter", domain.name, "test"]]);
-  }
-  if (selected.has("@orc/web")) {
-    steps.push(webUnit);
-    if (browser === "all") steps.push(webE2e);
-  }
-  if (browser === "sanity") steps.push(sanityE2e);
-}
-
-if (!wantsChangeScope) {
-  steps.push(allPackageTests, webUnit);
-  if (wantsE2e) steps.push(webE2e);
-  else if (wantsSanity) steps.push(sanityE2e);
-} else {
+let selection: DomainSelection | undefined;
+if (wantsChangeScope) {
   const base = compareBase ?? defaultCompareBase(repoRoot);
   const domains = readPackageDomains(repoRoot);
-  const selection = selectDomains(
+  selection = selectDomains(
     changedFiles(repoRoot, base),
     domains,
     dependentsByPackage(repoRoot, domains),
@@ -83,18 +52,11 @@ if (!wantsChangeScope) {
   console.log(`\nChanged since ${base}:`);
   if (selection.reasons.length === 0) console.log("- nothing");
   for (const reason of selection.reasons) console.log(`- ${reason}`);
-  if (selection.runAll) {
-    steps.push(allPackageTests, webUnit);
-    if (wantsE2e || wantsSanity) steps.push(webE2e);
-  } else if (selection.packageNames.length === 0) {
-    if (wantsE2e || wantsSanity) steps.push(sanityE2e);
-  } else {
-    const webChanged = selection.packageNames.includes("@orc/web");
-    let browser: "all" | "sanity" | "none" = "none";
-    if (webChanged && (wantsE2e || wantsSanity)) browser = "all";
-    else if (wantsSanity || wantsE2e) browser = "sanity";
-    pushPackageTests(selection.packageNames, browser);
-  }
+}
+steps.push(...packageTestSteps(repoRoot, selection, { e2e: wantsE2e, sanity: wantsSanity }));
+if (args.includes("--plan")) {
+  for (const [name, command] of steps) console.log(`${name}: ${command.join(" ")}`);
+  process.exit(0);
 }
 
 // Git hooks export GIT_DIR, GIT_INDEX_FILE, ... pointing at this repository. Tests that create

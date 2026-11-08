@@ -1,5 +1,5 @@
 import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiGet, apiPost, gotoView, tid } from "./_helpers";
@@ -20,7 +20,7 @@ test("should show only a table by default, offer both add paths, and persist pro
   page,
   request,
 }) => {
-  const workspace = mkdtempSync(join(tmpdir(), "orc-rule-settings-browser-"));
+  const workspace = mkdtempSync(join(homedir(), "orc-rule-settings-browser-"));
   const first = await apiPost<{ id: string }>(request, "/projects", { name: tid("rules-first") });
   const second = await apiPost<{ id: string }>(request, "/projects", { name: tid("rules-second") });
   await apiPost(request, "/rules/activate", {
@@ -70,7 +70,7 @@ test("should preserve a concurrent policy update and show the failed stale edit 
   page,
   request,
 }) => {
-  const workspace = mkdtempSync(join(tmpdir(), "orc-rule-concurrent-browser-"));
+  const workspace = mkdtempSync(join(homedir(), "orc-rule-concurrent-browser-"));
   const initial = await apiPost<{ id: string }>(request, "/rules/activate", {
     policy: { workspace, project_id: null, rules: [recordRule("existing-rule")] },
     expected_id: null,
@@ -78,7 +78,10 @@ test("should preserve a concurrent policy update and show the failed stale edit 
   });
   await gotoView(page, "rules");
   await page.getByTestId("rules-workspace-filter").selectOption(workspace);
-  await page.getByTestId("event-rule-edit").click();
+  const row = page.getByTestId("saved-event-rule");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("existing-rule");
+  await row.getByTestId("event-rule-edit").click();
   await page.getByTestId("event-rule-reason").fill("My local edit");
   await apiPost(request, "/rules/activate", {
     policy: {
