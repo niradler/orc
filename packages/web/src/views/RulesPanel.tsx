@@ -120,7 +120,8 @@ export function RulesPanel() {
         reason.trim() || (editing ? "Updated " : "Added ") + rule.id,
       );
     },
-    onSuccess: () => {
+    onSuccess: (revision) => {
+      selectWorkspace(revision.workspace, true);
       setEditorOpen(false);
       setEditing(undefined);
       setTemplateRule(undefined);
@@ -137,7 +138,10 @@ export function RulesPanel() {
         reason.trim() || "Updated rule settings",
       );
     },
-    onSuccess: () => refresh("Settings saved."),
+    onSuccess: (revision) => {
+      selectWorkspace(revision.workspace, true);
+      refresh("Settings saved.");
+    },
   });
 
   const toggle = useMutation({

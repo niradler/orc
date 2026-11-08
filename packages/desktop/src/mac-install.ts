@@ -70,11 +70,10 @@ export async function validateMacBundle(
   await execute("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle], {
     timeout: 60_000,
   });
-  await execute(
-    "/usr/bin/lipo",
-    [binary, "-verify_arch", process.arch === "x64" ? "x86_64" : process.arch],
-    { timeout: 10_000 },
-  );
+  const { stdout } = await execute("/usr/bin/file", ["-L", "-b", binary], { timeout: 10_000 });
+  const architecture = process.arch === "x64" ? "x86_64" : process.arch;
+  if (!stdout.startsWith("Mach-O") || !new RegExp(`\\b${architecture}\\b`).test(stdout))
+    throw new Error("Update bundle architecture differs from this app");
 }
 
 export async function prepareMacInstall(options: {

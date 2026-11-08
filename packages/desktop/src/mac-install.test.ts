@@ -50,7 +50,7 @@ test.skipIf(process.platform !== "darwin")(
 );
 
 test.skipIf(process.platform !== "darwin")(
-  "should validate a real ad-hoc signed native bundle",
+  "should validate a real ad-hoc signed native bundle without developer tools",
   async () => {
     const root = mkdtempSync(join(tmpdir(), "orc-mac-native-"));
     roots.push(root);
@@ -77,7 +77,14 @@ test.skipIf(process.platform !== "darwin")(
       timeout: 10_000,
       stdio: "pipe",
     });
-    await validateMacBundle(bundle, "dev.orc.fixture", "1.0.0");
+    const developerDirectory = process.env.DEVELOPER_DIR;
+    process.env.DEVELOPER_DIR = join(root, "no-developer-tools");
+    try {
+      await validateMacBundle(bundle, "dev.orc.fixture", "1.0.0");
+    } finally {
+      if (developerDirectory === undefined) delete process.env.DEVELOPER_DIR;
+      else process.env.DEVELOPER_DIR = developerDirectory;
+    }
   },
 );
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { reserveLoopbackPort, withRunningApis } from "./api-fixture.js";
@@ -80,7 +80,7 @@ async function createShard(index: number): Promise<Shard> {
   const port = String(reservation.port);
   let home: string;
   try {
-    home = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "orc-pw-home-")));
   } catch (error) {
     await reservation.release();
     throw error;

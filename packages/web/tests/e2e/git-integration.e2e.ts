@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect } from "@playwright/test";
@@ -13,7 +13,7 @@ import {
 } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
-const folder = mkdtempSync(join(tmpdir(), "orc-pw-git-"));
+const folder = realpathSync(mkdtempSync(join(tmpdir(), "orc-pw-git-")));
 const repo = join(folder, "repo");
 const checkout = join(folder, "checkout");
 const squash = join(folder, "squash");

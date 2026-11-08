@@ -17,13 +17,14 @@ Native acceptance command (after building the host CLI):
 PATH="$PWD/node_modules/.bin:$PATH" bun packages/desktop/scripts/mac-update-acceptance.ts --output /private/tmp/orc-mac-update-result.json
 ```
 
-Run `25f1e237-688b-43af-84b5-7762be9302e0` passed on Apple Silicon macOS:
+Pre-merge run `aa864cd0-8517-4472-bbfc-9dd9ef6c9e5b` passed on Apple Silicon
+macOS after integrating master `9fe5b20a` and rebuilding both fixture daemons:
 
 ```text
 PASS darwin: packaged 0.1.61 -> 0.1.62; daemon, tasks, session and auth preserved
 explicitInstallRequired: true
-previousDaemonPid: 992
-nextDaemonPid: 1086
+previousDaemonPid: 33893
+nextDaemonPid: 34443
 taskPreserved: true
 sessionPreserved: true
 configPreserved: true
@@ -62,6 +63,33 @@ that failure was isolated to the fixture and corrected, with early exception
 reporting added to prevent modal test failures. The repository PR gate and docs
 build passed; audit reported no vulnerabilities. The local ORC service was stopped
 on both 7700 and 7701, so no live ORC task/session state was changed.
+
+Pre-merge readiness also reproduced an end-user tooling gap by setting an
+unavailable `DEVELOPER_DIR`: the `lipo` shim required Apple command-line tools.
+Architecture validation now uses the stock macOS `/usr/bin/file` utility after
+signature verification. The same signed-bundle test passes without developer
+tools available to the updater.
+
+The first full pre-merge gate exposed a scheduling-dependent SSH fixture:
+`should bound command recovery and preserve the original deadline` assumed one
+new process always starts within 100ms and always rejects with a setup-timeout
+error. Existing execution semantics can instead expire during setup with no new
+attempt, or terminate an already-started process with SIGTERM (exit 143). The
+fixture now accepts those specific outcomes, still requires exactly three
+untimed attempts and at most one additional timed attempt, and removes its owned
+temporary directory after the child exits. Production SSH code is unchanged.
+The targeted regression passed and a fresh reviewer found no important issues.
+
+The full Mac browser run also exposed existing host-dependent fixtures. The E2E
+HOME and Git fixture roots now use physical paths, preserving the production
+agent symlink guard. Archive helper tests select Python 3 on Unix; terminal
+shortcut tests use the emulated browser platform; native dropdown tests use
+supported typeahead selection; the idle-stream test drains startup reads before
+measuring its unchanged idle interval. Rules-page saves now adopt the canonical
+workspace returned by the server, fixing a real hidden-policy bug when saving
+through an alias. Rule tests retain aliased input and check the canonical result.
+The focused rerun passed 42 scenarios, followed by all four dropdown scenarios.
+The final complete gate and merge result are recorded on PR #235.
 
 ## Windows and Linux acceptance
 

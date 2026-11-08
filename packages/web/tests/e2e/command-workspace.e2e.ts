@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatSettingsSchema } from "@orc/core/chat";
@@ -106,7 +106,7 @@ test("should share recent folders and last selection between chat and terminal, 
   page,
   request,
 }) => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-pw-workspace-"));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-pw-workspace-")));
   mkdirSync(join(cwd, "nested"));
   const git = (args: string[]) => {
     const result = spawnSync("git", ["-C", cwd, ...args], { timeout: 10000, encoding: "utf8" });
