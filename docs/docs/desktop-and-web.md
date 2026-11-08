@@ -47,6 +47,11 @@ Open the chat panel and click **Full screen chat** to work with every agent sess
   compact row design, retaining search, filters, task links and resume actions.
 
 On a phone the list opens full screen from **Sessions** in the chat header and the inspector opens as a sheet.
+The three-dot **Session actions** menu shows labeled actions with touch-sized rows
+on phones. It closes when you tap elsewhere in the chat or
+press Escape. Choosing an action also closes the menu; opening Session settings
+keeps the conversation and your draft in place. Agent, workspace and branch
+pickers also close when you tap outside them.
 Opening the list sets `sessionList=show` in the URL, so reload and Back restore it.
 Exit full screen also returns to the original page after navigating Back and Forward.
 

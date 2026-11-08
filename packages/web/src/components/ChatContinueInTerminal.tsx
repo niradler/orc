@@ -17,7 +17,7 @@ export function useChatContinueInTerminal() {
     setPending(false);
   }, [thread?.id]);
   async function open() {
-    if (!thread) return;
+    if (!thread) return false;
     setPending(true);
     setError("");
     try {
@@ -33,9 +33,11 @@ export function useChatContinueInTerminal() {
           "This session is not available in Sessions yet. Try again after session discovery refreshes.",
         );
       await openLiveSession(session);
+      return true;
     } catch (cause) {
       if (threadId.current === thread.id)
         setError(cause instanceof Error ? cause.message : "Could not continue in terminal.");
+      return false;
     } finally {
       if (threadId.current === thread.id) setPending(false);
     }
@@ -50,24 +52,36 @@ export function useChatContinueInTerminal() {
 
 export function ChatContinueInTerminal({
   control,
+  onOpen,
+  labelled = false,
 }: {
   control: ReturnType<typeof useChatContinueInTerminal>;
+  onOpen?: () => void;
+  labelled?: boolean;
 }) {
   if (!control.available) return null;
+  const button = (
+    <button
+      type="button"
+      data-testid="chat-continue-terminal"
+      aria-label="Continue in terminal"
+      disabled={control.disabled}
+      onClick={async () => {
+        if (await control.open()) onOpen?.();
+      }}
+      className={
+        labelled
+          ? "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface disabled:opacity-40"
+          : "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface disabled:opacity-40"
+      }
+    >
+      <SquareTerminal size={17} />
+      {labelled && "Continue in terminal"}
+    </button>
+  );
   return (
     <div className="relative">
-      <ActionHelp label="Continue in terminal">
-        <button
-          type="button"
-          data-testid="chat-continue-terminal"
-          aria-label="Continue in terminal"
-          disabled={control.disabled}
-          onClick={() => void control.open()}
-          className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface disabled:opacity-40"
-        >
-          <SquareTerminal size={17} />
-        </button>
-      </ActionHelp>
+      {labelled ? button : <ActionHelp label="Continue in terminal">{button}</ActionHelp>}
       {control.error && (
         <p
           role="alert"
