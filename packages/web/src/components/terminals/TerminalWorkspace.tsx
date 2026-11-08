@@ -14,6 +14,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { openTerminalPalette } from "@/lib/terminal-palette";
 import {
@@ -312,68 +313,77 @@ function WorkspaceTree(props: TreeProps) {
             </ActionHelp>
           )}
         </div>
-        <details
-          className="relative"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") event.currentTarget.removeAttribute("open");
-          }}
-          onClick={(event) => {
-            if ((event.target as HTMLElement).closest("button"))
-              event.currentTarget.removeAttribute("open");
-          }}
-        >
-          <summary
-            data-testid="pane-actions"
-            aria-label="Pane actions"
-            title="Pane actions"
-            className="list-none flex min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface cursor-pointer"
-          >
-            <Ellipsis size={18} />
-          </summary>
-          <div className="absolute right-0 top-full z-30 w-60 rounded-md border border-outline-variant bg-surface-high p-2 shadow-lg">
-            {terminal && props.renderOptions(terminal)}
-            <div className="pane-menu-layout-actions">
+        <div data-pane-menu className="relative">
+          <Popover>
+            <PopoverTrigger asChild>
               <button
                 type="button"
-                data-testid="pane-action-split-horizontal"
-                disabled={leaves(root).length >= 8}
-                onClick={() => split("row")}
-                className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+                data-testid="pane-actions"
+                aria-label="Pane actions"
+                title="Pane actions"
+                className="list-none flex min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface cursor-pointer"
               >
-                Split side by side
+                <Ellipsis size={18} />
               </button>
-              <button
-                type="button"
-                data-testid="pane-action-split-vertical"
-                disabled={leaves(root).length >= 8}
-                onClick={() => split("column")}
-                className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
-              >
-                Split top and bottom
-              </button>
-              {leaves(root).length > 1 && (
-                <>
+            </PopoverTrigger>
+            <PopoverContent
+              portalled={false}
+              data-testid="pane-actions-menu"
+              align="end"
+              className="w-60 p-2"
+            >
+              {terminal && <PopoverClose asChild>{props.renderOptions(terminal)}</PopoverClose>}
+              <div className="pane-menu-layout-actions">
+                <PopoverClose asChild>
                   <button
                     type="button"
-                    data-testid="pane-action-focus"
-                    onClick={() => zoom(zoomed ? null : node.id)}
+                    data-testid="pane-action-split-horizontal"
+                    disabled={leaves(root).length >= 8}
+                    onClick={() => split("row")}
                     className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
                   >
-                    {zoomed ? "Restore split layout" : "Expand pane"}
+                    Split side by side
                   </button>
+                </PopoverClose>
+                <PopoverClose asChild>
                   <button
                     type="button"
-                    data-testid="pane-action-close"
-                    onClick={() => close(node.id)}
+                    data-testid="pane-action-split-vertical"
+                    disabled={leaves(root).length >= 8}
+                    onClick={() => split("column")}
                     className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
                   >
-                    Close pane
+                    Split top and bottom
                   </button>
-                </>
-              )}
-            </div>
-          </div>
-        </details>
+                </PopoverClose>
+                {leaves(root).length > 1 && (
+                  <>
+                    <PopoverClose asChild>
+                      <button
+                        type="button"
+                        data-testid="pane-action-focus"
+                        onClick={() => zoom(zoomed ? null : node.id)}
+                        className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+                      >
+                        {zoomed ? "Restore split layout" : "Expand pane"}
+                      </button>
+                    </PopoverClose>
+                    <PopoverClose asChild>
+                      <button
+                        type="button"
+                        data-testid="pane-action-close"
+                        onClick={() => close(node.id)}
+                        className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+                      >
+                        Close pane
+                      </button>
+                    </PopoverClose>
+                  </>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </header>
       {!terminal ? (
         <p className="p-4 text-sm text-on-surface-variant">

@@ -1,7 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
 import { FolderOpen, GitBranch, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   ApiError,
   api,
@@ -12,6 +12,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { RecentFolders } from "@/components/RecentFolders";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { useSsh } from "@/hooks/useSsh";
@@ -168,30 +169,6 @@ export function NewTerminalMenu({
   const rows = listing?.root ? listing.worktrees : [];
   const busy = pending || checkingHost || !remoteSupported;
 
-  useEffect(() => {
-    // Portalled child dialogs own outside clicks and Escape until they close.
-    if (!open || removal || remoteBrowsing) return;
-    rootRef.current?.querySelector<HTMLInputElement>("input[data-testid='terminal-cwd']")?.focus();
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onOpenChange(false);
-        rootRef.current
-          ?.querySelector<HTMLButtonElement>("button[data-testid='terminal-new']")
-          ?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, onOpenChange, removal, remoteBrowsing]);
-
   const chooseFolder = (path: string) => {
     setCwd(path);
     folders.current.set(host, path);
@@ -271,46 +248,61 @@ export function NewTerminalMenu({
     hostError?.message ??
     hostsError?.message ??
     hostInfo?.reason;
-  const MenuSurface = compact ? DialogPrimitive.Content : "div";
+  const menuRef = useRef<HTMLDivElement>(null);
+  const MenuRoot = compact ? DialogPrimitive.Root : Popover;
+  const MenuTrigger = compact ? Fragment : PopoverTrigger;
+  const MenuSurface = compact ? DialogPrimitive.Content : PopoverContent;
 
   return (
-    <DialogPrimitive.Root
-      open={compact && open}
+    <MenuRoot
+      open={open}
       onOpenChange={(next) => {
-        if (!remoteBrowsing) onOpenChange(next);
+        if (!remoteBrowsing && !removal) onOpenChange(next);
       }}
     >
       <div ref={rootRef} className={cn("relative", className)}>
-        <button
-          type="button"
-          data-testid="terminal-new"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          onClick={() => onOpenChange(!open)}
-          title="New terminal"
-          className={cn(
-            "min-w-11 inline-flex items-center justify-center gap-2 min-h-11 rounded-md font-label text-xs transition-colors",
-            iconOnly
-              ? "w-11 shrink-0 sm:w-8 sm:min-w-8 sm:min-h-8 text-on-surface-variant hover:bg-surface"
-              : "w-full px-3 py-2 bg-primary border border-primary text-primary-foreground hover:bg-primary/90",
-          )}
-        >
-          <Plus size={14} />
-          <span className={compact || iconOnly ? "sr-only" : undefined}>New terminal</span>
-        </button>
+        <MenuTrigger {...(!compact ? { asChild: true } : {})}>
+          <button
+            type="button"
+            data-testid="terminal-new"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onClick={compact ? () => onOpenChange(!open) : undefined}
+            title="New terminal"
+            className={cn(
+              "min-w-11 inline-flex items-center justify-center gap-2 min-h-11 rounded-md font-label text-xs transition-colors",
+              iconOnly
+                ? "w-11 shrink-0 sm:w-8 sm:min-w-8 sm:min-h-8 text-on-surface-variant hover:bg-surface"
+                : "w-full px-3 py-2 bg-primary border border-primary text-primary-foreground hover:bg-primary/90",
+            )}
+          >
+            <Plus size={14} />
+            <span className={compact || iconOnly ? "sr-only" : undefined}>New terminal</span>
+          </button>
+        </MenuTrigger>
         {compact && open && <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />}
         {open && (
           <MenuSurface
-            {...(compact
-              ? {
-                  onCloseAutoFocus: (event: Event) => {
-                    event.preventDefault();
-                    rootRef.current
-                      ?.querySelector<HTMLButtonElement>('[data-testid="terminal-new"]')
-                      ?.focus();
-                  },
-                }
-              : {})}
+            ref={menuRef}
+            {...(!compact ? { align: "start" as const } : {})}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              menuRef.current
+                ?.querySelector<HTMLInputElement>('[data-testid="terminal-cwd"]')
+                ?.focus();
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              rootRef.current
+                ?.querySelector<HTMLButtonElement>('[data-testid="terminal-new"]')
+                ?.focus();
+            }}
+            onInteractOutside={(event) => {
+              if (remoteBrowsing || removal) event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              if (remoteBrowsing || removal) event.preventDefault();
+            }}
             role="dialog"
             aria-label="New terminal"
             aria-describedby={undefined}
@@ -319,7 +311,7 @@ export function NewTerminalMenu({
               "terminal-launch-controls bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 overflow-y-auto overscroll-contain",
               compact
                 ? "fixed inset-x-3 top-[calc(var(--app-top,0px)+env(safe-area-inset-top)+1rem)] z-50 max-h-[calc(var(--app-height,100dvh)-2rem)]"
-                : "absolute left-0 top-full mt-1 z-30 w-88 max-w-[calc(100vw-2rem)] max-h-[70dvh]",
+                : "w-88 max-h-[min(70dvh,var(--radix-popover-content-available-height))]",
             )}
           >
             {compact && (
@@ -549,6 +541,6 @@ export function NewTerminalMenu({
           confirmLabel={removal?.step === "dirty" ? "Discard and remove" : "Remove"}
         />
       </div>
-    </DialogPrimitive.Root>
+    </MenuRoot>
   );
 }

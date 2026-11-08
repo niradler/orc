@@ -5,7 +5,6 @@ import {
   type KbUsageStats,
   type KnowledgeBase,
 } from "@orc/core/kb";
-import * as Popover from "@radix-ui/react-popover";
 import {
   AlertTriangle,
   ChevronRight,
@@ -25,6 +24,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   useInvalidateKb,
@@ -280,8 +280,8 @@ export function KbDocumentPane({
                   </span>
                 )}
               </Button>
-              <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
-                <Popover.Trigger asChild>
+              <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+                <PopoverTrigger asChild>
                   <Button
                     size="icon"
                     variant="ghost"
@@ -291,63 +291,63 @@ export function KbDocumentPane({
                   >
                     <MoreHorizontal size={16} />
                   </Button>
-                </Popover.Trigger>
-                <Popover.Portal>
-                  <Popover.Content
-                    align="end"
-                    sideOffset={4}
-                    collisionPadding={8}
-                    role="menu"
-                    aria-label="Document actions"
-                    className="z-50 w-52 rounded-md border border-outline-variant bg-surface-high p-1 shadow-lg"
-                    onOpenAutoFocus={(event) => {
-                      event.preventDefault();
-                      (event.currentTarget as HTMLElement)
-                        .querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
-                        ?.focus();
-                    }}
-                    onKeyDown={moveMenuFocus}
-                  >
-                    {menuItem("kb-doc-properties", <Pencil size={14} />, "Title and labels", () => {
-                      beforeEdit.current = { title: doc.title, backlinks: doc.backlinks };
-                      setEditing(true);
-                    })}
-                    {!hasOriginal &&
-                      menuItem(
-                        "kb-doc-download-markdown",
-                        <FileDown size={14} />,
-                        "Download Markdown",
-                        downloadMarkdown,
-                      )}
-                    {hasOriginal &&
-                      menuItem(
-                        "kb-doc-download",
-                        <Download size={14} />,
-                        "Download original",
-                        () => void download(),
-                      )}
-                    {upload &&
-                      menuItem(
-                        "kb-doc-reparse",
-                        <RefreshCw size={14} />,
-                        "Parse again",
-                        () => void act(() => api.kb.reparse(doc.id)),
-                      )}
-                    {upload &&
-                      menuItem("kb-doc-replace", <FileUp size={14} />, "Replace file", () =>
-                        replaceInput.current?.click(),
-                      )}
-                    {doc.origin !== "external" &&
-                      menuItem(
-                        "kb-doc-delete",
-                        <Trash2 size={14} />,
-                        "Delete document",
-                        () => setDeleting(true),
-                        true,
-                      )}
-                  </Popover.Content>
-                </Popover.Portal>
-              </Popover.Root>
+                </PopoverTrigger>
+
+                <PopoverContent
+                  data-testid="kb-doc-actions-menu"
+                  align="end"
+                  sideOffset={4}
+                  collisionPadding={8}
+                  role="menu"
+                  aria-label="Document actions"
+                  className="z-50 w-52 rounded-md border border-outline-variant bg-surface-high p-1 shadow-lg"
+                  onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    (event.currentTarget as HTMLElement)
+                      .querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
+                      ?.focus();
+                  }}
+                  onKeyDown={moveMenuFocus}
+                >
+                  {menuItem("kb-doc-properties", <Pencil size={14} />, "Title and labels", () => {
+                    beforeEdit.current = { title: doc.title, backlinks: doc.backlinks };
+                    setEditing(true);
+                  })}
+                  {!hasOriginal &&
+                    menuItem(
+                      "kb-doc-download-markdown",
+                      <FileDown size={14} />,
+                      "Download Markdown",
+                      downloadMarkdown,
+                    )}
+                  {hasOriginal &&
+                    menuItem(
+                      "kb-doc-download",
+                      <Download size={14} />,
+                      "Download original",
+                      () => void download(),
+                    )}
+                  {upload &&
+                    menuItem(
+                      "kb-doc-reparse",
+                      <RefreshCw size={14} />,
+                      "Parse again",
+                      () => void act(() => api.kb.reparse(doc.id)),
+                    )}
+                  {upload &&
+                    menuItem("kb-doc-replace", <FileUp size={14} />, "Replace file", () =>
+                      replaceInput.current?.click(),
+                    )}
+                  {doc.origin !== "external" &&
+                    menuItem(
+                      "kb-doc-delete",
+                      <Trash2 size={14} />,
+                      "Delete document",
+                      () => setDeleting(true),
+                      true,
+                    )}
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           <header className="mb-2 mt-4 space-y-2">
