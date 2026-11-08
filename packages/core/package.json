@@ -6,6 +6,7 @@
   "exports": {
     "./providers": "./src/providers.ts",
     "./provider-service": "./src/provider-service.ts",
+    "./display-path": "./src/display-path.ts",
     "./daemon-runtime": "./src/daemon-runtime.ts",
     "./notifications": "./src/notifications.ts",
     "./usage": "./src/usage.ts",
