@@ -20,21 +20,31 @@ import {
   Moon,
   PanelLeft,
   PanelRight,
+  Paperclip,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   Sun,
   Terminal,
+  X,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentIcon } from "@/components/AgentIcon";
 import { Markdown } from "@/components/Markdown";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { AgentState } from "@/lib/agent-state";
 import { cn } from "@/lib/utils";
+import {
+  initialConfiguration,
+  type MockConfiguration,
+  type ToolTab,
+  UnifiedSessionTools,
+} from "./UnifiedSessionTools";
 import "../index.css";
 import "./unified-workspace.css";
 
@@ -47,10 +57,17 @@ interface Session {
   agent: string;
   state: AgentState;
   branch: string;
+  updatedAt?: number;
+  hasTerminal?: boolean;
 }
 interface Message {
   id: string;
   text: string;
+}
+interface Attachment {
+  id: string;
+  name: string;
+  size: number;
 }
 const sessions: Session[] = [
   {
@@ -63,6 +80,7 @@ const sessions: Session[] = [
   },
   {
     id: "ssh",
+    hasTerminal: true,
     title: "Review SSH host authentication",
     project: "ORC",
     agent: "claude",
@@ -150,18 +168,25 @@ function SharedControls({
   onHost,
   onProject,
   onAgent,
+  configuration,
+  onConfiguration,
 }: {
   session: Session;
   host: string;
   onHost: (host: string) => void;
   onProject: (project: string) => void;
   onAgent: (agent: string) => void;
+  configuration: MockConfiguration;
+  onConfiguration: (patch: Partial<MockConfiguration>) => void;
 }): ReactNode {
   return (
-    <div className="uw-workspace-controls" data-testid="shared-workspace-controls">
+    <div
+      className="uw-workspace-controls uw-configuration-grid"
+      data-testid="shared-workspace-controls"
+    >
       <label className="uw-picker">
         <Folder size={15} />
-        <span className="sr-only">Session folder</span>
+        <span>Project / folder</span>
         <select
           aria-label="Session folder"
           value={session.project}
@@ -174,7 +199,7 @@ function SharedControls({
       </label>
       <label className="uw-picker uw-host">
         <Laptop size={15} />
-        <span className="sr-only">Execution host</span>
+        <span>Execution host</span>
         <select
           aria-label="Execution host"
           value={host}
@@ -186,17 +211,98 @@ function SharedControls({
       </label>
       <label className="uw-picker uw-agent-picker">
         <AgentIcon agent={session.agent} className="size-4" />
-        <span className="sr-only">Agent for new session</span>
+        <span>Coding agent</span>
         <select
           aria-label="Agent for new session"
           title="Changing the agent starts a new mock session"
           value={session.agent}
           onChange={(event) => onAgent(event.target.value)}
         >
+          {session.agent === "shell" && <option value="shell">Shell (no coding agent)</option>}
           <option value="codex">Codex</option>
           <option value="claude">Claude</option>
         </select>
       </label>
+      <label className="uw-picker">
+        <ShieldCheck size={15} />
+        <span>Permissions</span>
+        <select
+          data-testid="mock-permissions"
+          aria-label="Agent permissions"
+          value={configuration.permission}
+          onChange={(event) => onConfiguration({ permission: event.target.value })}
+        >
+          <option value="default">Ask in chat</option>
+          <option value="acceptEdits">Allow workspace edits</option>
+          <option value="bypassPermissions">Full access / bypass permissions</option>
+        </select>
+      </label>
+      <label className="uw-picker">
+        <Settings size={15} />
+        <span>Reasoning effort</span>
+        <select
+          aria-label="Reasoning effort"
+          value={configuration.effort}
+          onChange={(event) => onConfiguration({ effort: event.target.value })}
+        >
+          <option>Agent default</option>
+        </select>
+      </label>
+      <label className="uw-picker">
+        <BookOpen size={15} />
+        <span>Tools</span>
+        <select
+          aria-label="Session tools"
+          value={configuration.tools}
+          onChange={(event) => onConfiguration({ tools: event.target.value })}
+        >
+          <option>ORC + host tools</option>
+          <option>Host tools only</option>
+        </select>
+      </label>
+      <label className="uw-picker">
+        <AgentIcon agent={session.agent} className="size-4" />
+        <span>Model</span>
+        <select aria-label="Session model">
+          <option>Agent default</option>
+        </select>
+      </label>
+      <label className="uw-instructions">
+        Session instructions
+        <textarea
+          aria-label="Session instructions"
+          placeholder="Additional instructions for this session"
+          value={configuration.instructions}
+          onChange={(event) => onConfiguration({ instructions: event.target.value })}
+        />
+      </label>
+      {configuration.permission === "bypassPermissions" && (
+        <p className="uw-permission-warning">
+          <ShieldCheck size={14} />
+          Full access allows actions without approval; Codex also runs without a sandbox. Demo
+          configuration only.
+        </p>
+      )}
+      <details className="uw-advanced">
+        <summary>Advanced launch options</summary>
+        <label className="uw-instructions">
+          Agent launch options
+          <textarea
+            aria-label="Advanced launch options"
+            value={configuration.launchOptions}
+            onChange={(event) => onConfiguration({ launchOptions: event.target.value })}
+            placeholder="Additional agent launch options"
+          />
+        </label>
+        <p>Capabilities and supported options depend on the selected backend.</p>
+      </details>
+      <p className="uw-config-note">
+        Host: {host} · Folder: ~/projects/{session.project.toLowerCase()} · Worktree:{" "}
+        {configuration.worktree}
+        <br />
+        Changing an agent after starting creates a new session. Model and effort choices come from
+        the provider in the real UI.
+      </p>
     </div>
   );
 }
@@ -218,6 +324,11 @@ function SessionPane({
   compact = false,
   onExpand,
   onSide,
+  configuration,
+  onConfiguration,
+  onTools,
+  attachments,
+  onAttachments,
 }: {
   session: Session;
   fresh: boolean;
@@ -235,7 +346,19 @@ function SessionPane({
   compact?: boolean;
   onExpand: () => void;
   onSide: () => void;
+  configuration: MockConfiguration;
+  onConfiguration: (patch: Partial<MockConfiguration>) => void;
+  onTools: (tab: ToolTab) => void;
+  attachments: Attachment[];
+  onAttachments: (files: Attachment[]) => void;
 }): ReactNode {
+  const [settingsOpen, setSettingsOpen] = useState(session.title === "New agent terminal");
+  const [refreshCount, setRefreshCount] = useState(0);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const canResume =
+    session.agent !== "shell" &&
+    (!fresh || messages.length > 0 || session.hasTerminal) &&
+    (session.state !== "working" || session.hasTerminal);
   return (
     <section
       className={cn("uw-pane", compact && "uw-pane-compact")}
@@ -260,12 +383,29 @@ function SessionPane({
           </select>
         </label>
         <nav className="uw-view-switch" aria-label="Session view">
-          <button type="button" aria-pressed={surface === "chat"} onClick={() => onSurface("chat")}>
+          <button
+            type="button"
+            aria-label="Show chat"
+            disabled={session.agent === "shell"}
+            aria-pressed={surface === "chat"}
+            onClick={() => onSurface("chat")}
+          >
             <MessageSquare size={14} />
             <span>Chat</span>
           </button>
           <button
             type="button"
+            aria-label={
+              session.agent === "shell"
+                ? "Show shell terminal"
+                : "Continue same session in terminal"
+            }
+            title={
+              canResume
+                ? "Reuse the attached terminal or resume this same coding-agent session"
+                : "An existing runtime session is required; wait for the current turn to finish"
+            }
+            disabled={session.agent !== "shell" && !canResume}
             aria-pressed={surface === "terminal"}
             onClick={() => onSurface("terminal")}
           >
@@ -273,6 +413,9 @@ function SessionPane({
             <span>Terminal</span>
           </button>
         </nav>
+        <IconAction label="Open Git and workspace tools" onClick={() => onTools("Changes")}>
+          <GitBranch size={16} />
+        </IconAction>
         {compact ? (
           <IconAction label="Expand session" onClick={onExpand}>
             <Maximize2 size={15} />
@@ -296,8 +439,12 @@ function SessionPane({
         <div className="uw-terminal" data-testid="unified-terminal">
           <div className="uw-terminal-caption">
             <Terminal size={13} />
-            {session.agent === "codex" ? "Codex" : "Claude"} CLI
-            <span className="ml-auto">Session transcript preview</span>
+            {session.agent === "shell"
+              ? "Shell"
+              : `${session.agent === "codex" ? "Codex" : "Claude"} CLI`}
+            <span className="ml-auto">
+              {session.agent === "shell" ? "New shell" : "Same coding session"} · {session.id}
+            </span>
           </div>
           <pre>
             <span className="text-muted-foreground">
@@ -305,10 +452,18 @@ function SessionPane({
             </span>
             {"\n\n"}
             <span className="text-foreground">
-              {session.agent === "codex" ? "◈ Codex" : "✳ Claude Code"}
+              {session.agent === "shell"
+                ? "$ Shell"
+                : session.agent === "codex"
+                  ? "◈ Codex"
+                  : "✳ Claude Code"}
             </span>
             {"\n"}
-            <span className="text-muted-foreground">Connected to the same workspace</span>
+            <span className="text-muted-foreground">
+              {session.agent === "shell"
+                ? "Fresh terminal in the selected project"
+                : "Resume preview · same agent, runtime identity, folder and host"}
+            </span>
             {"\n\n"}
             <span className="text-foreground">›</span> {session.title}
             {"\n\n"} Reading workspace configuration{"\n"} Inspecting the current changes{"\n"}{" "}
@@ -374,13 +529,51 @@ function SessionPane({
       )}
       <div className="uw-input-area">
         <div className="uw-composer-shell">
-          <SharedControls
-            session={session}
-            host={host}
-            onHost={onHost}
-            onProject={onProject}
-            onAgent={onAgent}
-          />
+          {settingsOpen && (
+            <section
+              className="uw-settings-panel"
+              aria-label="Session configuration"
+              id={`configuration-${session.id}`}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSettingsOpen(false);
+                  event.currentTarget.parentElement
+                    ?.querySelector<HTMLButtonElement>("[data-testid=composer-settings]")
+                    ?.focus();
+                }
+              }}
+            >
+              <header>
+                <strong>Session settings</strong>
+                <IconAction label="Close session settings" onClick={() => setSettingsOpen(false)}>
+                  <X size={15} />
+                </IconAction>
+              </header>
+              <SharedControls
+                session={session}
+                host={host}
+                onHost={onHost}
+                onProject={onProject}
+                onAgent={onAgent}
+                configuration={configuration}
+                onConfiguration={onConfiguration}
+              />
+              <div className="uw-config-links">
+                <button type="button" onClick={() => onTools("Worktrees")}>
+                  <GitBranch size={14} />
+                  Branches & worktrees
+                </button>
+                <button type="button" onClick={() => onTools("Changes")}>
+                  <GitBranch size={14} />
+                  Git & diff
+                </button>
+                <button type="button" onClick={() => fileInput.current?.click()}>
+                  <Paperclip size={14} />
+                  Attach files
+                </button>
+              </div>
+            </section>
+          )}
           <form
             className="uw-composer"
             onSubmit={(event) => {
@@ -388,6 +581,42 @@ function SessionPane({
               onSend();
             }}
           >
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              className="sr-only"
+              tabIndex={-1}
+              aria-label={`Attach files to ${session.title}`}
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []).map((file) => ({
+                  id: crypto.randomUUID(),
+                  name: file.name,
+                  size: file.size,
+                }));
+                onAttachments([...attachments, ...files]);
+                event.target.value = "";
+              }}
+            />
+            {attachments.length > 0 && (
+              <section className="uw-attachments" aria-label="Selected attachments">
+                {attachments.map((file) => (
+                  <span key={file.id}>
+                    <Paperclip size={12} />
+                    <span title={file.name}>{file.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove attachment ${file.name}`}
+                      onClick={() =>
+                        onAttachments(attachments.filter((item) => item.id !== file.id))
+                      }
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </section>
+            )}
             <label className="sr-only" htmlFor={`message-${session.id}`}>
               Message {session.title}
             </label>
@@ -409,17 +638,71 @@ function SessionPane({
               }}
             />
             <div className="uw-composer-footer">
-              <span className="uw-permission" title="Uses the existing permission policy">
-                <ShieldCheck size={14} />
-                <span>Default permissions</span>
-              </span>
-              <span className="uw-model">Agent default</span>
+              <button
+                type="button"
+                data-testid="composer-settings"
+                className={cn("uw-footer-icon", settingsOpen && "bg-surface-highest")}
+                aria-label="Session settings"
+                aria-expanded={settingsOpen}
+                aria-controls={`configuration-${session.id}`}
+                onClick={() => setSettingsOpen(!settingsOpen)}
+              >
+                <Settings size={15} />
+                {configuration.permission !== "default" && <span className="uw-settings-dot" />}
+              </button>
+              <button
+                type="button"
+                className="uw-footer-icon"
+                aria-label="Refresh session context"
+                title="Refresh workspace metadata without clearing the draft"
+                onClick={() => setRefreshCount(refreshCount + 1)}
+              >
+                <RefreshCw size={14} />
+              </button>
+              <button
+                type="button"
+                className="uw-footer-icon"
+                aria-label="Attach files"
+                title="Attach files"
+                onClick={() => fileInput.current?.click()}
+              >
+                <Paperclip size={15} />
+              </button>
+              <button
+                type="button"
+                className="uw-footer-chip"
+                aria-label={`Project and folder: ${session.project}`}
+                title={`~/projects/${session.project.toLowerCase()}`}
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Folder size={14} />
+                <span>{session.project}</span>
+              </button>
+              <button
+                type="button"
+                className="uw-footer-chip uw-branch-chip"
+                aria-label={`Branch and worktree: ${session.branch}`}
+                title={`${session.branch} / ${configuration.worktree}`}
+                onClick={() => onTools("Worktrees")}
+              >
+                <GitBranch size={14} />
+                <span>{session.branch}</span>
+              </button>
+              <button
+                type="button"
+                className="uw-model"
+                aria-label="Model: Agent default"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Agent default
+                <ChevronDown size={11} />
+              </button>
               <Button
                 type="submit"
                 size="icon"
                 aria-label={`Send to ${session.title}`}
                 actionHelp={false}
-                disabled={!draft.trim()}
+                disabled={!draft.trim() && !attachments.length}
               >
                 <ArrowUp size={17} />
               </Button>
@@ -427,9 +710,11 @@ function SessionPane({
           </form>
         </div>
         <div className="uw-input-note">
-          {surface === "terminal"
-            ? "Same folder, host and agent controls as chat"
-            : "Messages stay in this mock · no agents are started"}
+          {refreshCount
+            ? `Context refreshed · ${refreshCount} · draft and attachments preserved`
+            : surface === "terminal"
+              ? "Same folder, host and agent controls as chat"
+              : "Messages stay in this mock · no agents are started"}
         </div>
       </div>
     </section>
@@ -449,6 +734,12 @@ function UnifiedWorkspace(): ReactNode {
   const [overrides, setOverrides] = useState<Record<string, Partial<Session>>>({});
   const [newSessions, setNewSessions] = useState<Session[]>([]);
   const [hosts, setHosts] = useState<Record<string, string>>({});
+  const [configurations, setConfigurations] = useState<Record<string, MockConfiguration>>({});
+  const [attachments, setAttachments] = useState<Record<string, Attachment[]>>({});
+  const [toolsId, setToolsId] = useState<string | null>(null);
+  const [toolTab, setToolTab] = useState<ToolTab>("Changes");
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const [terminalChoices, setTerminalChoices] = useState(false);
   const [expanded, setExpanded] = useState<string[]>(["ORC"]);
   const [navigation, setNavigation] = useState("projects");
   const [search, setSearch] = useState("");
@@ -458,7 +749,11 @@ function UnifiedWorkspace(): ReactNode {
   const [phonePane, setPhonePane] = useState("primary");
   const [light, setLight] = useState(false);
   const [notice, setNotice] = useState("");
-  const allSessions = [...newSessions, ...sessions];
+  const allSessions = [
+    ...newSessions,
+    ...sessions.map((session, index) => ({ ...session, updatedAt: sessions.length - index })),
+  ].map((session) => ({ ...session, ...overrides[session.id] }));
+  const recentSessions = [...allSessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const homeSession: Session = {
     id: "home",
     title: "New session",
@@ -468,6 +763,30 @@ function UnifiedWorkspace(): ReactNode {
     branch: "main",
     ...overrides.home,
   };
+  const toolsSession = allSessions.find((session) => session.id === toolsId) ?? homeSession;
+
+  function createSession(project: string, kind = "chat"): void {
+    const agent = kind === "shell" ? "shell" : kind === "claude" ? "claude" : "codex";
+    const terminal = kind !== "chat";
+    const next: Session = {
+      id: `new-${crypto.randomUUID()}`,
+      title: terminal ? `New ${kind === "agent" ? "agent" : agent} terminal` : "New session",
+      project,
+      agent,
+      branch: "main",
+      state: "idle",
+      updatedAt: Date.now(),
+      hasTerminal: terminal,
+    };
+    setNewSessions([next, ...newSessions]);
+    setSelected(next.id);
+    setSurfaces({ ...surfaces, [next.id]: terminal ? "terminal" : "chat" });
+    setExpanded(expanded.includes(project) ? expanded : [...expanded, project]);
+    setSearch("");
+    setLauncherOpen(false);
+    setTerminalChoices(false);
+    changeScenario("session");
+  }
 
   function changeScenario(next: Scenario): void {
     setScenario(next);
@@ -480,6 +799,7 @@ function UnifiedWorkspace(): ReactNode {
 
   function selectSession(id: string): void {
     setSelected(id);
+    if (toolsId) setToolsId(id);
     if (scenario === "home") changeScenario("session");
     setPhoneNav(false);
   }
@@ -507,12 +827,37 @@ function UnifiedWorkspace(): ReactNode {
         onDraft={(draft) => setDrafts({ ...drafts, [id]: draft })}
         messages={messages[id] ?? []}
         onSend={() => {
-          if (!drafts[id]?.trim()) return;
+          if (!drafts[id]?.trim() && !attachments[id]?.length) return;
           setMessages({
             ...messages,
-            [id]: [...(messages[id] ?? []), { id: crypto.randomUUID(), text: drafts[id].trim() }],
+            [id]: [
+              ...(messages[id] ?? []),
+              {
+                id: crypto.randomUUID(),
+                text: [
+                  drafts[id]?.trim() ?? "",
+                  ...(attachments[id] ?? []).map((file) => `Attached: ${file.name}`),
+                ]
+                  .filter(Boolean)
+                  .join("\n"),
+              },
+            ],
           });
           setDrafts({ ...drafts, [id]: "" });
+          setAttachments({ ...attachments, [id]: [] });
+          setOverrides({ ...overrides, [id]: { ...overrides[id], updatedAt: Date.now() } });
+          if (id === "home") {
+            setNewSessions([
+              {
+                ...homeSession,
+                title: drafts[id]?.trim().slice(0, 55) || "New conversation",
+                updatedAt: Date.now(),
+              },
+              ...newSessions.filter((item) => item.id !== "home"),
+            ]);
+            setSelected("home");
+            changeScenario("session");
+          }
         }}
         onProject={(project) => setOverrides({ ...overrides, [id]: { ...overrides[id], project } })}
         onAgent={(agent) => {
@@ -528,6 +873,10 @@ function UnifiedWorkspace(): ReactNode {
             state: "idle" as const,
           };
           setNewSessions([next, ...newSessions]);
+          setConfigurations({
+            ...configurations,
+            [next.id]: configurations[id] ?? initialConfiguration,
+          });
           if (id === secondary && scenario === "parallel") setSecondary(next.id);
           else {
             setSelected(next.id);
@@ -536,6 +885,19 @@ function UnifiedWorkspace(): ReactNode {
         }}
         host={hosts[id] ?? "This computer"}
         onHost={(host) => setHosts({ ...hosts, [id]: host })}
+        configuration={configurations[id] ?? initialConfiguration}
+        onConfiguration={(patch) =>
+          setConfigurations({
+            ...configurations,
+            [id]: { ...(configurations[id] ?? initialConfiguration), ...patch },
+          })
+        }
+        onTools={(tab) => {
+          setToolsId(id);
+          setToolTab(tab);
+        }}
+        attachments={attachments[id] ?? []}
+        onAttachments={(files) => setAttachments({ ...attachments, [id]: files })}
         compact={compact}
         onExpand={() => {
           setSelected(id);
@@ -570,32 +932,6 @@ function UnifiedWorkspace(): ReactNode {
 
   return (
     <div className="uw-app bg-background text-foreground">
-      <div className="uw-review">
-        <span>
-          Workspace studies <span className="text-muted-foreground">/ interactive mock</span>
-        </span>
-        <nav aria-label="Mock scenarios">
-          {scenarios.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              aria-pressed={scenario === item.id}
-              onClick={() => changeScenario(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <IconAction
-          label="Toggle theme"
-          onClick={() => {
-            document.documentElement.classList.toggle("dark", light);
-            setLight(!light);
-          }}
-        >
-          {light ? <Moon size={15} /> : <Sun size={15} />}
-        </IconAction>
-      </div>
       <div className="uw-shell">
         <nav className="uw-rail" aria-label="Workspace">
           <div className="uw-brand">orc</div>
@@ -654,10 +990,104 @@ function UnifiedWorkspace(): ReactNode {
               <PanelLeft size={17} />
             </IconAction>
           </header>
-          <button type="button" className="uw-new-session" onClick={() => changeScenario("home")}>
-            <Plus size={17} />
-            New session
-          </button>
+          <div className="uw-new-session-row">
+            <button
+              type="button"
+              className="uw-new-session"
+              onClick={() =>
+                createSession(
+                  allSessions.find((session) => session.id === selected)?.project ??
+                    homeSession.project,
+                )
+              }
+            >
+              <Plus size={17} />
+              New session
+            </button>
+            <Popover
+              open={launcherOpen}
+              onOpenChange={(open) => {
+                setLauncherOpen(open);
+                if (!open) setTerminalChoices(false);
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="uw-launcher-trigger"
+                  aria-label="New session options"
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="uw-launcher-menu"
+                aria-label="Create a session or terminal"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    createSession(
+                      allSessions.find((session) => session.id === selected)?.project ?? "ORC",
+                    )
+                  }
+                >
+                  <MessageSquare size={15} />
+                  <span>
+                    New session<small>Web chat · default</small>
+                  </span>
+                  <Check size={13} className="ml-auto" />
+                </button>
+                <button
+                  type="button"
+                  aria-expanded={terminalChoices}
+                  onClick={() => setTerminalChoices(!terminalChoices)}
+                >
+                  <Terminal size={15} />
+                  <span>New terminal</span>
+                  <ChevronRight size={14} className="ml-auto" />
+                </button>
+                {terminalChoices && (
+                  <section className="uw-terminal-choices" aria-label="New terminal type">
+                    {[
+                      { kind: "shell", label: "Shell", hint: "Default terminal" },
+                      { kind: "codex", label: "Codex", hint: "New coding-agent session" },
+                      { kind: "claude", label: "Claude", hint: "New coding-agent session" },
+                      {
+                        kind: "agent",
+                        label: "Agent…",
+                        hint: "Choose an agent and launch options",
+                      },
+                    ].map((item) => (
+                      <button
+                        type="button"
+                        key={item.kind}
+                        data-testid={`new-terminal-${item.kind}`}
+                        onClick={() =>
+                          createSession(
+                            allSessions.find((session) => session.id === selected)?.project ??
+                              "ORC",
+                            item.kind,
+                          )
+                        }
+                      >
+                        {item.kind === "shell" ? (
+                          <Terminal size={16} />
+                        ) : (
+                          <AgentIcon agent={item.kind} className="size-4" />
+                        )}
+                        <span>
+                          {item.label}
+                          <small>{item.hint}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </section>
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
           <label className="uw-search">
             <Search size={14} />
             <input
@@ -673,43 +1103,54 @@ function UnifiedWorkspace(): ReactNode {
               aria-pressed={navigation === "projects"}
               onClick={() => setNavigation("projects")}
             >
-              By project
+              Projects
             </button>
             <button
               type="button"
               aria-pressed={navigation === "all"}
               onClick={() => setNavigation("all")}
             >
-              All sessions
+              Recents
             </button>
           </div>
           <div className="uw-tree">
             {navigation === "projects"
               ? projects.map((project) => (
                   <div className="uw-project-group" key={project}>
-                    <button
-                      type="button"
-                      className="uw-project-row"
-                      aria-expanded={expanded.includes(project)}
-                      onClick={() =>
-                        setExpanded(
-                          expanded.includes(project)
-                            ? expanded.filter((item) => item !== project)
-                            : [...expanded, project],
-                        )
-                      }
-                    >
-                      {expanded.includes(project) ? (
-                        <ChevronDown size={12} />
-                      ) : (
-                        <ChevronRight size={12} />
-                      )}
-                      <Folder size={16} />
-                      <span>{project}</span>
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {allSessions.filter((item) => item.project === project).length}
-                      </span>
-                    </button>
+                    <div className="uw-project-heading">
+                      <button
+                        type="button"
+                        className="uw-project-row"
+                        aria-expanded={expanded.includes(project)}
+                        onClick={() =>
+                          setExpanded(
+                            expanded.includes(project)
+                              ? expanded.filter((item) => item !== project)
+                              : [...expanded, project],
+                          )
+                        }
+                      >
+                        {expanded.includes(project) ? (
+                          <ChevronDown size={12} />
+                        ) : (
+                          <ChevronRight size={12} />
+                        )}
+                        <Folder size={16} />
+                        <span>{project}</span>
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {allSessions.filter((item) => item.project === project).length}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="uw-project-add"
+                        aria-label={`New session in ${project}`}
+                        title={`New session in ${project}`}
+                        onClick={() => createSession(project)}
+                      >
+                        <Plus size={15} />
+                      </button>
+                    </div>
                     {(expanded.includes(project) || !!search) && (
                       <div className="uw-project-sessions">
                         {allSessions
@@ -723,7 +1164,7 @@ function UnifiedWorkspace(): ReactNode {
                     )}
                   </div>
                 ))
-              : allSessions
+              : recentSessions
                   .filter((item) => item.title.toLowerCase().includes(search.toLowerCase()))
                   .map(sessionRow)}
             {!allSessions.some((item) =>
@@ -760,6 +1201,15 @@ function UnifiedWorkspace(): ReactNode {
             </div>
             <div className="ml-auto flex gap-1">
               <IconAction
+                label="Toggle theme"
+                onClick={() => {
+                  document.documentElement.classList.toggle("dark", light);
+                  setLight(!light);
+                }}
+              >
+                {light ? <Moon size={15} /> : <Sun size={15} />}
+              </IconAction>
+              <IconAction
                 label="Show parallel sessions"
                 active={scenario === "parallel"}
                 onClick={() => changeScenario(scenario === "parallel" ? "session" : "parallel")}
@@ -788,14 +1238,14 @@ function UnifiedWorkspace(): ReactNode {
                 aria-pressed={phonePane === "primary"}
                 onClick={() => setPhonePane("primary")}
               >
-                Session 1
+                {allSessions.find((session) => session.id === selected)?.title ?? "New session"}
               </button>
               <button
                 type="button"
                 aria-pressed={phonePane === "secondary"}
                 onClick={() => setPhonePane("secondary")}
               >
-                Session 2
+                {allSessions.find((session) => session.id === secondary)?.title ?? "Second session"}
               </button>
             </nav>
           )}
@@ -898,6 +1348,32 @@ function UnifiedWorkspace(): ReactNode {
             {notice || "Layout preview · demo sessions · no commands or agents run"}
           </div>
         </main>
+        {toolsId && (
+          <>
+            <button
+              type="button"
+              className="uw-tools-backdrop"
+              aria-label="Close workspace tools overlay"
+              onClick={() => setToolsId(null)}
+            />
+            <UnifiedSessionTools
+              key={toolsId}
+              project={toolsSession.project}
+              branch={toolsSession.branch}
+              worktree={(configurations[toolsId] ?? initialConfiguration).worktree}
+              tab={toolTab}
+              onTab={setToolTab}
+              onClose={() => setToolsId(null)}
+              onCheckout={(branch, worktree) => {
+                setOverrides({ ...overrides, [toolsId]: { ...overrides[toolsId], branch } });
+                setConfigurations({
+                  ...configurations,
+                  [toolsId]: { ...(configurations[toolsId] ?? initialConfiguration), worktree },
+                });
+              }}
+            />
+          </>
+        )}
       </div>
     </div>
   );
