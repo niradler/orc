@@ -108,6 +108,7 @@ export type NotificationAuditAction =
   | "notification.restored"
   | "notification.resolved"
   | "notification.expired"
+  | "notification.superseded"
   | "notification.deleted";
 
 export type NotificationAuditItem = Pick<

@@ -10,9 +10,27 @@ Request forms stay collapsed until opened; drafts survive closing and reopening
 the menu. Read and dismissed state is stored on the server and shared by clients.
 Dismissal does not approve, answer, cancel or delete a source request.
 
-![Notification menu on desktop with demo data](/screens/notification-center-light-1440.png)
+The menu shows **unread notifications** by default. Opening an item or choosing
+**Mark read** clears it from the inbox. **Show read** includes read history; use
+**Mark unread** to return an item to the inbox, or **Mark all read** to clear it.
+An opened human request stays available while you answer it.
 
-![Notification menu in phone chat with demo data](/screens/notification-center-dark-390.png)
+Each session keeps only its latest **Agent finished** notification. A newer finish
+physically replaces older completion notifications, including read and dismissed
+ones. Existing duplicates are cleaned automatically in bounded batches; lists and
+unread counts show only the latest even while cleanup is catching up.
+Saved chat views and the native session share that latest completion using the
+agent backend, execution host and native session ID. The alert opens where the
+latest turn ran; opening another read-only view creates no new completion alert.
+Matching native IDs on different hosts or agent backends stay separate.
+When a session continues, its latest completion alert is automatically marked read.
+This applies to workspace chats and observed agent sessions. **Show read** includes
+the retained latest completion, rather than a history of every turn.
+Failures and pending questions or approvals are kept independently.
+
+![Read history on desktop with demo data](/screens/notification-center-light-1440.png)
+
+![Read history on phone with demo data](/screens/notification-center-dark-390.png)
 
 Job delivery follows `notify_on`: `never` creates no alert, `failure` reports
 failed runs, and `always` also reports successful runs. Notification types are
@@ -31,9 +49,9 @@ rows at startup and every minute in bounded batches of 1000. A backlog drains
 over successive passes. Lowering retention also hides older entries immediately.
 SQLite reuses freed pages; cleanup does not guarantee a smaller database file.
 
-**Activity → Audit** retains notification creation, resolution, read, dismissal
-and expiry events independently, including the actual notification title and
-message. Audit events expire under their own retention period even if the alert
+**Activity → Audit** retains notification creation, resolution, read, dismissal,
+expiry and supersession events independently, including the actual notification
+title and message. Audit events expire under their own retention period even if the alert
 has already been cleaned up. New lifecycle events also cover human-request
 status changes, job starts/outcomes and task creation/status transitions.
 They exclude unrelated source prompts, command payloads, responses and output.

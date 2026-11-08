@@ -204,6 +204,98 @@ test("read state is shared across pages and survives reload", async ({ page, req
   }
 });
 
+test("reading a request preserves the active draft and focus as its inbox row disappears", async ({
+  page,
+  request,
+}) => {
+  const source = await apiPost<HumanRequest>(request, "/human-requests", {
+    kind: "question",
+    title: "Keep this answer",
+    prompt: "Which window?",
+    origin: { backend: "test", session_id: tid("draft"), request_id: "draft" },
+  });
+  let releaseRead = () => {};
+  const resumeRead = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  await page.route("**/api/notifications/*", async (route) => {
+    if (route.request().method() === "PATCH") await resumeRead;
+    await route.continue();
+  });
+  try {
+    await gotoView(page, "notifications");
+    const row = page.locator(`[data-source-id="${source.id}"]`);
+    await row.getByTestId("attention-review").click();
+    const answer = page
+      .getByTestId(`attention-request-${source.id}`)
+      .getByTestId("attention-answer");
+    await answer.fill("Tomorrow at 09:00");
+    releaseRead();
+    await expect(row).toHaveCount(0);
+    await expect(answer).toHaveValue("Tomorrow at 09:00");
+    await expect(answer).toBeFocused();
+  } finally {
+    releaseRead();
+  }
+});
+
+for (const theme of ["dark", "light"] as const)
+  for (const width of [1440, 390])
+    test(`unread inbox and read history ${theme} ${width}`, async ({ page, request }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await request.patch(`${API_BASE}/settings`, { headers: AUTH_HEADERS, data: { theme } });
+      await page.addInitScript((theme) => localStorage.setItem("orc_theme", theme), theme);
+      const sources: HumanRequest[] = [];
+      for (const title of ["Review deployment", "Choose a window"])
+        sources.push(
+          await apiPost<HumanRequest>(request, "/human-requests", {
+            kind: "question",
+            title,
+            prompt: title,
+            origin: { backend: "test", session_id: tid("inbox"), request_id: title },
+          }),
+        );
+      await gotoView(page, "notifications");
+      const menu = page.getByTestId("notification-menu");
+      const toggle = menu.getByTestId("notifications-show-read");
+      const rows = menu.getByTestId("notification-item");
+      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await expect(rows).toHaveCount(2);
+      const first = menu.locator(`[data-source-id="${sources[0]?.id}"]`);
+      await first.getByTestId("notification-mark-read").click();
+      await expect(first).toHaveCount(0);
+      await toggle.click();
+      await expect(rows).toHaveCount(2);
+      await expect(first.getByTestId("notification-mark-read")).toHaveAccessibleName("Mark unread");
+      await first.getByTestId("notification-mark-read").click();
+      await toggle.click();
+      await expect(rows).toHaveCount(2);
+      await first.getByTestId("attention-review").click();
+      await expect(first).toHaveCount(0);
+      await expect(
+        page.getByTestId(`attention-request-${sources[0]?.id}`).getByTestId("attention-answer"),
+      ).toBeVisible();
+      await menu.getByTestId("notifications-mark-all-read").click();
+      await expect(rows).toHaveCount(0);
+      await expect(menu.getByTestId("notifications-empty")).toHaveText("No unread notifications.");
+      await toggle.click();
+      await expect(rows).toHaveCount(2);
+      await expect(rows.getByRole("button", { name: "Mark unread", exact: true })).toHaveCount(2);
+      await page.screenshot({
+        path: testInfo.outputPath(`inbox-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.reload();
+      await expect(page.getByTestId("notifications-show-read")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      await expect(page.getByTestId("notifications-empty")).toBeVisible();
+    });
+
 test("notification and audit retention save in Settings with defaults and an audit event", async ({
   page,
   request,

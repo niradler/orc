@@ -79,6 +79,8 @@ test("should review compact requests, preserve masked drafts and return redacted
     await input.fill(value);
   }
   await reviewAttentionRequest(other);
+  await expect(card).toHaveCount(0);
+  await page.getByTestId("notifications-show-read").click();
   await expect(card.getByTestId("attention-review")).toHaveAttribute("aria-expanded", "false");
   await reviewAttentionRequest(card);
   for (const [name, value] of Object.entries(values))
@@ -120,6 +122,7 @@ test("should review compact requests, preserve masked drafts and return redacted
     await expect(card).not.toContainText(value);
   }
   await page.reload();
+  await page.getByTestId("notifications-show-read").click();
   await expect(card.getByTestId("attention-review")).toHaveAttribute("aria-expanded", "false");
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-command-result")).toContainText(

@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { changes } from "@orc/core/changes";
 import type { ChatThread } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
@@ -15,6 +16,87 @@ import { activeTurns, turnKey } from "./sessions/turns.js";
 const logger = createLogger("notifications");
 const observedTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+function sessionBackends(backend: string): string[] {
+  return backend === "codex" || backend === "codex-cli" ? ["codex", "codex-cli"] : [backend];
+}
+
+function associateSessionSources(
+  sqlite: Database,
+  sourceId: string,
+  backend: string,
+  host: string | null,
+  runtimeId: string,
+): void {
+  const notifications = new NotificationStore(sqlite);
+  const backends = sessionBackends(backend);
+  const key = JSON.stringify([backends[0], host, runtimeId]);
+  sqlite
+    .transaction(() => {
+      notifications.associateSession(sourceId, key);
+      for (const candidate of backends) {
+        for (const thread of new ChatStore(sqlite).byRuntime(candidate, host, runtimeId)) {
+          notifications.associateSession(thread.id, key);
+          if (
+            thread.sourceId &&
+            thread.sourceId.length <= 256 &&
+            !sqlite.query("SELECT 1 FROM gateway_sessions WHERE id=?").get(thread.sourceId)
+          )
+            notifications.associateSession(thread.sourceId, key);
+        }
+        for (const source of sqlite
+          .query<{ id: string }, [string, string | null, string]>(
+            "SELECT id FROM gateway_sessions WHERE backend=? AND execution_host IS ? AND runtime_session_id=?",
+          )
+          .all(candidate, host, runtimeId))
+          notifications.associateSession(source.id, key);
+      }
+    })
+    .immediate();
+}
+
+export function syncFinishedNotificationSessions(sqlite: Database): void {
+  const notifications = new NotificationStore(sqlite);
+  const rows = sqlite
+    .query<
+      {
+        source_id: string;
+        backend: unknown;
+        host: unknown;
+        runtime_id: unknown;
+      },
+      []
+    >(`SELECT DISTINCT n.source_id,
+    coalesce(CASE WHEN json_valid(t.data) THEN json_extract(t.data,'$.backend') END,g.backend) AS backend,
+    CASE WHEN t.id IS NOT NULL AND json_valid(t.data) THEN json_extract(t.data,'$.host') ELSE g.execution_host END AS host,
+    coalesce(CASE WHEN json_valid(t.data) THEN json_extract(t.data,'$.runtimeId') END,g.runtime_session_id) AS runtime_id
+    FROM notifications n LEFT JOIN chat_threads t ON t.id=n.source_id LEFT JOIN gateway_sessions g ON g.id=n.source_id
+    WHERE n.type='agent.finished' AND NOT EXISTS (
+      SELECT 1 FROM notification_session_sources s WHERE s.source_id=n.source_id) LIMIT 1000`)
+    .all();
+  for (const row of rows) {
+    if (
+      typeof row.backend === "string" &&
+      row.backend.length > 0 &&
+      row.backend.length <= 100 &&
+      typeof row.runtime_id === "string" &&
+      row.runtime_id.length > 0 &&
+      row.runtime_id.length <= 256 &&
+      (row.host === null || (typeof row.host === "string" && row.host.length <= 256))
+    )
+      associateSessionSources(sqlite, row.source_id, row.backend, row.host, row.runtime_id);
+    else notifications.associateSession(row.source_id, `source:${row.source_id}`);
+  }
+}
+
+export function retireChatFinishedNotifications(thread: ChatThread): void {
+  if (thread.runtimeId)
+    associateSessionSources(getSqlite(), thread.id, thread.backend, thread.host, thread.runtimeId);
+  const notifications = new NotificationStore(getSqlite());
+  let count = notifications.markFinishedRead(thread.id);
+  if (thread.sourceId) count += notifications.markFinishedRead(thread.sourceId);
+  if (count) changes.publish("notifications");
+}
+
 export function recordChatNotification(
   thread: ChatThread,
   eventId: string,
@@ -22,6 +104,8 @@ export function recordChatNotification(
 ): void {
   const sqlite = getSqlite();
   const waiting = kind === "question" || kind === "approval";
+  if (kind === "finished" && thread.runtimeId)
+    associateSessionSources(sqlite, thread.id, thread.backend, thread.host, thread.runtimeId);
   if (
     waiting &&
     sqlite
@@ -69,6 +153,12 @@ export function recordObservedNotification(
   stillCurrent: () => boolean,
 ): void {
   const sqlite = getSqlite();
+  if (event.status === "running" && event.previous !== "running") {
+    associateSessionSources(sqlite, event.id, event.backend, event.host, event.nativeId);
+    const notifications = new NotificationStore(sqlite);
+    const count = notifications.markFinishedRead(event.id);
+    if (count) changes.publish("notifications");
+  }
   if (!event.waiting) new NotificationStore(sqlite).resolveSource("agent.question", event.id);
   const kind =
     event.waiting && !event.wasWaiting
@@ -77,10 +167,7 @@ export function recordObservedNotification(
         ? "finished"
         : null;
   if (!kind) return;
-  const backends =
-    event.backend === "codex" || event.backend === "codex-cli"
-      ? ["codex", "codex-cli"]
-      : [event.backend];
+  const backends = sessionBackends(event.backend);
   const managed = () =>
     backends.some((backend) => {
       const threads = new ChatStore(sqlite).byRuntime(backend, event.host, event.nativeId);
@@ -126,6 +213,8 @@ export function recordObservedNotification(
           .get(event.id)
       )
         return;
+      if (kind === "finished")
+        associateSessionSources(sqlite, event.id, event.backend, event.host, event.nativeId);
       publishNotification(sqlite, {
         type: `agent.${kind}`,
         source_key: `observed:${event.id}:${kind}:${transitionId}`,
@@ -171,6 +260,7 @@ export function syncRequestNotifications(sqlite: Database): void {
 }
 
 export function maintainNotifications(sqlite: Database = getSqlite()): void {
+  syncFinishedNotificationSessions(sqlite);
   syncRequestNotifications(sqlite);
   new NotificationStore(sqlite).cleanup();
   cleanupAuditLog(sqlite, loadConfig().preferences.audit_retention_days ?? 90);
