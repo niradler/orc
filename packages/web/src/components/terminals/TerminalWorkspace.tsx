@@ -493,10 +493,13 @@ export function TerminalWorkspace(props: WorkspaceProps) {
     publishPane(layoutRef.current, id);
   }
   useEffect(() => {
+    // Preserve URL-restored panes when focus moves, without replacing a newer local edit.
+    if (layout !== storedLayout)
+      setLayout((current) => (current === storedLayout ? layout : current));
     try {
       localStorage.setItem("orc_workspace_layout", JSON.stringify(layout));
     } catch {}
-  }, [layout]);
+  }, [layout, storedLayout]);
   const panes = leaves(layout);
   const activePane = panes.find((pane) => pane.id === active) ?? panes[0];
   return (
