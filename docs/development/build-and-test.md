@@ -8,22 +8,22 @@ Commands to check, test and build ORC before opening a pull request.
 bun run ci:pr
 ```
 
-That is the local pull-request gate. The pre-commit hook runs the same package selection without the browser sanity suite (`bun run ci:changed`). `bun run ci` still runs every package's unit tests and no browser tests. `bun run ci:full` runs those unit tests plus the full Playwright suite. Run and record that full gate before every merge to master and before a release; the release check also runs all package and browser tests. Automatic homelab workflows remain disabled pending the security requirements below.
+That is the local pull-request gate. The pre-commit hook checks lint and formatting only. The pre-push hook runs `bun run ci:pr`: affected-package units, global checks, and browser sanity before any code reaches GitHub. Both hooks are installed by `bun install` through `core.hooksPath=.githooks`. `bun run ci` still runs every package's unit tests and no browser tests. `bun run ci:full` runs those unit tests plus the full Playwright suite. Run and record that full gate before every merge to master and before a release; the release check also runs all package and browser tests. Automatic homelab workflows remain disabled pending the security requirements below.
 
 | Command | What it runs |
 | --- | --- |
 | `bun run ci:changed` | Lint, format, typecheck, domain ownership, dependency security, and unit tests for packages changed since `master` plus packages that depend on them |
-| `bun run ci:pr` | The changed-package run, plus `@sanity` browser flows. A web change runs the web browser suite instead of only `@sanity` |
+| `bun run ci:pr` | The changed-package run, plus `@sanity` browser flows, including for web changes |
 | `bun run ci` | Lint, format, typecheck, domain ownership, dependency security, and every package's unit tests |
 | `bun run ci:full` | `bun run ci` plus the full browser suite |
 
-`bun run check` fixes lint and format in place. Pass `--changed <ref>` to compare with a branch other than `origin/master` (or `master` when the remote ref is missing). The command prints which packages it selected and why.
+`bun run check` fixes lint and format in place. Pass `--changed <ref>` to compare with a branch other than `origin/master` (or `master` when the remote ref is missing). The command prints which packages it selected and why. Add `--plan` to print the commands without running them, for example `bun run ci:pr --plan`. Selection includes tracked working-tree and staged changes as well as branch commits; push from the checkout you validated. For a new branch, comparison still uses `origin/master`, so it includes all PR changes. Fetch the base before starting work to keep that comparison current.
 
 A change to `bun.lock`, the root manifest, `patches/`, `scripts/`, `hooks/`, `.github/`, `.githooks/`, or a root `tsconfig*.json` runs every package. Docs and other files outside a package do not add package tests. On a pull request they still run `@sanity`.
 
 ## Domains and the sanity tag
 
-A domain is a workspace package. `scripts/ci-domains.ts` reads each `packages/*/package.json` and the `workspace:` dependencies. A package change runs that package's `test` script and the same for every package that depends on it, directly or through another package. `@orc/web` unit tests are `test:unit`. Its browser tests run when the pull-request gate selects `@orc/web`.
+A domain is a workspace package. `scripts/ci-domains.ts` reads each `packages/*/package.json` and the `workspace:` dependencies. A package change runs that package's `test` script and the same for every package that depends on it, directly or through another package. `@orc/web` unit tests are `test:unit`. Its units run when the pull-request gate selects `@orc/web`; the browser gate always runs the small sanity suite. Use `bun scripts/ci-local.ts --changed --e2e` to additionally run the full web browser suite when web is affected.
 
 `scripts/ci-domains.test.ts` fails if a source or test file is not under a package, `scripts/`, `hooks/`, or `docs/`. Adding a package with a `package.json` name and a `test` script is enough; there is no second list to edit. Vendored trees (`.examples`, `.demo`) and generated docs output are outside that check.
 
@@ -41,7 +41,7 @@ test("@sanity the app loads", async ({ page }) => {
 bun packages/web/scripts/run-e2e.ts --grep @sanity
 ```
 
-Feature tags such as `@chat` are not used. A change inside `packages/web` runs that package's browser tests.
+Feature tags such as `@chat` are not used. Package-scoped unit tests plus `@sanity` keep the push loop short. The complete browser suite remains a separate mandatory pre-merge and release check; sanity is not equivalent coverage.
 
 The full browser suite starts four isolated shards by default (`PW_SHARDS`). Each shard has its own API, database, home directory, transform cache, result directory and Playwright worker. Ports stay reserved until API startup; an API exiting during readiness or browser tests fails the run. Shards stay single-worker so those tests do not share one database or contend on Windows transform-cache files. `PW_SHARDS=1` is the serial run; set `PW_SHARDS=2` on smaller machines. `--grep` stays on one shard unless `PW_SHARDS` is set. Failure traces remain in `packages/web/test-results/shard-N`; temporary databases and homes are cleaned after children stop, including interrupted runs. Parallel runs reject a shared explicit port, database or `--output` path.
 
@@ -59,16 +59,13 @@ Before enabling automatic runs, implement and verify all of these requirements:
 - Registration uses a short-lived credential outside the job's environment. Confirm the workflow's requested labels match the actual runner labels.
 - Add a successful full-suite gate on the candidate merge revision before merge, rather than relying on a run after a push to master. Keep `ci:full` as the local equivalent and the release gate.
 
-Only after those checks pass should an isolated stack be installed under `/opt/homelab/stacks/gha-runner`, the PR readiness gate enabled, and automatic workflow triggers restored. This PR does not alter the live runner, repository approval settings, firewall or homelab services.
+Only after those checks pass, and Nir explicitly authorizes automatic execution, should an isolated stack be installed under `/opt/homelab/stacks/gha-runner` and automatic workflow triggers restored. No repository variable can enable PR execution in the current workflow. This PR does not alter the live runner, repository approval settings, firewall or homelab services.
 
 ### Manual homelab CI
 
-The Actions `CI` workflow runs these unit, type and security gates on the `homelab`
-runner when dispatched manually by `niradler` in `niradler/orc`. It uses Bun 1.4.4,
-runs package tests sequentially, grants read-only repository access and does not
-persist checkout credentials. Jobs stop after 60 minutes. Automatic PR runs stay
-disabled; this workflow does not establish isolation for running untrusted PR code.
-Browser tests remain a separate local or manual E2E check.
+The Actions `CI` workflow runs `ci:pr` on the `homelab` runner when dispatched manually by `niradler` in `niradler/orc`. Select the trusted feature branch in the dispatch UI: a full-history checkout compares it with `origin/master`, tests affected packages and dependents, and always runs browser sanity. Dispatching master itself runs global checks and sanity, since it has no package diff. Shared infrastructure changes still run all package units. It uses Bun 1.4.4, grants read-only repository access and does not persist checkout credentials. Jobs stop after 60 minutes. Automatic PR runs stay disabled; this workflow does not establish isolation for untrusted PR code. The manual E2E workflow runs the complete browser suite.
+
+Every checked-in workflow job, including Desktop, Docs and tag-release builds, requires both `github.actor` and `github.triggering_actor` to be `niradler`, in `niradler/orc`. A different user rerunning an owner's run cannot start jobs. Release desktop gaps keeps its existing `v*` tag trigger, subject to the same owner checks. These conditions gate jobs; GitHub may still show a skipped workflow run requested by another collaborator. Local hooks are developer checks and can be bypassed with Git's `--no-verify`; they are not a server-side merge protection rule.
 
 ## Tests
 

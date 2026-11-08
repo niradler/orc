@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   plan:
+    if: github.actor == 'niradler' && github.triggering_actor == 'niradler' && github.repository == 'niradler/orc'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -22,6 +23,7 @@ jobs:
         run: echo "matrix=$(bun scripts/release.ts --ci-matrix)" >> "$GITHUB_OUTPUT"
 
   desktop:
+    if: github.actor == 'niradler' && github.triggering_actor == 'niradler' && github.repository == 'niradler/orc'
     needs: plan
     strategy:
       fail-fast: false

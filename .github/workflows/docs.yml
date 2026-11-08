@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.actor == 'niradler' && github.triggering_actor == 'niradler' && github.repository == 'niradler/orc'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -33,6 +34,7 @@ jobs:
           path: docs/.vitepress/dist
 
   deploy:
+    if: github.actor == 'niradler' && github.triggering_actor == 'niradler' && github.repository == 'niradler/orc'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 5

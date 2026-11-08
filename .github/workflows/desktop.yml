@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   desktop:
+    if: github.actor == 'niradler' && github.triggering_actor == 'niradler' && github.repository == 'niradler/orc'
     name: desktop (${{ matrix.os }})
     strategy:
       fail-fast: false
