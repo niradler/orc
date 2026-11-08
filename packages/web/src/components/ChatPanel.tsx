@@ -227,10 +227,17 @@ export function ChatPanel({
       window.removeEventListener("resize", measure);
     };
   }, [draft, open]);
-  const queueDetails = useRef<HTMLDetailsElement>(null);
+  const [queueDisclosure, setQueueDisclosure] = useState({ key: activeKey, open: false });
   useLayoutEffect(() => {
-    if (open && editingQueuedId && queueDetails.current) queueDetails.current.open = true;
-  }, [editingQueuedId, open]);
+    if (open && editingQueuedId)
+      setQueueDisclosure((current) =>
+        current.key === activeKey && current.open ? current : { key: activeKey, open: true },
+      );
+    else if (!queued.length && !answers.length && !streaming)
+      setQueueDisclosure((current) =>
+        current.key === activeKey && current.open ? { key: activeKey, open: false } : current,
+      );
+  }, [activeKey, answers.length, editingQueuedId, open, queued.length, streaming]);
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
     initial: 384,
@@ -652,7 +659,10 @@ export function ChatPanel({
           {queued.length + answers.length > 0 && (
             <details
               key={activeKey}
-              ref={queueDetails}
+              open={queueDisclosure.key === activeKey && queueDisclosure.open}
+              onToggle={(event) =>
+                setQueueDisclosure({ key: activeKey, open: event.currentTarget.open })
+              }
               data-testid="chat-message-queue"
               aria-label="Pending messages"
               className="group mx-auto w-full max-w-[calc(48rem+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"

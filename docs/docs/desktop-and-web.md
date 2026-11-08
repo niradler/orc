@@ -225,6 +225,8 @@ Send queues the next message while a reply is running. If this session is alread
 responding, or every chat worker is busy, that message stays queued and sends when
 the turn ends, without an error. Open the pending list to edit a message, move it
 up or down, remove it, or send it ahead of the current reply.
+An expanded pending list stays open across busy-worker retries. After it drains,
+the next list starts collapsed.
 Every icon has an accessible name and opens its picker with the full details;
 phone touch targets are at least 44px. Send stays visible at the right.
 
