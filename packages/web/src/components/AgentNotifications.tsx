@@ -17,7 +17,7 @@ import { RequestCard, type RequestDraft } from "@/components/RequestCard";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { activeLiveSessionsQuery } from "@/hooks/useActiveLiveSessions";
-import { useChat } from "@/hooks/useChat";
+import { CHAT_THREAD_PARAM, useChat } from "@/hooks/useChat";
 import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import {
@@ -53,10 +53,11 @@ type Center = {
 };
 const CenterContext = createContext<Center | null>(null);
 
-/** Adding the default project scope to the URL does not leave the page the menu was opened on. */
+/** Default scope and the chat's assigned identity do not navigate away from the open menu. */
 function menuPlace({ pathname, search }: { pathname: string; search: string }): string {
   const params = new URLSearchParams(search);
   params.delete("project");
+  params.delete(CHAT_THREAD_PARAM);
   return `${pathname}?${params}`;
 }
 
