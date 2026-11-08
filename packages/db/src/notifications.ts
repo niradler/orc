@@ -18,6 +18,9 @@ type Row = Omit<OrcNotification, "requires_action"> & { requires_action: number 
 const ID_ATTEMPTS = 8;
 const COLUMNS =
   "id,type,source_id,title,body,level,project_id,path,requires_action,created_at,expires_at,read_at,dismissed_at";
+const LATEST_FINISHED = `type<>'agent.finished' OR id=(SELECT latest.id FROM notifications latest
+  WHERE latest.type='agent.finished' AND latest.source_id=notifications.source_id
+  ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)`;
 const notification = (row: Row, maximumAge: number): OrcNotification =>
   NotificationSchema.parse({
     ...row,
@@ -44,7 +47,9 @@ export class NotificationStore {
       read_at INTEGER, dismissed_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS notifications_created ON notifications(created_at DESC,id DESC);
-    CREATE INDEX IF NOT EXISTS notifications_expiry ON notifications(expires_at);`);
+    CREATE INDEX IF NOT EXISTS notifications_expiry ON notifications(expires_at);
+    CREATE INDEX IF NOT EXISTS notifications_finished_source ON notifications(source_id,created_at DESC,id DESC)
+      WHERE type='agent.finished';`);
   }
 
   publish(raw: NotificationInput): OrcNotification | null {
@@ -63,6 +68,14 @@ export class NotificationStore {
           return existing.expires_at > now && existing.created_at > now - maximumAge
             ? notification(existing, maximumAge)
             : null;
+        if (input.type === "agent.finished") {
+          const latest = this.db
+            .query<{ created_at: number }, [string]>(
+              "SELECT created_at FROM notifications WHERE type='agent.finished' AND source_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+            )
+            .get(input.source_id);
+          if (latest && latest.created_at >= input.created_at) return null;
+        }
         const insert = this.db.query(`INSERT INTO notifications
       (id,source_key,type,source_id,title,body,level,project_id,path,requires_action,created_at,expires_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_key) DO NOTHING`);
@@ -102,6 +115,17 @@ export class NotificationStore {
           const item = notification(row, maximumAge);
           if (inserted)
             recordNotificationAudit(this.db, "notification.created", item, { now: () => now });
+          if (inserted && input.type === "agent.finished") {
+            const superseded = this.db
+              .query<Row, [string, string]>(
+                `DELETE FROM notifications WHERE type='agent.finished' AND source_id=? AND id<>? RETURNING ${COLUMNS}`,
+              )
+              .all(input.source_id, id);
+            for (const previous of superseded)
+              recordNotificationAudit(this.db, "notification.superseded", previous, {
+                now: () => now,
+              });
+          }
           return item;
         }
         throw new Error("Notification ID allocation exhausted");
@@ -127,7 +151,7 @@ export class NotificationStore {
     this.cleanup();
     const maximumAge = this.maximumAge();
     const cutoff = this.now() - maximumAge;
-    const filter = `expires_at>? AND created_at>? AND dismissed_at IS NULL${unreadOnly ? " AND read_at IS NULL" : ""}`;
+    const filter = `expires_at>? AND created_at>? AND dismissed_at IS NULL AND (${LATEST_FINISHED})${unreadOnly ? " AND read_at IS NULL" : ""}`;
     const rows = this.db
       .query<Row, [number, number, number, number]>(
         `SELECT ${COLUMNS} FROM notifications WHERE ${filter} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,
@@ -136,7 +160,7 @@ export class NotificationStore {
     const unread =
       this.db
         .query<{ count: number }, [number, number]>(
-          "SELECT count(*) AS count FROM notifications WHERE expires_at>? AND created_at>? AND dismissed_at IS NULL AND read_at IS NULL",
+          `SELECT count(*) AS count FROM notifications WHERE expires_at>? AND created_at>? AND dismissed_at IS NULL AND read_at IS NULL AND (${LATEST_FINISHED})`,
         )
         .get(this.now(), cutoff)?.count ?? 0;
     return {
@@ -262,6 +286,14 @@ export class NotificationStore {
     const now = this.now();
     return this.db
       .transaction(() => {
+        const superseded = this.db
+          .query<Row, [number]>(
+            `DELETE FROM notifications WHERE id IN (SELECT id FROM notifications
+             WHERE type='agent.finished' AND NOT (${LATEST_FINISHED}) LIMIT ?) RETURNING ${COLUMNS}`,
+          )
+          .all(batchSize);
+        for (const row of superseded)
+          recordNotificationAudit(this.db, "notification.superseded", row, { now: () => now });
         this.db
           .query(
             "UPDATE notifications SET expires_at=created_at+? WHERE id IN (SELECT id FROM notifications WHERE expires_at>created_at+? LIMIT ?)",
@@ -271,10 +303,10 @@ export class NotificationStore {
           .query<Row, [number, number]>(
             `DELETE FROM notifications WHERE id IN (SELECT id FROM notifications WHERE expires_at<=? ORDER BY expires_at LIMIT ?) RETURNING ${COLUMNS}`,
           )
-          .all(now, batchSize);
+          .all(now, batchSize - superseded.length);
         for (const row of expired)
           recordNotificationAudit(this.db, "notification.expired", row, { now: () => now });
-        return expired.length;
+        return superseded.length + expired.length;
       })
       .immediate();
   }

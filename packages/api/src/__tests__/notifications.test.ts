@@ -15,7 +15,7 @@ beforeAll(() => {
 });
 afterAll(teardownTestApp);
 
-test("should keep only the latest managed turn completion unread", async () => {
+test("should store only the latest managed turn completion", async () => {
   const previousMock = process.env.ORC_E2E_CHAT_MOCK;
   process.env.ORC_E2E_CHAT_MOCK = "1";
   try {
@@ -41,8 +41,8 @@ test("should keep only the latest managed turn completion unread", async () => {
     expect(next.status).toBe(200);
     await next.text();
     const history = store.list().notifications.filter((item) => item.source_id === thread.id);
-    expect(history).toHaveLength(2);
-    expect(history.find((item) => item.id === previous?.id)?.read_at).not.toBeNull();
+    expect(history).toHaveLength(1);
+    expect(history.some((item) => item.id === previous?.id)).toBe(false);
     expect(history.filter((item) => item.read_at === null)).toHaveLength(1);
   } finally {
     if (previousMock === undefined) delete process.env.ORC_E2E_CHAT_MOCK;

@@ -15,9 +15,13 @@ The menu shows **unread notifications** by default. Opening an item or choosing
 **Mark unread** to return an item to the inbox, or **Mark all read** to clear it.
 An opened human request stays available while you answer it.
 
-When a session continues, its earlier **Agent finished** alerts are automatically
-marked read. This applies to workspace chats and observed agent sessions, leaving
-completion history available through **Show read** without accumulating old alerts.
+Each session keeps only its latest **Agent finished** notification. A newer finish
+physically replaces older completion notifications, including read and dismissed
+ones. Existing duplicates are cleaned automatically in bounded batches; lists and
+unread counts show only the latest even while cleanup is catching up.
+When a session continues, its latest completion alert is automatically marked read.
+This applies to workspace chats and observed agent sessions. **Show read** includes
+the retained latest completion, rather than a history of every turn.
 Failures and pending questions or approvals are kept independently.
 
 ![Read history on desktop with demo data](/screens/notification-center-light-1440.png)
@@ -41,9 +45,9 @@ rows at startup and every minute in bounded batches of 1000. A backlog drains
 over successive passes. Lowering retention also hides older entries immediately.
 SQLite reuses freed pages; cleanup does not guarantee a smaller database file.
 
-**Activity → Audit** retains notification creation, resolution, read, dismissal
-and expiry events independently, including the actual notification title and
-message. Audit events expire under their own retention period even if the alert
+**Activity → Audit** retains notification creation, resolution, read, dismissal,
+expiry and supersession events independently, including the actual notification
+title and message. Audit events expire under their own retention period even if the alert
 has already been cleaned up. New lifecycle events also cover human-request
 status changes, job starts/outcomes and task creation/status transitions.
 They exclude unrelated source prompts, command payloads, responses and output.
