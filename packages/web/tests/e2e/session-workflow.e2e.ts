@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { LIVE_REGISTRY_DIR, writeRegistration } from "../../../core/src/live-session";
+import { pauseBrowserClock } from "./_clock";
 import { apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 for (const width of [1440, 390]) {
@@ -101,8 +102,7 @@ for (const width of [1440, 390]) {
         await taskModule;
         await route.continue();
       });
-      await page.clock.install();
-      await page.clock.pauseAt(Date.now() + 100);
+      await pauseBrowserClock(page);
       try {
         await page.getByTestId("session-search").fill(title);
         await expect(row).toHaveCount(1);

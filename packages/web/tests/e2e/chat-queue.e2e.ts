@@ -2,6 +2,7 @@ import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { holdChatStream } from "./_chat-stream";
 import { closeChatHistory, openChatActions, openChatHistory } from "./_chat-ui";
+import { pauseBrowserClock } from "./_clock";
 import { API_SECRET } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -457,8 +458,7 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const sent = posts(page);
     const panel = page.getByTestId("chat-panel");
-    await page.clock.install();
-    await page.clock.pauseAt(new Date(Date.now() + 100));
+    await pauseBrowserClock(page);
     let busyAttempts = 0;
     await page.route("**/api/chat/stream", async (route) => {
       if (route.request().postDataJSON()?.messages?.[0]?.content === "REMOVE BUSY") {
