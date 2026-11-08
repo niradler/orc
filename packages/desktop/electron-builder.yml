@@ -6,7 +6,12 @@ nsis:
 directories:
   output: release
 files:
-  - dist/**
+  - dist/main.js
+  - dist/preload.cjs
+  - dist/viewer-preload.cjs
+  - dist/viewer-renderer.js
+  - dist/viewer.html
+  - dist/viewer.css
   - build/icon.png
   - package.json
 publish:

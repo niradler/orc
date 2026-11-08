@@ -97,6 +97,28 @@ While your pointer is over the list, or a row has keyboard focus, rows stay wher
 
 ## Terminals
 
+### Desktop browser and text viewer
+
+In the Electron desktop app, **File → Browser and files** (Ctrl/Cmd+Shift+B),
+or **Browser and files** in the tray menu, opens a separate companion window.
+External HTTP/HTTPS links from ORC open there too. Enter a full web address and
+use Back, Forward and Reload, or choose **System browser** to open the current
+address in your usual browser.
+
+**Open file** uses the native file picker to display local Markdown, code
+and plain text as read-only source. Files must be valid UTF-8 and at most 1 MiB;
+binary files are rejected. Markdown and HTML are shown literally, without
+executing scripts or loading embedded content. The viewer does not edit files.
+
+PNG, JPEG, GIF, WebP, BMP and ICO images can also be previewed, up to 8 MiB and
+16 megapixels. Images use native decoding and display as a static image;
+format support follows the operating system. PDF and Office previews are not included.
+
+The browser uses a separate, temporary session without ORC's API credentials,
+cookies or desktop bridge. Camera, microphone, location and other site permissions
+and downloads are blocked. Browser logins last until the desktop app exits.
+This companion window is desktop-only; the web and phone UI are unchanged.
+
 ![Terminals](/screens/terminals.png)
 
 Browser terminals for shells and coding agents, with split panes and Files and Git panels beside them. Terminals run on the selected execution host. See [Terminal workspace](./terminal-workspace.md).

@@ -14,7 +14,6 @@ import {
   nativeImage,
   screen,
   session,
-  shell,
   Tray,
 } from "electron";
 import { loadDesktopConfig, saveDesktopConnection } from "./connection.js";
@@ -29,6 +28,7 @@ import {
 import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
 import { withAppVersion } from "./update-policy.js";
 import { startDesktopUpdates } from "./updater.js";
+import { openDesktopViewer } from "./viewer.js";
 
 const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
@@ -149,13 +149,13 @@ function openWindow(url: string): void {
     win = null;
   });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (isWeb(target)) void shell.openExternal(target);
+    if (isWeb(target)) openDesktopViewer(target);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, target) => {
     if (new URL(target).origin === origin) return;
     event.preventDefault();
-    if (isWeb(target)) void shell.openExternal(target);
+    if (isWeb(target)) openDesktopViewer(target);
   });
   win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
     if (isMainFrame && code !== -3) void recover(`orc is not reachable (${description}).`);
@@ -291,6 +291,7 @@ function createTray(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open orc", click: showWindow },
+      { label: "Browser and files", click: () => openDesktopViewer() },
       {
         label: "Start at login",
         type: "checkbox",
@@ -341,6 +342,25 @@ function hardenSession(): void {
 
 async function start(): Promise<void> {
   hardenSession();
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+      {
+        label: "File",
+        submenu: [
+          {
+            label: "Browser and files",
+            accelerator: "CmdOrCtrl+Shift+B",
+            click: () => openDesktopViewer(),
+          },
+          { role: "close" },
+        ],
+      },
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" },
+    ]),
+  );
   listenForNotifications();
   try {
     await bringUp();
