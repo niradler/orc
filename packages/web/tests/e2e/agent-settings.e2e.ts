@@ -281,7 +281,7 @@ for (const width of [1440, 390])
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         ).toBe(true);
-        await page.setViewportSize({ width, height: width === 1440 ? 1250 : 1200 });
+        await page.setViewportSize({ width, height: 1000 });
         if (width === 390) await page.getByTestId("provider-advanced").locator("summary").click();
         await page.getByRole("heading", { name: "Settings", exact: true }).evaluate((element) => {
           for (let parent = element.parentElement; parent; parent = parent.parentElement)
@@ -332,3 +332,61 @@ for (const width of [1440, 390])
       }
     });
   }
+
+test.describe("provider help", () => {
+  test.use({ hasTouch: true });
+  for (const width of [1440, 390])
+    for (const theme of ["dark", "light"]) {
+      test(`info help supports hover, focus, tap and dismissal in ${theme} at ${width}px`, async ({
+        page,
+        request,
+      }) => {
+        await apiPatch(request, "/settings", { theme });
+        await page.addInitScript(
+          (secret) =>
+            localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+          API_SECRET,
+        );
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto("/settings");
+        await settingsSection(page, "agents");
+        await page.getByTestId("provider-select-codex").click();
+        const trigger = page.getByTestId("provider-binary-help");
+        const content = page.getByTestId("provider-binary-help-content");
+        await expect(content).toBeHidden();
+        await trigger.hover();
+        await expect(content).toBeVisible();
+        await expect(content).toContainText("SSH uses its remote installation");
+        await content.hover();
+        await expect(content).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(content).toBeHidden();
+        await page.getByTestId("provider-name").focus();
+        await trigger.focus();
+        await expect(content).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(content).toBeHidden();
+        await trigger.press("Enter");
+        await expect(content).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(content).toBeHidden();
+        await trigger.tap();
+        await expect(content).toBeVisible();
+        const bounds = await content.boundingBox();
+        expect(bounds?.x).toBeGreaterThanOrEqual(0);
+        expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(width);
+        await page.getByTestId("provider-name").tap();
+        await expect(content).toBeHidden();
+        await page.getByTestId("provider-advanced").locator("summary").tap();
+        await page.getByTestId("provider-env-help").tap();
+        await expect(page.getByTestId("provider-env-help-content")).toContainText(
+          "Empty values clear inherited values",
+        );
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("agent-settings-save")).toBeDisabled();
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBe(true);
+      });
+    }
+});

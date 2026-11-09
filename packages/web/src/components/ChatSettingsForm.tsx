@@ -2,6 +2,7 @@ import { type ChatSettings, ChatSettingsSchema } from "@orc/core/chat";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -65,27 +66,31 @@ export function ChatSettingsForm({ onManageProviders }: { onManageProviders: () 
       className="space-y-4"
       data-testid="chat-settings"
     >
-      <div>
+      <div className="flex items-center gap-1">
         <h2 id="chat-settings-title" className="text-base font-medium">
           Chat
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <HelpPopover label="Chat defaults" testId="chat-defaults-help">
           Defaults for new sessions. Existing chats keep their configuration. Credentials stay on
           the execution host or in encrypted provider settings.
-        </p>
+        </HelpPopover>
       </div>
       {config && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3">
-            <p className="text-sm">
-              Choose the default provider, model and connection in Providers.
-            </p>
+            <span className="text-sm">Provider and model defaults</span>
             <Button variant="outline" onClick={onManageProviders}>
               Manage providers
             </Button>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="chat-model-catalog">Model picker choices</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="chat-model-catalog">Model picker choices</Label>
+              <HelpPopover label="Model picker choices" testId="chat-model-catalog-help">
+                One agent: model-id per line. Use model IDs supported by your installed agent and
+                account.
+              </HelpPopover>
+            </div>
             <Textarea
               id="chat-model-catalog"
               data-testid="chat-model-catalog"
@@ -93,13 +98,15 @@ export function ChatSettingsForm({ onManageProviders }: { onManageProviders: () 
               onChange={(e) => setModels(e.target.value)}
               placeholder={"codex: your-model-id\nclaude: your-model-id"}
             />
-            <p className="text-xs text-muted-foreground">
-              One agent: model-id per line. Use model IDs supported by your installed agent and
-              account.
-            </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="chat-system-prompt">Instructions</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="chat-system-prompt">Instructions</Label>
+              <HelpPopover label="Chat instructions" testId="chat-system-help">
+                Claude appends these to its coding system prompt. Codex and other agents receive
+                them as turn instructions. Workspace rules remain enforced.
+              </HelpPopover>
+            </div>
             <Textarea
               id="chat-system-prompt"
               data-testid="chat-system-prompt"
@@ -107,13 +114,17 @@ export function ChatSettingsForm({ onManageProviders }: { onManageProviders: () 
               value={config.system}
               onChange={(e) => setConfig({ ...config, system: e.target.value })}
             />
-            <p className="text-xs text-muted-foreground">
-              Claude appends these to its coding system prompt. Codex and other agents receive them
-              as turn instructions. Workspace rules remain enforced.
-            </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="chat-mcp">Tools connection</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="chat-mcp">Tools connection</Label>
+              <HelpPopover label="Tools connection" testId="chat-mcp-help">
+                The ORC connection uses server credentials internally and serves meta tools that
+                search, describe and invoke every ORC tool on demand. Host configuration may include
+                other MCP servers; this setting does not disable them. Protected workspaces may also
+                require ORC tools.
+              </HelpPopover>
+            </div>
             <select
               id="chat-mcp"
               data-testid="chat-mcp"
@@ -124,12 +135,6 @@ export function ChatSettingsForm({ onManageProviders }: { onManageProviders: () 
               <option value="orc">Connect ORC MCP</option>
               <option value="native">Use the agent’s host configuration</option>
             </select>
-            <p className="text-xs text-muted-foreground">
-              The ORC connection uses server credentials internally and serves meta tools that
-              search, describe and invoke every ORC tool on demand. Host configuration may include
-              other MCP servers; this setting does not disable them. Protected workspaces may also
-              require ORC tools.
-            </p>
           </div>
           <ChatPermissionSelect config={config} onChange={setConfig} disabled={pending} />
           <Button data-testid="chat-settings-save" disabled={pending} onClick={() => void save()}>

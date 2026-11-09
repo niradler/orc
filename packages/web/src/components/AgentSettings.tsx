@@ -12,6 +12,7 @@ import { Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { AgentIcon } from "@/components/AgentIcon";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -71,7 +72,7 @@ export function AgentSettings() {
       window.dispatchEvent(new Event("orc-chat-settings-changed"));
     },
   });
-  const busy = query.isPending || query.isError || save.isPending;
+  const busy = query.isFetching || query.isError || save.isPending;
   const quotas = useQuery({
     queryKey: ["usage-quotas"],
     queryFn: api.settings.usageQuotas,
@@ -161,17 +162,17 @@ export function AgentSettings() {
   return (
     <section aria-labelledby="agent-settings-title" className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-1">
           <h2 id="agent-settings-title" className="text-base font-medium">
             Coding providers{" "}
             <span className="ml-2 text-xs font-normal text-muted-foreground">
               {settings?.providers.filter((item) => item.enabled).length ?? 0} enabled
             </span>
           </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <HelpPopover label="Coding providers" testId="provider-help">
             Named configurations for coding agents. Existing conversations keep their selected
             provider.
-          </p>
+          </HelpPopover>
         </div>
         <Button
           variant="outline"
@@ -295,7 +296,13 @@ export function AgentSettings() {
             {["claude", "codex"].includes(profile.agent) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="provider-binary">Executable path</Label>
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor="provider-binary">Executable path</Label>
+                    <HelpPopover label="Executable path" testId="provider-binary-help">
+                      Optional local binary path, without arguments. Blank uses the default
+                      installation. SSH uses its remote installation.
+                    </HelpPopover>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -316,14 +323,16 @@ export function AgentSettings() {
                   disabled={busy}
                   onChange={(event) => patch({ executable: event.target.value })}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Optional local binary path, without arguments. Blank uses the default
-                  installation. SSH uses its remote installation.
-                </p>
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="provider-model">Default model</Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="provider-model">Default model</Label>
+                <HelpPopover label="Default model" testId="provider-model-help">
+                  Leave blank for the adapter default. Explicit session models take precedence. Save
+                  connection changes before loading model choices.
+                </HelpPopover>
+              </div>
               <Input
                 id="provider-model"
                 data-testid="provider-model"
@@ -343,10 +352,6 @@ export function AgentSettings() {
                   </option>
                 ))}
               </datalist>
-              <p className="text-xs text-muted-foreground">
-                Explicit session models take precedence. Save connection changes before loading
-                model choices.
-              </p>
             </div>
             <details
               key={profile.id}
@@ -361,7 +366,14 @@ export function AgentSettings() {
               </summary>
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Label>Environment overrides</Label>
+                  <div className="flex items-center gap-1">
+                    <Label>Environment overrides</Label>
+                    <HelpPopover label="Environment overrides" testId="provider-env-help">
+                      Applies to launches and model discovery. Empty values clear inherited values.
+                      Credential variables are encrypted and write-only. Leave a saved secret
+                      untouched to preserve it; enter a value to replace it.
+                    </HelpPopover>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -380,10 +392,6 @@ export function AgentSettings() {
                     Add variable
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Applies to launches and model discovery. Empty values clear inherited values.
-                  Credential variables are encrypted and write-only.
-                </p>
                 {profile.environment.map((row, index) => (
                   <div
                     key={environmentKeys[profile.id]?.[index] ?? row.name}
@@ -476,7 +484,18 @@ export function AgentSettings() {
                 ))}
               </div>
               <div className="space-y-2 border-t border-border pt-3">
-                <Label htmlFor="provider-options">Chat launch options (JSON)</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="provider-options">Chat launch options (JSON)</Label>
+                  <HelpPopover label="Chat launch options" testId="provider-options-help">
+                    {chatRuntime(profile.agent) === "claude-sdk"
+                      ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
+                      : chatRuntime(profile.agent) === "codex"
+                        ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
+                        : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
+                    Session options override these defaults. These options apply to chat, not native
+                    terminal launches.
+                  </HelpPopover>
+                </div>
                 <Textarea
                   id="provider-options"
                   data-testid="provider-options"
@@ -487,14 +506,6 @@ export function AgentSettings() {
                   value={optionDrafts[profile.id] ?? optionsText(profile)}
                   onChange={(event) => changeOptions(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">
-                  {chatRuntime(profile.agent) === "claude-sdk"
-                    ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
-                    : chatRuntime(profile.agent) === "codex"
-                      ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
-                      : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
-                  Session options override these defaults.
-                </p>
                 {optionErrors[profile.id] && (
                   <p role="alert" className="text-xs text-error">
                     {optionErrors[profile.id]}
@@ -502,28 +513,31 @@ export function AgentSettings() {
                 )}
               </div>
             </details>
-            <div className="border-t border-border pt-3">
-              <h3 className="text-sm font-medium">Context</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1 border-t border-border pt-3">
+              <h3 className="text-sm font-medium">Context compaction</h3>
+              <HelpPopover label="Context compaction" testId="provider-compact-help">
                 {supportsManualCompaction(profile.agent)
                   ? "Compact an idle conversation from its actions or send /compact. Automatic compaction stays under the agent's control."
                   : "Manual compaction is not available through this adapter."}
-              </p>
+              </HelpPopover>
             </div>
             {supportsManualCompaction(profile.agent) && (
               <details className="space-y-2 border-t border-border pt-3">
                 <summary className="min-h-11 cursor-pointer text-sm">Local account limits</summary>
-                <p className="text-xs text-muted-foreground">
-                  Local CLI account only. Gateway, Bedrock billing and SSH quotas are not included.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={quotas.isFetching}
-                  onClick={() => void quotas.refetch()}
-                >
-                  {quotas.isFetching ? "Checking..." : "Check limits"}
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={quotas.isFetching}
+                    onClick={() => void quotas.refetch()}
+                  >
+                    {quotas.isFetching ? "Checking..." : "Check limits"}
+                  </Button>
+                  <HelpPopover label="Local account limits" testId="provider-limits-help">
+                    Local CLI account only. Gateway, Bedrock billing and SSH quotas are not
+                    included.
+                  </HelpPopover>
+                </div>
                 {quotas.isError && <p role="alert">Limits could not be loaded. Try again.</p>}
                 {quota && (
                   <div data-testid="provider-limits" className="space-y-2 text-xs">
@@ -597,8 +611,13 @@ export function AgentSettings() {
       </div>
       <Dialog open={newOpen} onOpenChange={setNewOpen}>
         <DialogContent>
-          <DialogTitle>New provider</DialogTitle>
-          <DialogDescription>
+          <div className="flex items-center gap-1">
+            <DialogTitle>New provider</DialogTitle>
+            <HelpPopover label="New provider" testId="provider-new-help">
+              Choose a coding-agent adapter, then configure its models and environment.
+            </HelpPopover>
+          </div>
+          <DialogDescription className="sr-only">
             Choose a coding-agent adapter, then configure its models and environment.
           </DialogDescription>
           <div className="space-y-4">

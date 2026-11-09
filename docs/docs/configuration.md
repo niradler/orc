@@ -6,6 +6,7 @@ Open **Settings → Providers**. Choose **New provider**, name it (for example,
 **Claude LiteLLM**), select a coding-agent adapter, and configure its connection.
 You can create several providers using the same adapter. Claude Code and Codex
 use native integrations; other coding agents use acpx.
+Field guidance and examples live behind info icons: hover, focus or tap to read them.
 
 Choose an enabled **Default provider** for new chats. Each provider has a default
 model; leave it blank to use the adapter's default. The chat picker selects named
