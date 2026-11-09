@@ -7,8 +7,11 @@ export function BrowserProfilesSettings() {
   const bridge = desktopBridge()?.preview;
   const [profiles, setProfiles] = useState<PreviewProfile[]>([]);
   const [name, setName] = useState("");
+  const [rename, setRename] = useState("");
   const [selected, setSelected] = useState("");
   const [port, setPort] = useState("9222");
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [store, setStore] = useState("");
   const [source, setSource] = useState<PreviewImportSource | null>(null);
   const [sites, setSites] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -86,8 +89,114 @@ export function BrowserProfilesSettings() {
           ))}
         </select>
       )}
+      {selected && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            aria-label="Rename browser profile"
+            data-testid="browser-profile-rename-name"
+            className="form-control form-control-single min-w-0 flex-1"
+            maxLength={80}
+            value={rename}
+            onChange={(event) => setRename(event.target.value)}
+            placeholder="New profile name"
+          />
+          <Button
+            disabled={busy || !rename.trim()}
+            data-testid="browser-profile-rename"
+            onClick={() =>
+              void run(async () => {
+                if (!bridge) return;
+                await bridge.renameProfile(selected, rename.trim());
+                setProfiles(await bridge.profiles());
+                setRename("");
+                setStatus("Profile renamed.");
+              })
+            }
+          >
+            Rename
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={busy}
+            data-testid="browser-profile-remove"
+            onClick={() =>
+              void run(async () => {
+                if (!bridge) return;
+                if (await bridge.removeProfile(selected)) {
+                  setProfiles(await bridge.profiles());
+                  setSelected("");
+                  setStatus("Profile removed and site data cleared.");
+                }
+              })
+            }
+          >
+            Remove profile
+          </Button>
+        </div>
+      )}
       <details className="mt-4" data-testid="browser-import-settings">
         <summary className="cursor-pointer text-sm">Import selected browser logins</summary>
+        <p className="my-2 text-xs text-muted-foreground">
+          Select a destination profile above. Scan installed Firefox profiles, or
+          Chrome/Edge/Brave/Chromium on macOS and Linux, and Safari on macOS. Only the sites you
+          choose are copied. Close the source browser first. OS keychain approval may be required;
+          Linux encrypted stores require Secret Service’s secret-tool.
+        </p>
+        <div className="my-2 flex flex-wrap gap-2">
+          <Button
+            disabled={busy || !selected}
+            data-testid="browser-import-stores"
+            onClick={() =>
+              void run(async () => {
+                if (!bridge) return;
+                setSource(null);
+                setSites([]);
+                setStore("");
+                setStores([]);
+                const found = await bridge.importStores();
+                setStores(found);
+                if (!found.length)
+                  setStatus(
+                    "No supported cookie stores found. Use the live-browser connection below; Windows Chrome/Edge app-bound cookies require it.",
+                  );
+              })
+            }
+          >
+            Scan browser profiles
+          </Button>
+          {stores.length > 0 && (
+            <select
+              aria-label="Source browser profile"
+              disabled={busy}
+              className="form-control form-control-single min-w-0"
+              value={store}
+              onChange={(event) => setStore(event.target.value)}
+            >
+              <option value="">Choose source profile</option>
+              {stores.map((value) => (
+                <option key={value.id} value={value.id}>
+                  {value.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {store && (
+            <Button
+              disabled={busy || !selected}
+              data-testid="browser-import-store-discover"
+              onClick={() =>
+                void run(async () => {
+                  if (!bridge) return;
+                  setSource(null);
+                  setSites([]);
+                  setSource(await bridge.discoverStore(store));
+                })
+              }
+            >
+              Choose source sites
+            </Button>
+          )}
+        </div>
         <p className="my-2 text-xs text-muted-foreground">
           Connect a Chrome/Edge profile whose local debugging endpoint you enabled, then select
           sites and a destination profile. Approve any prompt in that browser. Only selected sites’

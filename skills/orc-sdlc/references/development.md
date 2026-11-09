@@ -132,6 +132,18 @@ quietly redefine the acceptance criteria or substitute a cheaper partial result.
 
 ## Git delivery
 
+For desktop browser/file work, validate the actual Electron guest, renderer and
+MCP connection with isolated demo data. A web-only run cannot establish native
+view layering, OS dialogs, profile persistence, recording or revocation behavior.
+Check caller/session/client discovery separately from command execution. Exercise
+save conflicts and interrupted recording/import/download recovery; require durable
+storage before reporting a successful save/import. Compare requested competitor
+capabilities against source and observed behavior, preserving individual gaps.
+Read the effective platform browser guide for operations and context recovery;
+do not attach agents to the application's global debugging connection. Keep
+installed-guide/version mismatches explicit and follow the user's distribution
+authorization rather than silently updating an installation.
+
 Use the task's supplied checkout when present; for fresh branch work follow project
 branch conventions and preserve unrelated worktrees. Commit intended changes in
 coherent reviewable units. Publishing follows the user's authorization and repository

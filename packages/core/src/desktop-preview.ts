@@ -39,7 +39,60 @@ export const PreviewOpenSchema = z
       context.addIssue({ code: "custom", message: "Invalid file path", path: ["target"] });
   });
 export type PreviewOpen = z.infer<typeof PreviewOpenSchema>;
+export const BrowserSelectorSchema = z.union([
+  z.string().min(1).max(1000),
+  z
+    .object({
+      by: z.enum(["role", "text", "label", "placeholder", "testid", "css"]),
+      value: z.string().min(1).max(1000),
+      name: z.string().max(1000).optional(),
+      exact: z.boolean().optional(),
+    })
+    .strict(),
+]);
+export type BrowserSelector = z.infer<typeof BrowserSelectorSchema>;
 export const BrowserActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("resize_reset") }).strict(),
+  z.object({ action: z.literal("download"), download_id: z.string().uuid() }).strict(),
+  z
+    .object({
+      action: z.literal("upload"),
+      selector: BrowserSelectorSchema,
+      paths: z.array(z.string().min(1).max(4096)).min(1).max(10),
+    })
+    .strict(),
+  z.object({ action: z.literal("frames") }).strict(),
+  z.object({ action: z.literal("frame"), frame_id: z.string().max(100).nullable() }).strict(),
+  z
+    .object({
+      action: z.literal("dialog"),
+      response: z.enum(["status", "accept", "dismiss"]).default("status"),
+      text: z.string().max(2000).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("appearance"),
+      color_scheme: z.enum(["light", "dark", "system"]),
+      reduced_motion: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("resize"),
+      width: z.number().int().min(240).max(3840),
+      height: z.number().int().min(160).max(2160),
+      device_scale_factor: z.number().min(0.5).max(4).default(1),
+      mobile: z.boolean().default(false),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("recording_start"),
+      max_seconds: z.number().int().min(1).max(180).default(60),
+    })
+    .strict(),
+  z.object({ action: z.literal("recording_stop") }).strict(),
   z.object({ action: z.literal("tabs") }).strict(),
   z.object({ action: z.literal("tab_select"), tab_id: z.string().uuid() }).strict(),
   z.object({ action: z.literal("tab_close"), tab_id: z.string().uuid() }).strict(),
@@ -51,31 +104,31 @@ export const BrowserActionSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("snapshot"),
-      selector: z.string().min(1).max(1000).optional(),
+      selector: BrowserSelectorSchema.optional(),
       max_chars: z.number().int().min(1000).max(24000).optional(),
     })
     .strict(),
   z.object({ action: z.literal("screenshot") }).strict(),
-  z.object({ action: z.literal("click"), selector: z.string().min(1).max(1000) }).strict(),
-  z.object({ action: z.literal("hover"), selector: z.string().min(1).max(1000) }).strict(),
+  z.object({ action: z.literal("click"), selector: BrowserSelectorSchema }).strict(),
+  z.object({ action: z.literal("hover"), selector: BrowserSelectorSchema }).strict(),
   z
     .object({
       action: z.literal("select"),
-      selector: z.string().min(1).max(1000),
-      values: z.array(z.string().max(1000)).min(1).max(100),
+      selector: BrowserSelectorSchema,
+      values: z.array(z.string().max(1000)).max(100),
     })
     .strict(),
   z
     .object({
       action: z.literal("drag"),
-      selector: z.string().min(1).max(1000),
-      target: z.string().min(1).max(1000),
+      selector: BrowserSelectorSchema,
+      target: BrowserSelectorSchema,
     })
     .strict(),
   z
     .object({
       action: z.literal("wait"),
-      selector: z.string().min(1).max(1000).optional(),
+      selector: BrowserSelectorSchema.optional(),
       text: z.string().min(1).max(4000).optional(),
       url_includes: z.string().min(1).max(8192).optional(),
       state: z.enum(["visible", "hidden", "attached", "detached"]).default("visible"),
@@ -95,29 +148,42 @@ export const BrowserActionSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("type"),
-      selector: z.string().min(1).max(1000),
+      selector: BrowserSelectorSchema,
       text: z.string().max(10000),
     })
     .strict(),
   z
     .object({
       action: z.literal("press"),
-      key: z.enum([
-        "Enter",
-        "Tab",
-        "Escape",
-        "ArrowUp",
-        "ArrowDown",
-        "ArrowLeft",
-        "ArrowRight",
-        "Backspace",
-        "Space",
+      modifiers: z
+        .array(z.enum(["Control", "Alt", "Meta", "Shift"]))
+        .max(4)
+        .optional(),
+      key: z.union([
+        z.string().regex(/^[A-Za-z0-9]$/),
+        z.enum([
+          "Enter",
+          "Tab",
+          "Escape",
+          "ArrowUp",
+          "ArrowDown",
+          "ArrowLeft",
+          "ArrowRight",
+          "Backspace",
+          "Space",
+          "Delete",
+          "Home",
+          "End",
+          "PageUp",
+          "PageDown",
+        ]),
       ]),
     })
     .strict(),
   z
     .object({
       action: z.literal("scroll"),
+      selector: BrowserSelectorSchema.optional(),
       x: z.number().finite().min(-10000).max(10000).default(0),
       y: z.number().finite().min(-10000).max(10000),
     })
@@ -162,15 +228,26 @@ export interface PreviewFile {
   local_token?: string;
 }
 export interface PreviewBrowserState {
+  downloads?: PreviewDownload[];
   session_id: string;
   url: string;
   back: boolean;
   forward: boolean;
   loading: boolean;
   error: string | null;
+  dialog?: { type: string; message: string; default_prompt: string } | null;
+  color_scheme?: "light" | "dark" | "system";
+  recording?: boolean;
+  recording_available?: boolean;
   tab_id?: string;
   profile_id?: string | null;
   tabs?: { tab_id: string; url: string; profile_id: string | null }[];
+}
+export interface PreviewDownload {
+  id: string;
+  name: string;
+  status: "downloading" | "completed" | "failed";
+  bytes: number;
 }
 export const PreviewBoundsSchema = z
   .object({

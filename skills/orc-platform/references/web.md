@@ -149,12 +149,27 @@ tab, another conversation or a cached tool name does not enable browser access.
    Navigate through `preview_open_url`, or click a link. `preview_browser_screenshot`
    captures the browser guest only and returns MCP image content. Browser guests
    have no ORC bridge/credentials; automation cannot inspect the ORC app/file editor,
-   or upload files. Evaluation executes only inside the guest and has the signed-in
+   or edit files through browser evaluation. Explicit `upload` uses `selector` and
+   workspace `paths` (8 MiB/file, 16 MiB total); it cannot read outside that session.
+   Evaluation executes only inside the guest and has the signed-in
    website user's abilities; do not request secrets or export credentials.
    Tab commands: `tabs`, `new_tab`/`navigate` plus `url`, `tab_select`/`tab_close`
    plus `tab_id`, `back`, `forward`, `reload`. Top-level `tab_id` pins an action/
    snapshot; stale/foreign/inactive targets fail without automatic retargeting.
    Agents cannot select profiles or use the trusted user-only login import service.
+   Selectors may also be `{by,value,name?,exact?}` (role/text/label/placeholder/testid/css).
+   Cross-origin snapshots carry owned frame IDs. `frames` enumerates; `frame` selects
+   `frame_id`, or null returns to main. Refs route to their original frame; detach
+   and ancestor overlays fail safely. `dialog` status/accept/dismiss handles pending
+   dialogs with optional prompt text. Answer `requires_response` before more actions.
+   `appearance` sets color_scheme (system/light/dark) and optional reduced_motion;
+   `resize` sets width/height/device_scale_factor/mobile (at most16megapixels);
+   `resize_reset` returns to the panel viewport. `recording_start` chooses
+   max_seconds<=180; `recording_stop` saves guest-only WebM<=16MB and returns a
+   workspace path, not raw video. `tabs` includes download statuses; `download`
+   takes a completed download_id and returns its saved workspace path. Never call
+   an interrupted/pending recording or download successful. After losing context,
+   inspect tabs/dialog/download state before repeating an operation with side effects.
 6. Check delivery: `queued` is pending; `opened` acknowledges showing a URL/file,
    not successful site loading; `completed` is a browser command result. Poll
    `preview_request_get({id})` for queued work. Failed/expired is not success. A
@@ -172,13 +187,17 @@ Browser storage is separate from ORC. Temporary mode is the per-chat default;
 users create saved profiles in Settings → Browser and explicitly select one in
 the panel. Choosing the same profile shares its login/storage between those chats.
 Selected-site login import uses a user-enabled loopback Chrome/Edge debugging
-endpoint, never an agent connection; credential values stay in the trusted desktop.
+endpoint or user-selected supported local cookie store, never an agent connection;
+credential values stay in the trusted desktop.
 Only applicable cookies transfer, not passwords/localStorage/IndexedDB/device-bound
 sessions; partitioned cookies are skipped. Check imported logins rather than
 assuming success. The verified source was an isolated Windows Edge profile;
 native Chrome consent flow and Mac/Linux interaction remain unverified. Do not
-promise direct encrypted-profile imports or PDF/Office previews. Downloads/site
-permissions remain blocked.
+promise universal login transfer or PDF/Office previews. Direct stores support
+Firefox/Zen, Safari/macOS, Chromium/macOS/Linux and legacy Helium/Windows;
+OS key approval and source format support still apply. Modern Windows app-bound
+stores use live transfer. Downloads are privately staged, bounded and saved only
+into the trusted session workspace. Site permission requests remain denied.
 Opening web links in the system browser is a user desktop preference; explicit MCP
 preview requests still target the ORC panel. Verified desktop settings route:
 `/settings?settingsSection=browser` (unavailable in plain web).

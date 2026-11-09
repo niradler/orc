@@ -128,7 +128,10 @@ browser's image decoder. PDF and Office previews are not included.
 
 The browser uses a separate session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
-and downloads are blocked. Each chat starts with a temporary browser profile.
+are blocked. Browser downloads are staged privately (16 MB each, four across the
+app); **Browser display & recording** lists their status and saves completed files
+to the selected chat workspace. Interrupted/failed downloads are never reported
+as saved. Each chat starts with a temporary cookie/storage profile.
 **Settings → Browser → Saved browser profiles** creates named profiles; select one
 in the browser panel to remember site logins. Selecting the same profile in another
 chat explicitly shares that profile's site storage. Temporary chats stay isolated.
@@ -137,14 +140,17 @@ the site's expiry rules. Switching profiles closes that chat's browser tabs afte
 confirmation and preserves file drafts. Use **+** to open a browser tab and each
 tab's close button to close it. Popups open another isolated tab. Limits are eight
 tabs per chat and 24 total; reaching a limit asks you to close a tab, without eviction.
+Tab IDs, URLs and the selected tab restore when you return after app restart.
+Temporary mode does not persist cookies; saved tab URLs are still restored.
+Browser settings also offers profile rename and removal. Removal asks for native
+confirmation, closes its tabs, clears cookies/site data/cache and resets chat selections.
 
 **Import selected browser logins**, under Browser settings, connects to a local
 Chrome/Edge debugging endpoint you explicitly enable. Choose the destination ORC
 profile, enter the loopback debugging port, approve any source-browser prompt,
 then select sites from its open pages. Only those sites' applicable cookies are
 copied; their values and the source connection never reach agents or the API.
-The connection closes after import or cancellation. This is a live-browser
-transfer, not a direct import of encrypted browser databases. Import copies cookies
+The connection closes after import or cancellation. Live transfer copies cookies
 applicable to the selected site's root and currently open page path; passwords,
 localStorage, IndexedDB and device-bound sessions are not transferred. Partitioned
 cookies are skipped and counts are reported. Verify the login; some sites require
@@ -153,14 +159,36 @@ decrypted by ORC. Chrome's newer native consent flow and Mac/Linux interaction h
 not been validated here; the verified source was an isolated Windows Edge profile
 with a loopback debugging port. Existing personal profiles may not expose one.
 
+**Scan browser profiles** provides direct cookie-store import from Firefox/Zen,
+Safari on macOS, and supported Chromium-family stores on macOS/Linux. Legacy
+Windows Helium DPAPI stores are supported; app-bound Windows stores require the
+live connection. Select a source profile and individual sites. Reads use readonly
+SQLite snapshots; keys are obtained only after selection through OS facilities.
+macOS may request Keychain/Full Disk Access approval; Linux encrypted stores need
+`secret-tool` and an unlocked Secret Service. Missing keys and skipped cookies are
+reported, never treated as a guaranteed login. Containers and partitioned cookies
+are excluded. Direct Firefox import was exercised with isolated Windows demo data;
+other OS integrations still require their native platform acceptance checks.
+
+Expand **Browser display & recording** to change appearance/viewport, record the
+guest page, save WebM to the chat workspace, and play/download it. UI recording
+lasts up to 60 seconds; agent requests can choose up to 180 seconds. Recordings
+are limited to 16 MB and contain only the browser guest, without audio or ORC UI.
+If workspace saving fails, the completed file remains downloadable in that window.
+
 Agents can use [preview MCP tools](./mcp.md#desktop-preview-tools) to show a file
 or URL in the selected conversation. **Allow agent browser control**, on by
 default, is controlled in the chat's **Session settings** before you open a preview.
 It permits snapshots, screenshots, clicking, typing, key presses, scrolling,
-hovering, selecting, dragging, condition waits and guest JavaScript evaluation.
+hovering, selecting, dragging, condition waits, guest JavaScript evaluation,
+cross-origin frame targeting, semantic locators, dialogs, recording, appearance,
+viewport changes and explicit workspace-file uploads/download retrieval.
 This includes
 pages you sign into there. Turning the switch off revokes control. These tools
-cannot inspect the ORC app or its bridge, upload files or edit preview files.
+cannot inspect the ORC app or its bridge or edit preview files. Upload paths must
+remain inside the chat's trusted workspace. The guest has a minimal standard
+`prompt()` adapter because Electron disables that browser function; it exposes no
+application API, credentials, filesystem access or general IPC.
 Browser content is untrusted page data, never agent instructions.
 If a mutating browser command is still pending when control is revoked or its
 guest is hidden/switched, ORC closes that guest to prevent delayed execution.

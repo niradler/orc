@@ -1,5 +1,6 @@
 import {
   type BrowserAction,
+  type BrowserSelector,
   PREVIEW_COMMAND,
   PREVIEW_EVENT,
   PREVIEW_OPEN_EVENT,
@@ -27,6 +28,38 @@ import {
 
 contextBridge.exposeInMainWorld("orcDesktop", {
   preview: {
+    upload: (
+      session_id: string,
+      selector: BrowserSelector,
+      files: { name: string; data: string }[],
+      tab_id?: string,
+    ): Promise<unknown> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, {
+        action: "upload",
+        session_id,
+        selector,
+        files,
+        ...(tab_id ? { tab_id } : {}),
+      }),
+    importStores: (): Promise<{ id: string; name: string }[]> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "import_stores" }),
+    discoverStore: (source_id: string): Promise<PreviewImportSource> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "import_store_discover", source_id }),
+    display: (session_id: string, command: BrowserAction): Promise<unknown> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "display", session_id, command }),
+    pageDialog: (session_id: string, accept: boolean, text?: string): Promise<void> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, {
+        action: "page_dialog",
+        session_id,
+        accept,
+        ...(text === undefined ? {} : { text }),
+      }),
+    restore: (session_id: string): Promise<PreviewBrowserState | null> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "restore", session_id }),
+    renameProfile: (profile_id: string, name: string): Promise<PreviewProfile> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "profile_rename", profile_id, name }),
+    removeProfile: (profile_id: string): Promise<boolean> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "profile_remove", profile_id }),
     cancelImport: (): Promise<void> =>
       ipcRenderer.invoke(PREVIEW_COMMAND, { action: "import_cancel" }),
     onProfiles: (listener: (profiles: PreviewProfile[]) => void): (() => void) => {

@@ -6,9 +6,11 @@ import {
   PreviewClientSchema,
   PreviewOpenSchema,
 } from "@orc/core/desktop-preview";
+import { ValidationError } from "@orc/core/errors";
+import { storeSessionFiles } from "@orc/core/session-files";
 import { bodyLimit } from "hono/body-limit";
 import { previewBroker } from "../desktop-preview/broker.js";
-import { readPreviewFile, savePreviewFile } from "../desktop-preview/files.js";
+import { readPreviewData, readPreviewFile, savePreviewFile } from "../desktop-preview/files.js";
 import { previewSession } from "../desktop-preview/session.js";
 import { createRouter } from "../lib/router.js";
 import { bearerAuth } from "../middleware/auth.js";
@@ -17,7 +19,11 @@ const app = createRouter();
 app.use("/desktop-preview/*", (c, next) =>
   bearerAuth(configuredApiSecret(loadConfig().api.secret))(c, next),
 );
-app.use("/desktop-preview/*", bodyLimit({ maxSize: 2_000_000 }));
+app.use("/desktop-preview/*", (c, next) =>
+  bodyLimit({
+    maxSize: /\/desktop-preview\/(recording|artifact)$/.test(c.req.path) ? 16_000_000 : 2_000_000,
+  })(c, next),
+);
 app.use("/desktop-preview/*", async (c, next) => {
   c.header("Cache-Control", "no-store");
   await next();
@@ -46,6 +52,104 @@ const fileResult = z.object({
 const params = z.object({ id: z.string().uuid() });
 const sessionQuery = z.object({ session_id: z.string().min(1).max(200) });
 const fileQuery = sessionQuery.extend({ target: z.string().min(1).max(4096) });
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/desktop-preview/artifact",
+    tags: ["Desktop preview"],
+    summary: "Save a bounded browser download in its trusted session workspace",
+    request: {
+      query: sessionQuery.extend({ name: z.string().min(1).max(255) }),
+      body: {
+        content: {
+          "application/octet-stream": {
+            schema: z.string().openapi({ type: "string", format: "binary" }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({ path: z.string(), name: z.string(), size: z.number(), mimeType: z.string() }),
+      ),
+    },
+  }),
+  async (c) => {
+    const input = c.req.valid("query"),
+      session = await previewSession(input.session_id),
+      bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.length > 16_000_000) throw new ValidationError("Downloads must be at most 16 MB");
+    const [file] = await storeSessionFiles({
+      host: session.host,
+      cwd: session.cwd,
+      sessionId: session.id,
+      files: [{ name: input.name, mimeType: "application/octet-stream", data: bytes }],
+    });
+    if (!file) throw new ValidationError("Download could not be saved");
+    return c.json({ path: file.path, name: file.name, size: file.size, mimeType: file.mimeType });
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/desktop-preview/upload",
+    tags: ["Desktop preview"],
+    summary: "Read a bounded browser-upload file from its trusted session workspace",
+    request: { query: fileQuery },
+    responses: { 200: json(z.object({ name: z.string(), data: z.string() })) },
+  }),
+  async (c) => {
+    const input = c.req.valid("query"),
+      session = await previewSession(input.session_id);
+    const file = await readPreviewData(session.host, session.cwd, input.target);
+    return c.json({
+      name: file.path.split(/[\\/]/).pop() ?? "upload",
+      data: Buffer.from(file.bytes).toString("base64"),
+    });
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/desktop-preview/recording",
+    tags: ["Desktop preview"],
+    summary: "Save a bounded browser recording in its trusted session workspace",
+    request: {
+      query: sessionQuery,
+      body: {
+        content: {
+          "video/webm": { schema: z.string().openapi({ type: "string", format: "binary" }) },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({ path: z.string(), name: z.string(), size: z.number(), mimeType: z.string() }),
+      ),
+    },
+  }),
+  async (c) => {
+    const session = await previewSession(c.req.valid("query").session_id);
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (
+      bytes.length < 32 ||
+      bytes.length > 16_000_000 ||
+      bytes[0] !== 0x1a ||
+      bytes[1] !== 0x45 ||
+      bytes[2] !== 0xdf ||
+      bytes[3] !== 0xa3
+    )
+      throw new ValidationError("Expected a WebM browser recording, at most 16 MB");
+    const [file] = await storeSessionFiles({
+      host: session.host,
+      cwd: session.cwd,
+      sessionId: session.id,
+      files: [{ name: `browser-${Date.now()}.webm`, mimeType: "video/webm", data: bytes }],
+    });
+    if (!file) throw new ValidationError("Recording could not be saved");
+    return c.json({ path: file.path, name: file.name, size: file.size, mimeType: file.mimeType });
+  },
+);
 app.openapi(
   createRoute({
     method: "get",

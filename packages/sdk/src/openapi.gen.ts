@@ -2076,6 +2076,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop-preview/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save a bounded browser download in its trusted session workspace */
+        post: {
+            parameters: {
+                query: {
+                    session_id: string;
+                    name: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                            name: string;
+                            size: number;
+                            mimeType: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a bounded browser-upload file from its trusted session workspace */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                    target: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            name: string;
+                            data: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save a bounded browser recording in its trusted session workspace */
+        post: {
+            parameters: {
+                query: {
+                    session_id: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "video/webm": string;
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                            name: string;
+                            size: number;
+                            mimeType: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop-preview/clients": {
         parameters: {
             query?: never;
@@ -2274,6 +2411,64 @@ export interface paths {
                                 result?: unknown;
                                 command?: {
                                     /** @enum {string} */
+                                    action: "resize_reset";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "download";
+                                    /** Format: uuid */
+                                    download_id: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "upload";
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    paths: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    action: "frames";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "frame";
+                                    frame_id: string | null;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "dialog";
+                                    /**
+                                     * @default status
+                                     * @enum {string}
+                                     */
+                                    response: "status" | "accept" | "dismiss";
+                                    text?: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "appearance";
+                                    /** @enum {string} */
+                                    color_scheme: "light" | "dark" | "system";
+                                    reduced_motion?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "resize";
+                                    width: number;
+                                    height: number;
+                                    /** @default 1 */
+                                    device_scale_factor: number;
+                                    /** @default false */
+                                    mobile: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "recording_start";
+                                    /** @default 60 */
+                                    max_seconds: number;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "recording_stop";
+                                } | {
+                                    /** @enum {string} */
                                     action: "tabs";
                                 } | {
                                     /** @enum {string} */
@@ -2305,7 +2500,13 @@ export interface paths {
                                 } | {
                                     /** @enum {string} */
                                     action: "snapshot";
-                                    selector?: string;
+                                    selector?: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                     max_chars?: number;
                                 } | {
                                     /** @enum {string} */
@@ -2313,25 +2514,61 @@ export interface paths {
                                 } | {
                                     /** @enum {string} */
                                     action: "click";
-                                    selector: string;
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                 } | {
                                     /** @enum {string} */
                                     action: "hover";
-                                    selector: string;
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                 } | {
                                     /** @enum {string} */
                                     action: "select";
-                                    selector: string;
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                     values: string[];
                                 } | {
                                     /** @enum {string} */
                                     action: "drag";
-                                    selector: string;
-                                    target: string;
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    target: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                 } | {
                                     /** @enum {string} */
                                     action: "wait";
-                                    selector?: string;
+                                    selector?: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                     text?: string;
                                     url_includes?: string;
                                     /**
@@ -2350,16 +2587,29 @@ export interface paths {
                                 } | {
                                     /** @enum {string} */
                                     action: "type";
-                                    selector: string;
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                     text: string;
                                 } | {
                                     /** @enum {string} */
                                     action: "press";
-                                    /** @enum {string} */
-                                    key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                                    modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                    key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
                                 } | {
                                     /** @enum {string} */
                                     action: "scroll";
+                                    selector?: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
                                     /** @default 0 */
                                     x: number;
                                     y: number;
@@ -2430,6 +2680,64 @@ export interface paths {
                             result?: unknown;
                             command?: {
                                 /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
                                 action: "tabs";
                             } | {
                                 /** @enum {string} */
@@ -2461,7 +2769,13 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "snapshot";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 max_chars?: number;
                             } | {
                                 /** @enum {string} */
@@ -2469,25 +2783,61 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "click";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "hover";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "select";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 values: string[];
                             } | {
                                 /** @enum {string} */
                                 action: "drag";
-                                selector: string;
-                                target: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "wait";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text?: string;
                                 url_includes?: string;
                                 /**
@@ -2506,16 +2856,29 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "type";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text: string;
                             } | {
                                 /** @enum {string} */
                                 action: "press";
-                                /** @enum {string} */
-                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
                             } | {
                                 /** @enum {string} */
                                 action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 /** @default 0 */
                                 x: number;
                                 y: number;
@@ -2558,6 +2921,64 @@ export interface paths {
                         client_id?: string;
                         command: {
                             /** @enum {string} */
+                            action: "resize_reset";
+                        } | {
+                            /** @enum {string} */
+                            action: "download";
+                            /** Format: uuid */
+                            download_id: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "upload";
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            paths: string[];
+                        } | {
+                            /** @enum {string} */
+                            action: "frames";
+                        } | {
+                            /** @enum {string} */
+                            action: "frame";
+                            frame_id: string | null;
+                        } | {
+                            /** @enum {string} */
+                            action: "dialog";
+                            /**
+                             * @default status
+                             * @enum {string}
+                             */
+                            response?: "status" | "accept" | "dismiss";
+                            text?: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "appearance";
+                            /** @enum {string} */
+                            color_scheme: "light" | "dark" | "system";
+                            reduced_motion?: boolean;
+                        } | {
+                            /** @enum {string} */
+                            action: "resize";
+                            width: number;
+                            height: number;
+                            /** @default 1 */
+                            device_scale_factor?: number;
+                            /** @default false */
+                            mobile?: boolean;
+                        } | {
+                            /** @enum {string} */
+                            action: "recording_start";
+                            /** @default 60 */
+                            max_seconds?: number;
+                        } | {
+                            /** @enum {string} */
+                            action: "recording_stop";
+                        } | {
+                            /** @enum {string} */
                             action: "tabs";
                         } | {
                             /** @enum {string} */
@@ -2589,7 +3010,13 @@ export interface paths {
                         } | {
                             /** @enum {string} */
                             action: "snapshot";
-                            selector?: string;
+                            selector?: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                             max_chars?: number;
                         } | {
                             /** @enum {string} */
@@ -2597,25 +3024,61 @@ export interface paths {
                         } | {
                             /** @enum {string} */
                             action: "click";
-                            selector: string;
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                         } | {
                             /** @enum {string} */
                             action: "hover";
-                            selector: string;
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                         } | {
                             /** @enum {string} */
                             action: "select";
-                            selector: string;
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                             values: string[];
                         } | {
                             /** @enum {string} */
                             action: "drag";
-                            selector: string;
-                            target: string;
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            target: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                         } | {
                             /** @enum {string} */
                             action: "wait";
-                            selector?: string;
+                            selector?: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                             text?: string;
                             url_includes?: string;
                             /**
@@ -2634,16 +3097,29 @@ export interface paths {
                         } | {
                             /** @enum {string} */
                             action: "type";
-                            selector: string;
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                             text: string;
                         } | {
                             /** @enum {string} */
                             action: "press";
-                            /** @enum {string} */
-                            key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                            modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                            key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
                         } | {
                             /** @enum {string} */
                             action: "scroll";
+                            selector?: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
                             /** @default 0 */
                             x?: number;
                             y: number;
@@ -2673,6 +3149,64 @@ export interface paths {
                             expires_at: number;
                             result?: unknown;
                             command?: {
+                                /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
                                 /** @enum {string} */
                                 action: "tabs";
                             } | {
@@ -2705,7 +3239,13 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "snapshot";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 max_chars?: number;
                             } | {
                                 /** @enum {string} */
@@ -2713,25 +3253,61 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "click";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "hover";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "select";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 values: string[];
                             } | {
                                 /** @enum {string} */
                                 action: "drag";
-                                selector: string;
-                                target: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "wait";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text?: string;
                                 url_includes?: string;
                                 /**
@@ -2750,16 +3326,29 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "type";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text: string;
                             } | {
                                 /** @enum {string} */
                                 action: "press";
-                                /** @enum {string} */
-                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
                             } | {
                                 /** @enum {string} */
                                 action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 /** @default 0 */
                                 x: number;
                                 y: number;
@@ -2816,6 +3405,64 @@ export interface paths {
                             result?: unknown;
                             command?: {
                                 /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
                                 action: "tabs";
                             } | {
                                 /** @enum {string} */
@@ -2847,7 +3494,13 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "snapshot";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 max_chars?: number;
                             } | {
                                 /** @enum {string} */
@@ -2855,25 +3508,61 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "click";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "hover";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "select";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 values: string[];
                             } | {
                                 /** @enum {string} */
                                 action: "drag";
-                                selector: string;
-                                target: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "wait";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text?: string;
                                 url_includes?: string;
                                 /**
@@ -2892,16 +3581,29 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "type";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text: string;
                             } | {
                                 /** @enum {string} */
                                 action: "press";
-                                /** @enum {string} */
-                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
                             } | {
                                 /** @enum {string} */
                                 action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 /** @default 0 */
                                 x: number;
                                 y: number;
@@ -2974,6 +3676,64 @@ export interface paths {
                             result?: unknown;
                             command?: {
                                 /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
                                 action: "tabs";
                             } | {
                                 /** @enum {string} */
@@ -3005,7 +3765,13 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "snapshot";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 max_chars?: number;
                             } | {
                                 /** @enum {string} */
@@ -3013,25 +3779,61 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "click";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "hover";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "select";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 values: string[];
                             } | {
                                 /** @enum {string} */
                                 action: "drag";
-                                selector: string;
-                                target: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                             } | {
                                 /** @enum {string} */
                                 action: "wait";
-                                selector?: string;
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text?: string;
                                 url_includes?: string;
                                 /**
@@ -3050,16 +3852,29 @@ export interface paths {
                             } | {
                                 /** @enum {string} */
                                 action: "type";
-                                selector: string;
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 text: string;
                             } | {
                                 /** @enum {string} */
                                 action: "press";
-                                /** @enum {string} */
-                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
                             } | {
                                 /** @enum {string} */
                                 action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
                                 /** @default 0 */
                                 x: number;
                                 y: number;

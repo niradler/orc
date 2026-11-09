@@ -81,11 +81,12 @@ function imageMime(bytes: Uint8Array): string | null {
   return null;
 }
 
-export async function readPreviewFile(
+export async function readPreviewData(
   host: ExecHost,
   cwd: string,
   target: string,
-): Promise<PreviewFile> {
+  limit = IMAGE_LIMIT,
+): Promise<{ root: string; path: string; bytes: Uint8Array }> {
   const scoped = await previewPath(host, cwd, target);
   let root = scoped.root,
     path: string,
@@ -110,16 +111,16 @@ export async function readPreviewFile(
     );
     try {
       const info = await file.stat();
-      if (!info.isFile() || info.size > IMAGE_LIMIT)
+      if (!info.isFile() || info.size > limit)
         throw new ValidationError("Only regular files up to 8 MiB can be previewed");
-      const buffer = Buffer.alloc(IMAGE_LIMIT + 1);
+      const buffer = Buffer.alloc(limit + 1);
       let length = 0;
       while (length < buffer.length) {
         const read = await file.read(buffer, length, buffer.length - length, null);
         if (!read.bytesRead) break;
         length += read.bytesRead;
       }
-      if (length > IMAGE_LIMIT) throw new ValidationError("File exceeds the preview limit");
+      if (length > limit) throw new ValidationError("File exceeds the preview limit");
       bytes = buffer.subarray(0, length);
     } finally {
       await file.close();
@@ -129,7 +130,7 @@ export async function readPreviewFile(
     const python = (await runtime.binary("python3")) ?? (await runtime.binary("python"));
     if (!python) throw new ValidationError("Remote previews require Python 3 on the session host");
     const result = await runtime.exec([python, "-c", REMOTE_READ], {
-      input: JSON.stringify({ ...scoped, limit: IMAGE_LIMIT }),
+      input: JSON.stringify({ ...scoped, limit }),
       timeoutMs: 15000,
     });
     if (result.code !== 0) throw new ValidationError("Remote file could not be read");
@@ -144,6 +145,15 @@ export async function readPreviewFile(
     path = data.path;
     bytes = Buffer.from(data.data, "base64");
   }
+  return { root, path, bytes };
+}
+
+export async function readPreviewFile(
+  host: ExecHost,
+  cwd: string,
+  target: string,
+): Promise<PreviewFile> {
+  const { root, path, bytes } = await readPreviewData(host, cwd, target);
   const mime = imageMime(bytes);
   if (mime)
     return {

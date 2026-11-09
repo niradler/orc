@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import {
   BrowserActionSchema,
+  BrowserSelectorSchema,
   PREVIEW_COMMAND,
   PREVIEW_EVENT,
   PREVIEW_OPEN_EVENT,
@@ -10,16 +11,36 @@ import {
   PreviewPreferencesSchema,
   previewWebUrl,
 } from "@orc/core/desktop-preview";
-import { app, type BrowserWindow, ipcMain, session, shell } from "electron";
+import { app, type BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import { z } from "zod";
 import { PreviewBrowser } from "./preview-browser.js";
 import { PreviewLocalFiles } from "./preview-files.js";
 import { PreviewImport } from "./preview-import.js";
 import { PreviewChatPreferencesStore, PreviewPreferencesStore } from "./preview-preferences.js";
 import { PreviewProfiles } from "./preview-profiles.js";
+import { PreviewStoreImport } from "./preview-store-import.js";
 
 const sessionId = z.string().min(1).max(200);
 const commandSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("upload"),
+      session_id: sessionId,
+      tab_id: z.string().uuid().optional(),
+      selector: BrowserSelectorSchema,
+      files: z
+        .array(
+          z.object({ name: z.string().min(1).max(255), data: z.string().max(11_184_812) }).strict(),
+        )
+        .min(1)
+        .max(10),
+    })
+    .strict(),
+  z.object({ action: z.literal("import_stores") }).strict(),
+  z.object({ action: z.literal("import_store_discover"), source_id: z.string().uuid() }).strict(),
+  z
+    .object({ action: z.literal("display"), session_id: sessionId, command: BrowserActionSchema })
+    .strict(),
   z.object({ action: z.literal("import_cancel") }).strict(),
   z
     .object({ action: z.literal("import_discover"), port: z.number().int().min(1024).max(65535) })
@@ -33,6 +54,23 @@ const commandSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("profiles") }).strict(),
+  z.object({ action: z.literal("restore"), session_id: sessionId }).strict(),
+  z
+    .object({
+      action: z.literal("page_dialog"),
+      session_id: sessionId,
+      accept: z.boolean(),
+      text: z.string().max(2000).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("profile_rename"),
+      profile_id: z.string().uuid(),
+      name: z.string().trim().min(1).max(80),
+    })
+    .strict(),
+  z.object({ action: z.literal("profile_remove"), profile_id: z.string().uuid() }).strict(),
   z
     .object({ action: z.literal("profile_create"), name: z.string().trim().min(1).max(80) })
     .strict(),
@@ -126,6 +164,9 @@ let active: {
   chatPreferences: PreviewChatPreferencesStore;
   profiles: PreviewProfiles;
   importer: PreviewImport;
+  storeImporter: PreviewStoreImport;
+  imports: Promise<void>;
+  removingProfiles: Set<string>;
   dirty: boolean;
 } | null = null;
 let installed = false;
@@ -144,6 +185,10 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
       const profileId = profiles.selected(id);
       return { id: profileId, partition: profileId ? profiles.partition(profileId) : null };
     },
+    {
+      read: (id) => profiles.workspace(id),
+      save: (id, value) => profiles.saveWorkspace(id, value),
+    },
   );
   const files = new PreviewLocalFiles(window);
   const preferences = new PreviewPreferencesStore(
@@ -161,6 +206,9 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
     chatPreferences,
     profiles,
     importer: new PreviewImport(origin),
+    storeImporter: new PreviewStoreImport(),
+    imports: Promise.resolve(),
+    removingProfiles: new Set(),
     dirty: false,
   };
   // A damaged preference file must not enable control silently.
@@ -172,6 +220,7 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
   window.webContents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => {
     if (mainFrame && !inPlace) {
       active?.importer.cancel();
+      active?.storeImporter.cancel();
       browser.dispose();
       files.clear();
       if (active?.window === window) active.dirty = false;
@@ -179,6 +228,7 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
   });
   window.on("closed", () => {
     active?.importer.cancel();
+    active?.storeImporter.cancel();
     browser.dispose();
     if (active?.window === window) active = null;
   });
@@ -196,19 +246,80 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
       throw new Error("Desktop preview access denied");
     const input = commandSchema.parse(payload);
     switch (input.action) {
+      case "upload":
+        return host.browser.upload(input.session_id, input.selector, input.files, input.tab_id);
+      case "import_stores":
+        return host.storeImporter.list();
+      case "import_store_discover":
+        host.importer.cancel();
+        return host.storeImporter.discover(input.source_id);
+      case "display":
+        return host.browser.userControl(input.session_id, input.command);
       case "import_cancel":
         host.importer.cancel();
+        host.storeImporter.cancel();
         return;
       case "import_discover":
+        host.storeImporter.cancel();
         return host.importer.discover(input.port);
-      case "import_transfer":
-        return host.importer.transfer(
-          input.source_id,
-          input.sites,
-          session.fromPartition(host.profiles.partition(input.profile_id)),
+      case "import_transfer": {
+        const work = host.imports.then(() => {
+          if (host.removingProfiles.has(input.profile_id))
+            throw new Error("This browser profile is being removed");
+          const target = session.fromPartition(host.profiles.partition(input.profile_id));
+          return host.storeImporter.has(input.source_id)
+            ? host.storeImporter.transfer(input.source_id, input.sites, target)
+            : host.importer.transfer(input.source_id, input.sites, target);
+        });
+        host.imports = work.then(
+          () => {},
+          () => {},
         );
+        return work;
+      }
       case "profiles":
         return host.profiles.list();
+      case "restore":
+        return host.browser.restore(input.session_id);
+      case "page_dialog":
+        return host.browser.respondToDialog(input.session_id, input.accept, input.text);
+      case "profile_rename": {
+        const profile = host.profiles.rename(input.profile_id, input.name);
+        host.window.webContents.send(PREVIEW_PROFILES_EVENT, host.profiles.list());
+        return profile;
+      }
+      case "profile_remove": {
+        const partition = host.profiles.partition(input.profile_id);
+        const profile = host.profiles.list().find((profile) => profile.id === input.profile_id);
+        const result = await dialog.showMessageBox(host.window, {
+          type: "warning",
+          buttons: ["Cancel", "Remove profile"],
+          defaultId: 0,
+          cancelId: 0,
+          message: `Remove ${profile?.name ?? "browser profile"}?`,
+          detail:
+            "This signs out its sites and closes browser tabs using this profile. File drafts are preserved.",
+        });
+        if (result.response !== 1) return false;
+        if (host.removingProfiles.has(input.profile_id))
+          throw new Error("Profile removal is already in progress");
+        host.removingProfiles.add(input.profile_id);
+        host.importer.cancel();
+        host.storeImporter.cancel();
+        await host.imports;
+        try {
+          host.browser.closeProfile(input.profile_id);
+          const isolated = session.fromPartition(partition);
+          await isolated.clearStorageData();
+          await isolated.clearCache();
+          isolated.flushStorageData();
+          host.profiles.remove(input.profile_id);
+          host.window.webContents.send(PREVIEW_PROFILES_EVENT, host.profiles.list());
+          return true;
+        } finally {
+          host.removingProfiles.delete(input.profile_id);
+        }
+      }
       case "profile_create": {
         const profile = host.profiles.create(input.name);
         host.window.webContents.send(PREVIEW_PROFILES_EVENT, host.profiles.list());

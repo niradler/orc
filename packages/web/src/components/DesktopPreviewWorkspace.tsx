@@ -1,4 +1,5 @@
 import {
+  type BrowserAction,
   type PreviewBrowserState,
   type PreviewFile,
   type PreviewProfile,
@@ -29,8 +30,9 @@ import {
   useState,
 } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, getApiUrl } from "@/api/client";
+import { api, apiFetch, getApiUrl } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePreviewDelivery } from "@/hooks/usePreviewDelivery";
@@ -74,6 +76,39 @@ function error(cause: unknown): string {
   return cause instanceof Error ? cause.message : "Preview could not be opened";
 }
 
+async function saveRecording(
+  result: unknown,
+  session: string,
+  capture: (blob: Blob, name: string) => void,
+): Promise<unknown> {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("type" in result) ||
+    !["recording", "download"].includes(String(result.type))
+  )
+    return result;
+  if (!("data" in result) || typeof result.data !== "string" || result.data.length > 21_333_336)
+    throw new Error("Invalid browser recording");
+  const bytes = Uint8Array.from(atob(result.data), (value) => value.charCodeAt(0));
+  const name =
+    "name" in result && typeof result.name === "string" ? result.name : "browser-recording.webm";
+  const recording = result.type === "recording",
+    mime = recording ? "video/webm" : "application/octet-stream";
+  const blob = new Blob([bytes], { type: mime });
+  capture(blob, name);
+  const response = await apiFetch(
+    `/desktop-preview/${recording ? "recording" : "artifact"}?session_id=${encodeURIComponent(session)}&name=${encodeURIComponent(name)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": mime },
+      body: blob,
+    },
+  );
+  if (!response.ok) throw new Error("Recording could not be saved to this session workspace");
+  return response.json();
+}
+
 export function DesktopPreviewWorkspace({ children }: { children: ReactNode }) {
   const bridge = desktopBridge()?.preview;
   if (!bridge) return children;
@@ -92,6 +127,41 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const [resolved, setResolved] = useState<{ input: string; id: string } | null>(null);
   const session = resolved?.input === rawSession ? resolved.id : rawSession;
   const [models, setModels] = useState<Record<string, Model>>({});
+  const [displayBusy, setDisplayBusy] = useState(false);
+  const [recorded, setRecorded] = useState<{
+    session: string;
+    path: string | null;
+    url: string;
+    blob: Blob;
+    name: string;
+  } | null>(null);
+  const [recordingOpen, setRecordingOpen] = useState(false);
+  const recordingUrl = recorded?.url;
+  useEffect(
+    () => () => {
+      if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+    },
+    [recordingUrl],
+  );
+  const finishRecording = useCallback(async (result: unknown, id: string) => {
+    const saved = await saveRecording(result, id, (blob, name) =>
+      setRecorded({ session: id, path: null, url: URL.createObjectURL(blob), blob, name }),
+    );
+    if (
+      result &&
+      typeof result === "object" &&
+      "type" in result &&
+      ["recording", "download"].includes(String(result.type)) &&
+      saved &&
+      typeof saved === "object" &&
+      "path" in saved &&
+      typeof saved.path === "string"
+    ) {
+      const path = saved.path;
+      setRecorded((old) => (old?.session === id ? { ...old, path } : old));
+    }
+    return saved;
+  }, []);
   const storedModel = models[key] ?? initialModel();
   const nativeId = session ?? storedModel.browser?.session_id ?? key;
   const [chatPermission, setChatPermission] = useState<{
@@ -132,8 +202,30 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const [floating, setFloating] = useState<{ x: number; y: number } | null>(null);
   const [moving, setMoving] = useState(false);
   const [address, setAddress] = useState("");
+  const [dialogText, setDialogText] = useState("");
+  useEffect(
+    () => setDialogText(model.browser?.dialog?.default_prompt ?? ""),
+    [model.browser?.dialog?.default_prompt],
+  );
   const panel = useRef<HTMLElement>(null),
     surface = useRef<HTMLDivElement>(null);
+  const dialogSession = model.browser?.dialog ? nativeId : null;
+  useEffect(() => {
+    if (!dialogSession || model.active !== "browser") return;
+    const previous = document.activeElement;
+    const frame = requestAnimationFrame(() =>
+      panel.current
+        ?.querySelector<HTMLElement>(
+          '[data-testid="preview-page-dialog"] input, [data-testid="preview-page-dialog"] button',
+        )
+        ?.focus(),
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      if (previous instanceof HTMLElement && previous !== document.body && previous.isConnected)
+        previous.focus();
+    };
+  }, [dialogSession, model.active]);
   const openSequence = useRef(0);
   const [profiles, setProfiles] = useState<PreviewProfile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<{
@@ -154,7 +246,42 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       active = false;
     };
   }, [bridge, nativeId, key, edit]);
-  useEffect(() => bridge?.onProfiles(setProfiles), [bridge]);
+  useEffect(
+    () =>
+      bridge?.onProfiles((list) => {
+        setProfiles(list);
+        setModels((all) =>
+          Object.fromEntries(
+            Object.entries(all).map(([key, model]) => [
+              key,
+              model.browser?.profile_id &&
+              !list.some((profile) => profile.id === model.browser?.profile_id)
+                ? { ...model, browser: null }
+                : model,
+            ]),
+          ),
+        );
+        setSelectedProfile((old) =>
+          old?.id && !list.some((profile) => profile.id === old.id) ? { ...old, id: null } : old,
+        );
+      }),
+    [bridge],
+  );
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    void bridge
+      ?.restore(session)
+      .then((browser) => {
+        if (active && browser) edit(key, (old) => ({ ...old, browser, visible: true }));
+      })
+      .catch((cause) => {
+        if (active) edit(key, (old) => ({ ...old, error: error(cause) }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge, session, key, edit]);
 
   async function changeProfile(id: string | null): Promise<void> {
     if (
@@ -413,7 +540,8 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     };
   }, [bridge, nativeId, model.agentAccess, edit, key]);
 
-  const browserVisible = model.visible && model.active === "browser" && !moving;
+  const browserVisible =
+    model.visible && model.active === "browser" && !moving && !model.browser?.dialog;
   useLayoutEffect(() => {
     if (!bridge) return;
     if (!browserVisible) {
@@ -488,12 +616,39 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
         assertSelected();
         if (!current.current.model.agentAccess)
           throw new Error("Agent browser control was disabled");
-        result = await bridge.control(request.session_id, request.command, request.tab_id);
+        if (request.command?.action === "upload") {
+          const files: { name: string; data: string }[] = [];
+          let total = 0;
+          for (const path of request.command.paths) {
+            const response = await apiFetch(
+              `/desktop-preview/upload?session_id=${encodeURIComponent(request.session_id)}&target=${encodeURIComponent(path)}`,
+            );
+            if (!response.ok)
+              throw new Error(
+                "Upload file is unavailable, too large or outside this session workspace",
+              );
+            const file = await response.json();
+            if (typeof file.name !== "string" || typeof file.data !== "string")
+              throw new Error("Browser uploads must total at most 16 MiB");
+            total += file.data.length;
+            if (total > 22_369_624) throw new Error("Browser uploads must total at most 16 MiB");
+            files.push(file);
+            assertSelected();
+          }
+          result = await bridge.upload(
+            request.session_id,
+            request.command.selector,
+            files,
+            request.tab_id,
+          );
+        } else result = await bridge.control(request.session_id, request.command, request.tab_id);
+        assertSelected();
+        result = await finishRecording(result, request.session_id);
       }
       assertSelected();
       return { status: request.kind === "browser" ? "completed" : "opened", error: null, result };
     },
-    [bridge, edit, openUrl, openFile],
+    [bridge, edit, openUrl, openFile, finishRecording],
   );
   const deliveryError = usePreviewDelivery(
     resolved?.input === rawSession ? resolved.id : null,
@@ -517,6 +672,19 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, bridge]);
   const selected = model.files.find((tab) => tab.id === model.active);
+  async function display(command: BrowserAction): Promise<void> {
+    if (!bridge || displayBusy) return;
+    const scope = key,
+      id = nativeId;
+    setDisplayBusy(true);
+    try {
+      await finishRecording(await bridge.display(id, command), id);
+    } catch (cause) {
+      edit(scope, (old) => ({ ...old, error: error(cause) }));
+    } finally {
+      setDisplayBusy(false);
+    }
+  }
   const updateFile = (id: string, change: (old: FileTab) => FileTab) =>
     edit(key, (old) => ({
       ...old,
@@ -767,6 +935,70 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
             )}
             {model.active === "browser" ? (
               <>
+                {model.browser?.dialog && (
+                  <div
+                    role="alertdialog"
+                    aria-label="Browser page dialog"
+                    className="border-b border-border p-4"
+                    data-testid="preview-page-dialog"
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Escape" ||
+                        (event.key === "Enter" && event.target instanceof HTMLInputElement)
+                      ) {
+                        event.preventDefault();
+                        void bridge
+                          ?.pageDialog(nativeId, event.key === "Enter", dialogText)
+                          .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+                      } else if (event.key === "Tab") {
+                        const controls = [
+                          ...event.currentTarget.querySelectorAll<HTMLElement>("input,button"),
+                        ];
+                        const index = controls.indexOf(document.activeElement as HTMLElement),
+                          next =
+                            controls[
+                              (index + (event.shiftKey ? -1 : 1) + controls.length) %
+                                controls.length
+                            ];
+                        if (next) {
+                          event.preventDefault();
+                          next.focus();
+                        }
+                      }
+                    }}
+                  >
+                    <p className="text-xs text-muted-foreground">Message from this browser page</p>
+                    <p className="my-2 break-words text-sm">{model.browser.dialog.message}</p>
+                    {model.browser.dialog.type === "prompt" && (
+                      <input
+                        aria-label="Page prompt response"
+                        data-testid="preview-page-prompt"
+                        className="form-control form-control-single"
+                        value={dialogText}
+                        onChange={(event) => setDialogText(event.target.value)}
+                      />
+                    )}
+                    <div className="mt-2 flex gap-2">
+                      {[false, true].map((accept) => (
+                        <button
+                          key={String(accept)}
+                          type="button"
+                          className={button}
+                          data-testid={accept ? "preview-dialog-accept" : "preview-dialog-dismiss"}
+                          onClick={() =>
+                            void bridge
+                              ?.pageDialog(nativeId, accept, dialogText)
+                              .catch((cause) =>
+                                edit(key, (old) => ({ ...old, error: error(cause) })),
+                              )
+                          }
+                        >
+                          {accept ? "Accept" : "Dismiss"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center gap-1 border-b border-border px-2 py-1">
                   <select
                     aria-label="Browser profile"
@@ -883,6 +1115,110 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                     <ExternalLink size={14} />
                   </button>
                 </form>
+                <details
+                  className="shrink-0 border-b border-border px-3 py-1 text-xs"
+                  data-testid="preview-display-settings"
+                >
+                  <summary className="cursor-pointer">Browser display & recording</summary>
+                  <div className="flex flex-wrap items-center gap-2 py-2">
+                    <select
+                      aria-label="Browser color scheme"
+                      className="form-control h-8 text-xs"
+                      disabled={!model.browser || displayBusy}
+                      value={model.browser?.color_scheme ?? "system"}
+                      onChange={(event) =>
+                        void display({
+                          action: "appearance",
+                          color_scheme: event.target.value as "system" | "light" | "dark",
+                        })
+                      }
+                    >
+                      <option value="system">System appearance</option>
+                      <option value="light">Light</option>
+                      <option value="dark">Dark</option>
+                    </select>
+                    <select
+                      aria-label="Browser viewport"
+                      className="form-control h-8 text-xs"
+                      defaultValue=""
+                      disabled={!model.browser || displayBusy}
+                      onChange={(event) => {
+                        if (event.target.value === "fill") {
+                          void display({ action: "resize_reset" });
+                          return;
+                        }
+                        const [width, height] = event.target.value.split("x").map(Number);
+                        if (width && height)
+                          void display({
+                            action: "resize",
+                            width,
+                            height,
+                            device_scale_factor: 1,
+                            mobile: width < 600,
+                          });
+                      }}
+                    >
+                      <option value="" disabled>
+                        Viewport size
+                      </option>
+                      <option value="1280x720">Desktop 1280 × 720</option>
+                      <option value="fill">Fit panel</option>
+                      <option value="768x1024">Tablet 768 × 1024</option>
+                      <option value="390x844">Phone 390 × 844</option>
+                    </select>
+                    <button
+                      type="button"
+                      className={button}
+                      data-testid="preview-record-start"
+                      disabled={!model.browser || displayBusy || model.browser.recording_available}
+                      onClick={() => void display({ action: "recording_start", max_seconds: 60 })}
+                    >
+                      Record browser
+                    </button>
+                    <button
+                      type="button"
+                      className={button}
+                      data-testid="preview-record-stop"
+                      disabled={!model.browser?.recording_available || displayBusy}
+                      onClick={() => void display({ action: "recording_stop" })}
+                    >
+                      Save recording
+                    </button>
+                    {model.browser?.recording && (
+                      <span role="status">Recording · up to 60 seconds</span>
+                    )}
+                    {recorded?.session === nativeId && (
+                      <button
+                        type="button"
+                        className={button}
+                        data-testid="preview-recording-view"
+                        onClick={() => setRecordingOpen(true)}
+                      >
+                        View {recorded.blob.type === "video/webm" ? "recording" : "download"}
+                        {recorded.path ? " · saved" : " · unsaved"}
+                      </button>
+                    )}
+                  </div>
+                  {model.browser?.downloads?.map((download) => (
+                    <div key={download.id} className="flex items-center gap-2 py-1">
+                      <span className="min-w-0 truncate">
+                        {download.name} · {download.status} · {Math.ceil(download.bytes / 1024)} KB
+                      </span>
+                      {download.status === "completed" && (
+                        <button
+                          type="button"
+                          className={button}
+                          disabled={displayBusy}
+                          onClick={() =>
+                            void display({ action: "download", download_id: download.id })
+                          }
+                        >
+                          Save to workspace
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </details>
                 <div role="status" className="shrink-0 px-3 text-xs text-error">
                   {model.browser?.error ?? (model.browser?.loading ? "Loading…" : "")}
                 </div>
@@ -1008,6 +1344,38 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
           </aside>
         )}
       </div>
+      <Dialog
+        open={recordingOpen && recorded?.session === nativeId}
+        onOpenChange={setRecordingOpen}
+      >
+        <DialogContent className="max-w-3xl" data-testid="preview-recording-dialog">
+          <DialogTitle>
+            Browser {recorded?.blob.type === "video/webm" ? "recording" : "download"}
+          </DialogTitle>
+          <DialogDescription>
+            {recorded?.path
+              ? `Saved to ${recorded.path}`
+              : "Workspace save failed. Download this file to preserve it."}
+          </DialogDescription>
+          {recorded && (
+            <>
+              {recorded.blob.type === "video/webm" && (
+                <video
+                  controls
+                  src={recorded.url}
+                  className="w-full"
+                  data-testid="preview-recording-video"
+                >
+                  <track kind="captions" />
+                </video>
+              )}
+              <a className="text-sm underline" href={recorded.url} download={recorded.name}>
+                Download {recorded.name}
+              </a>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </DesktopPreviewContext.Provider>
   );
 }

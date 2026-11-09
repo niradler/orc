@@ -22,6 +22,20 @@ test("should persist explicit per-chat profiles, keep temporary defaults and rej
   expect(() => other.partition(profile.id)).toThrow();
   restarted.select("b", profile.id);
   expect(restarted.selected("b")).toBe(profile.id);
+  const tab = crypto.randomUUID();
+  restarted.saveWorkspace("b", {
+    selected: tab,
+    tabs: [{ id: tab, url: "https://example.com/account" }],
+  });
+  expect(new PreviewProfiles(path, "http://localhost:7702").workspace("b")?.selected).toBe(tab);
+  expect(other.workspace("b")).toBeNull();
+  expect(restarted.rename(profile.id, "Renamed").name).toBe("Renamed");
+  expect(() => other.rename(profile.id, "Foreign")).toThrow();
+  expect(() => other.remove(profile.id)).toThrow();
+  restarted.remove(profile.id);
+  expect(restarted.selected("b")).toBeNull();
+  expect(restarted.workspace("b")).toBeNull();
+  expect(restarted.list()).toEqual([]);
   restarted.select("a", null);
   expect(restarted.selected("a")).toBeNull();
   writeFileSync(path, "broken");

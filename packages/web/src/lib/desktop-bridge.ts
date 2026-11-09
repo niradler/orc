@@ -1,5 +1,6 @@
 import type {
   BrowserAction,
+  BrowserSelector,
   PreviewBrowserState,
   PreviewFile,
   PreviewImportResult,
@@ -54,6 +55,19 @@ export interface DesktopUpdates {
 /** Exposed by the Electron preload; absent in a plain browser. */
 export interface OrcDesktopBridge {
   preview?: {
+    upload(
+      session_id: string,
+      selector: BrowserSelector,
+      files: { name: string; data: string }[],
+      tab_id?: string,
+    ): Promise<unknown>;
+    importStores(): Promise<{ id: string; name: string }[]>;
+    discoverStore(source_id: string): Promise<PreviewImportSource>;
+    display(session_id: string, command: BrowserAction): Promise<unknown>;
+    pageDialog(session_id: string, accept: boolean, text?: string): Promise<void>;
+    restore(session_id: string): Promise<PreviewBrowserState | null>;
+    renameProfile(profile_id: string, name: string): Promise<PreviewProfile>;
+    removeProfile(profile_id: string): Promise<boolean>;
     cancelImport(): Promise<void>;
     onProfiles(listener: (profiles: PreviewProfile[]) => void): () => void;
     discoverImport(port: number): Promise<PreviewImportSource>;

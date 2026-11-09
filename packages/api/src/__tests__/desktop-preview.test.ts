@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ChatThreadSchema } from "@orc/core/chat";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
+import { z } from "zod";
 import { PreviewBroker } from "../desktop-preview/broker.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -124,6 +125,78 @@ describe("desktop preview API", () => {
   afterAll(async () => {
     teardownTestApp();
     await rm(directory, { recursive: true, force: true });
+  });
+  test("should authenticate recording uploads, validate WebM and save only inside the resolved session workspace", async () => {
+    const path = `/api/desktop-preview/recording?session_id=${session}`;
+    const bytes = new Uint8Array(64);
+    bytes.set([0x1a, 0x45, 0xdf, 0xa3]);
+    expect(
+      (
+        await app.request(path, {
+          method: "POST",
+          body: bytes,
+          headers: { "Content-Type": "video/webm" },
+        })
+      ).status,
+    ).toBe(401);
+    const headers = { Authorization: "Bearer test-secret", "Content-Type": "video/webm" };
+    expect(
+      (await app.request(path, { method: "POST", body: new Uint8Array(64), headers })).status,
+    ).toBe(400);
+    const response = await app.request(path, { method: "POST", body: bytes, headers });
+    expect(response.status).toBe(200);
+    const file = z.object({ path: z.string() }).parse(await response.json());
+    expect(file.path.startsWith(join(workspace, ".orc", "sessions", session, "uploads"))).toBe(
+      true,
+    );
+    expect(new Uint8Array(await readFile(file.path))).toEqual(bytes);
+    const larger = new Uint8Array(3_000_000);
+    larger.set([0x1a, 0x45, 0xdf, 0xa3]);
+    expect((await app.request(path, { method: "POST", body: larger, headers })).status).toBe(200);
+    expect(
+      (
+        await app.request("/api/desktop-preview/recording?session_id=missing", {
+          method: "POST",
+          body: bytes,
+          headers,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await app.request(path, { method: "POST", body: new Uint8Array(16_000_001), headers }))
+        .status,
+    ).toBe(413);
+  });
+  test("should constrain browser file transfers to the session workspace and sanitize download names", async () => {
+    const bytes = new Uint8Array([0, 255, 19, 42]);
+    await writeFile(join(workspace, "upload.bin"), bytes);
+    const upload = await req(
+      app,
+      "GET",
+      `/desktop-preview/upload?session_id=${session}&target=upload.bin`,
+    );
+    expect(upload.status).toBe(200);
+    expect(await upload.json()).toEqual({
+      name: "upload.bin",
+      data: Buffer.from(bytes).toString("base64"),
+    });
+    expect(
+      (await req(app, "GET", `/desktop-preview/upload?session_id=${session}&target=../outside.txt`))
+        .status,
+    ).toBe(400);
+    const path = `/api/desktop-preview/artifact?session_id=${session}&name=${encodeURIComponent("../../untrusted.bin")}`;
+    expect((await app.request(path, { method: "POST", body: bytes })).status).toBe(401);
+    const response = await app.request(path, {
+      method: "POST",
+      body: bytes,
+      headers: { Authorization: "Bearer test-secret", "Content-Type": "application/octet-stream" },
+    });
+    expect(response.status).toBe(200);
+    const file = z.object({ path: z.string() }).parse(await response.json());
+    expect(file.path.startsWith(join(workspace, ".orc", "sessions", session, "uploads"))).toBe(
+      true,
+    );
+    expect(new Uint8Array(await readFile(file.path))).toEqual(bytes);
   });
   test("should reject binary, malformed UTF-8 and oversized text while serving raster images", async () => {
     const fixtures: [string, Uint8Array, number][] = [

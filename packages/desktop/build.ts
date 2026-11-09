@@ -6,6 +6,7 @@ await mkdir(resolve(root, "dist"), { recursive: true });
 for (const [entry, target, format, name] of [
   ["main.ts", "node", "esm", "main.js"],
   ["preload.ts", "node", "cjs", "preload.cjs"],
+  ["preview-guest-preload.ts", "node", "cjs", "preview-guest-preload.cjs"],
 ] as const) {
   const result = await Bun.build({
     entrypoints: [resolve(root, "src", entry)],

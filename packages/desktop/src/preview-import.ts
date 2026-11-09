@@ -338,7 +338,9 @@ export class PreviewImport {
           await connection.call("Target.detachFromTarget", { sessionId });
         }
       }
+      if (generation !== this.generation) throw new Error("Browser import cancelled");
       await target.cookies.flushStore();
+      if (generation !== this.generation) throw new Error("Browser import cancelled");
       return { imported, skipped };
     } catch {
       throw new Error(

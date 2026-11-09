@@ -1,63 +1,64 @@
 # Desktop preview acceptance and evidence
 
-PR239, branch `code/desktop-browser-files`. This record separates implementation,
-observed behavior and limits. It does not claim complete T3 Code parity or a
-cross-platform production verdict. The reference is the local
-`C:/Projects/orc/.examples/t3code` source; T3 itself was not run interactively.
+PR239, branch `code/desktop-browser-files`. The implementation targets production
+review; this record separates capability, observed behavior and native-platform
+evidence. Reference source: `C:/Projects/orc/.examples/t3code` (MIT, T3 Tools Inc.,
+2026); substantial cookie-format adaptations retain the desktop third-party notice.
+T3 itself was inspected as source, not run interactively.
 
 ## Capability and acceptance matrix
 
-| Criterion | Reference and final implementation | Evidence / limit |
+| Criterion | Source comparison / ORC implementation | Acceptance evidence |
 | --- | --- | --- |
-| Agent actions | T3 `apps/server/src/mcp/toolkits/preview/handlers.ts` and `packages/contracts/src/previewAutomation.ts`; ORC `packages/core/src/desktop-preview.ts`, `packages/desktop/src/preview-browser.ts` | Snapshot, screenshot, click, type, press, scroll, hover, select, native pointer drag, condition wait and guest evaluation implemented. Real Electron + real MCP exercised these, timeout/reload, stale refs and cancellation. Drag requires both targets visible together; this is not full HTML5 drag-and-drop parity. |
-| Useful agent context | agent-browser `skill-data/core/SKILL.md` and `references/snapshot-refs.md`; ORC snapshot refs and `preview-tools.ts` | Bounded 12,000-character default snapshots, region selection, stable refs, explicit truncation, no echo of typed input/evaluation source, native MCP image results. Replaced nodes fail without retargeting. Recovery after compaction is rediscovery → tabs → fresh scoped snapshot. |
-| Session/client availability | T3 caller-thread preview capability; ORC MCP `server.ts`, `preview-tools.ts`, API `desktop-preview/broker.ts` | Real HTTP MCP tests cover full/meta list/search/describe/invoke, no target, unrelated session, multiple desktops, explicit client, pinned connection, revocation, reconnect and stale leases. Open tools require a matching desktop; browser actions additionally require an open guest and enabled access. Cached invocations recheck capability. |
-| Agent connection | ORC `agent-runtime/src/{orc-mcp,claude,claude-sdk,codex,codex-app,acp,acpx}.ts` | Managed chats/channels inject their trusted stable ORC ID. Bound calls default to that conversation. SDK launch and URL-contract tests verify propagation; real MCP verifies the resulting connection contract. No paid model turn was used as test evidence. |
-| Permissions | Desktop Session settings and Settings → Browser | Default ON; per-chat switch available before first preview; global OFF overrides it. Origin/session-scoped permissions are saved atomically. Actual Electron restart verifies revoked chat stays off. Leaving the chat releases its lease. |
-| Immediate revocation | ORC native guest ownership and pending-mutation tracking | Read-only waits/results are cancelled. An interrupted pending mutation closes that guest before queued code can run; explicit Reload restores URL/profile and keeps file drafts. Real Electron injection delays a native mutation, revokes access and asserts zero HTTP side effects on the demo site. Already accepted website actions cannot be undone. |
-| Tabs/navigation | T3 tab-target handlers; ORC `PreviewBrowser` and `DesktopPreviewWorkspace` | Stable tab IDs, new/select/close, popups in new tab, navigate/back/forward/reload. Eight tabs/chat, 24 total; explicit limit errors instead of eviction. Foreign, closed or inactive pinned targets fail. Browser tab contents are not restored across app restart. |
-| Profiles/auth | T3 `apps/desktop/src/preview/BrowserSession.ts`; ORC `preview-profiles.ts`, panel selector and Browser settings | Dedicated saved profiles and per-chat temporary default. Sharing is an explicit user profile selection. Actual restart preserves selected profile login; another chat stays temporary until explicitly sharing. Metadata contains no credentials. Session cookies retain their real lifetime. |
-| Selected login import | T3 `BrowserImport/{Sources,ChromiumKeys,ChromiumCookies,BrowserImport}.ts`; ORC `preview-import.ts` | User-only live-browser transfer from an explicitly enabled loopback endpoint. Real isolated Windows Edge source → selected site → ORC profile passed, including HttpOnly/SameSite preservation and exclusion of unrelated cookies. No source connection or cookie values go to agents/API. Source identity/targets are revalidated; cancellation closes connection; durable success waits for flush. |
-| Import security | ORC `preview-import.test.ts` | Same-host/different-port regression proves `orc_session` cannot cross the import boundary. Partitioned, expired, foreign-domain and ORC credential cookies are skipped. Changed source identity fails before cookie reads. Partial writes are reported as failure, with counts. |
-| Chat/files/edit/images | T3 `openFileInPreview.ts`, `PreviewPanel.tsx`; ORC `ChatAttachments`, `DesktopPreviewWorkspace`, file service, existing editors | Actual chat URL/Markdown/code/attachment paths; relative path with line reference; keyboard save; save conflict/reload; images; per-chat drafts; explicit source-opening actions. File containment/type/size/auth regressions use real filesystem/API. New panel remains desktop-only. |
-| Layout/focus/recovery | ORC panel and native bounds | Real Windows float/drag/dock, pointer/keyboard resize, modal guest hiding, quit cancellation and owned daemon survival. Native captures include guest pixels. Code line navigation focuses its selection so the next edit reaches the requested line. |
-| Guidance/SDK/packaging | Bundled platform web reference, SDLC development reference, public desktop/MCP pages, generated SDK | Source guidance and SDK updated to actual actions, discovery, profiles, import limits and context recovery. Source-built demo daemon's effective guide verified through real MCP. The live installed platform guide still resolves from an older bundled-skills cache; installation changes are forbidden, so that copy remains unchanged pending authorized normal distribution. Existing allowlist excludes validation harness assets. |
+| Core agent actions | T3 `packages/contracts/src/previewAutomation.ts`, server preview handlers; ORC core action contract, `preview-browser.ts` | Snapshot/screenshot, trusted Chromium click/type/pointer input, key presses/modifiers, scroll, hover, empty/multiple select, drag, condition wait, page-context evaluation. Real Electron/MCP covers actions, page globals, timeout/reload, stale refs and cancellation. HTML5 drag receives a separate runtime check from the earlier custom mouse-drag fixture. |
+| Semantic locators and frames | T3 preview locators; ORC `preview-frames.ts` and semantic selectors | CSS/ref or role/text/label/placeholder/testid objects; owned frame enumeration/selection; cross-origin snapshots and automatic ref-to-frame routing. Real cross-origin action, page-global evaluation, ancestor-overlay rejection and detached-frame failure. Ambiguous matches fail. Rotated/scaled frame pointer layouts currently fail explicitly rather than guessing coordinates. |
+| Dialogs | T3 dialog contract; ORC debugger plus `preview-guest-preload.ts` | Pending dialog state and explicit accept/dismiss/status. Real main-page prompt responses from both MCP and user UI passed. Electron disables native prompt, so a minimal standard prompt-only adapter restores it without exposing ORC APIs, general IPC, Node, credentials or filesystem access. Alert/confirm use Chromium's dialog protocol; additional native-platform interaction remains a review check. |
+| Context efficiency / recovery | agent-browser core skill and snapshot-ref guide; ORC MCP descriptions and platform guide | Default 12,000-character snapshots, 1,000-24,000 limits, region selection, stable bounded refs, truncation and native MCP images. Actions do not echo typed text/evaluation source. Recover after compaction through scoped discovery, tabs/dialog status and fresh snapshot; inspect uncertain delivery before retrying side effects. Page text stays untrusted evidence. |
+| Discovery and effective connection | ORC MCP full/meta discovery, preview broker, agent-runtime backend bindings | Real HTTP MCP tests cover ordinary listing and meta search/describe/invoke, no target, foreign session/project, multiple clients, explicit/pinned client, revocation, reconnect and stale leases. All managed agent launch paths inject the stable ORC conversation ID. No app-wide CDP endpoint is given to agents. No paid model turn is claimed as validation. |
+| Durable permissions and immediate revoke | Native preferences, Session settings and Browser settings | Default ON, per-chat switch before first preview, global override, atomic origin/chat persistence. Actual app restart keeps revoked permission. Leaving chat releases capability lease. Queued mutation injection proves zero late site side effects; interrupted mutations close the guest and require Reload. Accepted site operations cannot be undone. |
+| Browser tabs and navigation | T3 tab/profile host; ORC browser host, profile metadata and workspace UI | New/select/close/popups, stable tab IDs, navigation/history/reload; eight/chat and 24 total with explicit errors. URLs/selection restore on actual app restart before another link is clicked. Per-chat isolation and explicit shared-profile behavior verified. Restoration preserves browser URLs, not a crashed site's in-memory JavaScript state. |
+| Profiles and authentication | T3 BrowserSession/BrowserImport; ORC profile service and Settings | Named persistent profiles, temporary per-chat cookies/storage, explicit sharing, rename and confirmed removal. Actual restart preserves login. Removal closes profile tabs, waits for cancelled imports, clears site data/cache and resets durable selections; file drafts remain. Removal cancellation and paused-import race have separate scenarios. |
+| Direct store and live login import | T3 `BrowserImport/{Sources,ChromiumKeys,ChromiumCookies,FirefoxCookies,SafariCookies}.ts`; ORC `preview-store-import.ts` and `preview-import.ts` | Selected source profile and sites; readonly SQLite snapshot/cleanup; OS-derived keys; GCM/host-hash validation; precise cookie flags/expiry. Real Windows Firefox store and real isolated Edge live transfer passed. Synthetic native Windows DPAPI/Helium-store scenario validates that additional path. Pure CBC/GCM/Safari corruption tests cover formats; macOS/Linux OS integration needs native acceptance. Modern Windows Chrome/Edge app-bound stores use live transfer, as T3 also excludes their direct import. |
+| Import privacy and truthful outcomes | Native-only opaque grants and import tests | No key/cookie value/source connection in API or MCP. Exclude ORC session credentials, foreign/expired/partitioned cookies and Firefox containers. Source identity is revalidated, cancellation is checked through final flush, partial errors report counts. Passwords/localStorage/IndexedDB/device-bound credentials are not copied. Login success must be checked at the site. |
+| Browser uploads and downloads | T3 upload/download flows; ORC trusted workspace reader, native download staging and artifact save routes | Explicit workspace uploads (8 MiB/file, 16 MiB total), canonical containment/auth and traversal rejection; guest-only file inputs. Browser downloads are capped at 16 MB, four staged across the app, with completion/failure states and safe names. Saving returns a trusted session-workspace path; no automatic execution or arbitrary local output path. Real upload bytes and completed-download contents verified through MCP. Failed-download retry/budget regressions pass. |
+| Recording and appearance | T3 recording compositor, resize/color-scheme contract; ORC guest recorder and display controls | Guest capture only, no audio/ORC pixels, isolated networkless encoder, playable WebM <=16 MB and <=180 seconds; workspace save returns metadata/path, not video in agent context. Real decode/playback and modal guest hiding verified. Pending finalize stays cancellable and bounded; stalled-finalize/revoke test returns error and destroys the encoder. User can download completed output if workspace saving fails. Color scheme/reduced motion and viewport effects observed in the guest. |
+| Chat, paths, editing, images | T3 PreviewPanel/openFileInPreview; ORC chat links/attachments and existing editors | Actual attachment, relative path with line reference, Markdown read/edit/split, code edit/Ctrl+S, disk save/reopen, external conflict/draft preservation/reload, images and per-chat drafts. Files retain canonical host/workspace containment, size/type/auth checks. PDF/Office are outside the requested preview formats. |
+| Layout, keyboard, focus, recovery | ORC desktop-only workspace, native view bounds | Float/drag/dock and pointer/keyboard resize, settings modal guest hiding, quit cancellation and owned-daemon survival. Code-line navigation focuses the requested line. Recording modal uses existing accessible dialog/focus handling. New panel and settings remain absent on ordinary web/phone. |
+| Guidance, SDK, packaging | Bundled platform/SDLC sources, public docs, generated SDK and desktop asset allowlist | Updated to the real operations, limits and recovery contract. Source-built demo daemon's effective guidance is read through real MCP. Packaging includes only production main/preloads plus third-party notice, never the test harness. The installed live guide cache is unchanged under the explicit no-installation-change constraint; normal authorized distribution remains necessary. |
 
-## Reproducible evidence
+## Evidence and final checks
 
-The existing local helper is `.claude/scripts/preview-integrated-validation.ts`.
-It launches real Electron main/preload, the host-compiled CLI daemon, a loopback
-demo site and authenticated MCP. Data, browser profiles, logs and control harness
-stay under `.claude/validation/desktop-viewer`; captures are the five
-`docs/public/screens/desktop-*.png` images. The test-only authenticated main harness
-is outside shipping sources. Development credentials are loaded privately through
-existing configuration, never written to the document or command arguments.
+The reusable helper is `.claude/scripts/preview-integrated-validation.ts`; isolated
+demo home/database/workspace/profile and bounded logs remain under
+`.claude/validation/desktop-viewer`. It launches actual Electron main/preloads,
+the host-compiled CLI daemon and authenticated real MCP, using loopback listeners.
+Credentials load privately from existing development configuration. No personal
+browser/profile is read. The authenticated main harness is test-only and excluded
+from shipping assets.
 
-Focused source tests include `preview-{import,profiles,preferences}.test.ts`,
-`mcp-preview-capabilities.test.ts`, desktop-preview API tests, MCP meta/content tests
-and agent-runtime MCP injection tests. Final required local checks and exact Git
-revision are recorded in the PR and current handoff after they finish.
+Committed screenshots under `docs/public/screens/desktop-*.png` capture the actual
+native window including sibling guest pixels. Focused tests cover permissions,
+profile storage, cookie-import security/formats, download retry/budget, artifact
+auth/containment and real HTTP MCP discovery. The final run results, required
+local hook gate, exact implementation/PR head and screenshot refresh are recorded
+in the current handoff and PR description after completion.
 
-## Explicit remaining differences and evidence limits
+## Native evidence and operational limits
 
-- This is **live-browser cookie transfer**, not T3's direct cookie-store importer.
-  It requires a user-enabled debugging endpoint; normal personal profiles may not
-  expose one. T3's current Chrome/Edge source definitions exclude Windows because
-  of app-bound encryption. ORC does not bypass that protection. Native Chrome144+
-  consent flow and macOS/Linux interactive import were not validated.
-- Only cookies applicable to selected sites' root/current open-page paths transfer.
-  Passwords, localStorage, IndexedDB, device-bound and partitioned sessions are not
-  imported. A positive count does not establish a working login on every site.
-- Native picker results are injected; actual OS picker interaction is unverified.
-  External-opening calls are intercepted; real OS browser/VS Code handoff remains
-  unverified. macOS/Linux interactive desktop behavior is unverified.
-- Stalled-call and queued-mutation timing are injected at the native boundary;
-  normal action, import, save and restart paths use actual Electron/MCP. This is
-  not evidence for every possible hung-site/process failure.
-- T3's broader iframe/semantic locator/dialog automation, recording and appearance
-  controls are not implemented here. PDF/Office previews, profile rename/removal
-  and browser-tab restoration are also absent. These differences remain visible;
-  they are not evidence of equality or superiority to the whole competitor.
-- Screenshot evidence covers demo data only. A passing local gate does not settle
-  these product/platform limits. Human review remains required; no merge, release,
-  deployment or installation upgrade is authorized.
+- Native file-picker results are injected. Actual OS picker interaction remains
+  a human acceptance check; Playwright CDP does not automate the Windows file dialog.
+- External-opening calls are intercepted. Actual OS browser/VS Code/reveal handoff
+  remains a human acceptance check.
+- Windows Electron is exercised interactively. macOS/Linux Electron, Keychain,
+  Secret Service and Safari Full Disk Access behavior require those platforms.
+  Missing/denied OS access produces an error/skip count, not claimed success.
+- The source-based comparison establishes implemented operations and tested ORC
+  workflows, not universal equality to an entire competitor or every website.
+  Semantic matching is deliberately strict about ambiguity; complex transformed
+  iframe pointer layouts, cross-viewport drags and system clipboard shortcuts are
+  rejected instead of crossing security boundaries or silently retargeting.
+- Native Chromium dialogs and prompt-shim behavior should also be exercised on
+  each release platform. Source snapshots/key format fixtures do not replace
+  approval testing with the real macOS/Linux browser installation.
+- The installed guidance cache is not changed by a source PR. No merge, release,
+  deployment, default-branch push or installation upgrade is authorized here.
