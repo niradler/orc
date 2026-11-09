@@ -6,6 +6,7 @@ import { getSqlite } from "@orc/db/client";
 import { ScratchpadStore } from "@orc/db/scratchpads";
 import { createMcpServer, type McpMode, parseMcpMode, parseMcpProjects } from "@orc/mcp";
 import { Hono } from "hono";
+import { z } from "zod";
 import { clientOrigin } from "../lib/client-origin.js";
 import { bearerAuth } from "../middleware/auth.js";
 import { scratchpadContentUrls } from "../scratchpad-content.js";
@@ -36,9 +37,20 @@ app.all("/mcp", async (c) => {
   if ((c.req.queries("project")?.length ?? 0) > 1 || (c.req.queries("projects")?.length ?? 0) > 1)
     throw new ValidationError("Pass project/projects only once");
   const projects = parseMcpProjects(c.req.query("project"), c.req.query("projects"));
+  const preview = z
+    .object({
+      sessionId: z.string().min(1).max(200).optional(),
+      clientId: z.string().uuid().optional(),
+    })
+    .parse({ sessionId: c.req.query("preview_session"), clientId: c.req.query("preview_client") });
+  if (preview.clientId && !preview.sessionId)
+    throw new ValidationError("preview_client requires preview_session");
   const server = createMcpServer({
     publicApiBaseUrl: origin,
     mode,
+    ...(preview.sessionId
+      ? { previewScope: { sessionId: preview.sessionId, clientId: preview.clientId } }
+      : {}),
     ...(projects ? { projects } : {}),
     skillDownload: (name, ref, projectId) => skillDownloads.mint(name, ref, projectId, origin),
     padContentUrl: (id, mode, author, ifRevision) =>

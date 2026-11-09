@@ -96,6 +96,20 @@ save, close/reload, reopen and verify the result. A passing mock, render or type
 alone cannot prove the whole user flow. Low-impact edits do not need tests that only
 mirror their implementation; nontrivial logic needs meaningful behavioral coverage.
 
+For browser UI validation through ORC, discover the selected installation's
+`preview_*` tools and use the desktop workflow in `orc-platform`'s
+`references/web.md#desktop-preview-and-browser-control` when it fits the task.
+Verify a matching desktop/session and enabled browser control first; a connected
+web client or listed tool alone does not supply that capability. Open the actual
+URL, exercise the changed flow and inspect its result. A queued open is not
+validation. The tools support scoped tabs, compact refs, condition waits and
+guest-only JavaScript evaluation; use their current schemas. After compaction,
+rediscover capabilities, list tabs and take a fresh scoped snapshot instead of
+replaying stale refs or loading large page dumps into context. Browser automation
+and guest screenshots cannot validate the ORC renderer/file editor itself. For
+unsupported operations, use another available authorized interface or disclose
+the missing evidence.
+
 Before delivery check the changed boundaries for missing auth, unvalidated input,
 hardcoded secrets and data leaks. Preserve error handling and accessibility. Use
 isolated fixtures for validation instead of mutating production state. Record exact

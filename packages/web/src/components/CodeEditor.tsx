@@ -23,6 +23,9 @@ export type CodeEditorProps = {
   hideFrontmatter?: boolean;
   pageTitle?: string;
   compact?: boolean;
+  line?: number;
+  initialMode?: MarkdownEditorProps["initialMode"];
+  previewLinks?: boolean;
 };
 
 export function CodeEditor(props: CodeEditorProps) {

@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./desktop-preview": "./src/desktop-preview.ts",
     "./providers": "./src/providers.ts",
     "./provider-service": "./src/provider-service.ts",
     "./display-path": "./src/display-path.ts",

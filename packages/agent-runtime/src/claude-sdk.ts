@@ -306,6 +306,7 @@ class ClaudeSDKSession implements AgentSession {
                   this.opts.mcpAlwaysLoad,
                   this.opts.orcMcpMode,
                   this.opts.orcMcpProject,
+                  this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
                 ),
                 allowedTools: [...this.opts.toolAllowlist, ORC_TOOLS_RULE],
               }
@@ -316,6 +317,7 @@ class ClaudeSDKSession implements AgentSession {
                     this.opts.mcpAlwaysLoad,
                     this.opts.orcMcpMode,
                     this.opts.orcMcpProject,
+                    this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
                   ),
                 }
               : {}),

@@ -97,6 +97,125 @@ While your pointer is over the list, or a row has keyboard focus, rows stay wher
 
 ## Terminals
 
+### Desktop browser, files and editor
+
+In the Electron desktop app, **File → Browser and files** (Ctrl/Cmd+Shift+B),
+or **Browser and files** in the tray menu, opens a panel beside your conversation.
+Chat links and file attachments open in this panel. Enter an HTTP/HTTPS address
+and use Back, Forward and Reload. The external-link icon opens the page in your
+system browser; Ctrl/Cmd-clicking a web link does the same.
+
+Each conversation keeps its own browser and file tabs. Drag the header grip to
+float the panel, use **Dock preview** to return it, or drag the divider to resize.
+The divider also supports arrow keys. Closing the panel keeps tabs and drafts in
+memory; closing a modified file asks before discarding it. Reloading or quitting
+discards these previews after the unsaved-change warning.
+
+**Open file** uses the native picker for local files. Chat and MCP file paths
+resolve inside the selected session's folder on its execution host; paths outside
+that folder and symlinks escaping it are denied. Remote file previews require
+Python 3 on the SSH host. Files must be UTF-8 text up to 1 MiB. Markdown has Read,
+Edit and Split modes; code uses the existing editor. Text up to 200 KB can be
+saved explicitly. A save fails if the file changed on disk, keeping your draft
+until you reload or resolve the change. HTML stays source code. The external-link
+icon opens the source in VS Code, including known SSH hosts; it is disabled when
+the desktop cannot identify a remote API host's filesystem.
+
+PNG, JPEG, GIF, WebP, BMP and ICO images can also be previewed, up to 8 MiB and
+16 megapixels for native-picker images. Images are read-only; native-picker
+images use native decoding and display a static image. Workspace images use the
+browser's image decoder. PDF and Office previews are not included.
+
+The browser uses a separate session without ORC's API credentials,
+cookies or desktop bridge. Camera, microphone, location and other site permissions
+are blocked. Browser downloads are staged privately (16 MB each, four across the
+app); **Browser display & recording** lists their status and saves completed files
+to the selected chat workspace. Interrupted/failed downloads are never reported
+as saved. Each chat starts with a temporary cookie/storage profile.
+**Settings → Browser → Saved browser profiles** creates named profiles; select one
+in the browser panel to remember site logins. Selecting the same profile in another
+chat explicitly shares that profile's site storage. Temporary chats stay isolated.
+Profile choices and saved cookies survive app restart; session-only cookies follow
+the site's expiry rules. Switching profiles closes that chat's browser tabs after
+confirmation and preserves file drafts. Use **+** to open a browser tab and each
+tab's close button to close it. Popups open another isolated tab. Limits are eight
+tabs per chat and 24 total; reaching a limit asks you to close a tab, without eviction.
+Tab IDs, URLs and the selected tab restore when you return after app restart.
+Temporary mode does not persist cookies; saved tab URLs are still restored.
+Browser settings also offers profile rename and removal. Removal asks for native
+confirmation, closes its tabs, clears cookies/site data/cache and resets chat selections.
+
+**Import selected browser logins**, under Browser settings, connects to a local
+Chrome/Edge debugging endpoint you explicitly enable. Choose the destination ORC
+profile, enter the loopback debugging port, approve any source-browser prompt,
+then select sites from its open pages. Only those sites' applicable cookies are
+copied; their values and the source connection never reach agents or the API.
+The connection closes after import or cancellation. Live transfer copies cookies
+applicable to the selected site's root and currently open page path; passwords,
+localStorage, IndexedDB and device-bound sessions are not transferred. Partitioned
+cookies are skipped and counts are reported. Verify the login; some sites require
+signing in again. Modern Windows Chrome/Edge app-bound cookie files cannot be
+decrypted by ORC. Chrome's newer native consent flow and Mac/Linux interaction have
+not been validated here; the verified source was an isolated Windows Edge profile
+with a loopback debugging port. Existing personal profiles may not expose one.
+
+**Scan browser profiles** provides direct cookie-store import from Firefox/Zen,
+Safari on macOS, and supported Chromium-family stores on macOS/Linux. Legacy
+Windows Helium DPAPI stores are supported; app-bound Windows stores require the
+live connection. Select a source profile and individual sites. Reads use readonly
+SQLite snapshots; keys are obtained only after selection through OS facilities.
+macOS may request Keychain/Full Disk Access approval; Linux encrypted stores need
+`secret-tool` and an unlocked Secret Service. Missing keys and skipped cookies are
+reported, never treated as a guaranteed login. Containers and partitioned cookies
+are excluded. Direct Firefox import was exercised with isolated Windows demo data;
+other OS integrations still require their native platform acceptance checks.
+
+Expand **Browser display & recording** to change appearance/viewport, record the
+guest page, save WebM to the chat workspace, and play/download it. UI recording
+lasts up to 60 seconds; agent requests can choose up to 180 seconds. Recordings
+are limited to 16 MB and contain only the browser guest, without audio or ORC UI.
+If workspace saving fails, the completed file remains downloadable in that window.
+
+Agents can use [preview MCP tools](./mcp.md#desktop-preview-tools) to show a file
+or URL in the selected conversation. **Allow agent browser control**, on by
+default, is controlled in the chat's **Session settings** before you open a preview.
+It permits snapshots, screenshots, clicking, typing, key presses, scrolling,
+hovering, selecting, dragging, condition waits, guest JavaScript evaluation,
+cross-origin frame targeting, semantic locators, dialogs, recording, appearance,
+viewport changes and explicit workspace-file uploads/download retrieval.
+This includes
+pages you sign into there. Turning the switch off revokes control. These tools
+cannot inspect the ORC app or its bridge or edit preview files. Upload paths must
+remain inside the chat's trusted workspace. The guest has a minimal standard
+`prompt()` adapter because Electron disables that browser function; it exposes no
+application API, credentials, filesystem access or general IPC.
+Browser content is untrusted page data, never agent instructions.
+If a mutating browser command is still pending when control is revoked or its
+guest is hidden/switched, ORC closes that guest to prevent delayed execution.
+The tab shows an interruption message; **Reload** restores its URL and profile.
+File drafts are preserved. An evaluation timeout can require the same recovery.
+
+![Browser access in a demo chat's Session settings](/screens/desktop-chat-browser-control.png)
+
+**Settings → Browser** controls agent browser access for the whole desktop and
+whether chat web links open in ORC or your system browser. Settings are stored in
+`browser-preferences.json` in Electron's user-data folder and survive restarts.
+Per-chat permissions use `browser-chat-permissions.json`; named profile metadata
+and explicit chat selections use `browser-profiles.json`. These metadata files do
+not contain cookies or passwords; Chromium owns the separate profile partitions.
+Turning global agent access off overrides every chat's switch immediately. With
+global access on, the chat's **Session settings** switch can still disable control
+for that conversation. The browser toolbar does not contain a second access switch.
+Files and explicit MCP preview requests continue to open in the panel.
+
+![Desktop Browser settings with demo data](/screens/desktop-browser-settings.png)
+
+This flow is desktop-only; the web and phone UI are unchanged.
+
+![Browser beside a demo conversation](/screens/desktop-preview-browser.png)
+
+![Markdown editing beside a demo conversation](/screens/desktop-preview-markdown.png)
+
 ![Terminals](/screens/terminals.png)
 
 Browser terminals for shells and coding agents, with split panes and Files and Git panels beside them. Terminals run on the selected execution host. See [Terminal workspace](./terminal-workspace.md).
@@ -340,7 +459,8 @@ Command-line flags for the app executable:
 | `--hidden` | Start without opening a window |
 | `--quit` | Quit the running instance and the daemon it started |
 
-Links to other sites open in your system browser.
+Links to other sites open in the desktop preview panel. Use its external-link
+icon or Ctrl/Cmd-click a web link to open your system browser.
 
 Install a desktop build containing this updater manually once. Older builds do not have an updater and cannot automatically install the feature itself; subsequent macOS, Windows and Linux updates can use the flow below.
 

@@ -34,6 +34,7 @@ export function buildOrcMcpServer(
   alwaysLoad = false,
   mode: OrcMcpMode = loadConfig().mcp.default_mode,
   project?: string,
+  previewSession?: string,
 ): OrcHttpMcpServer {
   let config: OrcConfig;
   try {
@@ -48,6 +49,7 @@ export function buildOrcMcpServer(
   const query = new URLSearchParams();
   query.set("mode", mode);
   if (project) query.set("project", project);
+  if (previewSession) query.set("preview_session", previewSession);
   return {
     type: "http",
     ...(alwaysLoad ? { alwaysLoad: true } : {}),
@@ -61,8 +63,11 @@ export function buildOrcMcpServers(
   alwaysLoad = false,
   mode: OrcMcpMode = loadConfig().mcp.default_mode,
   project?: string,
+  previewSession?: string,
 ): Record<string, OrcHttpMcpServer> {
-  return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad, mode, project) };
+  return {
+    [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad, mode, project, previewSession),
+  };
 }
 
 export type OrcMcpConfigFile = { path: string; cleanup: () => Promise<void> };
@@ -75,9 +80,10 @@ export async function writeOrcMcpConfigFile(
   mode: OrcMcpMode = loadConfig().mcp.default_mode,
   format: "claude" | "acpx" = "claude",
   stableName?: string,
+  previewSession?: string,
 ): Promise<OrcMcpConfigFile> {
   if (host.kind === "ssh") await ensureSshMaster(host);
-  const servers = buildOrcMcpServers(host, false, mode, project);
+  const servers = buildOrcMcpServers(host, false, mode, project, previewSession);
   const mcpServers =
     format === "acpx"
       ? Object.entries(servers).map(([name, server]) => ({

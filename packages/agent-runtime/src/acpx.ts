@@ -438,6 +438,7 @@ export class AcpxSession implements AgentSession {
       this.opts.orcMcpMode,
       "acpx",
       `acpx-${this.agent}-${this.sessionName}`,
+      this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
     );
     return ["--mcp-config", this.mcpConfig.path];
   }

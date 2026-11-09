@@ -67,6 +67,22 @@ afterEach(() => {
 });
 
 describe("ORC MCP injection for tool-restricted sessions", () => {
+  test("should carry the trusted chat binding through the SDK launch rather than making the agent guess a session", async () => {
+    const session = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      orcMcp: true,
+      orcPreviewSessionId: "trusted-chat",
+    });
+    try {
+      await session.send("fixture");
+      await Bun.sleep(20);
+      const url = new URL(queries[0]?.options.mcpServers?.orc?.url ?? "");
+      expect(url.searchParams.get("preview_session")).toBe("trusted-chat");
+      expect(url.searchParams.get("mode")).toBe("meta");
+    } finally {
+      await session.close();
+    }
+  });
   test("should pass validated conversation options to the SDK without replacing callbacks", async () => {
     const session = await createBackend("claude").startSession({
       cwd: process.cwd(),
@@ -107,6 +123,22 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     expect(buildOrcMcpServers(undefined, false, "full").orc?.url).toBe(
       "http://127.0.0.1:7755/mcp?mode=full",
     );
+  });
+  test("should pin browser discovery to a stable ORC conversation without putting credentials in the URL", () => {
+    const server = buildOrcMcpServers(
+      undefined,
+      false,
+      "meta",
+      "Channel Project",
+      "chat-preview-123",
+    ).orc;
+    if (!server) throw new Error("ORC MCP server missing");
+    const url = new URL(server.url);
+    expect(url.searchParams.get("preview_session")).toBe("chat-preview-123");
+    expect(url.searchParams.get("project")).toBe("Channel Project");
+    expect(url.searchParams.get("mode")).toBe("meta");
+    expect(url.searchParams.has("auth")).toBe(false);
+    expect(server.headers?.Authorization).toBe("Bearer s3cret");
   });
 
   test("should build an http mcp server keyed orc with bearer auth", () => {

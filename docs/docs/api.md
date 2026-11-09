@@ -41,6 +41,33 @@ Unauthenticated exceptions: `GET /api/health`, the sign-in routes, `POST /webhoo
 
 ## Usage
 
+### Desktop preview
+
+The desktop panel uses authenticated `/api/desktop-preview/*` routes:
+`GET session?session_id=…` resolves a trusted session; `GET file?session_id=…&target=…`
+reads bounded workspace text/images; `PUT file` saves text using
+`{session_id,target,content,original}` and returns 409 if disk content changed.
+Paths are constrained to that session's working folder and execution host.
+
+`POST clients` registers `{client_id,session_id,agent_access,browser_ready}` and returns a
+private lease. Renewal, `GET clients/{id}/requests`, `POST clients/{id}/close` and
+`POST requests/{id}/ack` require `X-Preview-Lease` as well as normal API auth.
+`GET clients?session_id=…` lists targets (`agent_access`, `browser_ready`) without
+exposing leases. `POST requests` queues `{session_id,client_id?,kind:"url"|"file",target}`;
+`POST browser` queues `{session_id,client_id?,command,tab_id?}` only for an opted-in
+target with an open browser page (`browser_ready`), otherwise it returns 409.
+`GET requests/{id}` reports `queued`, `opened`, `completed`, `failed` or `expired`.
+`POST requests/{id}/cancel` fails a still-queued request so it never runs late; the
+MCP server calls it when a browser action is still queued after its 10-second wait.
+Queued work expires; it is not persisted across daemon restarts.
+
+Browser files stay inside the session workspace: `POST artifact?session_id=…&name=…`
+saves a browser download (octet-stream body), `POST recording?session_id=…` saves a
+WebM recording, and `GET upload?session_id=…&target=…` returns a workspace file as
+base64 for a browser upload. Artifact and recording bodies are capped at 16 MB.
+See [MCP preview tools](./mcp.md#desktop-preview-tools) for browser commands and
+permission behavior.
+
 `GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence from a
 stored native session transcript: `latest` (including optional recorded time and
 a conservative `may_be_cold_after` hint) and `totals`. Missing or unsupported

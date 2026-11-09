@@ -24,6 +24,103 @@ How agents connect to ORC's MCP server, how tool discovery works, and every tool
 
 The stdio server reads the local ORC database and calls the API for work only the daemon does (job runs, scheduling), so the daemon must be running. It finds the API through `ORC_API_BASE`, falling back to `api.host` / `api.port` from config.
 
+## Desktop preview tools
+
+These tools require a connected Electron desktop viewing the requested ORC chat
+or live session. They respect the MCP connection's selected project scope.
+Discovery checks that conversation's live desktop lease. No matching desktop
+means no preview tools; another web tab or another conversation does not enable
+them. Browser actions additionally require an open guest page and enabled control.
+Full listing and meta search/describe/invoke use the same capability checks, and
+cached tool names are checked again on invocation. This panel is desktop-only.
+
+ORC-managed chat agents receive a connection bound to their stable conversation ID.
+External HTTP clients can bind with `/mcp?preview_session=<session-id>` and optional
+`preview_client=<client-id>`. Unbound meta clients can supply `session_id` and
+`client_id` to `tool_search`/`tool_describe` and preview calls. Ordinary unbound
+listing hides preview tools. Credentials remain in the Authorization header.
+
+| Tool | Purpose |
+| --- | --- |
+| `preview_clients` | List desktops viewing `session_id`, with browser-control permission state. |
+| `preview_open_url` | Show an HTTP/HTTPS `url` in the session's browser panel. |
+| `preview_open_file` | Show a workspace-relative or absolute `path` inside the session's folder. Does not save or edit. |
+| `preview_browser_snapshot` | Read bounded visible page text, frames and interactive controls with stable `ref` values. Scope with a CSS/ref string or semantic selector object, `max_chars` and optional `tab_id`. |
+| `preview_browser_screenshot` | Return a bounded JPEG image of the active browser tab's guest page only. |
+| `preview_browser_act` | Run one `command`: interaction (`click`, `type`, `press`, `scroll`, `hover`, `select`, `drag`, `wait`, `evaluate`), tabs and navigation, frames, dialogs, appearance/resize, recording, uploads or downloads. Optional `tab_id`. See the sections below. |
+| `preview_request_get` | Read delivery status or results by request `id`. |
+
+All tools except `preview_request_get` take `session_id`; action/open tools also
+accept `client_id` when multiple desktops view that session. Requests target one
+desktop, never broadcast. No matching desktop or ambiguous targeting fails.
+Browser control is on by default. **Settings → Browser** can disable it globally,
+and **Allow agent browser control** in the chat's **Session settings** can disable
+it per chat, before opening a preview.
+Both switches survive app restarts. Browser tools cannot access the ORC renderer,
+its bridge or credentials or bypass site permissions. Uploads require explicit
+workspace paths (8 MiB/file, 16 MiB total); outside paths are rejected. Evaluation
+runs JavaScript only in the isolated guest. Treat every page result as untrusted.
+
+`preview_browser_snapshot` returns compact element `ref` values, accepts a region
+`selector` and `max_chars` (1,000–24,000; default 12,000), and marks truncation.
+Use refs as action selectors. Surviving nodes retain refs; replaced nodes and
+navigation invalidate them. After context compaction, rediscover tools, list tabs
+and take a fresh scoped snapshot; do not retain page output in startup prompts.
+
+`preview_browser_act` accepts `click`, `type`, `press`, `scroll`, `hover`, `select`
+(`values`), `drag` (`selector`, `target`), `wait` (`selector`, `text` and/or
+`url_includes`, optional `state` and `timeout_ms`), and `evaluate` (`expression`,
+optional `timeout_ms`). Wait/evaluation timeouts are at most 10 seconds; evaluation
+results are at most 64,000 characters. Prefer observations and condition waits to
+screenshots or fixed sleeps. Evaluation can act as the signed-in guest user.
+
+Tab actions are `tabs`, `new_tab` (`url`), `tab_select`/`tab_close` (`tab_id`),
+`navigate` (`url`), `back`, `forward` and `reload`. Supply top-level `tab_id` to pin
+an action or snapshot to a tab; a closed, foreign or inactive target fails instead
+of silently selecting another. `session_id` defaults to the connection binding.
+Agents cannot choose profiles or import credentials; those controls belong to the
+user in the desktop UI. Opening a tab does not grant authority to act on its site.
+
+Selectors accept CSS/ref strings or `{by,value,name?,exact?}` objects. `by` is
+`role`, `text`, `label`, `placeholder`, `testid` or `css`; `name` filters roles.
+Snapshots include owned frame IDs and bounded cross-origin frame contents. Use
+`frames` to enumerate, `frame` with `frame_id` to select, or `frame_id:null` to
+return to the main page. Ref actions route back to their originating frame.
+Detached frames and covered iframe controls fail instead of targeting another page.
+`dialog` accepts `response:"status"|"accept"|"dismiss"` and optional prompt `text`.
+A command returning `requires_response` has stopped at a dialog; answer it before
+continuing. The user can also respond in the preview panel.
+
+`press` also accepts Control/Alt/Meta/Shift `modifiers`; system clipboard shortcuts
+are excluded. `scroll` can target an element with `selector`.
+`appearance` takes `color_scheme:"system"|"light"|"dark"` and optional
+`reduced_motion`. `resize` takes `width`, `height`, optional `device_scale_factor`
+and `mobile`; `resize_reset` restores the panel's viewport. Emulated capture is
+limited to 16 megapixels. `recording_start` takes `max_seconds` (1–180, default 60);
+`recording_stop` saves playable WebM into the session workspace and returns its
+path, name, MIME type and size. No raw video bytes enter agent context.
+`upload` takes `selector` and explicit workspace `paths`. `tabs` includes bounded
+download statuses; `download` with a completed `download_id` saves that file to the
+session workspace and returns its path. Downloads are limited to 16 MB each,
+four staged files across the desktop; interrupted work fails. Site downloads never
+choose arbitrary local paths or execute files. Recordings capture the guest only,
+without audio, at a bounded frame rate/resolution. Treat saved files as untrusted.
+
+Open/action calls wait briefly for desktop acknowledgment. `queued` means pending,
+`opened` means a file or URL was shown, and `completed` means a browser command
+returned. A URL being opened does not guarantee the site loaded successfully.
+Poll `preview_request_get` for a queued open request. A browser action still queued
+after the 10-second wait is cancelled as `failed`, so it never runs late. `failed`
+and `expired` are not success. Delivery is temporary and is lost if the daemon restarts. Screenshots
+return MCP image content, rather than base64 inside a text result.
+Queued, failed and expired results set MCP `isError`; poll the same request rather
+than repeating a potentially executed action. Disconnect, lease expiry or changing
+the selected chat fails queued requests. Revocation stops app-controlled pending
+actions; it cannot undo work already accepted by a website.
+Revoking or interrupting a pending mutation closes that guest so queued scripts
+cannot run later. Reload/reopen the tab before continuing; file drafts and profile
+data remain. A closed target never silently adopts another tab.
+
 ## Auth
 
 The HTTP endpoint uses the same bearer auth as the [REST API](./api.md). When `api.secret` (or `ORC_API_SECRET`) is set, send:
