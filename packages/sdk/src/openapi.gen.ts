@@ -345,6 +345,8 @@ export interface paths {
                 query: {
                     agent: string;
                     threadId?: string;
+                    host?: string;
+                    cwd?: string;
                 };
                 header?: never;
                 path?: never;
@@ -15123,6 +15125,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{id}/runs/{runId}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve the native agent conversation created by this run */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    runId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Discovered native session, or null if the provider did not retain one */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{id}/runs/{runId}/logs": {
         parameters: {
             query?: never;
@@ -18315,6 +18358,7 @@ export interface components {
             job_id: string;
             task_id: string | null;
             session_id: string | null;
+            native_session_id: string | null;
             /** @enum {string} */
             status: "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
             trigger_by: string | null;

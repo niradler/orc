@@ -12,6 +12,7 @@ import {
 import { createFlow, reloadFlows } from "@orc/core/flow-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { tasks } from "@orc/db/schema";
+import { startScheduler, stopScheduler } from "@orc/runner/scheduler";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -410,3 +411,116 @@ test("should execute an agent in an isolated worktree with pinned host, environm
   expect(run.stdout).toContain("Clean worktree removed");
   expect(run.stdout).not.toContain("private-fixture-value");
 });
+
+test("should run scheduled agent actions and signed HTTP webhook agent actions end to end", async () => {
+  mode = "success";
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
+  const base = `http://127.0.0.1:${server.port}`;
+  const send = async <T = unknown>(path: string, body: unknown, method = "POST"): Promise<T> => {
+    const response = await fetch(`${base}/api${path}`, {
+      method,
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-secret" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return (await response.json()) as T;
+  };
+  let cronId: string | undefined;
+  try {
+    expect((await fetch(`${base}/api/jobs/missing/runs/missing/session`)).status).toBe(401);
+    await startScheduler();
+    const scheduled = await send<{ id: string }>("/jobs", {
+      name: "scheduled-agent-e2e",
+      action: { type: "agent", backend: "job-fixture", prompt: "Scheduled instructions" },
+      trigger_type: "cron",
+      cron_expr: "* * * * * *",
+      enabled: true,
+    });
+    cronId = scheduled.id;
+    let runId: string | undefined;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      const runs = (await (
+        await fetch(`${base}/api/jobs/${scheduled.id}/runs`, {
+          headers: { Authorization: "Bearer test-secret" },
+        })
+      ).json()) as { runs: { id: string }[] };
+      if (runs.runs[0]) {
+        runId = runs.runs[0].id;
+        break;
+      }
+      await Bun.sleep(20);
+    }
+    expect(runId).toBeDefined();
+    await send(`/jobs/${scheduled.id}`, { enabled: false }, "PATCH");
+    if (!runId) throw new Error("No scheduled run");
+    expect((await waitRun(runId)).status).toBe("success");
+    expect(lastPrompt).toContain("Scheduled instructions");
+    const source = await send<{ id: string; token: string; secret: string }>("/webhooks", {
+      name: "Real HTTP source",
+      provider: "generic",
+    });
+    const job = await send<{ id: string }>("/jobs", {
+      name: "http-agent-e2e",
+      action: { type: "agent", backend: "job-fixture", prompt: "Webhook instructions" },
+      trigger_type: "webhook",
+      enabled: true,
+      webhooks: [{ webhook_id: source.id, events: ["push"] }],
+    });
+    const payload = JSON.stringify({ fixture: "real-http-body" });
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Orc-Event": "push",
+      "X-Orc-Delivery": "http-real-e2e",
+      "X-Orc-Signature-256": `sha256=${createHmac("sha256", source.secret).update(payload).digest("hex")}`,
+    };
+    const denied = await fetch(`${base}/webhooks/${source.token}`, {
+      method: "POST",
+      headers: { ...headers, "X-Orc-Signature-256": "sha256=invalid" },
+      body: payload,
+    });
+    expect(denied.status).toBe(401);
+    const response = await fetch(`${base}/webhooks/${source.token}`, {
+      method: "POST",
+      headers,
+      body: payload,
+    });
+    expect(response.status).toBe(202);
+    const delivery = (await response.json()) as { run_ids: string[] };
+    const deliveredRunId = delivery.run_ids[0];
+    if (!deliveredRunId) throw new Error("Delivery did not start an agent run");
+    const completed = await waitRun(deliveredRunId);
+    expect(completed.status).toBe("success");
+    expect(completed.session_id).toBeTruthy();
+    if (!completed.session_id) throw new Error("Missing agent session link");
+    expect(lastPrompt).toContain("Webhook instructions");
+    expect(lastPrompt).toContain("real-http-body");
+    const rows = (await (
+      await fetch(`${base}/api/jobs/${job.id}/runs`, {
+        headers: { Authorization: "Bearer test-secret" },
+      })
+    ).json()) as { runs: { session_id: string; native_session_id: string }[] };
+    const firstRow = rows.runs[0];
+    if (!firstRow) throw new Error("Missing completed run");
+    expect(firstRow.session_id).toBe(completed.session_id);
+    expect(firstRow.native_session_id).toBe("fixture-runtime");
+    const wrongRun = await fetch(`${base}/api/jobs/${scheduled.id}/runs/${completed.id}/session`, {
+      headers: { Authorization: "Bearer test-secret" },
+    });
+    expect(wrongRun.status).toBe(404);
+    const absentNative = await fetch(`${base}/api/jobs/${job.id}/runs/${completed.id}/session`, {
+      headers: { Authorization: "Bearer test-secret" },
+    });
+    expect(await absentNative.json()).toEqual({ session_id: null });
+    const duplicate = await fetch(`${base}/webhooks/${source.token}`, {
+      method: "POST",
+      headers,
+      body: payload,
+    });
+    expect(duplicate.status).toBe(409);
+  } finally {
+    if (cronId) await send(`/jobs/${cronId}`, { enabled: false }, "PATCH");
+    stopScheduler();
+    await server.stop(true);
+  }
+}, 15000);

@@ -108,3 +108,59 @@ test("new agent job defaults to an isolated worktree and retains configuration a
   await page.getByTestId("job-cleanup").scrollIntoViewIfNeeded();
   await page.getByTestId("form-dialog").screenshot({ path: info.outputPath("job-worktree.png") });
 });
+
+for (const width of [1440, 390]) {
+  test(`job uses Chat agent/model menus and persists host-aware model choices ${width}`, async ({
+    page,
+    request,
+  }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const queriedHosts: string[] = [];
+    await page.route("**/api/chat/models?**", async (route) => {
+      const url = new URL(route.request().url());
+      queriedHosts.push(url.searchParams.get("host") ?? "inherit");
+      const agent = url.searchParams.get("agent");
+      await route.fulfill({
+        json: {
+          models: [{ id: `${agent}-fixture`, label: `${agent} fixture model` }],
+          warning: null,
+        },
+      });
+    });
+    await gotoView(page, "jobs");
+    await page.getByTestId("new-job-button").click();
+    const name = tid("picker-job");
+    await page.getByTestId("job-name-input").fill(name);
+    await page.getByTestId("form-step-destination").click();
+    await page.getByTestId("job-action-type").selectOption("agent");
+    await page.getByTestId("job-host").selectOption("__local__");
+    await page.getByTestId("job-agent-model-button").click();
+    await expect(page.getByTestId("job-agent-option-codex")).toBeVisible();
+    await expect(page.getByTestId("job-model-option-codex-fixture")).toBeVisible();
+    await page.getByTestId("job-agent-option-claude").click();
+    await page.getByTestId("job-model-option-claude-fixture").click();
+    await expect(page.getByTestId("job-model-current")).toContainText("claude fixture model");
+    expect(queriedHosts).toContain("__local__");
+    await page.getByTestId("job-agent-prompt").fill("Inspect the incoming event");
+    await page.getByTestId("job-agent-model-button").click();
+    await page.screenshot({ path: info.outputPath("job-agent-picker.png") });
+    await page.keyboard.press("Escape");
+    await page.getByTestId("form-step-settings").click();
+    await page.getByTestId("job-submit").click();
+    await expect(page.getByTestId("form-dialog")).toHaveCount(0);
+    const { jobs } = await apiGet<{
+      jobs: { id: string; name: string; action: { backend: string; model: string } }[];
+    }>(request, "/jobs");
+    const saved = jobs.find((job) => job.name === name);
+    if (!saved) throw new Error("Saved job missing");
+    expect(saved.action).toMatchObject({ backend: "claude", model: "claude-fixture" });
+    await page.reload();
+    await page
+      .locator(`[data-testid="job-row"][data-job-id="${saved.id}"]`)
+      .getByTestId("job-edit")
+      .click();
+    await page.getByTestId("form-step-destination").click();
+    await expect(page.getByTestId("job-agent-current")).toHaveText("Claude Code");
+    await expect(page.getByTestId("job-model-current")).toHaveText("claude fixture model");
+  });
+}

@@ -298,7 +298,19 @@ export function JobEditorDialog({
                   <div className="md:col-span-2">
                     <JobActionFields
                       value={draft.action}
-                      onChange={(action: JobAction) =>
+                      executionHost={draft.settings.host}
+                      cwd={
+                        draft.working_dir ||
+                        projects?.find((project) => project.id === draft.project_id)?.scope ||
+                        undefined
+                      }
+                      onChange={(action: JobAction) => {
+                        if (
+                          action.type === "agent" &&
+                          draft.action.type === "agent" &&
+                          action.backend !== draft.action.backend
+                        )
+                          setOptionsDraft("");
                         setDraft({
                           ...draft,
                           action,
@@ -313,8 +325,8 @@ export function JobEditorDialog({
                                   },
                                 }
                               : draft.settings,
-                        })
-                      }
+                        });
+                      }}
                     />
                   </div>
                   {draft.action.type === "agent" && (

@@ -569,6 +569,11 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     jobs: {
+      nativeSession: (id: string, runId: string) =>
+        c<{ session_id: string | null }>(
+          "GET",
+          `/jobs/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/session`,
+        ),
       list: (params?: {
         enabled?: boolean;
         project_id?: string;

@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { changes } from "@orc/core/changes";
-import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
+import { type ExecHost, execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
@@ -40,8 +40,8 @@ export type SyncResult = {
   error?: string;
 };
 
-const defaultAdapters = (): SessionAdapter[] => {
-  const runtime = hostRuntime(resolveExecHost());
+const defaultAdapters = (host: ExecHost = resolveExecHost()): SessionAdapter[] => {
+  const runtime = hostRuntime(host);
   return [
     claudeAdapter({}, runtime),
     codexAdapter(undefined, { runtime }),
@@ -300,6 +300,23 @@ export function runSync(
 }
 
 export const syncNow = () => runSync(currentAdapters, { force: true });
+
+export function discoverJobSession(
+  backend: string,
+  nativeId: string,
+  host: string | null,
+): Promise<string | null> {
+  return serialized(async () => {
+    const nativeBackend =
+      backend === "codex-cli" ? "codex" : backend === "claude-cli" ? "claude" : backend;
+    const adapter = defaultAdapters(execHostFor(host)).find(
+      (entry) => entry.backend === nativeBackend,
+    );
+    if (!adapter) return null;
+    const record = (await adapter.list(new Map())).find((entry) => entry.externalId === nativeId);
+    return record ? upsertRecord(record, host) : null;
+  });
+}
 
 export function refreshConfiguredSessionAdapters(): void {
   currentAdapters = defaultAdapters();

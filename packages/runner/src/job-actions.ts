@@ -147,6 +147,13 @@ export async function runJobAction(
         sqlite
           .query("UPDATE gateway_sessions SET last_activity_at=unixepoch() WHERE id=?")
           .run(sessionId);
+        const nativeId = activeSession.getRuntimeSessionId?.();
+        if (nativeId && nativeId !== runtimeId) {
+          runtimeId = nativeId;
+          sqlite
+            .query("UPDATE gateway_sessions SET runtime_session_id=? WHERE id=?")
+            .run(runtimeId, sessionId);
+        }
         if (event.type === "text") trace = (trace + event.data).slice(-64000);
         if (event.type === "permission_request")
           activeSession.respondPermission(
@@ -157,7 +164,7 @@ export async function runJobAction(
         if (event.type === "result") {
           if (event.data.outcome === "failed" || event.data.outcome === "stopped")
             throw new Error("Agent did not complete successfully");
-          runtimeId = event.data.runtimeSessionId ?? null;
+          runtimeId = event.data.runtimeSessionId ?? runtimeId;
           completed = true;
           break;
         }

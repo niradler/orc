@@ -134,7 +134,11 @@ The interpreter must be installed on the destination. Host default uses sh on Un
 and Windows PowerShell on Windows; jobs saved before this setting retain sh.
 
 Agent jobs save a prompt, backend, optional model, explicit automatic tool approval
-and supported launch options. New agent jobs default to an isolated, detached Git
+and supported launch options. Agent and model use the same picker as Chat: enabled
+agents, models reported by the provider on the job's selected host/directory,
+Agent default and an explicit Custom model option. A saved model remains selectable
+if discovery is temporarily unavailable. Changing agents clears the previous model
+and launch options. New agent jobs default to an isolated, detached Git
 worktree for each run. `HEAD` inherits the project checkout's current commit; override
 it with a branch or remote-tracking ref. ORC does not fetch, reset or push the base.
 **Clean up worktree after a successful run** is off by default. When enabled, cleanup
@@ -150,6 +154,14 @@ redacted from job output and saved agent summaries, including across output chun
 This does not scrub transformed values or files and logs written by the script itself.
 Values are single-line; `ORC_` names are reserved. Back up `~/.orc/secret.key` with the
 database: saved secrets cannot be decrypted without that machine key.
+
+To see a result, open the job and select **View result** under **Recent runs**.
+This shows the saved output and errors. **Session summary** opens the audit record.
+For an agent run with a native session ID, **Open agent session** opens the actual
+conversation in Sessions, where the existing transcript/resume controls apply.
+ORC discovers that conversation on the run's own host without changing the globally
+selected host. If the provider has not retained a conversation yet, the saved result
+remains available and the interface explains that the native conversation is missing.
 
 ![Job schedule editor](/screens/jobs-editor.png)
 

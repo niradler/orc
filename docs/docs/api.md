@@ -188,6 +188,7 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `POST` | `/jobs/{id}/trigger` | Run now; `?sync=true` waits and returns output |
 | `GET` | `/jobs/{id}/runs` | Run history |
 | `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
+| `GET` | `/jobs/{id}/runs/{runId}/session` | Resolve this run's native conversation; returns `{ session_id }` for Sessions, or `null` if unavailable |
 | `GET` `POST` | `/webhooks` | List / create webhooks |
 | `PATCH` `DELETE` | `/webhooks/{id}` | Update / delete |
 | `POST` | `/webhooks/{token}` (no `/api`) | Receive a signed delivery |
@@ -205,7 +206,7 @@ is an IANA timezone for cron. `shell` is `{ executable, args }`, with the script
 appended as the final argument. `workspace` is
 `{ mode: "directory" | "worktree", base_ref, cleanup_on_success }` for agent jobs.
 Legacy jobs without settings retain their previous shell and directory behavior.
-`inherit_project_directory: false` preserves a command job’s host working directory
+`inherit_project_directory: false` preserves a command jobâ€™s host working directory
 when adding settings to a legacy job; new jobs otherwise inherit their project path.
 The Jobs response includes `working_dir`, `settings`, `schedule_timezone` and a
 timezone-aware `next_run_at` for enabled cron jobs.
@@ -220,6 +221,15 @@ inputs remain supported as nonsecret values; reads expose them through `environm
 Do not supply both forms in one write. Agent `action.options` accepts the shared
 validated launch-options contract for its backend; automatic approval requires
 `action.auto_approve: true`.
+
+Job runs expose `session_id` for the audit record and `native_session_id` for the
+provider identity. The run-session resolver checks run ownership and discovers only
+that native conversation on its recorded execution host. It does not switch the
+global execution host. Existing authentication protects both endpoints.
+
+`GET /chat/models` also accepts optional `host` and `cwd` for a job destination.
+Omit `host` to follow the selected host, use `__local__` to pin local, or supply an
+SSH alias. An existing `threadId` owns its host/directory and rejects these overrides.
 
 ### Sessions, chat and terminals
 

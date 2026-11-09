@@ -541,7 +541,8 @@ describe("native chat runtime", () => {
   test("model catalog validates auth, agent and conversation scope", async () => {
     expect((await request("/chat/models?agent=gemini", undefined, false)).status).toBe(401);
     expect((await request("/chat/models?agent=--bad")).status).toBe(400);
-    expect((await request("/chat/models?agent=gemini&host=other")).status).toBe(400);
+    expect((await request("/chat/models?agent=gemini&host=-bad")).status).toBe(400);
+    expect((await request("/chat/models?agent=gemini&host=__local__")).status).toBe(200);
     const fallback = await (await request("/chat/models?agent=gemini")).json();
     expect(fallback).toEqual({ models: [], warning: null });
     const existing = await turn({ messages: [{ role: "user", content: "Model scope" }] });
@@ -549,6 +550,10 @@ describe("native chat runtime", () => {
     if (threadEvent?.type !== "thread") throw new Error("No thread fixture");
     expect(
       (await request(`/chat/models?agent=claude&threadId=${threadEvent.thread.id}`)).status,
+    ).toBe(400);
+    expect(
+      (await request(`/chat/models?agent=codex&threadId=${threadEvent.thread.id}&host=__local__`))
+        .status,
     ).toBe(400);
     expect(
       (await request("/chat/models?agent=codex&threadId=00000000-0000-4000-8000-000000000999"))

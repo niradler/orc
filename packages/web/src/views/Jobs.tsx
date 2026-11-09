@@ -312,7 +312,9 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   variant="ghost"
                   size="sm"
                   disabled={triggerJob.isPending}
-                  onClick={() => triggerJob.mutate(job.id)}
+                  onClick={() =>
+                    triggerJob.mutate(job.id, { onSuccess: () => openJobDetail(job.id) })
+                  }
                 >
                   <Play />
                   Run
@@ -447,7 +449,9 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                         data-testid="job-trigger"
                         size="sm"
                         disabled={triggerJob.isPending}
-                        onClick={() => triggerJob.mutate(job.id)}
+                        onClick={() =>
+                          triggerJob.mutate(job.id, { onSuccess: () => openJobDetail(job.id) })
+                        }
                         className="font-label text-sm min-h-8 px-3 bg-transparent text-on-surface border border-border hover:bg-surface-high"
                       >
                         <Play size={10} className="mr-1" /> Run

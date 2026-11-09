@@ -181,6 +181,7 @@ export type Job = {
 };
 
 export type JobRun = {
+  native_session_id?: string | null;
   task_id?: string | null;
   session_id?: string | null;
   id: string;

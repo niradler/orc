@@ -14,7 +14,7 @@ import { createLogger } from "@orc/core/logger";
 import { JobOverlapSchema, JobStatusSchema, JobTriggerTypeSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
 import { KB_DIGEST_COMMAND_PREFIX, kbDigestKbId } from "@orc/db/kb-digest";
-import { job_run_logs, job_runs, jobs } from "@orc/db/schema";
+import { gateway_sessions, job_run_logs, job_runs, jobs } from "@orc/db/schema";
 import { deleteJob, withTx } from "@orc/db/tx";
 import { executeJob } from "@orc/runner/executor";
 import { syncJob, unscheduleJob } from "@orc/runner/scheduler";
@@ -22,6 +22,7 @@ import { Cron } from "croner";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { readJobWebhooks, saveJobWebhooks, validateJobWebhooks } from "../lib/job-webhooks.js";
 import { createRouter } from "../lib/router.js";
+import { discoverJobSession } from "../session-watcher.js";
 
 const logger = createLogger("api:jobs");
 
@@ -128,6 +129,7 @@ const JobRunSchema = z
     job_id: z.string(),
     task_id: z.string().nullable(),
     session_id: z.string().nullable(),
+    native_session_id: z.string().nullable(),
     status: JobStatusSchema,
     trigger_by: z.string().nullable(),
     started_at: z.string().datetime().nullable(),
@@ -445,9 +447,15 @@ function toDto(j: typeof jobs.$inferSelect) {
   };
 }
 
-function runToDto(r: typeof job_runs.$inferSelect) {
+async function runToDto(r: typeof job_runs.$inferSelect) {
+  const session = r.session_id
+    ? await getDb().query.gateway_sessions.findFirst({
+        where: eq(gateway_sessions.id, r.session_id),
+      })
+    : null;
   return {
     ...r,
+    native_session_id: session?.runtime_session_id ?? null,
     started_at: r.started_at?.toISOString() ?? null,
     ended_at: r.ended_at?.toISOString() ?? null,
     created_at: r.created_at.toISOString(),
@@ -690,8 +698,46 @@ app.openapi(runsRoute, async (c) => {
     limit,
     orderBy: [desc(job_runs.created_at)],
   });
-  return c.json({ runs: rows.map(runToDto) });
+  return c.json({ runs: await Promise.all(rows.map(runToDto)) });
 });
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/jobs/{id}/runs/{runId}/session",
+    tags: ["Jobs"],
+    summary: "Resolve the native agent conversation created by this run",
+    request: { params: z.object({ id: z.string(), runId: z.string() }) },
+    responses: {
+      200: {
+        description: "Discovered native session, or null if the provider did not retain one",
+        content: {
+          "application/json": { schema: z.object({ session_id: z.string().nullable() }) },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const { id, runId } = c.req.valid("param");
+    const run = await getDb().query.job_runs.findFirst({
+      where: and(eq(job_runs.id, runId), eq(job_runs.job_id, id)),
+    });
+    if (!run) throw new NotFoundError("Job run", runId);
+    const session = run.session_id
+      ? await getDb().query.gateway_sessions.findFirst({
+          where: eq(gateway_sessions.id, run.session_id),
+        })
+      : null;
+    if (!session?.runtime_session_id) return c.json({ session_id: null });
+    return c.json({
+      session_id: await discoverJobSession(
+        session.backend,
+        session.runtime_session_id,
+        session.execution_host ?? null,
+      ),
+    });
+  },
+);
 
 app.openapi(runLogsRoute, async (c) => {
   const db = getDb();

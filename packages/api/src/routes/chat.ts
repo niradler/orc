@@ -239,7 +239,22 @@ app.openapi(
     tags: ["Chat"],
     request: {
       query: z
-        .object({ agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i), threadId: id.optional() })
+        .object({
+          agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i),
+          threadId: id.optional(),
+          host: z
+            .string()
+            .regex(/^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/)
+            .max(128)
+            .optional(),
+          cwd: z
+            .string()
+            .trim()
+            .min(1)
+            .max(4096)
+            .refine((value) => !value.includes("\0"))
+            .optional(),
+        })
         .strict(),
     },
     responses: {
@@ -250,13 +265,20 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { agent, threadId } = c.req.valid("query");
+    const { agent, threadId, host: requestedHost, cwd: requestedCwd } = c.req.valid("query");
     const thread = threadId ? requireThread(threadId) : null;
     if (thread && thread.config.agent !== agent)
       throw new ValidationError("The agent does not match this conversation.");
+    if (thread && (requestedHost !== undefined || requestedCwd !== undefined))
+      throw new ValidationError("A conversation owns its execution host and working directory.");
     if (agent !== "codex" && agent !== "claude") return c.json({ models: [], warning: null });
-    const host = thread ? execHostFor(thread.host) : resolveExecHost();
-    const cwd = thread?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
+    const host = thread
+      ? execHostFor(thread.host)
+      : requestedHost === undefined
+        ? resolveExecHost()
+        : execHostFor(requestedHost === "__local__" ? null : requestedHost);
+    const cwd =
+      thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
     const key = JSON.stringify([agent, host.kind === "ssh" ? host.alias : null, cwd]);
     const cached = modelCatalogs.get(key);
     if (cached && Date.now() - cached.at < 120_000) return c.json(await cached.result);

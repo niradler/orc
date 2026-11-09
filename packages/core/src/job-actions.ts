@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChatModelSchema } from "./chat.js";
 import { ChatAgentOptionsSchema } from "./chat-options.js";
 
 export const JobActionSchema = z.discriminatedUnion("type", [
@@ -9,7 +10,7 @@ export const JobActionSchema = z.discriminatedUnion("type", [
       prompt: z.string().trim().min(1).max(100000),
       backend: z.string().trim().min(1).max(64),
       options: ChatAgentOptionsSchema.optional(),
-      model: z.string().trim().min(1).max(128).optional(),
+      model: ChatModelSchema.refine((value) => value.length > 0).optional(),
       auto_approve: z.boolean().default(false),
     })
     .strict()
