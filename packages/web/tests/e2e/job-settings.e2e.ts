@@ -86,7 +86,7 @@ for (const [width, theme] of [
 
 test("new agent job defaults to an isolated worktree and retains configuration across tabs", async ({
   page,
-}) => {
+}, info) => {
   await gotoView(page, "jobs");
   await page.getByTestId("new-job-button").click();
   await page.getByTestId("job-name-input").fill(tid("agent-workspace"));
@@ -104,4 +104,7 @@ test("new agent job defaults to an isolated worktree and retains configuration a
   await expect(page.getByTestId("job-cleanup")).toBeChecked();
   await expect(page.getByTestId("job-base-ref")).toHaveValue("origin/main");
   await expect(page.getByTestId("job-agent-prompt")).toHaveValue("Review incoming issues");
+  await page.getByTestId("form-dialog").screenshot({ path: info.outputPath("job-agent.png") });
+  await page.getByTestId("job-cleanup").scrollIntoViewIfNeeded();
+  await page.getByTestId("form-dialog").screenshot({ path: info.outputPath("job-worktree.png") });
 });
