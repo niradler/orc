@@ -1,6 +1,6 @@
 ---
 name: orc-platform
-description: "Operate ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory/KB/digests/embeddings, sessions/handoff, terminals/chat, desktop previews/browser control, jobs/channels/gateway, ask-user requests, agents/backends/packages, Git/GitHub/SSH, rules/hooks, tags/audit, scratchpads (plans, diagrams, HTML), dashboard links."
+description: "Operate ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory/KB/digests/embeddings, sessions/handoff, terminals/chat, desktop browser/previews, jobs/channels/gateway, ask-user requests, agents/backends/packages, Git/GitHub/SSH, rules/hooks, tags/audit, scratchpads, dashboard links."
 ---
 
 # Operate ORC
