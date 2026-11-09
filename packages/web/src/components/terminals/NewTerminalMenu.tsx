@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { RecentFolders } from "@/components/RecentFolders";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useProviders } from "@/hooks/useAgents";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { useSsh } from "@/hooks/useSsh";
@@ -154,6 +155,7 @@ export function NewTerminalMenu({
     staleTime: 30_000,
   });
   let launchers: TerminalKind[] = [];
+  const providerSettings = useProviders();
   if (hostInfo?.ready) launchers = hostInfo.launchers;
   else if (!hostInfo && host === defaultHost && !hostError && remoteSupported) {
     launchers = defaultLaunchers;
@@ -190,14 +192,14 @@ export function NewTerminalMenu({
     setRemoteBrowsing(true);
   };
 
-  const launch = async (kind: TerminalKind) => {
+  const launch = async (kind: TerminalKind, providerId?: string, name?: string) => {
     setLocalError(null);
     const folderToUse = cwd.trim();
     if (needsFolderPick(kind, folderToUse)) {
       browse();
       return;
     }
-    if (await onCreate({ ...launchRequest(kind, folderToUse, worktree), host })) {
+    if (await onCreate({ ...launchRequest(kind, folderToUse, worktree), host, providerId, name })) {
       rememberFolder(host, folderToUse);
       if (host === null) saveLaunchPref(storage, CWD_KEY, folderToUse);
     }
@@ -420,19 +422,51 @@ export function NewTerminalMenu({
               <span className="font-body text-xs text-on-surface-variant">New git worktree</span>
             </label>
             <div className="space-y-0.5">
-              {launchers.map((kind) => {
+              {(providerSettings.data
+                ? [
+                    ...launchers
+                      .filter((kind) => kind === "shell")
+                      .map((kind) => ({
+                        kind,
+                        id: kind,
+                        name: terminalKind(kind).label,
+                        providerId: undefined as string | undefined,
+                      })),
+                    ...providerSettings.data.providers
+                      .filter(
+                        (profile) =>
+                          profile.enabled &&
+                          (launchers.includes(profile.agent) || (!host && !!profile.executable)),
+                      )
+                      .map((profile) => ({
+                        kind: profile.agent,
+                        id: profile.id,
+                        name: profile.name,
+                        providerId: profile.id,
+                      })),
+                  ]
+                : launchers.map((kind) => ({
+                    kind,
+                    id: kind,
+                    name: terminalKind(kind).label,
+                    providerId: undefined as string | undefined,
+                  }))
+              ).map((entry) => {
+                const kind = entry.kind;
                 const { label, icon: Icon } = terminalKind(kind);
                 return (
                   <button
-                    key={kind}
+                    key={entry.id}
                     type="button"
-                    data-testid={`terminal-launch-${kind}`}
+                    data-testid={`terminal-launch-${entry.id}`}
                     disabled={busy}
-                    onClick={() => void launch(kind)}
+                    onClick={() =>
+                      void launch(kind, entry.providerId, entry.providerId ? entry.name : undefined)
+                    }
                     className="w-full flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
                   >
                     <Icon size={14} />
-                    {label}
+                    {entry.name || label}
                   </button>
                 );
               })}

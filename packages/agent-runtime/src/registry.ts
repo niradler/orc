@@ -1,4 +1,5 @@
 import { withHumanRequests } from "./human-requests.js";
+import { providerSessionOptions, withProviderRedaction } from "./provider-session.js";
 import { sessionRules } from "./rules.js";
 import type { AgentBackend, AgentBackendName } from "./types.js";
 
@@ -25,24 +26,61 @@ export function createBackend(name: AgentBackendName): AgentBackend {
     const backend = factory();
     return {
       ...backend,
+      preflight: async (opts = {}) => {
+        const resolved = providerSessionOptions(String(name), opts, true);
+        let result: Awaited<ReturnType<AgentBackend["preflight"]>>;
+        try {
+          result = await backend.preflight(resolved);
+        } catch (error) {
+          throw new Error(
+            resolved.providerRedact?.(error instanceof Error ? error.message : String(error)) ??
+              String(error),
+          );
+        }
+        return result.error && resolved.providerRedact
+          ? { ...result, error: resolved.providerRedact(result.error) }
+          : result;
+      },
       startSession: async (opts) => {
+        opts = providerSessionOptions(String(name), opts);
         if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
           throw new Error(
             `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
           );
         return withHumanRequests(
-          await backend.startSession(await sessionRules(String(name), opts)),
+          withProviderRedaction(
+            await backend
+              .startSession(await sessionRules(String(name), opts))
+              .catch((error: unknown) => {
+                throw new Error(
+                  opts.providerRedact?.(error instanceof Error ? error.message : String(error)) ??
+                    String(error),
+                );
+              }),
+            opts,
+          ),
           String(name),
           opts,
         );
       },
       resumeSession: async (id, opts) => {
+        opts = providerSessionOptions(String(name), opts, true);
         if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
           throw new Error(
             `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
           );
         return withHumanRequests(
-          await backend.resumeSession(id, await sessionRules(String(name), opts)),
+          withProviderRedaction(
+            await backend
+              .resumeSession(id, await sessionRules(String(name), opts))
+              .catch((error: unknown) => {
+                throw new Error(
+                  opts.providerRedact?.(error instanceof Error ? error.message : String(error)) ??
+                    String(error),
+                );
+              }),
+            opts,
+          ),
           String(name),
           opts,
         );

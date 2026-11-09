@@ -181,6 +181,7 @@ function savePreferences(config: ChatConfig): void {
     CHAT_PREFERENCES_KEY,
     JSON.stringify({
       agent: config.agent,
+      providerId: config.providerId,
       model: config.model,
       ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}),
     }),
@@ -666,8 +667,13 @@ function useChatController() {
     activate(tab.key);
   }, [activate, mutate, update]);
   const startAgentConversation = useCallback(
-    (agent: string) => {
-      const next = blankTab({ ...defaults.current, agent, model: "" }, creationProject.current);
+    (agent: string, providerId?: string, model = "", options?: ChatAgentOptions) => {
+      const agentOptions = providerId ? {} : { ...defaults.current.agentOptions };
+      if (options) agentOptions[agent] = options;
+      const next = blankTab(
+        { ...defaults.current, agent, providerId, model, agentOptions },
+        creationProject.current,
+      );
       mutate((current) => [...current, next]);
       activate(next.key);
     },
@@ -832,6 +838,7 @@ function useChatController() {
             ...(!thread && current.projectId ? { projectId: current.projectId } : {}),
             messages: [{ role: "user", content: userMessage.content }],
             agent: config.agent,
+            providerId: config.providerId,
             model: config.model,
             agentOptions: config.agentOptions,
             ...(config.permissionMode && ["claude", "codex"].includes(config.agent)

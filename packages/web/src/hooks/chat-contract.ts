@@ -11,11 +11,14 @@ export const DEFAULT_CONFIG: ChatConfig = ChatSettingsSchema.parse({});
 /** The agent, model and permissions last picked in this browser, applied to new chats. */
 export const CHAT_PREFERENCES_KEY = "orc_chat_preferences";
 const ChatPreferencesSchema = ChatSettingsSchema.pick({
+  providerId: true,
   agent: true,
   model: true,
   permissionMode: true,
 }).partial();
-export type ChatPreferences = Partial<Pick<ChatConfig, "agent" | "model" | "permissionMode">>;
+export type ChatPreferences = Partial<
+  Pick<ChatConfig, "agent" | "model" | "permissionMode" | "providerId">
+>;
 export function parseChatPreferences(raw: string | null): ChatPreferences {
   try {
     const parsed = ChatPreferencesSchema.safeParse(JSON.parse(raw ?? "null"));
@@ -25,6 +28,7 @@ export function parseChatPreferences(raw: string | null): ChatPreferences {
   }
 }
 export function withPreferences(config: ChatConfig, preferences: ChatPreferences): ChatConfig {
+  if (config.providerId) return config;
   const next = { ...config, ...preferences };
   // A model belongs to its agent; drop it when the saved agent no longer matches.
   if (preferences.agent && preferences.agent !== config.agent && !preferences.model)

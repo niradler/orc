@@ -173,7 +173,7 @@ export class TerminalManager {
     };
     entry.pty = this.options.spawn(input.launch.spawnArgv ?? input.launch.argv, {
       cwd: input.launch.host ? undefined : input.launch.cwd,
-      env: buildPtyEnv(this.options.env),
+      env: buildPtyEnv({ ...this.options.env, ...input.launch.env }),
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       onData: (data) => this.onData(entry, data),

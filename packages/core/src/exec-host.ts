@@ -84,6 +84,7 @@ export interface HostSpawnOptions {
 }
 
 export interface HostExecOptions {
+  passEnv?: readonly string[] | undefined;
   cwd?: string | undefined;
   env?: Record<string, string> | undefined;
   input?: string | Uint8Array | undefined;
@@ -893,6 +894,23 @@ export async function hostExec(
         ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}),
       }),
     );
+  }
+  if (opts.passEnv !== undefined) {
+    const prepared = await prepareSshSpawn(host, opts);
+    try {
+      const proc = Bun.spawn(prepared.argv(argv, opts.cwd), {
+        env: process.env,
+        stdin: input,
+        stdout: "pipe",
+        stderr: "pipe",
+        windowsHide: true,
+        ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}),
+      });
+      prepared.track(proc.exited);
+      return await collect(proc);
+    } finally {
+      await prepared.stop();
+    }
   }
   const deadline = opts.timeoutMs ? performance.now() + opts.timeoutMs : undefined;
   await beginHostCommand(host.alias, deadline);

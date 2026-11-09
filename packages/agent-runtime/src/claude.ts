@@ -58,7 +58,7 @@ type StreamState = {
   lastAssistantText: string;
 };
 
-function buildClaudeEnv(): Record<string, string> {
+function buildClaudeEnv(overrides: Record<string, string> = {}): Record<string, string> {
   const allowed = new Set([
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_BASE_URL",
@@ -85,10 +85,12 @@ function buildClaudeEnv(): Record<string, string> {
       env[k] = v;
     }
   }
-  return env;
+  return { ...env, ...overrides };
 }
 
-async function findClaudeCli(host: ExecHost): Promise<string | null> {
+async function findClaudeCli(host: ExecHost, override?: string): Promise<string | null> {
+  if (host.kind === "local" && override)
+    return Bun.which(override, { PATH: process.env.PATH ?? "" });
   const found = await hostBinary(host, "claude");
   if (!found) return null;
   return found.replaceAll("\\", "/");
@@ -137,7 +139,11 @@ export class ClaudeSession implements AgentSession {
   private readonly orcMcpMode: SessionOpts["orcMcpMode"];
   private readonly host: ExecHost;
 
-  constructor(opts: SessionOpts, claudePath: string, host: ExecHost) {
+  constructor(
+    private readonly opts: SessionOpts,
+    claudePath: string,
+    host: ExecHost,
+  ) {
     this.host = host;
     this.cwd = opts.cwd;
     this.runtimeSessionId = opts.runtimeSessionId;
@@ -193,7 +199,8 @@ export class ClaudeSession implements AgentSession {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env: buildClaudeEnv(),
+      env: buildClaudeEnv(this.opts.providerEnv),
+      passEnv: Object.keys(this.opts.providerEnv ?? {}),
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
@@ -422,10 +429,10 @@ function createClaudeBackend(): AgentBackend {
       };
     },
 
-    async preflight() {
-      const host = resolveExecHost();
+    async preflight(opts = {}) {
+      const host = sessionExecHost(opts);
       try {
-        const path = await findClaudeCli(host);
+        const path = await findClaudeCli(host, opts.providerExecutable);
         if (!path) return { ok: false, error: claudeMissing(host) };
         const result = await hostExec(host, [path, "--version"], {
           timeoutMs: 30_000,
@@ -450,7 +457,7 @@ function createClaudeBackend(): AgentBackend {
 
     async startSession(opts) {
       const host = sessionExecHost(opts);
-      const path = await findClaudeCli(host);
+      const path = await findClaudeCli(host, opts.providerExecutable);
       if (!path) throw new Error(claudeMissing(host));
       const session = new ClaudeSession(opts, path, host);
       await session.start(opts);
@@ -459,7 +466,7 @@ function createClaudeBackend(): AgentBackend {
 
     async resumeSession(runtimeSessionId, opts) {
       const host = sessionExecHost(opts);
-      const path = await findClaudeCli(host);
+      const path = await findClaudeCli(host, opts.providerExecutable);
       if (!path) throw new Error(claudeMissing(host));
       const session = new ClaudeSession({ ...opts, runtimeSessionId }, path, host);
       await session.start({ ...opts, runtimeSessionId });

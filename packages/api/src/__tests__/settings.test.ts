@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, resetConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
+import { ProviderSettingsSchema } from "@orc/core/providers";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth";
@@ -46,6 +47,7 @@ afterAll(() => {
   if (originalProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = originalProfile;
   resetConfig();
+  rmSync(privateHome, { recursive: true, force: true });
 });
 
 test("should persist only validated provider executable paths without exposing credentials", async () => {
@@ -341,5 +343,75 @@ test("should save enabled coding agents and reject malformed agent ids", async (
         })
       ).status,
     ).toBe(400);
+  }
+});
+
+test("named provider API authenticates, masks secrets and preserves them on edit", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  try {
+    for (const method of ["GET", "PUT"])
+      expect((await app.request("/api/settings/providers", { method })).status).toBe(401);
+    const initial = ProviderSettingsSchema.parse(
+      await (await app.request("/api/settings/providers", { headers })).json(),
+    );
+    const profile = {
+      id: "claude-gateway",
+      name: "Claude gateway",
+      agent: "claude",
+      enabled: true,
+      executable: "",
+      model: "gateway-model",
+      environment: [
+        { name: "ANTHROPIC_AUTH_TOKEN", value: "private-fixture-token", secret: true },
+        { name: "ANTHROPIC_BASE_URL", value: "http://127.0.0.1:4000", secret: false },
+      ],
+    };
+    const put = async (value: unknown) =>
+      app.request("/api/settings/providers", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(value),
+      });
+    const response = await put({
+      ...initial,
+      default_provider_id: profile.id,
+      providers: [...initial.providers, profile],
+    });
+    expect(response.status).toBe(200);
+    const saved = ProviderSettingsSchema.parse(await response.json());
+    expect(
+      saved.providers.find((item) => item.id === profile.id)?.environment[0]?.value,
+    ).toBeNull();
+    expect(JSON.stringify(saved)).not.toContain("private-fixture-token");
+    expect(readFileSync(globalConfigPath(), "utf8")).not.toContain("private-fixture-token");
+    const prefs = (await (await app.request("/api/settings", { headers })).json()) as {
+      chat: unknown;
+    };
+    expect(prefs.chat).toMatchObject({
+      providerId: profile.id,
+      agent: "claude",
+      model: "gateway-model",
+    });
+    expect(JSON.stringify(prefs)).not.toMatch(/private-fixture-token|enc:v1:/);
+    expect((await put(saved)).status).toBe(200);
+    expect((await put(initial)).status).toBe(409);
+    const invalid = await put({
+      ...saved,
+      providers: saved.providers.map((item: { id: string }) =>
+        item.id === profile.id
+          ? {
+              ...item,
+              environment: [
+                { name: "ANTHROPIC_AUTH_TOKEN", value: "never-echo-input", secret: false },
+              ],
+            }
+          : item,
+      ),
+    });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.text()).not.toContain("never-echo-input");
+  } finally {
+    writeFileSync(globalConfigPath(), previous);
+    resetConfig();
   }
 });

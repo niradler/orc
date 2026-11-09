@@ -3,11 +3,10 @@ import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-export function ChatSettingsForm() {
+export function ChatSettingsForm({ onManageProviders }: { onManageProviders: () => void }) {
   const [config, setConfig] = useState<ChatSettings | null>(null);
   const [models, setModels] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -42,7 +41,14 @@ export function ChatSettingsForm() {
           if (!match) throw new Error("Use agent: model-id on each model line.");
           return { agent: match[1] ?? "", id: match[2] ?? "" };
         });
-      const chat = ChatSettingsSchema.parse({ ...config, models: entries });
+      const latest = ChatSettingsSchema.parse((await api.settings.get()).chat ?? {});
+      const chat = ChatSettingsSchema.parse({
+        ...config,
+        agent: latest.agent,
+        providerId: latest.providerId,
+        model: latest.model,
+        models: entries,
+      });
       await api.settings.save({ chat });
       setConfig(chat);
       window.dispatchEvent(new Event("orc-chat-settings-changed"));
@@ -65,31 +71,18 @@ export function ChatSettingsForm() {
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Defaults for new sessions. Existing chats keep their configuration. Credentials stay on
-          the execution host.
+          the execution host or in encrypted provider settings.
         </p>
       </div>
       {config && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="chat-default-agent">Default agent</Label>
-              <Input
-                id="chat-default-agent"
-                data-testid="chat-default-agent"
-                value={config.agent}
-                onChange={(e) => setConfig({ ...config, agent: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="chat-default-model">Default model</Label>
-              <Input
-                id="chat-default-model"
-                data-testid="chat-default-model"
-                value={config.model}
-                placeholder="Agent default"
-                onChange={(e) => setConfig({ ...config, model: e.target.value })}
-              />
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3">
+            <p className="text-sm">
+              Choose the default provider, model and connection in Providers.
+            </p>
+            <Button variant="outline" onClick={onManageProviders}>
+              Manage providers
+            </Button>
           </div>
           <div className="space-y-2">
             <Label htmlFor="chat-model-catalog">Model picker choices</Label>

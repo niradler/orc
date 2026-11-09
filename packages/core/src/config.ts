@@ -6,6 +6,7 @@ import { ChatSettingsSchema } from "./chat.js";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "./coding-agents.js";
 import { userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
+import { StoredProvidersSchema } from "./providers.js";
 import { decryptSecret } from "./secrets.js";
 
 export function localAgentBinary(name: string): string | null {
@@ -88,6 +89,7 @@ export const TtsConfigSchema = z.object({
 });
 
 export const OrcConfigSchema = z.object({
+  providers: StoredProvidersSchema.optional(),
   preferences: z
     .object({
       theme: z.enum(["dark", "light"]).optional(),

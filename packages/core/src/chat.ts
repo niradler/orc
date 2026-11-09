@@ -72,6 +72,10 @@ export const ChatAnswersSchema = z
   .refine((value) => Object.keys(value).length <= 20, "Too many answers");
 export const ChatSettingsSchema = z
   .object({
+    providerId: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
+      .optional(),
     agent: z
       .string()
       .regex(/^[a-z][a-z0-9-]{0,31}$/i)

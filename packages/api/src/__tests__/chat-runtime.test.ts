@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,7 +16,8 @@ import {
   type ChatThread,
   ChatThreadSchema,
 } from "@orc/core/chat";
-import { loadConfig, resetConfig, updateGlobalConfig } from "@orc/core/config";
+import { globalConfigPath, loadConfig, resetConfig, updateGlobalConfig } from "@orc/core/config";
+import { readProviderSettings, saveProviderSettings } from "@orc/core/provider-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -1664,5 +1665,92 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
       raw.agent_loop = previous.agent_loop;
       raw.preferences = previous.preferences;
     });
+  }
+});
+
+test("named provider defaults reach launches and remain pinned across a default change", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  try {
+    const initial = readProviderSettings();
+    const first = {
+      id: "codex-work",
+      name: "Work Codex",
+      agent: "codex",
+      enabled: true,
+      executable: "",
+      model: "work-model",
+      environment: [{ name: "OPENAI_API_KEY", value: "fixture-work-secret", secret: true }],
+    };
+    const second = {
+      ...first,
+      id: "codex-personal",
+      name: "Personal Codex",
+      model: "personal-model",
+      environment: [],
+    };
+    const saved = saveProviderSettings({
+      ...initial,
+      providers: [...initial.providers, first, second],
+      default_provider_id: first.id,
+    });
+    const result = await turn({
+      messages: [{ role: "user", content: "First named provider turn" }],
+    });
+    expect(result.response.status).toBe(200);
+    const thread = result.events.find((event) => event.type === "thread");
+    if (thread?.type !== "thread") throw Error("Missing thread");
+    expect(thread.thread.config).toMatchObject({ providerId: first.id, model: "work-model" });
+    expect(calls.at(-1)?.opts).toMatchObject({
+      providerId: first.id,
+      model: "work-model",
+      providerEnv: { OPENAI_API_KEY: "fixture-work-secret" },
+    });
+    expect(JSON.stringify(result.events)).not.toContain("fixture-work-secret");
+    saveProviderSettings({
+      ...saved,
+      default_provider_id: second.id,
+      providers: saved.providers.map((profile) =>
+        profile.id === first.id ? { ...profile, enabled: false } : profile,
+      ),
+    });
+    const resumed = await turn({
+      threadId: thread.thread.id,
+      messages: [{ role: "user", content: "Continue with work" }],
+    });
+    expect(resumed.events.some((event) => event.type === "error")).toBe(false);
+    expect(calls.at(-1)?.opts).toMatchObject({
+      providerId: first.id,
+      model: "work-model",
+      providerEnv: { OPENAI_API_KEY: "fixture-work-secret" },
+    });
+    const newDefault = await turn({
+      messages: [{ role: "user", content: "New personal conversation" }],
+    });
+    expect(newDefault.response.status).toBe(200);
+    expect(calls.at(-1)?.opts).toMatchObject({
+      providerId: second.id,
+      model: "personal-model",
+      providerEnv: {},
+    });
+    expect(
+      (
+        await turn({
+          agent: "claude",
+          providerId: second.id,
+          messages: [{ role: "user", content: "Mismatch" }],
+        })
+      ).response.status,
+    ).toBe(400);
+    expect(
+      (
+        await turn({
+          providerId: first.id,
+          messages: [{ role: "user", content: "Disabled new launch" }],
+        })
+      ).response.status,
+    ).toBe(400);
+  } finally {
+    writeFileSync(globalConfigPath(), previous);
+    resetConfig();
   }
 });

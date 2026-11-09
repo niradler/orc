@@ -3,12 +3,46 @@ import { ChatSettingsSchema } from "@orc/core/chat";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "@orc/core/coding-agents";
 import { loadConfig, OrcConfigSchema, updateGlobalConfig } from "@orc/core/config";
 import { McpServerSettingsSchema } from "@orc/core/mcp-prompts";
+import {
+  applyProviderPreferencePatch,
+  providerChatDefaults,
+  readProviderSettings,
+  saveProviderSettings,
+} from "@orc/core/provider-service";
+import { ProviderSettingsSchema } from "@orc/core/providers";
 import { AuditLog } from "@orc/db/audit";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
+const providerResponse = {
+  200: {
+    description: "Named coding providers; secret environment values are never returned",
+    content: { "application/json": { schema: ProviderSettingsSchema } },
+  },
+};
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/settings/providers",
+    tags: ["System"],
+    summary: "Read named coding providers and the default provider",
+    responses: providerResponse,
+  }),
+  (c) => c.json(readProviderSettings()),
+);
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/settings/providers",
+    tags: ["System"],
+    summary: "Save named providers with encrypted write-only environment secrets",
+    request: { body: { content: { "application/json": { schema: ProviderSettingsSchema } } } },
+    responses: providerResponse,
+  }),
+  (c) => c.json(saveProviderSettings(c.req.valid("json"))),
+);
 const mcpResponse = {
   200: {
     description: "MCP defaults and prompts; no credentials",
@@ -129,7 +163,13 @@ app.openapi(
     summary: "Read workspace preferences",
     responses: response,
   }),
-  (c) => c.json(PreferencesSchema.parse(loadConfig().preferences)),
+  (c) =>
+    c.json(
+      PreferencesSchema.parse({
+        ...loadConfig().preferences,
+        ...(loadConfig().providers ? { chat: providerChatDefaults() } : {}),
+      }),
+    ),
 );
 
 app.openapi(
@@ -147,6 +187,7 @@ app.openapi(
     const config = updateGlobalConfig((raw) => {
       const existing = PreferencesSchema.parse(raw.preferences ?? {});
       raw.preferences = { ...existing, ...preferences };
+      applyProviderPreferencePatch(raw, preferences);
     });
     const before = {
       notification_retention_days: previous.notification_retention_days ?? 30,

@@ -74,7 +74,8 @@ export class CodexAppSession implements AgentSession {
   constructor(
     private readonly opts: SessionOpts,
     private readonly host: ExecHost,
-    private readonly launcher: (host: ExecHost) => Promise<string[]> = codexCommand,
+    private readonly launcher: (host: ExecHost) => Promise<string[]> = (host) =>
+      codexCommand(host, opts.providerExecutable),
     private readonly spawnProcess: typeof hostSpawn = hostSpawn,
   ) {
     this.runtimeId = opts.runtimeSessionId;
@@ -529,7 +530,7 @@ export class CodexAppSession implements AgentSession {
         "features.default_mode_request_user_input=true",
       ];
       const mode = this.opts.permissionMode ?? (this.opts.autoApprove ? "acceptEdits" : "default");
-      const env = buildCodexEnv();
+      const env = buildCodexEnv(this.opts.providerEnv);
       const mcp =
         this.opts.orcMcp === false
           ? null
@@ -551,7 +552,7 @@ export class CodexAppSession implements AgentSession {
         stdout: "pipe",
         stderr: "ignore",
         env,
-        passEnv: ["ORC_CODEX_MCP_TOKEN"],
+        passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.providerEnv ?? {})],
       });
       const child = this.child;
       if (this.closed || this.closing) {

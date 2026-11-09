@@ -2,53 +2,98 @@
 
 ## Coding providers
 
-Open **Settings → Agents** to enable coding agents and select one to configure.
-Claude Code and Codex use native integrations; other agents use acpx. Provider
-selection and enablement are separate, so a disabled provider can be configured.
-Save changes commits the enabled list and executable paths together. Drafts survive
-switching providers and Settings sections.
-Use **Use default** to clear a provider's executable override, **Discard changes**
-to restore saved values, and **Save changes** to commit edits. Failed saves preserve
-the draft for retry; unchanged settings do not enable Save.
+Open **Settings → Providers**. Choose **New provider**, name it (for example,
+**Claude LiteLLM**), select a coding-agent adapter, and configure its connection.
+You can create several providers using the same adapter. Claude Code and Codex
+use native integrations; other coding agents use acpx.
 
-![Coding provider settings with demo data](/screens/settings-providers-desktop.png)
+Choose an enabled **Default provider** for new chats. Each provider has a default
+model; leave it blank to use the adapter's default. The chat picker selects named
+providers and can override the model and launch options for that conversation.
+Changing providers starts a new conversation. Existing conversations retain their
+provider ID and model when the default changes. Disabling a provider hides it from
+new launches while allowing its existing conversations to resume.
+
+![Named coding providers with demo data](/screens/settings-providers-desktop.png)
 
 [Phone layout](/screens/settings-providers-phone.png) ·
 [Compact context action](/screens/provider-compaction-phone.png)
 
-For Claude and Codex, **Executable path** overrides the binary on the local ORC
-API host for native sessions, model discovery and terminal/package launches. Enter
-an executable path without arguments, or leave it blank for the default installation
-(Codex on PATH; Claude's SDK default). Paths with
-spaces and `~/` are supported. SSH execution keeps using the remote installation.
-This setting affects new launches; an already-running process is not restarted.
-ORC reuses the CLI's existing login and configuration. Provider home directories
-continue to use `CODEX_HOME` and `CLAUDE_CONFIG_DIR` from the server environment.
-ORC does not create shadow accounts or store provider credentials in these settings.
+For Claude and Codex, **Executable path** overrides the local binary for native
+chat, model discovery and provider terminal launches. Enter a path without
+arguments, or leave it blank for the default installation. Paths with spaces and
+`~/` work. SSH uses the remote installation. Changes apply at the next launch;
+ORC does not restart running processes.
 
-The corresponding non-secret JSON settings are `preferences.agents` and
-`preferences.provider_paths`, for example:
+**Advanced configuration** starts collapsed:
 
-```json
-{
-  "preferences": {
-    "agents": ["codex", "claude"],
-    "provider_paths": { "codex": "/opt/codex/bin/codex", "claude": "" }
-  }
-}
-```
+- **Environment overrides** apply to launches and native model discovery, including
+  SSH. Values override the execution environment; an empty value clears an
+  inherited value. Use variables such as `CODEX_HOME` or `CLAUDE_CONFIG_DIR` for a
+  separate CLI configuration. ORC does not create shadow accounts.
+- Mark sensitive values **Secret**. Credential names such as `ANTHROPIC_AUTH_TOKEN`
+  require this automatically. Secrets are encrypted on the API host and are
+  write-only in the UI. An untouched saved placeholder preserves its value;
+  entering a replacement changes it. Remove a row to stop overriding that variable.
+  Transport and ORC connection variables are managed by ORC.
+- **Chat launch options (JSON)** accept validated adapter options: Claude SDK
+  options such as `{"effort":"high","maxTurns":20}`, or supported Codex/acpx
+  argument arrays. ORC owns session, transport and working-folder arguments.
+  Explicit session options take precedence over provider defaults. Native terminal
+  launches use provider environment and, for Claude/Codex, model; chat JSON options
+  are for the chat adapter. Package setups keep their own launch configuration.
 
-The authenticated `GET/PATCH /api/settings` routes expose these preferences.
-Only `claude` and `codex` path keys are accepted; control characters and paths
-longer than 2048 characters are rejected. Changes do not modify CLI configuration.
+Use **Save changes** to save the provider list, default and advanced settings
+together. Drafts survive switching providers and Settings sections. **Use default**
+clears an executable override; **Discard changes** restores saved values. Failed
+saves retain the draft. Concurrent edits are rejected rather than overwriting
+another device's settings; **Discard draft and reload** loads the saved version.
 
-**Account limits** starts collapsed. **Check limits** reuses the local-account
-quota reader described below, with no provider health polling. During native chat,
-Claude quota warnings/rejections and Codex usage-window warnings are also shown
-when supplied by the agent. Available reset times are included. Claude extra usage
-is distinguished from a blocked request. A failed turn leaves pending messages
-held by the existing chat error handling; retry is explicit after the limit resets.
-ORC does not switch accounts or schedule automatic quota retries.
+### Bedrock and LiteLLM examples
+
+These are environment configurations of the Claude adapter:
+
+| Configuration | Environment overrides |
+| --- | --- |
+| Claude Bedrock | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and an `AWS_PROFILE` configured on the execution host |
+| Claude LiteLLM | `ANTHROPIC_BASE_URL` pointing to your gateway and a secret `ANTHROPIC_AUTH_TOKEN` |
+
+Choose the model ID supported by your gateway or Bedrock deployment. If an
+inherited `ANTHROPIC_API_KEY` conflicts with gateway authentication, add an empty
+secret override for it. AWS profiles, gateway routing and optional endpoint
+variables remain native Claude configuration; see
+[Claude on Bedrock](https://code.claude.com/docs/en/amazon-bedrock),
+[Claude gateway configuration](https://code.claude.com/docs/en/llm-gateway) and
+[LiteLLM's Claude Code guide](https://docs.litellm.ai/docs/proxy/client_setup/claude_code).
+The configured URL is reached from the execution host, so a loopback proxy must
+run on that host.
+
+### Storage and API
+
+Authenticated `GET/PUT /api/settings/providers` reads and replaces
+`{providers, default_provider_id, revision}`. Each provider has `id`, `name`,
+`agent`, `enabled`, `executable`, `model`, optional `options`, and
+`environment: [{name, value, secret}]`. Secret values are returned as `null`;
+send that placeholder unchanged to retain a saved secret with the same provider
+and variable name. New or renamed secrets require a value. Send the current
+revision when saving; stale writes return 409. An existing provider's adapter is
+immutable; create another provider to change adapters.
+
+Private configuration lives under `providers.instances` and
+`providers.default_id` in the server's JSON config. Encrypted values use ORC's
+machine key at `~/.orc/secret.key`; back up that key with the config. Provider
+secrets are excluded from readable workspace preferences. Existing
+`preferences.agents`, `preferences.provider_paths` and chat defaults are migrated
+when saving Providers and remain compatible with `GET/PATCH /api/settings`.
+Without saved profiles, the existing CLI login, paths and chat settings are used.
+
+**Local account limits** starts collapsed. **Check limits** reuses the local-account
+quota reader below; it does not report gateway/Bedrock billing or SSH quotas.
+There is no provider health polling. Native Claude quota rejections and Codex
+usage-window notices include reset times when supplied by the agent. Claude extra
+usage is distinguished from a blocked request. A failed turn holds queued messages;
+retry explicitly after access returns. ORC does not switch accounts or schedule
+automatic quota retries.
 
 ## Manual context compaction
 
@@ -59,7 +104,7 @@ Progress, failures and completion use the normal conversation stream and history
 Running turns, attachments and integrations without native support cannot be
 compacted this way. Keep automatic compaction under the agent's own control;
 Claude sessions with slash commands explicitly disabled must enable them first.
-there is no ORC idle-compaction timer. Compaction summarizes model context and may
+There is no ORC idle-compaction timer. Compaction summarizes model context and may
 use provider quota; it does not erase the displayed ORC transcript.
 
 ## Usage in Settings

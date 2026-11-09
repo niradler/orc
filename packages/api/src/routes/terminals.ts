@@ -1,5 +1,6 @@
 import { basename, dirname } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
+import { agentForSessionBackend } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import {
@@ -9,6 +10,7 @@ import {
   listHostDirectories,
 } from "@orc/core/exec-host";
 import { AgentSetupSchema } from "@orc/core/package-launch";
+import { ProviderIdSchema } from "@orc/core/providers";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
@@ -23,7 +25,13 @@ import {
   TerminalHostQuerySchema,
   TerminalHostSchema,
 } from "../terminals/host.js";
-import { availableLaunchers, buildLaunch, LAUNCH_KINDS } from "../terminals/launch.js";
+import {
+  availableLaunchers,
+  buildLaunch,
+  configureProviderLaunch,
+  LAUNCH_KINDS,
+  providerLaunchDeps,
+} from "../terminals/launch.js";
 import {
   getTerminalManager,
   launchDeps,
@@ -94,6 +102,7 @@ const createTerminalRoute = createRoute({
         "application/json": {
           schema: z.object({
             kind: LaunchKindSchema.optional(),
+            providerId: ProviderIdSchema.optional(),
             host: TerminalHostSchema.optional().openapi({
               description:
                 "SSH config alias, or null for Local. Omit to use the configured default.",
@@ -325,6 +334,8 @@ app.openapi(createTerminalRoute, async (c) => {
   };
 
   if (body.setup) {
+    if (body.providerId)
+      throw new ValidationError("Package setups manage their own provider configuration.");
     checkRules(body.setup.cwd);
     if (body.live_session_id || body.worktree)
       throw new ValidationError(
@@ -379,6 +390,15 @@ app.openapi(createTerminalRoute, async (c) => {
       );
       if (original) return c.json(original, 200);
     }
+    const resumedKind = agentForSessionBackend(row.backend)?.id;
+    if (resumedKind)
+      deps = providerLaunchDeps(
+        resumedKind,
+        body.providerId ?? resumedKind,
+        deps,
+        host.kind === "ssh",
+        true,
+      );
     const launch = await buildLaunch(
       {
         live: {
@@ -390,7 +410,10 @@ app.openapi(createTerminalRoute, async (c) => {
       deps,
     );
     if (handoff && launch.kind === "codex" && launch.cwd) launch.argv.push("--cd", launch.cwd);
-    const resumedLaunch = await launchOnHost(host, launch);
+    const resumedLaunch = await launchOnHost(
+      host,
+      configureProviderLaunch(launch, body.providerId ?? launch.kind, true),
+    );
     const concurrent = manager.findByLiveSession(row.id);
     if (concurrent) {
       checkRules(concurrent.cwd);
@@ -408,7 +431,11 @@ app.openapi(createTerminalRoute, async (c) => {
   }
 
   // Validate the launcher and limit before making a worktree, so a failed start leaves nothing behind.
-  const launch = await buildLaunch({ kind: body.kind, cwd: body.cwd }, deps);
+  deps = providerLaunchDeps(body.kind ?? "shell", body.providerId, deps, host.kind === "ssh");
+  const launch = configureProviderLaunch(
+    await buildLaunch({ kind: body.kind, cwd: body.cwd }, deps),
+    body.providerId,
+  );
   if (launch.kind !== "shell") checkRules(launch.cwd);
   if (body.worktree && launch.kind === "shell") {
     throw new ValidationError("Worktrees are only created for agent terminals");

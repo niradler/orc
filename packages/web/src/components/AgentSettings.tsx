@@ -1,297 +1,655 @@
+import { ChatAgentOptionsSchema, chatRuntime } from "@orc/core/chat-options";
+import { agentLabel, CODING_AGENTS, supportsManualCompaction } from "@orc/core/coding-agents";
+import { ulid } from "@orc/core/ids";
 import {
-  AGENT_ID_PATTERN,
-  CODING_AGENTS,
-  enabledAgents,
-  type ProviderPaths,
-  ProviderPathsSchema,
-  supportsManualCompaction,
-} from "@orc/core/coding-agents";
+  type ProviderProfile,
+  type ProviderSettings,
+  ProviderSettingsSchema,
+  providerSecretName,
+} from "@orc/core/providers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Plus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { AgentIcon } from "@/components/AgentIcon";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { WORKSPACE_PREFERENCES_KEY } from "@/hooks/useAgents";
+import { Textarea } from "@/components/ui/textarea";
+import { CHAT_PREFERENCES_KEY } from "@/hooks/chat-contract";
+import { PROVIDER_SETTINGS_KEY, useProviders, WORKSPACE_PREFERENCES_KEY } from "@/hooks/useAgents";
 
+function optionsText(profile: ProviderProfile): string {
+  return JSON.stringify(
+    profile.options?.runtime === "claude-sdk"
+      ? profile.options.options
+      : (profile.options?.args ?? (chatRuntime(profile.agent) === "claude-sdk" ? {} : [])),
+    null,
+    2,
+  );
+}
 export function AgentSettings() {
   const client = useQueryClient();
-  const preferences = useQuery({ queryKey: WORKSPACE_PREFERENCES_KEY, queryFn: api.settings.get });
-  const [draft, setDraft] = useState<string[] | null>(null);
+  const query = useProviders();
+  const [draft, setDraft] = useState<ProviderSettings | null>(null);
+  const [editing, setEditing] = useState("");
+  const [optionDrafts, setOptionDrafts] = useState<Record<string, string>>({});
+  const [optionErrors, setOptionErrors] = useState<Record<string, string>>({});
+  const [environmentKeys, setEnvironmentKeys] = useState<Record<string, string[]>>({});
+  const [newOpen, setNewOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [agent, setAgent] = useState("claude");
   const [custom, setCustom] = useState("");
-  const [editing, setEditing] = useState("codex");
-  const [pathsDraft, setPathsDraft] = useState<ProviderPaths | null>(null);
-  const paths = pathsDraft ?? preferences.data?.provider_paths ?? {};
+  const [newError, setNewError] = useState("");
+  const settings = draft ?? query.data;
+  const profile =
+    settings?.providers.find((item) => item.id === (editing || settings.default_provider_id)) ??
+    settings?.providers[0];
+  const selectedButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (profile?.id)
+      selectedButton.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [profile?.id]);
+  const validation = settings ? ProviderSettingsSchema.safeParse(settings) : null;
+  const dirty =
+    !!settings &&
+    (JSON.stringify(settings) !== JSON.stringify(query.data) ||
+      Object.values(optionErrors).some(Boolean));
+  const save = useMutation({
+    mutationFn: (value: ProviderSettings) => api.settings.providers.save(value),
+    onSuccess: async (saved) => {
+      client.setQueryData(PROVIDER_SETTINGS_KEY, saved);
+      setDraft(null);
+      setOptionDrafts({});
+      setOptionErrors({});
+      localStorage.removeItem(CHAT_PREFERENCES_KEY);
+      await client.invalidateQueries({ queryKey: WORKSPACE_PREFERENCES_KEY });
+      await client.invalidateQueries({ queryKey: ["terminal-launchers"] });
+      await client.invalidateQueries({ queryKey: ["terminals"] });
+      await client.invalidateQueries({ queryKey: ["chat-models"] });
+      window.dispatchEvent(new Event("orc-chat-settings-changed"));
+    },
+  });
+  const busy = query.isPending || query.isError || save.isPending;
   const quotas = useQuery({
     queryKey: ["usage-quotas"],
     queryFn: api.settings.usageQuotas,
     enabled: false,
   });
-  const quota = quotas.data?.accounts.find((account) => account.provider === editing);
-  const savedAgents = enabledAgents(preferences.data?.agents);
-  const selected = draft ?? savedAgents;
-  const validatedPaths = ProviderPathsSchema.safeParse(paths);
-  const pathError = validatedPaths.success
-    ? undefined
-    : validatedPaths.error.issues.find((issue) => issue.path[0] === editing)?.message;
-  const savedPaths = preferences.data?.provider_paths ?? {};
-  const dirty =
-    selected.length !== savedAgents.length ||
-    selected.some((agent) => !savedAgents.includes(agent)) ||
-    (["codex", "claude"] as const).some(
-      (agent) => (paths[agent]?.trim() ?? "") !== (savedPaths[agent] ?? ""),
-    );
-  const save = useMutation({
-    mutationFn: (agents: string[]) => api.settings.save({ agents, provider_paths: paths }),
-    onSuccess: async (saved) => {
-      client.setQueryData(WORKSPACE_PREFERENCES_KEY, saved);
-      setDraft(null);
-      setPathsDraft(null);
-      await client.invalidateQueries({ queryKey: WORKSPACE_PREFERENCES_KEY });
-      await client.invalidateQueries({ queryKey: ["terminal-launchers"] });
-      await client.invalidateQueries({ queryKey: ["terminals"] });
-      await client.invalidateQueries({ queryKey: ["chat-models"] });
-    },
+  const quota = quotas.data?.accounts.find((account) => account.provider === profile?.agent);
+  const catalog = useQuery({
+    queryKey: ["provider-models", profile?.id, query.data?.revision],
+    queryFn: () => api.chat.models(profile?.agent ?? "codex", undefined, profile?.id),
+    enabled: false,
+    retry: false,
   });
-  const extra = [...new Set([...savedAgents, ...selected])].filter(
-    (id) => !CODING_AGENTS.some((agent) => agent.id === id),
-  );
-  const toggle = (id: string, on: boolean) => {
+  function patch(change: Partial<ProviderProfile>, rowKeys?: string[]): void {
+    if (!settings || !profile) return;
+    const environment = change.environment;
+    if (environment)
+      setEnvironmentKeys((current) => ({
+        ...current,
+        [profile.id]:
+          rowKeys ??
+          environment.map(
+            (_, index) =>
+              current[profile.id]?.[index] ??
+              profile.environment[index]?.name ??
+              crypto.randomUUID(),
+          ),
+      }));
     save.reset();
-    setDraft(on ? [...selected, id] : selected.filter((value) => value !== id));
-  };
-  const addCustom = () => {
-    const id = custom.trim().toLowerCase();
-    if (!AGENT_ID_PATTERN.test(id) || selected.includes(id)) return;
-    toggle(id, true);
-    setEditing(id);
+    setDraft({
+      ...settings,
+      providers: settings.providers.map((item) =>
+        item.id === profile.id ? { ...item, ...change } : item,
+      ),
+    });
+  }
+  function discard(): void {
+    setDraft(null);
+    setOptionDrafts({});
+    setOptionErrors({});
+    save.reset();
+  }
+  function create(): void {
+    if (!settings) return;
+    const adapter = agent === "other" ? custom.trim().toLowerCase() : agent;
+    if (!name.trim() || !/^[a-z][a-z0-9-]{0,31}$/.test(adapter)) {
+      setNewError("Enter a name and a valid adapter.");
+      return;
+    }
+    if (settings.providers.some((item) => item.name.toLowerCase() === name.trim().toLowerCase())) {
+      setNewError("Choose a unique provider name.");
+      return;
+    }
+    const next: ProviderProfile = {
+      id: ulid().toLowerCase(),
+      name: name.trim(),
+      agent: adapter,
+      enabled: true,
+      executable: "",
+      model: "",
+      environment: [],
+    };
+    setDraft({ ...settings, providers: [...settings.providers, next] });
+    setEditing(next.id);
+    setNewOpen(false);
+    setName("");
     setCustom("");
-  };
-  const busy = preferences.isPending || !!preferences.error || save.isPending;
+    save.reset();
+  }
+  function changeOptions(value: string): void {
+    if (!profile) return;
+    setOptionDrafts((current) => ({ ...current, [profile.id]: value }));
+    try {
+      const raw = JSON.parse(value);
+      const runtime = chatRuntime(profile.agent);
+      const options = ChatAgentOptionsSchema.parse(
+        runtime === "claude-sdk" ? { runtime, options: raw } : { runtime, args: raw },
+      );
+      patch({ options });
+      setOptionErrors((current) => ({ ...current, [profile.id]: "" }));
+    } catch {
+      setOptionErrors((current) => ({
+        ...current,
+        [profile.id]: "Enter valid JSON with supported options for this adapter.",
+      }));
+    }
+  }
   return (
     <section aria-labelledby="agent-settings-title" className="space-y-4">
-      <div>
-        <h2 id="agent-settings-title" className="text-base font-medium">
-          Coding agents{" "}
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
-            {selected.length} enabled
-          </span>
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Choose agents for chat, channels and terminals. Changes apply to new launches.
-        </p>
-      </div>
-      {preferences.error && <p role="alert">{preferences.error.message}</p>}
-      <div className="grid min-w-0 overflow-hidden rounded-md border border-border lg:grid-cols-[210px_minmax(0,1fr)]">
-        <nav
-          aria-label="Coding providers"
-          className="flex overflow-x-auto border-b border-border lg:block lg:divide-y lg:divide-border lg:border-r lg:border-b-0"
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="agent-settings-title" className="text-base font-medium">
+            Coding providers{" "}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {settings?.providers.filter((item) => item.enabled).length ?? 0} enabled
+            </span>
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Named configurations for coding agents. Existing conversations keep their selected
+            provider.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          data-testid="provider-new"
+          disabled={busy || (settings?.providers.length ?? 0) >= 64}
+          onClick={() => {
+            setNewError("");
+            setNewOpen(true);
+          }}
         >
-          {[...CODING_AGENTS.map((agent) => agent.id), ...extra].map((id) => {
-            const agent = CODING_AGENTS.find((item) => item.id === id);
-            return (
+          <Plus size={14} />
+          New provider
+        </Button>
+      </div>
+      {query.isPending && <p role="status">Loading providers...</p>}
+      {query.error && (
+        <div role="alert">
+          <p>Providers could not be loaded.</p>
+          <Button variant="ghost" onClick={() => void query.refetch()}>
+            Retry
+          </Button>
+        </div>
+      )}
+      {settings && (
+        <div className="grid items-center gap-2 sm:grid-cols-[140px_minmax(0,1fr)]">
+          <Label htmlFor="provider-default">Default provider</Label>
+          <select
+            id="provider-default"
+            data-testid="provider-default"
+            className="form-control form-control-single"
+            disabled={busy}
+            value={settings.default_provider_id}
+            onChange={(event) => {
+              save.reset();
+              setDraft({ ...settings, default_provider_id: event.target.value });
+            }}
+          >
+            {settings.providers.map((item) => (
+              <option key={item.id} value={item.id} disabled={!item.enabled}>
+                {item.name}
+                {item.enabled ? "" : " (disabled)"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {settings && profile && (
+        <div className="grid min-w-0 overflow-hidden rounded-md border border-border lg:grid-cols-[220px_minmax(0,1fr)]">
+          <nav
+            aria-label="Coding providers"
+            className="flex overflow-x-auto border-b border-border lg:block lg:max-h-[36rem] lg:overflow-y-auto lg:divide-y lg:divide-border lg:border-r lg:border-b-0"
+          >
+            {settings.providers.map((item) => (
               <div
-                key={id}
-                className={`flex min-h-11 shrink-0 items-center gap-2 px-3 lg:min-w-0 ${editing === id ? "bg-surface-highest" : ""}`}
+                key={item.id}
+                className={
+                  "flex min-h-11 shrink-0 items-center gap-2 px-3 lg:min-w-0 " +
+                  (profile.id === item.id ? "bg-surface-highest" : "")
+                }
               >
                 <button
                   type="button"
-                  data-testid={`provider-select-${id}`}
-                  aria-pressed={editing === id}
-                  onClick={() => setEditing(id)}
+                  data-testid={`provider-select-${item.id}`}
+                  ref={profile.id === item.id ? selectedButton : undefined}
+                  title={item.name}
+                  aria-pressed={profile.id === item.id}
+                  onClick={() => setEditing(item.id)}
                   className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  <AgentIcon agent={id} size={16} />
-                  <span className="min-w-0 truncate text-sm">{agent?.label ?? id}</span>
+                  <AgentIcon agent={item.agent} decorative size={16} />
+                  <span className="min-w-0 truncate text-sm">{item.name}</span>
                 </button>
                 <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center">
                   <input
                     type="checkbox"
-                    data-testid={`agent-enabled-${id}`}
                     className="accent-primary"
-                    aria-label={`Enable ${agent?.label ?? id}`}
-                    checked={selected.includes(id)}
-                    disabled={busy || (!selected.includes(id) && selected.length >= 64)}
-                    onChange={(event) => toggle(id, event.target.checked)}
+                    aria-label={`Enable ${item.name}`}
+                    data-testid={`agent-enabled-${item.id}`}
+                    checked={item.enabled}
+                    disabled={busy}
+                    onChange={(event) => {
+                      save.reset();
+                      setDraft({
+                        ...settings,
+                        providers: settings.providers.map((entry) =>
+                          entry.id === item.id
+                            ? { ...entry, enabled: event.target.checked }
+                            : entry,
+                        ),
+                      });
+                    }}
                   />
                 </label>
               </div>
-            );
-          })}
-        </nav>
-        <div className="min-w-0 space-y-5 p-4" data-testid="provider-editor">
-          <div>
-            <h3 className="text-sm font-medium">
-              {CODING_AGENTS.find((agent) => agent.id === editing)?.label ?? editing}
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {supportsManualCompaction(editing) ? "Native integration" : "Runs through acpx"}
-            </p>
-          </div>
-          {editing === "claude" || editing === "codex" ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="provider-binary">Executable path</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  data-testid="provider-use-default"
-                  disabled={busy || !paths[editing]}
-                  onClick={() => {
-                    save.reset();
-                    setPathsDraft({ ...paths, [editing]: "" });
-                  }}
-                >
-                  Use default
-                </Button>
+            ))}
+          </nav>
+          <div data-testid="provider-editor" className="min-w-0 space-y-4 p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="provider-name">Name</Label>
+                <Input
+                  id="provider-name"
+                  data-testid="provider-name"
+                  maxLength={80}
+                  value={profile.name}
+                  disabled={busy}
+                  onChange={(event) => patch({ name: event.target.value })}
+                />
               </div>
-              <Input
-                id="provider-binary"
-                data-testid="provider-binary"
-                value={paths[editing] ?? ""}
-                placeholder={editing}
-                maxLength={2048}
-                disabled={busy}
-                aria-invalid={!!pathError}
-                aria-describedby={pathError ? "provider-binary-error" : "provider-binary-help"}
-                onChange={(event) => {
-                  save.reset();
-                  setPathsDraft({ ...paths, [editing]: event.target.value });
-                }}
-              />
-              {pathError && (
-                <p id="provider-binary-error" role="alert" className="text-xs text-error">
-                  {pathError}
+              <div className="space-y-2">
+                <Label>Adapter</Label>
+                <p className="flex min-h-8 items-center gap-2 text-sm">
+                  <AgentIcon agent={profile.agent} decorative size={16} />
+                  {agentLabel(profile.agent)}
+                  <span className="text-xs text-muted-foreground">
+                    {supportsManualCompaction(profile.agent) ? "native" : "acpx"}
+                  </span>
                 </p>
-              )}
-              <p id="provider-binary-help" className="text-xs text-muted-foreground">
-                Local ORC host only. Leave blank to use the default installation. Enter a binary
-                path, without arguments. SSH hosts use their own installation.
-              </p>
+              </div>
+            </div>
+            {["claude", "codex"].includes(profile.agent) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="provider-binary">Executable path</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-testid="provider-use-default"
+                    disabled={busy || !profile.executable}
+                    onClick={() => patch({ executable: "" })}
+                  >
+                    Use default
+                  </Button>
+                </div>
+                <Input
+                  id="provider-binary"
+                  data-testid="provider-binary"
+                  value={profile.executable}
+                  maxLength={2048}
+                  placeholder={profile.agent}
+                  disabled={busy}
+                  onChange={(event) => patch({ executable: event.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional local binary path, without arguments. Blank uses the default
+                  installation. SSH uses its remote installation.
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="provider-model">Default model</Label>
+              <Input
+                id="provider-model"
+                data-testid="provider-model"
+                value={profile.model}
+                placeholder="Adapter default"
+                list="provider-model-choices"
+                disabled={busy}
+                onFocus={() => {
+                  if (!dirty && supportsManualCompaction(profile.agent)) void catalog.refetch();
+                }}
+                onChange={(event) => patch({ model: event.target.value })}
+              />
+              <datalist id="provider-model-choices">
+                {catalog.data?.models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
+              </datalist>
               <p className="text-xs text-muted-foreground">
-                Sign in with this agent’s CLI. ORC uses its existing account and configuration.
+                Explicit session models take precedence. Save connection changes before loading
+                model choices.
               </p>
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Install this agent and configure its command in acpx on the execution host.
-            </p>
-          )}
-          <div className="border-t border-border pt-4">
-            <h4 className="text-sm font-medium">Context</h4>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {supportsManualCompaction(editing)
-                ? "Compact context from an idle conversation’s actions, or send /compact. Automatic compaction stays under the agent’s control."
-                : "Manual compaction is not available through this integration."}
-            </p>
-          </div>
-          {supportsManualCompaction(editing) && (
-            <details className="border-t border-border pt-3">
-              <summary className="min-h-11 cursor-pointer text-sm">Account limits</summary>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Local account on the API host. Checked on request; SSH accounts are excluded.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={quotas.isFetching}
-                onClick={() => void quotas.refetch()}
-              >
-                {quotas.isFetching ? "Checking…" : "Check limits"}
-              </Button>
-              {quotas.isError && (
-                <p role="alert" className="mt-2 text-xs text-error">
-                  Limits could not be loaded. Try again.
-                </p>
-              )}
-              {quota && (
-                <div data-testid="provider-limits" className="mt-3 space-y-2 text-xs">
-                  <p className="text-muted-foreground">
-                    Checked {new Date(quota.checked_at).toLocaleTimeString()}
-                  </p>
-                  {quota.status !== "available" && (
-                    <p>{quota.message ?? "Account limits are unavailable."}</p>
-                  )}
-                  {quota.windows.map((window) => (
-                    <p key={window.label}>
-                      {window.label}: {window.used_percent}% used
-                      {window.resets_at
-                        ? ` · Resets ${new Date(window.resets_at).toLocaleString()}`
-                        : " · Reset time unavailable"}
-                    </p>
-                  ))}
+            <details
+              key={profile.id}
+              data-testid="provider-advanced"
+              className="space-y-3 border-t border-border pt-3"
+            >
+              <summary className="min-h-11 cursor-pointer text-sm">
+                Advanced configuration{" "}
+                <span className="ml-1 text-xs text-muted-foreground">
+                  {profile.environment.length ? `${profile.environment.length} variables` : ""}
+                </span>
+              </summary>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>Environment overrides</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid="provider-env-add"
+                    disabled={busy || profile.environment.length >= 64}
+                    onClick={() =>
+                      patch({
+                        environment: [
+                          ...profile.environment,
+                          { name: "", value: "", secret: false },
+                        ],
+                      })
+                    }
+                  >
+                    <Plus size={14} />
+                    Add variable
+                  </Button>
                 </div>
-              )}
+                <p className="text-xs text-muted-foreground">
+                  Applies to launches and model discovery. Empty values clear inherited values.
+                  Credential variables are encrypted and write-only.
+                </p>
+                {profile.environment.map((row, index) => (
+                  <div
+                    key={environmentKeys[profile.id]?.[index] ?? row.name}
+                    data-testid="provider-env-row"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b border-border py-2"
+                  >
+                    <Input
+                      aria-label="Variable name"
+                      data-testid="provider-env-name"
+                      value={row.name}
+                      placeholder="VARIABLE_NAME"
+                      maxLength={128}
+                      disabled={busy || row.value === null}
+                      className="font-mono text-xs"
+                      onChange={(event) =>
+                        patch({
+                          environment: profile.environment.map((item, number) =>
+                            number === index
+                              ? {
+                                  ...item,
+                                  name: event.target.value,
+                                  secret: item.secret || providerSecretName(event.target.value),
+                                }
+                              : item,
+                          ),
+                        })
+                      }
+                    />
+                    <label className="flex min-h-11 items-center gap-1 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={row.secret}
+                        disabled={busy || providerSecretName(row.name) || row.value === null}
+                        onChange={(event) =>
+                          patch({
+                            environment: profile.environment.map((item, number) =>
+                              number === index ? { ...item, secret: event.target.checked } : item,
+                            ),
+                          })
+                        }
+                      />
+                      Secret
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove variable ${row.name}`}
+                      disabled={busy}
+                      onClick={() =>
+                        patch(
+                          {
+                            environment: profile.environment.filter(
+                              (_, number) => number !== index,
+                            ),
+                          },
+                          profile.environment
+                            .map(
+                              (item, number) => environmentKeys[profile.id]?.[number] ?? item.name,
+                            )
+                            .filter((_, number) => number !== index),
+                        )
+                      }
+                    >
+                      <X size={14} />
+                    </Button>
+                    <Input
+                      aria-label={`Value for ${row.name || "variable"}`}
+                      data-testid="provider-env-value"
+                      type={row.secret ? "password" : "text"}
+                      autoComplete="off"
+                      value={row.value ?? ""}
+                      placeholder={
+                        row.value === null
+                          ? "Saved secret - enter to replace"
+                          : "Value (can be empty)"
+                      }
+                      maxLength={8192}
+                      disabled={busy}
+                      className="col-span-3"
+                      onChange={(event) =>
+                        patch({
+                          environment: profile.environment.map((item, number) =>
+                            number === index ? { ...item, value: event.target.value } : item,
+                          ),
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2 border-t border-border pt-3">
+                <Label htmlFor="provider-options">Chat launch options (JSON)</Label>
+                <Textarea
+                  id="provider-options"
+                  data-testid="provider-options"
+                  rows={4}
+                  maxLength={20000}
+                  className="font-mono text-xs"
+                  disabled={busy}
+                  value={optionDrafts[profile.id] ?? optionsText(profile)}
+                  onChange={(event) => changeOptions(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {chatRuntime(profile.agent) === "claude-sdk"
+                    ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
+                    : chatRuntime(profile.agent) === "codex"
+                      ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
+                      : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
+                  Session options override these defaults.
+                </p>
+                {optionErrors[profile.id] && (
+                  <p role="alert" className="text-xs text-error">
+                    {optionErrors[profile.id]}
+                  </p>
+                )}
+              </div>
             </details>
-          )}
+            <div className="border-t border-border pt-3">
+              <h3 className="text-sm font-medium">Context</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {supportsManualCompaction(profile.agent)
+                  ? "Compact an idle conversation from its actions or send /compact. Automatic compaction stays under the agent's control."
+                  : "Manual compaction is not available through this adapter."}
+              </p>
+            </div>
+            {supportsManualCompaction(profile.agent) && (
+              <details className="space-y-2 border-t border-border pt-3">
+                <summary className="min-h-11 cursor-pointer text-sm">Local account limits</summary>
+                <p className="text-xs text-muted-foreground">
+                  Local CLI account only. Gateway, Bedrock billing and SSH quotas are not included.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={quotas.isFetching}
+                  onClick={() => void quotas.refetch()}
+                >
+                  {quotas.isFetching ? "Checking..." : "Check limits"}
+                </Button>
+                {quotas.isError && <p role="alert">Limits could not be loaded. Try again.</p>}
+                {quota && (
+                  <div data-testid="provider-limits" className="space-y-2 text-xs">
+                    <p>Checked {new Date(quota.checked_at).toLocaleTimeString()}</p>
+                    {quota.status !== "available" && (
+                      <p>{quota.message ?? "Account limits are unavailable."}</p>
+                    )}
+                    {quota.windows.map((window) => (
+                      <p key={window.label}>
+                        {window.label}: {window.used_percent}% used
+                        {window.resets_at
+                          ? ` - Resets ${new Date(window.resets_at).toLocaleString()}`
+                          : " - Reset time unavailable"}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </details>
+            )}
+          </div>
         </div>
-      </div>
-      <form
-        className="flex flex-wrap items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addCustom();
-        }}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="agent-custom">Other acpx agent</Label>
-          <Input
-            id="agent-custom"
-            data-testid="agent-custom"
-            value={custom}
-            placeholder="e.g. qoder"
-            onChange={(event) => setCustom(event.target.value)}
-            className="w-48"
-          />
-        </div>
-        <Button
-          type="submit"
-          variant="outline"
-          disabled={
-            busy ||
-            !AGENT_ID_PATTERN.test(custom.trim().toLowerCase()) ||
-            selected.includes(custom.trim().toLowerCase()) ||
-            selected.length >= 64
-          }
-        >
-          Add
-        </Button>
-      </form>
+      )}
+      {validation && !validation.success && dirty && (
+        <p role="alert" data-testid="provider-validation" className="text-sm text-error">
+          {[...new Set(validation.error.issues.map((issue) => issue.message))].join(" ")}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           data-testid="agent-settings-save"
-          disabled={busy || !dirty || !validatedPaths.success || selected.length === 0}
-          onClick={() => save.mutate(selected)}
+          disabled={
+            busy || !dirty || !validation?.success || Object.values(optionErrors).some(Boolean)
+          }
+          onClick={() => {
+            if (settings) save.mutate(settings);
+          }}
         >
-          {save.isPending ? "Saving…" : "Save changes"}
+          {save.isPending ? "Saving..." : "Save changes"}
         </Button>
         {dirty && (
           <Button
-            type="button"
             variant="ghost"
             data-testid="provider-discard"
             disabled={save.isPending}
-            onClick={() => {
-              setDraft(null);
-              setPathsDraft(null);
-              save.reset();
-            }}
+            onClick={discard}
           >
             Discard changes
           </Button>
-        )}
-        {selected.length === 0 && (
-          <p className="text-xs text-muted-foreground">Enable at least one agent.</p>
         )}
         {save.isSuccess && (
           <p role="status" data-testid="agent-settings-saved">
             Provider settings saved.
           </p>
         )}
-        {save.error && <p role="alert">{save.error.message}</p>}
+        {save.error && (
+          <div className="space-y-2">
+            <p role="alert" className="text-sm text-error">
+              {save.error.message}
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                discard();
+                void query.refetch();
+              }}
+            >
+              Discard draft and reload
+            </Button>
+          </div>
+        )}
       </div>
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent>
+          <DialogTitle>New provider</DialogTitle>
+          <DialogDescription>
+            Choose a coding-agent adapter, then configure its models and environment.
+          </DialogDescription>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="provider-new-name">Provider name</Label>
+              <Input
+                id="provider-new-name"
+                data-testid="provider-new-name"
+                value={name}
+                placeholder="e.g. Claude LiteLLM"
+                maxLength={80}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="provider-new-adapter">Adapter</Label>
+              <select
+                id="provider-new-adapter"
+                data-testid="provider-new-adapter"
+                className="form-control form-control-single"
+                value={agent}
+                onChange={(event) => setAgent(event.target.value)}
+              >
+                {CODING_AGENTS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                    {supportsManualCompaction(item.id) ? "" : " (acpx)"}
+                  </option>
+                ))}
+                <option value="other">Other acpx agent</option>
+              </select>
+            </div>
+            {agent === "other" && (
+              <div className="space-y-2">
+                <Label htmlFor="provider-custom-agent">acpx agent ID</Label>
+                <Input
+                  id="provider-custom-agent"
+                  data-testid="agent-custom"
+                  value={custom}
+                  placeholder="e.g. qoder"
+                  onChange={(event) => setCustom(event.target.value)}
+                />
+              </div>
+            )}
+            {newError && <p role="alert">{newError}</p>}
+            <Button data-testid="provider-create" disabled={!name.trim()} onClick={create}>
+              Configure provider
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

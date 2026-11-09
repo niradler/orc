@@ -43,6 +43,12 @@ import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/co
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { AgentSetupSchema } from "@orc/core/package-launch";
+import {
+  providerChatDefaults,
+  providerForAgent,
+  providerRevision,
+} from "@orc/core/provider-service";
+import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
 import {
   type SessionFile,
@@ -240,7 +246,11 @@ app.openapi(
     tags: ["Chat"],
     request: {
       query: z
-        .object({ agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i), threadId: id.optional() })
+        .object({
+          agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i),
+          threadId: id.optional(),
+          providerId: ProviderIdSchema.optional(),
+        })
         .strict(),
     },
     responses: {
@@ -251,10 +261,14 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { agent, threadId } = c.req.valid("query");
+    const { agent, threadId, providerId } = c.req.valid("query");
     const thread = threadId ? requireThread(threadId) : null;
     if (thread && thread.config.agent !== agent)
       throw new ValidationError("The agent does not match this conversation.");
+    if (thread && providerId && thread.config.providerId !== providerId)
+      throw new ValidationError("The provider does not match this conversation.");
+    const selectedProvider = thread?.config.providerId ?? providerId;
+    providerForAgent(agent, selectedProvider, true);
     if (agent !== "codex" && agent !== "claude") return c.json({ models: [], warning: null });
     const host = thread ? execHostFor(thread.host) : resolveExecHost();
     const cwd = thread?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
@@ -263,6 +277,8 @@ app.openapi(
       host.kind === "ssh" ? host.alias : null,
       cwd,
       host.kind === "local" ? loadConfig().preferences.provider_paths?.[agent] : null,
+      selectedProvider,
+      providerRevision(),
     ]);
     const cached = modelCatalogs.get(key);
     if (cached && Date.now() - cached.at < 120_000) return c.json(await cached.result);
@@ -272,7 +288,7 @@ app.openapi(
         warning: "Model discovery is busy. Saved and custom models are still available.",
       });
     modelRequests++;
-    const result = discoverAgentModels(agent, host, cwd)
+    const result = discoverAgentModels(agent, host, cwd, selectedProvider)
       .then(
         (models): ChatModels => ({
           models,
@@ -454,8 +470,9 @@ async function newThread(
     cwd?: string | undefined;
     worktree?: boolean | undefined;
   },
+  providerId?: string,
 ): Promise<ChatThread> {
-  const config = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
+  const config = providerChatDefaults(providerId, agent);
   if (agent) config.agent = agent;
   if (model !== undefined) config.model = model;
   const host = launch ? selectedTerminalHost(loadConfig(), launch.host) : resolveExecHost();
@@ -511,6 +528,8 @@ async function newThread(
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;
+    thread.config.providerId = agent;
+    thread.config.agentOptions = {};
     thread.config.model = model ?? source.model ?? "";
     thread.backend = chatBackendFor(agent);
     if (source.project_id) thread.projectId = source.project_id;
@@ -1016,6 +1035,7 @@ const requestSchema = z
       .regex(/^[a-z][a-z0-9-]{0,31}$/i)
       .optional(),
     model: ChatModelSchema.optional(),
+    providerId: ProviderIdSchema.optional(),
     threadId: id.optional(),
     workspace: ChatWorkspaceSchema.optional(),
     // Retained for older clients; server settings own the effective prompt and permissions.
@@ -1120,7 +1140,7 @@ async function streamChat(
 ) {
   const thread = body.threadId
     ? requireThread(body.threadId)
-    : await newThread(body.agent, body.model, undefined, body.workspace);
+    : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
   if (body.threadId && body.projectId && body.projectId !== thread.projectId)
     throw new ValidationError("An existing conversation keeps its project");
@@ -1138,6 +1158,8 @@ async function streamChat(
   rememberTerminalFolder(thread.cwd, thread.host);
   if (body.threadId && body.agent && body.agent !== thread.config.agent)
     throw new ValidationError("Start a new chat to change agents.");
+  if (body.threadId && body.providerId && body.providerId !== thread.config.providerId)
+    throw new ValidationError("Start a new chat to change providers.");
   if (body.threadId && thread.messages.length && !thread.runtimeId)
     throw new ConflictError(
       "The previous turn did not establish a resumable session. Start a new chat.",
@@ -1254,8 +1276,10 @@ async function beginTurn(
   try {
     if (!mock) {
       const check = await backend.preflight({
+        providerId: thread.config.providerId,
         executionHost: thread.host,
         acpAgent: thread.config.agent,
+        acpxAgent: thread.config.agent,
       });
       if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
     }
@@ -1337,6 +1361,7 @@ async function beginTurn(
         completed = !stopped;
       } else {
         const opts: SessionOpts = {
+          providerId: thread.config.providerId,
           toolAllowlist: thread.toolAllowlist,
           chatAgentOptions: thread.config.agentOptions[thread.config.agent],
           interactive: true,
@@ -1347,7 +1372,7 @@ async function beginTurn(
           permissionMode: ["claude", "codex"].includes(thread.config.agent)
             ? thread.config.permissionMode
             : undefined,
-          model: thread.config.model || undefined,
+          model: thread.config.model,
           systemPromptAppend: chatSystemPrompt(thread.config.system, { webchat: true }),
           orcMcp: thread.config.mcp === "orc",
           orcMcpMode: loadConfig().mcp.default_mode,

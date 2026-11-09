@@ -169,6 +169,8 @@ export class AcpSession implements AgentSession {
     if (this.closed) throw new Error("ACP connection is closed.");
     try {
       this.child = await hostSpawn(sessionExecHost(this.opts), this.command, {
+        env: { ...process.env, ...this.opts.providerEnv },
+        passEnv: Object.keys(this.opts.providerEnv ?? {}),
         cwd: this.opts.cwd,
         stdin: "pipe",
         stdout: "pipe",

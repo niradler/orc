@@ -106,7 +106,17 @@ export async function launchOnHost(host: ExecHost, launch: Launch): Promise<Laun
   if (host.kind === "local") return { ...launch, host: null };
   await ensureSshMaster(host);
   const envFile = remoteTempPath(".env");
-  await writeHostFile(host, envFile, envScript(forwardedEnv(host, buildPtyEnv(process.env))));
+  await writeHostFile(
+    host,
+    envFile,
+    envScript(
+      forwardedEnv(
+        host,
+        buildPtyEnv({ ...process.env, ...launch.env }),
+        Object.keys(launch.env ?? {}),
+      ),
+    ),
+  );
   return {
     ...launch,
     host: host.alias,

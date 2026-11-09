@@ -990,3 +990,63 @@ describe("worktree terminals and /git/worktrees", () => {
     expect(res.status).toBe(401);
   });
 });
+
+test("native terminal provider environment and model stay out of metadata and plain shells", async () => {
+  const previous = loadConfig();
+  try {
+    loadConfig({
+      ...previous,
+      providers: {
+        default_id: "claude-proxy",
+        instances: [
+          {
+            id: "claude-proxy",
+            name: "Claude proxy",
+            agent: "claude",
+            enabled: true,
+            executable: "",
+            model: "gateway-model",
+            environment: [
+              { name: "PROVIDER_FIXTURE_ENDPOINT", value: "http://127.0.0.1:4000", secret: false },
+            ],
+          },
+        ],
+      },
+    });
+    const response = await req(app, "POST", "/terminals", {
+      kind: "claude",
+      providerId: "claude-proxy",
+      cwd: root,
+      host: null,
+    });
+    expect(response.status).toBe(201);
+    expect(ptys.at(-1)?.argv.slice(-2)).toEqual(["--model", "gateway-model"]);
+    expect(ptys.at(-1)?.options.env.PROVIDER_FIXTURE_ENDPOINT).toBe("http://127.0.0.1:4000");
+    expect(await response.text()).not.toContain("PROVIDER_FIXTURE_ENDPOINT");
+    expect(
+      (
+        await req(app, "POST", "/terminals", {
+          kind: "shell",
+          providerId: "claude-proxy",
+          cwd: root,
+          host: null,
+        })
+      ).status,
+    ).toBe(400);
+    const shell = await req(app, "POST", "/terminals", { kind: "shell", cwd: root, host: null });
+    expect(shell.status).toBe(201);
+    expect(ptys.at(-1)?.options.env.PROVIDER_FIXTURE_ENDPOINT).toBeUndefined();
+    expect(
+      (
+        await req(app, "POST", "/terminals", {
+          kind: "codex",
+          providerId: "claude-proxy",
+          cwd: root,
+          host: null,
+        })
+      ).status,
+    ).toBe(400);
+  } finally {
+    loadConfig(previous);
+  }
+});

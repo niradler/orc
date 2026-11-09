@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
-import { useEnabledAgents } from "@/hooks/useAgents";
+import { useEnabledAgents, useProviders } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
 import { agentEffort, agentModelLabel } from "@/lib/composer-chips";
@@ -27,6 +27,14 @@ export function ChatAgentModelPicker() {
   const { config, setConfig, streaming, thread, ready } = chat;
   const { data: ssh } = useSsh();
   const agents = Array.from(new Set([...useEnabledAgents(), config.agent]));
+  const providerSettings = useProviders();
+  const providers =
+    providerSettings.data?.providers.filter(
+      (profile) => profile.enabled || profile.id === config.providerId,
+    ) ?? [];
+  const selectedProvider = providers.find(
+    (profile) => profile.id === (config.providerId ?? config.agent),
+  );
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
   const [model, setModel] = useState("");
@@ -34,8 +42,14 @@ export function ChatAgentModelPicker() {
   const agentList = useRef<HTMLDivElement>(null);
   const modelList = useRef<HTMLDivElement>(null);
   const catalog = useQuery({
-    queryKey: ["chat-models", config.agent, thread?.id, thread ? thread.host : ssh?.host],
-    queryFn: () => api.chat.models(config.agent, thread?.id),
+    queryKey: [
+      "chat-models",
+      config.agent,
+      config.providerId,
+      thread?.id,
+      thread ? thread.host : ssh?.host,
+    ],
+    queryFn: () => api.chat.models(config.agent, thread?.id, config.providerId),
     enabled: ready,
     staleTime: 120_000,
     retry: false,
@@ -49,7 +63,7 @@ export function ChatAgentModelPicker() {
     : catalog.data?.warning;
   const modelName = choices.get(config.model) || config.model || "Agent default";
   const effort = agentEffort(config);
-  const name = agentLabel(config.agent);
+  const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
   const fixedModel = useAgentCapabilities(config.agent, thread)?.modelSelection === false;
@@ -68,7 +82,30 @@ export function ChatAgentModelPicker() {
     if (started) {
       chat.startAgentConversation(agent);
       setOpen(false);
-    } else setConfig({ ...config, agent, model: "" });
+    } else setConfig({ ...config, agent, providerId: undefined, model: "" });
+  };
+  const chooseProvider = (providerId: string) => {
+    const profile = providers.find((item) => item.id === providerId);
+    if (!profile) return;
+    if (profile.id === (config.providerId ?? config.agent)) {
+      focusChipOption(modelList.current);
+      return;
+    }
+    reset();
+    if (started) {
+      chat.startAgentConversation(profile.agent, profile.id, profile.model, profile.options);
+      setOpen(false);
+    } else {
+      const agentOptions: typeof config.agentOptions = {};
+      if (profile.options) agentOptions[profile.agent] = profile.options;
+      setConfig({
+        ...config,
+        agent: profile.agent,
+        providerId: profile.id,
+        model: profile.model,
+        agentOptions,
+      });
+    }
   };
   const chooseModel = (next: string) => {
     setConfig({ ...config, model: next });
@@ -103,7 +140,11 @@ export function ChatAgentModelPicker() {
           className={cn(composerChip, "max-w-64 text-on-surface")}
         >
           <AgentIcon agent={config.agent} decorative size={14} />
-          <span data-chip-label data-testid="chat-agent-current" className="shrink-0">
+          <span
+            data-chip-label
+            data-testid="chat-agent-current"
+            className="min-w-0 max-w-32 truncate"
+          >
             {name}
           </span>
           <span data-chip-label aria-hidden="true" className="text-muted-foreground">
@@ -142,23 +183,47 @@ export function ChatAgentModelPicker() {
             className="min-w-0 border-border max-[420px]:border-b max-[420px]:pb-1.5 min-[421px]:border-r min-[421px]:pr-1.5"
           >
             <p className={chipHeading}>Agent</p>
-            {agents.map((agent) => (
-              <button
-                type="button"
-                key={agent}
-                role="menuitemradio"
-                data-chip-option
-                aria-checked={agent === config.agent}
-                data-testid={`chat-agent-option-${agent}`}
-                disabled={!ready}
-                onClick={() => chooseAgent(agent)}
-                className={chipOption}
-              >
-                <AgentIcon agent={agent} decorative size={14} />
-                <span className="min-w-0 flex-1 truncate">{agentLabel(agent)}</span>
-                {agent === config.agent && <Check size={14} aria-hidden="true" />}
-              </button>
-            ))}
+            {providers.length > 0
+              ? providers.map((profile) => (
+                  <button
+                    type="button"
+                    key={profile.id}
+                    role="menuitemradio"
+                    data-chip-option
+                    aria-checked={profile.id === (config.providerId ?? config.agent)}
+                    data-testid={
+                      profile.id === profile.agent
+                        ? `chat-agent-option-${profile.agent}`
+                        : `chat-provider-option-${profile.id}`
+                    }
+                    disabled={!ready}
+                    onClick={() => chooseProvider(profile.id)}
+                    className={chipOption}
+                  >
+                    <AgentIcon agent={profile.agent} decorative size={14} />
+                    <span className="min-w-0 flex-1 truncate">{profile.name}</span>
+                    {profile.id === (config.providerId ?? config.agent) && (
+                      <Check size={14} aria-hidden="true" />
+                    )}
+                  </button>
+                ))
+              : agents.map((agent) => (
+                  <button
+                    type="button"
+                    key={agent}
+                    role="menuitemradio"
+                    data-chip-option
+                    aria-checked={agent === config.agent}
+                    data-testid={`chat-agent-option-${agent}`}
+                    disabled={!ready}
+                    onClick={() => chooseAgent(agent)}
+                    className={chipOption}
+                  >
+                    <AgentIcon agent={agent} decorative size={14} />
+                    <span className="min-w-0 flex-1 truncate">{agentLabel(agent)}</span>
+                    {agent === config.agent && <Check size={14} aria-hidden="true" />}
+                  </button>
+                ))}
           </div>
           <div
             ref={modelList}

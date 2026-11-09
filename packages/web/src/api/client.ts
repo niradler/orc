@@ -309,6 +309,7 @@ export type SshTest = {
 
 export type CreateTerminalInput = {
   kind: TerminalKind;
+  providerId?: string;
   host?: string | null;
   cwd?: string;
   name?: string;
@@ -721,8 +722,8 @@ export const api = {
           host: string | null;
         }[];
       }>("GET", "/chat/waiting"),
-    models: (agent: string, threadId?: string) =>
-      req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId }),
+    models: (agent: string, threadId?: string, providerId?: string) =>
+      req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId, providerId }),
     list: () =>
       req<{
         threads: {
@@ -769,6 +770,11 @@ export const api = {
       req<ChatThread>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission-mode`, { mode }),
   },
   settings: {
+    providers: {
+      get: () => req<import("@orc/core/providers").ProviderSettings>("GET", "/settings/providers"),
+      save: (settings: import("@orc/core/providers").ProviderSettings) =>
+        req<import("@orc/core/providers").ProviderSettings>("PUT", "/settings/providers", settings),
+    },
     usageHistory: (days: string) => req<UsageHistory>("GET", "/usage/history", undefined, { days }),
     usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {

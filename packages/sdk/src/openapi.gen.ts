@@ -345,6 +345,7 @@ export interface paths {
                 query: {
                     agent: string;
                     threadId?: string;
+                    providerId?: string;
                 };
                 header?: never;
                 path?: never;
@@ -476,6 +477,7 @@ export interface paths {
                             id: string;
                             title: string;
                             config: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -710,6 +712,7 @@ export interface paths {
                             id: string;
                             title: string;
                             config: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -887,6 +890,7 @@ export interface paths {
                             id: string;
                             title: string;
                             config: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -1114,6 +1118,7 @@ export interface paths {
                             id: string;
                             title: string;
                             config: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -1339,6 +1344,7 @@ export interface paths {
                             id: string;
                             title: string;
                             config: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -1652,6 +1658,7 @@ export interface paths {
                             id: string;
                             title: string;
                             config: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -1875,6 +1882,7 @@ export interface paths {
                         }[];
                         agent?: string;
                         model?: string;
+                        providerId?: string;
                         /** Format: uuid */
                         threadId?: string;
                         workspace?: {
@@ -3907,6 +3915,231 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read named coding providers and the default provider */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Named coding providers; secret environment values are never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            providers: {
+                                id: string;
+                                name: string;
+                                agent: string;
+                                enabled: boolean;
+                                /** @default  */
+                                executable: string;
+                                /** @default  */
+                                model: string;
+                                options?: {
+                                    /** @enum {string} */
+                                    runtime: "claude-sdk";
+                                    options: {
+                                        /** @enum {string} */
+                                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                        maxTurns?: number;
+                                        maxBudgetUsd?: number;
+                                        /** @enum {string} */
+                                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                        thinking?: {
+                                            /** @enum {string} */
+                                            type: "adaptive";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "disabled";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "enabled";
+                                            budgetTokens: number;
+                                        };
+                                        fallbackModel?: string;
+                                        extraArgs?: {
+                                            [key: string]: string | null;
+                                        };
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "codex";
+                                    args: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "acpx";
+                                    args: string[];
+                                };
+                                /** @default [] */
+                                environment: {
+                                    name: string;
+                                    value: string | null;
+                                    /** @default false */
+                                    secret: boolean;
+                                }[];
+                            }[];
+                            default_provider_id: string;
+                            revision: string;
+                        };
+                    };
+                };
+            };
+        };
+        /** Save named providers with encrypted write-only environment secrets */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        providers: {
+                            id: string;
+                            name: string;
+                            agent: string;
+                            enabled: boolean;
+                            /** @default  */
+                            executable?: string;
+                            /** @default  */
+                            model?: string;
+                            options?: {
+                                /** @enum {string} */
+                                runtime: "claude-sdk";
+                                options: {
+                                    /** @enum {string} */
+                                    permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                    maxTurns?: number;
+                                    maxBudgetUsd?: number;
+                                    /** @enum {string} */
+                                    effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                    thinking?: {
+                                        /** @enum {string} */
+                                        type: "adaptive";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "disabled";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "enabled";
+                                        budgetTokens: number;
+                                    };
+                                    fallbackModel?: string;
+                                    extraArgs?: {
+                                        [key: string]: string | null;
+                                    };
+                                };
+                            } | {
+                                /** @enum {string} */
+                                runtime: "codex";
+                                args: string[];
+                            } | {
+                                /** @enum {string} */
+                                runtime: "acpx";
+                                args: string[];
+                            };
+                            /** @default [] */
+                            environment?: {
+                                name: string;
+                                value: string | null;
+                                /** @default false */
+                                secret?: boolean;
+                            }[];
+                        }[];
+                        default_provider_id: string;
+                        revision: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Named coding providers; secret environment values are never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            providers: {
+                                id: string;
+                                name: string;
+                                agent: string;
+                                enabled: boolean;
+                                /** @default  */
+                                executable: string;
+                                /** @default  */
+                                model: string;
+                                options?: {
+                                    /** @enum {string} */
+                                    runtime: "claude-sdk";
+                                    options: {
+                                        /** @enum {string} */
+                                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                        maxTurns?: number;
+                                        maxBudgetUsd?: number;
+                                        /** @enum {string} */
+                                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                        thinking?: {
+                                            /** @enum {string} */
+                                            type: "adaptive";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "disabled";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "enabled";
+                                            budgetTokens: number;
+                                        };
+                                        fallbackModel?: string;
+                                        extraArgs?: {
+                                            [key: string]: string | null;
+                                        };
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "codex";
+                                    args: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "acpx";
+                                    args: string[];
+                                };
+                                /** @default [] */
+                                environment: {
+                                    name: string;
+                                    value: string | null;
+                                    /** @default false */
+                                    secret: boolean;
+                                }[];
+                            }[];
+                            default_provider_id: string;
+                            revision: string;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/mcp": {
         parameters: {
             query?: never;
@@ -4115,6 +4348,7 @@ export interface paths {
                             notification_retention_days?: number;
                             audit_retention_days?: number;
                             chat?: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -4214,6 +4448,7 @@ export interface paths {
                         notification_retention_days?: number;
                         audit_retention_days?: number;
                         chat?: {
+                            providerId?: string;
                             /** @default codex */
                             agent?: string;
                             /** @default  */
@@ -4303,6 +4538,7 @@ export interface paths {
                             notification_retention_days?: number;
                             audit_retention_days?: number;
                             chat?: {
+                                providerId?: string;
                                 /** @default codex */
                                 agent: string;
                                 /** @default  */
@@ -15358,6 +15594,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         kind?: string;
+                        providerId?: string;
                         /** @description SSH config alias, or null for Local. Omit to use the configured default. */
                         host?: string | null;
                         cwd?: string;
