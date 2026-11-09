@@ -4,6 +4,12 @@ The Sessions view uses the same working, waiting and ended states, task links, s
 
 Opening a linked task keeps you on that task even while a session search is updating.
 
+Sessions without a title use a readable folder name, including Windows extended
+paths, network shares, file URLs and POSIX paths. For example,
+`\\?\C:\Projects\orc` displays as `orc` rather than the full path in session and
+notification titles. Named sessions keep their titles; execution uses the original
+folder path. Codex uses the first prompt when its native title is only the folder.
+
 Activity and full-width session history share compact title/provider/state rows.
 An ORC terminal agent without observed session activity shows **Unknown**, rather
 than assuming it is idle. Terminals without recorded project ownership remain in

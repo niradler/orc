@@ -30,7 +30,10 @@ describe("pathName", () => {
     expect(pathName("/local/projects/orc")).toBe("orc");
     expect(pathName("C:\\Projects\\orc\\")).toBe("orc");
     expect(pathName("/")).toBe("/");
-    expect(pathName("C:\\")).toBe("C:");
+    expect(pathName("C:\\")).toBe("C:/");
+    expect(pathName("\\\\?\\C:\\Projects\\orc\\")).toBe("orc");
+    expect(pathName("file:///C:/Projects/my%20repo")).toBe("my repo");
+    expect(pathName("\\\\?\\UNC\\server\\share\\orc")).toBe("orc");
   });
 });
 

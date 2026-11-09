@@ -1,5 +1,6 @@
 import type { ChatSettings } from "@orc/core/chat";
 import { agentForSessionBackend, codingAgent } from "@orc/core/coding-agents";
+import { pathLabel } from "@orc/core/display-path";
 
 export type PermissionMode = NonNullable<ChatSettings["permissionMode"]>;
 export type ComposerWorktree = {
@@ -31,9 +32,7 @@ function comparable(path: string): string {
 }
 
 export function pathName(path: string): string {
-  const trimmed = trimSeparators(path);
-  const name = trimmed.split(/[\\/]/).pop() ?? "";
-  return name || trimmed;
+  return pathLabel(path.trim());
 }
 
 export function isWithin(path: string, parent: string): boolean {
