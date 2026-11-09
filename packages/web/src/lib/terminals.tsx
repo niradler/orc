@@ -46,7 +46,7 @@ interface TerminalsContextValue {
   engineError: string | null;
   connectionOf: (id: string) => ConnectionState | undefined;
   create: (input: CreateTerminalInput) => Promise<Terminal>;
-  openLiveSession: (session: LiveSession) => Promise<Terminal>;
+  openLiveSession: (session: LiveSession, providerId?: string) => Promise<Terminal>;
   remove: (id: string) => Promise<void>;
   rename: (id: string, name: string) => Promise<Terminal>;
   attach: (id: string, container: HTMLElement) => Promise<void>;
@@ -163,10 +163,11 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   );
 
   const openLiveSession = useCallback(
-    async (session: LiveSession): Promise<Terminal> => {
+    async (session: LiveSession, providerId?: string): Promise<Terminal> => {
       const terminal = await create({
         kind: session.agent === "codex" ? "codex" : "claude",
         live_session_id: session.id,
+        providerId,
       });
       const scope =
         new URLSearchParams(window.location.search).get("project") ?? session.project_id;

@@ -6,6 +6,11 @@ import {
   enabledAgents,
 } from "@orc/core/coding-agents";
 import { ValidationError } from "@orc/core/errors";
+import {
+  providerExecutable,
+  providerForAgent,
+  resolveProviderEnvironment,
+} from "@orc/core/provider-service";
 
 export const LAUNCH_KINDS: readonly string[] = ["shell", ...CODING_AGENTS.map((agent) => agent.id)];
 
@@ -57,6 +62,48 @@ export interface Launch {
   resume: boolean;
   host?: string | null | undefined;
   spawnArgv?: string[] | undefined;
+  env?: Record<string, string>;
+}
+
+export function providerLaunchDeps(
+  kind: string,
+  providerId: string | undefined,
+  deps: LaunchDeps,
+  remote = false,
+  resuming = false,
+): LaunchDeps {
+  if (kind === "shell") {
+    if (providerId) throw new ValidationError("A shell cannot use a coding provider.");
+    return deps;
+  }
+  const profile = providerForAgent(kind, providerId, resuming || !providerId);
+  const executable = remote ? undefined : providerExecutable(profile);
+  if (!executable) return deps;
+  const resolved = Bun.which(executable, { PATH: process.env.PATH ?? "" });
+  if (!resolved) throw new ValidationError("The provider executable could not be found.");
+  return {
+    ...deps,
+    which: (command) =>
+      codingAgent(kind)?.binaries.includes(command) ? resolved : deps.which(command),
+  };
+}
+
+export function configureProviderLaunch(
+  launch: Launch,
+  providerId?: string,
+  resuming = false,
+): Launch {
+  if (launch.kind === "shell") {
+    if (providerId) throw new ValidationError("A shell cannot use a coding provider.");
+    return launch;
+  }
+  const profile = providerForAgent(launch.kind, providerId, resuming || !providerId);
+  if (!profile) return launch;
+  const { env } = resolveProviderEnvironment(profile);
+  const argv = [...launch.argv];
+  if (profile.model && (launch.kind === "claude" || launch.kind === "codex"))
+    argv.push("--model", profile.model);
+  return { ...launch, argv, env };
 }
 
 export function isValidSessionId(id: string): boolean {

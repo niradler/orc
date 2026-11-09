@@ -16,6 +16,7 @@ import {
   type ChatWorkspace,
 } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
+import type { ProviderProfile } from "@orc/core/providers";
 import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES } from "@orc/core/session-file-types";
 import {
   createContext,
@@ -46,6 +47,7 @@ import {
   parseChatTabs,
   withPreferences,
 } from "./chat-contract";
+import { type ProviderDrafts, providerSelection } from "./chat-provider-config";
 
 export type { ChatMessage } from "@orc/core/chat";
 
@@ -95,6 +97,7 @@ export interface ChatTab {
   key: string;
   thread: ChatThread | null;
   config: ChatConfig;
+  providerDrafts?: ProviderDrafts;
   messages: ChatMessage[];
   draft: string;
   files: File[];
@@ -181,6 +184,7 @@ function savePreferences(config: ChatConfig): void {
     CHAT_PREFERENCES_KEY,
     JSON.stringify({
       agent: config.agent,
+      providerId: config.providerId,
       model: config.model,
       ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}),
     }),
@@ -278,12 +282,32 @@ function useChatController() {
     try {
       const preferences = await api.settings.get();
       const saved = ChatSettingsSchema.parse(preferences.chat ?? {});
-      defaults.current = withPreferences(
-        saved,
-        parseChatPreferences(readStorage(CHAT_PREFERENCES_KEY)),
-      );
+      const remembered = parseChatPreferences(readStorage(CHAT_PREFERENCES_KEY));
+      let resolved = withPreferences(saved, remembered);
+      if (resolved.providerId) {
+        const providers = await api.settings.providers.get();
+        const profile = providers.providers.find(
+          (item) =>
+            item.id === resolved.providerId && item.agent === resolved.agent && item.enabled,
+        );
+        resolved = profile
+          ? withPreferences(
+              {
+                ...saved,
+                agent: profile.agent,
+                providerId: profile.id,
+                model: profile.model,
+                agentOptions: profile.options ? { [profile.agent]: profile.options } : {},
+              },
+              remembered,
+            )
+          : saved;
+      }
+      defaults.current = resolved;
       mutate((current) =>
-        current.map((tab) => (isBlank(tab) ? { ...tab, config: defaults.current } : tab)),
+        current.map((tab) =>
+          isBlank(tab) ? { ...tab, config: defaults.current, providerDrafts: undefined } : tab,
+        ),
       );
       setReady(true);
     } catch (cause) {
@@ -666,12 +690,27 @@ function useChatController() {
     activate(tab.key);
   }, [activate, mutate, update]);
   const startAgentConversation = useCallback(
-    (agent: string) => {
-      const next = blankTab({ ...defaults.current, agent, model: "" }, creationProject.current);
+    (agent: string, providerId?: string, model = "", options?: ChatAgentOptions) => {
+      const agentOptions = providerId ? {} : { ...defaults.current.agentOptions };
+      if (options) agentOptions[agent] = options;
+      const next = blankTab(
+        { ...defaults.current, agent, providerId, model, agentOptions },
+        creationProject.current,
+      );
       mutate((current) => [...current, next]);
       activate(next.key);
     },
     [activate, mutate],
+  );
+  const selectProvider = useCallback(
+    (profile: ProviderProfile) => {
+      const current = find(activeRef.current);
+      if (!current) return;
+      const next = providerSelection(current.config, current.providerDrafts, profile);
+      update(current.key, () => next);
+      savePreferences(next.config);
+    },
+    [find, update],
   );
   const closeTab = useCallback(
     (key: string) => {
@@ -832,6 +871,7 @@ function useChatController() {
             ...(!thread && current.projectId ? { projectId: current.projectId } : {}),
             messages: [{ role: "user", content: userMessage.content }],
             agent: config.agent,
+            providerId: config.providerId,
             model: config.model,
             agentOptions: config.agentOptions,
             ...(config.permissionMode && ["claude", "codex"].includes(config.agent)
@@ -1189,6 +1229,7 @@ function useChatController() {
     closeTab,
     newTab,
     startAgentConversation,
+    selectProvider,
     showThread,
     messages: tab.messages,
     draft: tab.draft,

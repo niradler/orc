@@ -43,6 +43,12 @@ import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/co
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { AgentSetupSchema } from "@orc/core/package-launch";
+import {
+  providerChatDefaults,
+  providerForAgent,
+  providerRevision,
+} from "@orc/core/provider-service";
+import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
 import {
   type SessionFile,
@@ -86,6 +92,7 @@ import { prepareSessionDirectory } from "../terminals/session-dir.js";
 const logger = createLogger("api:chat");
 
 function expandChatInput(input: string, projectId: string | null): string {
+  if (input.trim() === "/compact") return "/compact";
   const prompts = new McpPromptStore(getSqlite());
   const skills = new SkillHistory(getSqlite());
   return expandChatCommands(input, {
@@ -220,6 +227,8 @@ let modelRequests = 0;
 function requireThread(id: string): ChatThread {
   const thread = store().get(id);
   if (!thread) throw new NotFoundError("Chat", id);
+  // Older conversations used the built-in adapter, never a later named default.
+  thread.config.providerId ??= thread.config.agent;
   return thread;
 }
 
@@ -242,6 +251,7 @@ app.openapi(
         .object({
           agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i),
           threadId: id.optional(),
+          providerId: ProviderIdSchema.optional(),
           host: z
             .string()
             .regex(/^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/)
@@ -265,10 +275,20 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { agent, threadId, host: requestedHost, cwd: requestedCwd } = c.req.valid("query");
+    const {
+      agent,
+      threadId,
+      providerId,
+      host: requestedHost,
+      cwd: requestedCwd,
+    } = c.req.valid("query");
     const thread = threadId ? requireThread(threadId) : null;
     if (thread && thread.config.agent !== agent)
       throw new ValidationError("The agent does not match this conversation.");
+    if (thread && providerId && thread.config.providerId !== providerId)
+      throw new ValidationError("The provider does not match this conversation.");
+    const selectedProvider = thread?.config.providerId ?? providerId;
+    providerForAgent(agent, selectedProvider, true);
     if (thread && (requestedHost !== undefined || requestedCwd !== undefined))
       throw new ValidationError("A conversation owns its execution host and working directory.");
     if (agent !== "codex" && agent !== "claude") return c.json({ models: [], warning: null });
@@ -279,7 +299,13 @@ app.openapi(
         : execHostFor(requestedHost === "__local__" ? null : requestedHost);
     const cwd =
       thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
-    const key = JSON.stringify([agent, host.kind === "ssh" ? host.alias : null, cwd]);
+    const key = JSON.stringify([
+      agent,
+      host.kind === "ssh" ? host.alias : null,
+      cwd,
+      selectedProvider,
+      providerRevision(),
+    ]);
     const cached = modelCatalogs.get(key);
     if (cached && Date.now() - cached.at < 120_000) return c.json(await cached.result);
     if (modelRequests >= 2)
@@ -288,7 +314,7 @@ app.openapi(
         warning: "Model discovery is busy. Saved and custom models are still available.",
       });
     modelRequests++;
-    const result = discoverAgentModels(agent, host, cwd)
+    const result = discoverAgentModels(agent, host, cwd, selectedProvider)
       .then(
         (models): ChatModels => ({
           models,
@@ -382,6 +408,8 @@ app.openapi(
     if (!run?.session?.steer || run.session.capabilities?.steering !== true)
       throw new ConflictError("This response cannot be steered. Queue a message instead.");
     const { input, requestId } = c.req.valid("json");
+    if (input.trim() === "/compact")
+      throw new ConflictError("Wait for this turn to finish before compacting context.");
     const previous = run.steering.get(requestId);
     if (previous) {
       if (previous.input !== input)
@@ -468,8 +496,9 @@ async function newThread(
     cwd?: string | undefined;
     worktree?: boolean | undefined;
   },
+  providerId?: string,
 ): Promise<ChatThread> {
-  const config = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
+  const config = providerChatDefaults(providerId, agent);
   if (agent) config.agent = agent;
   if (model !== undefined) config.model = model;
   const host = launch ? selectedTerminalHost(loadConfig(), launch.host) : resolveExecHost();
@@ -525,6 +554,8 @@ async function newThread(
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;
+    thread.config.providerId = agent;
+    thread.config.agentOptions = {};
     thread.config.model = model ?? source.model ?? "";
     thread.backend = chatBackendFor(agent);
     if (source.project_id) thread.projectId = source.project_id;
@@ -1030,6 +1061,7 @@ const requestSchema = z
       .regex(/^[a-z][a-z0-9-]{0,31}$/i)
       .optional(),
     model: ChatModelSchema.optional(),
+    providerId: ProviderIdSchema.optional(),
     threadId: id.optional(),
     workspace: ChatWorkspaceSchema.optional(),
     // Retained for older clients; server settings own the effective prompt and permissions.
@@ -1134,7 +1166,7 @@ async function streamChat(
 ) {
   const thread = body.threadId
     ? requireThread(body.threadId)
-    : await newThread(body.agent, body.model, undefined, body.workspace);
+    : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
   if (body.threadId && body.projectId && body.projectId !== thread.projectId)
     throw new ValidationError("An existing conversation keeps its project");
@@ -1152,6 +1184,8 @@ async function streamChat(
   rememberTerminalFolder(thread.cwd, thread.host);
   if (body.threadId && body.agent && body.agent !== thread.config.agent)
     throw new ValidationError("Start a new chat to change agents.");
+  if (body.threadId && body.providerId && body.providerId !== thread.config.providerId)
+    throw new ValidationError("Start a new chat to change providers.");
   if (body.threadId && thread.messages.length && !thread.runtimeId)
     throw new ConflictError(
       "The previous turn did not establish a resumable session. Start a new chat.",
@@ -1163,6 +1197,8 @@ async function streamChat(
     .find((message) => message.role === "user")
     ?.content.trim();
   if (!input) throw new ValidationError("A user message is required.");
+  if (input === "/compact" && uploads.length)
+    throw new ValidationError("Send attachments separately from context compaction.");
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   if (body.permissionMode !== undefined) {
     if (createBackend(thread.backend).capabilities?.livePermissions === false)
@@ -1208,6 +1244,21 @@ async function beginTurn(
   input: string,
   setup: TurnSetup = {},
 ): Promise<{ run: ChatRun; done: Promise<void> }> {
+  if (input.trim() === "/compact") {
+    if (!thread.runtimeId)
+      throw new ValidationError("Start a conversation before compacting context.");
+    if (thread.backend !== "claude" && thread.backend !== "codex-cli")
+      throw new ValidationError("This integration does not support manual context compaction.");
+    const options = thread.config.agentOptions.claude;
+    if (
+      thread.backend === "claude" &&
+      options?.runtime === "claude-sdk" &&
+      options.options.extraArgs?.["disable-slash-commands"] === null
+    )
+      throw new ValidationError(
+        "Enable Claude slash commands in session settings before compacting context.",
+      );
+  }
   if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
     throw new ValidationError("This chat reached its history size limit. Start a new chat.");
   const key = thread.runtimeId ? turnKey(thread.host, thread.backend, thread.runtimeId) : thread.id;
@@ -1251,8 +1302,10 @@ async function beginTurn(
   try {
     if (!mock) {
       const check = await backend.preflight({
+        providerId: thread.config.providerId,
         executionHost: thread.host,
         acpAgent: thread.config.agent,
+        acpxAgent: thread.config.agent,
       });
       if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
     }
@@ -1334,6 +1387,7 @@ async function beginTurn(
         completed = !stopped;
       } else {
         const opts: SessionOpts = {
+          providerId: thread.config.providerId,
           toolAllowlist: thread.toolAllowlist,
           chatAgentOptions: thread.config.agentOptions[thread.config.agent],
           interactive: true,
@@ -1344,7 +1398,7 @@ async function beginTurn(
           permissionMode: ["claude", "codex"].includes(thread.config.agent)
             ? thread.config.permissionMode
             : undefined,
-          model: thread.config.model || undefined,
+          model: thread.config.model,
           systemPromptAppend: chatSystemPrompt(thread.config.system, { webchat: true }),
           orcMcp: thread.config.mcp === "orc",
           orcMcpMode: loadConfig().mcp.default_mode,
@@ -1387,7 +1441,8 @@ async function beginTurn(
         if (stopped) return;
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
-        const sent = setup.context ? withOrcContext(turn, setup.context) : turn;
+        const sent =
+          setup.context && input.trim() !== "/compact" ? withOrcContext(turn, setup.context) : turn;
         const prompt =
           thread.backend === "acpx"
             ? [thread.config.system, sent].filter(Boolean).join("\n\n")

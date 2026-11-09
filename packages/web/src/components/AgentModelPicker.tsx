@@ -10,6 +10,7 @@ import {
   focusChipOption,
   onChipListKeyDown,
 } from "@/components/ComposerChip";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -31,6 +32,11 @@ export function AgentModelPicker({
   note,
   started = false,
   testIdPrefix = "chat",
+  providers,
+  providerId,
+  onProvider,
+  agentName,
+  accessibleSummary,
 }: {
   agent: string;
   selectedModel: string;
@@ -47,6 +53,11 @@ export function AgentModelPicker({
   note?: string | undefined;
   started?: boolean;
   testIdPrefix?: string;
+  providers?: { id: string; name: string; agent: string }[];
+  providerId?: string | undefined;
+  onProvider?: (id: string) => boolean;
+  agentName?: string | undefined;
+  accessibleSummary?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
@@ -54,7 +65,7 @@ export function AgentModelPicker({
   const [error, setError] = useState("");
   const agentList = useRef<HTMLDivElement>(null);
   const modelList = useRef<HTMLDivElement>(null);
-  const name = agentLabel(agent);
+  const name = agentName ?? agentLabel(agent);
   const modelName = choices.get(selectedModel) || selectedModel || "Agent default";
   const summary = suppliedSummary ?? modelName;
   function reset(): void {
@@ -92,13 +103,17 @@ export function AgentModelPicker({
         <button
           type="button"
           data-testid={`${testIdPrefix}-agent-model-button`}
-          aria-label={`Agent and model: ${name}, ${summary}`}
+          aria-label={`Agent and model: ${name}, ${accessibleSummary ?? summary}`}
           title={`${name} · ${summary}`}
           disabled={!ready}
           className={cn(composerChip, "max-w-64 text-on-surface")}
         >
           <AgentIcon agent={agent} decorative size={14} />
-          <span data-chip-label data-testid={`${testIdPrefix}-agent-current`} className="shrink-0">
+          <span
+            data-chip-label
+            data-testid={`${testIdPrefix}-agent-current`}
+            className="min-w-0 max-w-32 truncate"
+          >
             {name}
           </span>
           <span data-chip-label aria-hidden="true" className="text-muted-foreground">
@@ -141,21 +156,34 @@ export function AgentModelPicker({
             className="min-w-0 border-border max-[420px]:border-b max-[420px]:pb-1.5 min-[421px]:border-r min-[421px]:pr-1.5"
           >
             <p className={chipHeading}>Agent</p>
-            {agents.map((option) => (
+            {(providers?.length
+              ? providers
+              : agents.map((id) => ({ id, name: agentLabel(id), agent: id }))
+            ).map((entry) => (
               <button
                 type="button"
-                key={option}
+                key={entry.id}
                 role="menuitemradio"
                 data-chip-option
-                aria-checked={option === agent}
-                data-testid={`${testIdPrefix}-agent-option-${option}`}
+                aria-checked={entry.id === (providerId ?? agent)}
+                data-testid={
+                  entry.id === entry.agent
+                    ? `${testIdPrefix}-agent-option-${entry.id}`
+                    : `${testIdPrefix}-provider-option-${entry.id}`
+                }
                 disabled={!ready}
-                onClick={() => chooseAgent(option)}
+                onClick={() => {
+                  if (providers?.length && onProvider) {
+                    reset();
+                    if (onProvider(entry.id)) setOpen(false);
+                    else focusChipOption(modelList.current);
+                  } else chooseAgent(entry.agent);
+                }}
                 className={chipOption}
               >
-                <AgentIcon agent={option} decorative size={14} />
-                <span className="min-w-0 flex-1 truncate">{agentLabel(option)}</span>
-                {option === agent && <Check size={14} aria-hidden="true" />}
+                <AgentIcon agent={entry.agent} decorative size={14} />
+                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                {entry.id === (providerId ?? agent) && <Check size={14} aria-hidden="true" />}
               </button>
             ))}
           </div>
@@ -262,12 +290,15 @@ export function AgentModelPicker({
           </div>
         </div>
         {note && (
-          <p
-            data-testid={`${testIdPrefix}-agent-model-note`}
-            className="mt-1.5 border-t border-border px-2 pt-1.5 pb-0.5 text-xs text-muted-foreground"
-          >
-            {note}
-          </p>
+          <div className="mt-1.5 flex items-center gap-1 border-t border-border px-2 pt-1.5 text-xs text-muted-foreground">
+            Selection guidance
+            <HelpPopover
+              label="Agent and model selection"
+              testId={`${testIdPrefix}-agent-model-help`}
+            >
+              <span data-testid={`${testIdPrefix}-agent-model-note`}>{note}</span>
+            </HelpPopover>
+          </div>
         )}
       </PopoverContent>
     </Popover>

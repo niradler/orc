@@ -7,6 +7,7 @@ import { buildCodexEnv, codexCommand, hasConfiguredOrcMcp } from "./codex.js";
 import { elicitationForm } from "./elicitation.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
+import { codexLimitEvent } from "./provider-limits.js";
 import {
   type AgentEvent,
   type AgentSession,
@@ -58,6 +59,7 @@ export class CodexAppSession implements AgentSession {
   private runtimeId: string | undefined;
   private sequence = 0;
   private completedTurn = false;
+  private compacting = false;
   private readonly streamedItems = new Set<string>();
   /** The message whose text was streamed last; a new message starts a new paragraph. */
   private textItem: string | undefined;
@@ -72,7 +74,8 @@ export class CodexAppSession implements AgentSession {
   constructor(
     private readonly opts: SessionOpts,
     private readonly host: ExecHost,
-    private readonly launcher: (host: ExecHost) => Promise<string[]> = codexCommand,
+    private readonly launcher: (host: ExecHost) => Promise<string[]> = (host) =>
+      codexCommand(host, opts.providerExecutable),
     private readonly spawnProcess: typeof hostSpawn = hostSpawn,
   ) {
     this.runtimeId = opts.runtimeSessionId;
@@ -144,6 +147,11 @@ export class CodexAppSession implements AgentSession {
     }
     const method = String(message.method ?? "");
     const params = object(message.params);
+    if (method === "account/rateLimits/updated") {
+      const event = codexLimitEvent(params.rateLimits);
+      if (event) this.push(event);
+      return;
+    }
     if (typeof message.id === "number" || typeof message.id === "string") {
       if (this.closing || this.interrupting || this.done || this.completedTurn) {
         this.write({
@@ -345,6 +353,11 @@ export class CodexAppSession implements AgentSession {
       this.push({ type: "thinking", data: String(params.delta ?? "") });
     } else if (method === "item/started" || method === "item/completed") {
       const item = object(params.item);
+      if (item.type === "contextCompaction" && method === "item/started")
+        this.push({
+          type: "system_status",
+          data: "Compacting context…",
+        });
       if (method === "item/started" && typeof item.id === "string")
         this.actionItems.set(item.id, item);
       else if (method === "item/completed" && typeof item.id === "string")
@@ -412,6 +425,9 @@ export class CodexAppSession implements AgentSession {
         });
     } else if (method === "turn/completed") {
       const turn = object(params.turn);
+      if (this.compacting && turn.status === "completed")
+        this.push({ type: "system_status", data: "Context compacted." });
+      this.compacting = false;
       for (const [id, request] of this.pending)
         if (!request.asyncTurnId || turn.status !== "completed") this.resolved(id);
       if (turn.status === "failed")
@@ -474,6 +490,10 @@ export class CodexAppSession implements AgentSession {
   }
 
   private async startTurn(prompt: string, images?: ImageAttachment[]): Promise<void> {
+    const compact = prompt.trim() === "/compact";
+    if (compact && (!this.runtimeId || images?.length))
+      throw new Error("Compact an existing conversation without attachments.");
+    this.compacting = compact;
     this.done = false;
     this.interrupting = false;
     this.completedTurn = false;
@@ -510,7 +530,7 @@ export class CodexAppSession implements AgentSession {
         "features.default_mode_request_user_input=true",
       ];
       const mode = this.opts.permissionMode ?? (this.opts.autoApprove ? "acceptEdits" : "default");
-      const env = buildCodexEnv();
+      const env = buildCodexEnv(this.opts.env);
       const mcp =
         this.opts.orcMcp === false
           ? null
@@ -531,7 +551,7 @@ export class CodexAppSession implements AgentSession {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "ignore",
-        env: { ...env, ...this.opts.env },
+        env,
         passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.env ?? {})],
       });
       const child = this.child;
@@ -616,6 +636,11 @@ export class CodexAppSession implements AgentSession {
     this.activeTurnId = undefined;
     this.startedTurns.clear();
     this.turnQueued = false;
+    if (compact) {
+      this.push({ type: "system_status", data: "Compacting context…" });
+      await this.call("thread/compact/start", { threadId: this.runtimeId });
+      return;
+    }
     const started = await this.call("turn/start", {
       threadId: this.runtimeId,
       input: [

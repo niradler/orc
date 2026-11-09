@@ -1,5 +1,11 @@
 import { ChatModelSchema } from "@orc/core/chat";
 import { type ExecHost, hostBinary, hostSpawn } from "@orc/core/exec-host";
+import {
+  providerExecutable,
+  providerForAgent,
+  providerProcessEnvironment,
+  resolveProviderEnvironment,
+} from "@orc/core/provider-service";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { resolveCodexLaunch } from "./codex.js";
 import { endStdin, writeToStdin } from "./io.js";
@@ -40,15 +46,20 @@ export async function discoverAgentModels(
   agent: string,
   host: ExecHost,
   cwd: string,
+  providerId?: string,
 ): Promise<AgentModel[]> {
   if (agent !== "codex" && agent !== "claude") return [];
-  const binary = await hostBinary(host, agent);
+  const profile = providerForAgent(agent, providerId, true);
+  const custom = host.kind === "local" ? providerExecutable(profile) : undefined;
+  const binary = custom ? Bun.which(custom) : await hostBinary(host, agent);
   if (!binary) throw new Error("The selected agent is not installed on its execution host.");
   let command = [binary];
   if (host.kind === "local") {
     if (agent === "codex") command = resolveCodexLaunch(binary);
     else {
-      const launch = resolveClaudeSdkLaunch(true);
+      const launch = resolveClaudeSdkLaunch(true, (name) =>
+        name === "claude" ? binary : Bun.which(name),
+      );
       command = [
         ...(launch.executable ? [launch.executable] : []),
         launch.pathToClaudeCodeExecutable ?? binary,
@@ -78,6 +89,7 @@ export async function discoverAgentModels(
           ]),
     ],
     cwd,
+    resolveProviderEnvironment(profile).env,
   );
 }
 
@@ -86,8 +98,15 @@ export async function readAgentModelCatalog(
   host: ExecHost,
   command: string[],
   cwd: string,
+  environment: Record<string, string> = {},
 ): Promise<AgentModel[]> {
-  const child = await hostSpawn(host, command, { cwd, stdin: "pipe", stderr: "ignore" });
+  const child = await hostSpawn(host, command, {
+    cwd,
+    stdin: "pipe",
+    stderr: "ignore",
+    env: providerProcessEnvironment(environment),
+    passEnv: Object.keys(environment),
+  });
   const send = (value: unknown) =>
     writeToStdin(child.proc.stdin, new TextEncoder().encode(`${JSON.stringify(value)}\n`));
   const stdout = child.proc.stdout;

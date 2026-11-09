@@ -57,6 +57,10 @@ extra agents, production changes, publication, or imply hook enforcement.
 - Read [DESIGN.md](DESIGN.md) before web UI work. Follow its compact,
   screen-aware controls guidance: secondary lists default to a quiet
   collapsed summary, expanded items use slim rows, and editors appear on demand.
+  Keep long explanations and field guidance in the shared info-icon `HelpPopover`,
+  available on hover, keyboard focus and tap. Keep labels, values, concise status,
+  validation errors and essential action warnings visible. This is a project-wide
+  rule for new and modified UI; verify help interactions on desktop and phone.
   Review populated desktop and phone states before declaring substantial UI work done.
   Preserve its list-selection
   and bulk-action standard. Browser E2E selectors use `data-testid`; see

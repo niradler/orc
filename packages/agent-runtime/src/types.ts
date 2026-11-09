@@ -7,6 +7,11 @@ import type { SessionRuleGuard } from "./rules.js";
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
+  providerId?: string | undefined;
+  providerExecutable?: string | undefined;
+  providerTextRedactor?:
+    | (() => { push: (text: string) => string; flush: () => string })
+    | undefined;
   chatAgentOptions?: ChatAgentOptions | undefined;
   interactive?: boolean | undefined;
   attentionContext?: { chatThreadId: string; sessionTitle: string } | undefined;
@@ -147,7 +152,16 @@ export interface AgentBackend {
   startSession(opts: SessionOpts): Promise<AgentSession>;
   resumeSession(runtimeSessionId: string, opts: SessionOpts): Promise<AgentSession>;
   preflight(
-    opts?: Pick<SessionOpts, "executionHost" | "acpAgent" | "acpxAgent" | "env">,
+    opts?: Pick<
+      SessionOpts,
+      | "executionHost"
+      | "acpAgent"
+      | "acpxAgent"
+      | "providerId"
+      | "env"
+      | "providerExecutable"
+      | "redactOutput"
+    >,
   ): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;
   /**

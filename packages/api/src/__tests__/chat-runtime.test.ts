@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,7 +16,8 @@ import {
   type ChatThread,
   ChatThreadSchema,
 } from "@orc/core/chat";
-import { loadConfig, resetConfig, updateGlobalConfig } from "@orc/core/config";
+import { globalConfigPath, loadConfig, resetConfig, updateGlobalConfig } from "@orc/core/config";
+import { readProviderSettings, saveProviderSettings } from "@orc/core/provider-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -216,6 +217,70 @@ afterAll(() => {
 });
 
 describe("native chat runtime", () => {
+  test("should refuse compaction when Claude slash commands are explicitly disabled", async () => {
+    const originalClaude = createBackend("claude");
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => session({ id, opts }),
+    }));
+    try {
+      const started = await turn({
+        agent: "claude",
+        agentOptions: {
+          claude: {
+            runtime: "claude-sdk",
+            options: { extraArgs: { "disable-slash-commands": null } },
+          },
+        },
+        messages: [{ role: "user", content: "Start Claude with slash commands disabled" }],
+      });
+      const opened = started.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing Claude thread");
+      expect(
+        (
+          await turn({
+            threadId: opened.thread.id,
+            messages: [{ role: "user", content: "/compact" }],
+          })
+        ).response.status,
+      ).toBe(400);
+    } finally {
+      registerBackend("claude", () => originalClaude);
+    }
+  });
+  test("should reserve compact as a native command on the same existing session", async () => {
+    expect(
+      (await turn({ messages: [{ role: "user", content: "/compact" }] })).response.status,
+    ).toBe(400);
+    const first = await turn({ messages: [{ role: "user", content: "Start for compaction" }] });
+    const opened = first.events.find((event) => event.type === "thread");
+    if (opened?.type !== "thread") throw new Error("Missing thread");
+    const compact = await turn({
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "/compact" }],
+      context: { source: "webchat", route: "/tasks" },
+    });
+    expect(compact.response.status).toBe(200);
+    expect(calls.at(-1)?.prompt).toBe("/compact");
+    expect(calls.at(-1)?.id).toBe("native-fixture");
+    const key = turnKey(opened.thread.host, opened.thread.backend, "native-fixture");
+    activeTurns.add(key);
+    try {
+      expect(
+        (
+          await turn({
+            threadId: opened.thread.id,
+            messages: [{ role: "user", content: "/compact" }],
+          })
+        ).response.status,
+      ).toBe(409);
+    } finally {
+      activeTurns.delete(key);
+    }
+    calls.length = 0;
+  });
   test("should fold pre-tool narration separately from the final reply", async () => {
     narrateBeforeTool = true;
     try {
@@ -291,6 +356,14 @@ describe("native chat runtime", () => {
       expect(cursorCalls[0]?.opts).toMatchObject({ acpxAgent: "cursor", orcMcp: true });
       const thread = first.events.find((event) => event.type === "thread");
       if (thread?.type !== "thread") throw new Error("Missing Cursor thread");
+      expect(
+        (
+          await turn({
+            threadId: thread.thread.id,
+            messages: [{ role: "user", content: "/compact" }],
+          })
+        ).response.status,
+      ).toBe(400);
       const next = await turn({
         threadId: thread.thread.id,
         messages: [{ role: "user", content: "Cursor follow-up" }],
@@ -1597,5 +1670,108 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
       raw.agent_loop = previous.agent_loop;
       raw.preferences = previous.preferences;
     });
+  }
+});
+
+test("named provider defaults reach launches and remain pinned across a default change", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  try {
+    const legacyResult = await turn({
+      agent: "codex",
+      messages: [{ role: "user", content: "Existing conversation before provider profiles" }],
+    });
+    const legacy = legacyResult.events.find((event) => event.type === "thread");
+    if (legacy?.type !== "thread") throw Error("Missing legacy thread");
+    getSqlite()
+      .query("UPDATE chat_threads SET data=json_remove(data, '$.config.providerId') WHERE id=?")
+      .run(legacy.thread.id);
+    const initial = readProviderSettings();
+    const first = {
+      id: "codex-work",
+      name: "Work Codex",
+      agent: "codex",
+      enabled: true,
+      executable: "",
+      model: "work-model",
+      environment: [{ name: "OPENAI_API_KEY", value: "fixture-work-secret", secret: true }],
+    };
+    const second = {
+      ...first,
+      id: "codex-personal",
+      name: "Personal Codex",
+      model: "personal-model",
+      environment: [],
+    };
+    const saved = saveProviderSettings({
+      ...initial,
+      providers: [...initial.providers, first, second],
+      default_provider_id: first.id,
+    });
+    const result = await turn({
+      messages: [{ role: "user", content: "First named provider turn" }],
+    });
+    expect(result.response.status).toBe(200);
+    const thread = result.events.find((event) => event.type === "thread");
+    if (thread?.type !== "thread") throw Error("Missing thread");
+    expect(thread.thread.config).toMatchObject({ providerId: first.id, model: "work-model" });
+    expect(calls.at(-1)?.opts).toMatchObject({
+      providerId: first.id,
+      model: "work-model",
+      env: { OPENAI_API_KEY: "fixture-work-secret" },
+    });
+    expect(JSON.stringify(result.events)).not.toContain("fixture-work-secret");
+    const legacyResume = await turn({
+      threadId: legacy.thread.id,
+      messages: [{ role: "user", content: "Continue original local account" }],
+    });
+    expect(legacyResume.events.some((event) => event.type === "error")).toBe(false);
+    expect(calls.at(-1)?.opts.env?.OPENAI_API_KEY).toBeUndefined();
+    expect(calls.at(-1)?.opts.providerId).toBe("codex");
+    saveProviderSettings({
+      ...saved,
+      default_provider_id: second.id,
+      providers: saved.providers.map((profile) =>
+        profile.id === first.id ? { ...profile, enabled: false } : profile,
+      ),
+    });
+    const resumed = await turn({
+      threadId: thread.thread.id,
+      messages: [{ role: "user", content: "Continue with work" }],
+    });
+    expect(resumed.events.some((event) => event.type === "error")).toBe(false);
+    expect(calls.at(-1)?.opts).toMatchObject({
+      providerId: first.id,
+      model: "work-model",
+      env: { OPENAI_API_KEY: "fixture-work-secret" },
+    });
+    const newDefault = await turn({
+      messages: [{ role: "user", content: "New personal conversation" }],
+    });
+    expect(newDefault.response.status).toBe(200);
+    expect(calls.at(-1)?.opts).toMatchObject({
+      providerId: second.id,
+      model: "personal-model",
+      env: {},
+    });
+    expect(
+      (
+        await turn({
+          agent: "claude",
+          providerId: second.id,
+          messages: [{ role: "user", content: "Mismatch" }],
+        })
+      ).response.status,
+    ).toBe(400);
+    expect(
+      (
+        await turn({
+          providerId: first.id,
+          messages: [{ role: "user", content: "Disabled new launch" }],
+        })
+      ).response.status,
+    ).toBe(400);
+  } finally {
+    writeFileSync(globalConfigPath(), previous);
+    resetConfig();
   }
 });

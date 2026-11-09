@@ -1,9 +1,11 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
+import { supportsManualCompaction } from "@orc/core/coding-agents";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  ChevronsDownUp,
   LoaderCircle,
   Maximize2,
   Minimize2,
@@ -345,6 +347,27 @@ export function ChatPanel({
                 </button>
               </ActionHelp>
               <ChatContinueInTerminal control={terminalControl} />
+              {supportsManualCompaction(config.agent) && (
+                <ActionHelp label="Compact context">
+                  <button
+                    type="button"
+                    data-testid="chat-compact-button"
+                    aria-label="Compact context"
+                    className={iconButton}
+                    disabled={
+                      !thread?.runtimeId ||
+                      streaming ||
+                      reconnecting ||
+                      refreshing ||
+                      queued.length > 0 ||
+                      files.length > 0
+                    }
+                    onClick={() => void send("/compact")}
+                  >
+                    <ChevronsDownUp size={17} />
+                  </button>
+                </ActionHelp>
+              )}
               <ActionHelp label="Session settings">
                 <button
                   type="button"
@@ -402,6 +425,28 @@ export function ChatPanel({
                   onOpen={() => setActionsOpen(false)}
                   labelled
                 />
+                {supportsManualCompaction(config.agent) && (
+                  <button
+                    type="button"
+                    data-testid="chat-compact-button"
+                    className={actionButton}
+                    disabled={
+                      !thread?.runtimeId ||
+                      streaming ||
+                      reconnecting ||
+                      refreshing ||
+                      queued.length > 0 ||
+                      files.length > 0
+                    }
+                    onClick={() => {
+                      setActionsOpen(false);
+                      void send("/compact");
+                    }}
+                  >
+                    <ChevronsDownUp size={17} />
+                    Compact context
+                  </button>
+                )}
                 <button
                   type="button"
                   data-testid="chat-config-button"

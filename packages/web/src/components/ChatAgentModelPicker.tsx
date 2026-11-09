@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
-import { useEnabledAgents } from "@/hooks/useAgents";
+import { useEnabledAgents, useProviders } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
 import { agentEffort, agentModelLabel } from "@/lib/composer-chips";
@@ -13,9 +13,24 @@ export function ChatAgentModelPicker() {
   const { config, setConfig, streaming, thread, ready } = chat;
   const { data: ssh } = useSsh();
   const agents = Array.from(new Set([...useEnabledAgents(), config.agent]));
+  const providerSettings = useProviders();
+  const providers =
+    providerSettings.data?.providers.filter(
+      (profile) => profile.enabled || profile.id === config.providerId,
+    ) ?? [];
+  const selectedProvider = providers.find(
+    (profile) => profile.id === (config.providerId ?? config.agent),
+  );
   const catalog = useQuery({
-    queryKey: ["chat-models", config.agent, thread?.id, thread ? thread.host : ssh?.host],
-    queryFn: () => api.chat.models(config.agent, thread?.id),
+    queryKey: [
+      "chat-models",
+      config.agent,
+      config.providerId,
+      thread?.id,
+      thread ? thread.host : ssh?.host,
+    ],
+    queryFn: () =>
+      api.chat.models(config.agent, thread?.id, undefined, undefined, config.providerId),
     enabled: ready,
     staleTime: 120_000,
     retry: false,
@@ -29,7 +44,7 @@ export function ChatAgentModelPicker() {
     : catalog.data?.warning;
   const modelName = choices.get(config.model) || config.model || "Agent default";
   const effort = agentEffort(config);
-  const name = agentLabel(config.agent);
+  const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
   const fixedModel = useAgentCapabilities(config.agent, thread)?.modelSelection === false;
@@ -47,6 +62,19 @@ export function ChatAgentModelPicker() {
   return (
     <AgentModelPicker
       agent={config.agent}
+      agentName={name}
+      providers={providers}
+      providerId={config.providerId}
+      onProvider={(id) => {
+        const profile = providers.find((item) => item.id === id);
+        if (!profile || id === (config.providerId ?? config.agent)) return false;
+        if (started) {
+          chat.startAgentConversation(profile.agent, id, profile.model, profile.options);
+          return true;
+        }
+        chat.selectProvider(profile);
+        return false;
+      }}
       selectedModel={config.model}
       agents={agents}
       choices={choices}
@@ -56,6 +84,7 @@ export function ChatAgentModelPicker() {
       fetching={catalog.isFetching}
       warning={warning}
       summary={summary}
+      accessibleSummary={`${modelName}${effort ? `, ${effort} effort` : ""}`}
       note={note}
       started={started}
       onAgent={(agent) => {
@@ -64,7 +93,7 @@ export function ChatAgentModelPicker() {
           chat.startAgentConversation(agent);
           return true;
         }
-        setConfig({ ...config, agent, model: "" });
+        setConfig({ ...config, agent, providerId: undefined, model: "" });
         return false;
       }}
       onModel={(model) => setConfig({ ...config, model })}

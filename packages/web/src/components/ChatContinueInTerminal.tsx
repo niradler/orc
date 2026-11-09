@@ -32,7 +32,7 @@ export function useChatContinueInTerminal() {
         throw new Error(
           "This session is not available in Sessions yet. Try again after session discovery refreshes.",
         );
-      await openLiveSession(session);
+      await openLiveSession(session, thread.config.providerId);
       return true;
     } catch (cause) {
       if (threadId.current === thread.id)

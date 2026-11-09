@@ -307,7 +307,9 @@ test("backend capabilities lock the model column and hide the permission chip", 
   await page.getByTestId("chat-agent-model-button").click();
   await expect(page.getByTestId("chat-model-option-default")).toBeDisabled();
   await expect(page.getByTestId("chat-model-option-custom")).toBeDisabled();
+  await page.getByTestId("chat-agent-model-help").click();
   await expect(page.getByTestId("chat-agent-model-note")).toContainText("picks its own model");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("chat-permission-chip")).toHaveCount(0);
 });
