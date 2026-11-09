@@ -263,6 +263,17 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
         host.storeImporter.cancel();
         return host.importer.discover(input.port);
       case "import_transfer": {
+        const profile = host.profiles.list().find((profile) => profile.id === input.profile_id);
+        const hosts = [...new Set(input.sites.map((site) => new URL(site).hostname))];
+        const confirm = await dialog.showMessageBox(host.window, {
+          type: "question",
+          buttons: ["Cancel", "Import logins"],
+          defaultId: 0,
+          cancelId: 0,
+          message: `Import logins into ${profile?.name ?? "browser profile"}?`,
+          detail: `Cookies and site data for ${hosts.slice(0, 8).join(", ")}${hosts.length > 8 ? ` and ${hosts.length - 8} more` : ""} will be copied from your browser.`,
+        });
+        if (confirm.response !== 1) throw new Error("Import cancelled");
         const work = host.imports.then(() => {
           if (host.removingProfiles.has(input.profile_id))
             throw new Error("This browser profile is being removed");
@@ -402,9 +413,12 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
 /** Menu and unhandled external links reveal the integrated panel, not a new window. */
 export function openDesktopViewer(target?: string): void {
   const host = active;
-  if (!host || host.window.isDestroyed()) return;
-  if (target && host.preferences.snapshot().openLinksIn === "system") {
-    const url = previewWebUrl(target);
+  if (
+    !host ||
+    host.window.isDestroyed() ||
+    (target && host.preferences.snapshot().openLinksIn === "system")
+  ) {
+    const url = target && previewWebUrl(target);
     if (url) void shell.openExternal(url);
     return;
   }

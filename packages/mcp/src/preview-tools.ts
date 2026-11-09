@@ -4,9 +4,12 @@ import {
   type PreviewRequest,
 } from "@orc/core/desktop-preview";
 import { ValidationError } from "@orc/core/errors";
+import { createLogger } from "@orc/core/logger";
 import { z } from "zod";
 import { orcApi } from "./api-client.js";
 import type { ToolResult } from "./meta-tools.js";
+
+const logger = createLogger("mcp:preview");
 
 export function previewToolContent(name: string, value: string): ToolResult["content"] {
   if (
@@ -97,7 +100,9 @@ export async function availablePreviewTools(
       for (const tool of previewToolDefinitions)
         if (tool.name.startsWith("preview_browser_")) names.add(tool.name);
     return names;
-  } catch {
+  } catch (err) {
+    if (!(err instanceof Error && /\b(404|409)\b|not found/i.test(err.message)))
+      logger.warn("Preview capability discovery failed", err);
     return new Set();
   }
 }
@@ -240,6 +245,11 @@ export async function executePreviewTool(
     await new Promise((resolve) => setTimeout(resolve, 250));
     request = await orcApi<PreviewRequest>("GET", `/desktop-preview/requests/${request.id}`);
   }
+  if (browser && request.status === "queued")
+    request = await orcApi<PreviewRequest>(
+      "POST",
+      `/desktop-preview/requests/${request.id}/cancel`,
+    );
   if (request.status === "failed")
     throw new ValidationError(request.error ?? "Desktop preview failed");
   return previewDeliveryResult(request);

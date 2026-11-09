@@ -32,7 +32,8 @@ export class PreviewBroker {
         this.clients.delete(id);
       }
     for (const [id, request] of this.requests) {
-      if (request.expires_at < this.now()) request.status = "expired";
+      if (request.status === "queued" && request.expires_at < this.now())
+        request.status = "expired";
       if (request.expires_at + REQUEST_TTL < this.now()) this.requests.delete(id);
     }
   }
@@ -99,6 +100,8 @@ export class PreviewBroker {
       throw new ForbiddenError(
         "Enable browser control in Settings > Browser and this chat's Session settings first",
       );
+    if (input.kind === "browser" && !client.browserReady)
+      throw new ConflictError("No browser page is open for this session. Open a URL first.");
     if (this.requests.size >= 32)
       for (const [id, request] of this.requests) {
         if (request.status !== "queued") {
@@ -149,6 +152,16 @@ export class PreviewBroker {
     current.error = error;
     if (result !== undefined) current.result = result;
     return { ...current };
+  }
+  cancel(id: string, reason: string): PreviewRequest {
+    this.prune();
+    const request = this.requests.get(id);
+    if (!request) throw new NotFoundError("Preview request", id);
+    if (request.status === "queued") {
+      request.status = "failed";
+      request.error = reason;
+    }
+    return { ...request };
   }
   get(id: string): PreviewRequest {
     this.prune();

@@ -70,7 +70,11 @@ const sectionLabels: Record<Section, string> = {
 export default function Settings() {
   const visibleSections = sections.filter((id) => id !== "browser" || !!desktopBridge()?.preview);
   const { theme } = useTheme();
-  const [section, setSection] = useViewParam<Section>("settingsSection", "connection", sections);
+  const [section, setSection] = useViewParam<Section>(
+    "settingsSection",
+    "connection",
+    visibleSections,
+  );
   const [apiUrl, setApiUrl] = useState(getApiUrl);
   const [terminalFont, setTerminalFont] = useState(
     () => localStorage.getItem(TERMINAL_FONT_KEY) ?? "",

@@ -81,6 +81,7 @@ function AgentText({
     ) : (
       <Markdown
         key={part.offset}
+        previewLinks
         fallback={<p className="whitespace-pre-wrap wrap-break-word">{part.text}</p>}
       >
         {part.text}

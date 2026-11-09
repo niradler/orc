@@ -112,11 +112,12 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
     );
 
     try {
-      const served = await servedTools(args);
       // Request status remains readable after a target disconnects; scope is still checked.
-      const toolDef = (name === "preview_request_get" ? toolDefinitions : served).find(
-        (t) => t.name === name,
-      );
+      const toolDef = (
+        name.startsWith("preview_") && name !== "preview_request_get"
+          ? await servedTools(args)
+          : toolDefinitions
+      ).find((t) => t.name === name);
       if (!toolDef) {
         return {
           content: [
@@ -216,11 +217,15 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     if (selectedMode === "meta" && isMetaToolName(name)) {
-      const discoveryArgs =
+      const invoke =
         name === "tool_invoke"
-          ? z.object({ arguments: z.unknown().optional() }).parse(args).arguments
-          : args;
-      return runMetaTool(await servedTools(discoveryArgs), name, args, callTool);
+          ? z.object({ name: z.string().optional(), arguments: z.unknown().optional() }).parse(args)
+          : null;
+      const served =
+        invoke && !invoke.name?.startsWith("preview_")
+          ? toolDefinitions
+          : await servedTools(invoke ? invoke.arguments : args);
+      return runMetaTool(served, name, args, callTool);
     }
     return callTool(name, args);
   });

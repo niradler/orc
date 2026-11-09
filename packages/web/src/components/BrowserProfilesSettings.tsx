@@ -15,6 +15,7 @@ export function BrowserProfilesSettings() {
   const [source, setSource] = useState<PreviewImportSource | null>(null);
   const [sites, setSites] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   useEffect(() => {
@@ -26,9 +27,10 @@ export function BrowserProfilesSettings() {
       void bridge?.cancelImport();
     };
   }, [bridge]);
-  async function run(work: () => Promise<void>): Promise<void> {
+  async function run(work: () => Promise<void>, importWork = false): Promise<void> {
     if (busy) return;
     setBusy(true);
+    setImporting(importWork);
     setError(null);
     setStatus(null);
     try {
@@ -37,6 +39,7 @@ export function BrowserProfilesSettings() {
       setError(cause instanceof Error ? cause.message : "Browser profile operation failed");
     } finally {
       setBusy(false);
+      setImporting(false);
     }
   }
   return (
@@ -159,7 +162,7 @@ export function BrowserProfilesSettings() {
                   setStatus(
                     "No supported cookie stores found. Use the live-browser connection below; Windows Chrome/Edge app-bound cookies require it.",
                   );
-              })
+              }, true)
             }
           >
             Scan browser profiles
@@ -190,7 +193,7 @@ export function BrowserProfilesSettings() {
                   setSource(null);
                   setSites([]);
                   setSource(await bridge.discoverStore(store));
-                })
+                }, true)
               }
             >
               Choose source sites
@@ -232,7 +235,7 @@ export function BrowserProfilesSettings() {
                 setSource(null);
                 setSites([]);
                 setSource(await bridge.discoverImport(Number(port)));
-              })
+              }, true)
             }
           >
             Find source sites
@@ -275,7 +278,7 @@ export function BrowserProfilesSettings() {
                   setStatus(
                     `Imported ${result.imported} cookies; skipped ${result.skipped}. Check the selected sites in ORC; import does not guarantee a login.`,
                   );
-                })
+                }, true)
               }
             >
               Import selected sites
@@ -283,7 +286,7 @@ export function BrowserProfilesSettings() {
           </div>
         )}
       </details>
-      {busy && (
+      {importing && (
         <Button variant="ghost" onClick={() => void bridge?.cancelImport()}>
           Cancel import
         </Button>

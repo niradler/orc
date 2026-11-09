@@ -298,6 +298,18 @@ app.openapi(
   }),
   (c) => c.json(previewBroker.get(c.req.valid("param").id)),
 );
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/desktop-preview/requests/{id}/cancel",
+    tags: ["Desktop preview"],
+    summary: "Fail a still-queued preview request so it never runs late",
+    request: { params },
+    responses: { 200: json(requestResult) },
+  }),
+  (c) =>
+    c.json(previewBroker.cancel(c.req.valid("param").id, "Cancelled: the agent stopped waiting")),
+);
 const acknowledgement = z
   .object({
     client_id: z.string().uuid(),

@@ -2,7 +2,7 @@
 
 PR239, branch `code/desktop-browser-files`. The implementation targets production
 review; this record separates capability, observed behavior and native-platform
-evidence. Reference source: `C:/Projects/orc/.examples/t3code` (MIT, T3 Tools Inc.,
+evidence. Reference source: the open-source T3 Code repository (MIT, T3 Tools Inc.,
 2026); substantial cookie-format adaptations retain the desktop third-party notice.
 T3 itself was inspected as source, not run interactively.
 
@@ -28,9 +28,9 @@ T3 itself was inspected as source, not run interactively.
 
 ## Evidence and final checks
 
-The reusable helper is `.claude/scripts/preview-integrated-validation.ts`; isolated
-demo home/database/workspace/profile and bounded logs remain under
-`.claude/validation/desktop-viewer`. It launches actual Electron main/preloads,
+The integrated validation helper and its isolated demo home/database/workspace/
+profile and bounded logs are local-only evidence (gitignored `.claude/` paths) and
+are not part of the repository. The helper launches actual Electron main/preloads,
 the host-compiled CLI daemon and authenticated real MCP, using loopback listeners.
 Credentials load privately from existing development configuration. No personal
 browser/profile is read. The authenticated main harness is test-only and excluded
@@ -46,8 +46,8 @@ in the current handoff and PR description after completion.
 After the authorized update from master, the complete Electron/compiled-daemon/MCP
 journey passed, including real Chromium alert/confirm handling, prompt keyboard
 responses, bounded frame snapshots, contenteditable typing, HTML5 drag/drop, native
-Windows DPAPI import and the import/removal race. Focused checks passed 81 tests
-with 406 assertions across browser/API security, agent bindings and bundled skills.
+Windows DPAPI import and the import/removal race. Focused checks across browser/API
+security, agent bindings and bundled skills passed; see the PR for current counts.
 All workspace typechecks and the docs build passed. An additional real compiled
 startup verifies stale bundled-cache recovery. The mandatory pre-push gate is
 reported with the exact pushed head in the PR; these checks alone do not replace
@@ -60,7 +60,7 @@ an idle `Runtime.terminateExecution` call during restoration that crashed the
 Chromium guest; termination now requires an active read. Crashed guests fail
 explicitly with Reload recovery. Read-only snapshots/frame lists also retry
 bounded navigation-context replacement while rechecking permissions; mutations
-are never retried. The focused regression adds one test and six assertions.
+are never retried. A focused regression covers this.
 
 ## Native evidence and operational limits
 

@@ -1073,11 +1073,5 @@ const pageAction = `function(command) {
     element.dispatchEvent(new Event("input",{bubbles:true}));element.dispatchEvent(new Event("change",{bubbles:true}));return {ok:true,values:[...element.selectedOptions].map(option=>option.value)};
   }
   if(command.action==="click"){element.click();return {ok:true};}
-  if(!(element instanceof HTMLInputElement)&&!(element instanceof HTMLTextAreaElement))throw new Error("Type requires a text input or textarea");
-  if(element.readOnly)throw new Error("Input is read-only");
-  if(element instanceof HTMLInputElement && ["file","hidden","checkbox","radio","submit","button"].includes(element.type))throw new Error("This input type is not supported");
-  const prototype=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(prototype,"value")?.set?.call(element,command.text);
-  element.dispatchEvent(new Event("input",{bubbles:true}));element.dispatchEvent(new Event("change",{bubbles:true}));
-  return {ok:true};
+  throw new Error("Unsupported page action");
 }`;

@@ -25,6 +25,7 @@ export type CodeEditorProps = {
   compact?: boolean;
   line?: number;
   initialMode?: MarkdownEditorProps["initialMode"];
+  previewLinks?: boolean;
 };
 
 export function CodeEditor(props: CodeEditorProps) {

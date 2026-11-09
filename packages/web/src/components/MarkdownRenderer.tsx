@@ -50,7 +50,15 @@ function MarkdownImage(props: ElementProps) {
 const LINK =
   "text-primary underline decoration-outline underline-offset-2 hover:decoration-current";
 
-function PreviewMarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+function PreviewMarkdownLink({
+  href,
+  files,
+  children,
+}: {
+  href?: string;
+  files: boolean;
+  children?: ReactNode;
+}) {
   const preview = useDesktopPreview();
   const destination = href ? (previewFileDestination(href) ?? href) : undefined;
   return (
@@ -60,10 +68,12 @@ function PreviewMarkdownLink({ href, children }: { href?: string; children?: Rea
       rel="noopener noreferrer"
       className={LINK}
       onClick={(event) => {
+        const link = destination ? previewLink(destination) : null;
         if (
           !preview ||
           !destination ||
-          !previewLink(destination) ||
+          !link ||
+          (link.kind === "file" && !files) ||
           /^\/(?:activity|tasks|sessions|terminals|knowledge|settings|projects|jobs|scratchpad|rules|skills)(?:[/?#]|$)/.test(
             destination,
           )
@@ -133,10 +143,12 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   children,
   wikiLinks,
   readable = false,
+  previewLinks = false,
 }: {
   children: string;
   wikiLinks?: WikiLinks;
   readable?: boolean;
+  previewLinks?: boolean;
 }) {
   const { theme } = useTheme();
   const preview = useDesktopPreview();
@@ -171,7 +183,11 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                     <span>{children}</span>
                   );
                 }
-                return <PreviewMarkdownLink href={href}>{children}</PreviewMarkdownLink>;
+                return (
+                  <PreviewMarkdownLink href={href} files={previewLinks}>
+                    {children}
+                  </PreviewMarkdownLink>
+                );
               },
             }
           : {}),
@@ -179,7 +195,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       {...(wikiLinks || preview
         ? {
             remarkPlugins: [
-              ...(preview ? [remarkPreviewFiles] : []),
+              ...(preview && previewLinks ? [remarkPreviewFiles] : []),
               ...Object.values(defaultRemarkPlugins),
               ...(wikiLinks ? [remarkWikiLinks] : []),
             ],

@@ -135,13 +135,13 @@ tab, another conversation or a cached tool name does not enable browser access.
    only when the matching desktop also reports an open guest page. Open tools can
    be available before the first page. Discovery and invocation both recheck leases.
 5. With control enabled, use `preview_browser_snapshot` for bounded visible text and
-   interactive controls/refs; scope with `selector` and `max_chars` (default12,000,
-   range1,000–24,000). `preview_browser_act` takes `command` with
+   interactive controls/refs; scope with `selector` and `max_chars` (default 12,000,
+   range 1,000–24,000). `preview_browser_act` takes `command` with
    `click`/`type` plus `selector` (and `text` for typing), `press` plus an allowed
    `key`, `scroll` plus `x`/`y`, `hover` plus `selector`, `select` plus `selector`/
    `values`, `drag` plus `selector`/`target`, `wait` plus `selector`, `text` and/or
    `url_includes` (state/timeout optional), or `evaluate` plus `expression`.
-   Wait/evaluate timeouts are <=10seconds; evaluation results <=64,000characters.
+   Wait/evaluate timeouts are at most 10 seconds; evaluation results at most 64,000 characters.
    Use snapshot refs as selectors; they retain surviving nodes and fail when stale.
    Prefer condition waits and scoped snapshots over fixed sleeps/screenshots.
    After context compaction, rediscover, list tabs and snapshot the current page;
@@ -163,16 +163,17 @@ tab, another conversation or a cached tool name does not enable browser access.
    and ancestor overlays fail safely. `dialog` status/accept/dismiss handles pending
    dialogs with optional prompt text. Answer `requires_response` before more actions.
    `appearance` sets color_scheme (system/light/dark) and optional reduced_motion;
-   `resize` sets width/height/device_scale_factor/mobile (at most16megapixels);
+   `resize` sets width/height/device_scale_factor/mobile (at most 16 megapixels);
    `resize_reset` returns to the panel viewport. `recording_start` chooses
-   max_seconds<=180; `recording_stop` saves guest-only WebM<=16MB and returns a
-   workspace path, not raw video. `tabs` includes download statuses; `download`
+   max_seconds (at most 180); `recording_stop` saves guest-only WebM (at most
+   16 MB) and returns a workspace path, not raw video. `tabs` includes download statuses; `download`
    takes a completed download_id and returns its saved workspace path. Never call
    an interrupted/pending recording or download successful. After losing context,
    inspect tabs/dialog/download state before repeating an operation with side effects.
 6. Check delivery: `queued` is pending; `opened` acknowledges showing a URL/file,
    not successful site loading; `completed` is a browser command result. Poll
-   `preview_request_get({id})` for queued work. Failed/expired is not success. A
+   `preview_request_get({id})` for a queued open; a browser action still queued
+   after the 10-second wait is cancelled as failed. Failed/expired is not success. A
    delayed acknowledgment can follow execution: inspect the original request/page
    rather than issuing a new click/type request blindly. Results are ephemeral
    across daemon restarts and bounded queue retention. Queued/failed/expired sets
@@ -201,6 +202,14 @@ into the trusted session workspace. Site permission requests remain denied.
 Opening web links in the system browser is a user desktop preference; explicit MCP
 preview requests still target the ORC panel. Verified desktop settings route:
 `/settings?settingsSection=browser` (unavailable in plain web).
+
+To validate desktop browser/file changes, use the actual desktop app, guest and MCP
+connection with isolated demo data. A web-only run cannot establish native view
+layering, OS dialogs, profile persistence, recording or revocation behavior. Check
+discovery separately from command execution, exercise save conflicts and
+interrupted recording/import/download recovery, and require durable storage before
+reporting a successful save/import. Never attach agents to the application's
+global debugging connection.
 
 ## When routes change
 

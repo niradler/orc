@@ -13,7 +13,7 @@ describe("targeted desktop delivery", () => {
   test("should revoke queued automation and reclaim completed queue entries", () => {
     const broker = new PreviewBroker();
     const client = crypto.randomUUID();
-    const { lease } = broker.register(client, "session", undefined, true);
+    const { lease } = broker.register(client, "session", undefined, true, true);
     const queued = broker.create({
       session_id: "session",
       kind: "browser",
@@ -62,6 +62,15 @@ describe("targeted desktop delivery", () => {
       }),
     ).toThrow("Enable");
     broker.register(client, "session", registration.lease, true);
+    expect(() =>
+      broker.create({
+        session_id: "session",
+        kind: "browser",
+        target: "",
+        command: { action: "snapshot" },
+      }),
+    ).toThrow("No browser page");
+    broker.register(client, "session", registration.lease, true, true);
     expect(
       broker.create({
         session_id: "session",
@@ -90,8 +99,39 @@ describe("targeted desktop delivery", () => {
     });
     now = 46_000;
     expect(() => broker.pending(client, lease)).toThrow();
+    expect(broker.get(request.id)).toMatchObject({
+      status: "failed",
+      error: expect.stringMatching(/disconnected/),
+    });
+    const live = crypto.randomUUID();
+    const registration = broker.register(live, "session");
+    const stale = broker.create({ session_id: "session", kind: "url", target: "https://a.test" });
+    for (const at of [80_000, 120_000, 160_000, 170_000]) {
+      now = at;
+      broker.register(live, "session", registration.lease);
+    }
+    expect(broker.get(stale.id).status).toBe("expired");
+  });
+  test("should keep completed results after expiry and cancel queued work so it never runs late", () => {
+    let now = 0;
+    const broker = new PreviewBroker(() => now);
+    const client = crypto.randomUUID();
+    const { lease } = broker.register(client, "session", undefined, true, true);
+    const browser = (): string =>
+      broker.create({
+        session_id: "session",
+        kind: "browser",
+        target: "",
+        command: { action: "snapshot" },
+      }).id;
+    const done = browser();
+    broker.acknowledge(client, lease, done, "completed", null, { ok: true });
+    const waiting = browser();
+    expect(broker.cancel(waiting, "stopped").status).toBe("failed");
+    expect(broker.pending(client, lease).map((request) => request.id)).not.toContain(waiting);
+    expect(broker.cancel(done, "stopped").status).toBe("completed");
     now = 121_000;
-    expect(broker.get(request.id).status).toBe("expired");
+    expect(broker.get(done).status).toBe("completed");
   });
 });
 

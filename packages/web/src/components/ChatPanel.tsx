@@ -325,6 +325,7 @@ export function ChatPanel({
               type="button"
               data-testid="chat-preview-toggle"
               aria-label="Toggle preview panel"
+              aria-expanded={preview.visible}
               title="Browser and files"
               className={iconButton}
               onClick={preview.toggle}

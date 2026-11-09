@@ -712,7 +712,7 @@ export function ChatConversationInfo({
                 id="chat-browser-control-description"
                 className="mt-1 text-xs text-muted-foreground"
               >
-                {preview.browserControl.available
+                {preview.browserControl.globallyEnabled
                   ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
                   : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
               </p>
@@ -724,7 +724,7 @@ export function ChatConversationInfo({
               aria-describedby="chat-browser-control-description"
               className="mt-1 h-4 w-4 shrink-0"
               checked={preview.browserControl.enabled}
-              disabled={!preview.browserControl.available}
+              disabled={preview.browserControl.pending || !preview.browserControl.globallyEnabled}
               onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
             />
           </div>

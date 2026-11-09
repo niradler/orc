@@ -43,6 +43,7 @@ export type MarkdownEditorProps = {
   /** Compact form controls without removing the editor's modes or expansion. */
   compact?: boolean;
   line?: number;
+  previewLinks?: boolean;
 };
 
 /** Drops a first-line `# Title` from the body when it repeats the page title. */
@@ -78,6 +79,7 @@ export function MarkdownEditor({
   hideFrontmatter = false,
   compact = false,
   line,
+  previewLinks = false,
 }: MarkdownEditorProps) {
   const markdown = isMarkdownFile(path);
   const [localMode, setLocalMode] = useState<Mode>(
@@ -254,7 +256,7 @@ export function MarkdownEditor({
                 </details>
               )}
               {value.trim() ? (
-                <Markdown readable wikiLinks={wikiLinks}>
+                <Markdown readable wikiLinks={wikiLinks} previewLinks={previewLinks}>
                   {body}
                 </Markdown>
               ) : (

@@ -45,9 +45,9 @@ listing hides preview tools. Credentials remain in the Authorization header.
 | `preview_clients` | List desktops viewing `session_id`, with browser-control permission state. |
 | `preview_open_url` | Show an HTTP/HTTPS `url` in the session's browser panel. |
 | `preview_open_file` | Show a workspace-relative or absolute `path` inside the session's folder. Does not save or edit. |
-| `preview_browser_snapshot` | Read bounded visible page text and interactive controls with CSS selectors. |
-| `preview_browser_screenshot` | Return a bounded JPEG image of the browser guest only. |
-| `preview_browser_act` | Run a `command`: `click`/`type` with `selector`, `press` with an allowed `key`, or `scroll` with `x`/`y`. Typing also takes `text`. |
+| `preview_browser_snapshot` | Read bounded visible page text, frames and interactive controls with stable `ref` values. Scope with a CSS/ref string or semantic selector object, `max_chars` and optional `tab_id`. |
+| `preview_browser_screenshot` | Return a bounded JPEG image of the active browser tab's guest page only. |
+| `preview_browser_act` | Run one `command`: interaction (`click`, `type`, `press`, `scroll`, `hover`, `select`, `drag`, `wait`, `evaluate`), tabs and navigation, frames, dialogs, appearance/resize, recording, uploads or downloads. Optional `tab_id`. See the sections below. |
 | `preview_request_get` | Read delivery status or results by request `id`. |
 
 All tools except `preview_request_get` take `session_id`; action/open tools also
@@ -109,8 +109,9 @@ without audio, at a bounded frame rate/resolution. Treat saved files as untruste
 Open/action calls wait briefly for desktop acknowledgment. `queued` means pending,
 `opened` means a file or URL was shown, and `completed` means a browser command
 returned. A URL being opened does not guarantee the site loaded successfully.
-Poll `preview_request_get` for a queued request. `failed` and `expired` are not
-success. Delivery is temporary and is lost if the daemon restarts. Screenshots
+Poll `preview_request_get` for a queued open request. A browser action still queued
+after the 10-second wait is cancelled as `failed`, so it never runs late. `failed`
+and `expired` are not success. Delivery is temporary and is lost if the daemon restarts. Screenshots
 return MCP image content, rather than base64 inside a text result.
 Queued, failed and expired results set MCP `isError`; poll the same request rather
 than repeating a potentially executed action. Disconnect, lease expiry or changing

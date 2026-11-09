@@ -131,6 +131,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const [recorded, setRecorded] = useState<{
     session: string;
     path: string | null;
+    saving: boolean;
     url: string;
     blob: Blob;
     name: string;
@@ -144,23 +145,31 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     [recordingUrl],
   );
   const finishRecording = useCallback(async (result: unknown, id: string) => {
-    const saved = await saveRecording(result, id, (blob, name) =>
-      setRecorded({ session: id, path: null, url: URL.createObjectURL(blob), blob, name }),
-    );
-    if (
-      result &&
-      typeof result === "object" &&
-      "type" in result &&
-      ["recording", "download"].includes(String(result.type)) &&
-      saved &&
-      typeof saved === "object" &&
-      "path" in saved &&
-      typeof saved.path === "string"
-    ) {
-      const path = saved.path;
-      setRecorded((old) => (old?.session === id ? { ...old, path } : old));
+    let blob: Blob | null = null;
+    const settle = (path: string | null) =>
+      setRecorded((old) => (old && old.blob === blob ? { ...old, path, saving: false } : old));
+    try {
+      const saved = await saveRecording(result, id, (captured, name) => {
+        blob = captured;
+        setRecorded({
+          session: id,
+          path: null,
+          saving: true,
+          url: URL.createObjectURL(captured),
+          blob: captured,
+          name,
+        });
+      });
+      settle(
+        saved && typeof saved === "object" && "path" in saved && typeof saved.path === "string"
+          ? saved.path
+          : null,
+      );
+      return saved;
+    } catch (cause) {
+      settle(null);
+      throw cause;
     }
-    return saved;
   }, []);
   const storedModel = models[key] ?? initialModel();
   const nativeId = session ?? storedModel.browser?.session_id ?? key;
@@ -499,21 +508,22 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
           chatPermission?.id === nativeId &&
           chatPermission.enabled &&
           preferences.settings?.agentBrowserControl === true,
-        available:
-          chatPermission?.id === nativeId &&
-          !chatPermission.saving &&
-          preferences.settings?.agentBrowserControl === true,
+        globallyEnabled: preferences.settings?.agentBrowserControl !== false,
+        pending:
+          chatPermission?.id !== nativeId || !!chatPermission.saving || !preferences.settings,
         setEnabled: saveChatPermission,
       },
       openLink,
       openFile,
+      visible: model.visible,
       toggle: () => edit(current.current.key, (old) => ({ ...old, visible: !old.visible })),
     }),
     [
       openLink,
       openFile,
       edit,
-      preferences.settings?.agentBrowserControl,
+      preferences.settings,
+      model.visible,
       chatPermission,
       nativeId,
       saveChatPermission,
@@ -536,7 +546,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       .allow(nativeId, model.agentAccess)
       .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
     return () => {
-      void bridge.allow(nativeId, false);
+      bridge.allow(nativeId, false).catch(() => {});
     };
   }, [bridge, nativeId, model.agentAccess, edit, key]);
 
@@ -545,7 +555,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     if (!bridge) return;
     if (!browserVisible) {
-      void bridge.bounds(null, null);
+      bridge.bounds(null, null).catch(() => {});
       return;
     }
     let frame = 0;
@@ -558,7 +568,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
           '[role="dialog"][data-state="open"], [data-radix-popper-content-wrapper]',
         );
         if (!browserVisible || !element || blocked) {
-          if (previous !== "hidden") void bridge.bounds(null, null);
+          if (previous !== "hidden") bridge.bounds(null, null).catch(() => {});
           previous = "hidden";
           return;
         }
@@ -572,7 +582,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
         const signature = JSON.stringify([bounds, window.devicePixelRatio]);
         if (signature !== previous) {
           previous = signature;
-          void bridge.bounds(nativeId, bounds, current.current.model.browser?.url);
+          bridge.bounds(nativeId, bounds, current.current.model.browser?.url).catch(() => {});
         }
       });
     };
@@ -593,7 +603,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       observer.disconnect();
       mutations.disconnect();
       window.removeEventListener("resize", update);
-      void bridge.bounds(null, null);
+      bridge.bounds(null, null).catch(() => {});
     };
   }, [bridge, browserVisible, nativeId]);
 
@@ -920,11 +930,31 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                 </div>
               ))}
             </nav>
-            {(model.error || deliveryError || preferences.error) && (
+            {model.error && (
+              <div
+                role="alert"
+                className="flex shrink-0 items-start gap-2 px-3 py-1 text-xs text-error"
+              >
+                <span className="min-w-0 flex-1 break-words py-1">{model.error}</span>
+                <button
+                  type="button"
+                  className={button}
+                  aria-label="Dismiss preview error"
+                  data-testid="preview-error-dismiss"
+                  onClick={() => edit(key, (old) => ({ ...old, error: null }))}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+            {preferences.error && (
               <div role="alert" className="shrink-0 break-words px-3 py-2 text-xs text-error">
-                {model.error ||
-                  preferences.error ||
-                  `Agent preview delivery unavailable: ${deliveryError}`}
+                {preferences.error}
+              </div>
+            )}
+            {deliveryError && (
+              <div role="alert" className="shrink-0 break-words px-3 py-2 text-xs text-error">
+                Agent preview delivery unavailable: {deliveryError}
               </div>
             )}
             {model.loading && (
@@ -1003,7 +1033,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                   <select
                     aria-label="Browser profile"
                     data-testid="preview-browser-profile"
-                    className="min-w-0 max-w-40 rounded border border-input bg-background h-8 text-xs"
+                    className="form-control h-8 min-w-0 max-w-40 text-xs"
                     disabled={selectedProfile?.session !== nativeId}
                     value={selectedProfile?.session === nativeId ? (selectedProfile.id ?? "") : ""}
                     onChange={(event) => void changeProfile(event.target.value || null)}
@@ -1026,7 +1056,10 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                           data-testid="preview-browser-tab"
                           onClick={() => void changeTab("tab_select", tab.tab_id)}
                         >
-                          {index + 1} · {new URL(tab.url).hostname}
+                          {index + 1} ·{" "}
+                          {(URL.canParse(tab.url) && new URL(tab.url).hostname) ||
+                            tab.url ||
+                            "New tab"}
                         </button>
                         <button
                           type="button"
@@ -1068,7 +1101,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                     className={button}
                     aria-label="Back"
                     disabled={!model.browser?.back}
-                    onClick={() => void bridge?.navigate(nativeId, "back")}
+                    onClick={() =>
+                      void bridge
+                        ?.navigate(nativeId, "back")
+                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
+                    }
                   >
                     <ArrowLeft size={14} />
                   </button>
@@ -1077,7 +1114,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                     className={button}
                     aria-label="Forward"
                     disabled={!model.browser?.forward}
-                    onClick={() => void bridge?.navigate(nativeId, "forward")}
+                    onClick={() =>
+                      void bridge
+                        ?.navigate(nativeId, "forward")
+                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
+                    }
                   >
                     <ArrowRight size={14} />
                   </button>
@@ -1086,7 +1127,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                     className={button}
                     aria-label="Reload page"
                     disabled={!model.browser}
-                    onClick={() => void bridge?.navigate(nativeId, "reload")}
+                    onClick={() =>
+                      void bridge
+                        ?.navigate(nativeId, "reload")
+                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
+                    }
                   >
                     <RefreshCw size={14} />
                   </button>
@@ -1195,7 +1240,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                         onClick={() => setRecordingOpen(true)}
                       >
                         View {recorded.blob.type === "video/webm" ? "recording" : "download"}
-                        {recorded.path ? " · saved" : " · unsaved"}
+                        {recorded.saving
+                          ? " · saving…"
+                          : recorded.path
+                            ? " · saved"
+                            : " · save failed"}
                       </button>
                     )}
                   </div>
@@ -1219,7 +1268,10 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                     </div>
                   ))}
                 </details>
-                <div role="status" className="shrink-0 px-3 text-xs text-error">
+                <div
+                  role="status"
+                  className={`shrink-0 px-3 text-xs ${model.browser?.error ? "text-error" : "text-muted-foreground"}`}
+                >
                   {model.browser?.error ?? (model.browser?.loading ? "Loading…" : "")}
                 </div>
                 <div
@@ -1334,6 +1386,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                         onSave={() => void save(selected)}
                         height="100%"
                         compact
+                        previewLinks
                         testId="preview-editor-input"
                       />
                     </div>
@@ -1353,9 +1406,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
             Browser {recorded?.blob.type === "video/webm" ? "recording" : "download"}
           </DialogTitle>
           <DialogDescription>
-            {recorded?.path
-              ? `Saved to ${recorded.path}`
-              : "Workspace save failed. Download this file to preserve it."}
+            {recorded?.saving
+              ? "Saving…"
+              : recorded?.path
+                ? `Saved to ${recorded.path}`
+                : "Workspace save failed. Download this file to preserve it."}
           </DialogDescription>
           {recorded && (
             <>
