@@ -4,26 +4,66 @@ import {
   PREVIEW_COMMAND,
   PREVIEW_EVENT,
   PREVIEW_OPEN_EVENT,
+  PREVIEW_PROFILES_EVENT,
   PREVIEW_SETTINGS_EVENT,
   PreviewBoundsSchema,
   PreviewPreferencesSchema,
   previewWebUrl,
 } from "@orc/core/desktop-preview";
-import { app, type BrowserWindow, ipcMain, shell } from "electron";
+import { app, type BrowserWindow, ipcMain, session, shell } from "electron";
 import { z } from "zod";
 import { PreviewBrowser } from "./preview-browser.js";
 import { PreviewLocalFiles } from "./preview-files.js";
-import { PreviewPreferencesStore } from "./preview-preferences.js";
+import { PreviewImport } from "./preview-import.js";
+import { PreviewChatPreferencesStore, PreviewPreferencesStore } from "./preview-preferences.js";
+import { PreviewProfiles } from "./preview-profiles.js";
 
 const sessionId = z.string().min(1).max(200);
 const commandSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("import_cancel") }).strict(),
+  z
+    .object({ action: z.literal("import_discover"), port: z.number().int().min(1024).max(65535) })
+    .strict(),
+  z
+    .object({
+      action: z.literal("import_transfer"),
+      source_id: z.string().uuid(),
+      profile_id: z.string().uuid(),
+      sites: z.array(z.string().url().max(8192)).min(1).max(50),
+    })
+    .strict(),
+  z.object({ action: z.literal("profiles") }).strict(),
+  z
+    .object({ action: z.literal("profile_create"), name: z.string().trim().min(1).max(80) })
+    .strict(),
+  z
+    .object({
+      action: z.literal("profile_select"),
+      session_id: sessionId,
+      profile_id: z.string().uuid().nullable().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("tab"),
+      session_id: sessionId,
+      command: z
+        .object({ action: z.enum(["tab_select", "tab_close"]), tab_id: z.string().uuid() })
+        .strict(),
+    })
+    .strict(),
   z.object({ action: z.literal("dirty"), value: z.boolean() }).strict(),
   z.object({ action: z.literal("preferences") }).strict(),
   z
     .object({ action: z.literal("set_preferences"), preferences: PreviewPreferencesSchema })
     .strict(),
   z
-    .object({ action: z.literal("open"), session_id: sessionId, url: z.string().max(8192) })
+    .object({
+      action: z.literal("open"),
+      session_id: sessionId,
+      url: z.string().max(8192),
+      new_tab: z.boolean().optional(),
+    })
     .strict(),
   z
     .object({
@@ -42,7 +82,19 @@ const commandSchema = z.discriminatedUnion("action", [
     .strict(),
   z.object({ action: z.literal("allow"), session_id: sessionId, enabled: z.boolean() }).strict(),
   z
-    .object({ action: z.literal("control"), session_id: sessionId, command: BrowserActionSchema })
+    .object({
+      action: z.literal("chat_permission"),
+      session_id: sessionId,
+      enabled: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("control"),
+      session_id: sessionId,
+      command: BrowserActionSchema,
+      tab_id: z.string().uuid().optional(),
+    })
     .strict(),
   z.object({ action: z.literal("pick") }).strict(),
   z.object({ action: z.literal("read_local"), token: z.string().uuid() }).strict(),
@@ -71,19 +123,46 @@ let active: {
   browser: PreviewBrowser;
   files: PreviewLocalFiles;
   preferences: PreviewPreferencesStore;
+  chatPreferences: PreviewChatPreferencesStore;
+  profiles: PreviewProfiles;
+  importer: PreviewImport;
   dirty: boolean;
 } | null = null;
 let installed = false;
 
 export function attachDesktopPreview(window: BrowserWindow, origin: string): void {
-  const browser = new PreviewBrowser(window, (state) => {
-    if (!window.isDestroyed()) window.webContents.send(PREVIEW_EVENT, state);
-  });
+  const profiles = new PreviewProfiles(
+    join(app.getPath("userData"), "browser-profiles.json"),
+    origin,
+  );
+  const browser = new PreviewBrowser(
+    window,
+    (state) => {
+      if (!window.isDestroyed()) window.webContents.send(PREVIEW_EVENT, state);
+    },
+    (id) => {
+      const profileId = profiles.selected(id);
+      return { id: profileId, partition: profileId ? profiles.partition(profileId) : null };
+    },
+  );
   const files = new PreviewLocalFiles(window);
   const preferences = new PreviewPreferencesStore(
     join(app.getPath("userData"), "browser-preferences.json"),
   );
-  active = { window, origin, browser, files, preferences, dirty: false };
+  const chatPreferences = new PreviewChatPreferencesStore(
+    join(app.getPath("userData"), "browser-chat-permissions.json"),
+  );
+  active = {
+    window,
+    origin,
+    browser,
+    files,
+    preferences,
+    chatPreferences,
+    profiles,
+    importer: new PreviewImport(origin),
+    dirty: false,
+  };
   // A damaged preference file must not enable control silently.
   try {
     browser.setAgentAccess(preferences.get().agentBrowserControl);
@@ -92,12 +171,14 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
   }
   window.webContents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => {
     if (mainFrame && !inPlace) {
+      active?.importer.cancel();
       browser.dispose();
       files.clear();
       if (active?.window === window) active.dirty = false;
     }
   });
   window.on("closed", () => {
+    active?.importer.cancel();
     browser.dispose();
     if (active?.window === window) active = null;
   });
@@ -115,6 +196,33 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
       throw new Error("Desktop preview access denied");
     const input = commandSchema.parse(payload);
     switch (input.action) {
+      case "import_cancel":
+        host.importer.cancel();
+        return;
+      case "import_discover":
+        return host.importer.discover(input.port);
+      case "import_transfer":
+        return host.importer.transfer(
+          input.source_id,
+          input.sites,
+          session.fromPartition(host.profiles.partition(input.profile_id)),
+        );
+      case "profiles":
+        return host.profiles.list();
+      case "profile_create": {
+        const profile = host.profiles.create(input.name);
+        host.window.webContents.send(PREVIEW_PROFILES_EVENT, host.profiles.list());
+        return profile;
+      }
+      case "profile_select": {
+        if (input.profile_id !== undefined) {
+          host.profiles.select(input.session_id, input.profile_id);
+          host.browser.closeSession(input.session_id);
+        }
+        return host.profiles.selected(input.session_id);
+      }
+      case "tab":
+        return host.browser.tab(input.session_id, input.command);
       case "dirty":
         host.dirty = input.value;
         return;
@@ -127,15 +235,24 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
         return settings;
       }
       case "open":
-        return host.browser.open(input.session_id, input.url);
+        return host.browser.open(input.session_id, input.url, input.new_tab);
       case "navigation":
         return host.browser.navigation(input.session_id, input.direction);
       case "bounds":
         return host.browser.bounds(input.session_id, input.bounds, input.restore_url);
       case "allow":
-        return host.browser.allow(input.session_id, input.enabled);
+        return host.browser.allow(
+          input.session_id,
+          input.enabled && host.chatPreferences.get(host.origin, input.session_id),
+        );
+      case "chat_permission": {
+        if (input.enabled === undefined)
+          return host.chatPreferences.get(host.origin, input.session_id);
+        host.browser.allow(input.session_id, false);
+        return host.chatPreferences.set(host.origin, input.session_id, input.enabled);
+      }
       case "control":
-        return host.browser.control(input.session_id, input.command);
+        return host.browser.control(input.session_id, input.command, input.tab_id);
       case "pick":
         return host.files.pick();
       case "read_local":

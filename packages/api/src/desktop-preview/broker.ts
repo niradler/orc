@@ -8,6 +8,7 @@ interface Client {
   lease: string;
   seen: number;
   agentAccess: boolean;
+  browserReady: boolean;
 }
 const CLIENT_TTL = 45_000;
 const REQUEST_TTL = 120_000;
@@ -16,10 +17,20 @@ const REQUEST_TTL = 120_000;
 export class PreviewBroker {
   private readonly clients = new Map<string, Client>();
   private readonly requests = new Map<string, PreviewRequest>();
+  private failPending(clientId: string, reason: string): void {
+    for (const request of this.requests.values())
+      if (request.client_id === clientId && request.status === "queued") {
+        request.status = "failed";
+        request.error = reason;
+      }
+  }
   constructor(private readonly now: () => number = Date.now) {}
   private prune(): void {
     for (const [id, client] of this.clients)
-      if (this.now() - client.seen > CLIENT_TTL) this.clients.delete(id);
+      if (this.now() - client.seen > CLIENT_TTL) {
+        this.failPending(id, "Desktop disconnected or its lease expired");
+        this.clients.delete(id);
+      }
     for (const [id, request] of this.requests) {
       if (request.expires_at < this.now()) request.status = "expired";
       if (request.expires_at + REQUEST_TTL < this.now()) this.requests.delete(id);
@@ -30,6 +41,7 @@ export class PreviewBroker {
     session: string | null,
     lease?: string,
     agentAccess = false,
+    browserReady = false,
   ): { client_id: string; lease: string } {
     this.prune();
     const current = this.clients.get(id);
@@ -37,6 +49,8 @@ export class PreviewBroker {
     if (!current && this.clients.size >= 16)
       throw new ConflictError("Too many desktop clients. Close an unused desktop and retry.");
     const token = current?.lease ?? randomBytes(32).toString("hex");
+    if (current && current.session !== session)
+      this.failPending(id, "Desktop switched to another session");
     if (current?.agentAccess && !agentAccess)
       for (const request of this.requests.values()) {
         if (request.client_id === id && request.kind === "browser" && request.status === "queued") {
@@ -44,7 +58,14 @@ export class PreviewBroker {
           request.error = "Browser control was revoked";
         }
       }
-    this.clients.set(id, { id, session, lease: token, seen: this.now(), agentAccess });
+    this.clients.set(id, {
+      id,
+      session,
+      lease: token,
+      seen: this.now(),
+      agentAccess,
+      browserReady,
+    });
     return { client_id: id, lease: token };
   }
   private authenticate(id: string, lease?: string): Client {
@@ -135,14 +156,19 @@ export class PreviewBroker {
     if (!request) throw new NotFoundError("Preview request", id);
     return { ...request };
   }
-  list(session: string): { client_id: string; agent_access: boolean }[] {
+  list(session: string): { client_id: string; agent_access: boolean; browser_ready: boolean }[] {
     this.prune();
     return [...this.clients.values()]
       .filter((client) => client.session === session)
-      .map((client) => ({ client_id: client.id, agent_access: client.agentAccess }));
+      .map((client) => ({
+        client_id: client.id,
+        agent_access: client.agentAccess,
+        browser_ready: client.browserReady,
+      }));
   }
   close(id: string, lease: string | undefined): void {
     this.authenticate(id, lease);
+    this.failPending(id, "Desktop disconnected");
     this.clients.delete(id);
   }
 }

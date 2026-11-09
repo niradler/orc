@@ -30,7 +30,9 @@ describe("targeted desktop delivery", () => {
       });
       broker.acknowledge(client, lease, request.id, "opened", null);
     }
-    expect(broker.list("session")).toEqual([{ client_id: client, agent_access: false }]);
+    expect(broker.list("session")).toEqual([
+      { client_id: client, agent_access: false, browser_ready: false },
+    ]);
     expect(() => broker.close(client, "wrong")).toThrow();
     broker.close(client, lease);
     expect(broker.list("session")).toHaveLength(0);

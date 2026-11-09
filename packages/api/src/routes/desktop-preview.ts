@@ -33,6 +33,7 @@ const requestResult = z.object({
   expires_at: z.number(),
   result: z.unknown().optional(),
   command: BrowserActionSchema.optional(),
+  tab_id: z.string().uuid().optional(),
 });
 const fileResult = z.object({
   kind: z.enum(["text", "image"]),
@@ -55,7 +56,13 @@ app.openapi(
     responses: {
       200: json(
         z.object({
-          clients: z.array(z.object({ client_id: z.string(), agent_access: z.boolean() })),
+          clients: z.array(
+            z.object({
+              client_id: z.string(),
+              agent_access: z.boolean(),
+              browser_ready: z.boolean(),
+            }),
+          ),
         }),
       ),
     },
@@ -124,6 +131,7 @@ app.openapi(
         session,
         c.req.header("X-Preview-Lease"),
         input.agent_access,
+        input.browser_ready,
       ),
     );
   },

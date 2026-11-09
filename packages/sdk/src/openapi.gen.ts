@@ -2105,6 +2105,7 @@ export interface paths {
                             clients: {
                                 client_id: string;
                                 agent_access: boolean;
+                                browser_ready: boolean;
                             }[];
                         };
                     };
@@ -2128,6 +2129,8 @@ export interface paths {
                         session_id: string | null;
                         /** @default false */
                         agent_access?: boolean;
+                        /** @default false */
+                        browser_ready?: boolean;
                     };
                 };
             };
@@ -2271,7 +2274,39 @@ export interface paths {
                                 result?: unknown;
                                 command?: {
                                     /** @enum {string} */
+                                    action: "tabs";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "tab_select";
+                                    /** Format: uuid */
+                                    tab_id: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "tab_close";
+                                    /** Format: uuid */
+                                    tab_id: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "new_tab";
+                                    url: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "navigate";
+                                    url: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "back";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "forward";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "reload";
+                                } | {
+                                    /** @enum {string} */
                                     action: "snapshot";
+                                    selector?: string;
+                                    max_chars?: number;
                                 } | {
                                     /** @enum {string} */
                                     action: "screenshot";
@@ -2279,6 +2314,39 @@ export interface paths {
                                     /** @enum {string} */
                                     action: "click";
                                     selector: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "hover";
+                                    selector: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "select";
+                                    selector: string;
+                                    values: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    action: "drag";
+                                    selector: string;
+                                    target: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "wait";
+                                    selector?: string;
+                                    text?: string;
+                                    url_includes?: string;
+                                    /**
+                                     * @default visible
+                                     * @enum {string}
+                                     */
+                                    state: "visible" | "hidden" | "attached" | "detached";
+                                    /** @default 5000 */
+                                    timeout_ms: number;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "evaluate";
+                                    expression: string;
+                                    /** @default 5000 */
+                                    timeout_ms: number;
                                 } | {
                                     /** @enum {string} */
                                     action: "type";
@@ -2296,6 +2364,8 @@ export interface paths {
                                     x: number;
                                     y: number;
                                 };
+                                /** Format: uuid */
+                                tab_id?: string;
                             }[];
                         };
                     };
@@ -2360,7 +2430,39 @@ export interface paths {
                             result?: unknown;
                             command?: {
                                 /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
                                 action: "snapshot";
+                                selector?: string;
+                                max_chars?: number;
                             } | {
                                 /** @enum {string} */
                                 action: "screenshot";
@@ -2368,6 +2470,39 @@ export interface paths {
                                 /** @enum {string} */
                                 action: "click";
                                 selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string;
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string;
+                                target: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string;
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
                             } | {
                                 /** @enum {string} */
                                 action: "type";
@@ -2385,6 +2520,8 @@ export interface paths {
                                 x: number;
                                 y: number;
                             };
+                            /** Format: uuid */
+                            tab_id?: string;
                         };
                     };
                 };
@@ -2421,7 +2558,39 @@ export interface paths {
                         client_id?: string;
                         command: {
                             /** @enum {string} */
+                            action: "tabs";
+                        } | {
+                            /** @enum {string} */
+                            action: "tab_select";
+                            /** Format: uuid */
+                            tab_id: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "tab_close";
+                            /** Format: uuid */
+                            tab_id: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "new_tab";
+                            url: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "navigate";
+                            url: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "back";
+                        } | {
+                            /** @enum {string} */
+                            action: "forward";
+                        } | {
+                            /** @enum {string} */
+                            action: "reload";
+                        } | {
+                            /** @enum {string} */
                             action: "snapshot";
+                            selector?: string;
+                            max_chars?: number;
                         } | {
                             /** @enum {string} */
                             action: "screenshot";
@@ -2429,6 +2598,39 @@ export interface paths {
                             /** @enum {string} */
                             action: "click";
                             selector: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "hover";
+                            selector: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "select";
+                            selector: string;
+                            values: string[];
+                        } | {
+                            /** @enum {string} */
+                            action: "drag";
+                            selector: string;
+                            target: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "wait";
+                            selector?: string;
+                            text?: string;
+                            url_includes?: string;
+                            /**
+                             * @default visible
+                             * @enum {string}
+                             */
+                            state?: "visible" | "hidden" | "attached" | "detached";
+                            /** @default 5000 */
+                            timeout_ms?: number;
+                        } | {
+                            /** @enum {string} */
+                            action: "evaluate";
+                            expression: string;
+                            /** @default 5000 */
+                            timeout_ms?: number;
                         } | {
                             /** @enum {string} */
                             action: "type";
@@ -2446,6 +2648,8 @@ export interface paths {
                             x?: number;
                             y: number;
                         };
+                        /** Format: uuid */
+                        tab_id?: string;
                     };
                 };
             };
@@ -2470,7 +2674,39 @@ export interface paths {
                             result?: unknown;
                             command?: {
                                 /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
                                 action: "snapshot";
+                                selector?: string;
+                                max_chars?: number;
                             } | {
                                 /** @enum {string} */
                                 action: "screenshot";
@@ -2478,6 +2714,39 @@ export interface paths {
                                 /** @enum {string} */
                                 action: "click";
                                 selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string;
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string;
+                                target: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string;
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
                             } | {
                                 /** @enum {string} */
                                 action: "type";
@@ -2495,6 +2764,8 @@ export interface paths {
                                 x: number;
                                 y: number;
                             };
+                            /** Format: uuid */
+                            tab_id?: string;
                         };
                     };
                 };
@@ -2545,7 +2816,39 @@ export interface paths {
                             result?: unknown;
                             command?: {
                                 /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
                                 action: "snapshot";
+                                selector?: string;
+                                max_chars?: number;
                             } | {
                                 /** @enum {string} */
                                 action: "screenshot";
@@ -2553,6 +2856,39 @@ export interface paths {
                                 /** @enum {string} */
                                 action: "click";
                                 selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string;
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string;
+                                target: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string;
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
                             } | {
                                 /** @enum {string} */
                                 action: "type";
@@ -2570,6 +2906,8 @@ export interface paths {
                                 x: number;
                                 y: number;
                             };
+                            /** Format: uuid */
+                            tab_id?: string;
                         };
                     };
                 };
@@ -2636,7 +2974,39 @@ export interface paths {
                             result?: unknown;
                             command?: {
                                 /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
                                 action: "snapshot";
+                                selector?: string;
+                                max_chars?: number;
                             } | {
                                 /** @enum {string} */
                                 action: "screenshot";
@@ -2644,6 +3014,39 @@ export interface paths {
                                 /** @enum {string} */
                                 action: "click";
                                 selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string;
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string;
+                                target: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string;
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
                             } | {
                                 /** @enum {string} */
                                 action: "type";
@@ -2661,6 +3064,8 @@ export interface paths {
                                 x: number;
                                 y: number;
                             };
+                            /** Format: uuid */
+                            tab_id?: string;
                         };
                     };
                 };

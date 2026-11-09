@@ -171,6 +171,7 @@ export function SourceEditor({
       selection: { anchor },
       effects: EditorView.scrollIntoView(anchor, { y: "center" }),
     });
+    editor.focus();
   }, [line]);
 
   useEffect(() => {

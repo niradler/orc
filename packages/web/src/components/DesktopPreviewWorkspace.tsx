@@ -1,6 +1,7 @@
 import {
   type PreviewBrowserState,
   type PreviewFile,
+  type PreviewProfile,
   type PreviewRequest,
   previewLink,
 } from "@orc/core/desktop-preview";
@@ -56,7 +57,6 @@ type Model = {
   active: string;
   files: FileTab[];
   browser: PreviewBrowserState | null;
-  agentAccess: boolean;
   error: string | null;
   loading: boolean;
 };
@@ -65,7 +65,6 @@ const initialModel = (): Model => ({
   active: "browser",
   files: [],
   browser: null,
-  agentAccess: true,
   error: null,
   loading: false,
 });
@@ -86,16 +85,29 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const chat = useChat();
   const preferences = usePreviewPreferences();
   const [params] = useSearchParams();
-  const rawSession = chat.thread?.id ?? params.get(SESSION_LIVE_PARAM);
+  const chatShown = ["open", "full"].includes(params.get("chat") ?? "");
+  const rawSession =
+    params.get(SESSION_LIVE_PARAM) ?? (chatShown ? (chat.thread?.id ?? null) : null);
   const key = chat.activeKey;
   const [resolved, setResolved] = useState<{ input: string; id: string } | null>(null);
   const session = resolved?.input === rawSession ? resolved.id : rawSession;
-  const nativeId = session ?? key;
   const [models, setModels] = useState<Record<string, Model>>({});
   const storedModel = models[key] ?? initialModel();
+  const nativeId = session ?? storedModel.browser?.session_id ?? key;
+  const [chatPermission, setChatPermission] = useState<{
+    id: string;
+    enabled: boolean;
+    saving?: boolean;
+  } | null>(null);
+  const permissionSequence = useRef(0);
   const model = {
     ...storedModel,
-    agentAccess: storedModel.agentAccess && preferences.settings?.agentBrowserControl === true,
+    agentAccess:
+      !!session &&
+      chatPermission?.id === nativeId &&
+      chatPermission.enabled &&
+      !chatPermission.saving &&
+      preferences.settings?.agentBrowserControl === true,
   };
   const current = useRef({ key, session, nativeId, model });
   current.current = { key, session, nativeId, model };
@@ -123,6 +135,87 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const panel = useRef<HTMLElement>(null),
     surface = useRef<HTMLDivElement>(null);
   const openSequence = useRef(0);
+  const [profiles, setProfiles] = useState<PreviewProfile[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<{
+    session: string;
+    id: string | null;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([bridge?.profiles(), bridge?.selectProfile(nativeId)])
+      .then(([list, id]) => {
+        if (active) {
+          setProfiles(list ?? []);
+          setSelectedProfile({ session: nativeId, id: id ?? null });
+        }
+      })
+      .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+    return () => {
+      active = false;
+    };
+  }, [bridge, nativeId, key, edit]);
+  useEffect(() => bridge?.onProfiles(setProfiles), [bridge]);
+
+  async function changeProfile(id: string | null): Promise<void> {
+    if (
+      model.browser &&
+      !window.confirm(
+        "Switch browser profile? This closes this chat's browser tabs. File drafts stay open. Choosing a saved profile shares its logins with other chats using that profile.",
+      )
+    )
+      return;
+    try {
+      const selected = await bridge?.selectProfile(nativeId, id);
+      setSelectedProfile({ session: nativeId, id: selected ?? null });
+      edit(key, (old) => ({ ...old, browser: null }));
+    } catch (cause) {
+      edit(key, (old) => ({ ...old, error: error(cause) }));
+    }
+  }
+
+  async function changeTab(action: "tab_select" | "tab_close", tabId: string): Promise<void> {
+    try {
+      const browser = await bridge?.tab(nativeId, { action, tab_id: tabId });
+      edit(key, (old) => ({ ...old, browser: browser ?? null }));
+    } catch (cause) {
+      edit(key, (old) => ({ ...old, error: error(cause) }));
+    }
+  }
+
+  useEffect(() => {
+    const sequence = ++permissionSequence.current;
+    setChatPermission(null);
+    void bridge
+      ?.chatPermission(nativeId)
+      .then((enabled) => {
+        if (permissionSequence.current === sequence) setChatPermission({ id: nativeId, enabled });
+      })
+      .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+    return () => {
+      permissionSequence.current++;
+    };
+  }, [bridge, nativeId, key, edit]);
+
+  const saveChatPermission = useCallback(
+    (enabled: boolean) => {
+      if (!bridge) return;
+      const active = current.current;
+      const sequence = ++permissionSequence.current;
+      setChatPermission({ id: active.nativeId, enabled, saving: true });
+      void bridge
+        .chatPermission(active.nativeId, enabled)
+        .then((saved) => {
+          if (permissionSequence.current === sequence)
+            setChatPermission({ id: active.nativeId, enabled: saved });
+        })
+        .catch((cause) => {
+          if (permissionSequence.current === sequence)
+            setChatPermission({ id: active.nativeId, enabled: false });
+          edit(active.key, (old) => ({ ...old, error: error(cause) }));
+        });
+    },
+    [bridge, edit],
+  );
 
   useEffect(() => {
     if (!rawSession) {
@@ -275,16 +368,29 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const context = useMemo<DesktopPreviewContextValue>(
     () => ({
       browserControl: {
-        enabled: model.agentAccess,
-        available: preferences.settings?.agentBrowserControl === true,
-        setEnabled: (enabled: boolean) =>
-          edit(current.current.key, (old) => ({ ...old, agentAccess: enabled })),
+        enabled:
+          chatPermission?.id === nativeId &&
+          chatPermission.enabled &&
+          preferences.settings?.agentBrowserControl === true,
+        available:
+          chatPermission?.id === nativeId &&
+          !chatPermission.saving &&
+          preferences.settings?.agentBrowserControl === true,
+        setEnabled: saveChatPermission,
       },
       openLink,
       openFile,
       toggle: () => edit(current.current.key, (old) => ({ ...old, visible: !old.visible })),
     }),
-    [openLink, openFile, edit, model.agentAccess, preferences.settings?.agentBrowserControl],
+    [
+      openLink,
+      openFile,
+      edit,
+      preferences.settings?.agentBrowserControl,
+      chatPermission,
+      nativeId,
+      saveChatPermission,
+    ],
   );
   useEffect(
     () =>
@@ -299,11 +405,13 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   );
   useEffect(() => {
     if (!bridge) return;
-    void bridge.allow(nativeId, model.agentAccess);
+    void bridge
+      .allow(nativeId, model.agentAccess)
+      .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
     return () => {
       void bridge.allow(nativeId, false);
     };
-  }, [bridge, nativeId, model.agentAccess]);
+  }, [bridge, nativeId, model.agentAccess, edit, key]);
 
   const browserVisible = model.visible && model.active === "browser" && !moving;
   useLayoutEffect(() => {
@@ -380,7 +488,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
         assertSelected();
         if (!current.current.model.agentAccess)
           throw new Error("Agent browser control was disabled");
-        result = await bridge.control(request.session_id, request.command);
+        result = await bridge.control(request.session_id, request.command, request.tab_id);
       }
       assertSelected();
       return { status: request.kind === "browser" ? "completed" : "opened", error: null, result };
@@ -391,6 +499,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     resolved?.input === rawSession ? resolved.id : null,
     key,
     model.agentAccess,
+    model.browser !== null,
     executeRequest,
   );
 
@@ -658,6 +767,61 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
             )}
             {model.active === "browser" ? (
               <>
+                <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+                  <select
+                    aria-label="Browser profile"
+                    data-testid="preview-browser-profile"
+                    className="min-w-0 max-w-40 rounded border border-input bg-background h-8 text-xs"
+                    disabled={selectedProfile?.session !== nativeId}
+                    value={selectedProfile?.session === nativeId ? (selectedProfile.id ?? "") : ""}
+                    onChange={(event) => void changeProfile(event.target.value || null)}
+                  >
+                    <option value="">Temporary · this chat</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                  <nav className="flex min-w-0 flex-1 overflow-x-auto" aria-label="Browser tabs">
+                    {model.browser?.tabs?.map((tab, index) => (
+                      <div key={tab.tab_id} className="flex shrink-0 items-center">
+                        <button
+                          type="button"
+                          className={button}
+                          title={tab.url}
+                          aria-pressed={tab.tab_id === model.browser?.tab_id}
+                          data-testid="preview-browser-tab"
+                          onClick={() => void changeTab("tab_select", tab.tab_id)}
+                        >
+                          {index + 1} · {new URL(tab.url).hostname}
+                        </button>
+                        <button
+                          type="button"
+                          className={button}
+                          aria-label={`Close browser tab ${index + 1}`}
+                          onClick={() => void changeTab("tab_close", tab.tab_id)}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </nav>
+                  <button
+                    type="button"
+                    className={button}
+                    aria-label="New browser tab"
+                    data-testid="preview-browser-new-tab"
+                    onClick={() =>
+                      void bridge
+                        ?.open(nativeId, model.browser?.url ?? "https://example.com", true)
+                        .then((browser) => edit(key, (old) => ({ ...old, browser })))
+                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
+                    }
+                  >
+                    +
+                  </button>
+                </div>
                 <form
                   className="flex shrink-0 items-center gap-1 border-b border-border p-2"
                   onSubmit={(event) => {

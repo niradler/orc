@@ -103,7 +103,12 @@ Verify a matching desktop/session and enabled browser control first; a connected
 web client or listed tool alone does not supply that capability. Open the actual
 URL, exercise the changed flow and inspect its result. A queued open is not
 validation, a guest screenshot cannot prove the ORC shell/file editor, and these
-bounded tools do not replace full browser automation for unsupported operations.
+tools support scoped tabs, compact refs, condition waits and guest-only JavaScript
+evaluation; use their current schemas. After compaction, rediscover capabilities,
+list tabs and take a fresh scoped snapshot instead of replaying stale refs or
+loading large page dumps into context. Browser automation cannot validate the ORC
+renderer/file editor itself. These tools do not replace another authorized
+interface for unsupported operations.
 Use another available authorized interface or disclose the missing evidence.
 
 Before delivery check the changed boundaries for missing auth, unvalidated input,

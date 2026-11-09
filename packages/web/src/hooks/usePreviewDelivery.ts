@@ -1,5 +1,5 @@
 import type { PreviewRequest } from "@orc/core/desktop-preview";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiFetch } from "@/api/client";
 import { type PreviewCompletion, PreviewExecutionLedger } from "@/lib/preview-delivery";
 
@@ -7,17 +7,32 @@ export function usePreviewDelivery(
   session: string | null,
   scopeKey: string,
   agentAccess: boolean,
+  browserReady: boolean,
   execute: (request: PreviewRequest) => Promise<PreviewCompletion>,
 ): string | null {
   const client = useRef(crypto.randomUUID()),
     lease = useRef<string | undefined>(undefined);
   const ledger = useRef(new PreviewExecutionLedger());
   const registrationQueue = useRef(Promise.resolve());
-  const latestAccess = useRef(agentAccess);
-  latestAccess.current = agentAccess;
   const latestScope = useRef(scopeKey);
   latestScope.current = scopeKey;
   const [error, setError] = useState<string | null>(null);
+  const release = useCallback((): void => {
+    registrationQueue.current = registrationQueue.current
+      .then(async () => {
+        const token = lease.current;
+        if (!token) return;
+        await apiFetch(`/desktop-preview/clients/${client.current}/close`, {
+          method: "POST",
+          headers: { "X-Preview-Lease": token },
+          keepalive: true,
+        });
+        if (lease.current === token) lease.current = undefined;
+      })
+      .catch(() =>
+        setError("Desktop preview disconnect could not be confirmed; its lease will expire."),
+      );
+  }, []);
   useEffect(() => {
     const close = () => {
       if (lease.current)
@@ -28,10 +43,16 @@ export function usePreviewDelivery(
         });
     };
     window.addEventListener("pagehide", close);
-    return () => window.removeEventListener("pagehide", close);
-  }, []);
+    return () => {
+      window.removeEventListener("pagehide", close);
+      release();
+    };
+  }, [release]);
   useEffect(() => {
-    if (!session) return;
+    if (!session) {
+      release();
+      return;
+    }
     let stopped = false,
       timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
@@ -42,8 +63,9 @@ export function usePreviewDelivery(
           const clientLease = await api.preview.register(
             client.current,
             session,
-            latestAccess.current,
+            agentAccess,
             lease.current,
+            browserReady,
           );
           lease.current = clientLease.lease;
           activeLease = clientLease.lease;
@@ -80,6 +102,6 @@ export function usePreviewDelivery(
       stopped = true;
       clearTimeout(timer);
     };
-  }, [session, scopeKey, execute]);
+  }, [session, scopeKey, execute, agentAccess, browserReady, release]);
   return error;
 }

@@ -2,7 +2,10 @@ import type {
   BrowserAction,
   PreviewBrowserState,
   PreviewFile,
+  PreviewImportResult,
+  PreviewImportSource,
   PreviewPreferences,
+  PreviewProfile,
 } from "@orc/core/desktop-preview";
 import type { NotificationLevel } from "./agent-notifications";
 
@@ -51,11 +54,22 @@ export interface DesktopUpdates {
 /** Exposed by the Electron preload; absent in a plain browser. */
 export interface OrcDesktopBridge {
   preview?: {
+    cancelImport(): Promise<void>;
+    onProfiles(listener: (profiles: PreviewProfile[]) => void): () => void;
+    discoverImport(port: number): Promise<PreviewImportSource>;
+    transferImport(
+      source_id: string,
+      profile_id: string,
+      sites: string[],
+    ): Promise<PreviewImportResult>;
+    profiles(): Promise<PreviewProfile[]>;
+    createProfile(name: string): Promise<PreviewProfile>;
+    selectProfile(session_id: string, profile_id?: string | null): Promise<string | null>;
     dirty(value: boolean): Promise<void>;
     preferences(): Promise<PreviewPreferences>;
     setPreferences(preferences: PreviewPreferences): Promise<PreviewPreferences>;
     onPreferences(listener: (preferences: PreviewPreferences) => void): () => void;
-    open(session_id: string, url: string): Promise<PreviewBrowserState>;
+    open(session_id: string, url: string, new_tab?: boolean): Promise<PreviewBrowserState>;
     navigate(session_id: string, direction: "back" | "forward" | "reload"): Promise<void>;
     bounds(
       session_id: string | null,
@@ -63,7 +77,12 @@ export interface OrcDesktopBridge {
       restore_url?: string,
     ): Promise<void>;
     allow(session_id: string, enabled: boolean): Promise<void>;
-    control(session_id: string, command: BrowserAction): Promise<unknown>;
+    chatPermission(session_id: string, enabled?: boolean): Promise<boolean>;
+    control(session_id: string, command: BrowserAction, tab_id?: string): Promise<unknown>;
+    tab(
+      session_id: string,
+      command: { action: "tab_select" | "tab_close"; tab_id: string },
+    ): Promise<PreviewBrowserState | null>;
     pick(): Promise<PreviewFile | null>;
     read(token: string): Promise<PreviewFile>;
     release(token: string): Promise<void>;

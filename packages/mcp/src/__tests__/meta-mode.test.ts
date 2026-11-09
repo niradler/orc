@@ -82,14 +82,17 @@ describe("meta mode", () => {
     expect(searchTools(toolDefinitions, "zzz qqq", 5)).toEqual([]);
   });
 
-  test("tool_search with an empty query returns every tool grouped by toolset", async () => {
+  test("tool_search with an empty query returns available tools and hides unbound preview capabilities", async () => {
     const client = await connect("meta");
     for (const args of [{}, { query: "  " }, { query: "the a" }]) {
       const text = textOf(await client.callTool({ name: "tool_search", arguments: args }));
-      expect(text).toStartWith(`${toolDefinitions.length} tools by toolset:`);
+      const available = toolDefinitions.filter((tool) => !tool.name.startsWith("preview_"));
+      expect(text).toStartWith(`${available.length} tools by toolset:`);
       expect(text).toMatch(/^memory \(\d+\): .*memory_list/m);
       expect(text).toMatch(/^core \(\d+\): .*\bcontext\b/m);
-      for (const tool of toolDefinitions) expect(text).toContain(tool.name);
+      for (const tool of available) expect(text).toContain(tool.name);
+      for (const tool of toolDefinitions.filter((tool) => tool.name.startsWith("preview_")))
+        expect(text).not.toContain(tool.name);
     }
   });
 

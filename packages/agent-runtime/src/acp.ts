@@ -243,6 +243,7 @@ export class AcpSession implements AgentSession {
             false,
             this.opts.orcMcpMode,
             this.opts.orcMcpProject,
+            this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
           )
         : null;
       if (server && !this.capabilities.mcp)

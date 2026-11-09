@@ -82,7 +82,7 @@ import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orcApi, orcApiBase } from "./api-client.js";
 import { executeKbTool, isKbTool, kbSearchLines, kbToolDefinitions } from "./kb-tools.js";
-import { executePreviewTool, previewToolDefinitions } from "./preview-tools.js";
+import { executePreviewTool, type PreviewScope, previewToolDefinitions } from "./preview-tools.js";
 import type { McpProject } from "./project-scope.js";
 
 const logger = createLogger("mcp:tools");
@@ -1040,6 +1040,7 @@ export const toolDefinitions = [
 export type ToolName = (typeof toolDefinitions)[number]["name"];
 
 export type ToolOptions = {
+  previewScope?: PreviewScope;
   projectScopes?: readonly McpProject[];
   publicApiBaseUrl?: string;
   skillDownload?: (name: string, ref: string, projectId: string | null) => SkillDownload;
@@ -1217,6 +1218,7 @@ export async function executeTool(
       name,
       args,
       options.projectScopes?.map((project) => project.id),
+      options.previewScope,
     );
   if (name.startsWith("channel_")) {
     const schema =

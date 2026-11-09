@@ -21,6 +21,15 @@ export type ToolResult = {
 };
 
 const searchInput = z.object({
+  session_id: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      "Intended preview session for capability-aware discovery; cannot override a connection binding",
+    ),
+  client_id: z.string().uuid().optional(),
   query: z
     .string()
     .optional()
@@ -29,7 +38,11 @@ const searchInput = z.object({
     ),
   limit: z.number().int().min(1).max(50).default(10).describe("Max results for a query search"),
 });
-const describeInput = z.object({ name: z.string().min(1) });
+const describeInput = z.object({
+  name: z.string().min(1),
+  session_id: z.string().min(1).max(200).optional(),
+  client_id: z.string().uuid().optional(),
+});
 const invokeInput = z.object({
   name: z.string().min(1),
   arguments: z.record(z.string(), z.unknown()).optional(),

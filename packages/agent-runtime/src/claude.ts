@@ -135,6 +135,7 @@ export class ClaudeSession implements AgentSession {
   private readonly useOrcMcp: boolean;
   private readonly orcMcpProject: string | undefined;
   private readonly orcMcpMode: SessionOpts["orcMcpMode"];
+  private readonly previewSession: string | undefined;
   private readonly host: ExecHost;
 
   constructor(opts: SessionOpts, claudePath: string, host: ExecHost) {
@@ -148,6 +149,7 @@ export class ClaudeSession implements AgentSession {
     this.useOrcMcp = opts.orcMcp ?? false;
     this.orcMcpProject = opts.orcMcpProject;
     this.orcMcpMode = opts.orcMcpMode;
+    this.previewSession = opts.orcPreviewSessionId ?? opts.attentionContext?.chatThreadId;
   }
 
   private mcpConfig: OrcMcpConfigFile | null = null;
@@ -160,7 +162,14 @@ export class ClaudeSession implements AgentSession {
   private async spawn(extraArgs: string[] = [], printPrompt?: string | undefined): Promise<void> {
     this.releaseMcpConfig();
     if (this.toolAllowlist !== undefined || this.useOrcMcp)
-      this.mcpConfig = await writeOrcMcpConfigFile(this.host, this.orcMcpProject, this.orcMcpMode);
+      this.mcpConfig = await writeOrcMcpConfigFile(
+        this.host,
+        this.orcMcpProject,
+        this.orcMcpMode,
+        "claude",
+        undefined,
+        this.previewSession,
+      );
     const args = [
       this.claudePath,
       "-p",

@@ -1325,6 +1325,7 @@ async function beginTurn(
           model: thread.config.model || undefined,
           systemPromptAppend: chatSystemPrompt(thread.config.system, { webchat: true }),
           orcMcp: thread.config.mcp === "orc",
+          orcPreviewSessionId: thread.id,
           orcMcpMode: loadConfig().mcp.default_mode,
           mcpAlwaysLoad: true,
           acpxAgent: thread.config.agent,

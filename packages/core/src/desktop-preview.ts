@@ -40,9 +40,58 @@ export const PreviewOpenSchema = z
   });
 export type PreviewOpen = z.infer<typeof PreviewOpenSchema>;
 export const BrowserActionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("snapshot") }).strict(),
+  z.object({ action: z.literal("tabs") }).strict(),
+  z.object({ action: z.literal("tab_select"), tab_id: z.string().uuid() }).strict(),
+  z.object({ action: z.literal("tab_close"), tab_id: z.string().uuid() }).strict(),
+  z.object({ action: z.literal("new_tab"), url: z.string().min(1).max(8192) }).strict(),
+  z.object({ action: z.literal("navigate"), url: z.string().min(1).max(8192) }).strict(),
+  z.object({ action: z.literal("back") }).strict(),
+  z.object({ action: z.literal("forward") }).strict(),
+  z.object({ action: z.literal("reload") }).strict(),
+  z
+    .object({
+      action: z.literal("snapshot"),
+      selector: z.string().min(1).max(1000).optional(),
+      max_chars: z.number().int().min(1000).max(24000).optional(),
+    })
+    .strict(),
   z.object({ action: z.literal("screenshot") }).strict(),
   z.object({ action: z.literal("click"), selector: z.string().min(1).max(1000) }).strict(),
+  z.object({ action: z.literal("hover"), selector: z.string().min(1).max(1000) }).strict(),
+  z
+    .object({
+      action: z.literal("select"),
+      selector: z.string().min(1).max(1000),
+      values: z.array(z.string().max(1000)).min(1).max(100),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("drag"),
+      selector: z.string().min(1).max(1000),
+      target: z.string().min(1).max(1000),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("wait"),
+      selector: z.string().min(1).max(1000).optional(),
+      text: z.string().min(1).max(4000).optional(),
+      url_includes: z.string().min(1).max(8192).optional(),
+      state: z.enum(["visible", "hidden", "attached", "detached"]).default("visible"),
+      timeout_ms: z.number().int().min(1).max(10000).default(5000),
+    })
+    .strict()
+    .refine((input) => input.selector || input.text || input.url_includes, {
+      message: "Provide a selector, text or URL condition",
+    }),
+  z
+    .object({
+      action: z.literal("evaluate"),
+      expression: z.string().min(1).max(20000),
+      timeout_ms: z.number().int().min(1).max(10000).default(5000),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("type"),
@@ -80,6 +129,7 @@ export const PreviewBrowserInputSchema = z
     session_id: sessionId,
     client_id: z.string().uuid().optional(),
     command: BrowserActionSchema,
+    tab_id: z.string().uuid().optional(),
   })
   .strict();
 export type PreviewBrowserInput = z.infer<typeof PreviewBrowserInputSchema>;
@@ -91,6 +141,7 @@ export const PreviewClientSchema = z
     client_id: z.string().uuid(),
     session_id: sessionId.nullable(),
     agent_access: z.boolean().default(false),
+    browser_ready: z.boolean().default(false),
   })
   .strict();
 export type PreviewRequest = PreviewOperation & {
@@ -117,6 +168,9 @@ export interface PreviewBrowserState {
   forward: boolean;
   loading: boolean;
   error: string | null;
+  tab_id?: string;
+  profile_id?: string | null;
+  tabs?: { tab_id: string; url: string; profile_id: string | null }[];
 }
 export const PreviewBoundsSchema = z
   .object({
@@ -130,6 +184,7 @@ export const PREVIEW_COMMAND = "orc:preview-command";
 export const PREVIEW_EVENT = "orc:preview-event";
 export const PREVIEW_OPEN_EVENT = "orc:preview-open";
 export const PREVIEW_SETTINGS_EVENT = "orc:preview-settings";
+export const PREVIEW_PROFILES_EVENT = "orc:preview-profiles";
 export const PreviewPreferencesSchema = z
   .object({
     agentBrowserControl: z.boolean().default(true),
@@ -137,6 +192,23 @@ export const PreviewPreferencesSchema = z
   })
   .strict();
 export type PreviewPreferences = z.infer<typeof PreviewPreferencesSchema>;
+export const PreviewProfileSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(80),
+    origin: z.string().url(),
+  })
+  .strict();
+export type PreviewProfile = z.infer<typeof PreviewProfileSchema>;
+export interface PreviewImportSource {
+  id: string;
+  name: string;
+  sites: string[];
+}
+export interface PreviewImportResult {
+  imported: number;
+  skipped: number;
+}
 
 /** Parse chat destinations without treating Windows drive letters as URI protocols. */
 export function previewLink(

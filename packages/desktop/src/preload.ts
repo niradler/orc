@@ -3,10 +3,14 @@ import {
   PREVIEW_COMMAND,
   PREVIEW_EVENT,
   PREVIEW_OPEN_EVENT,
+  PREVIEW_PROFILES_EVENT,
   PREVIEW_SETTINGS_EVENT,
   type PreviewBrowserState,
   type PreviewFile,
+  type PreviewImportResult,
+  type PreviewImportSource,
   type PreviewPreferences,
+  type PreviewProfile,
 } from "@orc/core/desktop-preview";
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 import { NOTIFY_CHANNEL, type NotifyRequest, OPEN_CHANNEL } from "./notify.js";
@@ -23,6 +27,36 @@ import {
 
 contextBridge.exposeInMainWorld("orcDesktop", {
   preview: {
+    cancelImport: (): Promise<void> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "import_cancel" }),
+    onProfiles: (listener: (profiles: PreviewProfile[]) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, profiles: PreviewProfile[]) => listener(profiles);
+      ipcRenderer.on(PREVIEW_PROFILES_EVENT, handler);
+      return () => ipcRenderer.removeListener(PREVIEW_PROFILES_EVENT, handler);
+    },
+    discoverImport: (port: number): Promise<PreviewImportSource> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "import_discover", port }),
+    transferImport: (
+      source_id: string,
+      profile_id: string,
+      sites: string[],
+    ): Promise<PreviewImportResult> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, {
+        action: "import_transfer",
+        source_id,
+        profile_id,
+        sites,
+      }),
+    profiles: (): Promise<PreviewProfile[]> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "profiles" }),
+    createProfile: (name: string): Promise<PreviewProfile> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "profile_create", name }),
+    selectProfile: (session_id: string, profile_id?: string | null): Promise<string | null> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, {
+        action: "profile_select",
+        session_id,
+        ...(profile_id === undefined ? {} : { profile_id }),
+      }),
     dirty: (value: boolean): Promise<void> =>
       ipcRenderer.invoke(PREVIEW_COMMAND, { action: "dirty", value }),
     preferences: (): Promise<PreviewPreferences> =>
@@ -35,8 +69,13 @@ contextBridge.exposeInMainWorld("orcDesktop", {
       ipcRenderer.on(PREVIEW_SETTINGS_EVENT, handler);
       return () => ipcRenderer.removeListener(PREVIEW_SETTINGS_EVENT, handler);
     },
-    open: (session_id: string, url: string): Promise<PreviewBrowserState> =>
-      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "open", session_id, url }),
+    open: (session_id: string, url: string, new_tab?: boolean): Promise<PreviewBrowserState> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, {
+        action: "open",
+        session_id,
+        url,
+        ...(new_tab === undefined ? {} : { new_tab }),
+      }),
     navigate: (session_id: string, direction: "back" | "forward" | "reload"): Promise<void> =>
       ipcRenderer.invoke(PREVIEW_COMMAND, { action: "navigation", session_id, direction }),
     bounds: (
@@ -52,8 +91,24 @@ contextBridge.exposeInMainWorld("orcDesktop", {
       }),
     allow: (session_id: string, enabled: boolean): Promise<void> =>
       ipcRenderer.invoke(PREVIEW_COMMAND, { action: "allow", session_id, enabled }),
-    control: (session_id: string, command: BrowserAction): Promise<unknown> =>
-      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "control", session_id, command }),
+    chatPermission: (session_id: string, enabled?: boolean): Promise<boolean> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, {
+        action: "chat_permission",
+        session_id,
+        ...(enabled === undefined ? {} : { enabled }),
+      }),
+    control: (session_id: string, command: BrowserAction, tab_id?: string): Promise<unknown> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, {
+        action: "control",
+        session_id,
+        command,
+        ...(tab_id ? { tab_id } : {}),
+      }),
+    tab: (
+      session_id: string,
+      command: { action: "tab_select" | "tab_close"; tab_id: string },
+    ): Promise<PreviewBrowserState | null> =>
+      ipcRenderer.invoke(PREVIEW_COMMAND, { action: "tab", session_id, command }),
     pick: (): Promise<PreviewFile | null> =>
       ipcRenderer.invoke(PREVIEW_COMMAND, { action: "pick" }),
     read: (token: string): Promise<PreviewFile> =>

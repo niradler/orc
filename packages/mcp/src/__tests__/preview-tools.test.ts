@@ -12,5 +12,6 @@ test("should return bounded browser screenshots as MCP images without base64 tex
   expect(content).toHaveLength(2);
   expect(content[0]?.text).not.toContain("aGVsbG8=");
   expect(content[1]?.type).toBe("image");
+  expect(previewToolContent("preview_browser_act", value)[1]?.type).toBe("image");
   expect(previewToolContent("some_other_tool", value)[0]?.text).toBe(value);
 });

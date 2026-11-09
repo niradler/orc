@@ -1,6 +1,7 @@
 import { PreviewPreferencesSchema } from "@orc/core/desktop-preview";
 import { Button } from "@/components/ui/button";
 import { usePreviewPreferences } from "@/hooks/usePreviewPreferences";
+import { BrowserProfilesSettings } from "./BrowserProfilesSettings";
 
 export function BrowserSettings() {
   const { settings, error, busy, save } = usePreviewPreferences();
@@ -67,10 +68,11 @@ export function BrowserSettings() {
             />
           </div>
           <p className="mt-4 text-xs text-muted-foreground">
-            Browser logins are temporary and separate from ORC. Camera, microphone, location and
-            downloads stay blocked. File previews stay inside ORC; the external-link icon opens a
-            source in VS Code.
+            Temporary browser logins end with the app; saved profiles retain them separately from
+            ORC. Camera, microphone, location and downloads stay blocked. File previews stay inside
+            ORC; the external-link icon opens a source in VS Code.
           </p>
+          <BrowserProfilesSettings />
         </>
       )}
       <Button

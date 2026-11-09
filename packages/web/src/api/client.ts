@@ -650,11 +650,12 @@ export const api = {
       session_id: string | null,
       agent_access: boolean,
       lease?: string,
+      browser_ready = false,
     ) =>
       req<{ client_id: string; lease: string }>(
         "POST",
         "/desktop-preview/clients",
-        { client_id, session_id, agent_access },
+        { client_id, session_id, agent_access, browser_ready },
         undefined,
         { headers: lease ? { "X-Preview-Lease": lease } : {} },
       ),

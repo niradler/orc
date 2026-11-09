@@ -126,26 +126,55 @@ PNG, JPEG, GIF, WebP, BMP and ICO images can also be previewed, up to 8 MiB and
 images use native decoding and display a static image. Workspace images use the
 browser's image decoder. PDF and Office previews are not included.
 
-The browser uses a separate, temporary session without ORC's API credentials,
+The browser uses a separate session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
-and downloads are blocked. Browser logins are temporary and are not reused after
-quitting or reloading the app. At most eight browser pages are retained; reopening
-an evicted page restores its URL with a fresh temporary browser session.
+and downloads are blocked. Each chat starts with a temporary browser profile.
+**Settings → Browser → Saved browser profiles** creates named profiles; select one
+in the browser panel to remember site logins. Selecting the same profile in another
+chat explicitly shares that profile's site storage. Temporary chats stay isolated.
+Profile choices and saved cookies survive app restart; session-only cookies follow
+the site's expiry rules. Switching profiles closes that chat's browser tabs after
+confirmation and preserves file drafts. Use **+** to open a browser tab and each
+tab's close button to close it. Popups open another isolated tab. Limits are eight
+tabs per chat and 24 total; reaching a limit asks you to close a tab, without eviction.
+
+**Import selected browser logins**, under Browser settings, connects to a local
+Chrome/Edge debugging endpoint you explicitly enable. Choose the destination ORC
+profile, enter the loopback debugging port, approve any source-browser prompt,
+then select sites from its open pages. Only those sites' applicable cookies are
+copied; their values and the source connection never reach agents or the API.
+The connection closes after import or cancellation. This is a live-browser
+transfer, not a direct import of encrypted browser databases. Import copies cookies
+applicable to the selected site's root and currently open page path; passwords,
+localStorage, IndexedDB and device-bound sessions are not transferred. Partitioned
+cookies are skipped and counts are reported. Verify the login; some sites require
+signing in again. Modern Windows Chrome/Edge app-bound cookie files cannot be
+decrypted by ORC. Chrome's newer native consent flow and Mac/Linux interaction have
+not been validated here; the verified source was an isolated Windows Edge profile
+with a loopback debugging port. Existing personal profiles may not expose one.
 
 Agents can use [preview MCP tools](./mcp.md#desktop-preview-tools) to show a file
 or URL in the selected conversation. **Allow agent browser control**, on by
 default, is controlled in the chat's **Session settings** before you open a preview.
-It permits snapshots, screenshots,
-clicking, typing, key presses and scrolling in its isolated browser. This includes
+It permits snapshots, screenshots, clicking, typing, key presses, scrolling,
+hovering, selecting, dragging, condition waits and guest JavaScript evaluation.
+This includes
 pages you sign into there. Turning the switch off revokes control. These tools
-cannot inspect the ORC app, execute arbitrary scripts, upload files or edit files.
+cannot inspect the ORC app or its bridge, upload files or edit preview files.
 Browser content is untrusted page data, never agent instructions.
+If a mutating browser command is still pending when control is revoked or its
+guest is hidden/switched, ORC closes that guest to prevent delayed execution.
+The tab shows an interruption message; **Reload** restores its URL and profile.
+File drafts are preserved. An evaluation timeout can require the same recovery.
 
 ![Browser access in a demo chat's Session settings](/screens/desktop-chat-browser-control.png)
 
 **Settings → Browser** controls agent browser access for the whole desktop and
 whether chat web links open in ORC or your system browser. Settings are stored in
 `browser-preferences.json` in Electron's user-data folder and survive restarts.
+Per-chat permissions use `browser-chat-permissions.json`; named profile metadata
+and explicit chat selections use `browser-profiles.json`. These metadata files do
+not contain cookies or passwords; Chromium owns the separate profile partitions.
 Turning global agent access off overrides every chat's switch immediately. With
 global access on, the chat's **Session settings** switch can still disable control
 for that conversation. The browser toolbar does not contain a second access switch.
