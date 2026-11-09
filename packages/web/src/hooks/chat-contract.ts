@@ -4,6 +4,7 @@ import {
   type ChatSettings,
   ChatSettingsSchema,
 } from "@orc/core/chat";
+import { withPermissionMode } from "../lib/composer-chips";
 
 export type ChatConfig = ChatSettings;
 export const DEFAULT_CONFIG: ChatConfig = ChatSettingsSchema.parse({});
@@ -11,11 +12,14 @@ export const DEFAULT_CONFIG: ChatConfig = ChatSettingsSchema.parse({});
 /** The agent, model and permissions last picked in this browser, applied to new chats. */
 export const CHAT_PREFERENCES_KEY = "orc_chat_preferences";
 const ChatPreferencesSchema = ChatSettingsSchema.pick({
+  providerId: true,
   agent: true,
   model: true,
   permissionMode: true,
 }).partial();
-export type ChatPreferences = Partial<Pick<ChatConfig, "agent" | "model" | "permissionMode">>;
+export type ChatPreferences = Partial<
+  Pick<ChatConfig, "agent" | "model" | "permissionMode" | "providerId">
+>;
 export function parseChatPreferences(raw: string | null): ChatPreferences {
   try {
     const parsed = ChatPreferencesSchema.safeParse(JSON.parse(raw ?? "null"));
@@ -26,10 +30,12 @@ export function parseChatPreferences(raw: string | null): ChatPreferences {
 }
 export function withPreferences(config: ChatConfig, preferences: ChatPreferences): ChatConfig {
   const next = { ...config, ...preferences };
+  if (preferences.agent && !preferences.providerId && preferences.agent !== config.agent)
+    next.providerId = preferences.agent;
   // A model belongs to its agent; drop it when the saved agent no longer matches.
   if (preferences.agent && preferences.agent !== config.agent && !preferences.model)
     next.model = "";
-  return next;
+  return preferences.permissionMode ? withPermissionMode(next, preferences.permissionMode) : next;
 }
 
 /** Conversations open as chat tabs in this browser, restored after a reload. */

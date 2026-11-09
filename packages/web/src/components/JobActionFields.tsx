@@ -1,10 +1,10 @@
 import type { JobAction } from "@orc/core/job-actions";
 import { type ReactElement, useId } from "react";
+import { JobAgentPicker } from "@/components/JobAgentPicker";
 import { MarkdownField } from "@/components/MarkdownField";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useBackends } from "@/hooks/useBackends";
 
 export function jobActionValid(action: JobAction): boolean {
   if (action.type === "command") return Boolean(action.command.trim());
@@ -15,12 +15,15 @@ export function jobActionValid(action: JobAction): boolean {
 export function JobActionFields({
   value,
   onChange,
+  executionHost,
+  cwd,
 }: {
   value: JobAction;
   onChange: (action: JobAction) => void;
+  executionHost?: string | null | undefined;
+  cwd?: string | undefined;
 }): ReactElement {
   const id = useId();
-  const { data } = useBackends();
   return (
     <section className="space-y-3 border-y border-border py-4" data-testid="job-action-fields">
       <div className="space-y-1.5">
@@ -61,31 +64,8 @@ export function JobActionFields({
       {value.type === "agent" && (
         <>
           <div className="space-y-1.5">
-            <Label htmlFor={`${id}-backend`}>Agent backend</Label>
-            <Input
-              id={`${id}-backend`}
-              data-testid="job-agent-backend"
-              value={value.backend}
-              list={`${id}-backends`}
-              onChange={(event) => onChange({ ...value, backend: event.target.value })}
-              required
-            />
-            <datalist id={`${id}-backends`}>
-              {data?.backends.map((backend) => (
-                <option key={backend.name} value={backend.name}>
-                  {backend.available ? "Available" : "Unavailable"}
-                </option>
-              ))}
-            </datalist>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor={`${id}-model`}>Model (optional)</Label>
-            <Input
-              id={`${id}-model`}
-              data-testid="job-agent-model"
-              value={value.model ?? ""}
-              onChange={(event) => onChange({ ...value, model: event.target.value || undefined })}
-            />
+            <Label>Agent and model</Label>
+            <JobAgentPicker value={value} onChange={onChange} host={executionHost} cwd={cwd} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={`${id}-prompt`}>Instructions</Label>

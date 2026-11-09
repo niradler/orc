@@ -1,5 +1,6 @@
 import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/core/github-sync";
 import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
+import type { JobEnvironment, JobSettings } from "@orc/core/job-settings";
 
 export type {
   ChannelCondition,
@@ -154,6 +155,10 @@ export type MemoryExportPlan = components["schemas"]["MemoryExportPlan"];
 export type MemoryExportResult = components["schemas"]["MemoryExportResult"];
 
 export type Job = {
+  schedule_timezone?: string;
+  settings?: JobSettings | null;
+  environment?: JobEnvironment;
+  working_dir?: string | null;
   action?: JobAction;
   webhooks?: WebhookSubscription[];
   id: string;
@@ -176,6 +181,7 @@ export type Job = {
 };
 
 export type JobRun = {
+  native_session_id?: string | null;
   task_id?: string | null;
   session_id?: string | null;
   id: string;
@@ -407,11 +413,14 @@ export type CreateMemoryInput = components["schemas"]["CreateMemory"];
 export type UpdateMemoryInput = Omit<components["schemas"]["UpdateMemory"], "project_id">;
 
 export type CreateJobInput = {
+  settings?: JobSettings;
+  environment?: JobEnvironment;
+  working_dir?: string;
   action?: JobAction;
   webhooks?: WebhookSubscription[];
   name: string;
   enabled?: boolean;
-  project_id?: string;
+  project_id?: string | null;
   description?: string;
   command?: string;
   trigger_type: JobTriggerType;
@@ -422,10 +431,12 @@ export type CreateJobInput = {
   overlap?: "skip" | "queue" | "kill";
   notify_on?: "never" | "failure" | "always";
   env_vars?: Record<string, string>;
-  working_dir?: string;
 };
 
 export type UpdateJobInput = {
+  settings?: JobSettings;
+  environment?: JobEnvironment;
+  working_dir?: string;
   action?: JobAction;
   webhooks?: WebhookSubscription[];
   name?: string;
@@ -440,8 +451,7 @@ export type UpdateJobInput = {
   notify_on?: "never" | "failure" | "always";
   enabled?: boolean;
   env_vars?: Record<string, string>;
-  working_dir?: string;
-  project_id?: string;
+  project_id?: string | null;
 };
 
 export type SkillSource = "builtin" | "user";

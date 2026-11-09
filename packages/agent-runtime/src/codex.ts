@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   type ExecHost,
   ensureSshMaster,
@@ -10,6 +11,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { providerProcessEnvironment } from "@orc/core/provider-service";
 import { CODEX_CAPABILITIES, CODEX_EXEC_CAPABILITIES } from "./capabilities.js";
 import { CodexAppSession } from "./codex-app.js";
 import { sessionExecHost } from "./execution-host.js";
@@ -42,13 +44,14 @@ export function resolveCodexLaunch(
   return [node, script];
 }
 
-export async function codexCommand(host: ExecHost): Promise<string[]> {
-  const executable = await hostBinary(host, "codex");
+export async function codexCommand(host: ExecHost, override?: string): Promise<string[]> {
+  const executable =
+    host.kind === "local" && override ? Bun.which(override) : await hostBinary(host, "codex");
   if (!executable) throw new Error("Codex CLI not found on PATH");
   return host.kind === "local" ? resolveCodexLaunch(executable) : [executable];
 }
 
-export function buildCodexEnv(): Record<string, string> {
+export function buildCodexEnv(overrides: Record<string, string> = {}): Record<string, string> {
   const allowed = new Set([
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
@@ -78,7 +81,7 @@ export function buildCodexEnv(): Record<string, string> {
       env[k] = v;
     }
   }
-  return env;
+  return { ...env, ...overrides };
 }
 
 export async function hasConfiguredOrcMcp(
@@ -130,7 +133,8 @@ export class CodexSession implements AgentSession {
   constructor(
     opts: SessionOpts,
     host: ExecHost = resolveExecHost(),
-    private readonly launcher: (host: ExecHost) => Promise<string[]> = codexCommand,
+    private readonly launcher: (host: ExecHost) => Promise<string[]> = (host) =>
+      codexCommand(host, opts.providerExecutable),
   ) {
     this.cwd = opts.cwd;
     this.host = host;
@@ -144,10 +148,15 @@ export class CodexSession implements AgentSession {
       opts.orcMcp === false
         ? null
         : buildOrcMcpServer(this.host, false, opts.orcMcpMode, opts.orcMcpProject);
-    const env = buildCodexEnv();
+    const env = buildCodexEnv(this.opts.env);
     if (mcp?.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
     const command = await this.launcher(this.host);
     const args = [...command, "exec"];
+    if (opts.chatAgentOptions) {
+      const options = ChatAgentOptionsSchema.parse(opts.chatAgentOptions);
+      if (options.runtime !== "codex") throw new Error("Codex CLI requires Codex launch options");
+      args.push(...options.args);
+    }
     if (opts.runtimeSessionId) args.push("resume", opts.runtimeSessionId);
     args.push("--json", "--skip-git-repo-check", "-c", 'approval_policy="never"');
     args.push(
@@ -176,7 +185,7 @@ export class CodexSession implements AgentSession {
       stdout: "pipe",
       stderr: "pipe",
       env,
-      passEnv: ["ORC_CODEX_MCP_TOKEN"],
+      passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.env ?? {})],
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
@@ -344,9 +353,14 @@ function createCodexBackend(): AgentBackend {
     async preflight(opts = {}) {
       const host = sessionExecHost(opts);
       try {
-        if (await hostBinary(host, "codex")) {
-          const launch = await codexCommand(host);
-          const status = await hostExec(host, [...launch, "login", "status"], { timeoutMs: 15000 });
+        if (opts.providerExecutable || (await hostBinary(host, "codex"))) {
+          const launch = await codexCommand(host, opts.providerExecutable);
+          if (opts.env?.OPENAI_API_KEY) return { ok: true };
+          const status = await hostExec(host, [...launch, "login", "status"], {
+            timeoutMs: 15000,
+            env: providerProcessEnvironment(opts.env),
+            passEnv: Object.keys(opts.env ?? {}),
+          });
           return status.code === 0
             ? { ok: true }
             : {

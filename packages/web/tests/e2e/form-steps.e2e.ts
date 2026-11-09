@@ -38,28 +38,28 @@ for (const width of [1440, 390, 320]) {
     await gotoView(page, "jobs");
     await page.getByTestId("new-job-button").click();
     const dialog = page.getByTestId("form-dialog");
-    await expect(dialog.getByRole("tab", { name: "Details", exact: true })).toHaveAttribute(
+    await expect(dialog.getByRole("tab", { name: "Trigger", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     await expect(page.getByTestId("job-submit")).toHaveCount(0);
     await footerFits(page, dialog, width);
     // Direct tab navigation is allowed, but final validation must reveal the first invalid field.
-    await page.getByTestId("form-step-automation").click();
+    await page.getByTestId("form-step-settings").click();
     await page.getByTestId("job-submit").click();
     await expect(page.getByTestId("job-name-input")).toBeFocused();
     const name = tid("step-job");
     await page.getByTestId("job-name-input").fill(name);
-    await page.getByTestId("form-step-automation").click();
+    await page.getByTestId("form-step-settings").click();
     await page.getByTestId("job-submit").click();
     await expect(page.getByTestId("job-command-input")).toBeFocused();
     await page.getByTestId("job-command-input").fill("echo step-draft");
-    await dialog.getByLabel("Timeout in seconds").fill("0");
     await page.getByTestId("form-step-next").click();
+    await dialog.getByLabel("Timeout (seconds)", { exact: true }).fill("0");
+    await page.getByTestId("job-submit").click();
     expect(writes).toEqual({ posts: 0, patches: 0 });
-    await expect(dialog.getByLabel("Timeout in seconds")).toBeFocused();
-    await dialog.getByLabel("Timeout in seconds").fill("321");
-    await page.getByTestId("form-step-next").click();
+    await expect(dialog.getByLabel("Timeout (seconds)", { exact: true })).toBeFocused();
+    await dialog.getByLabel("Timeout (seconds)", { exact: true }).fill("321");
     expect(writes).toEqual({ posts: 0, patches: 0 });
     await expect(page.getByTestId("job-create-enabled")).not.toBeChecked();
     await page.getByTestId("form-step-back").click();
@@ -68,7 +68,7 @@ for (const width of [1440, 390, 320]) {
     await page.getByTestId("form-step-back").click();
     expect(writes).toEqual({ posts: 0, patches: 0 });
     await expect(page.getByTestId("job-name-input")).toHaveValue(name);
-    await page.getByTestId("form-step-automation").click();
+    await page.getByTestId("form-step-settings").click();
     await footerFits(page, dialog, width);
     await page.screenshot({ path: info.outputPath("job-automation.png") });
     expect(writes).toEqual({ posts: 0, patches: 0 });
@@ -84,9 +84,9 @@ for (const width of [1440, 390, 320]) {
     expect(saved.timeout_secs).toBe(321);
     const row = page.locator(`[data-testid="job-row"][data-job-id="${saved.id}"]`);
     await row.getByTestId("job-edit").click();
-    await page.getByTestId("form-step-execution").click();
+    await page.getByTestId("form-step-destination").click();
     await page.getByTestId("job-command-input").fill("echo edited-step");
-    await page.getByTestId("form-step-automation").click();
+    await page.getByTestId("form-step-settings").click();
     await page.getByTestId("form-step-back").click();
     expect(writes).toEqual({ posts: 1, patches: 0 });
     await expect(page.getByTestId("job-command-input")).toHaveValue("echo edited-step");

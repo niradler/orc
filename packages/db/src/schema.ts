@@ -1,5 +1,6 @@
 import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/core/github-sync";
 import type { JobAction } from "@orc/core/job-actions";
+import type { JobEnvironment, JobSettings } from "@orc/core/job-settings";
 import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
@@ -165,6 +166,8 @@ export const jobs = sqliteTable(
     overlap: text("overlap", { enum: ["skip", "queue", "kill"] })
       .default("skip")
       .notNull(),
+    settings: text("settings", { mode: "json" }).$type<JobSettings>(),
+    environment: text("environment", { mode: "json" }).$type<JobEnvironment>(),
     env_vars: text("env_vars", { mode: "json" }).$type<Record<string, string>>(),
     working_dir: text("working_dir"),
     notify_on: text("notify_on", { enum: ["never", "failure", "always"] })

@@ -1,5 +1,14 @@
-import { type HostProcess, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
+import {
+  execHostFor,
+  type HostProcess,
+  hostExec,
+  hostPlatform,
+  hostSpawn,
+  resolveExecHost,
+} from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
+import { resolveJobEnvironment } from "@orc/core/job-environment";
+import { jobShellArgv } from "@orc/core/job-settings";
 import { createLogger } from "@orc/core/logger";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
@@ -34,6 +43,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
   // The API trigger path pre-creates the run row as "pending" before calling
   // us, so a row to mark "failed" exists even if setup below throws.
   let runRowExists = Boolean(opts.runId);
+  let redact = (text: string): string => text;
 
   const mutateRun = (mutation: () => unknown): void => {
     const sqlite = getSqlite(db);
@@ -122,8 +132,26 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       return runId;
     }
 
+    const environment = resolveJobEnvironment(job.environment);
+    redact = environment.redact;
+    const jobEnv = {
+      ...(job.env_vars ?? {}),
+      ...(opts.input?.env ?? {}),
+      ...(opts.envOverrides ?? {}),
+      ...environment.env,
+      ORC_JOB_RUN_ID: runId,
+    };
+
     if (job.action && job.action.type !== "command") {
-      const output = await runJobAction(job, job.action, runId, opts.input?.stdin);
+      const output = await runJobAction(
+        job,
+        job.action,
+        runId,
+        opts.input?.stdin,
+        jobEnv,
+        redact,
+        environment.createRedactor(),
+      );
       await db
         .insert(job_run_logs)
         .values({ run_id: runId, ts: new Date(), stream: "stdout", line: output });
@@ -137,27 +165,56 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       return runId;
     }
 
-    const env = {
+    const env: Record<string, string | undefined> = {
       ...process.env,
-      ORC_JOB_RUN_ID: runId,
-      ...(job.env_vars ?? {}),
-      ...(opts.input?.env ?? {}),
-      ...(opts.envOverrides ?? {}),
+      ...jobEnv,
     };
     const stdin = opts.execution?.stdin ?? opts.input?.stdin;
     const stdinBytes = stdin === undefined ? "ignore" : new TextEncoder().encode(stdin);
 
     const timeout = opts.execution?.timeout_ms ?? (job.timeout_secs ?? 300) * 1000;
 
-    const host = opts.execution ? null : resolveExecHost();
+    const host = opts.execution
+      ? null
+      : job.settings?.host === undefined
+        ? resolveExecHost()
+        : execHostFor(job.settings.host);
+    const argv =
+      opts.execution?.argv ??
+      jobShellArgv(job.settings, job.command, host ? hostPlatform(host) : process.platform);
+    if (!opts.execution && host) {
+      const available =
+        host.kind === "local"
+          ? Boolean(
+              Bun.which(argv[0] ?? "", {
+                PATH:
+                  Object.entries(env).find(([key]) => key.toUpperCase() === "PATH")?.[1] ??
+                  process.env.PATH ??
+                  "",
+              }),
+            )
+          : (
+              await hostExec(host, ["sh", "-c", 'command -v "$1"', "sh", argv[0] ?? ""], {
+                timeoutMs: 10000,
+              })
+            ).code === 0;
+      if (!available) throw new Error("Configured shell is not available on the selected host");
+    }
+    const projectDirectory =
+      job.settings && job.settings.inherit_project_directory !== false && job.project_id
+        ? getSqlite()
+            .query<{ scope: string | null }, [string]>("SELECT scope FROM projects WHERE id=?")
+            .get(job.project_id)?.scope
+        : undefined;
+    const commandDirectory = job.working_dir ?? projectDirectory ?? undefined;
     let handle: HostProcess;
     if (host?.kind === "ssh") {
-      handle = await hostSpawn(host, ["sh", "-c", job.command], {
-        cwd: job.working_dir ?? undefined,
+      handle = await hostSpawn(host, argv, {
+        cwd: commandDirectory,
         env,
         passEnv: [
           "ORC_JOB_RUN_ID",
-          ...Object.keys(job.env_vars ?? {}),
+          ...Object.keys(jobEnv),
           ...Object.keys(opts.input?.env ?? {}),
           ...Object.keys(opts.envOverrides ?? {}),
         ],
@@ -165,8 +222,8 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       });
     } else {
       const local = Bun.spawn({
-        cmd: opts.execution?.argv ?? ["sh", "-c", job.command],
-        cwd: opts.execution?.cwd ?? job.working_dir ?? process.cwd(),
+        cmd: argv,
+        cwd: opts.execution?.cwd ?? commandDirectory ?? process.cwd(),
         env: env as Record<string, string>,
         stdout: "pipe",
         stderr: "pipe",
@@ -223,14 +280,26 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       const dec = new TextDecoder();
       let buf = "";
       let receivedBytes = 0;
-      for await (const chunk of reader) {
+      const redactor = environment.createRedactor();
+      const encoder = new TextEncoder();
+      const safeDecoder = new TextDecoder();
+      const accept = (text: string): void => {
         const remaining = Math.max(0, MAX_STREAM_BYTES - receivedBytes);
-        const accepted = chunk.subarray(0, remaining);
-        receivedBytes += accepted.byteLength;
-        buf += dec.decode(accepted, { stream: true });
+        if (!remaining) return;
+        const bytes = encoder.encode(text);
+        let length = Math.min(bytes.length, remaining);
+        if (length < bytes.length) {
+          while (length > 0 && ((bytes[length] ?? 0) & 0xc0) === 0x80) length--;
+          receivedBytes = MAX_STREAM_BYTES;
+        } else receivedBytes += length;
+        buf += safeDecoder.decode(bytes.subarray(0, length));
+      };
+      for await (const chunk of reader) {
+        accept(redactor.write(dec.decode(chunk, { stream: true })));
         const lines = buf.split("\n");
         buf = lines.pop() ?? "";
-        for (const line of lines) {
+        for (const rawLine of lines) {
+          const line = rawLine;
           if (stream === "stdout") {
             if (stdoutBytes < MAX_STREAM_BYTES) {
               stdoutLines.push(line);
@@ -256,7 +325,8 @@ export async function executeJob(opts: RunOptions): Promise<string> {
           }
         }
       }
-      buf += dec.decode();
+      accept(redactor.write(dec.decode()));
+      accept(redactor.finish());
       if (buf) {
         const line = buf.slice(
           0,
@@ -323,7 +393,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     );
     return runId;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = redact(err instanceof Error ? err.message : String(err));
     // Resolve the run so it never dangles in "pending"/"running". The write-back
     // can itself fail (e.g. the run row was deleted, or the DB is shutting down),
     // so guard it — a failed status update must not mask the original error.
@@ -342,7 +412,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       }
     }
     logger.error(`Job run ${runId} crashed: ${msg}`);
-    throw err;
+    throw new Error(msg);
   } finally {
     if (runRowExists) {
       try {

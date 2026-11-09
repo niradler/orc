@@ -3,10 +3,19 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { ChannelConnectionSchema } from "./channels.js";
 import { ChatSettingsSchema } from "./chat.js";
-import { AGENT_ID_PATTERN } from "./coding-agents.js";
+import { AGENT_ID_PATTERN, ProviderPathsSchema } from "./coding-agents.js";
 import { userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
+import { StoredProvidersSchema } from "./providers.js";
 import { decryptSecret } from "./secrets.js";
+
+export function localAgentBinary(name: string): string | null {
+  const paths = loadConfig().preferences.provider_paths;
+  let target = (name === "claude" || name === "codex" ? paths?.[name] : undefined) || name;
+  if (target.startsWith("~/") || target.startsWith("~\\"))
+    target = join(userHome(), target.slice(2));
+  return Bun.which(target, { PATH: process.env.PATH ?? "" });
+}
 
 const ChannelDefaultModeSchema = z
   .enum(["direct", "multi"])
@@ -80,6 +89,7 @@ export const TtsConfigSchema = z.object({
 });
 
 export const OrcConfigSchema = z.object({
+  providers: StoredProvidersSchema.optional(),
   preferences: z
     .object({
       theme: z.enum(["dark", "light"]).optional(),
@@ -89,6 +99,7 @@ export const OrcConfigSchema = z.object({
       audit_retention_days: z.number().int().min(1).max(3650).optional(),
       chat: ChatSettingsSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
+      provider_paths: ProviderPathsSchema.optional(),
     })
     .default({}),
   skills: z

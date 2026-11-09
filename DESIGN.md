@@ -247,6 +247,15 @@ the actual application with realistic data and preserve its working behavior.
   actions. Embedded server/host/chat/notification/knowledge forms own their saves.
   Keep sections mounted so switching categories does not erase drafts. URLs
   restore the current section on Back/reload.
+- **Help and descriptions (project-wide):** keep long explanations, examples and
+  secondary field guidance behind an adjacent info icon using the shared
+  `HelpPopover`. Show the text on hover and keyboard focus; tapping or activating
+  the icon must also open it. Keep the overlay within the viewport, readable in
+  both themes, dismissible with Escape/outside interaction, and usable on touch.
+  Forms show labels, values and concise current status. Validation errors and
+  essential warnings needed for an action remain visible beside that action.
+  Apply this rule to new and modified UI; do not repeat help paragraphs below
+  fields or section headings. Verify hover, focus, tap and dismissal end to end.
 - **Verification:** review populated desktop and phone states, both themes,
   keyboard focus, touch targets, long content and recoverable failures. Exercise
   real save/reopen, selection/filter scope, native session resume, stream/queue

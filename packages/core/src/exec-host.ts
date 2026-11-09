@@ -16,7 +16,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path";
 import { CODING_AGENTS } from "./coding-agents.js";
-import { configuredApiSecret, loadConfig, type OrcConfig } from "./config.js";
+import { configuredApiSecret, loadConfig, localAgentBinary, type OrcConfig } from "./config.js";
 import { ConflictError, OrcError, ValidationError } from "./errors.js";
 import { ulid } from "./ids.js";
 import { createLogger } from "./logger.js";
@@ -84,6 +84,7 @@ export interface HostSpawnOptions {
 }
 
 export interface HostExecOptions {
+  passEnv?: readonly string[] | undefined;
   cwd?: string | undefined;
   env?: Record<string, string> | undefined;
   input?: string | Uint8Array | undefined;
@@ -894,6 +895,23 @@ export async function hostExec(
       }),
     );
   }
+  if (opts.passEnv !== undefined) {
+    const prepared = await prepareSshSpawn(host, opts);
+    try {
+      const proc = Bun.spawn(prepared.argv(argv, opts.cwd), {
+        env: process.env,
+        stdin: input,
+        stdout: "pipe",
+        stderr: "pipe",
+        windowsHide: true,
+        ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}),
+      });
+      prepared.track(proc.exited);
+      return await collect(proc);
+    } finally {
+      await prepared.stop();
+    }
+  }
   const deadline = opts.timeoutMs ? performance.now() + opts.timeoutMs : undefined;
   await beginHostCommand(host.alias, deadline);
   try {
@@ -1129,7 +1147,7 @@ export async function probeHost(host: SshExecHost, fresh = false): Promise<HostP
 }
 
 export async function hostBinary(host: ExecHost, name: string): Promise<string | null> {
-  if (host.kind === "local") return Bun.which(name, { PATH: process.env.PATH ?? "" });
+  if (host.kind === "local") return localAgentBinary(name);
   return (await probeHost(host)).binaries[name] ?? null;
 }
 

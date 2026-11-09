@@ -41,7 +41,9 @@ export function useChatContinueInTerminal(inWorkspace = false) {
         throw new Error(
           "This session is not available in Sessions yet. Try again after session discovery refreshes.",
         );
-      const terminal = await openLiveSession(session, { navigate: !inWorkspace });
+      const terminal = await openLiveSession(session, thread.config.providerId, {
+        navigate: !inWorkspace,
+      });
       if (inWorkspace && threadId.current === thread.id) home.go({ terminalId: terminal.id });
       return true;
     } catch (cause) {

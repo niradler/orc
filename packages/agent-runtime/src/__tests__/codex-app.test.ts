@@ -30,6 +30,13 @@ for await (const line of createInterface({input:process.stdin})) {
  const msg = JSON.parse(line);
  if(msg.method === 'initialize') emit({id:msg.id,result:{}});
  if(msg.method === 'thread/start' || msg.method === 'thread/resume') { thread=msg.params; emit({id:msg.id,result:{thread:{id:'native-fixture'}}}); }
+ if(msg.method === 'thread/compact/start') {
+   emit({id:msg.id,result:{}});
+   notify('turn/started',{turn:{id:'compact-turn'}});
+   notify('item/started',{item:{id:'compact',type:'contextCompaction'}});
+   notify('item/completed',{item:{id:'compact',type:'contextCompaction'}});
+   notify('turn/completed',{turn:{id:'compact-turn',status:'completed'}});
+ }
  if(msg.method === 'turn/start') {
    turn++; received={}; emit({id:msg.id,result:{turn:{id:'turn-'+turn}}});
    emit({id:'approval-'+turn,method:'item/commandExecution/requestApproval',params:{threadId:'native-fixture',turnId:'turn-'+turn,command:'echo harmless',cwd:thread.cwd}});
@@ -51,6 +58,27 @@ for await (const line of createInterface({input:process.stdin})) {
     script,
   ]);
 }
+
+test("should compact the existing native thread without sending a model prompt", async () => {
+  const session = fixture({ runtimeSessionId: "native-fixture" });
+  try {
+    await session.send("/compact");
+    const events: AgentEvent[] = [];
+    for await (const event of session.events()) events.push(event);
+    expect(events).toContainEqual({ type: "system_status", data: "Context compacted." });
+    expect(events.find((event) => event.type === "result")?.data).toMatchObject({
+      runtimeSessionId: "native-fixture",
+      outcome: "completed",
+    });
+    expect(
+      events.some((event) => event.type === "permission_request" || event.type === "text"),
+    ).toBe(false);
+  } finally {
+    await session.close();
+  }
+  const fresh = fixture();
+  await expect(fresh.send("/compact")).rejects.toThrow("existing conversation");
+});
 
 test("should retain exact file changes and deliver a typed MCP form on the same native thread", async () => {
   const cwd = temporaryDirectory(join(tmpdir(), "orc-file-form-"));
