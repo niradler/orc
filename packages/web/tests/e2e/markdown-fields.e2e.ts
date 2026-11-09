@@ -64,7 +64,7 @@ for (const width of [1440, 390, 320]) {
     await expect(dialog.getByTestId("memory-content-count")).toContainText(
       String([...markdown].length),
     );
-    await dialog.getByTestId("form-step-trigger").click();
+    await dialog.getByTestId("form-step-details").click();
     await openFinalFormStep(page);
     await expect(preview).toBeVisible();
     await page.keyboard.press("Escape");
