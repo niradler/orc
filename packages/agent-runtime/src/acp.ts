@@ -173,6 +173,8 @@ export class AcpSession implements AgentSession {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "ignore",
+        env: { ...process.env, ...this.opts.env },
+        passEnv: Object.keys(this.opts.env ?? {}),
       });
       const child = this.child;
       if (!child.proc.stdout || typeof child.proc.stdout === "number")

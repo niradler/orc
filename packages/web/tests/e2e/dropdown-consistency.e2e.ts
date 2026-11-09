@@ -53,55 +53,19 @@ for (const theme of ["dark", "light"] as const) {
       await expect(action).toHaveValue("command");
       await revealFormField(page, trigger);
       await trigger.focus();
-      await trigger.press("Space");
-      await expect(page.getByTestId("job-trigger-manual")).toBeFocused();
-      await page.keyboard.press("c");
-      await expect(page.getByTestId("job-trigger-cron")).toBeFocused();
-      await page.keyboard.press("Enter");
-      await expect(trigger).toContainText("cron");
+      await trigger.press("s");
+      await trigger.press("Enter");
+      await expect(trigger).toHaveValue("cron");
+      expect(await nativeChevron(trigger)).toBe(nativeImage);
 
       const projectChoice = page.getByTestId("job-project-select");
       await revealFormField(page, projectChoice);
-      await projectChoice.click();
-      await page.getByRole("option", { name: longName, exact: true }).click();
-      await expect(projectChoice).toContainText(longName);
-      const geometry = await projectChoice.evaluate((element) => {
-        const control = element.getBoundingClientRect();
-        const svg = element.querySelector("svg");
-        const text = element.querySelector(":scope > span");
-        if (!svg || !text) throw new Error("Missing select text or chevron");
-        const icon = svg.getBoundingClientRect();
-        const label = text.getBoundingClientRect();
-        return {
-          size: [icon.width, icon.height],
-          right: control.right - icon.right,
-          center: icon.y + icon.height / 2 - (control.y + control.height / 2),
-          stroke: svg.getAttribute("stroke-width"),
-          path: svg.querySelector("path")?.getAttribute("d"),
-          color: getComputedStyle(svg).color,
-          labelRight: label.right,
-          iconLeft: icon.left,
-          labelOverflow: getComputedStyle(text).textOverflow,
-        };
-      });
-      expect(geometry.size).toEqual([14, 14]);
-      expect(geometry.right).toBeCloseTo(13, 0);
-      expect(geometry.center).toBeCloseTo(0, 1);
-      expect(geometry.stroke).toBe("1.5");
-      expect(geometry.path).toBe("m6 9 6 6 6-6");
-      expect(geometry.labelRight).toBeLessThanOrEqual(geometry.iconLeft - 1);
-      expect(geometry.labelOverflow).toBe("ellipsis");
-      const nativeColor = await page.evaluate((image) => {
-        const color = image.match(/stroke=['"]([^'"]+)['"]/)?.[1];
-        if (!color) throw new Error("Missing native chevron stroke");
-        const probe = document.createElement("span");
-        probe.style.color = color;
-        document.body.append(probe);
-        const computed = getComputedStyle(probe).color;
-        probe.remove();
-        return computed;
-      }, nativeImage);
-      expect(nativeColor).toBe(geometry.color);
+      await projectChoice.selectOption({ label: longName });
+      await expect(projectChoice.locator("option:checked")).toHaveText(longName);
+      expect(await nativeChevron(projectChoice)).toBe(nativeImage);
+      expect(
+        await projectChoice.evaluate((element) => element.scrollWidth <= element.clientWidth),
+      ).toBe(true);
       await revealFormField(page, action);
       await action.scrollIntoViewIfNeeded();
       await page.screenshot({

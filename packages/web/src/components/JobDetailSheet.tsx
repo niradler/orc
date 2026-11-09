@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Pencil, Play, Power } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import type { Job, JobRun } from "@/api/client";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { api, type Job, type JobRun } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
 import { ErrorState } from "@/components/ErrorState";
 import { JobWebhooks } from "@/components/JobWebhooks";
@@ -90,7 +90,7 @@ export function JobDetailSheet({
                         : job.command}
                   </pre>
                 </DetailField>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <DetailField label="Trigger Type">
                     <span className="font-label text-xs  px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
                       {job.trigger_type}
@@ -109,12 +109,12 @@ export function JobDetailSheet({
                     <code className="font-mono text-xs">{job.cron_expr}</code>
                   </DetailField>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <DetailField label="Timeout">{job.timeout_secs}s</DetailField>
                   <DetailField label="Max Retries">{job.max_retries}</DetailField>
                   <DetailField label="Overlap">{job.overlap}</DetailField>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <DetailField label="Notify On">{job.notify_on}</DetailField>
                   <DetailField label="Run Count">{job.run_count}</DetailField>
                 </div>
@@ -125,7 +125,14 @@ export function JobDetailSheet({
                 )}
               </div>
 
-              {!job.command.startsWith("__") && <JobWebhooks key={job.id} job={job} />}
+              {!job.command.startsWith("__") && (
+                <details className="border-y border-border py-2">
+                  <summary className="min-h-8 cursor-pointer text-sm">
+                    Webhook connections ({job.webhooks?.length ?? 0})
+                  </summary>
+                  <JobWebhooks key={job.id} job={job} />
+                </details>
+              )}
 
               {/* Recent runs */}
               <div>
@@ -194,7 +201,9 @@ export function JobDetailSheet({
               variant="ghost"
               size="sm"
               disabled={triggerJob.isPending}
-              onClick={() => triggerJob.mutate(job.id)}
+              onClick={() =>
+                triggerJob.mutate(job.id, { onSuccess: (result) => setExpandedRun(result.run_id) })
+              }
               className="font-label text-xs font-medium bg-transparent text-on-surface border border-control-border hover:bg-surface"
             >
               <Play size={12} className="mr-1.5" />
@@ -218,13 +227,40 @@ function RunItem({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const navigate = useNavigate();
+
+  const [opening, setOpening] = useState(false);
+
+  const [sessionError, setSessionError] = useState("");
+
+  async function openNative(): Promise<void> {
+    setOpening(true);
+    setSessionError("");
+
+    try {
+      const result = await api.jobs.nativeSession(jobId, run.id);
+
+      if (result.session_id)
+        navigate(`/sessions?project=all&session=${encodeURIComponent(result.session_id)}`);
+      else
+        setSessionError(
+          "The native conversation is not available yet. The saved result is still available below.",
+        );
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : "Could not open this conversation.");
+    } finally {
+      setOpening(false);
+    }
+  }
+
   return (
     <div className="min-w-0 border-y border-border overflow-hidden bg-background">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-surface transition-colors text-left"
+        data-testid="job-run-result"
+        className="w-full flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-surface transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown size={12} className="text-outline shrink-0" />
@@ -232,11 +268,16 @@ function RunItem({
           <ChevronRight size={12} className="text-outline shrink-0" />
         )}
         <StatusBadge status={run.status} type="job" />
-        <span className="font-label text-xs text-outline flex-1">
+        <span className="order-last basis-full min-w-0 font-label text-xs text-outline sm:order-none sm:basis-auto sm:flex-1">
           {run.started_at ? new Date(run.started_at).toLocaleString() : "\u2014"}
           {run.ended_at && (
-            <span className="ml-2">\u2192 {new Date(run.ended_at).toLocaleString()}</span>
+            <span className="ml-2">
+              {"\u2192"} {new Date(run.ended_at).toLocaleTimeString()}
+            </span>
           )}
+        </span>
+        <span className="ml-auto whitespace-nowrap text-xs underline sm:ml-0">
+          {expanded ? "Hide result" : "View result"}
         </span>
         {run.exit_code !== null && (
           <span
@@ -257,29 +298,51 @@ function RunItem({
               Created task
             </Link>
           )}
+          {run.native_session_id && (
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="job-run-open-session"
+              disabled={opening}
+              onClick={() => void openNative()}
+            >
+              {opening ? "Opening…" : "Open agent session"}
+            </Button>
+          )}
           {run.session_id && (
             <Link
               className="underline"
               data-testid="job-run-session-link"
               to={`/audit/${run.session_id}?project=all`}
             >
-              Agent session
+              Session summary
             </Link>
           )}
         </div>
+      )}
+      {sessionError && (
+        <p role="alert" className="px-3 pb-2 text-sm text-error">
+          {sessionError}
+        </p>
       )}
       {run.error_msg && (
         <div className="px-3 pb-2">
           <span className="font-body text-xs text-error">{run.error_msg}</span>
         </div>
       )}
-      {expanded && <RunLogViewer jobId={jobId} runId={run.id} />}
+      {expanded && (
+        <RunLogViewer
+          jobId={jobId}
+          runId={run.id}
+          live={["pending", "running"].includes(run.status)}
+        />
+      )}
     </div>
   );
 }
 
-function RunLogViewer({ jobId, runId }: { jobId: string; runId: string }) {
-  const { data: logs, isLoading, error, refetch } = useJobRunLogs(jobId, runId);
+function RunLogViewer({ jobId, runId, live }: { jobId: string; runId: string; live: boolean }) {
+  const { data: logs, isLoading, error, refetch } = useJobRunLogs(jobId, runId, live);
 
   if (error) return <ErrorState message={error.message} onRetry={() => refetch()} />;
 

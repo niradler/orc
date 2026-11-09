@@ -5,6 +5,8 @@
   "main": "./src/index.ts",
   "exports": {
     "./desktop-preview": "./src/desktop-preview.ts",
+    "./providers": "./src/providers.ts",
+    "./provider-service": "./src/provider-service.ts",
     "./daemon-runtime": "./src/daemon-runtime.ts",
     "./notifications": "./src/notifications.ts",
     "./usage": "./src/usage.ts",
@@ -25,6 +27,8 @@
     "./process-supervisor": "./src/process-supervisor.ts",
     "./github-auth": "./src/github-auth.ts",
     "./github-sync": "./src/github-sync.ts",
+    "./job-settings": "./src/job-settings.ts",
+    "./job-environment": "./src/job-environment.ts",
     "./job-actions": "./src/job-actions.ts",
     "./changes": "./src/changes.ts",
     ".": "./src/index.ts",

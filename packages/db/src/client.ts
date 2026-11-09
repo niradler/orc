@@ -385,6 +385,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE tasks ADD COLUMN skill_name TEXT",
     "ALTER TABLE jobs ADD COLUMN skill_name TEXT",
     "ALTER TABLE jobs ADD COLUMN action TEXT",
+    "ALTER TABLE jobs ADD COLUMN settings TEXT",
+    "ALTER TABLE jobs ADD COLUMN environment TEXT",
     "ALTER TABLE job_runs ADD COLUMN task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
     "ALTER TABLE job_runs ADD COLUMN session_id TEXT",
     "ALTER TABLE tasks ADD COLUMN auto_start INTEGER NOT NULL DEFAULT 1",

@@ -95,9 +95,11 @@ test("stopping a chunked response preserves partial text and a new send finishes
   await page.getByTestId("chat-agent-model-button").click();
   await expect(page.getByTestId("chat-model-option-default")).toBeDisabled();
   await expect(page.getByTestId("chat-model-option-custom")).toBeDisabled();
+  await page.getByTestId("chat-agent-model-help").click();
   await expect(page.getByTestId("chat-agent-model-note")).toContainText(
     "Model changes are available after the current response",
   );
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("chat-activity-status")).toContainText(
     /codex\s*Working for \d+:\d{2}/,

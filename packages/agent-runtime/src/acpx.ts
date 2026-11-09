@@ -12,6 +12,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { providerProcessEnvironment } from "@orc/core/provider-service";
 import { ACPX_CAPABILITIES } from "./capabilities.js";
 import { sessionExecHost } from "./execution-host.js";
 import { readProcessOutput } from "./io.js";
@@ -386,7 +387,12 @@ export class AcpxSession implements AgentSession {
             ? ["--resume-session", this.opts.acpxNativeSessionId]
             : []),
         ],
-        { cwd: this.cwd, timeoutMs: 30_000 },
+        {
+          cwd: this.cwd,
+          timeoutMs: 30_000,
+          env: providerProcessEnvironment(this.opts.env),
+          passEnv: Object.keys(this.opts.env ?? {}),
+        },
       );
       if (result.code !== 0)
         throw new Error(
@@ -476,7 +482,10 @@ export class AcpxSession implements AgentSession {
     if (code !== 0) {
       const detail = this.stderrBuf.trim();
       const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
-      logger.error(msg, { agent: this.agent, stderr: detail });
+      logger.error(this.opts.redactOutput?.(msg) ?? msg, {
+        agent: this.agent,
+        stderr: this.opts.redactOutput?.(detail) ?? detail,
+      });
       if (!this.gotError)
         this.push({
           type: "error",
@@ -498,7 +507,9 @@ export class AcpxSession implements AgentSession {
   async send(prompt: string): Promise<void> {
     if (this.proc) {
       await this.close().catch((err) =>
-        logger.warn("Failed to close previous ACPX process", { err }),
+        logger.warn("Failed to close previous ACPX process", {
+          message: this.opts.redactOutput?.(String(err)) ?? String(err),
+        }),
       );
     }
 
@@ -533,6 +544,8 @@ export class AcpxSession implements AgentSession {
     let handle: HostProcess;
     try {
       handle = await hostSpawn(this.host, args, {
+        env: providerProcessEnvironment(this.opts.env),
+        passEnv: Object.keys(this.opts.env ?? {}),
         cwd: this.cwd,
         stdout: "pipe",
         stderr: "pipe",
@@ -553,11 +566,14 @@ export class AcpxSession implements AgentSession {
     this.drainOutput = readProcessOutput(this.proc, {
       stdout: (line) => this.handleLine(line),
       stderr: (line) => {
-        logger.debug("ACPX stderr", { agent: this.agent, line });
+        logger.debug("ACPX stderr", { agent: this.agent, bytes: line.length });
         this.stderrBuf += `${line}\n`;
       },
       onError: (err, stream) => {
-        logger.error(`Error reading ACPX ${stream}`, { err, agent: this.agent });
+        logger.error(`Error reading ACPX ${stream}`, {
+          message: this.opts.redactOutput?.(String(err)) ?? String(err),
+          agent: this.agent,
+        });
         if (stream === "stdout")
           this.push({ type: "error", data: `ACPX stream error: ${String(err)}` });
       },

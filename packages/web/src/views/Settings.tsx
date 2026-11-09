@@ -55,7 +55,7 @@ const sectionLabels: Record<Section, string> = {
   server: "Server",
   notifications: "Notifications",
   channels: "Channels",
-  agents: "Agents",
+  agents: "Providers",
   chat: "Chat",
   browser: "Browser",
   mcp: "MCP",
@@ -247,7 +247,7 @@ export default function Settings() {
             <AgentSettings />
           </div>
           <div hidden={section !== "chat"}>
-            <ChatSettingsForm />
+            <ChatSettingsForm onManageProviders={() => navigate("agents")} />
           </div>
           <div hidden={section !== "channels"}>
             <ChannelSettings active={section === "channels"} />

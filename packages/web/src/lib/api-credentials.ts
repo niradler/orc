@@ -1,4 +1,5 @@
 import type { ChatSettings } from "@orc/core/chat";
+import type { ProviderPaths } from "@orc/core/coding-agents";
 
 export const API_ACCESS_CHANGED = "orc-api-access-changed";
 const LEGACY_SECRET_PREFIX = "orc_api_secret";
@@ -18,6 +19,7 @@ export type WorkspacePreferences = {
   terminal_font?: string;
   chat?: ChatSettings;
   agents?: string[];
+  provider_paths?: ProviderPaths;
 };
 
 const endpoint = (apiUrl: string, path: string) => `${apiUrl.replace(/\/$/, "")}${path}`;

@@ -7,6 +7,11 @@ import type { SessionRuleGuard } from "./rules.js";
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
+  providerId?: string | undefined;
+  providerExecutable?: string | undefined;
+  providerTextRedactor?:
+    | (() => { push: (text: string) => string; flush: () => string })
+    | undefined;
   chatAgentOptions?: ChatAgentOptions | undefined;
   interactive?: boolean | undefined;
   attentionContext?: { chatThreadId: string; sessionTitle: string } | undefined;
@@ -27,6 +32,8 @@ export type SessionOpts = {
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;
   ruleGuard?: SessionRuleGuard;
+  env?: Record<string, string> | undefined;
+  redactOutput?: ((text: string) => string) | undefined;
   cwd: string;
   model?: string | undefined;
   runtimeSessionId?: string | undefined;
@@ -147,7 +154,16 @@ export interface AgentBackend {
   startSession(opts: SessionOpts): Promise<AgentSession>;
   resumeSession(runtimeSessionId: string, opts: SessionOpts): Promise<AgentSession>;
   preflight(
-    opts?: Pick<SessionOpts, "executionHost" | "acpAgent" | "acpxAgent">,
+    opts?: Pick<
+      SessionOpts,
+      | "executionHost"
+      | "acpAgent"
+      | "acpxAgent"
+      | "providerId"
+      | "env"
+      | "providerExecutable"
+      | "redactOutput"
+    >,
   ): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;
   /**
