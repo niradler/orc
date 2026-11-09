@@ -175,7 +175,7 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
 export function openDesktopViewer(target?: string): void {
   const host = active;
   if (!host || host.window.isDestroyed()) return;
-  if (target && host.preferences.get().openLinksIn === "system") {
+  if (target && host.preferences.snapshot().openLinksIn === "system") {
     const url = previewWebUrl(target);
     if (url) void shell.openExternal(url);
     return;

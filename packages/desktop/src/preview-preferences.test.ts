@@ -19,4 +19,5 @@ test("should default browser control on, persist preferences and reject damaged 
   expect(store.get().agentBrowserControl).toBe(false);
   writeFileSync(path, "broken");
   expect(() => store.get()).toThrow();
+  expect(store.snapshot()).toEqual({ agentBrowserControl: false, openLinksIn: "system" });
 });
