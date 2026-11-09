@@ -276,6 +276,7 @@ export function ChatPanel({
   return (
     <ThreadPrimitive.Root
       data-testid="chat-panel"
+      data-thread-id={thread?.id ?? ""}
       data-streaming={streaming ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(

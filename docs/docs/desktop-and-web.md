@@ -46,6 +46,10 @@ The gear above the input opens session settings, including permissions, agent op
 
 Use **Show parallel sessions** for two independently selected sessions. Each pane owns its draft, attachments and controls; streams continue under the shared providers. Phones and tablets show one pane at a time with session tabs. Message drafts survive reload in the same browser tab. Selected upload files stay in memory; leaving with unsent files asks for confirmation.
 
+Selecting a terminal that is already open focuses its existing pane, including
+the correct phone session tab. A restored link cannot mount the same terminal
+canvas twice, and closing a duplicate presentation leaves the original working.
+
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
 - **Inspector**: the panel button shows the host, folder, branch, changed files, linked task and pull request. **Diff**, **Files** and **Worktrees** reuse the terminal workspace tools. Opening checkout tools connects a shell in the selected folder if one is needed; file saves retain conflict detection and unsaved drafts.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.

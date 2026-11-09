@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { ChatPanel } from "@/components/ChatPanel";
+import { TerminalWorkspaceGroup } from "@/components/terminals/TerminalWorkspaceGroup";
 import { Button } from "@/components/ui/button";
 import { ChatPaneProvider, useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { SessionPaneNavigation } from "@/hooks/useSessionHome";
 import { swapSessionPanes } from "@/lib/session-home";
+import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
 export function SessionWorkspace({
@@ -22,6 +24,7 @@ export function SessionWorkspace({
   onOpenNavigation: () => void;
 }) {
   const chat = useChat();
+  const { terminals } = useTerminals();
   const [params, setParams] = useSearchParams();
   const parallel = params.get("parallel") === "1";
   const [secondary, setSecondary] = useState<string | null>(() => params.get("parallelDraft"));
@@ -146,7 +149,14 @@ export function SessionWorkspace({
       return next;
     });
   }
-  const names = [chat.thread?.title ?? "New session", secondaryTab?.thread?.title ?? "New session"];
+  const names = [
+    terminals.find((terminal) => terminal.id === params.get("sessionTerminal"))?.name ??
+      chat.thread?.title ??
+      "New session",
+    terminals.find((terminal) => terminal.id === params.get("parallelsessionTerminal"))?.name ??
+      secondaryTab?.thread?.title ??
+      "New session",
+  ];
   const parallelButton = (
     <Button
       variant="ghost"
@@ -186,7 +196,7 @@ export function SessionWorkspace({
                   className="min-w-0 max-w-40 truncate"
                   data-testid={`parallel-tab-${index}`}
                 >
-                  {name}
+                  <span className="truncate">{name}</span>
                 </Button>
               ))}
             </nav>
@@ -213,61 +223,63 @@ export function SessionWorkspace({
           {error}
         </p>
       )}
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <div
-          data-testid="session-primary-pane"
-          className={cn(
-            "min-h-0 min-w-0 flex-1",
-            parallel && phonePane === 1 ? "hidden lg:flex" : "flex",
-          )}
-        >
-          <ChatPaneProvider
-            tabKey={chat.activeKey}
-            onSelect={selectPrimary}
-            visible={!parallel || desktop || phonePane === 0}
-          >
-            <ChatPanel
-              open
-              embedded
-              fullscreen
-              compactPane={parallel}
-              workspaceActions={desktop ? parallelButton : undefined}
-              visible={!parallel || desktop || phonePane === 0}
-              onToggle={onToggle}
-              onClose={onClose}
-              onToggleFullscreen={onToggleFullscreen}
-            />
-          </ChatPaneProvider>
-        </div>
-        {parallel && secondaryTab && (
+      <TerminalWorkspaceGroup>
+        <div className="flex min-h-0 min-w-0 flex-1">
           <div
-            data-testid="session-secondary-pane"
+            data-testid="session-primary-pane"
             className={cn(
-              "relative min-h-0 min-w-0 flex-1 border-l border-border",
-              phonePane === 0 ? "hidden lg:flex" : "flex",
+              "min-h-0 min-w-0 flex-1",
+              parallel && phonePane === 1 ? "hidden lg:flex" : "flex",
             )}
           >
-            <SessionPaneNavigation prefix="parallel">
-              <ChatPaneProvider
-                tabKey={secondaryTab.key}
-                onSelect={selectSecondary}
-                visible={desktop || phonePane === 1}
-              >
-                <ChatPanel
-                  open
-                  embedded
-                  fullscreen
-                  compactPane
-                  visible={desktop || phonePane === 1}
-                  onToggle={toggle}
-                  onClose={toggle}
-                  onToggleFullscreen={expandSecondary}
-                />
-              </ChatPaneProvider>
-            </SessionPaneNavigation>
+            <ChatPaneProvider
+              tabKey={chat.activeKey}
+              onSelect={selectPrimary}
+              visible={!parallel || desktop || phonePane === 0}
+            >
+              <ChatPanel
+                open
+                embedded
+                fullscreen
+                compactPane={parallel}
+                workspaceActions={desktop ? parallelButton : undefined}
+                visible={!parallel || desktop || phonePane === 0}
+                onToggle={onToggle}
+                onClose={onClose}
+                onToggleFullscreen={onToggleFullscreen}
+              />
+            </ChatPaneProvider>
           </div>
-        )}
-      </div>
+          {parallel && secondaryTab && (
+            <div
+              data-testid="session-secondary-pane"
+              className={cn(
+                "relative min-h-0 min-w-0 flex-1 border-l border-border",
+                phonePane === 0 ? "hidden lg:flex" : "flex",
+              )}
+            >
+              <SessionPaneNavigation prefix="parallel">
+                <ChatPaneProvider
+                  tabKey={secondaryTab.key}
+                  onSelect={selectSecondary}
+                  visible={desktop || phonePane === 1}
+                >
+                  <ChatPanel
+                    open
+                    embedded
+                    fullscreen
+                    compactPane
+                    visible={desktop || phonePane === 1}
+                    onToggle={toggle}
+                    onClose={toggle}
+                    onToggleFullscreen={expandSecondary}
+                  />
+                </ChatPaneProvider>
+              </SessionPaneNavigation>
+            </div>
+          )}
+        </div>
+      </TerminalWorkspaceGroup>
     </div>
   );
 }

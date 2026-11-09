@@ -17,6 +17,7 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/compone
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useWorkspaceSearchParams } from "@/hooks/useSessionHome";
 import { openTerminalPalette } from "@/lib/terminal-palette";
+import { useTerminals } from "@/lib/terminals";
 import {
   closePane,
   type Layout,
@@ -29,9 +30,11 @@ import { FilePanel } from "./FilePanel";
 import { GitPanelBody } from "./GitPanel";
 import { TerminalCheckout } from "./TerminalCheckout";
 import { TerminalPaneLinks } from "./TerminalPaneLinks";
+import { useTerminalWorkspaceGroup } from "./TerminalWorkspaceGroup";
 import "./TerminalWorkspace.css";
 
 type WorkspaceProps = {
+  onActivate?: () => void;
   storageKey?: string;
   selected: Terminal;
   terminals: Terminal[];
@@ -40,6 +43,7 @@ type WorkspaceProps = {
   renderOptions: (terminal: Terminal) => ReactNode;
 };
 type TreeProps = WorkspaceProps & {
+  focusElsewhere: (id: string) => boolean;
   node: Layout;
   root: Layout;
   active: string;
@@ -188,6 +192,8 @@ function WorkspaceTree(props: TreeProps) {
               aria-label={label}
               aria-pressed={node.kind === kind}
               onClick={() => {
+                if (kind === "terminal" && node.terminalId && props.focusElsewhere(node.terminalId))
+                  return;
                 setPane({
                   kind,
                   terminalId:
@@ -241,6 +247,7 @@ function WorkspaceTree(props: TreeProps) {
             openTerminalPalette({
               currentId: terminal?.id ?? null,
               select: (id) => {
+                if (node.kind === "terminal" && props.focusElsewhere(id)) return;
                 const existing = leaves(root).find(
                   (pane) => pane.kind === "terminal" && pane.terminalId === id,
                 );
@@ -409,6 +416,9 @@ function WorkspaceTree(props: TreeProps) {
 }
 
 export function TerminalWorkspace(props: WorkspaceProps) {
+  const group = useTerminalWorkspaceGroup();
+  const owner = useRef(Symbol("terminal-workspace"));
+  const { focus: focusTerminal } = useTerminals();
   const storageKey = props.storageKey ?? "orc_workspace_layout";
   const desktop = useBreakpoint("lg");
   const [params, setParams] = useWorkspaceSearchParams();
@@ -513,6 +523,31 @@ export function TerminalWorkspace(props: WorkspaceProps) {
     } catch {}
   }, [layout, storedLayout, storageKey]);
   const panes = leaves(layout);
+  const terminalIds = panes
+    .filter((pane) => pane.kind === "terminal" && pane.terminalId)
+    .map((pane) => pane.terminalId as string)
+    .join("\n");
+  const focusRegistered = useRef<((id: string) => void) | null>(null);
+  focusRegistered.current = (id) => {
+    const target = leaves(layoutRef.current).find(
+      (pane) => pane.kind === "terminal" && pane.terminalId === id,
+    );
+    if (!target) return;
+    setZoomed(null);
+    focusPane(target.id);
+    requestAnimationFrame(() => {
+      props.onActivate?.();
+      requestAnimationFrame(() => focusTerminal(id));
+    });
+  };
+  useEffect(
+    () =>
+      group?.register(owner.current, {
+        terminals: new Set(terminalIds.split("\n").filter(Boolean)),
+        focus: (id) => focusRegistered.current?.(id),
+      }),
+    [group, terminalIds],
+  );
   const activePane = panes.find((pane) => pane.id === active) ?? panes[0];
   return (
     <div data-testid="terminal-workspace" className="flex flex-col flex-1 min-h-0 min-w-0">
@@ -538,6 +573,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
         </nav>
       )}
       <WorkspaceTree
+        focusElsewhere={(id) => group?.focus(id, owner.current) ?? false}
         {...props}
         node={layout}
         root={layout}

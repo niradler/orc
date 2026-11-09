@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import { type SessionHomeNav, WorkspaceSearchScope } from "@/hooks/useSessionHome";
+import { type SessionHomeNav, useSessionHome, WorkspaceSearchScope } from "@/hooks/useSessionHome";
 import { type InspectorTab, sameSessionFolder } from "@/lib/session-home";
 import { runningTerminalForSession } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
@@ -131,6 +131,7 @@ export function SessionHomeToggles({ home }: { home: SessionHomeNav }) {
 }
 
 export function SessionTerminalCenter({ context }: { context: SessionContext }) {
+  const home = useSessionHome();
   const { isLoading, terminals } = useTerminals();
   const terminal = context.terminal;
   if (terminal?.status !== "running")
@@ -145,6 +146,7 @@ export function SessionTerminalCenter({ context }: { context: SessionContext }) 
   return (
     <div data-testid="session-terminal" className="flex min-h-0 flex-1 flex-col">
       <TerminalWorkspace
+        onActivate={home.activate}
         selected={terminal}
         terminals={terminals}
         storageKey={`orc_session_layout_${terminal.id}`}

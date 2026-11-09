@@ -49,8 +49,8 @@ interface TerminalsContextValue {
   openLiveSession: (session: LiveSession, options?: { navigate?: boolean }) => Promise<Terminal>;
   remove: (id: string) => Promise<void>;
   rename: (id: string, name: string) => Promise<Terminal>;
-  attach: (id: string, container: HTMLElement) => Promise<void>;
-  detach: (id: string) => void;
+  attach: (id: string, container: HTMLElement) => Promise<boolean>;
+  detach: (id: string, container: HTMLElement) => void;
   sendInput: (id: string, data: string) => void;
   /** Sticky Ctrl from the key bar: the next typed character is sent as its control code. */
   armCtrl: (id: string, onUsed: (() => void) | null) => void;
@@ -215,7 +215,9 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   );
 
   const attach = useCallback(
-    async (id: string, container: HTMLElement): Promise<void> => {
+    async (id: string, container: HTMLElement): Promise<boolean> => {
+      const owner = pendingContainers.current.get(id);
+      if (owner && owner !== container && owner.isConnected) return false;
       pendingContainers.current.set(id, container);
       const focusedBeforeLoad = document.activeElement;
       try {
@@ -223,9 +225,9 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
         setEngineError(null);
       } catch (error) {
         setEngineError(error instanceof Error ? error.message : String(error));
-        return;
+        return false;
       }
-      if (pendingContainers.current.get(id) !== container) return;
+      if (pendingContainers.current.get(id) !== container) return false;
       let runtime = runtimes.current.get(id);
       if (!runtime) {
         runtime = createRuntime(id, (size) =>
@@ -235,11 +237,13 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       }
       mountRuntime(runtime, container, document.activeElement === focusedBeforeLoad);
       void connectRuntime(runtime, callbacks);
+      return true;
     },
     [callbacks],
   );
 
-  const detach = useCallback((id: string) => {
+  const detach = useCallback((id: string, container: HTMLElement) => {
+    if (pendingContainers.current.get(id) !== container) return;
     pendingContainers.current.delete(id);
     const runtime = runtimes.current.get(id);
     if (runtime) unmountRuntime(runtime);

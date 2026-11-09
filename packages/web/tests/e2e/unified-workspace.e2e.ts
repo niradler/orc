@@ -143,6 +143,74 @@ for (const width of [1440, 390]) {
       ).toHaveValue("Draft before terminal duplication");
     });
 
+    test("should focus an existing terminal across parallel workspaces instead of mounting it twice", async ({
+      page,
+    }) => {
+      const fixture = await mockSessionHome(page);
+      const shell = {
+        ...fixture.terminal,
+        id: "parallel-shell",
+        kind: "shell",
+        name: "Parallel shell",
+        live_session_id: null,
+      };
+      await page.route(/\/api\/terminals(\?.*)?$/, (route) =>
+        route.fulfill({
+          json: {
+            enabled: true,
+            ready: true,
+            reason: null,
+            launchers: ["shell", "claude"],
+            host: null,
+            terminals: [fixture.terminal, shell],
+          },
+        }),
+      );
+      await page.goto(
+        `/workspace?project=all&chat=full&sessionTerminal=${HOME.terminal}&parallel=1&parallelsessionTerminal=${shell.id}&parallelview=terminal&parallelpaneTerminal=${shell.id}`,
+      );
+      const primary = page.getByTestId("session-primary-pane");
+      const secondary = page.getByTestId("session-secondary-pane");
+      await expect(primary.getByTestId("terminal-viewport")).toHaveAttribute(
+        "data-terminal-id",
+        HOME.terminal,
+      );
+      if (width < 1024) await page.getByTestId("parallel-tab-1").click();
+      await secondary.getByTestId("pane-terminal").click();
+      await page.getByRole("option").filter({ hasText: fixture.terminal.name }).click();
+      await expect(primary).toBeVisible();
+      await expect(primary.getByTestId("terminal-viewport")).toHaveAttribute(
+        "data-terminal-id",
+        HOME.terminal,
+      );
+      await expect(secondary.getByTestId("terminal-viewport")).toHaveAttribute(
+        "data-terminal-id",
+        shell.id,
+      );
+      if (width < 1024) await expect(page.getByTestId("parallel-tab-1")).toHaveText(shell.name);
+      const ids = await page
+        .getByTestId("terminal-viewport")
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-terminal-id")));
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    test("should keep a terminal canvas owned when a duplicated saved URL closes", async ({
+      page,
+    }) => {
+      await mockSessionHome(page);
+      await page.goto(
+        `/workspace?project=all&chat=full&sessionTerminal=${HOME.terminal}&parallel=1&parallelsessionTerminal=${HOME.terminal}`,
+      );
+      const primary = page.getByTestId("session-primary-pane");
+      const secondary = page.getByTestId("session-secondary-pane");
+      await expect(primary.locator("canvas")).toHaveCount(1);
+      await expect(secondary.getByTestId("terminal-already-open")).toHaveCount(1);
+      await expect(secondary.locator("canvas")).toHaveCount(0);
+      await page.getByTestId("workspace-parallel").click();
+      await expect(primary.locator("canvas")).toHaveCount(1);
+      await expect(primary.getByTestId("terminal-already-open")).toHaveCount(0);
+    });
+
     test("should restore saved parallel sessions under delayed reads and expand the selected session", async ({
       page,
     }) => {

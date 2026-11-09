@@ -14,6 +14,28 @@ Local automated coverage includes desktop and phone viewports; live SSH and
 physical mobile devices remain unverified. This follow-up does not change Tasks
 or other page layouts and is not a merge or release.
 
+### Production user-journey checks
+
+The production integration was exercised in the actual authenticated source app
+with an isolated checkout and real Codex/shell runtimes. Desktop and phone journeys
+covered upload/read plus queued responses, concurrent streams in separate chats,
+busy handoff guards, chat/terminal identity, dirty file save/reopen, terminal input,
+reload/scrollback and retained PID. Touch checks used Pixel 7 emulation; physical
+phones and live SSH remain unverified.
+
+Exploratory testing reproduced a duplicate-PTY defect: selecting the other session's
+terminal in the global picker moved its canvas and left its original pane blank.
+Workspaces now focus the existing presentation across the group. Container-owned
+attach/detach also protects restored duplicate URLs and their cleanup. Desktop and
+phone regressions cover both cases. Phone terminal tab names and title truncation
+were corrected during visual review.
+
+Production screenshots are in `docs/public/screens/`: `session-home-desktop.png`,
+`session-home-phone.png`, `session-list-phone.png`, `workspace-settings-desktop.png`,
+`workspace-settings-phone.png`, `workspace-parallel-desktop.png`,
+`workspace-parallel-phone.png` and `workspace-touch-terminal.png`. They show the
+actual application with synthetic fixture conversations, rather than new mock variants.
+
 This draft proposes full-page web chat as ORC's starting workspace, retains side
 chat on existing pages, and gives sessions consistent chat/terminal controls.
 It is a design prototype, not a live session integration or a production default

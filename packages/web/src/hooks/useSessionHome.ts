@@ -133,7 +133,14 @@ export function useSessionHome() {
     if (!prefix || key.startsWith(prefix))
       scoped.set(prefix ? key.slice(prefix.length) : key, value);
   }
-  return { ...readSessionHome(scoped), go };
+  const activate = useCallback(() => {
+    const next = new URLSearchParams(window.location.search);
+    if (next.get("parallel") !== "1") return;
+    if (prefix === "parallel") next.set("sessionPane", "secondary");
+    else next.delete("sessionPane");
+    navigate({ search: next.toString(), hash: window.location.hash }, { replace: true });
+  }, [navigate, prefix]);
+  return { ...readSessionHome(scoped), go, activate };
 }
 
 const ENTRY_KEY = "orcSessionHomeEntry";
