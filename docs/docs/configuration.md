@@ -11,9 +11,13 @@ Field guidance and examples live behind info icons: hover, focus or tap to read 
 Choose an enabled **Default provider** for new chats. Each provider has a default
 model; leave it blank to use the adapter's default. The chat picker selects named
 providers and can override the model and launch options for that conversation.
+An explicit choice in this browser is remembered across reloads; saving provider
+settings clears that browser override so the saved defaults take effect. Unsent
+model and option edits are retained separately for each provider while switching.
 Changing providers starts a new conversation. Existing conversations retain their
 provider ID and model when the default changes. Disabling a provider hides it from
 new launches while allowing its existing conversations to resume.
+Conversations saved before profiles existed remain pinned to their original native provider.
 
 ![Named coding providers with demo data](/screens/settings-providers-desktop.png)
 

@@ -227,6 +227,8 @@ let modelRequests = 0;
 function requireThread(id: string): ChatThread {
   const thread = store().get(id);
   if (!thread) throw new NotFoundError("Chat", id);
+  // Older conversations used the built-in adapter, never a later named default.
+  thread.config.providerId ??= thread.config.agent;
   return thread;
 }
 

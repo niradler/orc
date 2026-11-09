@@ -4,6 +4,7 @@ import {
   type ChatSettings,
   ChatSettingsSchema,
 } from "@orc/core/chat";
+import { withPermissionMode } from "../lib/composer-chips";
 
 export type ChatConfig = ChatSettings;
 export const DEFAULT_CONFIG: ChatConfig = ChatSettingsSchema.parse({});
@@ -28,12 +29,13 @@ export function parseChatPreferences(raw: string | null): ChatPreferences {
   }
 }
 export function withPreferences(config: ChatConfig, preferences: ChatPreferences): ChatConfig {
-  if (config.providerId) return config;
   const next = { ...config, ...preferences };
+  if (preferences.agent && !preferences.providerId && preferences.agent !== config.agent)
+    next.providerId = preferences.agent;
   // A model belongs to its agent; drop it when the saved agent no longer matches.
   if (preferences.agent && preferences.agent !== config.agent && !preferences.model)
     next.model = "";
-  return next;
+  return preferences.permissionMode ? withPermissionMode(next, preferences.permissionMode) : next;
 }
 
 /** Conversations open as chat tabs in this browser, restored after a reload. */

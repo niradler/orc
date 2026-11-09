@@ -72,13 +72,7 @@ export function ChatAgentModelPicker() {
           chat.startAgentConversation(profile.agent, id, profile.model, profile.options);
           return true;
         }
-        setConfig({
-          ...config,
-          agent: profile.agent,
-          providerId: id,
-          model: profile.model,
-          agentOptions: profile.options ? { [profile.agent]: profile.options } : {},
-        });
+        chat.selectProvider(profile);
         return false;
       }}
       selectedModel={config.model}

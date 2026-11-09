@@ -1676,6 +1676,15 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
 test("named provider defaults reach launches and remain pinned across a default change", async () => {
   const previous = readFileSync(globalConfigPath(), "utf8");
   try {
+    const legacyResult = await turn({
+      agent: "codex",
+      messages: [{ role: "user", content: "Existing conversation before provider profiles" }],
+    });
+    const legacy = legacyResult.events.find((event) => event.type === "thread");
+    if (legacy?.type !== "thread") throw Error("Missing legacy thread");
+    getSqlite()
+      .query("UPDATE chat_threads SET data=json_remove(data, '$.config.providerId') WHERE id=?")
+      .run(legacy.thread.id);
     const initial = readProviderSettings();
     const first = {
       id: "codex-work",
@@ -1711,6 +1720,13 @@ test("named provider defaults reach launches and remain pinned across a default 
       env: { OPENAI_API_KEY: "fixture-work-secret" },
     });
     expect(JSON.stringify(result.events)).not.toContain("fixture-work-secret");
+    const legacyResume = await turn({
+      threadId: legacy.thread.id,
+      messages: [{ role: "user", content: "Continue original local account" }],
+    });
+    expect(legacyResume.events.some((event) => event.type === "error")).toBe(false);
+    expect(calls.at(-1)?.opts.env?.OPENAI_API_KEY).toBeUndefined();
+    expect(calls.at(-1)?.opts.providerId).toBe("codex");
     saveProviderSettings({
       ...saved,
       default_provider_id: second.id,

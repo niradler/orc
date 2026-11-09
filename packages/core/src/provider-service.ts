@@ -114,6 +114,7 @@ export function providerForAgent(
     : (saved.instances.find(
         (profile) => profile.id === saved.default_id && profile.agent === agent,
       ) ?? saved.instances.find((profile) => profile.id === agent));
+  if (providerId && !selected && allowDisabled && providerId === agent) return undefined;
   if (providerId && !selected)
     throw new ValidationError(
       "This provider is no longer configured. Choose another provider for a new session.",

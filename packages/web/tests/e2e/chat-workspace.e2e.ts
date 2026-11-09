@@ -8,6 +8,7 @@ import {
   chooseWorkspaceHost,
   openChatSettings,
   openWorkspaceFolder,
+  settingsSection,
   setWorkspaceWorktree,
 } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
@@ -533,19 +534,29 @@ test("chat defaults save and reload through Settings", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/settings?settingsSection=chat");
   await page.getByTestId("chat-system-prompt").fill("Saved from the mobile settings form");
-  await page.getByTestId("chat-default-model").fill("fixture-settings-model");
   await page
     .getByTestId("chat-model-catalog")
     .fill("codex: fixture-settings-model\nclaude: fixture-claude-model");
+  await page.getByRole("button", { name: "Manage providers", exact: true }).click();
+  await page.getByTestId("provider-select-codex").click();
+  await page.getByTestId("provider-model").fill("fixture-settings-model");
+  await page.getByTestId("provider-default").selectOption("codex");
+  await page.getByTestId("agent-settings-save").click();
+  await expect(page.getByTestId("agent-settings-saved")).toBeVisible();
+  await settingsSection(page, "chat");
+  await expect(page.getByTestId("chat-system-prompt")).toHaveValue(
+    "Saved from the mobile settings form",
+  );
   await page.getByTestId("chat-settings-save").click();
   await expect(page.getByTestId("chat-settings-feedback")).toContainText("Chat defaults saved");
   await page.reload();
-  await expect(page.getByTestId("chat-default-model")).toHaveValue("fixture-settings-model");
   await expect(page.getByTestId("chat-system-prompt")).toHaveValue(
     "Saved from the mobile settings form",
   );
   await openChat(page);
-  await expect(page.getByTestId("chat-model-current")).toHaveText("fixture-settings-model");
+  await expect(
+    page.getByTestId("chat-agent-model-button").filter({ visible: true }),
+  ).toHaveAccessibleName("Agent and model: Codex, fixture-settings-model");
 });
 
 test("coding-session selection opens native history before sending a continuation", async ({

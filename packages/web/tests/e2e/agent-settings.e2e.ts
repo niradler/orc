@@ -206,7 +206,7 @@ for (const width of [1440, 390])
         await page.route("**/api/chat/models?**", (route) =>
           route.fulfill({ json: { models: [], warning: null } }),
         );
-        await page.setViewportSize({ width, height: 1000 });
+        await page.setViewportSize({ width, height: width === 1440 ? 1150 : 1100 });
         await page.goto("/settings");
         await settingsSection(page, "agents");
         await page.getByTestId("provider-new").click();
