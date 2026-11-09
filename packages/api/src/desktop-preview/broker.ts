@@ -76,7 +76,7 @@ export class PreviewBroker {
       );
     if (input.kind === "browser" && !client.agentAccess)
       throw new ForbiddenError(
-        "Enable Allow agent browser control in this session's desktop preview first",
+        "Enable browser control in Settings > Browser and this chat's Session settings first",
       );
     if (this.requests.size >= 32)
       for (const [id, request] of this.requests) {

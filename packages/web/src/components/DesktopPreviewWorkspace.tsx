@@ -274,11 +274,17 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   );
   const context = useMemo<DesktopPreviewContextValue>(
     () => ({
+      browserControl: {
+        enabled: model.agentAccess,
+        available: preferences.settings?.agentBrowserControl === true,
+        setEnabled: (enabled: boolean) =>
+          edit(current.current.key, (old) => ({ ...old, agentAccess: enabled })),
+      },
       openLink,
       openFile,
       toggle: () => edit(current.current.key, (old) => ({ ...old, visible: !old.visible })),
     }),
-    [openLink, openFile, edit],
+    [openLink, openFile, edit, model.agentAccess, preferences.settings?.agentBrowserControl],
   );
   useEffect(
     () =>
@@ -713,24 +719,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                     <ExternalLink size={14} />
                   </button>
                 </form>
-                <label className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 text-xs text-on-surface-variant">
-                  <input
-                    type="checkbox"
-                    data-testid="preview-agent-access"
-                    checked={model.agentAccess}
-                    disabled={!preferences.settings?.agentBrowserControl}
-                    onChange={(event) =>
-                      edit(key, (old) => ({ ...old, agentAccess: event.target.checked }))
-                    }
-                  />
-                  Allow agent browser control
-                  <span
-                    title="Lets agents in this session read, screenshot and interact with this browser, including pages you sign into. On by default; Settings → Browser controls global access."
-                    className="ml-auto cursor-help"
-                  >
-                    ⓘ
-                  </span>
-                </label>
                 <div role="status" className="shrink-0 px-3 text-xs text-error">
                   {model.browser?.error ?? (model.browser?.loading ? "Loading…" : "")}
                 </div>

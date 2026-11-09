@@ -51,7 +51,7 @@ export function BrowserSettings() {
               <p className="mt-1 max-w-xl text-xs text-muted-foreground">
                 On by default. Agents in the selected conversation can read, screenshot and interact
                 with its browser, including pages you sign into. Turn it off here for every
-                conversation, or use the preview switch for one chat.
+                conversation, or use Session settings for one chat.
               </p>
             </div>
             <input

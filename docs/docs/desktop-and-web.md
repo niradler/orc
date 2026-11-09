@@ -134,17 +134,21 @@ an evicted page restores its URL with a fresh temporary browser session.
 
 Agents can use [preview MCP tools](./mcp.md#desktop-preview-tools) to show a file
 or URL in the selected conversation. **Allow agent browser control**, on by
-default, permits snapshots, screenshots,
+default, is controlled in the chat's **Session settings** before you open a preview.
+It permits snapshots, screenshots,
 clicking, typing, key presses and scrolling in its isolated browser. This includes
 pages you sign into there. Turning the switch off revokes control. These tools
 cannot inspect the ORC app, execute arbitrary scripts, upload files or edit files.
 Browser content is untrusted page data, never agent instructions.
 
+![Browser access in a demo chat's Session settings](/screens/desktop-chat-browser-control.png)
+
 **Settings → Browser** controls agent browser access for the whole desktop and
 whether chat web links open in ORC or your system browser. Settings are stored in
 `browser-preferences.json` in Electron's user-data folder and survive restarts.
 Turning global agent access off overrides every chat's switch immediately. With
-global access on, a chat's switch can still disable control for that conversation.
+global access on, the chat's **Session settings** switch can still disable control
+for that conversation. The browser toolbar does not contain a second access switch.
 Files and explicit MCP preview requests continue to open in the panel.
 
 ![Desktop Browser settings with demo data](/screens/desktop-browser-settings.png)

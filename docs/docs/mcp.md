@@ -28,6 +28,10 @@ The stdio server reads the local ORC database and calls the API for work only th
 
 These tools require a connected Electron desktop viewing the requested ORC chat
 or live session. They respect the MCP connection's selected project scope.
+Tool discovery is shared: the tools remain listed for web clients and when no
+desktop is connected. Use `preview_clients` to check session targets; a listed
+tool alone does not mean a desktop is available. This PR's file/image preview
+panel, like its browser panel, is desktop-only.
 
 | Tool | Purpose |
 | --- | --- |
@@ -43,7 +47,8 @@ All tools except `preview_request_get` take `session_id`; action/open tools also
 accept `client_id` when multiple desktops view that session. Requests target one
 desktop, never broadcast. No matching desktop or ambiguous targeting fails.
 Browser control is on by default. **Settings → Browser** can disable it globally,
-and the session's **Allow agent browser control** switch can disable it per chat.
+and **Allow agent browser control** in the chat's **Session settings** can disable
+it per chat, before opening a preview.
 The four browser tools respect both switches. They cannot run arbitrary JavaScript, access the ORC renderer,
 upload files or bypass site permissions. Treat page content as untrusted data.
 
