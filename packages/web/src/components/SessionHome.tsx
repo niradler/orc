@@ -34,18 +34,20 @@ export interface SessionContext {
   shell?: Terminal;
 }
 
-export function useSessionContext(terminalId: string | null): SessionContext {
+export function useSessionContext(
+  terminalId: string | null,
+  selectedLiveId: string | null = null,
+): SessionContext {
   const chat = useChat();
   const { terminals } = useTerminals();
   const live = useQuery({
     queryKey: ["session-workspace-context"],
     queryFn: () => api.sessions.live({ active: false, limit: 5000 }),
-    enabled: !!terminalId || !!chat.thread?.runtimeId,
+    enabled: !!terminalId || !!selectedLiveId || !!chat.thread?.runtimeId,
   });
   const terminal = terminalId ? terminals.find((item) => item.id === terminalId) : undefined;
-  const cwd = terminal ? terminal.cwd : (chat.thread?.cwd ?? chat.workspace?.cwd ?? null);
-  const host = terminal ? terminal.host : (chat.thread?.host ?? chat.workspace?.host ?? null);
-  const liveId = terminal ? terminal.live_session_id : (chat.thread?.sourceId ?? null);
+  const liveId =
+    selectedLiveId ?? (terminal ? terminal.live_session_id : (chat.thread?.sourceId ?? null));
   const session = live.data?.sessions.find((item) =>
     liveId
       ? item.id === liveId
@@ -53,6 +55,16 @@ export function useSessionContext(terminalId: string | null): SessionContext {
         item.agent === chat.config.agent &&
         item.host === chat.thread?.host,
   );
+  const cwd = selectedLiveId
+    ? (session?.cwd ?? null)
+    : terminal
+      ? terminal.cwd
+      : (chat.thread?.cwd ?? chat.workspace?.cwd ?? null);
+  const host = selectedLiveId
+    ? (session?.host ?? null)
+    : terminal
+      ? terminal.host
+      : (chat.thread?.host ?? chat.workspace?.host ?? null);
   const sameFolder = (item: Terminal) =>
     item.status === "running" && sameSessionFolder(item.cwd, cwd) && (item.host ?? null) === host;
   return {
@@ -68,34 +80,37 @@ export function useSessionContext(terminalId: string | null): SessionContext {
 }
 
 /** Opens a `sessionLive` link: in its running terminal when there is one, else resumed as chat. */
-export function useSessionLiveLink(home: SessionHomeNav, enabled: boolean) {
+export function useSessionLiveLink(home: SessionHomeNav, enabled: boolean, preferTerminal = true) {
   const { terminals, isLoading } = useTerminals();
   const chat = useChat();
   const { openThread } = chat;
-  const opening = useRef<string | null>(null);
   const [error, setError] = useState("");
   const { liveId, go } = home;
+  const terminalId =
+    preferTerminal && liveId ? runningTerminalForSession(terminals, liveId)?.id : undefined;
   useEffect(() => {
-    if (!enabled || !liveId || isLoading || opening.current === liveId) return;
-    opening.current = liveId;
     setError("");
-    const terminal = runningTerminalForSession(terminals, liveId);
-    if (terminal) {
-      go({ terminalId: terminal.id, liveId: null }, { replace: true });
-      opening.current = null;
+    if (!enabled || !liveId || isLoading) return;
+    if (terminalId) {
+      go({ terminalId, liveId: null }, { replace: true });
       return;
     }
+    let current = true;
     api.chat
       .resume(liveId)
-      .then((thread) => openThread(thread))
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : "Session could not be opened."),
-      )
-      .finally(() => {
-        opening.current = null;
-        go({ terminalId: null, liveId: null }, { replace: true });
+      .then((thread) => {
+        if (!current) return;
+        openThread(thread);
+        go({ terminalId: null, liveId: null }, { replace: true, chatThread: thread.id });
+      })
+      .catch((cause) => {
+        if (current)
+          setError(cause instanceof Error ? cause.message : "Session could not be opened.");
       });
-  }, [enabled, liveId, isLoading, terminals, go, openThread]);
+    return () => {
+      current = false;
+    };
+  }, [enabled, liveId, isLoading, terminalId, go, openThread]);
   return error;
 }
 

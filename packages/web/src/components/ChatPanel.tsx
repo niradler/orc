@@ -43,6 +43,7 @@ import {
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
+import { LiveSessionDetail } from "@/components/LiveSessionDetail";
 import {
   SessionDrawer,
   SessionHomeToggles,
@@ -169,8 +170,9 @@ export function ChatPanel({
   const home = useSessionHome();
   const docked = fullscreen && desktop && !compactPane && !home.listHidden;
   const rail = fullscreen && desktop && !compactPane && home.listHidden;
-  const context = useSessionContext(fullscreen ? home.terminalId : null);
+  const context = useSessionContext(fullscreen ? home.terminalId : null, home.liveId);
   const terminalCenter = fullscreen && !!home.terminalId;
+  const nativeCenter = !!home.liveId;
   const unrelatedTerminal =
     terminalCenter &&
     context.terminal &&
@@ -182,12 +184,17 @@ export function ChatPanel({
     )
       ? context.terminal
       : undefined;
-  const linkError = useSessionLiveLink(home, fullscreen);
-  const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
+  const linkError = useSessionLiveLink(home, open, fullscreen);
+  const title = nativeCenter
+    ? (context.session?.name ?? "Session")
+    : terminalCenter
+      ? (context.terminal?.name ?? "Terminal")
+      : thread?.title;
   const projects = useProjects();
-  const recordedOwner = terminalCenter
-    ? context.session?.project_id
-    : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
+  const recordedOwner =
+    terminalCenter || nativeCenter
+      ? context.session?.project_id
+      : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
   const owner =
     recordedOwner ?? projectForFolder(context.cwd, projects.data ?? [])?.id ?? recordedOwner;
   const projectName =
@@ -281,7 +288,8 @@ export function ChatPanel({
   return (
     <ThreadPrimitive.Root
       data-testid="chat-panel"
-      data-thread-id={thread?.id ?? ""}
+      data-thread-id={nativeCenter ? "" : (thread?.id ?? "")}
+      data-live-session-id={home.liveId ?? undefined}
       data-streaming={streaming ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(
@@ -343,7 +351,7 @@ export function ChatPanel({
           ) : (
             <div className="min-w-0 flex-1" aria-hidden="true" />
           )}
-          {streaming && (
+          {streaming && !nativeCenter && (
             <LoaderCircle
               size={14}
               aria-hidden="true"
@@ -373,7 +381,8 @@ export function ChatPanel({
                 aria-label="Show terminal"
                 aria-pressed={terminalCenter}
                 disabled={
-                  !terminalCenter && (!terminalControl.available || terminalControl.disabled)
+                  nativeCenter ||
+                  (!terminalCenter && (!terminalControl.available || terminalControl.disabled))
                 }
                 title={
                   terminalCenter
@@ -390,7 +399,7 @@ export function ChatPanel({
               </button>
             </fieldset>
           )}
-          {terminalCenter ? null : headerWide ? (
+          {terminalCenter || nativeCenter ? null : headerWide ? (
             <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
               <ActionHelp label="Refresh session">
                 <button
@@ -582,7 +591,7 @@ export function ChatPanel({
           onOpenChange={setSettingsDialogOpen}
           terminalOnly={unrelatedTerminal}
         />
-        {linkError && (
+        {linkError && !nativeCenter && (
           <p role="alert" className="px-4 py-1 text-xs text-error">
             {linkError}
           </p>
@@ -598,6 +607,16 @@ export function ChatPanel({
             </p>
           )}
           <div className="relative flex min-h-0 flex-1 flex-col">
+            {home.liveId && (
+              <LiveSessionDetail
+                key={home.liveId}
+                embedded
+                sessionId={home.liveId}
+                initialQuery=""
+                resumeNotice={linkError || "Opening session…"}
+                onClose={() => home.go({ liveId: null })}
+              />
+            )}
             {terminalCenter && <SessionTerminalCenter context={context} />}
             <ThreadPrimitive.Viewport
               ref={scroll.viewportRef}
@@ -609,7 +628,7 @@ export function ChatPanel({
               data-pinned={scroll.pinned}
               className={cn(
                 "chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6",
-                terminalCenter && "hidden",
+                (terminalCenter || nativeCenter) && "hidden",
               )}
             >
               <div ref={scroll.contentRef} className="flex min-h-full flex-col">
@@ -701,20 +720,22 @@ export function ChatPanel({
               </div>
             )}
           </div>
-          {streaming && (
+          {streaming && !nativeCenter && (
             <ChatLiveStatus
               agent={streamingAgent}
               startedAt={turn?.startedAt}
               activity={activity}
             />
           )}
-          <ChatLiveAnnouncer
-            streaming={streaming}
-            agent={streamingAgent}
-            text={streamText}
-            last={messages[messages.length - 1]}
-          />
-          {error && (
+          {!nativeCenter && (
+            <ChatLiveAnnouncer
+              streaming={streaming}
+              agent={streamingAgent}
+              text={streamText}
+              last={messages[messages.length - 1]}
+            />
+          )}
+          {error && !nativeCenter && (
             <div
               role="alert"
               data-testid="chat-error"
@@ -723,7 +744,7 @@ export function ChatPanel({
               {error}
             </div>
           )}
-          {(permission || question) && (
+          {!nativeCenter && (permission || question) && (
             <div
               className="shrink-0 max-h-[45vh] overflow-auto"
               data-testid="chat-pending-requests"
@@ -783,7 +804,7 @@ export function ChatPanel({
               )}
             </div>
           )}
-          {queued.length + answers.length > 0 && (
+          {!nativeCenter && queued.length + answers.length > 0 && (
             <details
               key={activeKey}
               open={queueDisclosure.key === activeKey && queueDisclosure.open}
@@ -842,6 +863,7 @@ export function ChatPanel({
           <div
             className={cn(
               "chat-composer-footer relative w-full shrink-0",
+              nativeCenter && "hidden",
               terminalCenter ? "border-t border-border px-2 py-1" : "px-4 pt-2 pb-3 sm:px-6",
             )}
           >

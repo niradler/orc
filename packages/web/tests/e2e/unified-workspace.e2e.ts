@@ -94,18 +94,34 @@ for (const width of [1440, 390]) {
       await expect(primary.getByTestId("chat-agent-current")).toHaveText(original ?? "");
     });
 
-    test("should keep an externally owned conversation readable when chat resume is blocked", async ({
+    test("should open a project session in the chat pane instead of a details drawer", async ({
       page,
-    }) => {
+    }, testInfo) => {
       await mockSessionHome(page);
-      await page.route("**/api/chat/threads", (route) =>
-        route.request().method() === "POST"
-          ? route.fulfill({
-              status: 409,
-              json: { error: "End the original agent session before resuming it in chat." },
-            })
-          : route.fallback(),
+      let resumes = 0;
+      await page.route(/\/api\/projects(\?.*)?$/, (route) =>
+        route.fulfill({
+          json: {
+            projects: [
+              {
+                id: "payments",
+                name: "payments",
+                status: "active",
+                scope: "/home/demo/billing-api",
+              },
+            ],
+            total: 1,
+          },
+        }),
       );
+      await page.route("**/api/chat/threads", (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        resumes++;
+        return route.fulfill({
+          status: 409,
+          json: { error: "End the original agent session before resuming it in chat." },
+        });
+      });
       await page.route(`**/api/sessions/live/${HOME.codexLive}/transcript?**`, (route) =>
         route.fulfill({
           json: {
@@ -124,21 +140,265 @@ for (const width of [1440, 390]) {
         }),
       );
       await page.goto("/workspace?project=all&chat=full");
+      const primary = page.getByTestId("session-primary-pane");
+      await primary.getByTestId("chat-input").fill("Keep my original draft");
+      if (width < 1024) await page.getByTestId("chat-sessions-button").click();
+      await page.getByTestId("session-navigation-projects").click();
+      const projects = page.getByRole("region", { name: "Projects", exact: true });
+      await projects.getByRole("button", { name: /^payments/ }).click();
+      await projects
+        .locator(`[data-history-id="native:${HOME.codexLive}"]`)
+        .getByTestId("chat-resume-live")
+        .click();
+      const conversation = primary.getByTestId("session-native-conversation");
+      await expect(conversation).toContainText("Existing session remains readable.");
+      await expect(conversation.getByTestId("session-read-only-notice")).toContainText(
+        "End the original agent session",
+      );
+      await expect(page.getByTestId("live-session-detail")).toHaveCount(0);
+      await expect(page.getByTestId("chat-sessions-dialog")).toHaveCount(0);
+      await expect(
+        primary.getByTestId("session-project-breadcrumb").filter({ visible: true }),
+      ).toHaveText("payments");
+      await expect(primary.getByTestId("chat-input")).not.toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(conversation).toBeVisible();
+      await page.reload();
+      await expect(conversation).toContainText("Existing session remains readable.");
+      await expect(page).toHaveURL(new RegExp(`sessionLive=${HOME.codexLive}`));
+      await expect.poll(() => resumes).toBe(2);
+      await page.screenshot({
+        path: testInfo.outputPath(`workspace-native-${width}.png`),
+        animations: "disabled",
+      });
+      if (width < 1024)
+        await page.getByTestId("chat-clear-button").filter({ visible: true }).click();
+      else await page.getByTestId("chat-history-new").click();
+      await expect(conversation).toHaveCount(0);
+      await expect(primary.getByTestId("chat-input")).toBeVisible();
+      await expect(page).not.toHaveURL(/sessionLive=/);
+      if (width < 1024) await page.getByTestId("chat-sessions-button").click();
+      await page.getByTestId("session-navigation-recents").click();
+      await page
+        .locator('[data-history-id^="draft:"]')
+        .filter({ visible: true })
+        .getByTestId("chat-session-select")
+        .click();
+      await expect(primary.getByTestId("chat-input")).toHaveValue("Keep my original draft");
+    });
+
+    test("should ignore a late session open and resume the selected conversation in place", async ({
+      page,
+    }) => {
+      const fixture = await mockSessionHome(page);
+      const otherId = "other-native";
+      const other = {
+        ...fixture.live[1],
+        id: otherId,
+        session_id: "other-runtime",
+        name: "Other conversation",
+      };
+      await page.route("**/api/sessions/live?**", (route) =>
+        route.fulfill({ json: { sessions: [...fixture.live, other], total: 3, has_more: false } }),
+      );
+      for (const id of [HOME.codexLive, otherId])
+        await page.route(`**/api/sessions/live/${id}/transcript?**`, (route) =>
+          route.fulfill({
+            json: {
+              total: 1,
+              offset: 0,
+              matches: [],
+              turns: [
+                {
+                  index: 0,
+                  role: "assistant",
+                  time: null,
+                  blocks: [
+                    {
+                      type: "text",
+                      text:
+                        id === otherId
+                          ? "Other original conversation."
+                          : "First original conversation.",
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+      let releaseFirst = () => {};
+      const first = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let held = false;
+      let released = false;
+      await page.route("**/api/chat/threads", async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        const source = route.request().postDataJSON().sourceSessionId;
+        if (source === HOME.codexLive) {
+          held = true;
+          await first;
+          return route.fulfill({ json: fixture.chats[0] });
+        }
+        if (!released)
+          return route.fulfill({
+            status: 409,
+            json: { error: "End the original agent session before resuming it in chat." },
+          });
+        return route.fulfill({
+          json: {
+            ...fixture.chats[1],
+            title: other.name,
+            sourceId: otherId,
+            runtimeId: other.session_id,
+            config: { ...fixture.chats[1].config, agent: "codex" },
+            backend: "codex-cli",
+          },
+        });
+      });
+      await page.goto(`/workspace?project=all&chat=full&chatThread=${HOME.chatA}`);
+      const primary = page.getByTestId("session-primary-pane");
+      await primary.getByTestId("chat-input").fill("Original conversation draft");
       if (width < 1024) await page.getByTestId("chat-sessions-button").click();
       await page
         .locator(`[data-history-id="native:${HOME.codexLive}"]`)
         .filter({ visible: true })
         .getByTestId("chat-resume-live")
         .click();
-      await expect(page.getByTestId("session-read-only-notice")).toContainText(
-        "End the original agent session",
+      await expect.poll(() => held).toBe(true);
+      if (width < 1024) await page.getByTestId("chat-sessions-button").click();
+      await page
+        .locator(`[data-history-id="native:${otherId}"]`)
+        .filter({ visible: true })
+        .getByTestId("chat-resume-live")
+        .click();
+      const conversation = primary.getByTestId("session-native-conversation");
+      await expect(conversation).toContainText("Other original conversation.");
+      const lateResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().endsWith("/api/chat/threads") &&
+          response.request().postDataJSON().sourceSessionId === HOME.codexLive,
       );
-      await expect(page.getByTestId("live-session-detail")).toContainText(
-        "Existing session remains readable.",
+      releaseFirst();
+      await (await lateResponse).finished();
+      await page.evaluate(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
       );
-      await page.keyboard.press("Escape");
+      await expect(primary.getByTestId("chat-panel")).toHaveAttribute(
+        "data-live-session-id",
+        otherId,
+      );
+      released = true;
+      await conversation.getByTestId("open-chat-resume").click();
+      await expect(conversation).toHaveCount(0);
+      await expect(primary.getByTestId("chat-panel")).toHaveAttribute("data-thread-id", HOME.chatB);
+      await expect(primary.getByTestId("chat-input")).toBeVisible();
       await expect(page.getByTestId("live-session-detail")).toHaveCount(0);
-      await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeVisible();
+      if (width < 1024) await page.getByTestId("chat-sessions-button").click();
+      await page
+        .locator(`[data-history-id="chat:${HOME.chatA}"]`)
+        .filter({ visible: true })
+        .getByTestId("chat-session-select")
+        .click();
+      await expect(primary.getByTestId("chat-input")).toHaveValue("Original conversation draft");
+    });
+
+    test("should keep two native conversations and their searches scoped to parallel panes", async ({
+      page,
+    }) => {
+      const fixture = await mockSessionHome(page);
+      const other = {
+        ...fixture.live[1],
+        id: "parallel-native",
+        session_id: "parallel-runtime",
+        name: "Second native conversation",
+      };
+      await page.route("**/api/sessions/live?**", (route) =>
+        route.fulfill({ json: { sessions: [fixture.live[1], other], total: 2, has_more: false } }),
+      );
+      await page.route("**/api/chat/threads", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({
+              status: 409,
+              json: { error: "Original agent still owns this session." },
+            })
+          : route.fallback(),
+      );
+      for (const id of [HOME.codexLive, other.id])
+        await page.route(`**/api/sessions/live/${id}/transcript?**`, (route) =>
+          route.fulfill({
+            json: {
+              total: 1,
+              offset: 0,
+              matches: new URL(route.request().url()).searchParams.get("q") ? [0] : [],
+              turns: [
+                {
+                  index: 0,
+                  role: "assistant",
+                  time: null,
+                  blocks: [
+                    {
+                      type: "text",
+                      text:
+                        id === other.id
+                          ? "Second native conversation."
+                          : "First native conversation.",
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+      await page.goto("/workspace?project=all&chat=full");
+      if (width < 1024) await page.getByTestId("chat-sessions-button").click();
+      await page
+        .locator(`[data-history-id="native:${HOME.codexLive}"]`)
+        .filter({ visible: true })
+        .getByTestId("chat-resume-live")
+        .click();
+      const primary = page.getByTestId("session-primary-pane");
+      await expect(primary.getByTestId("session-native-conversation")).toContainText(
+        "First native conversation.",
+      );
+      await page.getByTestId("workspace-parallel").click();
+      if (width < 1024) await page.getByTestId("parallel-tab-1").click();
+      const secondary = page.getByTestId("session-secondary-pane");
+      await secondary.getByTestId("chat-sessions-button").click();
+      await page
+        .getByTestId("chat-sessions-dialog")
+        .locator(`[data-history-id="native:${other.id}"]`)
+        .getByTestId("chat-resume-live")
+        .click();
+      await expect(secondary.getByTestId("session-native-conversation")).toContainText(
+        "Second native conversation.",
+      );
+      await expect(page).toHaveURL(/parallelsessionLive=parallel-native/);
+      await secondary.getByRole("button", { name: "Search this session", exact: true }).click();
+      await secondary.getByTestId("transcript-search").fill("Second");
+      await expect(secondary.getByTestId("transcript-match-count")).toHaveText("1 / 1");
+      if (width < 1024) await page.getByTestId("parallel-tab-0").click();
+      await primary.getByRole("button", { name: "Search this session", exact: true }).click();
+      await primary.getByTestId("transcript-search").fill("First");
+      await expect(primary.getByTestId("transcript-match-count")).toHaveText("1 / 1");
+      const highlights = () =>
+        page.evaluate(
+          () =>
+            (CSS as unknown as { highlights: Map<string, { size: number }> }).highlights.get(
+              "session-search",
+            )?.size ?? 0,
+        );
+      await expect.poll(highlights).toBe(2);
+      await primary.getByTestId("transcript-search").fill("");
+      await expect.poll(highlights).toBe(1);
+      if (width < 1024) {
+        await expect(page.getByTestId("parallel-tab-1")).toHaveText(other.name);
+        await page.getByTestId("parallel-tab-1").click();
+      }
+      await expect(secondary.getByTestId("transcript-search")).toHaveValue("Second");
+      await expect(page.getByTestId("live-session-detail")).toHaveCount(0);
     });
 
     test("should keep split controls contextual to the terminal", async ({ page }, testInfo) => {

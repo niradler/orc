@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Menu, MessagesSquare, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -27,6 +28,13 @@ export function SessionWorkspace({
   const { terminals } = useTerminals();
   const [params, setParams] = useSearchParams();
   const parallel = params.get("parallel") === "1";
+  const primaryLive = params.get("sessionLive");
+  const secondaryLive = params.get("parallelsessionLive");
+  const live = useQuery({
+    queryKey: ["session-workspace-context"],
+    queryFn: () => api.sessions.live({ active: false, limit: 5000 }),
+    enabled: !!primaryLive || !!secondaryLive,
+  });
   const [secondary, setSecondary] = useState<string | null>(() => params.get("parallelDraft"));
   const phonePane = params.get("sessionPane") === "secondary" ? 1 : 0;
   function setPhonePane(index: number): void {
@@ -151,9 +159,11 @@ export function SessionWorkspace({
   }
   const names = [
     terminals.find((terminal) => terminal.id === params.get("sessionTerminal"))?.name ??
+      live.data?.sessions.find((session) => session.id === primaryLive)?.name ??
       chat.thread?.title ??
       "New session",
     terminals.find((terminal) => terminal.id === params.get("parallelsessionTerminal"))?.name ??
+      live.data?.sessions.find((session) => session.id === secondaryLive)?.name ??
       secondaryTab?.thread?.title ??
       "New session",
   ];

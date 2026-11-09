@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type LiveSession } from "@/api/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
+import { useSessionHome } from "@/hooks/useSessionHome";
 import { resumeCommand, resumeUnavailableReason, scopedSessionPath } from "@/lib/live-sessions";
 import {
   absoluteUrl,
@@ -21,6 +22,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
   const { openLiveSession, info, terminals } = useTerminals();
   const navigate = useNavigate();
   const chat = useChat();
+  const home = useSessionHome();
   const [params] = useSearchParams();
   const [pending, setPending] = useState(false);
   const [chatPending, setChatPending] = useState(false);
@@ -72,7 +74,12 @@ export function ResumeActions({ session }: { session: LiveSession }) {
     setChatPending(true);
     setError(null);
     try {
-      chat.openThread(await api.chat.resume(session.id));
+      const thread = await api.chat.resume(session.id);
+      chat.openThread(thread);
+      if (home.liveId === session.id) {
+        home.go({ liveId: null, terminalId: null }, { chatThread: thread.id });
+        return;
+      }
       const next = new URLSearchParams(params);
       next.delete("session");
       next.set("chat", "open");

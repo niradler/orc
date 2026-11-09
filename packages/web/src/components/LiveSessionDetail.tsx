@@ -18,6 +18,7 @@ type Turn = TranscriptPage["turns"][number];
 type TurnBlock = Turn["blocks"][number];
 
 const HIGHLIGHT = "session-search";
+const highlightsByConversation = new Map<HTMLElement, Range[]>();
 
 const ROLE_STYLE: Record<Turn["role"], string> = {
   user: "border-border/65",
@@ -68,9 +69,17 @@ function useSearchHighlight(
       .Highlight;
     if (!el || !registry || !HighlightCtor) return;
     const needle = query.trim().toLowerCase();
+    const update = () => {
+      const ranges = [...highlightsByConversation.values()].flat();
+      if (ranges.length) registry.set(HIGHLIGHT, new HighlightCtor(...ranges));
+      else registry.delete(HIGHLIGHT);
+    };
     const paint = () => {
-      registry.delete(HIGHLIGHT);
-      if (needle.length < 2) return;
+      if (needle.length < 2) {
+        highlightsByConversation.delete(el);
+        update();
+        return;
+      }
       const ranges: Range[] = [];
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -86,7 +95,8 @@ function useSearchHighlight(
           ranges.push(range);
         }
       }
-      if (ranges.length > 0) registry.set(HIGHLIGHT, new HighlightCtor(...ranges));
+      highlightsByConversation.set(el, ranges);
+      update();
     };
     paint();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -102,7 +112,8 @@ function useSearchHighlight(
     return () => {
       clearTimeout(timer);
       observer.disconnect();
-      registry.delete(HIGHLIGHT);
+      highlightsByConversation.delete(el);
+      update();
     };
   }, [root, query, dependency]);
 }
@@ -175,14 +186,17 @@ export function LiveSessionDetail({
   sessionId,
   initialQuery,
   resumeNotice,
+  embedded = false,
   onClose,
 }: {
   sessionId: string | null;
   initialQuery: string;
   resumeNotice?: string;
+  embedded?: boolean;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
   const { data: all } = useLiveSessions(false);
   const session: LiveSession | undefined = all?.find((s) => s.id === sessionId);
@@ -213,7 +227,9 @@ export function LiveSessionDetail({
     if (!data) return;
     if (target !== undefined) {
       stick.current = false;
-      document.getElementById(`turn-${target}`)?.scrollIntoView({ block: "center" });
+      turnsRef.current
+        ?.querySelector<HTMLElement>(`[data-turn-index="${target}"]`)
+        ?.scrollIntoView({ block: "center" });
       return;
     }
     if (stick.current) scrollToEnd();
@@ -227,46 +243,79 @@ export function LiveSessionDetail({
     if (matches.length > 0) setCursor((c) => (c + step + matches.length) % matches.length);
   };
 
-  return (
-    <Sheet open={Boolean(sessionId)} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent
-        side="right"
-        defaultWidth={1100}
-        resizeKey="live-session"
-        data-testid="live-session-detail"
-      >
-        <SheetHeader>
+  const content = (
+    <>
+      <SheetHeader className={embedded ? "px-4 py-2 sm:px-6" : undefined}>
+        {!embedded && (
           <SheetTitle className="normal-case tracking-normal text-sm pr-8">
             {session?.name ?? "Session"}
           </SheetTitle>
-          {resumeNotice && (
-            <p
-              role="status"
-              data-testid="session-read-only-notice"
-              className="text-sm text-on-surface-variant"
-            >
-              Viewing conversation. {resumeNotice}
-            </p>
-          )}
-          {session && (
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
-              <span className="font-medium text-primary">{session.agent}</span>
-              <StateBadge state={liveSessionState(session)} />
-              <span>
-                <span className="text-on-surface-variant">tokens </span>
-                {formatTokens(session)}
-              </span>
+        )}
+        {resumeNotice && (
+          <p
+            role="status"
+            data-testid="session-read-only-notice"
+            className="text-sm text-on-surface-variant"
+          >
+            Viewing conversation. {resumeNotice}
+          </p>
+        )}
+        {session && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
+            <span className="font-medium text-primary">{session.agent}</span>
+            <StateBadge state={liveSessionState(session)} />
+            <span>
+              <span className="text-on-surface-variant">tokens </span>
+              {formatTokens(session)}
+            </span>
+            {!embedded && (
               <span>
                 <span className="text-on-surface-variant">active </span>
                 {formatWhen(session.last_activity_at)}
               </span>
-              <SessionTaskLink session={session} linkTestId="detail-open-task" />
-              <ResumeActions session={session} />
-              <SessionScratchpads session={session} />
+            )}
+            <SessionTaskLink session={session} linkTestId="detail-open-task" />
+            <ResumeActions session={session} />
+            <SessionScratchpads session={session} />
+            {!embedded && (
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
-            </div>
-          )}
-          {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
+            )}
+          </div>
+        )}
+        {!embedded && sessionId && (
+          <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />
+        )}
+        {embedded && (
+          <div className="flex items-center gap-2 text-xs text-on-surface-variant">
+            {data && (
+              <span data-testid="transcript-status" className="mr-auto">
+                {data.total} {data.total === 1 ? "turn" : "turns"}
+              </span>
+            )}
+            <button
+              type="button"
+              aria-label="Search this session"
+              aria-expanded={searchOpen}
+              onClick={() => setSearchOpen((value) => !value)}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center sm:min-h-8 sm:min-w-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            >
+              <Search size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label="Refresh conversation"
+              data-testid="transcript-refresh"
+              onClick={() => {
+                stick.current = true;
+                void refetch();
+              }}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center sm:min-h-8 sm:min-w-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            >
+              <RefreshCw size={15} className={isFetching ? "animate-spin" : ""} />
+            </button>
+          </div>
+        )}
+        {(!embedded || searchOpen) && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-[150px] flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-outline" />
@@ -306,121 +355,146 @@ export function LiveSessionDetail({
             >
               <ChevronRight className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              data-testid="transcript-refresh"
-              onClick={() => {
-                stick.current = true;
-                refetch();
-              }}
-              className="min-h-11 px-2 inline-flex items-center gap-1 font-label text-xs font-medium text-primary hover:text-on-surface"
-            >
-              <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
+            {!embedded && (
+              <button
+                type="button"
+                data-testid="transcript-refresh"
+                onClick={() => {
+                  stick.current = true;
+                  refetch();
+                }}
+                className="min-h-11 px-2 inline-flex items-center gap-1 font-label text-xs font-medium text-primary hover:text-on-surface"
+              >
+                <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            )}
           </div>
-          {data && (
+        )}
+        {data && !embedded && (
+          <div
+            data-testid="transcript-status"
+            className="mt-2 font-body text-xs text-on-surface-variant tabular-nums"
+          >
+            {data.total} {data.total === 1 ? "turn" : "turns"}
+            {live ? ` · live, updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
+          </div>
+        )}
+      </SheetHeader>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <SheetBody
+          ref={bodyRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            const near = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+            stick.current = near;
+            setAtBottom(near);
+          }}
+        >
+          {isLoading ? (
+            <div className="space-y-4">
+              {[...Array(5)].map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+                <Skeleton key={i} className="h-16 w-full bg-surface-highest" />
+              ))}
+            </div>
+          ) : error || !data ? (
             <div
-              data-testid="transcript-status"
-              className="mt-2 font-body text-xs text-on-surface-variant tabular-nums"
+              data-testid="transcript-unavailable"
+              className="font-body text-xs text-outline py-12 text-center"
             >
-              {data.total} turns
-              {live ? ` · live, updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
+              {error
+                ? `Could not load the conversation: ${error.message}`
+                : "No conversation was recorded for this session."}
+              <p className="mt-2">
+                Resume actions remain available when the native agent session exists.
+              </p>
+              <button
+                type="button"
+                className="mt-3 min-h-11 text-primary hover:underline"
+                onClick={() => refetch()}
+              >
+                Retry conversation
+              </button>
+            </div>
+          ) : (
+            <div ref={turnsRef} className="space-y-3">
+              {data.turns.map((turn) => {
+                const matched = matches.includes(turn.index);
+                const blocks = turn.blocks.map((block, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
+                  <Block key={i} block={block} matched={matched} />
+                ));
+                return (
+                  <div
+                    key={turn.index}
+                    id={embedded ? undefined : `turn-${turn.index}`}
+                    data-turn-index={turn.index}
+                    data-testid="transcript-turn"
+                    data-role={turn.role}
+                    style={{
+                      contentVisibility: "auto",
+                      containIntrinsicSize: "auto 120px",
+                    }}
+                    className={`border-b px-4 py-3 text-on-surface space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
+                  >
+                    <div className="font-label text-xs font-medium text-outline">
+                      {turn.role}
+                      {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
+                    </div>
+                    {turn.role === "system" ? (
+                      <details open={matched || undefined}>
+                        <summary className="cursor-pointer font-label text-xs font-medium text-outline hover:text-on-surface">
+                          injected context
+                        </summary>
+                        <div className="mt-2 space-y-2">{blocks}</div>
+                      </details>
+                    ) : (
+                      blocks
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
-        </SheetHeader>
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          <SheetBody
-            ref={bodyRef}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              const near = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-              stick.current = near;
-              setAtBottom(near);
+        </SheetBody>
+        {data && !atBottom && (
+          <button
+            type="button"
+            data-testid="jump-to-latest"
+            onClick={() => {
+              stick.current = true;
+              scrollToEnd();
             }}
+            className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
           >
-            {isLoading ? (
-              <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
-                  <Skeleton key={i} className="h-16 w-full bg-surface-highest" />
-                ))}
-              </div>
-            ) : error || !data ? (
-              <div
-                data-testid="transcript-unavailable"
-                className="font-body text-xs text-outline py-12 text-center"
-              >
-                {error
-                  ? `Could not load the conversation: ${error.message}`
-                  : "No conversation was recorded for this session."}
-                <p className="mt-2">
-                  Resume actions remain available when the native agent session exists.
-                </p>
-                <button
-                  type="button"
-                  className="mt-3 min-h-11 text-primary hover:underline"
-                  onClick={() => refetch()}
-                >
-                  Retry conversation
-                </button>
-              </div>
-            ) : (
-              <div ref={turnsRef} className="space-y-3">
-                {data.turns.map((turn) => {
-                  const matched = matches.includes(turn.index);
-                  const blocks = turn.blocks.map((block, i) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
-                    <Block key={i} block={block} matched={matched} />
-                  ));
-                  return (
-                    <div
-                      key={turn.index}
-                      id={`turn-${turn.index}`}
-                      data-testid="transcript-turn"
-                      data-role={turn.role}
-                      style={{
-                        contentVisibility: "auto",
-                        containIntrinsicSize: "auto 120px",
-                      }}
-                      className={`border-b px-4 py-3 text-on-surface space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
-                    >
-                      <div className="font-label text-xs font-medium text-outline">
-                        {turn.role}
-                        {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
-                      </div>
-                      {turn.role === "system" ? (
-                        <details open={matched || undefined}>
-                          <summary className="cursor-pointer font-label text-xs font-medium text-outline hover:text-on-surface">
-                            injected context
-                          </summary>
-                          <div className="mt-2 space-y-2">{blocks}</div>
-                        </details>
-                      ) : (
-                        blocks
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </SheetBody>
-          {data && !atBottom && (
-            <button
-              type="button"
-              data-testid="jump-to-latest"
-              onClick={() => {
-                stick.current = true;
-                scrollToEnd();
-              }}
-              className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
-            >
-              <ArrowDown className="h-3.5 w-3.5" />
-              Jump to latest
-              {data.total > seenTotal.current && ` · ${data.total - seenTotal.current} new`}
-            </button>
-          )}
-        </div>
+            <ArrowDown className="h-3.5 w-3.5" />
+            Jump to latest
+            {data.total > seenTotal.current && ` · ${data.total - seenTotal.current} new`}
+          </button>
+        )}
+      </div>
+    </>
+  );
+  if (embedded)
+    return (
+      <section
+        data-testid="session-native-conversation"
+        aria-label={session?.name ?? "Session conversation"}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        {content}
+      </section>
+    );
+  return (
+    <Sheet open={Boolean(sessionId)} onOpenChange={(value) => !value && onClose()}>
+      <SheetContent
+        side="right"
+        defaultWidth={1100}
+        resizeKey="live-session"
+        data-testid="live-session-detail"
+      >
+        {content}
       </SheetContent>
     </Sheet>
   );

@@ -30,8 +30,11 @@ The follow-up combines chat and terminal navigation under **Sessions**, keeps sp
 controls inside the terminal, and replaces long settings explanations with shared
 info popovers. Settings retain reported token counts and the actual host/folder.
 Project folders match unassigned chats and shells by normalized path; pagination
-loads older sessions within the expanded project. A native conversation blocked
-from chat resume remains readable without bypassing its original writer's ownership.
+loads older sessions within the expanded project. Selecting a native conversation
+blocked from resume renders it in the selected chat pane, with its original writer's
+ownership restriction visible. Its pane-scoped URL survives reload, late open results
+cannot replace a newer selection, and resuming after release opens the editable chat
+in place. Parallel transcript searches keep their own matches and scroll targets.
 Provider changes and model discovery remain scoped to their pane and host.
 
 Exploratory testing reproduced a duplicate-PTY defect: selecting the other session's
@@ -46,7 +49,8 @@ Production screenshots are in `docs/public/screens/`: `session-home-desktop.png`
 `workspace-settings-phone.png`, `workspace-parallel-desktop.png`,
 `workspace-parallel-phone.png`, `workspace-projects-desktop.png`,
 `workspace-projects-phone.png`, `workspace-terminal-desktop.png` and
-`workspace-touch-terminal.png`. They show the
+`workspace-touch-terminal.png`, `workspace-native-desktop.png` and
+`workspace-native-phone.png`. They show the
 actual application with synthetic fixture conversations, rather than new mock variants.
 
 This draft proposes full-page web chat as ORC's starting workspace, retains side
