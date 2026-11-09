@@ -20,6 +20,11 @@ Agents connected over [MCP](./mcp.md) do not need a local copy: they discover th
 
 ORC ships two built-in skills. Each keeps its `SKILL.md` short and loads one reference file when needed.
 
+Compiled releases keep bundled skills in a directory identified by their content.
+When an upgrade changes that directory, ORC automatically rebuilds its discovery
+cache so effective reads use the new bundled files. Authored instruction history
+and user skills are preserved.
+
 | Skill | Use for | References |
 | --- | --- | --- |
 | `orc-platform` | Operating ORC: CLI/API/MCP, auth and settings, projects, tasks and flows, memory, knowledge bases and digests, sessions and handoff, terminals and chat, jobs, channels and gateway, human requests, agents and packages, Git/GitHub/SSH, rules and hooks, scratchpads | `setup`, `work`, `memory`, `knowledge`, `execution`, `session-archive`, `channels`, `chat-ui`, `web`, `packages`, `rules`, `scratchpads`; scripts `upload-session.py`, `sync-sessions.py` |

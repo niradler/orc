@@ -12,7 +12,7 @@ T3 itself was inspected as source, not run interactively.
 | --- | --- | --- |
 | Core agent actions | T3 `packages/contracts/src/previewAutomation.ts`, server preview handlers; ORC core action contract, `preview-browser.ts` | Snapshot/screenshot, trusted Chromium click/type/pointer input, key presses/modifiers, scroll, hover, empty/multiple select, drag, condition wait, page-context evaluation. Real Electron/MCP covers actions, page globals, timeout/reload, stale refs and cancellation. HTML5 drag receives a separate runtime check from the earlier custom mouse-drag fixture. |
 | Semantic locators and frames | T3 preview locators; ORC `preview-frames.ts` and semantic selectors | CSS/ref or role/text/label/placeholder/testid objects; owned frame enumeration/selection; cross-origin snapshots and automatic ref-to-frame routing. Real cross-origin action, page-global evaluation, ancestor-overlay rejection and detached-frame failure. Ambiguous matches fail. Rotated/scaled frame pointer layouts currently fail explicitly rather than guessing coordinates. |
-| Dialogs | T3 dialog contract; ORC debugger plus `preview-guest-preload.ts` | Pending dialog state and explicit accept/dismiss/status. Real main-page prompt responses from both MCP and user UI passed. Electron disables native prompt, so a minimal standard prompt-only adapter restores it without exposing ORC APIs, general IPC, Node, credentials or filesystem access. Alert/confirm use Chromium's dialog protocol; additional native-platform interaction remains a review check. |
+| Dialogs | T3 dialog contract; ORC debugger plus `preview-guest-preload.ts` | Pending dialog state and explicit accept/dismiss/status. Real Chromium alert/confirm accept/dismiss and main-page prompt responses from MCP, user UI and keyboard passed. Electron disables native prompt, so a minimal standard prompt-only adapter restores it without exposing ORC APIs, general IPC, Node, credentials or filesystem access. The validation client keeps guest dialogs pending instead of Playwright's default auto-dismiss, so this tests the actual Chromium dialog protocol. |
 | Context efficiency / recovery | agent-browser core skill and snapshot-ref guide; ORC MCP descriptions and platform guide | Default 12,000-character snapshots, 1,000-24,000 limits, region selection, stable bounded refs, truncation and native MCP images. Actions do not echo typed text/evaluation source. Recover after compaction through scoped discovery, tabs/dialog status and fresh snapshot; inspect uncertain delivery before retrying side effects. Page text stays untrusted evidence. |
 | Discovery and effective connection | ORC MCP full/meta discovery, preview broker, agent-runtime backend bindings | Real HTTP MCP tests cover ordinary listing and meta search/describe/invoke, no target, foreign session/project, multiple clients, explicit/pinned client, revocation, reconnect and stale leases. All managed agent launch paths inject the stable ORC conversation ID. No app-wide CDP endpoint is given to agents. No paid model turn is claimed as validation. |
 | Durable permissions and immediate revoke | Native preferences, Session settings and Browser settings | Default ON, per-chat switch before first preview, global override, atomic origin/chat persistence. Actual app restart keeps revoked permission. Leaving chat releases capability lease. Queued mutation injection proves zero late site side effects; interrupted mutations close the guest and require Reload. Accepted site operations cannot be undone. |
@@ -24,7 +24,7 @@ T3 itself was inspected as source, not run interactively.
 | Recording and appearance | T3 recording compositor, resize/color-scheme contract; ORC guest recorder and display controls | Guest capture only, no audio/ORC pixels, isolated networkless encoder, playable WebM <=16 MB and <=180 seconds; workspace save returns metadata/path, not video in agent context. Real decode/playback and modal guest hiding verified. Pending finalize stays cancellable and bounded; stalled-finalize/revoke test returns error and destroys the encoder. User can download completed output if workspace saving fails. Color scheme/reduced motion and viewport effects observed in the guest. |
 | Chat, paths, editing, images | T3 PreviewPanel/openFileInPreview; ORC chat links/attachments and existing editors | Actual attachment, relative path with line reference, Markdown read/edit/split, code edit/Ctrl+S, disk save/reopen, external conflict/draft preservation/reload, images and per-chat drafts. Files retain canonical host/workspace containment, size/type/auth checks. PDF/Office are outside the requested preview formats. |
 | Layout, keyboard, focus, recovery | ORC desktop-only workspace, native view bounds | Float/drag/dock and pointer/keyboard resize, settings modal guest hiding, quit cancellation and owned-daemon survival. Code-line navigation focuses the requested line. Recording modal uses existing accessible dialog/focus handling. New panel and settings remain absent on ordinary web/phone. |
-| Guidance, SDK, packaging | Bundled platform/SDLC sources, public docs, generated SDK and desktop asset allowlist | Updated to the real operations, limits and recovery contract. Source-built demo daemon's effective guidance is read through real MCP. Packaging includes only production main/preloads plus third-party notice, never the test harness. The installed live guide cache is unchanged under the explicit no-installation-change constraint; normal authorized distribution remains necessary. |
+| Guidance, SDK, packaging | Bundled platform/SDLC sources, public docs, generated SDK and desktop asset allowlist | Updated to the real operations, limits and recovery contract. A reproduced persistent-cache bug kept older bundle paths after upgrade; the cache now invalidates when the bundle directory changes. A regression and actual compiled-daemon startup verify current effective platform/SDLC guidance through real MCP. Packaging includes only production main/preloads plus third-party notice, never the test harness. No live installation was upgraded; distribution remains separately authorized. |
 
 ## Evidence and final checks
 
@@ -43,6 +43,16 @@ auth/containment and real HTTP MCP discovery. The final run results, required
 local hook gate, exact implementation/PR head and screenshot refresh are recorded
 in the current handoff and PR description after completion.
 
+After the authorized update from master, the complete Electron/compiled-daemon/MCP
+journey passed, including real Chromium alert/confirm handling, prompt keyboard
+responses, bounded frame snapshots, contenteditable typing, HTML5 drag/drop, native
+Windows DPAPI import and the import/removal race. Focused checks passed 81 tests
+with 406 assertions across browser/API security, agent bindings and bundled skills.
+All workspace typechecks and the docs build passed. An additional real compiled
+startup verifies stale bundled-cache recovery. The mandatory pre-push gate is
+reported with the exact pushed head in the PR; these checks alone do not replace
+the native-platform limits below.
+
 ## Native evidence and operational limits
 
 - Native file-picker results are injected. Actual OS picker interaction remains
@@ -57,8 +67,8 @@ in the current handoff and PR description after completion.
   Semantic matching is deliberately strict about ambiguity; complex transformed
   iframe pointer layouts, cross-viewport drags and system clipboard shortcuts are
   rejected instead of crossing security boundaries or silently retargeting.
-- Native Chromium dialogs and prompt-shim behavior should also be exercised on
-  each release platform. Source snapshots/key format fixtures do not replace
+- Chromium dialogs and prompt-shim behavior passed on Windows; they should also
+  be exercised on each other release platform. Source/key format fixtures do not replace
   approval testing with the real macOS/Linux browser installation.
-- The installed guidance cache is not changed by a source PR. No merge, release,
+- No live installation is upgraded by this source PR. No PR merge, release,
   deployment, default-branch push or installation upgrade is authorized here.

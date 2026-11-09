@@ -425,6 +425,35 @@ describe("listSkills", () => {
     expect(results).toEqual([]);
   });
 
+  test("should replace persisted old-bundle paths automatically after an upgrade", () => {
+    const previous = mkdtempSync(join(tmpdir(), "orc-old-bundle-"));
+    try {
+      mkdirSync(join(previous, "orc-platform", "references"), { recursive: true });
+      writeFileSync(
+        join(previous, "orc-platform", "SKILL.md"),
+        "---\nname: orc-platform\ndescription: Old bundle\n---\nOld",
+      );
+      writeFileSync(join(previous, "orc-platform", "references", "web.md"), "STALE BUNDLE GUIDE");
+      const cache = reloadCache();
+      cache.builtinRoot = previous;
+      cache.skills = cache.skills.map((skill) =>
+        skill.source === "builtin"
+          ? { ...skill, path: join(previous, skill.name, "SKILL.md") }
+          : skill,
+      );
+      writeFileSync(join(getUserSkillsDir(), "..", "skills-cache.json"), JSON.stringify(cache));
+      const current = readSkill("orc-platform", "references/web.md") as SkillRefContent;
+      expect(current.path.startsWith(getBuiltinSkillsDir())).toBe(true);
+      expect(current.content).not.toBe("STALE BUNDLE GUIDE");
+      expect(
+        JSON.parse(readFileSync(join(getUserSkillsDir(), "..", "skills-cache.json"), "utf8"))
+          .builtinRoot,
+      ).toBe(getBuiltinSkillsDir());
+    } finally {
+      reloadCache();
+      rmSync(previous, { recursive: true, force: true });
+    }
+  });
   test("reload rebuilds cache", () => {
     const before = listSkills({ reload: true });
     const after = listSkills({ reload: true });

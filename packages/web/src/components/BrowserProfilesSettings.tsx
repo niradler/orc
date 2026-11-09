@@ -202,7 +202,7 @@ export function BrowserProfilesSettings() {
           sites and a destination profile. Approve any prompt in that browser. Only selected sites’
           cookies are copied; the agent never receives this connection. Passwords, local storage and
           device-bound sessions are not transferred. Some sites require logging in again. Windows
-          encrypted cookie files cannot be copied directly.
+          Chrome/Edge app-bound cookie files require this connection.
         </p>
         <a
           className="text-xs underline"
