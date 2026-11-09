@@ -1201,6 +1201,15 @@ async function beginTurn(
       throw new ValidationError("Start a conversation before compacting context.");
     if (thread.backend !== "claude" && thread.backend !== "codex-cli")
       throw new ValidationError("This integration does not support manual context compaction.");
+    const options = thread.config.agentOptions.claude;
+    if (
+      thread.backend === "claude" &&
+      options?.runtime === "claude-sdk" &&
+      options.options.extraArgs?.["disable-slash-commands"] === null
+    )
+      throw new ValidationError(
+        "Enable Claude slash commands in session settings before compacting context.",
+      );
   }
   if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
     throw new ValidationError("This chat reached its history size limit. Start a new chat.");

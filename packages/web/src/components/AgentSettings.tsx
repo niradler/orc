@@ -3,6 +3,7 @@ import {
   CODING_AGENTS,
   enabledAgents,
   type ProviderPaths,
+  ProviderPathsSchema,
   supportsManualCompaction,
 } from "@orc/core/coding-agents";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,10 +29,23 @@ export function AgentSettings() {
     enabled: false,
   });
   const quota = quotas.data?.accounts.find((account) => account.provider === editing);
-  const selected = draft ?? enabledAgents(preferences.data?.agents);
+  const savedAgents = enabledAgents(preferences.data?.agents);
+  const selected = draft ?? savedAgents;
+  const validatedPaths = ProviderPathsSchema.safeParse(paths);
+  const pathError = validatedPaths.success
+    ? undefined
+    : validatedPaths.error.issues.find((issue) => issue.path[0] === editing)?.message;
+  const savedPaths = preferences.data?.provider_paths ?? {};
+  const dirty =
+    selected.length !== savedAgents.length ||
+    selected.some((agent) => !savedAgents.includes(agent)) ||
+    (["codex", "claude"] as const).some(
+      (agent) => (paths[agent]?.trim() ?? "") !== (savedPaths[agent] ?? ""),
+    );
   const save = useMutation({
     mutationFn: (agents: string[]) => api.settings.save({ agents, provider_paths: paths }),
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
+      client.setQueryData(WORKSPACE_PREFERENCES_KEY, saved);
       setDraft(null);
       setPathsDraft(null);
       await client.invalidateQueries({ queryKey: WORKSPACE_PREFERENCES_KEY });
@@ -40,7 +54,9 @@ export function AgentSettings() {
       await client.invalidateQueries({ queryKey: ["chat-models"] });
     },
   });
-  const extra = selected.filter((id) => !CODING_AGENTS.some((agent) => agent.id === id));
+  const extra = [...new Set([...savedAgents, ...selected])].filter(
+    (id) => !CODING_AGENTS.some((agent) => agent.id === id),
+  );
   const toggle = (id: string, on: boolean) => {
     save.reset();
     setDraft(on ? [...selected, id] : selected.filter((value) => value !== id));
@@ -49,6 +65,7 @@ export function AgentSettings() {
     const id = custom.trim().toLowerCase();
     if (!AGENT_ID_PATTERN.test(id) || selected.includes(id)) return;
     toggle(id, true);
+    setEditing(id);
     setCustom("");
   };
   const busy = preferences.isPending || !!preferences.error || save.isPending;
@@ -56,7 +73,10 @@ export function AgentSettings() {
     <section aria-labelledby="agent-settings-title" className="space-y-4">
       <div>
         <h2 id="agent-settings-title" className="text-base font-medium">
-          Coding agents
+          Coding agents{" "}
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            {selected.length} enabled
+          </span>
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Choose agents for chat, channels and terminals. Changes apply to new launches.
@@ -92,7 +112,7 @@ export function AgentSettings() {
                     className="accent-primary"
                     aria-label={`Enable ${agent?.label ?? id}`}
                     checked={selected.includes(id)}
-                    disabled={busy}
+                    disabled={busy || (!selected.includes(id) && selected.length >= 64)}
                     onChange={(event) => toggle(id, event.target.checked)}
                   />
                 </label>
@@ -111,7 +131,22 @@ export function AgentSettings() {
           </div>
           {editing === "claude" || editing === "codex" ? (
             <div className="space-y-2">
-              <Label htmlFor="provider-binary">Executable path</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="provider-binary">Executable path</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-testid="provider-use-default"
+                  disabled={busy || !paths[editing]}
+                  onClick={() => {
+                    save.reset();
+                    setPathsDraft({ ...paths, [editing]: "" });
+                  }}
+                >
+                  Use default
+                </Button>
+              </div>
               <Input
                 id="provider-binary"
                 data-testid="provider-binary"
@@ -119,12 +154,19 @@ export function AgentSettings() {
                 placeholder={editing}
                 maxLength={2048}
                 disabled={busy}
+                aria-invalid={!!pathError}
+                aria-describedby={pathError ? "provider-binary-error" : "provider-binary-help"}
                 onChange={(event) => {
                   save.reset();
                   setPathsDraft({ ...paths, [editing]: event.target.value });
                 }}
               />
-              <p className="text-xs text-muted-foreground">
+              {pathError && (
+                <p id="provider-binary-error" role="alert" className="text-xs text-error">
+                  {pathError}
+                </p>
+              )}
+              <p id="provider-binary-help" className="text-xs text-muted-foreground">
                 Local ORC host only. Leave blank to use the default installation. Enter a binary
                 path, without arguments. SSH hosts use their own installation.
               </p>
@@ -157,7 +199,7 @@ export function AgentSettings() {
                 disabled={quotas.isFetching}
                 onClick={() => void quotas.refetch()}
               >
-                Check limits
+                {quotas.isFetching ? "Checking…" : "Check limits"}
               </Button>
               {quotas.isError && (
                 <p role="alert" className="mt-2 text-xs text-error">
@@ -207,7 +249,12 @@ export function AgentSettings() {
         <Button
           type="submit"
           variant="outline"
-          disabled={busy || !AGENT_ID_PATTERN.test(custom.trim().toLowerCase())}
+          disabled={
+            busy ||
+            !AGENT_ID_PATTERN.test(custom.trim().toLowerCase()) ||
+            selected.includes(custom.trim().toLowerCase()) ||
+            selected.length >= 64
+          }
         >
           Add
         </Button>
@@ -215,17 +262,32 @@ export function AgentSettings() {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           data-testid="agent-settings-save"
-          disabled={busy || (!draft && !pathsDraft) || selected.length === 0}
+          disabled={busy || !dirty || !validatedPaths.success || selected.length === 0}
           onClick={() => save.mutate(selected)}
         >
-          {save.isPending ? "Saving…" : "Save agents"}
+          {save.isPending ? "Saving…" : "Save changes"}
         </Button>
+        {dirty && (
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="provider-discard"
+            disabled={save.isPending}
+            onClick={() => {
+              setDraft(null);
+              setPathsDraft(null);
+              save.reset();
+            }}
+          >
+            Discard changes
+          </Button>
+        )}
         {selected.length === 0 && (
           <p className="text-xs text-muted-foreground">Enable at least one agent.</p>
         )}
         {save.isSuccess && (
           <p role="status" data-testid="agent-settings-saved">
-            Agents saved.
+            Provider settings saved.
           </p>
         )}
         {save.error && <p role="alert">{save.error.message}</p>}

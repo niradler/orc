@@ -216,6 +216,39 @@ afterAll(() => {
 });
 
 describe("native chat runtime", () => {
+  test("should refuse compaction when Claude slash commands are explicitly disabled", async () => {
+    const originalClaude = createBackend("claude");
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => session({ id, opts }),
+    }));
+    try {
+      const started = await turn({
+        agent: "claude",
+        agentOptions: {
+          claude: {
+            runtime: "claude-sdk",
+            options: { extraArgs: { "disable-slash-commands": null } },
+          },
+        },
+        messages: [{ role: "user", content: "Start Claude with slash commands disabled" }],
+      });
+      const opened = started.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing Claude thread");
+      expect(
+        (
+          await turn({
+            threadId: opened.thread.id,
+            messages: [{ role: "user", content: "/compact" }],
+          })
+        ).response.status,
+      ).toBe(400);
+    } finally {
+      registerBackend("claude", () => originalClaude);
+    }
+  });
   test("should reserve compact as a native command on the same existing session", async () => {
     expect(
       (await turn({ messages: [{ role: "user", content: "/compact" }] })).response.status,

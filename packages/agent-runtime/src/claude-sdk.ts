@@ -148,6 +148,7 @@ class ClaudeSDKSession implements AgentSession {
     { question: ChatQuestion; resolve: (answers: Record<string, string[]> | null) => void }
   >();
   private abortController: AbortController | null = null;
+  private runningQuery: Promise<void> | undefined;
   private readonly opts: SessionOpts;
   private readonly host: ExecHost;
 
@@ -190,13 +191,16 @@ class ClaudeSDKSession implements AgentSession {
     if (this.abortController) {
       this.abortController.abort();
     }
+    await this.runningQuery;
     this.done = false;
     this.eventQueue.length = 0;
     this.abortController = new AbortController();
-    void this.driveQuery(prompt);
+    this.runningQuery = this.driveQuery(prompt);
   }
 
   private async driveQuery(prompt: string): Promise<void> {
+    const abortController = this.abortController;
+    let nativeQuery: ReturnType<typeof query> | undefined;
     try {
       const supplied = this.opts.chatAgentOptions
         ? ChatAgentOptionsSchema.parse(this.opts.chatAgentOptions)
@@ -301,7 +305,7 @@ class ClaudeSDKSession implements AgentSession {
               .filter(Boolean)
               .join("\n\n"),
           },
-          ...(this.abortController ? { abortController: this.abortController } : {}),
+          ...(abortController ? { abortController } : {}),
           onElicitation: async (request, { signal }) => {
             const requestId = ulid();
             try {
@@ -410,6 +414,7 @@ class ClaudeSDKSession implements AgentSession {
           ...(this.opts.model ? { model: this.opts.model } : {}),
         },
       });
+      nativeQuery = q;
 
       // Each text block is its own paragraph; joined bare, text before and after a tool
       // call runs together and breaks markdown such as a code fence opening mid-line.
@@ -480,6 +485,7 @@ class ClaudeSDKSession implements AgentSession {
           }
         }
 
+        // Keep reading after the result so the subprocess releases its working folder.
         if (msg.type === "result") {
           this.runtimeSessionId = msg.session_id;
           if (msg.is_error) {
@@ -498,7 +504,6 @@ class ClaudeSDKSession implements AgentSession {
               },
             });
           }
-          break;
         }
       }
     } catch (err) {
@@ -509,6 +514,14 @@ class ClaudeSDKSession implements AgentSession {
           data: err instanceof Error ? err.message : String(err),
         });
       }
+    } finally {
+      try {
+        await nativeQuery?.return();
+      } catch (error) {
+        logger.warn("Claude SDK cleanup failed", { error });
+        this.push({ type: "error", data: "Claude connection could not be closed cleanly." });
+      }
+      if (this.abortController === abortController) this.abortController = null;
     }
 
     this.done = true;
@@ -582,6 +595,8 @@ class ClaudeSDKSession implements AgentSession {
     this.permissionResolvers.clear();
     this.abortController?.abort();
     this.abortController = null;
+    await this.runningQuery;
+    this.runningQuery = undefined;
     this.done = true;
     this.resolveNext?.();
     this.resolveNext = null;

@@ -102,16 +102,34 @@ for (const width of [1440, 390]) {
         await page.getByRole("button", { name: "Check limits" }).click();
         await expect(page.getByTestId("provider-limits")).toContainText("100% used");
         await expect(page.getByTestId("provider-limits")).toContainText("Resets");
+        let failSave = true;
+        await page.route("**/api/settings", (route) => {
+          if (route.request().method() === "PATCH" && failSave) {
+            failSave = false;
+            return route.fulfill({ status: 503, json: { error: "Temporary settings failure" } });
+          }
+          return route.continue();
+        });
+        await page.getByTestId("agent-settings-save").click();
+        await expect(page.getByRole("alert")).toContainText("Temporary settings failure");
+        await expect(page.getByTestId("provider-binary")).toHaveValue("C:\\Agent Tools\\codex.exe");
         await page.getByTestId("agent-settings-save").click();
         await expect(page.getByTestId("agent-settings-saved")).toBeVisible();
         await page.reload();
         await expect(page.getByTestId("provider-binary")).toHaveValue("C:\\Agent Tools\\codex.exe");
         await expect(page.getByRole("button", { name: "Check limits" })).toBeHidden();
+        await page.getByTestId("provider-use-default").click();
+        await expect(page.getByTestId("provider-binary")).toHaveValue("");
+        await expect(page.getByTestId("agent-settings-save")).toBeEnabled();
+        await page.getByTestId("provider-discard").click();
+        await expect(page.getByTestId("provider-binary")).toHaveValue("C:\\Agent Tools\\codex.exe");
+        await expect(page.getByTestId("agent-settings-save")).toBeDisabled();
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         ).toBe(true);
         await page.getByTestId("provider-binary").focus();
         await expect(page.getByTestId("provider-binary")).toBeFocused();
+        await page.getByTestId("provider-select-codex").focus();
         await page.screenshot({ path: testInfo.outputPath(`providers-${theme}-${width}.png`) });
       } finally {
         await apiPatch(request, "/settings", { provider_paths: {} });
@@ -120,7 +138,7 @@ for (const width of [1440, 390]) {
   }
   test(`manual compaction uses an existing idle conversation and preserves drafts at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.addInitScript(
       (secret) =>
@@ -141,6 +159,8 @@ for (const width of [1440, 390]) {
     await page.getByTestId("chat-input").fill("Keep this draft");
     await openChatActions(page);
     await expect(page.getByTestId("chat-compact-button")).toBeEnabled();
+    await page.getByTestId("chat-compact-button").hover();
+    await page.screenshot({ path: testInfo.outputPath(`compaction-menu-${width}.png`) });
     const sent = page.waitForRequest(
       (request) => request.url().endsWith("/api/chat/stream") && request.method() === "POST",
     );

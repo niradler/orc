@@ -5,8 +5,16 @@
 Open **Settings → Agents** to enable coding agents and select one to configure.
 Claude Code and Codex use native integrations; other agents use acpx. Provider
 selection and enablement are separate, so a disabled provider can be configured.
-Save agents commits the enabled list and executable paths together. Drafts survive
+Save changes commits the enabled list and executable paths together. Drafts survive
 switching providers and Settings sections.
+Use **Use default** to clear a provider's executable override, **Discard changes**
+to restore saved values, and **Save changes** to commit edits. Failed saves preserve
+the draft for retry; unchanged settings do not enable Save.
+
+![Coding provider settings with demo data](/screens/settings-providers-desktop.png)
+
+[Phone layout](/screens/settings-providers-phone.png) ·
+[Compact context action](/screens/provider-compaction-phone.png)
 
 For Claude and Codex, **Executable path** overrides the binary on the local ORC
 API host for native sessions, model discovery and terminal/package launches. Enter
@@ -50,6 +58,7 @@ same native session: Claude's SDK command or Codex's `thread/compact/start` RPC.
 Progress, failures and completion use the normal conversation stream and history.
 Running turns, attachments and integrations without native support cannot be
 compacted this way. Keep automatic compaction under the agent's own control;
+Claude sessions with slash commands explicitly disabled must enable them first.
 there is no ORC idle-compaction timer. Compaction summarizes model context and may
 use provider quota; it does not erase the displayed ORC transcript.
 
