@@ -143,7 +143,15 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     };
 
     if (job.action && job.action.type !== "command") {
-      const output = await runJobAction(job, job.action, runId, opts.input?.stdin, jobEnv, redact);
+      const output = await runJobAction(
+        job,
+        job.action,
+        runId,
+        opts.input?.stdin,
+        jobEnv,
+        redact,
+        environment.createRedactor(),
+      );
       await db
         .insert(job_run_logs)
         .values({ run_id: runId, ts: new Date(), stream: "stdout", line: output });
@@ -272,15 +280,26 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       const dec = new TextDecoder();
       let buf = "";
       let receivedBytes = 0;
-      for await (const chunk of reader) {
+      const redactor = environment.createRedactor();
+      const encoder = new TextEncoder();
+      const safeDecoder = new TextDecoder();
+      const accept = (text: string): void => {
         const remaining = Math.max(0, MAX_STREAM_BYTES - receivedBytes);
-        const accepted = chunk.subarray(0, remaining);
-        receivedBytes += accepted.byteLength;
-        buf += dec.decode(accepted, { stream: true });
+        if (!remaining) return;
+        const bytes = encoder.encode(text);
+        let length = Math.min(bytes.length, remaining);
+        if (length < bytes.length) {
+          while (length > 0 && ((bytes[length] ?? 0) & 0xc0) === 0x80) length--;
+          receivedBytes = MAX_STREAM_BYTES;
+        } else receivedBytes += length;
+        buf += safeDecoder.decode(bytes.subarray(0, length));
+      };
+      for await (const chunk of reader) {
+        accept(redactor.write(dec.decode(chunk, { stream: true })));
         const lines = buf.split("\n");
         buf = lines.pop() ?? "";
         for (const rawLine of lines) {
-          const line = redact(rawLine);
+          const line = rawLine;
           if (stream === "stdout") {
             if (stdoutBytes < MAX_STREAM_BYTES) {
               stdoutLines.push(line);
@@ -306,9 +325,10 @@ export async function executeJob(opts: RunOptions): Promise<string> {
           }
         }
       }
-      buf += dec.decode();
+      accept(redactor.write(dec.decode()));
+      accept(redactor.finish());
       if (buf) {
-        const line = redact(buf).slice(
+        const line = buf.slice(
           0,
           Math.max(0, MAX_STREAM_BYTES - (stream === "stdout" ? stdoutBytes : stderrBytes)),
         );

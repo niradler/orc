@@ -90,7 +90,7 @@ export function JobDetailSheet({
                         : job.command}
                   </pre>
                 </DetailField>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <DetailField label="Trigger Type">
                     <span className="font-label text-xs  px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
                       {job.trigger_type}
@@ -109,12 +109,12 @@ export function JobDetailSheet({
                     <code className="font-mono text-xs">{job.cron_expr}</code>
                   </DetailField>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <DetailField label="Timeout">{job.timeout_secs}s</DetailField>
                   <DetailField label="Max Retries">{job.max_retries}</DetailField>
                   <DetailField label="Overlap">{job.overlap}</DetailField>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <DetailField label="Notify On">{job.notify_on}</DetailField>
                   <DetailField label="Run Count">{job.run_count}</DetailField>
                 </div>
@@ -260,7 +260,7 @@ function RunItem({
         onClick={onToggle}
         aria-expanded={expanded}
         data-testid="job-run-result"
-        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-surface transition-colors text-left"
+        className="w-full flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-surface transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown size={12} className="text-outline shrink-0" />
@@ -268,7 +268,7 @@ function RunItem({
           <ChevronRight size={12} className="text-outline shrink-0" />
         )}
         <StatusBadge status={run.status} type="job" />
-        <span className="font-label text-xs text-outline flex-1">
+        <span className="order-last basis-full min-w-0 font-label text-xs text-outline sm:order-none sm:basis-auto sm:flex-1">
           {run.started_at ? new Date(run.started_at).toLocaleString() : "\u2014"}
           {run.ended_at && (
             <span className="ml-2">
@@ -276,7 +276,9 @@ function RunItem({
             </span>
           )}
         </span>
-        <span className="text-xs underline">{expanded ? "Hide result" : "View result"}</span>
+        <span className="ml-auto whitespace-nowrap text-xs underline sm:ml-0">
+          {expanded ? "Hide result" : "View result"}
+        </span>
         {run.exit_code !== null && (
           <span
             className={`font-mono text-xs ${run.exit_code === 0 ? "text-secondary" : "text-error"}`}

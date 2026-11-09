@@ -4,6 +4,7 @@ import { execHostFor, hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import { readFlow } from "@orc/core/flow-service";
 import { ulid } from "@orc/core/ids";
 import type { JobAction } from "@orc/core/job-actions";
+import { createJobOutputRedactor, type JobOutputRedactor } from "@orc/core/job-environment";
 import type { JobSettings } from "@orc/core/job-settings";
 import { getDb, getSqlite } from "@orc/db/client";
 import { job_runs, sessions, tasks } from "@orc/db/schema";
@@ -29,6 +30,7 @@ export async function runJobAction(
   input?: string,
   env?: Record<string, string>,
   redact: (text: string) => string = (text) => text,
+  outputRedactor: JobOutputRedactor = createJobOutputRedactor([]),
 ): Promise<string> {
   const db = getDb();
   if (action.type === "task") {
@@ -154,7 +156,7 @@ export async function runJobAction(
             .query("UPDATE gateway_sessions SET runtime_session_id=? WHERE id=?")
             .run(runtimeId, sessionId);
         }
-        if (event.type === "text") trace = (trace + event.data).slice(-64000);
+        if (event.type === "text") trace = (trace + outputRedactor.write(event.data)).slice(-64000);
         if (event.type === "permission_request")
           activeSession.respondPermission(
             event.data.requestId,
@@ -191,13 +193,13 @@ export async function runJobAction(
         failure ??= `Could not close agent: ${error instanceof Error ? error.message : String(error)}`;
       }
     }
-    trace = redact(trace);
+    trace = (trace + outputRedactor.finish()).slice(-64000);
     failure = failure ? redact(failure) : null;
     try {
       const cleanup = await workspace.cleanup(!failure);
-      if (cleanup) trace += `\n${cleanup}`;
+      if (cleanup) trace += `\n${redact(cleanup)}`;
     } catch {
-      trace += `\nWorktree retained; cleanup failed: ${cwd}`;
+      trace += redact(`\nWorktree retained; cleanup failed: ${cwd}`);
     }
     sqlite
       .query(

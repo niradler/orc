@@ -230,9 +230,9 @@ export function JobEditorDialog({
                         <p className="mt-3 text-xs text-outline">
                           Saved schedule’s next run:{" "}
                           {new Date(job.next_run_at).toLocaleString(undefined, {
-                            timeZone: job.settings?.timezone ?? "UTC",
+                            timeZone: job.schedule_timezone,
                           })}{" "}
-                          ({job.settings?.timezone ?? "UTC"})
+                          ({job.schedule_timezone})
                         </p>
                       )}
                     </div>

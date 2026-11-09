@@ -12,6 +12,7 @@ import {
 import { createFlow, reloadFlows } from "@orc/core/flow-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { tasks } from "@orc/db/schema";
+import { executeJob } from "@orc/runner/executor";
 import { startScheduler, stopScheduler } from "@orc/runner/scheduler";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -71,10 +72,17 @@ beforeAll(() => {
             type: "permission_request",
             data: { requestId: "request", tool: "shell", command: "example" },
           };
-          yield {
-            type: "text",
-            data: `Agent action completed${options.env?.FIXTURE_SECRET ?? ""}`,
-          };
+          if (options.env?.REDACTION_REGRESSION) {
+            const secret = options.env.FIXTURE_SECRET ?? "";
+            yield { type: "text", data: secret.slice(0, 20) };
+            yield { type: "text", data: secret.slice(20) };
+            yield { type: "text", data: "x".repeat(63990) };
+          } else {
+            yield {
+              type: "text",
+              data: `Agent action completed${options.env?.FIXTURE_SECRET ?? ""}`,
+            };
+          }
           yield { type: "result", data: { runtimeSessionId: "fixture-runtime" } };
         },
       };
@@ -524,3 +532,68 @@ test("should run scheduled agent actions and signed HTTP webhook agent actions e
     await server.stop(true);
   }
 }, 15000);
+
+test("agent output redacts split secrets before rolling trace retention and audit persistence", async () => {
+  const secret = "SYNTHETIC_SECRET_BOUNDARY_12345";
+  const created = await req(app, "POST", "/jobs", {
+    name: "redaction-rolling-regression",
+    trigger_type: "manual",
+    action: { type: "agent", backend: "job-fixture", prompt: "Inspect fixture" },
+    environment: [
+      { name: "FIXTURE_SECRET", value: secret, secret: true },
+      { name: "REDACTION_REGRESSION", value: "true", secret: false },
+    ],
+  });
+  expect(created.status).toBe(201);
+  const job = await created.json();
+  const trigger = await (await req(app, "POST", `/jobs/${job.id}/trigger`)).json();
+  const run = await waitRun(trigger.run_id);
+  expect(run.status).toBe("success");
+  const sqlite = getSqlite();
+  const persisted = [
+    run.stdout,
+    sqlite.query("SELECT summary FROM gateway_sessions WHERE id=?").get(run.session_id ?? ""),
+    sqlite.query("SELECT summary FROM sessions WHERE id=?").get(run.session_id ?? ""),
+    sqlite.query("SELECT line FROM job_run_logs WHERE run_id=?").all(run.id),
+  ];
+  expect(JSON.stringify(persisted)).not.toContain("DARY_12345");
+  expect(run.stdout).toEndWith("x".repeat(63990));
+  expect(run.stdout).toHaveLength(64000);
+});
+
+test("command redacts secret fragments before stream cap, including split chunks and both output streams", async () => {
+  const secret = "SYNTHETIC_COMMAND_SECRET_SECOND_PART";
+  const created = await req(app, "POST", "/jobs", {
+    name: "redaction-command-regression",
+    trigger_type: "manual",
+    action: { type: "command", command: "fixture" },
+    environment: [{ name: "FIXTURE_SECRET", value: secret, secret: true }],
+  });
+  expect(created.status).toBe(201);
+  const job = await created.json();
+  const runId = await executeJob({
+    jobId: job.id,
+    execution: {
+      argv: [
+        process.execPath,
+        "-e",
+        "process.stdout.write('x'.repeat(65530));process.stdout.write(process.env.FIXTURE_SECRET.slice(0,12));await Bun.sleep(20);process.stdout.write(process.env.FIXTURE_SECRET.slice(12));process.stderr.write(process.env.FIXTURE_SECRET);",
+      ],
+      stdin: "",
+      timeout_ms: 5000,
+      cwd: fixtureHome,
+    },
+  });
+  const sqlite = getSqlite();
+  const run = sqlite
+    .query<{ stdout: string; stderr: string; status: string }, [string]>(
+      "SELECT stdout,stderr,status FROM job_runs WHERE id=?",
+    )
+    .get(runId);
+  expect(run?.status).toBe("success");
+  expect(run?.stdout).toBe(`${"x".repeat(65530)}[REDAC`);
+  expect(run?.stderr).toBe("[REDACTED]");
+  const logs = sqlite.query("SELECT line FROM job_run_logs WHERE run_id=?").all(runId);
+  expect(JSON.stringify(logs)).not.toContain("SYNTHETIC");
+  expect(JSON.stringify(logs)).not.toContain("SECOND_PART");
+});
