@@ -250,6 +250,7 @@ export function JobEditorDialog({
                     <Label htmlFor="job-description">Description (optional)</Label>
                     <Input
                       id="job-description"
+                      data-testid="job-description"
                       value={draft.description}
                       onChange={(event) => change("description", event.target.value)}
                     />

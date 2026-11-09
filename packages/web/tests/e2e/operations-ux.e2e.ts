@@ -87,7 +87,7 @@ for (const theme of ["dark", "light"] as const) {
       const row = page.locator(`[data-testid="job-row"][data-job-id="${job.id}"]`);
       await row.getByTestId("job-edit").click();
       const dialog = page.getByRole("dialog");
-      await dialog.getByLabel("Description", { exact: true }).fill("");
+      await dialog.getByTestId("job-description").fill("");
       await revealFormField(page, dialog.getByLabel("Maximum retries", { exact: true }));
       await dialog.getByLabel("Maximum retries", { exact: true }).fill("0");
       await revealFormField(page, dialog.getByLabel("Command", { exact: true }));

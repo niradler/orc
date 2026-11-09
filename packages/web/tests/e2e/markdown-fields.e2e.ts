@@ -64,7 +64,7 @@ for (const width of [1440, 390, 320]) {
     await expect(dialog.getByTestId("memory-content-count")).toContainText(
       String([...markdown].length),
     );
-    await dialog.getByTestId("form-step-details").click();
+    await dialog.getByTestId("form-step-trigger").click();
     await openFinalFormStep(page);
     await expect(preview).toBeVisible();
     await page.keyboard.press("Escape");
@@ -152,7 +152,7 @@ test("Task body and job task instructions preview Markdown without changing thei
   await page.keyboard.press("Escape");
   await gotoView(page, "jobs");
   await page.getByTestId("new-job-button").click();
-  await page.getByTestId("form-step-execution").click();
+  await page.getByTestId("form-step-destination").click();
   await page.getByTestId("job-action-type").selectOption("task");
   await page.getByTestId("job-task-body").fill(markdown);
   await page.getByTestId("job-task-body-preview").click();
@@ -161,8 +161,8 @@ test("Task body and job task instructions preview Markdown without changing thei
       .getByTestId("job-task-body-rendered")
       .getByRole("heading", { name: "Verification checklist" }),
   ).toBeVisible();
-  await page.getByTestId("form-step-details").click();
-  await page.getByTestId("form-step-execution").click();
+  await page.getByTestId("form-step-trigger").click();
+  await page.getByTestId("form-step-destination").click();
   await expect(page.getByTestId("job-task-body")).toHaveValue(markdown);
   const savedTask = await apiGet<{ body: string }>(request, `/tasks/${createdTaskId}`);
   expect(savedTask.body).toBe(changed);
