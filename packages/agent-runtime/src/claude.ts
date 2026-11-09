@@ -136,9 +136,11 @@ export class ClaudeSession implements AgentSession {
   private readonly orcMcpProject: string | undefined;
   private readonly orcMcpMode: SessionOpts["orcMcpMode"];
   private readonly host: ExecHost;
+  private readonly env: SessionOpts["env"];
 
   constructor(opts: SessionOpts, claudePath: string, host: ExecHost) {
     this.host = host;
+    this.env = opts.env;
     this.cwd = opts.cwd;
     this.runtimeSessionId = opts.runtimeSessionId;
     this.claudePath = claudePath;
@@ -193,7 +195,8 @@ export class ClaudeSession implements AgentSession {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env: buildClaudeEnv(),
+      env: { ...buildClaudeEnv(), ...this.env },
+      passEnv: Object.keys(this.env ?? {}),
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;

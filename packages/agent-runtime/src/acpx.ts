@@ -475,7 +475,10 @@ export class AcpxSession implements AgentSession {
     if (code !== 0) {
       const detail = this.stderrBuf.trim();
       const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
-      logger.error(msg, { agent: this.agent, stderr: detail });
+      logger.error(this.opts.redactOutput?.(msg) ?? msg, {
+        agent: this.agent,
+        stderr: this.opts.redactOutput?.(detail) ?? detail,
+      });
       if (!this.gotError)
         this.push({
           type: "error",
@@ -536,6 +539,8 @@ export class AcpxSession implements AgentSession {
         stdout: "pipe",
         stderr: "pipe",
         stdin: "ignore",
+        env: { ...process.env, ...this.opts.env },
+        passEnv: Object.keys(this.opts.env ?? {}),
       });
     } catch (error) {
       this.releaseMcpConfig();
@@ -552,7 +557,10 @@ export class AcpxSession implements AgentSession {
     this.drainOutput = readProcessOutput(this.proc, {
       stdout: (line) => this.handleLine(line),
       stderr: (line) => {
-        logger.debug("ACPX stderr", { agent: this.agent, line });
+        logger.debug("ACPX stderr", {
+          agent: this.agent,
+          line: this.opts.redactOutput?.(line) ?? line,
+        });
         this.stderrBuf += `${line}\n`;
       },
       onError: (err, stream) => {

@@ -88,15 +88,24 @@ export async function hostClaudeLoggedIn(
   return loggedIn;
 }
 
-async function sshSdkLaunch(host: SshExecHost): Promise<Partial<Options>> {
+async function sshSdkLaunch(
+  host: SshExecHost,
+  jobEnv: Record<string, string> = {},
+): Promise<Partial<Options>> {
   const claudePath = await hostBinary(host, "claude");
   if (!claudePath) throw new Error(`claude CLI not found on ${host.alias}`);
-  const prepared = await prepareSshSpawn(host);
+  const prepared = await prepareSshSpawn(host, {
+    env: { ...process.env, ...jobEnv },
+    passEnv: Object.keys(jobEnv),
+  });
   return {
     pathToClaudeCodeExecutable: claudePath,
     spawnClaudeCodeProcess: (options: SpawnOptions): SpawnedProcess => {
       const inline = Object.entries(options.env)
-        .filter(([key, value]) => value !== undefined && SDK_ENV_PASSTHROUGH.test(key))
+        .filter(
+          ([key, value]) =>
+            value !== undefined && SDK_ENV_PASSTHROUGH.test(key) && !Object.hasOwn(jobEnv, key),
+        )
         .map(([key, value]) => `${key}=${value}`);
       const command = [options.command, ...options.args];
       const [bin = "ssh", ...args] = prepared.argv(
@@ -111,7 +120,9 @@ async function sshSdkLaunch(host: SshExecHost): Promise<Partial<Options>> {
       child.stderr.on("data", (chunk: Buffer) => {
         logger.debug("claude stderr (ssh)", {
           host: host.alias,
-          data: chunk.toString(),
+          ...(Object.keys(jobEnv).length
+            ? { bytes: chunk.byteLength }
+            : { data: chunk.toString() }),
         });
       });
       prepared.track(new Promise((resolve) => child.once("exit", resolve)));
@@ -238,13 +249,16 @@ class ClaudeSDKSession implements AgentSession {
         : "";
 
       const launch =
-        this.host.kind === "ssh" ? await sshSdkLaunch(this.host) : resolveClaudeSdkLaunch();
+        this.host.kind === "ssh"
+          ? await sshSdkLaunch(this.host, this.opts.env)
+          : resolveClaudeSdkLaunch();
       const q = query({
         prompt,
         options: {
           ...sdkChatOverrides(options),
           ...launch,
           cwd: this.opts.cwd,
+          ...(this.opts.env ? { env: { ...process.env, ...this.opts.env } } : {}),
           ...(rulesHook
             ? {
                 hooks: Object.fromEntries(
@@ -491,7 +505,11 @@ class ClaudeSDKSession implements AgentSession {
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        logger.error("Claude SDK query error", { err });
+        logger.error("Claude SDK query error", {
+          err: this.opts.redactOutput
+            ? this.opts.redactOutput(err instanceof Error ? err.message : String(err))
+            : err,
+        });
         this.push({
           type: "error",
           data: err instanceof Error ? err.message : String(err),
@@ -624,7 +642,7 @@ function createClaudeSDKBackend(): AgentBackend {
         // be there even though the agent itself runs in-process. An API key is
         // accepted as an alternative.
         const claudePath = Bun.which("claude");
-        if (!claudePath && !process.env.ANTHROPIC_API_KEY) {
+        if (!claudePath && !opts.env?.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY) {
           return {
             ok: false,
             error:

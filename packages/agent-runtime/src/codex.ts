@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   type ExecHost,
   ensureSshMaster,
@@ -148,6 +149,11 @@ export class CodexSession implements AgentSession {
     if (mcp?.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
     const command = await this.launcher(this.host);
     const args = [...command, "exec"];
+    if (opts.chatAgentOptions) {
+      const options = ChatAgentOptionsSchema.parse(opts.chatAgentOptions);
+      if (options.runtime !== "codex") throw new Error("Codex CLI requires Codex launch options");
+      args.push(...options.args);
+    }
     if (opts.runtimeSessionId) args.push("resume", opts.runtimeSessionId);
     args.push("--json", "--skip-git-repo-check", "-c", 'approval_policy="never"');
     args.push(
@@ -175,8 +181,8 @@ export class CodexSession implements AgentSession {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env,
-      passEnv: ["ORC_CODEX_MCP_TOKEN"],
+      env: { ...env, ...opts.env },
+      passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(opts.env ?? {})],
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;

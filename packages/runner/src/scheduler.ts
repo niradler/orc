@@ -47,7 +47,7 @@ export async function startScheduler(): Promise<void> {
     // Internal commands are managed by their own mechanisms (e.g. task loop), not the scheduler.
     if (job.command.startsWith("__internal:")) continue;
     if (job.trigger_type === "cron" && job.cron_expr) {
-      scheduleCronJob(job.id, job.name, job.cron_expr);
+      scheduleCronJob(job.id, job.name, job.cron_expr, job.settings?.timezone);
     } else if (job.trigger_type === "one-shot" && job.run_at) {
       scheduleOneShotJob(job.id, job.name, job.run_at, job.run_count);
     }
@@ -180,12 +180,17 @@ async function checkCircuitBreaker(jobId: string, name: string): Promise<void> {
   );
 }
 
-export function scheduleCronJob(jobId: string, name: string, expr: string): void {
+export function scheduleCronJob(
+  jobId: string,
+  name: string,
+  expr: string,
+  timezone?: string,
+): void {
   if (activeCrons.has(jobId)) {
     activeCrons.get(jobId)?.stop();
   }
 
-  const cron = new Cron(expr, { protect: true }, async () => {
+  const cron = new Cron(expr, { protect: true, ...(timezone ? { timezone } : {}) }, async () => {
     const db = getDb();
     const still = await db.query.jobs.findFirst({
       where: eq(jobs.id, jobId),
@@ -265,7 +270,7 @@ export function syncJob(job: typeof jobs.$inferSelect): void {
   unscheduleJob(job.id);
   if (!job.enabled || job.command.startsWith("__internal:")) return;
   if (job.trigger_type === "cron" && job.cron_expr) {
-    scheduleCronJob(job.id, job.name, job.cron_expr);
+    scheduleCronJob(job.id, job.name, job.cron_expr, job.settings?.timezone);
   } else if (job.trigger_type === "one-shot" && job.run_at) {
     scheduleOneShotJob(job.id, job.name, job.run_at, job.run_count);
   } else if (job.trigger_type === "watch" && job.watch_path) {
