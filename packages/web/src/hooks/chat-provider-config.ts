@@ -16,9 +16,7 @@ export function providerSelection(
       options: config.agentOptions[config.agent],
     },
   };
-  const remembered = Object.hasOwn(providerDrafts, profile.id)
-    ? providerDrafts[profile.id]
-    : undefined;
+  const remembered = Object.entries(providerDrafts).find(([id]) => id === profile.id)?.[1];
   const options = remembered ? remembered.options : profile.options;
   // Keep the transport's 20-agent limit; provider drafts retain edits independently.
   const agentOptions = Object.fromEntries(
