@@ -53,6 +53,15 @@ startup verifies stale bundled-cache recovery. The mandatory pre-push gate is
 reported with the exact pushed head in the PR; these checks alone do not replace
 the native-platform limits below.
 
+A separate authenticated-site journey verifies a server-enforced anonymous 401,
+selected-site login transfer from actual isolated Edge, agent access to protected
+content, and the same protected content after a real app restart. This exposed
+an idle `Runtime.terminateExecution` call during restoration that crashed the
+Chromium guest; termination now requires an active read. Crashed guests fail
+explicitly with Reload recovery. Read-only snapshots/frame lists also retry
+bounded navigation-context replacement while rechecking permissions; mutations
+are never retried. The focused regression adds one test and six assertions.
+
 ## Native evidence and operational limits
 
 - Native file-picker results are injected. Actual OS picker interaction remains

@@ -21,6 +21,7 @@ import {
 import { z } from "zod";
 import { PreviewDownloads } from "./preview-downloads.js";
 import { PreviewFrames } from "./preview-frames.js";
+import { previewObservation } from "./preview-observation.js";
 import { PreviewRecording } from "./preview-recording.js";
 
 interface BrowserPage {
@@ -31,6 +32,7 @@ interface BrowserPage {
   generation: number;
   temporaryPartition: string;
   pendingMutations: number;
+  pendingReads: number;
   interrupted: boolean;
   frames: PreviewFrames;
   dialogOpened: (() => void) | null;
@@ -228,6 +230,7 @@ export class PreviewBrowser {
         generation: 0,
         temporaryPartition,
         pendingMutations: 0,
+        pendingReads: 0,
         interrupted: false,
         frames: new PreviewFrames(view.webContents),
         dialogOpened: null,
@@ -438,7 +441,7 @@ export class PreviewBrowser {
       return;
     }
     const debuggerClient = page.contents.debugger;
-    if (debuggerClient.isAttached())
+    if (page.pendingReads > 0 && debuggerClient.isAttached())
       void debuggerClient.sendCommand("Runtime.terminateExecution").catch(() => {});
   }
   private async bounded<T>(
@@ -601,7 +604,7 @@ export class PreviewBrowser {
   async control(id: string, input: BrowserAction, tabId?: string): Promise<unknown> {
     const command = BrowserActionSchema.parse(input);
     const page = this.page(id, tabId);
-    if (page.interrupted || page.contents.isDestroyed())
+    if (page.interrupted || page.contents.isDestroyed() || page.contents.isCrashed())
       throw new Error("Browser action interrupted. Reload to restore this tab.");
     if (
       !this.agentAccess ||
@@ -626,7 +629,9 @@ export class PreviewBrowser {
       "recording_start",
       "recording_stop",
     ].includes(command.action);
+    const reads = ["snapshot", "wait", "frames", "screenshot"].includes(command.action);
     if (mutates) page.pendingMutations++;
+    if (reads) page.pendingReads++;
     try {
       const work = this.perform(id, command, page);
       if (mutates && command.action !== "dialog")
@@ -643,6 +648,7 @@ export class PreviewBrowser {
       throw cause;
     } finally {
       if (mutates) page.pendingMutations--;
+      if (reads) page.pendingReads--;
       page.dialogOpened = null;
     }
   }
@@ -689,11 +695,6 @@ export class PreviewBrowser {
         page.state.recording_available = false;
         this.publish(this.state(page));
       }
-    }
-    if (command.action === "frames") return { frames: page.frames.list() };
-    if (command.action === "frame") {
-      page.frames.select(command.frame_id);
-      return { frame_id: command.frame_id };
     }
     if (command.action === "dialog") {
       if (command.response === "status") return { dialog: page.state.dialog ?? null };
@@ -771,6 +772,16 @@ export class PreviewBrowser {
     if (contents.isLoadingMainFrame() || !previewWebUrl(contents.getURL()))
       throw new Error("Page is not ready. Inspect its status before retrying.");
     assertAllowed();
+    if (command.action === "frames")
+      return this.bounded(
+        previewObservation(async () => ({ frames: page.frames.list() }), assertAllowed),
+        assertAllowed,
+        10000,
+      );
+    if (command.action === "frame") {
+      page.frames.select(command.frame_id);
+      return { frame_id: command.frame_id };
+    }
     if (command.action === "evaluate") {
       const value = await this.bounded(
         page.frames.evaluate(command.expression),
@@ -781,7 +792,11 @@ export class PreviewBrowser {
       return { value };
     }
     if (command.action === "snapshot")
-      return this.bounded(page.frames.snapshot(pageAction, command), assertAllowed, 10000);
+      return this.bounded(
+        previewObservation(() => page.frames.snapshot(pageAction, command), assertAllowed),
+        assertAllowed,
+        10000,
+      );
     if (command.action === "wait") {
       const deadline = Date.now() + command.timeout_ms;
       while (true) {
