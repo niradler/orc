@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./project-path": "./src/project-path.ts",
     "./providers": "./src/providers.ts",
     "./provider-service": "./src/provider-service.ts",
     "./daemon-runtime": "./src/daemon-runtime.ts",

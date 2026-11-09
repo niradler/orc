@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type HostRuntime, hostRuntime } from "@orc/core/exec-host";
+import { type HostRuntime, hostRuntime, SshError } from "@orc/core/exec-host";
 import { readRegistrations, writeRegistration } from "@orc/core/live-session";
 import { getSqlite } from "@orc/db/client";
 import webpush from "web-push";
@@ -11,7 +11,7 @@ import { runSync, startSessionWatcher } from "../session-watcher.js";
 import { codexAdapter } from "../sessions/codex.js";
 import { cursorAgentAdapter } from "../sessions/cursor-agent.js";
 import { geminiAdapter } from "../sessions/gemini.js";
-import { withLifecycle } from "../sessions/lifecycle.js";
+import { lifecycleRecords, withLifecycle } from "../sessions/lifecycle.js";
 import { hasWriter, remoteWriters } from "../sessions/ownership.js";
 import { readTranscript } from "../sessions/transcript.js";
 import type { SessionAdapter } from "../sessions/types.js";
@@ -24,6 +24,99 @@ beforeAll(() => {
 });
 afterAll(() => {
   teardownTestApp();
+});
+
+test("SSH lifecycle records come from that host and never from the local registry", async () => {
+  const probes: number[] = [];
+  const runtime: HostRuntime = {
+    ...hostRuntime({ kind: "local" }),
+    host: {
+      kind: "ssh",
+      alias: "lab",
+      remotePort: 0,
+      apiTarget: "127.0.0.1:7701",
+      secret: undefined,
+      connectTimeoutSecs: 5,
+    },
+    home: async () => "/remote",
+    listFiles: async (path, limit) => {
+      expect(path).toBe("/remote/.orc/live-sessions");
+      expect(limit).toBe(1000);
+      return [{ path: `${path}/codex-remote.json`, size: 300, mtimeMs: 1, birthtimeMs: 1 }];
+    },
+    readFile: async (path, limit) => {
+      expect(path).toBe("/remote/.orc/live-sessions/codex-remote.json");
+      expect(limit).toBe(65_536);
+      return new TextEncoder().encode(
+        JSON.stringify({
+          backend: "codex",
+          externalId: "remote",
+          pid: 22,
+          title: "Remote",
+          cwd: "/remote/project",
+          status: "running",
+          createdAt: 1,
+          updatedAt: 2,
+        }),
+      );
+    },
+    processAlive: async (pid) => {
+      probes.push(pid);
+      return true;
+    },
+  };
+  expect(await lifecycleRecords(undefined, runtime)).toMatchObject([
+    { backend: "codex", externalId: "remote", cwd: "/remote/project", status: "running" },
+  ]);
+  expect(probes).toEqual([22]);
+  runtime.readFile = async () => {
+    throw new SshError("Connection closed");
+  };
+  await expect(lifecycleRecords(undefined, runtime)).rejects.toThrow("Connection closed");
+});
+
+test("targeted Codex discovery reads only the requested runtime and rejects SQL metacharacters", async () => {
+  const db = new Database(":memory:");
+  try {
+    db.exec(
+      "CREATE TABLE threads (id TEXT, title TEXT, name TEXT, cwd TEXT, preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT, created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER, archived INTEGER)",
+    );
+    for (const id of ["wanted", "unrelated"])
+      db.query("INSERT INTO threads VALUES (?,?,NULL,'/repo','','',1,?,1,1,2,2,0)").run(
+        id,
+        id,
+        `/${id}.jsonl`,
+      );
+    const inspected: string[] = [];
+    const runtime: HostRuntime = {
+      ...hostRuntime({ kind: "local" }),
+      home: async () => "/home/demo",
+      isFile: async () => true,
+      isDirectory: async () => false,
+      sqliteQuery: async <T extends object>(
+        _path: string,
+        sql: string,
+        parameters: readonly (string | number | null)[] = [],
+      ) => db.query<T, (string | number | null)[]>(sql).all(...parameters),
+      stat: async (path) => {
+        inspected.push(path);
+        return null;
+      },
+    };
+    expect(
+      (
+        await codexAdapter(undefined, { runtime, sessionId: "wanted", writer: () => false }).list(
+          new Map(),
+        )
+      ).map((record) => record.externalId),
+    ).toEqual(["wanted"]);
+    expect(inspected).toEqual(["/wanted.jsonl"]);
+    expect(() => codexAdapter(undefined, { runtime, sessionId: "wanted' OR 1=1 --" })).toThrow(
+      "Invalid native Codex session identity",
+    );
+  } finally {
+    db.close();
+  }
 });
 
 describe("native ownership", () => {

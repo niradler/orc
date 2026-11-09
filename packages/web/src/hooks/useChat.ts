@@ -828,8 +828,8 @@ function useChatController() {
     [activate, mutate, find],
   );
   const selectProvider = useCallback(
-    (profile: ProviderProfile) => {
-      const current = find(activeRef.current);
+    (profile: ProviderProfile, key = activeRef.current) => {
+      const current = find(key);
       if (!current) return;
       const next = providerSelection(current.config, current.providerDrafts, profile);
       update(current.key, () => next);
@@ -1468,6 +1468,7 @@ function useChatView(controller: ChatController, key: string, select: (key: stri
       removeFile: (index: number) => latest.current.removeFile(index, key),
       setWorkspace: (workspace: ChatWorkspace) => latest.current.setWorkspace(workspace, key),
       setConfig: (config: ChatConfig) => latest.current.setConfig(config, key),
+      selectProvider: (profile: ProviderProfile) => latest.current.selectProvider(profile, key),
       changePermissions: (config: ChatConfig) => latest.current.changePermissions(config, key),
       applyAgentOptions: (agent: string, options: ChatAgentOptions) =>
         latest.current.applyAgentOptions(agent, options, key),

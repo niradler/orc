@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
+import { ValidationError } from "@orc/core/errors";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { readCodexQuestionPending } from "./codex-attention.js";
@@ -31,9 +32,12 @@ export function codexAdapter(
     writer?: (path: string) => boolean;
     historyDb?: string;
     runtime?: HostRuntime;
+    sessionId?: string;
   } = {},
 ): SessionAdapter {
   const runtime = options.runtime ?? hostRuntime(LOCAL_HOST);
+  if (options.sessionId && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(options.sessionId))
+    throw new ValidationError("Invalid native Codex session identity");
   return {
     backend: "codex",
     minIntervalMs: 5_000,
@@ -66,7 +70,8 @@ export function codexAdapter(
         stateDb,
         `SELECT id, title, name, cwd, preview, first_user_message, tokens_used, rollout_path,
                 created_at_ms, created_at, updated_at_ms, updated_at
-         FROM threads WHERE archived = 0`,
+         FROM threads WHERE archived = 0${options.sessionId ? " AND id = ?" : ""}`,
+        options.sessionId ? [options.sessionId] : [],
       );
       const lockDirectory = joinHost(home, "thread-writer-locks");
       const hasLockDirectory = await runtime.isDirectory(lockDirectory);

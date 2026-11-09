@@ -1,5 +1,6 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { supportsManualCompaction } from "@orc/core/coding-agents";
+import { projectForFolder } from "@orc/core/project-path";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -184,9 +185,11 @@ export function ChatPanel({
   const linkError = useSessionLiveLink(home, fullscreen);
   const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
   const projects = useProjects();
-  const owner = terminalCenter
+  const recordedOwner = terminalCenter
     ? context.session?.project_id
     : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
+  const owner =
+    recordedOwner ?? projectForFolder(context.cwd, projects.data ?? [])?.id ?? recordedOwner;
   const projectName =
     owner === null
       ? "Unassigned"
@@ -527,7 +530,7 @@ export function ChatPanel({
             </Popover>
           )}
           {workspaceActions}
-          {fullscreen && !phone && <SessionHomeToggles home={home} />}
+          {fullscreen && !phone && !terminalCenter && <SessionHomeToggles home={home} />}
           {onToggleFullscreen && (
             <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
               <button
@@ -571,7 +574,7 @@ export function ChatPanel({
               </span>
               <span className="min-w-0 truncate">{title ?? "New session"}</span>
             </h2>
-            <SessionHomeToggles home={home} />
+            {!terminalCenter && <SessionHomeToggles home={home} />}
           </div>
         )}
         <ChatConversationInfo
@@ -836,7 +839,12 @@ export function ChatPanel({
               </ol>
             </details>
           )}
-          <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
+          <div
+            className={cn(
+              "chat-composer-footer relative w-full shrink-0",
+              terminalCenter ? "border-t border-border px-2 py-1" : "px-4 pt-2 pb-3 sm:px-6",
+            )}
+          >
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -853,7 +861,12 @@ export function ChatPanel({
                   addFiles(Array.from(event.dataTransfer.files));
                 }
               }}
-              className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+              className={cn(
+                "chat-composer-box mx-auto w-full max-w-3xl",
+                terminalCenter
+                  ? "bg-background"
+                  : "rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus",
+              )}
             >
               {files.length > 0 && (
                 <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">
@@ -1056,23 +1069,25 @@ export function ChatPanel({
                       </button>
                     </ActionHelp>
                   )}
-                  <ActionHelp label={streaming ? "Queue message" : "Send message"}>
-                    <button
-                      type="submit"
-                      disabled={terminalCenter || !ready || (!draft.trim() && !files.length)}
-                      data-testid="chat-send-button"
-                      aria-label={streaming ? "Queue message" : "Send message"}
-                      className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-                    >
-                      <ArrowUp size={18} />
-                    </button>
-                  </ActionHelp>
+                  {!terminalCenter && (
+                    <ActionHelp label={streaming ? "Queue message" : "Send message"}>
+                      <button
+                        type="submit"
+                        disabled={terminalCenter || !ready || (!draft.trim() && !files.length)}
+                        data-testid="chat-send-button"
+                        aria-label={streaming ? "Queue message" : "Send message"}
+                        className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+                      >
+                        <ArrowUp size={18} />
+                      </button>
+                    </ActionHelp>
+                  )}
                 </div>
               </div>
             </form>
           </div>
         </div>
-        {fullscreen && home.drawer && <SessionDrawer context={context} />}
+        {fullscreen && !terminalCenter && home.drawer && <SessionDrawer context={context} />}
       </div>
       {fullscreen && <SessionInspector context={context} home={home} narrow={!desktop} />}
     </ThreadPrimitive.Root>

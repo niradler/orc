@@ -174,10 +174,12 @@ function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
 export function LiveSessionDetail({
   sessionId,
   initialQuery,
+  resumeNotice,
   onClose,
 }: {
   sessionId: string | null;
   initialQuery: string;
+  resumeNotice?: string;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
@@ -237,6 +239,15 @@ export function LiveSessionDetail({
           <SheetTitle className="normal-case tracking-normal text-sm pr-8">
             {session?.name ?? "Session"}
           </SheetTitle>
+          {resumeNotice && (
+            <p
+              role="status"
+              data-testid="session-read-only-notice"
+              className="text-sm text-on-surface-variant"
+            >
+              Viewing conversation. {resumeNotice}
+            </p>
+          )}
           {session && (
             <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
               <span className="font-medium text-primary">{session.agent}</span>

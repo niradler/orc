@@ -80,7 +80,7 @@ import {
   retireChatFinishedNotifications,
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
-import { LIVE_CHAT_ID } from "../session-watcher.js";
+import { discoverNativeSession, LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
@@ -1576,6 +1576,14 @@ async function beginTurn(
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
       await run.session?.close().catch(() => {});
+      if (!mock && thread.runtimeId && ["codex", "claude"].includes(thread.config.agent)) {
+        try {
+          if (thread.host || !(await nativeSource(thread)))
+            await discoverNativeSession(thread.config.agent, thread.runtimeId, thread.host);
+        } catch {
+          logger.warn("Native chat session discovery failed", { runId });
+        }
+      }
       thread.messages.push(assistant);
       if (synced) {
         const mark = await transcriptMark(thread).catch(() => null);

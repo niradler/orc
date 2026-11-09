@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { changes } from "@orc/core/changes";
 import { hostRuntime, LOCAL_HOST, SshError } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION } from "@orc/core/usage";
 import { getSqlite } from "@orc/db/client";
@@ -10,6 +11,7 @@ import type { createApp } from "../server.js";
 import { runSync, startSessionWatcher, tokensSettled } from "../session-watcher.js";
 import { claudeAdapter } from "../sessions/claude.js";
 import { codexAdapter } from "../sessions/codex.js";
+import { projectIdFor } from "../sessions/common.js";
 import { cursorAdapter, cursorStateDbPath, resolveSlugPath } from "../sessions/cursor.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -172,6 +174,45 @@ describe("claude adapter: live registry", () => {
     const { results } = await res.json();
     expect(results[0]).toMatchObject({ backend: "claude" });
     expect(results[0].error).toBeUndefined();
+  });
+
+  test("new folder scope backfills unassigned sessions and preserves explicit assignments", async () => {
+    const sqlite = getSqlite();
+    const [row] = await live();
+    if (!row) throw new Error("Watched session is missing");
+    expect(await projectIdFor("/tmp/some-repo")).toBeNull();
+    sqlite.run("INSERT INTO projects (id,name,scope) VALUES (?,?,?)", [
+      "folder-project",
+      "folder-project",
+      "/tmp/some-repo",
+    ]);
+    changes.publish("projects");
+    expect(await projectIdFor("/tmp/some-repo")).toBe("folder-project");
+    await runSync([claude()], { force: true });
+    expect(
+      sqlite
+        .query<{ project_id: string }, [string]>(
+          "SELECT project_id FROM gateway_sessions WHERE id=?",
+        )
+        .get(row.id)?.project_id,
+    ).toBe("folder-project");
+    sqlite.run("UPDATE projects SET scope=? WHERE id=?", ["/tmp", "folder-project"]);
+    changes.publish("projects");
+    sqlite.run("INSERT INTO projects (id,name,scope) VALUES (?,?,?)", [
+      "nested-project",
+      "nested-project",
+      "/tmp/some-repo",
+    ]);
+    changes.publish("projects");
+    expect(await projectIdFor("/tmp/some-repo")).toBe("nested-project");
+    await runSync([claude()], { force: true });
+    expect(
+      sqlite
+        .query<{ project_id: string }, [string]>(
+          "SELECT project_id FROM gateway_sessions WHERE id=?",
+        )
+        .get(row.id)?.project_id,
+    ).toBe("folder-project");
   });
 });
 

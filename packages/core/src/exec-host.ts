@@ -71,7 +71,11 @@ export interface HostRuntime {
   readFile(path: string, maxBytes: number): Promise<Uint8Array>;
   listFiles(path: string, maxFiles?: number): Promise<HostFileInfo[]>;
   processAlive(pid: number): Promise<boolean>;
-  sqliteQuery<T extends object>(path: string, sql: string): Promise<T[]>;
+  sqliteQuery<T extends object>(
+    path: string,
+    sql: string,
+    parameters?: readonly (string | number | null)[],
+  ): Promise<T[]>;
 }
 
 export interface HostSpawnOptions {
@@ -138,9 +142,9 @@ const LOGIN_SHELL =
 const VERIFY_TTL_MS = 5_000;
 const PROBE_TTL_MS = 30_000;
 const MASTER_IDLE_MS = 60_000;
-// OpenSSH commonly permits ten sessions per connection. Leave headroom for
-// health checks and tunnel management while adapters fan out filesystem reads.
-const MAX_SHARED_SESSIONS = 8;
+// Windows opens a fresh connection per command. Keep handshake bursts below
+// sshd MaxStartups, including when another ORC client is inspecting the host.
+const MAX_SHARED_SESSIONS = process.platform === "win32" ? 2 : 8;
 const SSH_ATTEMPTS = 3;
 const logger = createLogger("core:ssh");
 
@@ -1275,7 +1279,7 @@ uri = pathlib.Path(path).resolve().as_uri() + "?mode=ro"
 db = sqlite3.connect(uri, uri=True, timeout=2)
 db.row_factory = sqlite3.Row
 try:
-  print(json.dumps([dict(row) for row in db.execute(request["sql"]).fetchall()]))
+  print(json.dumps([dict(row) for row in db.execute(request["sql"], request.get("parameters", [])).fetchall()]))
 finally:
   db.close()
 `;
@@ -1384,18 +1388,20 @@ export async function hostSqliteQuery<T extends object>(
   host: ExecHost,
   path: string,
   sql: string,
+  parameters: readonly (string | number | null)[] = [],
 ): Promise<T[]> {
   const target = await expandHostPath(host, path);
   if (host.kind === "ssh") {
     return remotePythonJson<T[]>(host, REMOTE_SQLITE_QUERY, {
       path: target,
       sql,
+      parameters,
     });
   }
   return retryTransientSqlite(() => {
     const db = new Database(target, { readonly: true });
     try {
-      return db.query<T, []>(sql).all();
+      return db.query<T, (string | number | null)[]>(sql).all(...parameters);
     } finally {
       db.close();
     }
@@ -1434,8 +1440,11 @@ export function hostRuntime(host: ExecHost = resolveExecHost()): HostRuntime {
     readFile: (path, maxBytes) => readHostFile(host, path, maxBytes),
     listFiles: (path, maxFiles) => listHostFiles(host, path, maxFiles),
     processAlive: (pid) => hostProcessAlive(host, pid),
-    sqliteQuery: <T extends object>(path: string, sql: string) =>
-      hostSqliteQuery<T>(host, path, sql),
+    sqliteQuery: <T extends object>(
+      path: string,
+      sql: string,
+      parameters?: readonly (string | number | null)[],
+    ) => hostSqliteQuery<T>(host, path, sql, parameters),
   };
 }
 

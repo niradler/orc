@@ -1,4 +1,5 @@
 import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
+import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
@@ -51,6 +52,7 @@ export function chatHistoryList(
   projectScope = "all",
   terminals: readonly Terminal[] = [],
   includeShells = false,
+  projectFolders: readonly { id: string; scope?: string | null }[] = [],
 ): ChatHistoryEntry[] {
   const matches = (text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
   const entries: ChatHistoryEntry[] = [];
@@ -159,7 +161,11 @@ export function chatHistoryList(
     if (!existing) entries.push(entry);
     else existing.seenKeys.push(`native:${session.id}`);
     entry.provider ??= session.agent;
-    entry.projectId = session.project_id;
+    entry.projectId =
+      session.project_id ??
+      entry.projectId ??
+      projectForFolder(session.cwd, projectFolders)?.id ??
+      session.project_id;
     observe(entry, liveSessionState(session));
     entry.updatedAt = Math.max(entry.updatedAt, date);
     keywords.set(
@@ -229,6 +235,18 @@ export function chatHistoryList(
       entry.id,
       `${keywords.get(entry.id) ?? entry.title} ${session.title} ${session.agent}`,
     );
+  }
+  for (const entry of entries) {
+    if (entry.projectId) continue;
+    const cwd =
+      entry.kind === "local"
+        ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
+        : entry.kind === "native"
+          ? entry.session.cwd
+          : entry.kind === "terminal"
+            ? entry.terminal.cwd
+            : null;
+    entry.projectId = projectForFolder(cwd, projectFolders)?.id ?? entry.projectId;
   }
   return entries
     .filter(

@@ -1,13 +1,24 @@
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { History, PanelLeftClose, PanelLeftOpen, Plus, SquareTerminal, X } from "lucide-react";
+import {
+  ChevronRight,
+  Folder,
+  History,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, type Terminal } from "@/api/client";
+import { api, type LiveSession, type Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { HelpPopover } from "@/components/HelpPopover";
+import { LiveSessionDetail } from "@/components/LiveSessionDetail";
 import { SessionLaunchMenu } from "@/components/SessionLaunchMenu";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
@@ -75,6 +86,7 @@ export function ChatSessionPicker({
   const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [viewing, setViewing] = useState<{ id: string; notice: string } | null>(null);
   const { data: projects } = useProjects({ status: "active" });
   const { data: ssh } = useSsh();
   const [section, setSection] = useState<"projects" | "recents">("recents");
@@ -97,7 +109,6 @@ export function ChatSessionPicker({
       api.sessions.live({
         active: false,
         limit: 5000,
-        ...(projectScope === "all" ? {} : { project_id: projectScope }),
       }),
     enabled: open,
     staleTime: 0,
@@ -112,14 +123,22 @@ export function ChatSessionPicker({
       }),
     enabled: open,
   });
-  async function select(load: () => ReturnType<typeof api.chat.get>, projectId?: string | null) {
+  async function select(
+    load: () => ReturnType<typeof api.chat.get>,
+    projectId?: string | null,
+    native?: LiveSession,
+  ) {
     setPending(true);
     setError("");
     try {
       chat.openThread(await load(), { projectId });
       setOpen(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Session could not be opened.");
+      const message = cause instanceof Error ? cause.message : "Session could not be opened.";
+      if (native) {
+        setOpen(false);
+        setViewing({ id: native.id, notice: message });
+      } else setError(message);
     } finally {
       setPending(false);
     }
@@ -135,6 +154,7 @@ export function ChatSessionPicker({
     projectScope,
     terminals,
     !!home,
+    projects ?? [],
   );
   const isSelected = (entry: ChatHistoryEntry) =>
     home?.terminalId
@@ -155,6 +175,8 @@ export function ChatSessionPicker({
     loading,
   });
   const shown = stable.items.slice(0, visibleCount);
+  const projectEntries = stable.items.filter((entry) => entry.projectId === expandedProject);
+  const visibleEntries = section === "projects" ? projectEntries : stable.items;
   const active = entries.find(
     (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
   );
@@ -182,7 +204,7 @@ export function ChatSessionPicker({
       void select(() => api.chat.get(entry.thread.id), entry.projectId);
     } else if (entry.kind === "native") {
       home?.go({ terminalId: null });
-      void select(() => api.chat.resume(entry.session.id), entry.projectId);
+      void select(() => api.chat.resume(entry.session.id), entry.projectId, entry.session);
     } else if (entry.kind === "archive") {
       const session = entry.session;
       setSelectedArchive(session);
@@ -193,280 +215,311 @@ export function ChatSessionPicker({
       setError("");
     }
   };
+  const transcript = viewing && (
+    <LiveSessionDetail
+      sessionId={viewing.id}
+      initialQuery=""
+      resumeNotice={viewing.notice}
+      onClose={() => setViewing(null)}
+    />
+  );
   if (rail)
     return (
-      <aside
-        data-testid="session-rail"
-        aria-label="Sessions"
-        className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-border py-3"
-      >
-        <ActionHelp label="Show session list">
-          <Button
-            variant="ghost"
-            size="icon"
-            data-testid="session-list-expand"
-            aria-label="Show session list"
-            onClick={() => home?.go({ listHidden: false })}
-          >
-            <PanelLeftOpen size={16} />
-          </Button>
-        </ActionHelp>
-        <ActionHelp label="New session">
-          <Button
-            variant="ghost"
-            size="icon"
-            data-testid="chat-clear-button"
-            aria-label="New session"
-            disabled={pending}
-            onClick={() => {
-              chat.newTab();
-              home?.go({ terminalId: null });
-            }}
-          >
-            <Plus size={16} />
-          </Button>
-        </ActionHelp>
-        <div className="mt-2 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
-          {shown.map((entry) => {
-            const state = states.get(entry.id) ?? "idle";
-            const agent = entryAgent(entry);
-            const selected = isSelected(entry);
-            return (
-              <ActionHelp
-                key={entry.id}
-                label={entry.title}
-                description={`${agent || "Unknown provider"} · ${AGENT_STATES[state].label}`}
-              >
-                <button
-                  type="button"
-                  data-testid="session-rail-item"
-                  data-history-id={entry.id}
-                  data-state={state}
-                  aria-label={`${entry.title} · ${AGENT_STATES[state].label}`}
-                  aria-current={selected ? "true" : undefined}
-                  disabled={pending}
-                  onClick={() => selectEntry(entry)}
-                  className={`relative flex size-10 shrink-0 items-center justify-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
-                >
-                  <ProviderMark agent={agent} />
-                  <span className="absolute right-0.5 bottom-0.5">
-                    <StateBadge state={state} compact context={agent || undefined} />
-                  </span>
-                </button>
-              </ActionHelp>
-            );
-          })}
-        </div>
-      </aside>
-    );
-  return (
-    <SessionHistoryFrame
-      docked={docked}
-      wide={wide}
-      open={open}
-      onOpenChange={setOpen}
-      onCollapse={home ? () => home.go({ listHidden: true }) : undefined}
-      onNew={() => home?.go({ terminalId: null })}
-      newDisabled={pending}
-    >
-      {selectedArchive ? (
-        <section className="min-w-0 space-y-3">
-          <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
-            Back to sessions
-          </Button>
-          <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
-          <p className="text-sm text-muted-foreground">
-            Resume from a pushed repository, branch and exact commit. ORC verifies the checkout and
-            imports the native history before opening chat.
-          </p>
-          {(
-            [
-              ["repository", "Repository", repository, setRepository],
-              ["branch", "Branch", branch, setBranch],
-              ["commit", "Pushed commit", commit, setCommit],
-              ["subdirectory", "Repository subdirectory", subdirectory, setSubdirectory],
-            ] as const
-          ).map(([key, title, value, change]) => (
-            <label key={key} htmlFor={`chat-archive-${key}`} className="block space-y-2 text-sm">
-              {title}
-              <Input
-                id={`chat-archive-${key}`}
-                data-testid={`chat-archive-${key}`}
-                value={value}
-                onChange={(event) => change(event.target.value)}
-                disabled={pending}
-              />
-            </label>
-          ))}
-          <Button
-            data-testid="chat-archive-prepare"
-            disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
-            onClick={() =>
-              void select(async () => {
-                const handoff = await api.sessions.archiveResume(selectedArchive.id, {
-                  revision: selectedArchive.revision,
-                  repository,
-                  branch,
-                  commit,
-                  subdirectory,
-                });
-                if (handoff.status !== "ready" || !handoff.live_session_id)
-                  throw new Error(handoff.error || "The imported session is not ready to resume.");
-                return api.chat.resume(handoff.live_session_id);
-              }, selectedArchive.project_id)
-            }
-          >
-            {pending ? "Preparing…" : "Resume"}
-          </Button>
-        </section>
-      ) : (
-        <>
-          <div role="tablist" aria-label="Session navigation" className="flex gap-1">
-            {(["projects", "recents"] as const).map((value) => (
-              <Button
-                key={value}
-                role="tab"
-                variant="ghost"
-                aria-selected={section === value}
-                onClick={() => setSection(value)}
-                data-testid={`session-navigation-${value}`}
-                className={section === value ? "bg-surface-highest" : undefined}
-              >
-                {value === "projects" ? "Projects" : "Recents"}
-              </Button>
-            ))}
-          </div>
-          {section === "projects" && (
-            <section aria-label="Projects" className="space-y-1">
-              {(projects ?? []).map((project) => (
-                <div key={project.id} className="group">
-                  <div className="flex min-w-0 items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      className="min-w-0 flex-1 justify-start truncate"
-                      aria-expanded={expandedProject === project.id}
-                      onClick={() =>
-                        setExpandedProject(expandedProject === project.id ? null : project.id)
-                      }
-                    >
-                      {project.name}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`New session in ${project.name}`}
-                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100"
-                      onClick={() => {
-                        chat.newTab({
-                          projectId: project.id,
-                          fresh: true,
-                          ...(project.scope?.trim()
-                            ? {
-                                workspace: {
-                                  cwd: project.scope,
-                                  host: ssh?.host ?? null,
-                                  worktree: false,
-                                },
-                              }
-                            : {}),
-                        });
-                        home?.go({ terminalId: null });
-                        setOpen(false);
-                      }}
-                    >
-                      <Plus size={15} />
-                    </Button>
-                  </div>
-                  {expandedProject === project.id && (
-                    <div className="pl-2">
-                      {shown
-                        .filter((entry) => entry.projectId === project.id)
-                        .map((entry) => (
-                          <HistoryRow
-                            key={entry.id}
-                            entry={entry}
-                            state={states.get(entry.id) ?? "idle"}
-                            pending={pending}
-                            selected={isSelected(entry)}
-                            terminal={!!entry.terminalId}
-                            onSelect={() => selectEntry(entry)}
-                          />
-                        ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </section>
-          )}
-          <Input
-            data-testid="chat-session-search"
-            aria-label="Search sessions"
-            placeholder="Search sessions…"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setVisibleCount(50);
-            }}
-          />
-          <div className="min-w-0 space-y-2" {...stable.listProps}>
-            <SessionStateFilters
-              value={filter}
-              counts={counts}
-              onChange={(next) => {
-                setFilter(next);
-                setVisibleCount(50);
-                try {
-                  localStorage.setItem(FILTER_KEY, next);
-                } catch {}
-              }}
-            >
-              <StableOrderPill pending={stable.pending} onApply={stable.apply} />
-            </SessionStateFilters>
-            <div
-              data-testid="chat-session-list"
-              hidden={section !== "recents"}
-              className="min-w-0 space-y-1"
-            >
-              {shown.map((entry) => (
-                <HistoryRow
-                  key={entry.id}
-                  entry={entry}
-                  state={states.get(entry.id) ?? "idle"}
-                  pending={pending}
-                  selected={isSelected(entry)}
-                  terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                  onSelect={() => selectEntry(entry)}
-                />
-              ))}
-            </div>
-          </div>
-          {loading && (
-            <p role="status" className="px-2 text-xs text-muted-foreground">
-              Loading sessions…
-            </p>
-          )}
-          {!loading && !shown.length && (
-            <p className="px-2 text-sm text-muted-foreground">
-              {search || filter !== "all" ? "No sessions match." : "No sessions yet."}
-            </p>
-          )}
-          {stable.items.length > visibleCount && (
+      <>
+        <aside
+          data-testid="session-rail"
+          aria-label="Sessions"
+          className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-border py-3"
+        >
+          <ActionHelp label="Show session list">
             <Button
               variant="ghost"
-              data-testid="chat-history-more"
-              onClick={() => setVisibleCount((count) => count + 50)}
+              size="icon"
+              data-testid="session-list-expand"
+              aria-label="Show session list"
+              onClick={() => home?.go({ listHidden: false })}
             >
-              Load older sessions
+              <PanelLeftOpen size={16} />
             </Button>
-          )}
-        </>
-      )}
-      {(error || threads.error || live.error || archive.error) && (
-        <p role="alert" className="text-sm text-error wrap-break-word">
-          {error || threads.error?.message || live.error?.message || archive.error?.message}
-        </p>
-      )}
-    </SessionHistoryFrame>
+          </ActionHelp>
+          <ActionHelp label="New session">
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="chat-clear-button"
+              aria-label="New session"
+              disabled={pending}
+              onClick={() => {
+                chat.newTab();
+                home?.go({ terminalId: null });
+              }}
+            >
+              <Plus size={16} />
+            </Button>
+          </ActionHelp>
+          <div className="mt-2 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
+            {shown.map((entry) => {
+              const state = states.get(entry.id) ?? "idle";
+              const agent = entryAgent(entry);
+              const selected = isSelected(entry);
+              return (
+                <ActionHelp
+                  key={entry.id}
+                  label={entry.title}
+                  description={`${agent || "Unknown provider"} · ${AGENT_STATES[state].label}`}
+                >
+                  <button
+                    type="button"
+                    data-testid="session-rail-item"
+                    data-history-id={entry.id}
+                    data-state={state}
+                    aria-label={`${entry.title} · ${AGENT_STATES[state].label}`}
+                    aria-current={selected ? "true" : undefined}
+                    disabled={pending}
+                    onClick={() => selectEntry(entry)}
+                    className={`relative flex size-10 shrink-0 items-center justify-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+                  >
+                    <ProviderMark agent={agent} />
+                    <span className="absolute right-0.5 bottom-0.5">
+                      <StateBadge state={state} compact context={agent || undefined} />
+                    </span>
+                  </button>
+                </ActionHelp>
+              );
+            })}
+          </div>
+        </aside>
+        {transcript}
+      </>
+    );
+  return (
+    <>
+      <SessionHistoryFrame
+        docked={docked}
+        wide={wide}
+        open={open}
+        onOpenChange={setOpen}
+        onCollapse={home ? () => home.go({ listHidden: true }) : undefined}
+        onNew={() => home?.go({ terminalId: null })}
+        newDisabled={pending}
+      >
+        {selectedArchive ? (
+          <section className="min-w-0 space-y-3">
+            <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
+              Back to sessions
+            </Button>
+            <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
+            <p className="text-sm text-muted-foreground">
+              Resume from a pushed repository, branch and exact commit. ORC verifies the checkout
+              and imports the native history before opening chat.
+            </p>
+            {(
+              [
+                ["repository", "Repository", repository, setRepository],
+                ["branch", "Branch", branch, setBranch],
+                ["commit", "Pushed commit", commit, setCommit],
+                ["subdirectory", "Repository subdirectory", subdirectory, setSubdirectory],
+              ] as const
+            ).map(([key, title, value, change]) => (
+              <label key={key} htmlFor={`chat-archive-${key}`} className="block space-y-2 text-sm">
+                {title}
+                <Input
+                  id={`chat-archive-${key}`}
+                  data-testid={`chat-archive-${key}`}
+                  value={value}
+                  onChange={(event) => change(event.target.value)}
+                  disabled={pending}
+                />
+              </label>
+            ))}
+            <Button
+              data-testid="chat-archive-prepare"
+              disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
+              onClick={() =>
+                void select(async () => {
+                  const handoff = await api.sessions.archiveResume(selectedArchive.id, {
+                    revision: selectedArchive.revision,
+                    repository,
+                    branch,
+                    commit,
+                    subdirectory,
+                  });
+                  if (handoff.status !== "ready" || !handoff.live_session_id)
+                    throw new Error(
+                      handoff.error || "The imported session is not ready to resume.",
+                    );
+                  return api.chat.resume(handoff.live_session_id);
+                }, selectedArchive.project_id)
+              }
+            >
+              {pending ? "Preparing…" : "Resume"}
+            </Button>
+          </section>
+        ) : (
+          <>
+            <div role="tablist" aria-label="Session navigation" className="flex gap-1">
+              {(["projects", "recents"] as const).map((value) => (
+                <Button
+                  key={value}
+                  role="tab"
+                  variant="ghost"
+                  aria-selected={section === value}
+                  onClick={() => setSection(value)}
+                  data-testid={`session-navigation-${value}`}
+                  className={section === value ? "bg-surface-highest" : undefined}
+                >
+                  {value === "projects" ? "Projects" : "Recents"}
+                </Button>
+              ))}
+            </div>
+            <Input
+              data-testid="chat-session-search"
+              aria-label="Search sessions"
+              placeholder="Search sessions…"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setVisibleCount(50);
+              }}
+            />
+            <div className="min-w-0 space-y-2" {...stable.listProps}>
+              <SessionStateFilters
+                value={filter}
+                counts={counts}
+                onChange={(next) => {
+                  setFilter(next);
+                  setVisibleCount(50);
+                  try {
+                    localStorage.setItem(FILTER_KEY, next);
+                  } catch {}
+                }}
+              >
+                <StableOrderPill pending={stable.pending} onApply={stable.apply} />
+              </SessionStateFilters>
+              {section === "projects" && (
+                <section aria-label="Projects" className="space-y-1">
+                  {(projects ?? []).map((project) => (
+                    <div key={project.id} className="group">
+                      <div className="flex min-w-0 items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          className="min-w-0 flex-1 justify-start truncate"
+                          aria-expanded={expandedProject === project.id}
+                          onClick={() => {
+                            setVisibleCount(50);
+                            setExpandedProject(expandedProject === project.id ? null : project.id);
+                          }}
+                        >
+                          <ChevronRight
+                            size={13}
+                            className={cn(
+                              "shrink-0",
+                              expandedProject === project.id && "rotate-90",
+                            )}
+                          />
+                          <Folder size={14} className="shrink-0" />
+                          <span className="truncate">{project.name}</span>
+                          <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                            {stable.items.filter((entry) => entry.projectId === project.id).length}
+                          </span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`New session in ${project.name}`}
+                          className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100"
+                          onClick={() => {
+                            chat.newTab({
+                              projectId: project.id,
+                              fresh: true,
+                              ...(project.scope?.trim()
+                                ? {
+                                    workspace: {
+                                      cwd: project.scope,
+                                      host: ssh?.host ?? null,
+                                      worktree: false,
+                                    },
+                                  }
+                                : {}),
+                            });
+                            home?.go({ terminalId: null });
+                            setOpen(false);
+                          }}
+                        >
+                          <Plus size={15} />
+                        </Button>
+                      </div>
+                      {expandedProject === project.id && (
+                        <div className="pl-2">
+                          {projectEntries.slice(0, visibleCount).map((entry) => (
+                            <HistoryRow
+                              key={entry.id}
+                              entry={entry}
+                              state={states.get(entry.id) ?? "idle"}
+                              pending={pending}
+                              selected={isSelected(entry)}
+                              terminal={!!entry.terminalId}
+                              onSelect={() => selectEntry(entry)}
+                            />
+                          ))}
+                          {!projectEntries.length && !loading && (
+                            <p className="px-2 py-2 text-xs text-muted-foreground">
+                              No sessions match this project.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </section>
+              )}
+              <div
+                data-testid="chat-session-list"
+                hidden={section !== "recents"}
+                className="min-w-0 space-y-1"
+              >
+                {shown.map((entry) => (
+                  <HistoryRow
+                    key={entry.id}
+                    entry={entry}
+                    state={states.get(entry.id) ?? "idle"}
+                    pending={pending}
+                    selected={isSelected(entry)}
+                    terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                    onSelect={() => selectEntry(entry)}
+                  />
+                ))}
+              </div>
+            </div>
+            {loading && (
+              <p role="status" className="px-2 text-xs text-muted-foreground">
+                Loading sessions…
+              </p>
+            )}
+            {!loading && section === "recents" && !shown.length && (
+              <p className="px-2 text-sm text-muted-foreground">
+                {search || filter !== "all" ? "No sessions match." : "No sessions yet."}
+              </p>
+            )}
+            {visibleEntries.length > visibleCount && (
+              <Button
+                variant="ghost"
+                data-testid="chat-history-more"
+                onClick={() => setVisibleCount((count) => count + 50)}
+              >
+                Load older sessions
+              </Button>
+            )}
+          </>
+        )}
+        {(error || threads.error || live.error || archive.error) && (
+          <p role="alert" className="text-sm text-error wrap-break-word">
+            {error || threads.error?.message || live.error?.message || archive.error?.message}
+          </p>
+        )}
+      </SessionHistoryFrame>
+      {transcript}
+    </>
   );
 }
 
@@ -610,7 +663,7 @@ function SessionHistoryFrame({
         data-testid="chat-sessions-dialog"
         data-session-list-wide={wide || undefined}
         className={cn(
-          "chat-history-drawer left-0 top-[var(--app-top,0px)] flex h-[var(--app-height,100dvh)] max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-4 rounded-none p-4",
+          "chat-history-drawer left-0 top-[var(--app-top,0px)] flex h-[var(--app-height,100dvh)] max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-4 overflow-hidden rounded-none p-4",
           wide ? "w-screen" : "w-[min(340px,calc(100vw-24px))] max-sm:w-screen",
         )}
         onOpenAutoFocus={(event) => {
@@ -618,12 +671,12 @@ function SessionHistoryFrame({
           content.current?.focus();
         }}
       >
-        <div className="flex items-center gap-2 pr-8">
+        <div className="flex shrink-0 items-center gap-2 pr-8">
           <DialogTitle className="flex-1">Sessions</DialogTitle>
           {newSession}
           <SessionLaunchMenu />
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto space-y-4">{children}</div>
       </DialogContent>
     </Dialog>
   );
@@ -756,7 +809,9 @@ export function ChatConversationInfo({
   inline?: boolean;
   terminalOnly?: Terminal;
 }) {
-  const { config, changePermissions, thread } = useChat();
+  const { config, changePermissions, thread, workspace } = useChat();
+  const { data: ssh } = useSsh();
+  const dialog = useRef<HTMLDivElement>(null);
   const usage = useQuery({
     queryKey: [
       "chat-session-usage",
@@ -788,7 +843,13 @@ export function ChatConversationInfo({
   const body = terminalOnly ? (
     <dl className="space-y-3 text-sm break-words">
       <div>
-        <dt className="text-muted-foreground">Agent</dt>
+        <dt className="flex items-center justify-between text-muted-foreground">
+          Agent
+          <HelpPopover label="terminal configuration" testId="chat-terminal-config-help">
+            The terminal keeps its launch configuration. Use Chat to resume a supported agent, or
+            New terminal for a different configuration.
+          </HelpPopover>
+        </dt>
         <dd>{terminalOnly.kind}</dd>
       </div>
       <div>
@@ -803,38 +864,43 @@ export function ChatConversationInfo({
         <dt className="text-muted-foreground">Tokens used</dt>
         <dd data-testid="chat-token-count">{tokenLabel}</dd>
       </div>
-      <p className="text-xs text-muted-foreground">
-        The terminal keeps its launch configuration. Use Chat to resume a supported agent, or New
-        terminal for a different configuration.
-      </p>
     </dl>
   ) : (
     <>
-      <p className="text-xs text-muted-foreground">
-        Loosening permissions applies right away, including to a pending approval. Stricter
-        permissions apply to your next message. Change new-chat defaults in Settings.
-      </p>
-      <dl className="space-y-3 text-sm wrap-break-word">
-        <div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 text-sm wrap-break-word">
+        <div className="contents">
           <dt className="text-muted-foreground">Tokens used</dt>
           <dd data-testid="chat-token-count">{tokenLabel}</dd>
         </div>
-        <div>
-          <dt className="text-muted-foreground">Agent and working folder</dt>
+        <div className="contents">
+          <dt className="text-muted-foreground">Agent / host</dt>
           <dd>
-            {config.agent} · {thread?.host || "Selected execution host"}
-            {thread?.cwd && <span className="block font-mono text-xs">{thread.cwd}</span>}
+            {config.agent} ·{" "}
+            {thread
+              ? (thread.host ?? "Local")
+              : workspace?.host === undefined
+                ? (ssh?.host ?? "Local")
+                : (workspace.host ?? "Local")}
           </dd>
         </div>
-        <div>
+        {(thread?.cwd ?? workspace?.cwd) && (
+          <div className="contents">
+            <dt className="text-muted-foreground">Folder</dt>
+            <dd className="min-w-0 font-mono text-xs">{thread?.cwd ?? workspace?.cwd}</dd>
+          </div>
+        )}
+        <div className="contents">
           <dt className="text-muted-foreground">Tools</dt>
-          <dd>
-            {config.mcp === "orc"
-              ? "ORC MCP connection plus agent host configuration"
-              : "Agent host configuration"}
+          <dd className="flex min-w-0 items-center justify-between gap-2">
+            {config.mcp === "orc" ? "ORC + host" : "Host"}
+            <HelpPopover label="session tools" testId="chat-tools-help">
+              {config.mcp === "orc"
+                ? "ORC MCP connection plus agent host configuration"
+                : "Agent host configuration"}
+            </HelpPopover>
           </dd>
         </div>
-        <div>
+        <div className="col-span-2">
           <dd>
             <ChatPermissionSelect
               config={config}
@@ -862,12 +928,12 @@ export function ChatConversationInfo({
         <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
           {config.system || "No additional instructions"}
         </pre>
-        <p className="mt-2 text-xs text-muted-foreground">
+        <HelpPopover label="session instructions" testId="chat-instructions-help">
           {config.agent === "claude"
             ? "Appended to Claude’s coding system prompt."
             : "Sent as turn instructions to the agent."}{" "}
           Agent and workspace instructions may also apply.
-        </p>
+        </HelpPopover>
       </details>
     </>
   );
@@ -884,7 +950,20 @@ export function ChatConversationInfo({
     );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="chat-config-dialog" className="w-[calc(100%-1rem)]">
+      <DialogContent
+        ref={dialog}
+        data-testid="chat-config-dialog"
+        className="w-[calc(100%-1rem)]"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          const control = Array.from(
+            dialog.current?.querySelectorAll<HTMLElement>(
+              "select:not(:disabled), textarea:not(:disabled), input:not(:disabled)",
+            ) ?? [],
+          ).find((element) => element.getClientRects().length > 0);
+          (control ?? dialog.current)?.focus();
+        }}
+      >
         <DialogTitle>Session settings</DialogTitle>
         <DialogDescription className="sr-only">Configure this session</DialogDescription>
         {body}

@@ -151,7 +151,9 @@ export function SessionTerminalCenter({ context }: { context: SessionContext }) 
         terminals={terminals}
         storageKey={`orc_session_layout_${terminal.id}`}
         renderTerminal={(id) => <TerminalViewport terminalId={id} />}
-        renderActions={(item) => <ContinueInChat terminal={item} inWorkspace />}
+        renderActions={(item) =>
+          item.id === terminal.id ? null : <ContinueInChat terminal={item} inWorkspace />
+        }
         renderOptions={(item) => <SessionTerminalActions terminal={item} />}
       />
     </div>

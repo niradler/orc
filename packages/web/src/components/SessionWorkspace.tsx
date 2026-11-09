@@ -1,4 +1,4 @@
-import { Columns2, Maximize2, Menu, X } from "lucide-react";
+import { Maximize2, Menu, MessagesSquare, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
@@ -166,7 +166,7 @@ export function SessionWorkspace({
       aria-pressed={parallel}
       onClick={toggle}
     >
-      {parallel ? <X size={17} /> : <Columns2 size={17} />}
+      {parallel ? <X size={17} /> : <MessagesSquare size={17} />}
     </Button>
   );
   return (

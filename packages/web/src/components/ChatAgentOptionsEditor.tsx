@@ -1,5 +1,6 @@
 import { ChatAgentOptionsSchema, chatRuntime } from "@orc/core/chat-options";
 import { useEffect, useId, useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useChat } from "@/hooks/useChat";
@@ -86,12 +87,22 @@ export function ChatAgentOptionsEditor() {
   return (
     <details data-testid="chat-agent-options" className="min-w-0 space-y-3 text-sm">
       <summary className="min-h-11 cursor-pointer py-3">Advanced launch options</summary>
-      <label htmlFor={inputId} className="block space-y-2">
-        <span>
-          {runtime === "claude-sdk"
-            ? "Claude SDK options (JSON)"
-            : `${runtime === "codex" ? "Codex App Server" : "ACPX"} arguments (JSON array)`}
-        </span>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor={inputId}>
+            {runtime === "claude-sdk"
+              ? "Claude SDK options (JSON)"
+              : `${runtime === "codex" ? "Codex App Server" : "ACPX"} arguments (JSON array)`}
+          </label>
+          <HelpPopover label="agent launch options" testId="chat-agent-options-help">
+            {runtime === "claude-sdk"
+              ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}.'
+              : runtime === "acpx"
+                ? 'Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions.'
+                : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above."}{" "}
+            Options are kept separately for each agent. Credentials stay in host configuration.
+          </HelpPopover>
+        </div>
         <Textarea
           id={inputId}
           data-testid="chat-agent-options-input"
@@ -106,15 +117,7 @@ export function ChatAgentOptionsEditor() {
           }}
           className="font-mono text-xs"
         />
-      </label>
-      <p className="text-xs text-muted-foreground" data-testid="chat-agent-options-help">
-        {runtime === "claude-sdk"
-          ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}.'
-          : runtime === "acpx"
-            ? 'Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions.'
-            : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above."}{" "}
-        Options are kept separately for each agent. Credentials stay in host configuration.
-      </p>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"

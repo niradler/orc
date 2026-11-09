@@ -23,7 +23,11 @@ for (const width of [390, 1440]) {
     await chooseChatAgent(page, "gemini");
     await openChatSettings(page);
     await page.getByTestId("chat-agent-options").locator("summary").click();
-    await expect(page.getByTestId("chat-agent-options-help")).toContainText("--approve-all");
+    await page.getByTestId("chat-agent-options-help").click();
+    await expect(page.getByTestId("chat-agent-options-help-content")).toContainText(
+      "--approve-all",
+    );
+    await page.keyboard.press("Escape");
     await editor.fill('["--format", "text"]');
     await apply.click();
     await expect(page.getByTestId("chat-agent-options-error")).toContainText(

@@ -10,8 +10,10 @@ token counts, files/Git/worktrees and touch-terminal continuity. The integration
 also retains the original components named in the audit below: prompt/command
 menus, approval/question cards, terminal splits and lifecycle actions, Git/PR
 operations, file conflict protection, discovery/archive and history filters.
-Local automated coverage includes desktop and phone viewports; live SSH and
-physical mobile devices remain unverified. This follow-up does not change Tasks
+Local automated coverage includes desktop and touch-enabled phone viewports.
+One-time SSH validation covered streaming, upload/read, runtime-preserving
+chat/terminal handoff, terminal reload and file save/reopen with Git diff. Physical
+mobile devices remain unverified. This follow-up does not change Tasks
 or other page layouts and is not a merge or release.
 
 ### Production user-journey checks
@@ -21,7 +23,16 @@ with an isolated checkout and real Codex/shell runtimes. Desktop and phone journ
 covered upload/read plus queued responses, concurrent streams in separate chats,
 busy handoff guards, chat/terminal identity, dirty file save/reopen, terminal input,
 reload/scrollback and retained PID. Touch checks used Pixel 7 emulation; physical
-phones and live SSH remain unverified.
+phones remain unverified. SSH was checked once in an isolated validation folder;
+subsequent regression runs use local fixtures and fake host runtimes.
+
+The follow-up combines chat and terminal navigation under **Sessions**, keeps split
+controls inside the terminal, and replaces long settings explanations with shared
+info popovers. Settings retain reported token counts and the actual host/folder.
+Project folders match unassigned chats and shells by normalized path; pagination
+loads older sessions within the expanded project. A native conversation blocked
+from chat resume remains readable without bypassing its original writer's ownership.
+Provider changes and model discovery remain scoped to their pane and host.
 
 Exploratory testing reproduced a duplicate-PTY defect: selecting the other session's
 terminal in the global picker moved its canvas and left its original pane blank.
@@ -33,7 +44,9 @@ were corrected during visual review.
 Production screenshots are in `docs/public/screens/`: `session-home-desktop.png`,
 `session-home-phone.png`, `session-list-phone.png`, `workspace-settings-desktop.png`,
 `workspace-settings-phone.png`, `workspace-parallel-desktop.png`,
-`workspace-parallel-phone.png` and `workspace-touch-terminal.png`. They show the
+`workspace-parallel-phone.png`, `workspace-projects-desktop.png`,
+`workspace-projects-phone.png`, `workspace-terminal-desktop.png` and
+`workspace-touch-terminal.png`. They show the
 actual application with synthetic fixture conversations, rather than new mock variants.
 
 This draft proposes full-page web chat as ORC's starting workspace, retains side

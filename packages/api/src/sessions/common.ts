@@ -1,7 +1,9 @@
 import { statSync } from "node:fs";
 import { basename } from "node:path";
+import { changes } from "@orc/core/changes";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
-import { getDb } from "@orc/db/client";
+import { projectForFolder } from "@orc/core/project-path";
+import { getDb, getSqlite } from "@orc/db/client";
 import { projects } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import type { SessionStatus } from "./types.js";
@@ -36,16 +38,30 @@ export function oneLine(text: string, max: number): string {
 }
 
 const projectByCwd = new Map<string, string | null>();
+let cachedDatabase: ReturnType<typeof getSqlite> | undefined;
+changes.subscribe(({ resources }) => {
+  if (resources.includes("projects")) projectByCwd.clear();
+});
 
 export async function projectIdFor(
   cwd: string | null | undefined,
   runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): Promise<string | null> {
   if (!cwd) return null;
+  const database = getSqlite();
+  if (cachedDatabase !== database) {
+    projectByCwd.clear();
+    cachedDatabase = database;
+  }
   const key = `${runtime.host.kind === "ssh" ? runtime.host.alias : "local"}:${cwd}`;
   const cached = projectByCwd.get(key);
   if (cached !== undefined) return cached;
   let id: string | null = null;
+  const scoped = projectForFolder(cwd, await getDb().query.projects.findMany());
+  if (scoped) {
+    projectByCwd.set(key, scoped.id);
+    return scoped.id;
+  }
   try {
     const result = await runtime.exec(["git", "-C", cwd, "remote", "get-url", "origin"], {
       timeoutMs: 30_000,

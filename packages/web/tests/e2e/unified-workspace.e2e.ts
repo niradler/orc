@@ -3,7 +3,303 @@ import { HOME, mockSessionHome } from "./_session-home-demo";
 
 for (const width of [1440, 390]) {
   test.describe(`unified workspace at ${width}px`, () => {
-    test.use({ viewport: { width, height: 844 } });
+    test.use({ viewport: { width, height: 844 }, hasTouch: width === 390 });
+
+    test("should keep provider changes and model discovery scoped to their own pane and host", async ({
+      page,
+    }) => {
+      await mockSessionHome(page);
+      await page.route("**/api/settings/providers", (route) =>
+        route.fulfill({
+          json: {
+            revision: "0".repeat(64),
+            default_provider_id: "claude",
+            providers: [
+              {
+                id: "claude",
+                name: "Claude Code",
+                agent: "claude",
+                enabled: true,
+                model: "",
+                executable: "",
+                environment: [],
+              },
+              {
+                id: "review",
+                name: "Review",
+                agent: "claude",
+                enabled: true,
+                model: "review-model",
+                executable: "",
+                environment: [],
+              },
+            ],
+          },
+        }),
+      );
+      await page.route("**/api/ssh", (route) =>
+        route.fulfill({ json: { host: null, hosts: ["lab"], supported: true } }),
+      );
+      await page.route("**/api/terminals/browse?**", (route) =>
+        route.fulfill({
+          json: {
+            host: "lab",
+            path: "/remote",
+            parent: "/",
+            directories: [],
+          },
+        }),
+      );
+      await page.route("**/api/git/worktrees?**", (route) =>
+        route.fulfill({
+          json: {
+            root: "/remote/review",
+            worktrees: [],
+          },
+        }),
+      );
+      const discoveries: URLSearchParams[] = [];
+      await page.route("**/api/chat/models?**", (route) => {
+        discoveries.push(new URL(route.request().url()).searchParams);
+        return route.fulfill({
+          json: { models: [{ id: "review-model", label: "Review model" }], warning: null },
+        });
+      });
+      await page.goto("/workspace?project=all&chat=full");
+      const primary = page.getByTestId("session-primary-pane");
+      await expect(primary.getByTestId("chat-agent-model-button")).toBeEnabled();
+      const original = await primary.getByTestId("chat-agent-current").textContent();
+      await page.getByTestId("workspace-parallel").click();
+      if (width < 1024) await page.getByTestId("parallel-tab-1").click();
+      const secondary = page.getByTestId("session-secondary-pane");
+      await secondary.getByTestId("chat-agent-model-button").click();
+      await page.getByTestId("chat-provider-option-review").click();
+      await page.keyboard.press("Escape");
+      await expect(secondary.getByTestId("chat-agent-current")).toHaveText("Review");
+      await expect(primary.getByTestId("chat-agent-current")).toHaveText(original ?? "");
+      await secondary.getByTestId("chat-workspace-folder").click();
+      await page.getByTestId("chat-workspace-host-option").filter({ hasText: "lab" }).click();
+      await page.getByTestId("chat-workspace-cwd").fill("/remote/review");
+      await page.getByTestId("chat-workspace-apply").click();
+      await expect
+        .poll(() =>
+          discoveries.some(
+            (query) =>
+              query.get("host") === "lab" &&
+              query.get("cwd") === "/remote/review" &&
+              query.get("providerId") === "review",
+          ),
+        )
+        .toBe(true);
+      await expect(primary.getByTestId("chat-agent-current")).toHaveText(original ?? "");
+    });
+
+    test("should keep an externally owned conversation readable when chat resume is blocked", async ({
+      page,
+    }) => {
+      await mockSessionHome(page);
+      await page.route("**/api/chat/threads", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({
+              status: 409,
+              json: { error: "End the original agent session before resuming it in chat." },
+            })
+          : route.fallback(),
+      );
+      await page.route(`**/api/sessions/live/${HOME.codexLive}/transcript?**`, (route) =>
+        route.fulfill({
+          json: {
+            total: 1,
+            offset: 0,
+            matches: [],
+            turns: [
+              {
+                index: 0,
+                role: "assistant",
+                time: null,
+                blocks: [{ type: "text", text: "Existing session remains readable." }],
+              },
+            ],
+          },
+        }),
+      );
+      await page.goto("/workspace?project=all&chat=full");
+      if (width < 1024) await page.getByTestId("chat-sessions-button").click();
+      await page
+        .locator(`[data-history-id="native:${HOME.codexLive}"]`)
+        .filter({ visible: true })
+        .getByTestId("chat-resume-live")
+        .click();
+      await expect(page.getByTestId("session-read-only-notice")).toContainText(
+        "End the original agent session",
+      );
+      await expect(page.getByTestId("live-session-detail")).toContainText(
+        "Existing session remains readable.",
+      );
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("live-session-detail")).toHaveCount(0);
+      await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeVisible();
+    });
+
+    test("should keep split controls contextual to the terminal", async ({ page }, testInfo) => {
+      await mockSessionHome(page);
+      let played = false;
+      await page.route(`**/api/terminals/${HOME.terminal}/ticket`, (route) =>
+        route.fulfill({
+          json: {
+            ticket: "local-demo-fixture",
+            expires_in: 60,
+          },
+        }),
+      );
+      await page.routeWebSocket(`**/terminals/${HOME.terminal}/ws**`, (socket) => {
+        played = true;
+        socket.send(
+          Buffer.from(
+            "\u001b[2J\u001b[HORC session workspace\r\n\r\ndemo@workspace $ bun test\r\n\u001b[32m24 checks passed\u001b[0m\r\n\r\nRuntime retained after reload.\r\nFolder: /home/demo/acme-shop\r\n\r\ndemo@workspace $ ",
+          ),
+        );
+        socket.send(JSON.stringify({ type: "replay-end" }));
+      });
+      await page.route(/\/api\/projects(\?.*)?$/, (route) =>
+        route.fulfill({
+          json: {
+            projects: [
+              { id: "shop", name: "Acme shop", scope: "/home/demo/acme-shop", status: "active" },
+            ],
+            total: 1,
+          },
+        }),
+      );
+      await page.goto(
+        `/workspace?project=all&chat=full&sessionTerminal=${HOME.terminal}&drawer=terminal`,
+      );
+      await expect(page.getByTestId("session-terminal")).toBeVisible();
+      await expect(page.getByTestId("session-drawer-toggle")).toHaveCount(0);
+      await expect(page.getByTestId("session-inspector-toggle")).toHaveCount(0);
+      await expect(page.getByTestId("session-drawer")).toHaveCount(0);
+      await expect(page.getByTestId("pane-split-horizontal")).toHaveCount(1);
+      await expect(page.getByTestId("pane-split-vertical")).toHaveCount(1);
+      await expect(page.getByTestId("terminal-continue-chat")).toHaveCount(1);
+      await expect(page.getByTestId("chat-send-button")).toHaveCount(0);
+      await expect(page.getByTestId("composer-settings")).toBeVisible();
+      await expect(page.getByTestId("chat-attach-button")).toBeVisible();
+      await expect(
+        page.getByTestId("session-project-breadcrumb").filter({ visible: true }),
+      ).toHaveText("Acme shop");
+      await expect.poll(() => played).toBe(true);
+      await expect(page.getByTestId("terminal-surface").locator("canvas").first()).toBeVisible();
+      if (width === 390)
+        await expect(page.getByTestId("terminal-text-layer")).toContainText(
+          "Runtime retained after reload.",
+        );
+      await page.screenshot({
+        path: testInfo.outputPath(`workspace-terminal-${width}.png`),
+        animations: "disabled",
+      });
+    });
+
+    test("should find older folder-matched sessions inside their project", async ({
+      page,
+    }, testInfo) => {
+      const fixture = await mockSessionHome(page);
+      const sessions = Array.from({ length: 110 }, (_, index) => ({
+        ...fixture.live[1],
+        id: `folder-session-${index}`,
+        session_id: `folder-runtime-${index}`,
+        name: `Folder session ${index}`,
+        status: "stopped",
+        waiting_for_human: false,
+        project_id: null,
+        cwd: index < 55 ? "C:/Projects/other" : "\\\\?\\C:\\Projects\\ORC\\packages\\web",
+        last_activity_at: new Date(Date.now() - index * 60_000).toISOString(),
+      }));
+      await page.route("**/api/projects?**", (route) =>
+        route.fulfill({
+          json: {
+            projects: [{ id: "orc", name: "orc", status: "active", scope: "C:/Projects/orc" }],
+            next_offset: null,
+          },
+        }),
+      );
+      await page.route("**/api/sessions/live?**", (route) =>
+        route.fulfill({ json: { sessions, total: sessions.length, has_more: false } }),
+      );
+      await page.goto("/workspace?project=all&chat=full");
+      if (width < 1024) await page.getByTestId("chat-sessions-button").click();
+      await page.getByTestId("session-navigation-projects").click();
+      const projects = page.getByRole("region", { name: "Projects", exact: true });
+      await projects.getByRole("button", { name: /^orc/ }).click();
+      await expect(projects.locator("[data-history-id]")).toHaveCount(50);
+      await expect(projects.locator('[data-history-id="native:folder-session-55"]')).toBeVisible();
+      await page.getByTestId("chat-history-more").click();
+      await expect(projects.locator("[data-history-id]")).toHaveCount(55);
+      await expect(
+        projects.locator('[data-history-id="native:folder-session-109"]'),
+      ).toBeAttached();
+      await expect(page.getByTestId("chat-history-more")).toHaveCount(0);
+      if (width < 1024)
+        await expect(
+          page
+            .getByTestId("chat-sessions-dialog")
+            .getByRole("heading", { name: "Sessions", exact: true }),
+        ).toBeVisible();
+      await page.getByTestId("session-navigation-projects").scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: testInfo.outputPath(`workspace-projects-${width}.png`),
+        animations: "disabled",
+      });
+    });
+
+    test("should disclose settings help on focus, hover and tap without consuming the form", async ({
+      page,
+    }, testInfo) => {
+      const fixture = await mockSessionHome(page);
+      fixture.chats[0].projectId = "demo-project";
+      fixture.chats[0].runtimeId = fixture.live[0].session_id;
+      await page.route(/\/api\/projects(\?.*)?$/, (route) =>
+        route.fulfill({
+          json: {
+            projects: [
+              {
+                id: "demo-project",
+                name: "Acme shop",
+                scope: "/home/demo/acme-shop",
+                status: "active",
+              },
+            ],
+            total: 1,
+          },
+        }),
+      );
+      await page.goto(`/workspace?project=all&chat=full&chatThread=${HOME.chatA}`);
+      await page.getByTestId("composer-settings").click();
+      const help = page.getByTestId("chat-permission-help");
+      const content = page.getByTestId("chat-permission-help-content");
+      await expect(content).toHaveCount(0);
+      await help.focus();
+      await expect(content).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(content).toHaveCount(0);
+      await page.getByTestId("chat-permission-mode").focus();
+      await help.hover();
+      await expect(content).toBeVisible();
+      await page.getByTestId("workspace-parallel").hover();
+      await expect(content).toHaveCount(0);
+      await help.click();
+      await expect(content).toBeVisible();
+      await page.getByTestId("chat-permission-mode").click();
+      await expect(content).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("chat-input").click();
+      await page.screenshot({
+        path: testInfo.outputPath(`workspace-settings-${width}.png`),
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
 
     test("should open full-page chat by default and preserve independent parallel drafts", async ({
       page,

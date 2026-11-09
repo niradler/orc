@@ -1,13 +1,30 @@
+import { posix } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
-import { readRegistrations } from "@orc/core/live-session";
+import { LiveRegistration, readRegistrations } from "@orc/core/live-session";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
 export async function lifecycleRecords(
   dir?: string,
   runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): Promise<SessionRecord[]> {
+  let registrations: LiveRegistration[];
+  if (runtime.host.kind === "local") registrations = readRegistrations(dir);
+  else {
+    registrations = [];
+    const folder = dir ?? posix.join(await runtime.home(), ".orc", "live-sessions");
+    for (const file of await runtime.listFiles(folder, 1000)) {
+      if (!file.path.endsWith(".json") || file.size > 65_536) continue;
+      const bytes = await runtime.readFile(file.path, 65_536);
+      try {
+        const parsed = LiveRegistration.safeParse(JSON.parse(new TextDecoder().decode(bytes)));
+        if (parsed.success) registrations.push(parsed.data);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+    }
+  }
   return Promise.all(
-    readRegistrations(dir).map(async (record) => {
+    registrations.map(async (record) => {
       const alive = await runtime.processAlive(record.pid);
       return {
         backend: record.backend,

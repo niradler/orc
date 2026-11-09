@@ -4,7 +4,7 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
-  MessageSquare,
+  MessagesSquare,
   Package,
   Settings,
   Terminal,
@@ -81,7 +81,10 @@ export function WorkspaceSidebar({
       <nav aria-label="Workspace" className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-auto">
         <Button
           variant="ghost"
-          aria-label="Chat workspace"
+          aria-label="Sessions workspace"
+          aria-current={
+            pathname === "/workspace" || pathname.startsWith("/terminals") ? "page" : undefined
+          }
           data-testid="nav-workspace"
           className={cn("min-h-11 justify-start gap-3", rail && "justify-center px-0")}
           onClick={() => {
@@ -89,10 +92,13 @@ export function WorkspaceSidebar({
             onNavigate?.();
           }}
         >
-          <MessageSquare size={18} />
-          {!rail && "Chat"}
+          <MessagesSquare size={18} />
+          {!rail && <span className="flex-1 text-left">Sessions</span>}
+          {!rail && running > 0 && (
+            <span className="rounded bg-surface px-1.5 text-xs text-primary">{running}</span>
+          )}
         </Button>
-        {WORKSPACE_SECTIONS.map((section) => {
+        {WORKSPACE_SECTIONS.filter((section) => section.id !== "terminals").map((section) => {
           const Icon = icons[section.id];
           const button = (
             <button
@@ -116,9 +122,6 @@ export function WorkspaceSidebar({
             >
               <Icon className="size-4 shrink-0" />
               {!rail && <span className="flex-1">{section.label}</span>}
-              {section.id === "terminals" && running > 0 && !rail && (
-                <span className="rounded bg-surface px-1.5 text-xs text-primary">{running}</span>
-              )}
             </button>
           );
           return rail ? (

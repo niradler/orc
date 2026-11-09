@@ -69,8 +69,8 @@ for (const width of [1440, 390])
       page,
     }) => {
       await mockSessionHome(page);
-      await page.goto(`/tasks?project=all&chat=full&sessionTerminal=${HOME.terminal}`);
-      await expect(page.getByTestId("session-terminal")).toBeVisible();
+      await page.goto(`/tasks?project=all&chat=full&chatThread=${HOME.chatA}`);
+      await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
       await expect(page.getByTestId("session-inspector")).toHaveCount(0);
 
       const inspectorToggle = page
@@ -109,7 +109,7 @@ for (const width of [1440, 390])
         await expect(drawerToggle).toHaveAttribute("aria-pressed", "true");
 
         await page.reload();
-        await expect(page.getByTestId("session-terminal")).toBeVisible();
+        await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
         await expect(page.getByTestId("session-inspector")).toBeVisible();
         await expect(page.getByTestId("session-inspector-tab-diff")).toHaveAttribute(
           "aria-selected",
