@@ -5,13 +5,14 @@ import { agentLabel, CODING_AGENTS, enabledAgents } from "./coding-agents.js";
 import { loadConfig, type OrcConfig, updateGlobalConfig } from "./config.js";
 import { ConflictError, ValidationError } from "./errors.js";
 import { userHome } from "./home.js";
+import { resolveJobEnvironment } from "./job-environment.js";
 import {
   type ProviderSettings,
   ProviderSettingsSchema,
   type StoredProviderProfile,
   StoredProvidersSchema,
 } from "./providers.js";
-import { decryptSecret, encryptSecret } from "./secrets.js";
+import { encryptSecret } from "./secrets.js";
 
 function profiles(config: OrcConfig): { instances: StoredProviderProfile[]; default_id: string } {
   if (config.providers) return config.providers;
@@ -128,46 +129,13 @@ export function resolveProviderEnvironment(profile: StoredProviderProfile | unde
   redact: (text: string) => string;
   stream: () => { push: (text: string) => string; flush: () => string };
 } {
-  const env: Record<string, string> = Object.create(null);
-  const secrets: string[] = [];
-  for (const row of profile?.environment ?? []) {
-    const value = row.secret ? decryptSecret(row.value) : row.value;
-    env[row.name] = value;
-    if (row.secret && value) secrets.push(value);
-  }
-  secrets.sort((a, b) => b.length - a.length);
+  const resolved = resolveJobEnvironment(profile?.environment ?? []);
   return {
-    env,
-    redact: (text) =>
-      secrets.reduce((value, secret) => value.replaceAll(secret, "[REDACTED]"), text),
+    env: resolved.env,
+    redact: resolved.redact,
     stream: () => {
-      let pending = "";
-      return {
-        push: (text: string) => {
-          if (!secrets.length) return text;
-          pending += text;
-          let output = "";
-          let index = 0;
-          while (index < pending.length) {
-            const match = secrets.find((secret) => pending.startsWith(secret, index));
-            if (match) {
-              output += "[REDACTED]";
-              index += match.length;
-              continue;
-            }
-            if (secrets.some((secret) => secret.startsWith(pending.slice(index)))) break;
-            output += pending[index];
-            index++;
-          }
-          pending = pending.slice(index);
-          return output;
-        },
-        flush: () => {
-          const tail = pending;
-          pending = "";
-          return tail;
-        },
-      };
+      const stream = resolved.createRedactor();
+      return { push: stream.write, flush: stream.finish };
     },
   };
 }

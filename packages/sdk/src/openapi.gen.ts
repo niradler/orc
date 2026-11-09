@@ -346,6 +346,8 @@ export interface paths {
                     agent: string;
                     threadId?: string;
                     providerId?: string;
+                    host?: string;
+                    cwd?: string;
                 };
                 header?: never;
                 path?: never;
@@ -15371,6 +15373,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{id}/runs/{runId}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve the native agent conversation created by this run */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    runId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Discovered native session, or null if the provider did not retain one */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{id}/runs/{runId}/logs": {
         parameters: {
             query?: never;
@@ -18221,6 +18264,28 @@ export interface components {
             name: string;
             description: string | null;
             command: string;
+            settings: {
+                host?: string | null;
+                inherit_project_directory?: boolean;
+                timezone?: string;
+                shell?: {
+                    executable: string;
+                    args: string[];
+                };
+                workspace?: {
+                    /** @enum {string} */
+                    mode: "directory" | "worktree";
+                    base_ref: string;
+                    cleanup_on_success: boolean;
+                };
+            } | null;
+            environment: {
+                name: string;
+                value: string | null;
+                secret: boolean;
+            }[];
+            working_dir: string | null;
+            schedule_timezone: string;
             action: {
                 /** @enum {string} */
                 type: "command";
@@ -18230,6 +18295,41 @@ export interface components {
                 type: "agent";
                 prompt: string;
                 backend: string;
+                options?: {
+                    /** @enum {string} */
+                    runtime: "claude-sdk";
+                    options: {
+                        /** @enum {string} */
+                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        maxTurns?: number;
+                        maxBudgetUsd?: number;
+                        /** @enum {string} */
+                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                        thinking?: {
+                            /** @enum {string} */
+                            type: "adaptive";
+                        } | {
+                            /** @enum {string} */
+                            type: "disabled";
+                        } | {
+                            /** @enum {string} */
+                            type: "enabled";
+                            budgetTokens: number;
+                        };
+                        fallbackModel?: string;
+                        extraArgs?: {
+                            [key: string]: string | null;
+                        };
+                    };
+                } | {
+                    /** @enum {string} */
+                    runtime: "codex";
+                    args: string[];
+                } | {
+                    /** @enum {string} */
+                    runtime: "acpx";
+                    args: string[];
+                };
                 model?: string;
                 /** @default false */
                 auto_approve: boolean;
@@ -18274,8 +18374,28 @@ export interface components {
         CreateJob: {
             name: string;
             description?: string;
-            /** @description Shell command executed via `sh -c`. Runs with the server's privileges. */
+            /** @description Script executed with the configured shell and host privileges. */
             command?: string;
+            settings?: {
+                host?: string | null;
+                inherit_project_directory?: boolean;
+                timezone?: string;
+                shell?: {
+                    executable: string;
+                    args: string[];
+                };
+                workspace?: {
+                    /** @enum {string} */
+                    mode: "directory" | "worktree";
+                    base_ref: string;
+                    cleanup_on_success: boolean;
+                };
+            };
+            environment?: {
+                name: string;
+                value: string | null;
+                secret: boolean;
+            }[];
             action?: {
                 /** @enum {string} */
                 type: "command";
@@ -18285,6 +18405,41 @@ export interface components {
                 type: "agent";
                 prompt: string;
                 backend: string;
+                options?: {
+                    /** @enum {string} */
+                    runtime: "claude-sdk";
+                    options: {
+                        /** @enum {string} */
+                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        maxTurns?: number;
+                        maxBudgetUsd?: number;
+                        /** @enum {string} */
+                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                        thinking?: {
+                            /** @enum {string} */
+                            type: "adaptive";
+                        } | {
+                            /** @enum {string} */
+                            type: "disabled";
+                        } | {
+                            /** @enum {string} */
+                            type: "enabled";
+                            budgetTokens: number;
+                        };
+                        fallbackModel?: string;
+                        extraArgs?: {
+                            [key: string]: string | null;
+                        };
+                    };
+                } | {
+                    /** @enum {string} */
+                    runtime: "codex";
+                    args: string[];
+                } | {
+                    /** @enum {string} */
+                    runtime: "acpx";
+                    args: string[];
+                };
                 model?: string;
                 /** @default false */
                 auto_approve: boolean;
@@ -18329,12 +18484,32 @@ export interface components {
                 [key: string]: string;
             };
             working_dir?: string;
-            project_id?: string;
+            project_id?: string | null;
         };
         UpdateJob: {
             name?: string;
             description?: string;
             command?: string;
+            settings?: {
+                host?: string | null;
+                inherit_project_directory?: boolean;
+                timezone?: string;
+                shell?: {
+                    executable: string;
+                    args: string[];
+                };
+                workspace?: {
+                    /** @enum {string} */
+                    mode: "directory" | "worktree";
+                    base_ref: string;
+                    cleanup_on_success: boolean;
+                };
+            };
+            environment?: {
+                name: string;
+                value: string | null;
+                secret: boolean;
+            }[];
             action?: {
                 /** @enum {string} */
                 type: "command";
@@ -18344,6 +18519,41 @@ export interface components {
                 type: "agent";
                 prompt: string;
                 backend: string;
+                options?: {
+                    /** @enum {string} */
+                    runtime: "claude-sdk";
+                    options: {
+                        /** @enum {string} */
+                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        maxTurns?: number;
+                        maxBudgetUsd?: number;
+                        /** @enum {string} */
+                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                        thinking?: {
+                            /** @enum {string} */
+                            type: "adaptive";
+                        } | {
+                            /** @enum {string} */
+                            type: "disabled";
+                        } | {
+                            /** @enum {string} */
+                            type: "enabled";
+                            budgetTokens: number;
+                        };
+                        fallbackModel?: string;
+                        extraArgs?: {
+                            [key: string]: string | null;
+                        };
+                    };
+                } | {
+                    /** @enum {string} */
+                    runtime: "codex";
+                    args: string[];
+                } | {
+                    /** @enum {string} */
+                    runtime: "acpx";
+                    args: string[];
+                };
                 model?: string;
                 /** @default false */
                 auto_approve: boolean;
@@ -18379,7 +18589,7 @@ export interface components {
                 [key: string]: string;
             };
             working_dir?: string;
-            project_id?: string;
+            project_id?: string | null;
         };
         JobRunResult: {
             run_id: string;
@@ -18397,6 +18607,7 @@ export interface components {
             job_id: string;
             task_id: string | null;
             session_id: string | null;
+            native_session_id: string | null;
             /** @enum {string} */
             status: "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
             trigger_by: string | null;

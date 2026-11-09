@@ -199,8 +199,8 @@ export class ClaudeSession implements AgentSession {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env: buildClaudeEnv(this.opts.providerEnv),
-      passEnv: Object.keys(this.opts.providerEnv ?? {}),
+      env: buildClaudeEnv(this.opts.env),
+      passEnv: Object.keys(this.opts.env ?? {}),
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;

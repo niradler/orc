@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   type ExecHost,
   ensureSshMaster,
@@ -147,10 +148,15 @@ export class CodexSession implements AgentSession {
       opts.orcMcp === false
         ? null
         : buildOrcMcpServer(this.host, false, opts.orcMcpMode, opts.orcMcpProject);
-    const env = buildCodexEnv(this.opts.providerEnv);
+    const env = buildCodexEnv(this.opts.env);
     if (mcp?.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
     const command = await this.launcher(this.host);
     const args = [...command, "exec"];
+    if (opts.chatAgentOptions) {
+      const options = ChatAgentOptionsSchema.parse(opts.chatAgentOptions);
+      if (options.runtime !== "codex") throw new Error("Codex CLI requires Codex launch options");
+      args.push(...options.args);
+    }
     if (opts.runtimeSessionId) args.push("resume", opts.runtimeSessionId);
     args.push("--json", "--skip-git-repo-check", "-c", 'approval_policy="never"');
     args.push(
@@ -179,7 +185,7 @@ export class CodexSession implements AgentSession {
       stdout: "pipe",
       stderr: "pipe",
       env,
-      passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.providerEnv ?? {})],
+      passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.env ?? {})],
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
@@ -349,11 +355,11 @@ function createCodexBackend(): AgentBackend {
       try {
         if (opts.providerExecutable || (await hostBinary(host, "codex"))) {
           const launch = await codexCommand(host, opts.providerExecutable);
-          if (opts.providerEnv?.OPENAI_API_KEY) return { ok: true };
+          if (opts.env?.OPENAI_API_KEY) return { ok: true };
           const status = await hostExec(host, [...launch, "login", "status"], {
             timeoutMs: 15000,
-            env: providerProcessEnvironment(opts.providerEnv),
-            passEnv: Object.keys(opts.providerEnv ?? {}),
+            env: providerProcessEnvironment(opts.env),
+            passEnv: Object.keys(opts.env ?? {}),
           });
           return status.code === 0
             ? { ok: true }

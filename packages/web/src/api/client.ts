@@ -722,8 +722,20 @@ export const api = {
           host: string | null;
         }[];
       }>("GET", "/chat/waiting"),
-    models: (agent: string, threadId?: string, providerId?: string) =>
-      req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId, providerId }),
+    models: (
+      agent: string,
+      threadId?: string,
+      host?: string | null,
+      cwd?: string,
+      providerId?: string,
+    ) =>
+      req<ChatModels>("GET", "/chat/models", undefined, {
+        agent,
+        threadId,
+        host: host === null ? "__local__" : host,
+        cwd,
+        providerId,
+      }),
     list: () =>
       req<{
         threads: {
@@ -1031,6 +1043,11 @@ export const api = {
   },
 
   jobs: {
+    nativeSession: (id: string, runId: string) =>
+      req<{ session_id: string | null }>(
+        "GET",
+        `/jobs/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/session`,
+      ),
     list: (params?: { enabled?: boolean; project_id?: string; limit?: number; offset?: number }) =>
       req<JobPage>(
         "GET",

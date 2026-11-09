@@ -390,8 +390,8 @@ export class AcpxSession implements AgentSession {
         {
           cwd: this.cwd,
           timeoutMs: 30_000,
-          env: providerProcessEnvironment(this.opts.providerEnv),
-          passEnv: Object.keys(this.opts.providerEnv ?? {}),
+          env: providerProcessEnvironment(this.opts.env),
+          passEnv: Object.keys(this.opts.env ?? {}),
         },
       );
       if (result.code !== 0)
@@ -481,9 +481,9 @@ export class AcpxSession implements AgentSession {
     if (code !== 0) {
       const detail = this.stderrBuf.trim();
       const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
-      logger.error(this.opts.providerRedact?.(msg) ?? msg, {
+      logger.error(this.opts.redactOutput?.(msg) ?? msg, {
         agent: this.agent,
-        stderr: this.opts.providerRedact?.(detail) ?? detail,
+        stderr: this.opts.redactOutput?.(detail) ?? detail,
       });
       if (!this.gotError)
         this.push({
@@ -507,7 +507,7 @@ export class AcpxSession implements AgentSession {
     if (this.proc) {
       await this.close().catch((err) =>
         logger.warn("Failed to close previous ACPX process", {
-          message: this.opts.providerRedact?.(String(err)) ?? String(err),
+          message: this.opts.redactOutput?.(String(err)) ?? String(err),
         }),
       );
     }
@@ -543,8 +543,8 @@ export class AcpxSession implements AgentSession {
     let handle: HostProcess;
     try {
       handle = await hostSpawn(this.host, args, {
-        env: providerProcessEnvironment(this.opts.providerEnv),
-        passEnv: Object.keys(this.opts.providerEnv ?? {}),
+        env: providerProcessEnvironment(this.opts.env),
+        passEnv: Object.keys(this.opts.env ?? {}),
         cwd: this.cwd,
         stdout: "pipe",
         stderr: "pipe",
@@ -570,7 +570,7 @@ export class AcpxSession implements AgentSession {
       },
       onError: (err, stream) => {
         logger.error(`Error reading ACPX ${stream}`, {
-          message: this.opts.providerRedact?.(String(err)) ?? String(err),
+          message: this.opts.redactOutput?.(String(err)) ?? String(err),
           agent: this.agent,
         });
         if (stream === "stdout")

@@ -128,8 +128,7 @@ async function newWebhookJob(
     await page.getByTestId("job-agent-prompt").fill("Review the event and report findings");
   }
   await revealFormField(page, page.getByTestId("job-trigger-type"));
-  await page.getByTestId("job-trigger-type").click();
-  await page.getByTestId("job-trigger-webhook").click();
+  await page.getByTestId("job-trigger-type").selectOption("webhook");
   await revealFormField(page, page.getByTestId("job-webhook-select"));
   await page.getByTestId("job-webhook-select").selectOption(sourceId);
 }
@@ -247,8 +246,7 @@ test("inline source creation retries safely and agent action needs no command", 
   await revealFormField(page, page.getByTestId("job-agent-prompt"));
   await page.getByTestId("job-agent-prompt").fill("Inspect the incoming event");
   await revealFormField(page, page.getByTestId("job-trigger-type"));
-  await page.getByTestId("job-trigger-type").click();
-  await page.getByTestId("job-trigger-webhook").click();
+  await page.getByTestId("job-trigger-type").selectOption("webhook");
   await page.getByTestId("webhook-add").click();
   await page.getByTestId("webhook-name").fill(name);
   await page.route("**/api/webhooks", async (route) => {
@@ -312,6 +310,7 @@ test("mobile navigation opens configured sources and job connections without ove
     fullPage: true,
   });
   await endpoint.getByTestId("webhook-job-link").click();
+  await page.getByText("Webhook connections (1)", { exact: true }).click();
   await expect(page.getByTestId("job-webhooks")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -346,8 +345,7 @@ test("project-scoped job picker offers shared and matching sources only", async 
   await page.goto(`/jobs?project=${first.id}`);
   await page.getByTestId("new-job-button").click();
   await revealFormField(page, page.getByTestId("job-trigger-type"));
-  await page.getByTestId("job-trigger-type").click();
-  await page.getByTestId("job-trigger-webhook").click();
+  await page.getByTestId("job-trigger-type").selectOption("webhook");
   const picker = page.getByTestId("job-webhook-select");
   await expect(picker.locator(`option[value="${own.id}"]`)).toHaveCount(1);
   await expect(picker.locator(`option[value="${shared.id}"]`)).toHaveCount(1);
@@ -357,8 +355,7 @@ test("project-scoped job picker offers shared and matching sources only", async 
   await page.goto("/jobs?project=all");
   await page.getByTestId("new-job-button").click();
   await revealFormField(page, page.getByTestId("job-trigger-type"));
-  await page.getByTestId("job-trigger-type").click();
-  await page.getByTestId("job-trigger-webhook").click();
+  await page.getByTestId("job-trigger-type").selectOption("webhook");
   await expect(picker.locator(`option[value="${shared.id}"]`)).toHaveCount(1);
   await expect(picker.locator(`option[value="${own.id}"]`)).toHaveCount(0);
 });

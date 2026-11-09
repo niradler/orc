@@ -81,7 +81,8 @@ export function AgentSettings() {
   const quota = quotas.data?.accounts.find((account) => account.provider === profile?.agent);
   const catalog = useQuery({
     queryKey: ["provider-models", profile?.id, query.data?.revision],
-    queryFn: () => api.chat.models(profile?.agent ?? "codex", undefined, profile?.id),
+    queryFn: () =>
+      api.chat.models(profile?.agent ?? "codex", undefined, undefined, undefined, profile?.id),
     enabled: false,
     retry: false,
   });

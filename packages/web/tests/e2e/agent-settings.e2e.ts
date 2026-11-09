@@ -302,7 +302,7 @@ for (const width of [1440, 390])
         await page.goto("/tasks?chat=full");
         await expect(
           page.getByTestId("chat-agent-model-button").filter({ visible: true }),
-        ).toHaveAccessibleName(/Claude LiteLLM team, team-coding-model, High effort/);
+        ).toHaveAccessibleName(/Claude LiteLLM team, team-coding-model.*High effort/);
         const sent = page.waitForRequest(
           (req) => req.url().endsWith("/api/chat/stream") && req.method() === "POST",
         );

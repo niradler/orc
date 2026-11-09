@@ -169,12 +169,12 @@ export class AcpSession implements AgentSession {
     if (this.closed) throw new Error("ACP connection is closed.");
     try {
       this.child = await hostSpawn(sessionExecHost(this.opts), this.command, {
-        env: { ...process.env, ...this.opts.providerEnv },
-        passEnv: Object.keys(this.opts.providerEnv ?? {}),
         cwd: this.opts.cwd,
         stdin: "pipe",
         stdout: "pipe",
         stderr: "ignore",
+        env: { ...process.env, ...this.opts.env },
+        passEnv: Object.keys(this.opts.env ?? {}),
       });
       const child = this.child;
       if (!child.proc.stdout || typeof child.proc.stdout === "number")

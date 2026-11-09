@@ -82,8 +82,10 @@ test("should keep named same-adapter configurations independent and mask encrypt
     ),
   ).toBe("error [REDACTED]");
   const stream = resolveProviderEnvironment(providerForAgent("claude", "claude-proxy")).stream();
-  expect(stream.push("prefix fixture-private-")).toBe("prefix ");
-  expect(stream.push("provider-key suffix") + stream.flush()).toBe("[REDACTED] suffix");
+  const prefix = stream.push("prefix fixture-private-");
+  expect(prefix + stream.push("provider-key suffix") + stream.flush()).toBe(
+    "prefix [REDACTED] suffix",
+  );
   expect(stream.flush()).toBe("");
   const ciphertext = loadConfig().providers?.instances.find(
     (profile) => profile.id === "claude-proxy",

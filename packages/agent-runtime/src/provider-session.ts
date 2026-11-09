@@ -26,8 +26,8 @@ export function providerSessionOptions<T extends Partial<SessionOpts>>(
   return {
     ...opts,
     providerId: profile.id,
-    providerEnv: { ...resolved.env, ...opts.providerEnv },
-    providerRedact: resolved.redact,
+    env: { ...resolved.env, ...opts.env },
+    redactOutput: (text) => opts.redactOutput?.(resolved.redact(text)) ?? resolved.redact(text),
     providerTextRedactor: resolved.stream,
     ...(opts.model === undefined && profile.model ? { model: profile.model } : {}),
     ...(opts.chatAgentOptions === undefined && profile.options
@@ -103,8 +103,8 @@ export function redactProviderEvent(
   return event;
 }
 export function withProviderRedaction(session: AgentSession, opts: SessionOpts): AgentSession {
-  if (!opts.providerRedact) return session;
-  const redact = opts.providerRedact;
+  if (!opts.redactOutput) return session;
+  const redact = opts.redactOutput;
   const protect =
     <A extends unknown[], R>(method: (...args: A) => Promise<R>) =>
     async (...args: A): Promise<R> => {
@@ -148,7 +148,7 @@ export function withProviderRedaction(session: AgentSession, opts: SessionOpts):
             event.type === "text" ? text : event.type === "thinking" ? thinking : undefined;
           if (stream && (event.type === "text" || event.type === "thinking")) {
             const data = stream.push(event.data);
-            if (data) yield { ...event, data };
+            if (data) yield { ...event, data: redact(data) };
           } else yield redactProviderEvent(event, redact);
         }
       } catch (error) {

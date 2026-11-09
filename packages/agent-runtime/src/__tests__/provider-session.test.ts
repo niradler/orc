@@ -42,7 +42,7 @@ test("named providers isolate defaults and explicit session overrides", () => {
       providerSessionOptions("claude", { cwd: process.cwd(), providerId: "work" }),
     ).toMatchObject({
       model: "work-model",
-      providerEnv: { AWS_PROFILE: "work" },
+      env: { AWS_PROFILE: "work" },
       chatAgentOptions: { runtime: "claude-sdk", options: { effort: "high" } },
     });
     expect(providerSessionOptions("claude", { providerId: "personal" })).not.toHaveProperty(
@@ -61,6 +61,13 @@ test("named providers isolate defaults and explicit session overrides", () => {
     expect(() => providerSessionOptions("claude", { providerId: "missing" })).toThrow(
       "no longer configured",
     );
+    const job = providerSessionOptions("claude", {
+      providerId: "work",
+      env: { AWS_PROFILE: "job-override" },
+      redactOutput: (text: string) => text.replaceAll("job-secret", "[REDACTED]"),
+    });
+    expect(job.env.AWS_PROFILE).toBe("job-override");
+    expect(job.redactOutput("error job-secret")).toBe("error [REDACTED]");
   } finally {
     loadConfig(original);
   }
@@ -105,7 +112,7 @@ test("redacts credentials from persisted display payloads and thrown errors with
       throw Error("stream x");
     },
   };
-  const wrapped = withProviderRedaction(session, { cwd: process.cwd(), providerRedact: redact });
+  const wrapped = withProviderRedaction(session, { cwd: process.cwd(), redactOutput: redact });
   expect(wrapped.id).toBe("x");
   await expect(wrapped.send("prompt")).rejects.toThrow("secret [REDACTED]");
   const events = wrapped.events()[Symbol.asyncIterator]();

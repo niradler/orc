@@ -99,19 +99,22 @@ export async function hostClaudeLoggedIn(
 
 async function sshSdkLaunch(
   host: SshExecHost,
-  providerEnv: Record<string, string> = {},
+  env: Record<string, string> = {},
 ): Promise<Partial<Options>> {
   const claudePath = await hostBinary(host, "claude");
   if (!claudePath) throw new Error(`claude CLI not found on ${host.alias}`);
   const prepared = await prepareSshSpawn(host, {
-    env: { ...process.env, ...providerEnv },
-    passEnv: Object.keys(providerEnv),
+    env: { ...process.env, ...env },
+    passEnv: Object.keys(env),
   });
   return {
     pathToClaudeCodeExecutable: claudePath,
     spawnClaudeCodeProcess: (options: SpawnOptions): SpawnedProcess => {
       const inline = Object.entries(options.env)
-        .filter(([key, value]) => value !== undefined && SDK_ENV_PASSTHROUGH.test(key))
+        .filter(
+          ([key, value]) =>
+            value !== undefined && SDK_ENV_PASSTHROUGH.test(key) && !Object.hasOwn(env, key),
+        )
         .map(([key, value]) => `${key}=${value}`);
       const command = [options.command, ...options.args];
       const [bin = "ssh", ...args] = prepared.argv(
@@ -258,7 +261,7 @@ class ClaudeSDKSession implements AgentSession {
 
       const launch =
         this.host.kind === "ssh"
-          ? await sshSdkLaunch(this.host, this.opts.providerEnv)
+          ? await sshSdkLaunch(this.host, this.opts.env)
           : this.opts.providerExecutable
             ? resolveClaudeSdkLaunch(true, (name) =>
                 name === "claude"
@@ -271,7 +274,7 @@ class ClaudeSDKSession implements AgentSession {
         options: {
           ...sdkChatOverrides(options),
           ...launch,
-          env: { ...process.env, ...this.opts.providerEnv },
+          env: { ...process.env, ...this.opts.env },
           cwd: this.opts.cwd,
           ...(rulesHook
             ? {
@@ -532,7 +535,7 @@ class ClaudeSDKSession implements AgentSession {
       if ((err as Error).name !== "AbortError") {
         logger.error("Claude SDK query error", {
           message:
-            this.opts.providerRedact?.(err instanceof Error ? err.message : String(err)) ??
+            this.opts.redactOutput?.(err instanceof Error ? err.message : String(err)) ??
             (err instanceof Error ? err.message : String(err)),
         });
         this.push({
@@ -545,7 +548,7 @@ class ClaudeSDKSession implements AgentSession {
         await nativeQuery?.return();
       } catch (error) {
         logger.warn("Claude SDK cleanup failed", {
-          message: this.opts.providerRedact?.(String(error)) ?? String(error),
+          message: this.opts.redactOutput?.(String(error)) ?? String(error),
         });
         this.push({ type: "error", data: "Claude connection could not be closed cleanly." });
       }
@@ -637,7 +640,7 @@ class ClaudeSDKSession implements AgentSession {
 
 async function sshPreflight(
   host: SshExecHost,
-  providerEnv: Record<string, string> = {},
+  env: Record<string, string> = {},
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const claudePath = await hostBinary(host, "claude");
@@ -647,7 +650,7 @@ async function sshPreflight(
         error: `claude CLI not found on ${host.alias} — install Claude Code there (npm i -g @anthropic-ai/claude-code)`,
       };
     }
-    const environment = { ...process.env, ...providerEnv };
+    const environment = { ...process.env, ...env };
     if (
       environment.ANTHROPIC_API_KEY ||
       environment.ANTHROPIC_AUTH_TOKEN ||
@@ -655,7 +658,7 @@ async function sshPreflight(
       environment.CLAUDE_CODE_USE_BEDROCK === "1"
     )
       return { ok: true };
-    if ((await hostClaudeLoggedIn(host, claudePath, false, providerEnv)) === false) {
+    if ((await hostClaudeLoggedIn(host, claudePath, false, env)) === false) {
       return {
         ok: false,
         error:
@@ -682,7 +685,7 @@ function createClaudeSDKBackend(): AgentBackend {
     async preflight(opts = {}) {
       const host = sessionExecHost(opts);
       if (host.kind === "ssh") {
-        return sshPreflight(host, opts.providerEnv);
+        return sshPreflight(host, opts.env);
       }
       try {
         await import("@anthropic-ai/claude-agent-sdk");
@@ -697,7 +700,7 @@ function createClaudeSDKBackend(): AgentBackend {
         const claudePath = opts.providerExecutable
           ? Bun.which(opts.providerExecutable)
           : localAgentBinary("claude");
-        const environment = { ...process.env, ...opts.providerEnv };
+        const environment = { ...process.env, ...opts.env };
         if (
           !claudePath &&
           !environment.ANTHROPIC_API_KEY &&

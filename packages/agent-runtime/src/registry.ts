@@ -33,12 +33,12 @@ export function createBackend(name: AgentBackendName): AgentBackend {
           result = await backend.preflight(resolved);
         } catch (error) {
           throw new Error(
-            resolved.providerRedact?.(error instanceof Error ? error.message : String(error)) ??
+            resolved.redactOutput?.(error instanceof Error ? error.message : String(error)) ??
               String(error),
           );
         }
-        return result.error && resolved.providerRedact
-          ? { ...result, error: resolved.providerRedact(result.error) }
+        return result.error && resolved.redactOutput
+          ? { ...result, error: resolved.redactOutput(result.error) }
           : result;
       },
       startSession: async (opts) => {
@@ -53,7 +53,7 @@ export function createBackend(name: AgentBackendName): AgentBackend {
               .startSession(await sessionRules(String(name), opts))
               .catch((error: unknown) => {
                 throw new Error(
-                  opts.providerRedact?.(error instanceof Error ? error.message : String(error)) ??
+                  opts.redactOutput?.(error instanceof Error ? error.message : String(error)) ??
                     String(error),
                 );
               }),
@@ -75,7 +75,7 @@ export function createBackend(name: AgentBackendName): AgentBackend {
               .resumeSession(id, await sessionRules(String(name), opts))
               .catch((error: unknown) => {
                 throw new Error(
-                  opts.providerRedact?.(error instanceof Error ? error.message : String(error)) ??
+                  opts.redactOutput?.(error instanceof Error ? error.message : String(error)) ??
                     String(error),
                 );
               }),

@@ -8,9 +8,7 @@ export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
   providerId?: string | undefined;
-  providerEnv?: Record<string, string> | undefined;
   providerExecutable?: string | undefined;
-  providerRedact?: ((text: string) => string) | undefined;
   providerTextRedactor?:
     | (() => { push: (text: string) => string; flush: () => string })
     | undefined;
@@ -34,6 +32,8 @@ export type SessionOpts = {
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;
   ruleGuard?: SessionRuleGuard;
+  env?: Record<string, string> | undefined;
+  redactOutput?: ((text: string) => string) | undefined;
   cwd: string;
   model?: string | undefined;
   runtimeSessionId?: string | undefined;
@@ -158,9 +158,9 @@ export interface AgentBackend {
       | "acpAgent"
       | "acpxAgent"
       | "providerId"
-      | "providerEnv"
+      | "env"
       | "providerExecutable"
-      | "providerRedact"
+      | "redactOutput"
     >,
   ): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;

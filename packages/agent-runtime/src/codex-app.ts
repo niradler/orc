@@ -530,7 +530,7 @@ export class CodexAppSession implements AgentSession {
         "features.default_mode_request_user_input=true",
       ];
       const mode = this.opts.permissionMode ?? (this.opts.autoApprove ? "acceptEdits" : "default");
-      const env = buildCodexEnv(this.opts.providerEnv);
+      const env = buildCodexEnv(this.opts.env);
       const mcp =
         this.opts.orcMcp === false
           ? null
@@ -552,7 +552,7 @@ export class CodexAppSession implements AgentSession {
         stdout: "pipe",
         stderr: "ignore",
         env,
-        passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.providerEnv ?? {})],
+        passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.env ?? {})],
       });
       const child = this.child;
       if (this.closed || this.closing) {
