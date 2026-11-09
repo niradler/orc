@@ -1,3 +1,4 @@
+import { pathLabel } from "@orc/core/display-path";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Braces,
@@ -216,8 +217,7 @@ export function FilePanel({
     queryKey: ["git", terminal.id, "status"],
     queryFn: () => api.git.status(terminal.id),
   });
-  const rootName =
-    rootPath.replace(/\\/g, "/").replace(/\/$/, "").split("/").pop() || rootPath || "Files";
+  const rootName = pathLabel(rootPath) || "Files";
   function selectFile(path: string | null): void {
     if (path === selected) return;
     if (

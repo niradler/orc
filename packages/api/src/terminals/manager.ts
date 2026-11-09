@@ -1,5 +1,6 @@
 import { changes } from "@orc/core/changes";
 import { agentForSessionBackend } from "@orc/core/coding-agents";
+import { pathLabel } from "@orc/core/display-path";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { trackHostProcess } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
@@ -296,7 +297,7 @@ export class TerminalManager {
 
 function defaultName(input: CreateTerminalInput): string {
   const { launch } = input;
-  const tail = launch.cwd?.split(/[\\/]/).filter(Boolean).pop();
+  const tail = pathLabel(launch.cwd);
   const label = launch.resume ? `${launch.kind} (resume)` : launch.kind;
   return tail ? `${label} · ${tail}` : label;
 }

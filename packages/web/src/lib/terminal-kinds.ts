@@ -1,4 +1,5 @@
 import { agentLabel } from "@orc/core/coding-agents";
+import { pathLabel } from "@orc/core/display-path";
 import { Bot, MousePointer2, SquareTerminal } from "lucide-react";
 import type { ElementType } from "react";
 
@@ -8,7 +9,5 @@ export function terminalKind(kind: string): { label: string; icon: ElementType }
 }
 
 export function cwdTail(cwd: string | null): string {
-  if (!cwd) return "";
-  const segments = cwd.split(/[\\/]+/).filter(Boolean);
-  return segments.slice(-2).join("/") || cwd;
+  return pathLabel(cwd, 2);
 }
