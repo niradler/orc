@@ -138,6 +138,7 @@ files:
 files:
   - url: orc-0.1.30-linux-x86_64.AppImage
     sha512: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    blockMapSize: 3
 `,
       );
       writeFileSync(join(arm, "orc-0.1.30-linux-arm64.AppImage"), "app");

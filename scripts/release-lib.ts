@@ -79,7 +79,8 @@ export function collectDesktopUpdateAssets(input: {
       if (!input.exists(payload))
         throw new Error(`Update metadata references missing file ${file.url}`);
       remember(names, added, file.url, payload);
-      if (file.blockMapSize == null) continue;
+      // AppImage embeds its blockmap; blockMapSize does not imply a sidecar file.
+      if (file.blockMapSize == null || file.url.endsWith(".AppImage")) continue;
       const blockmap = `${file.url}.blockmap`;
       const blockPath = join(entry.directory, blockmap);
       if (!input.exists(blockPath)) throw new Error(`Missing update blockmap ${blockmap}`);
