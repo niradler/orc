@@ -2076,6 +2076,683 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop-preview/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List desktop targets viewing one session */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            clients: {
+                                client_id: string;
+                                agent_access: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Register or renew a desktop viewing one session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        client_id: string;
+                        session_id: string | null;
+                        /** @default false */
+                        agent_access?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            client_id: string;
+                            lease: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/clients/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release this desktop lease on close or reload */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop lease released */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a preview's trusted session workspace and project */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            cwd: string;
+                            host: string | null;
+                            projectId: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/clients/{id}/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Receive requests for this desktop's selected session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            requests: {
+                                id: string;
+                                client_id: string;
+                                session_id: string;
+                                /** @enum {string} */
+                                kind: "url" | "file" | "browser";
+                                target: string;
+                                /** @enum {string} */
+                                status: "queued" | "opened" | "completed" | "failed" | "expired";
+                                error: string | null;
+                                expires_at: number;
+                                result?: unknown;
+                                command?: {
+                                    /** @enum {string} */
+                                    action: "snapshot";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "screenshot";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "click";
+                                    selector: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "type";
+                                    selector: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "press";
+                                    /** @enum {string} */
+                                    key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "scroll";
+                                    /** @default 0 */
+                                    x: number;
+                                    y: number;
+                                };
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a file or URL in a desktop viewing this session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        /** Format: uuid */
+                        client_id?: string;
+                        /** @enum {string} */
+                        kind: "url" | "file";
+                        target: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "snapshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string;
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                /** @enum {string} */
+                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/browser": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue browser automation for an explicitly enabled session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        /** Format: uuid */
+                        client_id?: string;
+                        command: {
+                            /** @enum {string} */
+                            action: "snapshot";
+                        } | {
+                            /** @enum {string} */
+                            action: "screenshot";
+                        } | {
+                            /** @enum {string} */
+                            action: "click";
+                            selector: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "type";
+                            selector: string;
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "press";
+                            /** @enum {string} */
+                            key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                        } | {
+                            /** @enum {string} */
+                            action: "scroll";
+                            /** @default 0 */
+                            x?: number;
+                            y: number;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "snapshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string;
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                /** @enum {string} */
+                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/requests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read truthful queued/opened/completed/failed preview delivery */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "snapshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string;
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                /** @enum {string} */
+                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/requests/{id}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge an actual preview or browser action result */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        client_id: string;
+                        /** @enum {string} */
+                        status: "opened" | "completed" | "failed";
+                        /** @default null */
+                        error?: string | null;
+                        result?: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "snapshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string;
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                /** @enum {string} */
+                                key: "Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space";
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview a bounded file inside a trusted session workspace */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                    target: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            kind: "text" | "image";
+                            path: string;
+                            root: string;
+                            host: string | null;
+                            content: string;
+                            editable: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        /** Save workspace text with optimistic conflict protection */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        target: string;
+                        content: string;
+                        original: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description File saved */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description File changed on disk; original content is required */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/config": {
         parameters: {
             query?: never;

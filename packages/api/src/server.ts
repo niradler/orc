@@ -15,6 +15,7 @@ import { authRouter } from "./routes/auth.js";
 import { backendsRouter } from "./routes/backends.js";
 import { channelsRouter } from "./routes/channels.js";
 import { chatRouter } from "./routes/chat.js";
+import { desktopPreviewRouter } from "./routes/desktop-preview.js";
 import { eventsRouter } from "./routes/events.js";
 import { flowsRouter } from "./routes/flows.js";
 import { gatewayRouter } from "./routes/gateway.js";
@@ -129,6 +130,7 @@ export function createApp() {
   app.route("/api", eventsRouter);
   app.route("/api", sshRouter);
   app.route("/api", chatRouter);
+  app.route("/api", desktopPreviewRouter);
   app.route("/api", pushRouter);
   app.route("/api", healthRouter);
   app.route("/api", authRouter);

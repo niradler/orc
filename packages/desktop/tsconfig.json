@@ -5,6 +5,5 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["src", "build.ts"],
-  "exclude": ["src/viewer-renderer.ts"]
+  "include": ["src", "build.ts"]
 }

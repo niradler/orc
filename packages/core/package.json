@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./desktop-preview": "./src/desktop-preview.ts",
     "./daemon-runtime": "./src/daemon-runtime.ts",
     "./notifications": "./src/notifications.ts",
     "./usage": "./src/usage.ts",

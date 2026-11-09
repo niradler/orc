@@ -1,3 +1,9 @@
+import type {
+  BrowserAction,
+  PreviewBrowserState,
+  PreviewFile,
+  PreviewPreferences,
+} from "@orc/core/desktop-preview";
 import type { NotificationLevel } from "./agent-notifications";
 
 export interface DesktopNotification {
@@ -44,6 +50,29 @@ export interface DesktopUpdates {
 
 /** Exposed by the Electron preload; absent in a plain browser. */
 export interface OrcDesktopBridge {
+  preview?: {
+    dirty(value: boolean): Promise<void>;
+    preferences(): Promise<PreviewPreferences>;
+    setPreferences(preferences: PreviewPreferences): Promise<PreviewPreferences>;
+    onPreferences(listener: (preferences: PreviewPreferences) => void): () => void;
+    open(session_id: string, url: string): Promise<PreviewBrowserState>;
+    navigate(session_id: string, direction: "back" | "forward" | "reload"): Promise<void>;
+    bounds(
+      session_id: string | null,
+      bounds: { x: number; y: number; width: number; height: number } | null,
+      restore_url?: string,
+    ): Promise<void>;
+    allow(session_id: string, enabled: boolean): Promise<void>;
+    control(session_id: string, command: BrowserAction): Promise<unknown>;
+    pick(): Promise<PreviewFile | null>;
+    read(token: string): Promise<PreviewFile>;
+    release(token: string): Promise<void>;
+    save(token: string, content: string, original: string): Promise<void>;
+    externalUrl(url: string): Promise<void>;
+    externalFile(path: string, host: string | null, reveal?: boolean): Promise<void>;
+    onBrowser(listener: (state: PreviewBrowserState) => void): () => void;
+    onOpen(listener: (request: { kind: "url" | "panel"; target?: string }) => void): () => void;
+  };
   notify(notification: DesktopNotification): void;
   onOpen(listener: (path: string) => void): () => void;
   updates?: DesktopUpdates;

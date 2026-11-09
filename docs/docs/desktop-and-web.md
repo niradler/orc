@@ -97,28 +97,63 @@ While your pointer is over the list, or a row has keyboard focus, rows stay wher
 
 ## Terminals
 
-### Desktop browser and text viewer
+### Desktop browser, files and editor
 
 In the Electron desktop app, **File → Browser and files** (Ctrl/Cmd+Shift+B),
-or **Browser and files** in the tray menu, opens a separate companion window.
-External HTTP/HTTPS links from ORC open there too. Enter a full web address and
-use Back, Forward and Reload, or choose **System browser** to open the current
-address in your usual browser.
+or **Browser and files** in the tray menu, opens a panel beside your conversation.
+Chat links and file attachments open in this panel. Enter an HTTP/HTTPS address
+and use Back, Forward and Reload. The external-link icon opens the page in your
+system browser; Ctrl/Cmd-clicking a web link does the same.
 
-**Open file** uses the native file picker to display local Markdown, code
-and plain text as read-only source. Files must be valid UTF-8 and at most 1 MiB;
-binary files are rejected. Markdown and HTML are shown literally, without
-executing scripts or loading embedded content. The viewer does not edit files.
+Each conversation keeps its own browser and file tabs. Drag the header grip to
+float the panel, use **Dock preview** to return it, or drag the divider to resize.
+The divider also supports arrow keys. Closing the panel keeps tabs and drafts in
+memory; closing a modified file asks before discarding it. Reloading or quitting
+discards these previews after the unsaved-change warning.
+
+**Open file** uses the native picker for local files. Chat and MCP file paths
+resolve inside the selected session's folder on its execution host; paths outside
+that folder and symlinks escaping it are denied. Remote file previews require
+Python 3 on the SSH host. Files must be UTF-8 text up to 1 MiB. Markdown has Read,
+Edit and Split modes; code uses the existing editor. Text up to 200 KB can be
+saved explicitly. A save fails if the file changed on disk, keeping your draft
+until you reload or resolve the change. HTML stays source code. The external-link
+icon opens the source in VS Code, including known SSH hosts; it is disabled when
+the desktop cannot identify a remote API host's filesystem.
 
 PNG, JPEG, GIF, WebP, BMP and ICO images can also be previewed, up to 8 MiB and
-16 megapixels. Images use native decoding and display as a static image;
-format support follows the operating system. PDF and Office previews are not included.
+16 megapixels for native-picker images. Images are read-only; native-picker
+images use native decoding and display a static image. Workspace images use the
+browser's image decoder. PDF and Office previews are not included.
 
 The browser uses a separate, temporary session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
 and downloads are blocked. Browser logins are temporary and are not reused after
-closing the companion window.
-This companion window is desktop-only; the web and phone UI are unchanged.
+quitting or reloading the app. At most eight browser pages are retained; reopening
+an evicted page restores its URL with a fresh temporary browser session.
+
+Agents can use [preview MCP tools](./mcp.md#desktop-preview-tools) to show a file
+or URL in the selected conversation. **Allow agent browser control**, on by
+default, permits snapshots, screenshots,
+clicking, typing, key presses and scrolling in its isolated browser. This includes
+pages you sign into there. Turning the switch off revokes control. These tools
+cannot inspect the ORC app, execute arbitrary scripts, upload files or edit files.
+Browser content is untrusted page data, never agent instructions.
+
+**Settings → Browser** controls agent browser access for the whole desktop and
+whether chat web links open in ORC or your system browser. Settings are stored in
+`browser-preferences.json` in Electron's user-data folder and survive restarts.
+Turning global agent access off overrides every chat's switch immediately. With
+global access on, a chat's switch can still disable control for that conversation.
+Files and explicit MCP preview requests continue to open in the panel.
+
+![Desktop Browser settings with demo data](/screens/desktop-browser-settings.png)
+
+This flow is desktop-only; the web and phone UI are unchanged.
+
+![Browser beside a demo conversation](/screens/desktop-preview-browser.png)
+
+![Markdown editing beside a demo conversation](/screens/desktop-preview-markdown.png)
 
 ![Terminals](/screens/terminals.png)
 
@@ -319,7 +354,8 @@ Command-line flags for the app executable:
 | `--hidden` | Start without opening a window |
 | `--quit` | Quit the running instance and the daemon it started |
 
-Links to other sites open in your system browser.
+Links to other sites open in the desktop preview panel. Use its external-link
+icon or Ctrl/Cmd-click a web link to open your system browser.
 
 Install a desktop build containing this updater manually once. Older builds do not have an updater and cannot automatically install the feature itself; subsequent macOS, Windows and Linux updates can use the flow below.
 

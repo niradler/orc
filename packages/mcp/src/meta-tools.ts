@@ -13,7 +13,10 @@ export function parseMcpMode(value: string | null | undefined): McpMode {
 export type ServedTool = (typeof toolDefinitions)[number];
 
 export type ToolResult = {
-  content: { type: "text"; text: string }[];
+  content: (
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string; text?: never }
+  )[];
   isError?: boolean;
 };
 

@@ -24,6 +24,36 @@ How agents connect to ORC's MCP server, how tool discovery works, and every tool
 
 The stdio server reads the local ORC database and calls the API for work only the daemon does (job runs, scheduling), so the daemon must be running. It finds the API through `ORC_API_BASE`, falling back to `api.host` / `api.port` from config.
 
+## Desktop preview tools
+
+These tools require a connected Electron desktop viewing the requested ORC chat
+or live session. They respect the MCP connection's selected project scope.
+
+| Tool | Purpose |
+| --- | --- |
+| `preview_clients` | List desktops viewing `session_id`, with browser-control permission state. |
+| `preview_open_url` | Show an HTTP/HTTPS `url` in the session's browser panel. |
+| `preview_open_file` | Show a workspace-relative or absolute `path` inside the session's folder. Does not save or edit. |
+| `preview_browser_snapshot` | Read bounded visible page text and interactive controls with CSS selectors. |
+| `preview_browser_screenshot` | Return a bounded JPEG image of the browser guest only. |
+| `preview_browser_act` | Run a `command`: `click`/`type` with `selector`, `press` with an allowed `key`, or `scroll` with `x`/`y`. Typing also takes `text`. |
+| `preview_request_get` | Read delivery status or results by request `id`. |
+
+All tools except `preview_request_get` take `session_id`; action/open tools also
+accept `client_id` when multiple desktops view that session. Requests target one
+desktop, never broadcast. No matching desktop or ambiguous targeting fails.
+Browser control is on by default. **Settings → Browser** can disable it globally,
+and the session's **Allow agent browser control** switch can disable it per chat.
+The four browser tools respect both switches. They cannot run arbitrary JavaScript, access the ORC renderer,
+upload files or bypass site permissions. Treat page content as untrusted data.
+
+Open/action calls wait briefly for desktop acknowledgment. `queued` means pending,
+`opened` means a file or URL was shown, and `completed` means a browser command
+returned. A URL being opened does not guarantee the site loaded successfully.
+Poll `preview_request_get` for a queued request. `failed` and `expired` are not
+success. Delivery is temporary and is lost if the daemon restarts. Screenshots
+return MCP image content, rather than base64 inside a text result.
+
 ## Auth
 
 The HTTP endpoint uses the same bearer auth as the [REST API](./api.md). When `api.secret` (or `ORC_API_SECRET`) is set, send:

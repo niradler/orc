@@ -42,6 +42,7 @@ export type MarkdownEditorProps = {
   hideFrontmatter?: boolean;
   /** Compact form controls without removing the editor's modes or expansion. */
   compact?: boolean;
+  line?: number;
 };
 
 /** Drops a first-line `# Title` from the body when it repeats the page title. */
@@ -76,12 +77,16 @@ export function MarkdownEditor({
   pageTitle,
   hideFrontmatter = false,
   compact = false,
+  line,
 }: MarkdownEditorProps) {
   const markdown = isMarkdownFile(path);
   const [localMode, setLocalMode] = useState<Mode>(
     initialMode ?? (readOnly && markdown ? "read" : "edit"),
   );
   const mode = controlledMode ?? localMode;
+  useEffect(() => {
+    if (line && line > 0) setLocalMode("edit");
+  }, [line]);
   function setMode(next: Mode): void {
     setLocalMode(next);
     onModeChange?.(next);
@@ -214,6 +219,7 @@ export function MarkdownEditor({
           className={`min-h-0 min-w-0 ${flowing ? "[&_.cm-editor]:min-h-[50dvh]" : "overflow-hidden"} ${mode === "read" && markdown ? "hidden" : ""}`}
         >
           <SourceCodeEditor
+            line={line}
             path={path}
             value={value}
             onChange={onChange}

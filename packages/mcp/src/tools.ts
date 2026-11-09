@@ -82,6 +82,7 @@ import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orcApi, orcApiBase } from "./api-client.js";
 import { executeKbTool, isKbTool, kbSearchLines, kbToolDefinitions } from "./kb-tools.js";
+import { executePreviewTool, previewToolDefinitions } from "./preview-tools.js";
 import type { McpProject } from "./project-scope.js";
 
 const logger = createLogger("mcp:tools");
@@ -194,6 +195,7 @@ const digestCompleteParams = z
   })
   .strict();
 export const toolDefinitions = [
+  ...previewToolDefinitions,
   {
     name: "command_request",
     description:
@@ -1210,6 +1212,12 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
+  if (previewToolDefinitions.some((tool) => tool.name === name))
+    return executePreviewTool(
+      name,
+      args,
+      options.projectScopes?.map((project) => project.id),
+    );
   if (name.startsWith("channel_")) {
     const schema =
       name === "channel_list"

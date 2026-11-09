@@ -1,3 +1,4 @@
+import { previewLink } from "@orc/core/desktop-preview";
 import { code } from "@streamdown/code";
 import { mermaid } from "@streamdown/mermaid";
 import { ImageIcon } from "lucide-react";
@@ -11,7 +12,10 @@ import {
 } from "react";
 import { defaultRemarkPlugins, Streamdown } from "streamdown";
 import { MarkdownLinkDialog } from "@/components/MarkdownLinkDialog";
+import { desktopBridge } from "@/lib/desktop-bridge";
+import { useDesktopPreview } from "@/lib/desktop-preview-context";
 import { imageRendering } from "@/lib/markdown-images";
+import { previewFileDestination, remarkPreviewFiles } from "@/lib/markdown-preview-links";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { remarkWikiLinks, type WikiLinks, wikiLinkKey } from "@/lib/wiki-links";
@@ -45,6 +49,36 @@ function MarkdownImage(props: ElementProps) {
 /** Links and wiki links look alike: always underlined, since link colour alone matches body text. */
 const LINK =
   "text-primary underline decoration-outline underline-offset-2 hover:decoration-current";
+
+function PreviewMarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+  const preview = useDesktopPreview();
+  const destination = href ? (previewFileDestination(href) ?? href) : undefined;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={LINK}
+      onClick={(event) => {
+        if (
+          !preview ||
+          !destination ||
+          !previewLink(destination) ||
+          /^\/(?:activity|tasks|sessions|terminals|knowledge|settings|projects|jobs|scratchpad|rules|skills)(?:[/?#]|$)/.test(
+            destination,
+          )
+        )
+          return;
+        event.preventDefault();
+        if ((event.ctrlKey || event.metaKey) && /^https?:/i.test(destination))
+          void desktopBridge()?.preview?.externalUrl(destination);
+        else void preview.openLink(destination);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
 
 type ChildProps = { children?: ReactNode; node?: { tagName?: string } };
 
@@ -105,6 +139,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   readable?: boolean;
 }) {
   const { theme } = useTheme();
+  const preview = useDesktopPreview();
   return (
     <Streamdown
       mode="static"
@@ -116,19 +151,19 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       components={{
         img: MarkdownImage,
         li: MarkdownListItem,
-        ...(wikiLinks
+        ...(wikiLinks || preview
           ? {
               a: (props: ComponentProps<"a"> | Record<string, unknown>) => {
                 const href = typeof props.href === "string" ? props.href : undefined;
                 const children = props.children as ReactNode;
                 if (href?.startsWith("#wiki-")) {
                   const slug = wikiLinkKey(decodeURIComponent(href.slice(6)));
-                  return wikiLinks.slugs.includes(slug) ? (
+                  return wikiLinks?.slugs.includes(slug) ? (
                     <button
                       type="button"
                       data-testid={`wiki-link-${slug}`}
                       className={LINK}
-                      onClick={() => wikiLinks.select(slug)}
+                      onClick={() => wikiLinks?.select(slug)}
                     >
                       {children}
                     </button>
@@ -136,18 +171,18 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                     <span>{children}</span>
                   );
                 }
-                return (
-                  <a href={href} target="_blank" rel="noopener noreferrer">
-                    {children}
-                  </a>
-                );
+                return <PreviewMarkdownLink href={href}>{children}</PreviewMarkdownLink>;
               },
             }
           : {}),
       }}
-      {...(wikiLinks
+      {...(wikiLinks || preview
         ? {
-            remarkPlugins: [...Object.values(defaultRemarkPlugins), remarkWikiLinks],
+            remarkPlugins: [
+              ...(preview ? [remarkPreviewFiles] : []),
+              ...Object.values(defaultRemarkPlugins),
+              ...(wikiLinks ? [remarkWikiLinks] : []),
+            ],
           }
         : {})}
       shikiTheme={["github-light", "github-dark"]}

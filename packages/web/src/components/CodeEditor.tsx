@@ -23,6 +23,8 @@ export type CodeEditorProps = {
   hideFrontmatter?: boolean;
   pageTitle?: string;
   compact?: boolean;
+  line?: number;
+  initialMode?: MarkdownEditorProps["initialMode"];
 };
 
 export function CodeEditor(props: CodeEditorProps) {

@@ -23,6 +23,7 @@ import {
   runMetaTool,
   type ToolResult,
 } from "./meta-tools.js";
+import { previewToolContent } from "./preview-tools.js";
 import {
   agentSessionFromEnv,
   executeTool,
@@ -151,7 +152,7 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
         ...options,
         ...(callProjects ? { projectScopes: callProjects } : {}),
       });
-      return { content: [{ type: "text" as const, text: result }] };
+      return { content: previewToolContent(name, result) };
     } catch (err) {
       logger.error(`Tool error: ${name}`, err);
       const msg = err instanceof Error ? err.message : "Unknown error";

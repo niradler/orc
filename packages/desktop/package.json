@@ -12,7 +12,7 @@
     "bin": "cd ../cli && bun run build.ts",
     "dev": "bun run bundle && electron .",
     "build": "bun run bundle",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.renderer.json",
+    "typecheck": "tsc --noEmit",
     "test": "bun test",
     "dist": "bun run bundle && bun run bin --only host && electron-builder",
     "dist:mac": "bun run bundle && bun run bin --only mac-arm64,mac-x64 && electron-builder --mac --arm64 --x64",
