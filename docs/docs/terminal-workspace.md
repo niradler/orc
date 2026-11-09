@@ -2,6 +2,8 @@
 
 Use Terminals to keep shells and coding agents beside Files and Git views. Splitting or expanding a pane preserves running terminal processes.
 
+The default [chat workspace](./desktop-and-web.md#full-width-sessions-view) also embeds these same terminal panes and checkout tools. A supported chat's **Terminal** control resumes its native runtime on the original host and folder; it does not launch a fresh conversation. **Chat** returns to the original stored thread. Busy responses and native writer ownership still prevent conflicting resumes. New terminal launches remain separate sessions.
+
 ## Find and manage terminals
 
 - Press **Ctrl+K** (**Cmd+K** on macOS) and choose **Terminals**, or use the terminal picker icon beside the split controls.

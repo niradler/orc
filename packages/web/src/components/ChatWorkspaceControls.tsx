@@ -20,9 +20,11 @@ import {
   onChipListKeyDown,
 } from "@/components/ComposerChip";
 import { FolderPickerDialog } from "@/components/FolderPickerDialog";
+import type { SessionContext } from "@/components/SessionHome";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
+import { useSessionHome } from "@/hooks/useSessionHome";
 import { useSsh } from "@/hooks/useSsh";
 import {
   branchChipLabel,
@@ -34,7 +36,7 @@ import {
 import { folderHistory, rememberFolder, useFolderHistory } from "@/lib/folder-history";
 import { cn } from "@/lib/utils";
 
-export function ChatWorkspaceControls() {
+export function ChatWorkspaceControls({ context }: { context?: SessionContext }) {
   const {
     workspace,
     setWorkspace,
@@ -47,6 +49,8 @@ export function ChatWorkspaceControls() {
     workspacePickerSession,
   } = useChat();
   const { data: ssh } = useSsh();
+  const home = useSessionHome();
+  const bound = context?.terminal ?? thread;
   const [folderOpen, setFolderOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -64,11 +68,11 @@ export function ChatWorkspaceControls() {
     retry: false,
   });
   const displayPath = cwd || defaultFolder.data?.path || "~";
-  const gitPath = cwd || defaultFolder.data?.path || "";
+  const gitPath = bound?.cwd || cwd || defaultFolder.data?.path || "";
   const git = useQuery({
-    queryKey: ["chat-workspace-git", host, gitPath],
-    queryFn: () => api.git.worktrees(gitPath, host),
-    enabled: !!ssh && !!gitPath && !thread,
+    queryKey: ["chat-workspace-git", bound ? bound.host : host, gitPath],
+    queryFn: () => api.git.worktrees(gitPath, bound ? bound.host : host),
+    enabled: !!ssh && !!gitPath,
     staleTime: 30_000,
     retry: false,
   });
@@ -101,7 +105,51 @@ export function ChatWorkspaceControls() {
     if (ssh && !workspace && !thread && !streaming)
       setWorkspace({ host: ssh.host, cwd: folderHistory(ssh.host).last, worktree: false });
   }, [ssh, workspace, thread, streaming, setWorkspace]);
-  if (thread) return null;
+  if (bound)
+    return (
+      <fieldset
+        aria-label="Session workspace"
+        className="flex min-w-0 items-center gap-1 border-0 p-0"
+      >
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn(composerChip, "max-w-48")}
+              data-testid="session-folder"
+              aria-label={`Session folder: ${bound.cwd ?? "Unknown"}, host: ${bound.host ?? "Local"}`}
+              title={`${bound.host ?? "Local"}: ${bound.cwd ?? "Unknown"}`}
+            >
+              <Folder size={14} />
+              <span data-chip-label className="truncate">
+                {pathName(bound.cwd ?? "") || "Folder"}
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent side="top" className="max-w-[calc(100vw-2rem)] space-y-2 text-sm">
+            <p className="break-all">
+              {bound.host ?? "Local"}: {bound.cwd ?? "Unknown folder"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              This session keeps its original host and folder. Start a new session to use another
+              workspace.
+            </p>
+          </PopoverContent>
+        </Popover>
+        <button
+          type="button"
+          data-testid="session-branch"
+          className={cn(composerChip, "max-w-40")}
+          aria-label="Open Git and worktree tools"
+          onClick={() => home.go({ inspector: "diff" })}
+        >
+          <GitBranch size={14} />
+          <span data-chip-label className="truncate">
+            {branchName(currentWorktree(git.data, gitPath)) || "Git"}
+          </span>
+        </button>
+      </fieldset>
+    );
 
   const hosts = [null, ...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])];
   const listing = git.data;

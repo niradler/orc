@@ -11,11 +11,11 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import type { Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
+import { useWorkspaceSearchParams } from "@/hooks/useSessionHome";
 import { openTerminalPalette } from "@/lib/terminal-palette";
 import {
   closePane,
@@ -32,6 +32,7 @@ import { TerminalPaneLinks } from "./TerminalPaneLinks";
 import "./TerminalWorkspace.css";
 
 type WorkspaceProps = {
+  storageKey?: string;
   selected: Terminal;
   terminals: Terminal[];
   renderTerminal: (id: string) => ReactNode;
@@ -408,15 +409,16 @@ function WorkspaceTree(props: TreeProps) {
 }
 
 export function TerminalWorkspace(props: WorkspaceProps) {
+  const storageKey = props.storageKey ?? "orc_workspace_layout";
   const desktop = useBreakpoint("lg");
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useWorkspaceSearchParams();
   const requestedView = params.get("view");
   const requestedPane = params.get("pane");
   const requestedTerminal = params.get("paneTerminal");
   const requestedFile = params.get("file");
   const [storedLayout, setLayout] = useState<Layout>(() => {
     try {
-      const stored = readLayout(JSON.parse(localStorage.getItem("orc_workspace_layout") ?? "null"));
+      const stored = readLayout(JSON.parse(localStorage.getItem(storageKey) ?? "null"));
       if (stored) return stored;
     } catch {}
     return {
@@ -507,9 +509,9 @@ export function TerminalWorkspace(props: WorkspaceProps) {
     if (layout !== storedLayout)
       setLayout((current) => (current === storedLayout ? layout : current));
     try {
-      localStorage.setItem("orc_workspace_layout", JSON.stringify(layout));
+      localStorage.setItem(storageKey, JSON.stringify(layout));
     } catch {}
-  }, [layout, storedLayout]);
+  }, [layout, storedLayout, storageKey]);
   const panes = leaves(layout);
   const activePane = panes.find((pane) => pane.id === active) ?? panes[0];
   return (

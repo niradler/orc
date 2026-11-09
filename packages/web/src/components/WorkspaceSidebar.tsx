@@ -4,6 +4,7 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
   Package,
   Settings,
   Terminal,
@@ -78,6 +79,19 @@ export function WorkspaceSidebar({
         onNavigate={onNavigate}
       />
       <nav aria-label="Workspace" className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-auto">
+        <Button
+          variant="ghost"
+          aria-label="Chat workspace"
+          data-testid="nav-workspace"
+          className={cn("min-h-11 justify-start gap-3", rail && "justify-center px-0")}
+          onClick={() => {
+            navigate(`/workspace?project=${encodeURIComponent(projectId)}&chat=full`);
+            onNavigate?.();
+          }}
+        >
+          <MessageSquare size={18} />
+          {!rail && "Chat"}
+        </Button>
         {WORKSPACE_SECTIONS.map((section) => {
           const Icon = icons[section.id];
           const button = (

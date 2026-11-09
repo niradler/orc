@@ -1,10 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Save } from "lucide-react";
 import { type ReactElement, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { useWorkspaceSearchParams } from "@/hooks/useSessionHome";
 import { isMarkdownFile } from "@/lib/file-kind";
 
 type Draft = { original: string; content: string };
@@ -30,7 +30,7 @@ export function FileEditor({
   readOnly: boolean;
   onDirty: (dirty: boolean) => void;
 }): ReactElement {
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useWorkspaceSearchParams();
   const requestedMode = params.get("editorMode");
   const mode = requestedMode === "read" || requestedMode === "split" ? requestedMode : "edit";
   const draftKey = `${terminalId}:${path}`;

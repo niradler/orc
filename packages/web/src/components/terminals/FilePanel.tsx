@@ -13,8 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { type KeyboardEvent, lazy, type ReactElement, Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { api, type GitStatus, type Terminal } from "@/api/client";
+import { useWorkspaceSearchParams } from "@/hooks/useSessionHome";
 import { fileChangeState } from "@/lib/git-status";
 import "./FilePanel.css";
 
@@ -152,7 +152,7 @@ export function FilePanel({
 }): ReactElement {
   const viewKey = `${terminal.id}:${paneId}`;
   const remembered = fileViews.get(viewKey);
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useWorkspaceSearchParams();
   const requestedFile =
     active &&
     params.get("view") === "files" &&

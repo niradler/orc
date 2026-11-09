@@ -223,8 +223,10 @@ the actual application with realistic data and preserve its working behavior.
   every step before saving; reveal and focus an invalid field's step. Short forms
   stay on one page. Phone footers reach the dialog bottom without stretching
   gaps between fields.
-- **Chat:** show one selected conversation. Session history is **one flat list,
-  newest activity first**. Open, selected, working and needs-input states use icons
+- **Chat:** each pane shows one selected conversation. The default workspace supports
+  two parallel sessions; phones use tabs to show one pane at a time. **Recents** is
+  **one flat list, newest activity first**; **Projects** offers explicit project navigation.
+  Open, selected, working and needs-input states use icons
   and selection styling; they never create sections or override date order. Do not
   add Open/Earlier, source or date groups without explicit new direction. This is
   an intentional exception to the general secondary-list disclosure guidance. Use a
@@ -366,11 +368,12 @@ instructions or files occupying the main reading area and source metadata in
 expandable details.
 
 The shell is project-centered: a compact sidebar, project dropdown and one
-contextual navigation row. Keep Activity first and the default at `/activity`.
+contextual navigation row. Full-page chat at `/workspace` is the default; Activity
+remains its existing page at `/activity`.
 Knowledge has exactly Knowledge base and Memories as sibling destinations.
-KB settings, digest, comments and document history are contextual actions. Chat opens from
-the header; it is not another sidebar destination. Agent sessions have one
-full-width presentation, reached from that header action's fullscreen mode:
+KB settings, digest, comments and document history are contextual actions. Chat opens
+from the app rail or header, with retained side chat on existing pages. Agent sessions share a
+full-width presentation:
 session list, conversation and an inspector opened on demand. In full width the
 workspace sidebar stays visible as its collapsed icon rail; Minimize returns to the
 previous page. Other surfaces that list sessions link into it and reuse its row

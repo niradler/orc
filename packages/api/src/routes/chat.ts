@@ -829,7 +829,31 @@ app.openapi(
       )
         throw new ValidationError("Package installation cannot bypass protected workspace rules");
       thread.cwd = await installPackageForChat(setup, host);
-    } else thread = await newThread(undefined, undefined, body.sourceSessionId);
+    } else {
+      const resumed = await newThread(undefined, undefined, body.sourceSessionId);
+      const candidates = resumed.runtimeId
+        ? store()
+            .byRuntime(resumed.backend, resumed.host, resumed.runtimeId)
+            .filter((item) => item.config.agent === resumed.config.agent)
+        : [];
+      const existing = candidates.find((item) => !item.sourceId) ?? candidates[0];
+      if (existing) {
+        if (
+          threadRun(existing.id) ||
+          (existing.runtimeId &&
+            active.has(turnKey(existing.host, existing.backend, existing.runtimeId)))
+        )
+          throw new ConflictError("Wait for the agent to finish before resuming.");
+        thread = existing;
+        if (resumed.transcriptMark && resumed.transcriptMark !== existing.transcriptMark) {
+          thread.messages = resumed.messages;
+          thread.importedMessages = resumed.importedMessages;
+          thread.historyBefore = resumed.historyBefore;
+          thread.transcriptMark = resumed.transcriptMark;
+        }
+        thread.sourceId = body.sourceSessionId;
+      } else thread = resumed;
+    }
     store().save(thread);
     return c.json(thread);
   },

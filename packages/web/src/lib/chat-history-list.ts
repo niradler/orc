@@ -50,6 +50,7 @@ export function chatHistoryList(
   query = "",
   projectScope = "all",
   terminals: readonly Terminal[] = [],
+  includeShells = false,
 ): ChatHistoryEntry[] {
   const matches = (text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
   const entries: ChatHistoryEntry[] = [];
@@ -169,7 +170,7 @@ export function chatHistoryList(
     liveEntries.set(session.id, entry);
   }
   for (const terminal of terminals) {
-    if (terminal.status !== "running" || terminal.kind === "shell") continue;
+    if (terminal.status !== "running" || (terminal.kind === "shell" && !includeShells)) continue;
     const linked = terminal.live_session_id ? liveEntries.get(terminal.live_session_id) : undefined;
     if (linked) {
       if (linked.kind === "native") linked.terminalId ??= terminal.id;

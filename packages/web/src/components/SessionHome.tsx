@@ -4,15 +4,19 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type LiveSession, type Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
+import { SessionLaunchMenu } from "@/components/SessionLaunchMenu";
+import { SessionTerminalActions } from "@/components/SessionTerminalActions";
+import { ContinueInChat } from "@/components/terminals/ContinueInChat";
+import { FilePanel } from "@/components/terminals/FilePanel";
 import { GitPanelBody } from "@/components/terminals/GitPanel";
 import { TerminalViewport } from "@/components/terminals/TerminalViewport";
+import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import type { SessionHomeNav } from "@/hooks/useSessionHome";
-import type { InspectorTab } from "@/lib/session-home";
+import { type SessionHomeNav, WorkspaceSearchScope } from "@/hooks/useSessionHome";
+import { type InspectorTab, sameSessionFolder } from "@/lib/session-home";
 import { runningTerminalForSession } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
@@ -33,14 +37,24 @@ export interface SessionContext {
 export function useSessionContext(terminalId: string | null): SessionContext {
   const chat = useChat();
   const { terminals } = useTerminals();
-  const live = useActiveLiveSessions();
+  const live = useQuery({
+    queryKey: ["session-workspace-context"],
+    queryFn: () => api.sessions.live({ active: false, limit: 5000 }),
+    enabled: !!terminalId || !!chat.thread?.runtimeId,
+  });
   const terminal = terminalId ? terminals.find((item) => item.id === terminalId) : undefined;
-  const cwd = terminal ? terminal.cwd : (chat.thread?.cwd ?? null);
-  const host = terminal ? terminal.host : (chat.thread?.host ?? null);
+  const cwd = terminal ? terminal.cwd : (chat.thread?.cwd ?? chat.workspace?.cwd ?? null);
+  const host = terminal ? terminal.host : (chat.thread?.host ?? chat.workspace?.host ?? null);
   const liveId = terminal ? terminal.live_session_id : (chat.thread?.sourceId ?? null);
-  const session = liveId ? live.data?.find((item) => item.id === liveId) : undefined;
+  const session = live.data?.sessions.find((item) =>
+    liveId
+      ? item.id === liveId
+      : item.session_id === chat.thread?.runtimeId &&
+        item.agent === chat.config.agent &&
+        item.host === chat.thread?.host,
+  );
   const sameFolder = (item: Terminal) =>
-    item.status === "running" && !!cwd && item.cwd === cwd && (item.host ?? null) === host;
+    item.status === "running" && sameSessionFolder(item.cwd, cwd) && (item.host ?? null) === host;
   return {
     terminal,
     cwd,
@@ -117,7 +131,7 @@ export function SessionHomeToggles({ home }: { home: SessionHomeNav }) {
 }
 
 export function SessionTerminalCenter({ context }: { context: SessionContext }) {
-  const { isLoading } = useTerminals();
+  const { isLoading, terminals } = useTerminals();
   const terminal = context.terminal;
   if (terminal?.status !== "running")
     return (
@@ -130,7 +144,14 @@ export function SessionTerminalCenter({ context }: { context: SessionContext }) 
     );
   return (
     <div data-testid="session-terminal" className="flex min-h-0 flex-1 flex-col">
-      <TerminalViewport terminalId={terminal.id} />
+      <TerminalWorkspace
+        selected={terminal}
+        terminals={terminals}
+        storageKey={`orc_session_layout_${terminal.id}`}
+        renderTerminal={(id) => <TerminalViewport terminalId={id} />}
+        renderActions={(item) => <ContinueInChat terminal={item} inWorkspace />}
+        renderOptions={(item) => <SessionTerminalActions terminal={item} />}
+      />
     </div>
   );
 }
@@ -283,17 +304,52 @@ function InspectorBody({
   home: SessionHomeNav;
 }) {
   const git = context.gitTerminal;
-  const tabs: [InspectorTab, string][] = git
-    ? [
-        ["overview", "Overview"],
-        ["diff", "Diff"],
-      ]
-    : [["overview", "Overview"]];
-  const shown = tab === "diff" && git ? "diff" : "overview";
+  const { create } = useTerminals();
+  const requested = useRef<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState("");
+  const cwd = context.cwd;
+  const host = context.host;
+  const connect = async () => {
+    if (!cwd || connecting) return;
+    setConnecting(true);
+    setError("");
+    try {
+      await create({ kind: "shell", cwd, host });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not connect checkout tools.");
+    } finally {
+      setConnecting(false);
+    }
+  };
+  useEffect(() => {
+    if (tab === "overview" || tab === "worktrees" || git || !cwd) return;
+    const key = JSON.stringify([host, cwd]);
+    if (requested.current === key) return;
+    requested.current = key;
+    setConnecting(true);
+    setError("");
+    void create({ kind: "shell", cwd, host })
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Could not connect checkout tools.");
+      })
+      .finally(() => setConnecting(false));
+  }, [tab, git, cwd, host, create]);
+  const tabs: [InspectorTab, string][] = [
+    ["overview", "Overview"],
+    ["diff", "Diff"],
+    ["files", "Files"],
+    ["worktrees", "Worktrees"],
+  ];
+  const shown = tab;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {tabs.length > 1 && (
-        <div role="tablist" aria-label="Inspector" className="flex gap-1 px-3 pb-2">
+        <div
+          role="tablist"
+          aria-label="Inspector"
+          className="flex shrink-0 gap-1 overflow-x-auto px-3 pb-2"
+        >
           {tabs.map(([id, label]) => (
             <button
               key={id}
@@ -303,7 +359,7 @@ function InspectorBody({
               aria-selected={shown === id}
               onClick={() => home.go({ inspector: id }, { replace: true })}
               className={cn(
-                "min-h-8 rounded-md px-3 text-sm",
+                "min-h-8 shrink-0 rounded-md px-3 text-sm max-sm:min-h-11 pointer-coarse:min-h-11",
                 shown === id
                   ? "bg-surface-highest text-on-surface"
                   : "text-outline hover:bg-surface hover:text-on-surface",
@@ -314,9 +370,37 @@ function InspectorBody({
           ))}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {shown === "diff" && git ? (
-          <GitPanelBody terminal={git} paneId="session-inspector" />
+      <div className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-3 pb-3">
+        {shown === "files" && git ? (
+          <WorkspaceSearchScope prefix="inspector">
+            <FilePanel terminal={git} active paneId="session-inspector" />
+          </WorkspaceSearchScope>
+        ) : shown === "worktrees" ? (
+          <SessionLaunchMenu worktrees />
+        ) : shown === "diff" && git ? (
+          <WorkspaceSearchScope prefix="inspector">
+            <GitPanelBody terminal={git} paneId="session-inspector" />
+          </WorkspaceSearchScope>
+        ) : shown !== "overview" ? (
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              {connecting
+                ? "Connecting checkout tools…"
+                : cwd
+                  ? "Checkout tools are unavailable."
+                  : "Choose a session folder to inspect files and changes."}
+            </p>
+            {error && (
+              <p role="alert" className="text-error">
+                {error}
+              </p>
+            )}
+            {cwd && !connecting && (
+              <Button variant="outline" onClick={() => void connect()}>
+                Retry checkout connection
+              </Button>
+            )}
+          </div>
         ) : (
           <Overview context={context} />
         )}

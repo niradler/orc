@@ -1,5 +1,19 @@
 # Unified session workspace mock review
 
+Production follow-up: the application now composes these controls in
+`SessionWorkspace.tsx`, backed by the existing chat and terminal providers. The
+mock descriptions and screenshots below remain the visual reference for PR #237.
+See [Desktop and web](../docs/desktop-and-web.md#full-width-sessions-view) for
+the implemented behavior. Production validation covers actual Codex streaming,
+uploads, queues, approval denial, same-runtime chat/terminal handoff, reported
+token counts, files/Git/worktrees and touch-terminal continuity. The integration
+also retains the original components named in the audit below: prompt/command
+menus, approval/question cards, terminal splits and lifecycle actions, Git/PR
+operations, file conflict protection, discovery/archive and history filters.
+Local automated coverage includes desktop and phone viewports; live SSH and
+physical mobile devices remain unverified. This follow-up does not change Tasks
+or other page layouts and is not a merge or release.
+
 This draft proposes full-page web chat as ORC's starting workspace, retains side
 chat on existing pages, and gives sessions consistent chat/terminal controls.
 It is a design prototype, not a live session integration or a production default
