@@ -113,3 +113,45 @@ export function useTaskSessions(taskId: string | null) {
     select: (data) => data.sessions,
   });
 }
+
+export function useSessionMessages(sessionId: string | null, live: boolean) {
+  return useQuery({
+    queryKey: ["sessions", "messages", sessionId],
+    queryFn: () => api.sessions.messages(sessionId as string),
+    select: (data) => data.messages,
+    enabled: Boolean(sessionId),
+    staleTime: 0,
+    refetchInterval: live ? 10_000 : false,
+    retry: false,
+  });
+}
+
+function useSessionMessageAction(sessionId: string | null) {
+  const qc = useQueryClient();
+  return () => qc.invalidateQueries({ queryKey: ["sessions", "messages", sessionId] });
+}
+
+export function useSendSessionMessage(sessionId: string | null) {
+  const refresh = useSessionMessageAction(sessionId);
+  return useMutation({
+    mutationFn: (body: string) => api.sessions.sendMessage(sessionId as string, body),
+    onSuccess: refresh,
+  });
+}
+
+export function useCancelSessionMessage(sessionId: string | null) {
+  const refresh = useSessionMessageAction(sessionId);
+  return useMutation({
+    mutationFn: (messageId: string) => api.sessions.cancelMessage(messageId),
+    onSuccess: refresh,
+  });
+}
+
+export function useMoveSessionMessage(sessionId: string | null) {
+  const refresh = useSessionMessageAction(sessionId);
+  return useMutation({
+    mutationFn: (input: { messageId: string; direction: "up" | "down" }) =>
+      api.sessions.moveMessage(input.messageId, input.direction),
+    onSuccess: refresh,
+  });
+}

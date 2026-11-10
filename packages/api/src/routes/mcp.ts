@@ -45,9 +45,11 @@ app.all("/mcp", async (c) => {
     .parse({ sessionId: c.req.query("preview_session"), clientId: c.req.query("preview_client") });
   if (preview.clientId && !preview.sessionId)
     throw new ValidationError("preview_client requires preview_session");
+  const agentSessionId = z.string().min(1).max(200).optional().parse(c.req.query("session"));
   const server = createMcpServer({
     publicApiBaseUrl: origin,
     mode,
+    ...(agentSessionId ? { agentSessionId } : {}),
     ...(preview.sessionId
       ? { previewScope: { sessionId: preview.sessionId, clientId: preview.clientId } }
       : {}),

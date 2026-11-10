@@ -162,6 +162,8 @@ export type {
   Session,
   SessionDetail,
   SessionEvent,
+  SessionMessage,
+  SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
   SkillFileInput,
@@ -225,6 +227,8 @@ import type {
   ResumeFlowInput,
   Session,
   SessionDetail,
+  SessionMessage,
+  SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
   SkillFileInput,
@@ -1273,6 +1277,21 @@ export const api = {
       ),
     linkTask: (id: string, task_id: string | null) =>
       req<LiveSession>("PATCH", `/sessions/live/${id}`, { task_id }),
+    messages: (id: string) =>
+      req<{ messages: SessionMessage[] }>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/messages`,
+      ),
+    sendMessage: (id: string, body: string) =>
+      req<SessionMessageResult>("POST", `/sessions/live/${encodeURIComponent(id)}/messages`, {
+        body,
+      }),
+    cancelMessage: (messageId: string) =>
+      req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/cancel`),
+    moveMessage: (messageId: string, direction: "up" | "down") =>
+      req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/move`, {
+        direction,
+      }),
   },
 
   skills: {

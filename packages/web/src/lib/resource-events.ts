@@ -44,6 +44,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "chat-resume-sessions",
     "chat-resume-archive",
   ],
+  "session-messages": ["sessions"],
   jobs: [
     "jobs",
     "job",

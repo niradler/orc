@@ -17,6 +17,7 @@ import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
 import { startNotificationMaintenance } from "./notifications.js";
 import { startAttentionPush, startJobPush } from "./push/service.js";
 import { createApp } from "./server.js";
+import { startSessionMessageDelivery } from "./session-message-delivery.js";
 import { startSessionWatcher } from "./session-watcher.js";
 import { closeSessionArchive } from "./sessions/archive.js";
 import { shutdownTerminals } from "./terminals/service.js";
@@ -66,6 +67,7 @@ const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
 const stopJobPush = startJobPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();
+const stopSessionMessageDelivery = startSessionMessageDelivery();
 const stopGithubIssueSync = startGithubIssueSync();
 const stopNotificationMaintenance = startNotificationMaintenance();
 const channels = startChannelRuntime().catch(() => {
@@ -95,6 +97,7 @@ async function shutdown(signal: string, exitCode = 0) {
   stopAttentionPush();
   stopJobPush();
   stopHumanRequestDelivery();
+  stopSessionMessageDelivery();
   stopNotificationMaintenance();
   await stopGithubIssueSync();
   await (await channels)();

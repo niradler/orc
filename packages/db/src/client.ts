@@ -16,6 +16,7 @@ import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
 import { installScratchpads } from "./scratchpads.js";
 import { installSessionArchive } from "./session-archive.js";
+import { SessionMessageStore } from "./session-messages.js";
 import { installSkillHistory } from "./skill-history.js";
 
 export type OrcDb = ReturnType<typeof createDb>;
@@ -596,6 +597,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installScratchpads(sqlite);
   installMcpPrompts(sqlite);
   new HumanRequestStore(sqlite);
+  new SessionMessageStore(sqlite);
   new NotificationStore(sqlite);
 
   installChangeTracking(sqlite, path);

@@ -2,9 +2,48 @@ import type { HookCallback, SyncHookJSONOutput } from "@anthropic-ai/claude-agen
 import { runHumanRuleActions } from "@orc/core/human-request-client";
 import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
 import { processRuleCommand } from "@orc/core/rule-command";
+import { ruleEventCapability } from "@orc/core/rule-events";
 import { normalizeRuleHook, ruleHookOutput } from "@orc/core/rule-hooks";
 import type { SessionRuleGuard } from "./rules.js";
 import type { AgentEvent } from "./types.js";
+
+type PendingMessages = {
+  deliver: () => void;
+  interrupt: (error: string) => void;
+  context: string;
+};
+
+async function pendingSessionMessages(
+  backend: string,
+  sessionId: string | undefined,
+): Promise<PendingMessages | null> {
+  if (!sessionId) return null;
+  try {
+    const [{ getSqlite }, { SessionMessageStore }, { sessionMessageContext }] = await Promise.all([
+      import("@orc/db/client"),
+      import("@orc/db/session-messages"),
+      import("@orc/core/session-messages"),
+    ]);
+    const store = new SessionMessageStore(getSqlite());
+    const messages = store.claim(backend, sessionId);
+    if (!messages.length) return null;
+    return {
+      context: sessionMessageContext(messages),
+      deliver: () =>
+        store.deliver(
+          messages.map((message) => message.id),
+          "hook",
+        ),
+      interrupt: (error) =>
+        store.interrupted(
+          messages.map((message) => message.id),
+          error,
+        ),
+    };
+  } catch {
+    return null;
+  }
+}
 
 export async function sessionStartRuleContext(
   guard: SessionRuleGuard,
@@ -24,11 +63,47 @@ export async function sessionStartRuleContext(
     guard.builtinActions === false
       ? guard.evaluate(event)
       : await runRuleBuiltinActions(event, guard.evaluate(event));
-  ruleHookOutput("claude", event, result);
+  const pending =
+    result.decision === "deny" ? null : await pendingSessionMessages("claude", sessionId);
+  if (pending) result.context.push(pending.context);
+  try {
+    ruleHookOutput("claude", event, result);
+  } catch (error) {
+    pending?.interrupt("The hook could not return the message to the agent");
+    throw error;
+  }
+  pending?.deliver();
   return [
     ...result.context,
     ...(result.action_errors ?? []).map((error) => `${error.rule_id}: ${error.reason}`),
   ].join("\n");
+}
+
+/** Inject queued session messages without enabling the rules engine. */
+export async function sessionMessagesContext(sessionId: string | undefined): Promise<string> {
+  const pending = await pendingSessionMessages("claude", sessionId);
+  if (!pending) return "";
+  pending.deliver();
+  return pending.context;
+}
+
+export function createSessionMessagesHook(sessionId: string | undefined): HookCallback {
+  return async (input) => {
+    try {
+      if (!ruleEventCapability("claude", `native:${input.hook_event_name}`)?.context) return {};
+      const pending = await pendingSessionMessages("claude", input.session_id ?? sessionId);
+      if (!pending) return {};
+      pending.deliver();
+      return {
+        hookSpecificOutput: {
+          hookEventName: input.hook_event_name,
+          additionalContext: pending.context,
+        },
+      } as SyncHookJSONOutput;
+    } catch {
+      return {};
+    }
+  };
 }
 
 export function createRulesHook(
@@ -77,7 +152,21 @@ export function createRulesHook(
           data: `ORC rule denied tool: ${reason}`,
         });
       }
-      return ruleHookOutput("claude", event, result) as SyncHookJSONOutput;
+      const pending =
+        result.decision === "deny" ||
+        !ruleEventCapability("claude", `native:${input.hook_event_name}`)?.context
+          ? null
+          : await pendingSessionMessages("claude", event.session_id);
+      if (pending) result.context.push(pending.context);
+      let output: SyncHookJSONOutput;
+      try {
+        output = ruleHookOutput("claude", event, result) as SyncHookJSONOutput;
+      } catch (error) {
+        pending?.interrupt("The hook could not return the message to the agent");
+        throw error;
+      }
+      pending?.deliver();
+      return output;
     } catch (error) {
       finishWaiting();
       const reason = `ORC rule evaluation unavailable: ${String(error)}`;

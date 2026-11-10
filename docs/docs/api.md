@@ -267,6 +267,10 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher |
 | `PATCH` | `/sessions/live/{id}` | Link a live session to a task |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
+| `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
+| `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
+| `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |
+| `POST` | `/session-messages/{id}/move` | Reorder a queued message |
 | `GET` | `/sessions/live/search` | Search sessions |
 | `GET` | `/sessions/archive` | Search archived session passages |
 | `POST` | `/session-handoffs` | Start a session handoff |
