@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { ErrorReport } from "@/components/ErrorReport";
+import { isStaleBuildError, reloadForStaleBuild } from "@/lib/app-errors";
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Uncaught render error:", error, info.componentStack);
+    // A chunk the deploy replaced is recoverable; the reload picks up the new build.
+    if (isStaleBuildError(error)) reloadForStaleBuild();
   }
 
   handleReload = () => {
@@ -26,21 +29,21 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   render() {
-    if (this.state.error) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8 text-center">
-          <p className="text-error font-label text-sm uppercase tracking-widest">
-            Something went wrong
-          </p>
-          <pre className="max-w-xl overflow-auto rounded bg-muted p-4 text-left text-xs text-muted-foreground">
-            {this.state.error.message}
-          </pre>
-          <Button variant="outline" size="sm" onClick={this.handleReload} className="text-xs">
-            RELOAD
-          </Button>
-        </div>
-      );
-    }
-    return this.props.children;
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    const stale = isStaleBuildError(error);
+    return (
+      <ErrorReport
+        error={error}
+        testId="app-error"
+        title={stale ? "ORC was updated" : "Something went wrong"}
+        hint={
+          stale
+            ? "This tab is running an older version. Reload to load the current one."
+            : "Reload the page. If this keeps happening, the details below are what to report."
+        }
+        onReload={this.handleReload}
+      />
+    );
   }
 }
