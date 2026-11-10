@@ -316,8 +316,10 @@ questions, chat replies and job results while ORC is unfocused. Job pushes follo
 the job's notify setting and start with new runs. See [Installation](./install.md).
 
 The Electron desktop app also sends native notifications while its window is
-unfocused, minimized or hidden. Clicking one brings ORC forward and opens its
-destination. Done notifications are silent; native Needs-you sound follows the OS.
+unfocused, minimized or hidden. Clicking one brings ORC forward, opens its
+destination and marks that notification read, clearing it from the inbox.
+A grouped done toast opens its destination only; clear the collapsed items from
+the notification menu. Done notifications are silent; native Needs-you sound follows the OS.
 
 ## Audit
 

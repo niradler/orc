@@ -171,9 +171,16 @@ contextBridge.exposeInMainWorld("orcDesktop", {
     },
   },
   notify: (notification: NotifyRequest) => ipcRenderer.send(NOTIFY_CHANNEL, notification),
-  onOpen: (listener: (path: string) => void) => {
-    const handler = (_event: IpcRendererEvent, path: unknown) => {
-      if (typeof path === "string") listener(path);
+  onOpen: (listener: (path: string, id?: string) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => {
+      if (typeof payload === "string") {
+        listener(payload);
+        return;
+      }
+      if (payload && typeof payload === "object") {
+        const { path, id } = payload as { path?: unknown; id?: unknown };
+        if (typeof path === "string") listener(path, typeof id === "string" ? id : undefined);
+      }
     };
     ipcRenderer.on(OPEN_CHANNEL, handler);
     return () => {
