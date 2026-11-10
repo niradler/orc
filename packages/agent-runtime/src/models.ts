@@ -78,6 +78,7 @@ export async function discoverAgentModels(
         "--no-skills",
         "--no-prompt-templates",
         "--no-context-files",
+        "--no-mcp",
         "--no-approve",
       ],
       cwd,

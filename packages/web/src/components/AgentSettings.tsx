@@ -531,7 +531,7 @@ export function AgentSettings() {
                       : chatRuntime(profile.agent) === "claude-sdk"
                         ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
                         : chatRuntime(profile.agent) === "pi"
-                          ? 'Pi options, for example {"thinkingLevel":"high","autoCompaction":true}.'
+                          ? 'Pi options, for example {"thinkingLevel":"high","autoCompaction":true}. Queue mode, auto-retry and auto-compaction changes are saved to Pi\'s own settings on the execution host; thinking level is session-only.'
                           : chatRuntime(profile.agent) === "codex"
                             ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
                             : 'ACPX arguments, for example ["--timeout","120"].'}{" "}

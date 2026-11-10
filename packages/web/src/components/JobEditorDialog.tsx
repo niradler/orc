@@ -359,6 +359,9 @@ export function JobEditorDialog({
                       <HelpPopover label="Agent launch options" testId="job-agent-options-help">
                         Uses the same supported options as Chat. Set the model above; keep
                         credentials in environment variables. Unsupported options are rejected.
+                        {draft.action.backend === "pi"
+                          ? " Pi queue, retry and compaction changes are saved to Pi's own settings on the execution host."
+                          : ""}
                       </HelpPopover>
                     </details>
                   )}
