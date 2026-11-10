@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import { ConflictError, OrcError } from "@orc/core/errors";
 import {
@@ -159,7 +162,14 @@ const featureError = z.string().nullable();
  * missing spec or tool becomes a 404 and anything else `failure` (400 for edits, 503 for reaching a
  * server).
  */
+export function useLegacySpecHome(home = homedir()): void {
+  const legacy = join(home, "spec-cli-config");
+  if (!process.env.SPEC_HOME && !existsSync(join(home, ".spec-cli")) && existsSync(legacy))
+    process.env.SPEC_HOME = legacy;
+}
+
 async function withSpecs<T>(failure: 400 | 503, run: (client: SpecClient) => Promise<T> | T) {
+  useLegacySpecHome();
   const client = createSpecClient();
   try {
     return await run(client);

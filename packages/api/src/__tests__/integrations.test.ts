@@ -2,7 +2,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSpecClient, setSpecHome } from "api-spec-cli";
+import { createSpecClient, setSpecHome, specHome } from "api-spec-cli";
+import { useLegacySpecHome } from "../routes/integrations.js";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -423,3 +424,29 @@ test("lists, toggles, reads and renders an MCP connection's resources and prompt
   ).toBe(404);
   expect((await req(app, "DELETE", base)).status).toBe(204);
 }, 30_000);
+
+test("reads the pre-0.6 spec-cli registry in place when ~/.spec-cli does not exist", () => {
+  const user = mkdtempSync(join(tmpdir(), "orc-spec-user-"));
+  const previous = process.env.SPEC_HOME;
+  const configured = () => process.env.SPEC_HOME;
+  try {
+    delete process.env.SPEC_HOME;
+    useLegacySpecHome(user);
+    expect(configured()).toBeUndefined();
+    mkdirSync(join(user, "spec-cli-config"));
+    useLegacySpecHome(user);
+    expect(configured()).toBe(join(user, "spec-cli-config"));
+    setSpecHome(undefined);
+    expect(specHome()).toBe(join(user, "spec-cli-config"));
+    expect(existsSync(join(user, "spec-cli-config"))).toBe(true);
+    delete process.env.SPEC_HOME;
+    mkdirSync(join(user, ".spec-cli"));
+    useLegacySpecHome(user);
+    expect(configured()).toBeUndefined();
+  } finally {
+    if (previous === undefined) delete process.env.SPEC_HOME;
+    else process.env.SPEC_HOME = previous;
+    setSpecHome(home);
+    rmSync(user, { recursive: true, force: true });
+  }
+});
