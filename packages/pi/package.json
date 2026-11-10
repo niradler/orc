@@ -1,0 +1,85 @@
+{
+  "name": "@orc/pi",
+  "version": "0.1.62",
+  "description": "porc - fuses ORC into the Pi coding agent: context, memories, skills, MCP tools, spec bridge and the ORC theme",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "orc",
+    "porc",
+    "agent",
+    "mcp",
+    "skills",
+    "memory",
+    "theme"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niradler/orc.git",
+    "directory": "packages/pi"
+  },
+  "homepage": "https://github.com/niradler/orc/tree/master/packages/pi",
+  "bugs": {
+    "url": "https://github.com/niradler/orc/issues"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/orc.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts/*.md"
+    ],
+    "themes": [
+      "./themes/*.json"
+    ],
+    "changelogPath": "./CHANGELOG.md"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./mcp": "./src/mcp.ts"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "extensions",
+    "prompts",
+    "skills",
+    "src",
+    "themes"
+  ],
+  "scripts": {
+    "sync:skills": "bun scripts/sync-skills.ts",
+    "check:skills": "bun scripts/sync-skills.ts --check",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-tui": "1.5.2",
+    "bun-types": "^1.4.4",
+    "typebox": "^1.4.6",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

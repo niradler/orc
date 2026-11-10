@@ -1,6 +1,6 @@
 # Connect agents
 
-How to connect Claude Code, Codex, Cursor, Gemini CLI and other MCP clients to ORC: MCP registration, session tracking, hooks and skills.
+How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi and other MCP clients to ORC: MCP registration, session tracking, hooks and skills.
 
 ## What each piece gives you
 
@@ -112,6 +112,22 @@ Any client that launches stdio servers:
 
 Clients that support HTTP can use `http://127.0.0.1:7700/mcp` with the bearer header instead.
 
+### Pi (porc)
+
+[`@orc/pi`](https://www.npmjs.com/package/@orc/pi), or **porc**, packages the ORC
+connection for [Pi](https://pi.dev): native MCP, context and memories, skill sync, the
+`spec` bridge, an ORC system prompt section and the ORC theme.
+
+```bash
+pi install npm:@orc/pi
+```
+
+It registers the `orc` stdio MCP server automatically, scoped to the matched project,
+and sets `ORC_SESSION_ID` so writes are attributed to the Pi session. Configure it in
+`~/.pi/agent/porc.json` or `.pi/porc.json`; environment variables and session flags
+override the files. See [Pi and porc](./pi.md) for configuration, commands and
+security notes.
+
 | stdio variable | Purpose |
 | --- | --- |
 | `ORC_API_BASE` | ORC origin to call (default from `api.host` / `api.port`) |
@@ -200,6 +216,10 @@ orc skill export-to claude --dry-run
 ```
 
 Agents connected over MCP can also list and read skills without installing them (`skill_list`, `skill_read`). See [Skills](./skills.md).
+
+Pi users do not need a separate skill install: `@orc/pi` loads `orc-platform` and
+`orc-sdlc` from the package and syncs the skills visible to the active project. See
+[Pi and porc](./pi.md).
 
 ## Agents ORC runs itself
 

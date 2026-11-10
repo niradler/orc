@@ -1,0 +1,120 @@
+# Skills, profiles and packages
+
+Sources: [Skills](https://niradler.github.io/orc/docs/skills),
+[Agent packages](https://github.com/niradler/orc/blob/master/docs/docs/agent-packages.md).
+
+## Discover and load
+
+ORC ships two entry points: `orc-platform` for operating the product and `orc-sdlc`
+for engineering process. `skill_list` returns metadata; `skill_read` returns the
+effective entry instructions and file inventory. Load a supporting file with
+`skill_read({name, ref: "references/knowledge.md", project})`. Bare reference
+filenames are supported; paths resolve from the skill root, never the repo cwd.
+Reads do not execute scripts. Binary content uses explicit base64 encoding.
+
+Skills can belong to multiple projects; unassigned skills are global. Use
+`/mcp?project=<readable-name>` or `/mcp?projects=orc,project2` to bind the connection
+to selected projects' skills plus global ones. Shared skills appear once, before
+pagination; project instruction overrides follow URL order, then global fallback.
+Pass an explicit tool `project` to select one of the URL's projects. These defaults
+also apply to project-aware context/tasks/jobs/memories/knowledge/session searches;
+new resources use the first project by default. See [MCP query parameters](setup.md#customize-the-http-mcp-connection)
+for `mode=full|meta`, selection limits and connection examples.
+Other projects' skills are unavailable through list, search,
+named/reference reads and downloads. Without a bound URL, pass `project` to select
+scope. Scoped instruction edits do not assign skills to projects.
+Manage assignments with `orc skill projects <name> --set <project-id> ...`, or
+`--global`; authenticated API callers use GET/PUT `/api/skills/{name}/projects`.
+
+`skill_list` lists and searches in pages: `limit` defaults to 30 (maximum 500),
+`offset` defaults to 0, and the response includes `total` and `next_offset`.
+Pass `q` for combined BM25/prefix/stem/phrase/substring/typo search on names and
+descriptions. Search scores sort descending; all query terms must match. Fetch
+the next page using `next_offset`; null means there are no more results.
+MCP skill creation inherits the connection/argument project; with no selected
+project, creation is global. Existing skills remain global until assigned.
+
+To use an original script/asset outside the ORC host, request
+`skill_read({name, ref: "scripts/check.py", download: true, project})`.
+Fetch the returned `download_url` into the intended local file and verify its
+`sha256` and `size_bytes`; do not retype the script from tool output. This returns
+metadata instead of file content. The URL grants only that file version for ten
+minutes, needs no API secret on the GET, and must stay out of logs/shared documents.
+Expired links, API restarts or changed files require a new URL. Downloading never
+executes it; inspect the script and dependencies before an authorized run. Preserve
+relative paths and fetch required sibling resources from the inventory as needed.
+API/SDK callers use `POST /api/skills/<name>/download` / `client.skills.download`.
+
+Built-ins live in the distribution, user skills in `~/.orc/skills/`, and authored
+instruction changes can be global or project-scoped. Built-in names take precedence
+over same-named user folders; project instruction overrides take precedence over
+global ones. Read the effective version before acting and refresh at work-unit
+boundaries or after compaction. Do not synchronize process bodies into every
+coding client's local skills; MCP is the central discovery/read interface.
+
+Old built-in names remain named-read compatibility routes for saved tasks and
+flows; they are not extra discovery entries. New definitions should use the two
+entry points. Explicit legacy authored overrides remain readable under their names.
+Managed workers/reviewers also receive applicable authored legacy supplements with
+name/scope/change provenance. Unmodified retired playbooks are not reinjected;
+worker and reviewer instructions are kept in their own roles. Reconcile a conflict
+explicitly before changing either authored version; no automatic overlay rewrite.
+Built-in discovery toggles hide metadata, not named reads or execution. Authored
+overrides and user/imported skills retain their normal visibility rules.
+
+## Author and edit
+
+A skill is a folder with `SKILL.md` (name/description frontmatter), plus only useful
+references, scripts or assets. Keep selection and shared constraints in the entry;
+group related details into references loaded when needed. Prefer a few coherent
+references over a file per operation. Avoid generic agent personas, repeated
+lifecycle rules and exhaustive API/CLI manuals.
+
+For audited instruction edits, read raw `SKILL.md`, then `skill_update` with
+`expected_content`, scope, reason and session ID when available. Reconcile conflicts
+against the current version. This edits entry instructions, not supporting files.
+For a script, reference or other text file of a user skill, read it with `skill_read`
+and `ref`, then `skill_file_write` with the full new text, that read text as
+`expected_content` (null adds a new file) and a reason. File writes apply to every
+scope; built-in and package skills are read-only. Preserve original assets
+and local edits. Verify save/reopen and effective reads in the intended scope.
+
+Folder import/export preserves supporting content:
+
+```sh
+orc skill create my-workflow --directory ./my-workflow
+orc skill read my-workflow --ref references/guide.md
+orc skill validate ./my-workflow
+orc skill export my-workflow ./exported/my-workflow
+```
+
+For GitHub import, inspect `orc skill import <owner/repo> --list`, choose the actual
+skill, then import. Existing names are not overwritten. Sync compares each file
+with its imported baseline; local/upstream conflicts require review, not blind
+replacement. Review the pinned source and licenses before running imported scripts.
+Paths must remain inside the skill; symlinks/traversal and oversize bundles are rejected.
+
+Local agents: `orc skill local [agent] [--path <dir>]` lists skills in agent folders
+(`~/.claude/skills`, `~/.codex/skills`, ...) or any folder; `-s <names>` / `--all` imports.
+`orc skill export-to <agent|dir> [names...] --dry-run` writes native skill folders back; add `--project <name>` to write into that project's checkout (`claude` -> `.claude/skills`, `agents` -> `.agents/skills`), listed by `orc skill project-folders`.
+Near copies (a few characters different) and renamed copies count as the same skill and
+are flagged, not imported or exported as new; existing folders change only with
+`--overwrite <names>`. Memories: `orc mem sources|import|export` move project memories to and
+from Claude Code memory folders (`<name>.md` + `MEMORY.md`) and Codex notes
+(`~/.codex/memories/extensions/ad_hoc/notes`) with the same dedup.
+
+## Agent profiles and portable packages
+
+A profile defines specialist instructions/model/tools; a backend selects how an
+agent runs. Neither is an SDLC flow. ORC supports APM `.agent.md` profiles and
+portable packages; inspect/import/read using the current agent/package tools or
+Packages dashboard. Standalone profiles live in `~/.orc/agents/`; project profiles
+can override shared IDs. Preserve authored manifests, relative paths and assets.
+
+Check the backend can honor declared model/tool restrictions before launch.
+Unsupported restrictions must fail rather than silently run unrestricted.
+Profile handoffs are declarations; ORC flow edges control managed execution.
+Package dependency installation and deployment can execute code or change project
+configuration: inspect the planned operation and use the user's scope. Do not
+include client credentials in exported packages. Verify the prepared project and
+actual launched session, not only that an import succeeded.

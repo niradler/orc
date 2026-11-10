@@ -60,7 +60,8 @@
       "!.examples",
       "!.demo",
       "!.cursor",
-      "!packages/core/src/schemas"
+      "!packages/core/src/schemas",
+      "!packages/pi/skills"
     ]
   }
 }
