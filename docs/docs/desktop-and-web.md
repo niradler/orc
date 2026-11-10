@@ -321,6 +321,16 @@ destination and marks that notification read, clearing it from the inbox.
 A grouped done toast opens its destination only; clear the collapsed items from
 the notification menu. Done notifications are silent; native Needs-you sound follows the OS.
 
+## Browser app and updates
+
+The dashboard installs as a browser app and serves an offline shell when the network
+is unreachable. An open tab or installed app runs the build it was loaded with, and
+the server replaces that build when it is updated. Reaching a page whose code is gone
+then reloads the app once, without asking, so unsaved input in the current page is
+lost; the reload loads the current build. If it does not fix the problem, ORC shows
+the failing error with **Reload** and **Copy details** instead of a generic error
+page, so a report carries the real message and stack.
+
 ## Audit
 
 Lifecycle and knowledge events with filters and expandable details. Recorded
