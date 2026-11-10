@@ -904,19 +904,24 @@ describe("native chat runtime", () => {
         return session({ id, opts });
       },
     }));
-    const idleTurn = await turn({
-      threadId: idleOpen.id,
-      messages: [{ role: "user", content: "Continue an idle open conversation" }],
-    }).finally(() => registerBackend("claude", () => originalClaude));
+    let idleTurn: Awaited<ReturnType<typeof turn>>, stillOwned: Awaited<ReturnType<typeof turn>>;
+    try {
+      idleTurn = await turn({
+        threadId: idleOpen.id,
+        messages: [{ role: "user", content: "Continue an idle open conversation" }],
+      });
+      stillOwned = await turn({
+        threadId: ownedThread.id,
+        messages: [{ role: "user", content: "Do not take over an open agent" }],
+      });
+    } finally {
+      registerBackend("claude", () => originalClaude);
+    }
     expect(resumed).toEqual(["claude-open-idle"]);
     expect(idleTurn.events).not.toContainEqual({
       type: "error",
       message:
         "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
-    });
-    const stillOwned = await turn({
-      threadId: ownedThread.id,
-      messages: [{ role: "user", content: "Do not take over an open agent" }],
     });
     expect(stillOwned.events).toContainEqual({
       type: "error",
