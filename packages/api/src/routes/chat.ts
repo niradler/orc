@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
@@ -300,7 +301,7 @@ app.openapi(
         ? resolveExecHost()
         : execHostFor(requestedHost === "__local__" ? null : requestedHost);
     const cwd =
-      thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
+      thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : homedir());
     const key = JSON.stringify([
       agent,
       host.kind === "ssh" ? host.alias : null,
@@ -511,7 +512,7 @@ async function newThread(
       )
     : host.kind === "ssh"
       ? await hostHome(host)
-      : process.cwd();
+      : homedir();
   const thread: ChatThread = {
     id: crypto.randomUUID(),
     title: "New chat",

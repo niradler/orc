@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AgentBackend,
@@ -437,7 +437,7 @@ describe("native chat runtime", () => {
     try {
       const store = new RuleStore(getSqlite());
       const policy = {
-        workspace: process.cwd(),
+        workspace: homedir(),
         project_id: null,
         rules: [
           {
@@ -986,6 +986,29 @@ describe("native chat runtime", () => {
     expect(stdout).toContain(
       "stopped Codex record rejects a held writer, resumes after release and blocks re-acquisition",
     );
+  });
+  test("starts a chat without a chosen folder in the home folder, not the server's working directory", async () => {
+    const original = process.cwd();
+    process.chdir("/");
+    const originalClaude = createBackend("claude");
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => session({ id, opts }),
+    }));
+    try {
+      const started = await turn({
+        agent: "claude",
+        messages: [{ role: "user", content: "Start without choosing a folder" }],
+      });
+      const opened = started.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing Claude thread");
+      expect(opened.thread.cwd).toBe(homedir());
+    } finally {
+      registerBackend("claude", () => originalClaude);
+      process.chdir(original);
+    }
   });
   test("requires auth, validates shapes and denies unknown conversations and permission requests", async () => {
     for (const [path, body] of [
