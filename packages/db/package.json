@@ -26,7 +26,8 @@
     "./read-usage": "./src/read-usage.ts",
     "./agent-memory": "./src/agent-memory.ts",
     "./memory-transfer": "./src/memory-transfer.ts",
-    "./task-audit": "./src/task-audit.ts"
+    "./task-audit": "./src/task-audit.ts",
+    "./workspaces": "./src/workspaces.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,6 +1,7 @@
 import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/core/github-sync";
 import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 import type { JobEnvironment, JobSettings } from "@orc/core/job-settings";
+import type { WorkspaceEnvironment, WorkspaceSetupStatus } from "@orc/core/workspace-settings";
 
 export type {
   ChannelCondition,
@@ -312,8 +313,27 @@ export type Project = {
   tags: string[] | null;
   obsidian_path: string | null;
   max_workers: number | null;
+  workspace: WorkspaceEnvironment;
   created_at: string;
   updated_at: string;
+};
+
+export type WorkspaceRecord = {
+  worktree_path: string;
+  project_id: string | null;
+  repo_root: string | null;
+  git_branch: string | null;
+  host: string | null;
+  setup_status: WorkspaceSetupStatus;
+  setup_output: string | null;
+  setup_started_at: number | null;
+  setup_ended_at: number | null;
+  port_base: number | null;
+  port_count: number | null;
+  preview_url: string | null;
+  dev_terminal_id: string | null;
+  created_at: number;
+  updated_at: number;
 };
 
 export type ProjectSummary = {
@@ -540,6 +560,7 @@ export type CreateProjectInput = {
   tags?: string[];
   obsidian_path?: string;
   max_workers?: number;
+  workspace?: WorkspaceEnvironment;
 };
 
 export type UpdateProjectInput = {
@@ -553,6 +574,7 @@ export type UpdateProjectInput = {
   tags?: string[] | null;
   obsidian_path?: string | null;
   max_workers?: number | null;
+  workspace?: WorkspaceEnvironment;
 };
 
 export type ApiError = { error: string; code: string };

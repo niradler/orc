@@ -49,6 +49,7 @@ import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
 import { usageRouter } from "./routes/usage.js";
+import { workspacesRouter } from "./routes/workspaces.js";
 import { webhookPublicRouter, webhooksRouter } from "./routes/webhooks.js";
 import { createWebStatic } from "./static.js";
 
@@ -162,6 +163,7 @@ export function createApp() {
   app.route("/api", gatewayRouter);
   app.route("/api", tagsRouter);
   app.route("/api", terminalsRouter);
+  app.route("/api", workspacesRouter);
   app.route("/api", gitRouter);
   app.route("/api", terminalGitRouter);
   app.route("/api", githubRouter);

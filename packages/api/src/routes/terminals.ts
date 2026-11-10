@@ -9,6 +9,7 @@ import {
   LOCAL_HOST,
   listHostDirectories,
 } from "@orc/core/exec-host";
+import { jobShellArgv } from "@orc/core/job-settings";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import { ProviderIdSchema } from "@orc/core/providers";
 import { getDb, getSqlite } from "@orc/db/client";
@@ -42,6 +43,12 @@ import {
   terminalsAvailability,
 } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
+import {
+  projectById,
+  projectWorkspaceConfig,
+  resolveProjectForPath,
+  workspaceLaunch,
+} from "../workspaces/service.js";
 
 const app = createRouter();
 
@@ -60,6 +67,10 @@ const TerminalSchema = z
     exit_code: z.number().nullable(),
     pid: z.number().nullable(),
     live_session_id: z.string().nullable(),
+    project_id: z.string().nullable(),
+    worktree_path: z.string().nullable(),
+    dev: z.boolean(),
+    preview_url: z.string().nullable(),
     created_at: z.string().datetime(),
   })
   .openapi("Terminal");
@@ -112,6 +123,13 @@ const createTerminalRoute = createRoute({
             live_session_id: z.string().min(1).optional(),
             worktree: z.boolean().optional().openapi({
               description: "Start an agent in a new git worktree of the cwd's repo",
+            }),
+            project_id: z.string().optional().openapi({
+              description: "Project whose workspace environment and ports this terminal uses",
+            }),
+            dev: z.boolean().optional().openapi({
+              description:
+                "Run the project's dev script in a shell and publish the first printed URL as a preview",
             }),
             setup: AgentSetupSchema.optional(),
           }),
@@ -431,10 +449,20 @@ app.openapi(createTerminalRoute, async (c) => {
   }
 
   // Validate the launcher and limit before making a worktree, so a failed start leaves nothing behind.
-  deps = providerLaunchDeps(body.kind ?? "shell", body.providerId, deps, host.kind === "ssh");
+  if (body.dev && body.kind && body.kind !== "shell")
+    throw new ValidationError("A dev server runs in a shell terminal");
+  if (body.dev && body.providerId)
+    throw new ValidationError("A dev server does not use a coding provider");
+  const kind = body.dev ? "shell" : body.kind;
+  deps = providerLaunchDeps(
+    kind ?? "shell",
+    body.dev ? undefined : body.providerId,
+    deps,
+    host.kind === "ssh",
+  );
   const launch = configureProviderLaunch(
-    await buildLaunch({ kind: body.kind, cwd: body.cwd }, deps),
-    body.providerId,
+    await buildLaunch({ kind, cwd: body.cwd }, deps),
+    body.dev ? undefined : body.providerId,
   );
   if (launch.kind !== "shell") checkRules(launch.cwd);
   if (body.worktree && launch.kind === "shell") {
@@ -446,10 +474,32 @@ app.openapi(createTerminalRoute, async (c) => {
     { ...sessionDirDeps(deps, host), validateDirectory: checkPlannedRules },
   );
   if (launch.kind !== "shell") checkRules(cwd);
-  const name = body.name ?? (cwd !== launch.cwd ? worktreeName(cwd) : undefined);
+  const workspace = await workspaceLaunch(host, cwd, body.project_id);
+  const project = body.project_id ? projectById(body.project_id) : resolveProjectForPath(cwd);
+  const devScript = project ? projectWorkspaceConfig(project).dev_script?.trim() : null;
+  if (body.dev && !devScript)
+    throw new ValidationError("This project has no dev script. Add one in project settings.");
+  const withWorkspace: typeof launch = {
+    ...launch,
+    cwd,
+    env: { ...launch.env, ...workspace.env },
+    ...(body.dev && devScript ? { argv: jobShellArgv(undefined, devScript, deps.platform) } : {}),
+  };
+  const name =
+    body.name ??
+    (body.dev && project
+      ? `${project.name} preview`
+      : cwd !== launch.cwd
+        ? worktreeName(cwd)
+        : undefined);
   const info = manager.create({
-    launch: await launchOnHost(host, { ...launch, cwd }),
+    launch: await launchOnHost(host, withWorkspace),
     name,
+    metadata: {
+      projectId: workspace.projectId,
+      worktreePath: workspace.worktreePath,
+      dev: Boolean(body.dev),
+    },
   });
   rememberTerminalFolder(info.cwd, info.host);
   return c.json(info, 201);

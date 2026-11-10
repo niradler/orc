@@ -6,20 +6,24 @@ import { Input } from "@/components/ui/input";
 export function JobEnvironmentFields({
   value,
   onChange,
+  title = "Environment variables",
+  help = "Secret values are encrypted and become write-only after saving. Leave a saved secret blank to keep it. Exact secret values are redacted from run logs.",
+  addTestId = "job-env-add",
 }: {
   value: JobEnvironment;
   onChange: (value: JobEnvironment) => void;
+  title?: string;
+  help?: string;
+  addTestId?: string;
 }) {
   const [keys, setKeys] = useState(() => value.map(() => crypto.randomUUID()));
   return (
     <details className="space-y-3 rounded-md border border-border p-3">
       <summary className="cursor-pointer text-sm">
-        Environment variables{value.length ? ` (${value.length})` : ""}
+        {title}
+        {value.length ? ` (${value.length})` : ""}
       </summary>
-      <p className="text-xs text-outline">
-        Secret values are encrypted and become write-only after saving. Leave a saved secret blank
-        to keep it. Exact secret values are redacted from run logs.
-      </p>
+      <p className="text-xs text-outline">{help}</p>
       {value.map((entry, index) => (
         <div
           key={keys[index]}
@@ -91,7 +95,7 @@ export function JobEnvironmentFields({
         type="button"
         variant="outline"
         size="sm"
-        data-testid="job-env-add"
+        data-testid={addTestId}
         onClick={() => {
           setKeys([...keys, crypto.randomUUID()]);
           onChange([...value, { name: "", value: "", secret: false }]);

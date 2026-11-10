@@ -93,6 +93,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   health: ["health"],
   github: ["github", "git"],
   audit: ["knowledge-audit", "skill-history"],
+  workspaces: ["workspaces", "terminals", "project-summary"],
 };
 
 export function invalidateResources(

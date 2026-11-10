@@ -204,6 +204,32 @@ export default function Terminals() {
 
   const canDuplicate = (terminal: Terminal): boolean =>
     !!info && (terminal.host ? ssh?.supported === true : info.launchers.includes(terminal.kind));
+  const startDevServer = async (terminal: Terminal): Promise<void> => {
+    if (!terminal.project_id || creating) return;
+    setCreating(true);
+    setActionError(null);
+    try {
+      const dev = await create({
+        kind: "shell",
+        ...(terminal.cwd ? { cwd: terminal.cwd } : {}),
+        ...(terminal.host ? { host: terminal.host } : {}),
+        project_id: terminal.project_id,
+        dev: true,
+      });
+      setOptionsOpen(false);
+      navigate(
+        workspaceDestination(
+          `/terminals/${dev.id}`,
+          params.get("project") ?? "all",
+          params.toString(),
+        ),
+      );
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setCreating(false);
+    }
+  };
   const duplicateTerminal = async (terminal: Terminal): Promise<void> => {
     if (!canDuplicate(terminal) || creating) return;
     setCreating(true);
@@ -492,6 +518,17 @@ export default function Terminals() {
                   <SessionLinks liveSessionId={optionsTerminal.live_session_id} />
                 )}
                 <TerminalCheckout key={optionsTerminal.id} terminal={optionsTerminal} />
+                {optionsTerminal.preview_url && (
+                  <a
+                    data-testid="terminal-preview"
+                    href={optionsTerminal.preview_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-sm text-primary underline"
+                  >
+                    Open preview: {optionsTerminal.preview_url}
+                  </a>
+                )}
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
@@ -514,6 +551,16 @@ export default function Terminals() {
                   >
                     Duplicate tab
                   </Button>
+                  {optionsTerminal.project_id && !optionsTerminal.dev && (
+                    <Button
+                      variant="outline"
+                      data-testid="terminal-start-dev"
+                      disabled={creating}
+                      onClick={() => void startDevServer(optionsTerminal)}
+                    >
+                      Start dev server
+                    </Button>
+                  )}
                 </div>
                 <Button
                   variant="outline"

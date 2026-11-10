@@ -1,4 +1,9 @@
 import { DEFAULT_GITHUB_STATUS_LABELS, type GithubSyncConfig } from "@orc/core/github-sync";
+import {
+  defaultWorkspaceEnvironment,
+  type WorkspaceEnvironment,
+  WorkspaceEnvironmentSchema,
+} from "@orc/core/workspace-settings";
 import { useState } from "react";
 import type { CreateProjectInput, ProjectStatus } from "@/api/client";
 import { api } from "@/api/client";
@@ -17,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { FormStepActions, FormStepPanel, FormSteps, useFormSteps } from "@/components/useFormSteps";
+import { WorkspaceEnvironmentFields } from "@/components/WorkspaceEnvironmentFields";
 import { useCreateProject } from "@/hooks/useProjects";
 import { PROJECT_STATUSES } from "@/lib/project-statuses";
 
@@ -33,6 +39,7 @@ export function CreateProjectDialog({
     [
       { id: "details", label: "Details" },
       { id: "configuration", label: "Configuration" },
+      { id: "workspace", label: "Workspace" },
     ],
     open,
   );
@@ -47,6 +54,7 @@ export function CreateProjectDialog({
     status_labels: DEFAULT_GITHUB_STATUS_LABELS,
   });
   const [maxWorkers, setMaxWorkers] = useState("");
+  const [workspace, setWorkspace] = useState<WorkspaceEnvironment>(defaultWorkspaceEnvironment);
   const createProject = useCreateProject();
   const [firstTask, setFirstTask] = useState(true);
   const [folderError, setFolderError] = useState("");
@@ -61,6 +69,7 @@ export function CreateProjectDialog({
       maxWorkers,
       firstTask,
       githubSync,
+      workspace,
     ]) !==
     JSON.stringify([
       "",
@@ -72,6 +81,7 @@ export function CreateProjectDialog({
       "",
       true,
       { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
+      defaultWorkspaceEnvironment(),
     ]);
   function resetForm() {
     steps.reset();
@@ -84,6 +94,7 @@ export function CreateProjectDialog({
     setGithubSync({ enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS });
     setMaxWorkers("");
     setFirstTask(true);
+    setWorkspace(defaultWorkspaceEnvironment());
     setFolderError("");
     createProject.reset();
   }
@@ -91,6 +102,11 @@ export function CreateProjectDialog({
   const handleSubmit = (e: React.FormEvent, closeAfterSave: () => void) => {
     e.preventDefault();
     if (!name.trim()) return;
+    const parsedWorkspace = WorkspaceEnvironmentSchema.safeParse(workspace);
+    if (!parsedWorkspace.success) {
+      steps.invalid("workspace", parsedWorkspace.error.issues[0].message);
+      return;
+    }
     const input: CreateProjectInput = {
       name: name.trim(),
       description: description.trim() || undefined,
@@ -105,6 +121,7 @@ export function CreateProjectDialog({
       git_remote_url: gitRemoteUrl.trim() || undefined,
       github_sync: githubSync,
       max_workers: maxWorkers ? Number(maxWorkers) : undefined,
+      workspace: parsedWorkspace.data,
     };
     createProject.mutate(input, {
       onSuccess: (project) => {
@@ -271,6 +288,9 @@ export function CreateProjectDialog({
                     Create the first task after saving
                   </label>
                   <GithubSyncFields value={githubSync} onChange={setGithubSync} />
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="workspace">
+                  <WorkspaceEnvironmentFields value={workspace} onChange={setWorkspace} />
                 </FormStepPanel>
                 {createProject.error && (
                   <p role="alert" className="text-sm text-destructive md:col-span-2">

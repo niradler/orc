@@ -25,6 +25,7 @@ export const CHANGE_RESOURCES = [
   "github",
   "audit",
   "scratchpads",
+  "workspaces",
 ] as const;
 
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];

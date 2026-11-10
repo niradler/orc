@@ -42,6 +42,7 @@ import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
+import { workspaceLaunch } from "../workspaces/service.js";
 import { createLogger } from "@orc/core/logger";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import {
@@ -1410,7 +1411,13 @@ async function beginTurn(
         thread.runtimeId ??= `mock-${thread.id}`;
         completed = !stopped;
       } else {
+        const projectWorkspace = thread.projectId
+          ? await workspaceLaunch(execHostFor(thread.host), thread.cwd, thread.projectId)
+          : null;
         const opts: SessionOpts = {
+          ...(projectWorkspace && Object.keys(projectWorkspace.env).length
+            ? { env: projectWorkspace.env }
+            : {}),
           providerId: thread.config.providerId,
           toolAllowlist: thread.toolAllowlist,
           chatAgentOptions: thread.config.agentOptions[thread.config.agent],

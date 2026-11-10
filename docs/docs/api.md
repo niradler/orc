@@ -137,6 +137,7 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `GET` | `/projects/by-name/{name}` | Look up by name (case-insensitive) |
 | `GET` | `/projects/{id}/summary` | Task, memory and job counts |
 | `GET` `POST` | `/projects/{id}/comments` | Project comments |
+| `GET` | `/workspaces` | Prepared workspaces (`project_id`, `path`) |
 | `GET` `POST` | `/tasks` | List (`project_id`, `status`, `tag`, `limit`) / create |
 | `POST` | `/tasks/batch` | Create tasks with dependency links atomically |
 | `GET` `PATCH` `DELETE` | `/tasks/{id}` | Read / update / delete |
@@ -151,6 +152,21 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `POST` | `/tasks/{id}/flow/halt` | Stop a running flow |
 | `GET` | `/tags` | Unique tags across resources |
 | `GET` | `/search` | Search all projects and resources |
+
+Projects accept an optional `workspace` object with `setup_script`, `dev_script`,
+`setup_timeout_secs`, `port_base`, `port_count` and `env`. `env` is the same
+`{ name, value, secret }` array as job environments: secret values are encrypted
+at rest, read back as `value: null`, and retained when that saved `null`
+placeholder is sent again. Omitting `workspace` on update preserves it; sending
+one without a stored secret's value returns 400. An invalid or missing stored
+value falls back to defaults: no scripts, a 900-second setup timeout, ten ports
+starting from 3100, and no variables.
+
+`GET /workspaces` returns workspace records with `setup_status`, `setup_output`,
+the allocated `port_base`/`port_count` block, `preview_url` and the owning
+project. Filter by `project_id`, or pass `path` for exactly one folder. Setup runs
+once per managed worktree; a project's main checkout gets a port block but no
+setup.
 
 ### Memory
 
@@ -284,6 +300,13 @@ or `failed`). The same optional `turn` object is persisted on assistant messages
 elapsed time. Replay includes the original start; legacy messages may omit `turn`.
 Before a tool call, a `narration` event moves accumulated prose out of the current
 reply and into its folded activity. Its `text` preserves that prose for expansion.
+
+`POST /terminals` accepts `project_id` to use that project's workspace environment
+and ports, and `dev: true` to run its dev script in a shell terminal. A dev
+terminal rejects an agent `kind` or `providerId`, and fails when the project has no
+dev script. Terminal responses include `project_id`, `worktree_path`, `dev` and
+`preview_url`. For a dev terminal, the first printed `http(s)` URL becomes
+`preview_url` and stays until that terminal exits.
 
 ### Human requests, rules and scratchpads
 

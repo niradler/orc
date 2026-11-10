@@ -8,6 +8,11 @@ import { GitPanelBody } from "@/components/terminals/GitPanel";
 import { TerminalViewport } from "@/components/terminals/TerminalViewport";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  useWorkspaceByPath,
+  workspacePortRange,
+  workspaceSetupLabel,
+} from "@/components/WorkspaceStatus";
 import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -232,6 +237,8 @@ function Overview({ context }: { context: SessionContext }) {
     : undefined;
   const task = context.session?.task;
   const changes = status.data?.files.length;
+  const { data: workspace } = useWorkspaceByPath(context.cwd);
+  const ports = workspace ? workspacePortRange(workspace) : null;
   return (
     <dl data-testid="session-inspector-overview" className="space-y-3 text-sm">
       <OverviewRow label="Host">{context.host ?? "local"}</OverviewRow>
@@ -239,6 +246,22 @@ function Overview({ context }: { context: SessionContext }) {
       <OverviewRow label="Branch">{branch}</OverviewRow>
       <OverviewRow label="Changes">
         {changes === undefined ? null : `${changes} ${changes === 1 ? "file" : "files"}`}
+      </OverviewRow>
+      <OverviewRow label="Workspace ports">{ports}</OverviewRow>
+      <OverviewRow label="Workspace setup">
+        {workspace ? workspaceSetupLabel(workspace) : null}
+      </OverviewRow>
+      <OverviewRow label="Preview">
+        {workspace?.preview_url && (
+          <a
+            className="text-primary hover:underline"
+            href={workspace.preview_url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open preview
+          </a>
+        )}
       </OverviewRow>
       <OverviewRow label="Task">
         {task && (
