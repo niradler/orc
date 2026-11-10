@@ -1,5 +1,6 @@
 import type { JobEnvironment } from "@orc/core/job-settings";
 import { useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -19,11 +20,13 @@ export function JobEnvironmentFields({
   const [keys, setKeys] = useState(() => value.map(() => crypto.randomUUID()));
   return (
     <details className="space-y-3 rounded-md border border-border p-3">
-      <summary className="cursor-pointer text-sm">
+      <summary className="flex cursor-pointer items-center gap-1 text-sm">
         {title}
         {value.length ? ` (${value.length})` : ""}
+        <HelpPopover label={title} testId={`${addTestId}-help`}>
+          {help}
+        </HelpPopover>
       </summary>
-      <p className="text-xs text-outline">{help}</p>
       {value.map((entry, index) => (
         <div
           key={keys[index]}

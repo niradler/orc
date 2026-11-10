@@ -77,6 +77,12 @@ describe("project workspace environment", () => {
       workspace: { ...workspace, port_base: 65530, port_count: 10 },
     });
     expect(invalid.status).toBe(400);
+
+    const unsavedSecret = await req(app, "PATCH", `/projects/${project.id}`, {
+      workspace: { ...workspace, env: [{ name: "OTHER", value: null, secret: true }] },
+    });
+    expect(unsavedSecret.status).toBe(400);
+    expect((await unsavedSecret.json()).error).toContain("previously saved");
   });
 
   test("lists prepared workspaces and removes them with the project", async () => {

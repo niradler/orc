@@ -13,15 +13,16 @@ import {
   defaultWorkspaceEnvironment,
   parseWorkspaceEnvironment,
   publicWorkspaceEnvironment,
-  WorkspaceEnvironmentSchema,
   storeWorkspaceEnvironment,
+  type WorkspaceEnvironment,
+  WorkspaceEnvironmentSchema,
 } from "@orc/core/workspace-environment";
 import { getDb } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
 import { bridge_chats, comments, jobs, projects, sessions, tasks } from "@orc/db/schema";
-import { deleteProjectWorkspaceEnvironments } from "@orc/db/workspaces";
 import { withTx } from "@orc/db/tx";
+import { deleteProjectWorkspaceEnvironments } from "@orc/db/workspaces";
 import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
 
@@ -221,6 +222,20 @@ const summaryRoute = createRoute({
   },
 });
 
+/** Keeps the job-environment secret contract: a null value keeps the stored secret or fails as 400. */
+function prepareWorkspace(
+  input: WorkspaceEnvironment,
+  previous: WorkspaceEnvironment,
+): WorkspaceEnvironment {
+  try {
+    return storeWorkspaceEnvironment(input, previous);
+  } catch {
+    throw new ValidationError(
+      "Cannot keep a secret that was not previously saved. Enter its value.",
+    );
+  }
+}
+
 function toDto(p: typeof projects.$inferSelect) {
   return {
     ...p,
@@ -373,7 +388,7 @@ app.openapi(createRoute_, async (c) => {
     obsidian_path: body.obsidian_path,
     max_workers: body.max_workers,
     upload_directory: body.upload_directory,
-    workspace: storeWorkspaceEnvironment(
+    workspace: prepareWorkspace(
       body.workspace ?? defaultWorkspaceEnvironment(),
       defaultWorkspaceEnvironment(),
     ),
@@ -422,7 +437,7 @@ app.openapi(updateRoute, async (c) => {
       ...(body.upload_directory !== undefined ? { upload_directory: body.upload_directory } : {}),
       ...(body.workspace !== undefined
         ? {
-            workspace: storeWorkspaceEnvironment(
+            workspace: prepareWorkspace(
               body.workspace,
               parseWorkspaceEnvironment(existing.workspace),
             ),

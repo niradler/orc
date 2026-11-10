@@ -1,7 +1,7 @@
 import { createServer, isIP } from "node:net";
 import { type ExecHost, hostExec } from "./exec-host.js";
-import { jobShellArgv } from "./job-settings.js";
 import { type JobOutputRedactor, resolveJobEnvironment } from "./job-environment.js";
+import { jobShellArgv } from "./job-settings.js";
 import { encryptSecret } from "./secrets.js";
 import {
   DEFAULT_WORKSPACE_PORT_BASE,
@@ -9,8 +9,8 @@ import {
   WORKSPACE_SETUP_OUTPUT_LIMIT,
   type WorkspaceEnvironment,
   type WorkspaceEnvironmentStore,
-  workspacePortEnv,
   type WorkspaceRecord,
+  workspacePortEnv,
 } from "./workspace-settings.js";
 
 export * from "./workspace-settings.js";
@@ -108,32 +108,41 @@ export async function ensureWorkspaceEnvironment(
 
   const base = input.workspace.port_base ?? DEFAULT_WORKSPACE_PORT_BASE;
   const count = input.workspace.port_count;
-  const used = input.store.usedPorts();
-  const portBase = await findFreePortBlock({
-    start: base,
-    count,
-    used,
-    ...(input.host.kind === "ssh" ? { isFree: () => true } : {}),
-    ...(input.isPortFree ? { isFree: input.isPortFree } : {}),
-  });
 
-  let record: WorkspaceRecord;
-  try {
-    record = input.store.create({
-      worktree_path: input.path,
-      project_id: input.projectId,
-      repo_root: input.repoRoot,
-      git_branch: input.branch ?? null,
-      host: input.host.kind === "ssh" ? input.host.alias : null,
-      port_base: portBase,
-      port_count: count,
+  let record: WorkspaceRecord | null = null;
+  let portBase = base;
+  let lastError: unknown;
+  // A concurrent prepare can take the block between the probe and the insert, so
+  // re-read the used ports and try the next block instead of failing the launch.
+  for (let attempt = 0; attempt < 3 && !record; attempt++) {
+    portBase = await findFreePortBlock({
+      start: base,
+      count,
+      used: input.store.usedPorts(),
+      ...(input.host.kind === "ssh" ? { isFree: () => true } : {}),
+      ...(input.isPortFree ? { isFree: input.isPortFree } : {}),
     });
-  } catch {
-    // Another process claimed the same block or the same path first.
-    const raced = input.store.byPath(input.path);
-    if (raced) return raced;
-    throw new Error(`Could not record the workspace environment for ${input.path}`);
+    try {
+      record = input.store.create({
+        worktree_path: input.path,
+        project_id: input.projectId,
+        repo_root: input.repoRoot,
+        git_branch: input.branch ?? null,
+        host: input.host.kind === "ssh" ? input.host.alias : null,
+        port_base: portBase,
+        port_count: count,
+      });
+    } catch (error) {
+      // Another process claimed the same path first; reuse its record.
+      const raced = input.store.byPath(input.path);
+      if (raced) return raced;
+      lastError = error;
+    }
   }
+  if (!record)
+    throw new Error(`Could not record the workspace environment for ${input.path}`, {
+      cause: lastError,
+    });
 
   const setup = input.workspace.setup_script?.trim();
   if (!setup) {

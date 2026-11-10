@@ -119,7 +119,7 @@ turns and job actions that run in that project's folders.
   `::` are shown as `localhost`, and later URLs in the same terminal are ignored.
 - **Port range** gives each workspace a stable block instead of a single port.
   The first workspace of a project starts at 3100 with 10 ports unless
-  **First port** or **Ports per workspace** is changed (1–100). Later workspaces
+  **Port range start** or **Ports per workspace** is changed (1-100). Later workspaces
   take the next free block, and blocks never overlap on the same API host, even
   across projects. Ports already bound on a local host are skipped; SSH hosts
   cannot be probed, so only ORC's own allocations are avoided there.

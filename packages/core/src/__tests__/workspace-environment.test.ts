@@ -218,6 +218,32 @@ describe("workspace runtime", () => {
     expect(again.preview_url).toBe("http://localhost:3200");
   });
 
+  test("moves to the next block when a concurrent prepare took the first", async () => {
+    const { store, records } = fakeStore();
+    const path = "/repo/.orc/worktrees/race";
+    const create = store.create;
+    let attempts = 0;
+    store.create = (input) => {
+      attempts++;
+      if (attempts === 1) {
+        records.set("/repo/.orc/worktrees/other", record("/repo/.orc/worktrees/other", 3200, 2));
+        throw new Error("UNIQUE constraint failed: workspace_environments.port_base");
+      }
+      return create(input);
+    };
+    const setup = await ensureWorkspaceEnvironment({
+      store,
+      host: localHost,
+      projectId: "project-1",
+      path,
+      repoRoot: "/repo",
+      platform: "linux",
+      workspace: { ...defaultWorkspaceEnvironment(), port_count: 2, port_base: 3200 },
+    });
+    expect(attempts).toBe(2);
+    expect(setup.port_base).toBe(3202);
+  });
+
   test("skips socket probing for SSH hosts", async () => {
     const { store } = fakeStore();
     const first = await ensureWorkspaceEnvironment({
