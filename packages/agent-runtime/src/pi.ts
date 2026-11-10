@@ -103,6 +103,7 @@ export class PiSession implements AgentSession {
   private readonly allowedTools = new Set<string>();
   private failedTurn = false;
   private extensionFailed = false;
+  private reloadPending = false;
   private modelError: string | undefined;
   private usage: unknown;
   private mode: LivePermissionMode;
@@ -145,7 +146,21 @@ export class PiSession implements AgentSession {
         (Number(parsed[2]) < 5 || (Number(parsed[2]) === 5 && Number(parsed[3]) < 2)))
     )
       throw new Error("Pi 1.5.2 or newer is required for the native RPC adapter.");
-    const source = `export default ${piExtension.toString()};\n`;
+    const config = {
+      serverName: `orc_${this.id.toLowerCase()}`,
+      ...(this.opts.orcMcp
+        ? {
+            server: buildOrcMcpServer(
+              host,
+              false,
+              this.opts.orcMcpMode,
+              this.opts.orcMcpProject,
+              this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
+            ),
+          }
+        : {}),
+    };
+    const source = `const config=${JSON.stringify(config)}; export default (pi) => (${piExtension.toString()})(pi,config);\n`;
     let extension: string;
     let promptFile: string | undefined;
     try {
@@ -168,20 +183,6 @@ export class PiSession implements AgentSession {
           writeFileSync(promptFile, this.opts.systemPromptAppend, { mode: 0o600 });
         }
       }
-      const config = {
-        serverName: `orc_${this.id.toLowerCase()}`,
-        ...(this.opts.orcMcp
-          ? {
-              server: buildOrcMcpServer(
-                host,
-                false,
-                this.opts.orcMcpMode,
-                this.opts.orcMcpProject,
-                this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
-              ),
-            }
-          : {}),
-      };
       this.rpc = await PiRpc.start(
         host,
         [
@@ -195,7 +196,7 @@ export class PiSession implements AgentSession {
           ...(promptFile ? ["--append-system-prompt", promptFile] : []),
         ],
         this.opts.cwd,
-        { ...this.opts.env, ORC_PI_SESSION_CONFIG: JSON.stringify(config) },
+        this.opts.env ?? {},
       );
       this.rpc.onRecord((record) => this.receive(record));
       this.rpc.onFailure((error) => {
@@ -215,19 +216,7 @@ export class PiSession implements AgentSession {
         .parse((await this.rpc.request({ type: "get_commands" })).data);
       if (!commands.commands.some((command) => command.name === "orc-adapter-check"))
         throw new Error("Pi could not load the ORC session bridge; refusing an unguarded session.");
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const ready = new Promise<boolean>((resolve) => {
-          this.bridgeReady = resolve;
-          timer = setTimeout(() => resolve(false), 15_000);
-        });
-        await this.rpc.request({ type: "prompt", message: "/orc-adapter-check" });
-        if (!(await ready))
-          throw new Error("Pi could not connect the ORC session bridge or MCP tools.");
-      } finally {
-        clearTimeout(timer);
-        this.bridgeReady = undefined;
-      }
+      await this.checkBridge();
       await this.applyOptions();
       this.queue.length = 0;
     } catch (error) {
@@ -238,6 +227,21 @@ export class PiSession implements AgentSession {
   private client(): PiRpc {
     if (!this.rpc) throw new Error("Pi session is not initialized.");
     return this.rpc;
+  }
+  private async checkBridge(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const ready = new Promise<boolean>((resolve) => {
+        this.bridgeReady = resolve;
+        timer = setTimeout(() => resolve(false), 15_000);
+      });
+      await this.client().request({ type: "prompt", message: "/orc-adapter-check" });
+      if (!(await ready))
+        throw new Error("Pi could not connect the ORC session bridge or MCP tools.");
+    } finally {
+      clearTimeout(timer);
+      this.bridgeReady = undefined;
+    }
   }
   private async applyOptions(): Promise<void> {
     if (!this.opts.chatAgentOptions) return;
@@ -254,6 +258,34 @@ export class PiSession implements AgentSession {
       await this.client().request({ type: "set_auto_compaction", enabled: options.autoCompaction });
     if (options.autoRetry !== undefined)
       await this.client().request({ type: "set_auto_retry", enabled: options.autoRetry });
+  }
+  private async verifyIdentity() {
+    const state = stateSchema.parse((await this.client().request({ type: "get_state" })).data);
+    if (state.sessionId !== this.runtimeId)
+      throw new Error(
+        "Pi replaced the native session. The original ORC session identity was preserved.",
+      );
+    return state;
+  }
+  private async completeTurn(
+    outcome: "completed" | "failed" | "stopped",
+    turn: number,
+  ): Promise<void> {
+    try {
+      const state = await this.verifyIdentity();
+      if (state.isStreaming || state.isCompacting || state.pendingMessageCount > 0) return;
+      if (this.reloadPending) {
+        await this.checkBridge();
+        await this.applyOptions();
+        this.reloadPending = false;
+      }
+      if (turn === this.turn && !this.finished) this.finish(outcome);
+    } catch (error) {
+      if (turn !== this.turn || this.finished) return;
+      this.push({ type: "error", data: error instanceof Error ? error.message : String(error) });
+      this.finish("failed");
+      await this.close();
+    }
   }
   private push(event: AgentEvent): void {
     this.queue.push(event);
@@ -335,12 +367,13 @@ export class PiSession implements AgentSession {
         ? (event.message.errorMessage ?? "Pi model request failed.")
         : undefined;
     } else if (event.type === "agent_settled" && this.running)
-      this.finish(
+      void this.completeTurn(
         event.aborted || this.stopping
           ? "stopped"
           : this.failedTurn || this.extensionFailed
             ? "failed"
             : "completed",
+        this.turn,
       );
     else if (event.type === "compaction_start" || event.type === "auto_retry_start")
       this.push({
@@ -355,6 +388,26 @@ export class PiSession implements AgentSession {
     request: z.infer<typeof dialogSchema> & { method: RpcExtensionUIRequest["method"] },
   ): void {
     if (request.method === "notify") {
+      if (request.message === "orc-adapter-reloaded") {
+        this.reloadPending = true;
+        return;
+      }
+      if (request.message === "orc-adapter-session-replacement-blocked") {
+        this.extensionFailed = true;
+        this.push({
+          type: "error",
+          data: "Native Pi session replacement is not supported. Start a new conversation in ORC.",
+        });
+        return;
+      }
+      if (request.message === "orc-adapter-mcp-failed" && !this.bridgeReady) {
+        this.extensionFailed = true;
+        this.push({
+          type: "error",
+          data: "Pi could not reconnect the scoped ORC MCP tools after reload.",
+        });
+        return;
+      }
       if (request.message.startsWith("orc-adapter-")) {
         this.bridgeReady?.(request.message === "orc-adapter-ready");
         return;
@@ -497,10 +550,17 @@ export class PiSession implements AgentSession {
       throw new Error("Pi compaction does not accept images.");
     }
     const execute = async () => {
+      await this.verifyIdentity();
+      if (turn !== this.turn) return;
+      if (this.reloadPending) {
+        await this.checkBridge();
+        await this.applyOptions();
+        this.reloadPending = false;
+      }
       if (prompt.trim() === "/compact") {
         this.push({ type: "system_status", data: "Compacting Pi context…" });
         await this.client().request({ type: "compact" }, 120_000);
-        if (turn === this.turn) this.finish("completed");
+        if (turn === this.turn) await this.completeTurn("completed", turn);
         return;
       }
       const reply = await this.client().request({
@@ -520,7 +580,10 @@ export class PiSession implements AgentSession {
         .object({ disposition: z.enum(["started", "queued", "handled"]) })
         .parse(reply.data);
       if (data.disposition === "handled" && turn === this.turn)
-        this.finish(this.extensionFailed || this.failedTurn ? "failed" : "completed");
+        await this.completeTurn(
+          this.extensionFailed || this.failedTurn ? "failed" : "completed",
+          turn,
+        );
     };
     const operation = execute()
       .catch((error: unknown) => {

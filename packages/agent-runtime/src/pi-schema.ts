@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export const stateSchema = z.object({
   sessionId: z.uuid(),
+  isStreaming: z.boolean(),
+  isCompacting: z.boolean(),
+  pendingMessageCount: z.number().int().nonnegative(),
   sessionFile: z.string().min(1).max(4096).optional(),
 });
 const contentSchema = z.array(

@@ -20,6 +20,11 @@ function fixture(opts: Partial<SessionOpts> = {}) {
     extension,
     `export default function(pi) {
     pi.registerCommand('probe', {description:'RPC integration probe', handler:async(args,ctx)=>{
+      if(args==='proxy')pi.sendUserMessage('Reply to the proxied request');
+      if(args==='reload')await ctx.reload();
+      if(args==='fresh'){const result=await ctx.newSession();ctx.ui.notify('replacement-cancelled:'+result.cancelled);}
+      if(args==='identity')ctx.ui.notify('native-id:'+ctx.sessionManager.getSessionId());
+      if(args==='mcp')ctx.ui.notify('mcp-tools:'+pi.getAllTools().filter(tool=>tool.name.startsWith('mcp__orc_')).map(tool=>tool.name).join(','));
       if(args==='dialog') {const answer=await ctx.ui.input('Your answer');ctx.ui.notify('answer:'+answer);}
       if(args==='permission') {const tool={toolName:'write',input:{path:'proof.txt',content:'proof'}};const allowed=await ctx.ui.confirm('ORC tool approval',JSON.stringify({tool:tool.toolName,input:tool.input}));ctx.ui.notify('approved:'+allowed);}
       if(args==='slow'){ctx.ui.notify('slow-started');await new Promise(resolve=>setTimeout(resolve,200));ctx.ui.notify('slow-ended');}
@@ -208,73 +213,87 @@ test("real Pi streams a model turn, gates writes, reports usage and resumes the 
   }
 }, 30000);
 
-test("real Pi connects the scoped ORC MCP server with authentication without changing native settings", async () => {
-  const { resetConfig } = await import("@orc/core/config");
-  const captured: { url: string; authorization: string | null }[] = [];
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    async fetch(request) {
-      if (request.method === "GET") return new Response(null, { status: 405 });
-      const m = (await request.json()) as {
-        id?: string | number;
-        method: string;
-        params?: { protocolVersion: string };
-      };
-      captured.push({ url: request.url, authorization: request.headers.get("authorization") });
-      if (m.id === undefined) return new Response(null, { status: 202 });
-      const result =
-        m.method === "initialize"
-          ? {
-              protocolVersion: m.params?.protocolVersion,
-              serverInfo: { name: "fixture", version: "1" },
-              capabilities: { tools: {} },
-            }
-          : m.method === "tools/list"
+for (const reload of [false, true])
+  test(`real Pi preserves scoped authenticated MCP and native settings (reload=${reload})`, async () => {
+    const { resetConfig } = await import("@orc/core/config");
+    const captured: { url: string; authorization: string | null }[] = [];
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        if (request.method === "GET") return new Response(null, { status: 405 });
+        const m = (await request.json()) as {
+          id?: string | number;
+          method: string;
+          params?: { protocolVersion: string };
+        };
+        captured.push({ url: request.url, authorization: request.headers.get("authorization") });
+        if (m.id === undefined) return new Response(null, { status: 202 });
+        const result =
+          m.method === "initialize"
             ? {
-                tools: [
-                  {
-                    name: "ping",
-                    description: "Fixture ping",
-                    inputSchema: { type: "object", properties: {} },
-                  },
-                ],
+                protocolVersion: m.params?.protocolVersion,
+                serverInfo: { name: "fixture", version: "1" },
+                capabilities: { tools: {} },
               }
-            : {};
-      return Response.json({ jsonrpc: "2.0", id: m.id, result });
-    },
-  });
-  const savedPort = process.env.ORC_API_PORT;
-  const savedSecret = process.env.ORC_API_SECRET;
-  process.env.ORC_API_PORT = String(server.port);
-  process.env.ORC_API_SECRET = "pi-fixture-private-token";
-  resetConfig();
-  const { session, cwd } = fixture({ orcMcp: true, orcMcpProject: "Pi integration fixture" });
-  try {
-    const before = await Bun.file(join(cwd, "agent", "settings.json")).text();
-    await session.initialize();
-    expect(captured.length).toBeGreaterThanOrEqual(2);
-    expect(captured.every((row) => row.authorization === "Bearer pi-fixture-private-token")).toBe(
-      true,
-    );
-    expect(
-      captured.some(
-        (row) => new URL(row.url).searchParams.get("project") === "Pi integration fixture",
-      ),
-    ).toBe(true);
-    expect(await Bun.file(join(cwd, "agent", "settings.json")).text()).toBe(before);
-    expect(await Bun.file(join(cwd, "agent", "mcp.json")).exists()).toBe(false);
-    expect(await Bun.file(join(cwd, ".pi", "mcp.json")).exists()).toBe(false);
-  } finally {
-    await session.close();
-    await server.stop(true);
-    if (savedPort === undefined) delete process.env.ORC_API_PORT;
-    else process.env.ORC_API_PORT = savedPort;
-    if (savedSecret === undefined) delete process.env.ORC_API_SECRET;
-    else process.env.ORC_API_SECRET = savedSecret;
+            : m.method === "tools/list"
+              ? {
+                  tools: [
+                    {
+                      name: "ping",
+                      description: "Fixture ping",
+                      inputSchema: { type: "object", properties: {} },
+                    },
+                  ],
+                }
+              : {};
+        return Response.json({ jsonrpc: "2.0", id: m.id, result });
+      },
+    });
+    const savedPort = process.env.ORC_API_PORT;
+    const savedSecret = process.env.ORC_API_SECRET;
+    process.env.ORC_API_PORT = String(server.port);
+    process.env.ORC_API_SECRET = "pi-fixture-private-token";
     resetConfig();
-  }
-}, 30000);
+    const { session, cwd } = fixture({ orcMcp: true, orcMcpProject: "Pi integration fixture" });
+    try {
+      const before = await Bun.file(join(cwd, "agent", "settings.json")).text();
+      await session.initialize();
+      if (reload) {
+        await session.send("/probe reload");
+        await collect(session);
+      }
+      await session.send("/probe mcp");
+      const mcpEvents = await collect(session);
+      expect(
+        mcpEvents.some(
+          (event) =>
+            event.type === "system_status" &&
+            event.data.includes(`mcp__orc_${session.id.toLowerCase()}__ping`),
+        ),
+      ).toBe(true);
+      expect(captured.length).toBeGreaterThanOrEqual(2);
+      expect(captured.every((row) => row.authorization === "Bearer pi-fixture-private-token")).toBe(
+        true,
+      );
+      expect(
+        captured.some(
+          (row) => new URL(row.url).searchParams.get("project") === "Pi integration fixture",
+        ),
+      ).toBe(true);
+      expect(await Bun.file(join(cwd, "agent", "settings.json")).text()).toBe(before);
+      expect(await Bun.file(join(cwd, "agent", "mcp.json")).exists()).toBe(false);
+      expect(await Bun.file(join(cwd, ".pi", "mcp.json")).exists()).toBe(false);
+    } finally {
+      await session.close();
+      await server.stop(true);
+      if (savedPort === undefined) delete process.env.ORC_API_PORT;
+      else process.env.ORC_API_PORT = savedPort;
+      if (savedSecret === undefined) delete process.env.ORC_API_SECRET;
+      else process.env.ORC_API_SECRET = savedSecret;
+      resetConfig();
+    }
+  }, 30000);
 
 test("real Pi sends images, steers before the next model request, and applies live edit permissions", async () => {
   const requests: { messages: { role: string; content: unknown }[] }[] = [];
@@ -539,3 +558,86 @@ test("real Pi settles after retry recovery and streams reasoning separately", as
     await server.stop(true);
   }
 }, 30000);
+
+test("Pi refuses native session replacement while preserving the ORC conversation", async () => {
+  const { session } = fixture();
+  await session.initialize();
+  const original = session.getRuntimeSessionId();
+  await session.send("/probe fresh");
+  const replacement = await collect(session);
+  expect(
+    replacement.some((event) => event.type === "error" && event.data.includes("session")),
+  ).toBe(true);
+  await session.send("/probe identity");
+  const identity = await collect(session);
+  expect(
+    identity.some(
+      (event) => event.type === "system_status" && event.data === `native-id:${original}`,
+    ),
+  ).toBe(true);
+  expect(session.getRuntimeSessionId()).toBe(original);
+}, 15000);
+
+test("Pi native queue, retry and compaction options retain their documented persisted behavior", async () => {
+  const { session, cwd } = fixture({
+    chatAgentOptions: {
+      runtime: "pi",
+      options: {
+        steeringMode: "all",
+        followUpMode: "all",
+        autoRetry: false,
+        autoCompaction: false,
+      },
+    },
+  });
+  await session.initialize();
+  await session.close();
+  const settings = await Bun.file(join(cwd, "agent", "settings.json")).json();
+  expect(settings).toMatchObject({
+    steeringMode: "all",
+    followUpMode: "all",
+    retry: { enabled: false },
+    compaction: { enabled: false },
+  });
+  expect(await Bun.file(join(cwd, "agent", "mcp.json")).exists()).toBe(false);
+}, 15000);
+
+test("Pi waits for model work started by a handled extension command", async () => {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch() {
+      await Bun.sleep(100);
+      return new Response(
+        `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: "Proxied reply" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+  const { session, cwd } = fixture({ model: "orc-fixture/fixture" });
+  writeFileSync(
+    join(cwd, "agent", "models.json"),
+    JSON.stringify({
+      providers: {
+        "orc-fixture": {
+          baseUrl: `http://127.0.0.1:${server.port}/v1`,
+          api: "openai-completions",
+          apiKey: "fixture-local-only",
+          models: [{ id: "fixture", contextWindow: 32000, maxTokens: 1000 }],
+        },
+      },
+    }),
+  );
+  try {
+    await session.initialize();
+    await session.send("/probe proxy");
+    const events = await collect(session);
+    expect(events.some((event) => event.type === "text" && event.data === "Proxied reply")).toBe(
+      true,
+    );
+    expect(events.filter((event) => event.type === "result")).toHaveLength(1);
+  } finally {
+    await session.close();
+    await server.stop(true);
+  }
+}, 15000);
