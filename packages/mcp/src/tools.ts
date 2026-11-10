@@ -130,7 +130,9 @@ const channelEditParams = ChannelUpdateSchema.extend({
   project: projectParam,
 });
 const auditParams = scopeParams.extend({
-  entity_type: z.enum(["memory", "skill", "kb"]).optional(),
+  entity_type: z
+    .enum(["memory", "skill", "kb", "task", "job", "rule", "settings", "terminal", "auth"])
+    .optional(),
   session_id: z.string().min(1).max(200).optional(),
   since: z.number().int().min(0).optional(),
   limit: z.number().int().min(1).max(100).default(50),
@@ -283,7 +285,7 @@ export const toolDefinitions = [
   {
     name: "audit_list",
     description:
-      "Review central knowledge audit entries, optionally by session_id. Removed memories survive in snapshot; result_ids identify replacements. Use with the delivery section of orc-sdlc references/review-and-delivery.md.",
+      "Review central audit entries (knowledge, task, job, rule, settings, terminal, auth events), optionally by entity_type or session_id. Removed memories survive in snapshot; result_ids identify replacements. Use with the delivery section of orc-sdlc references/review-and-delivery.md.",
     inputSchema: auditParams,
   },
   {

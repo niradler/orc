@@ -14219,7 +14219,7 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global" | "all";
-                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task";
+                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task" | "job" | "rule" | "terminal" | "auth";
                     session_id?: string;
                     since?: number | null;
                     limit?: number;

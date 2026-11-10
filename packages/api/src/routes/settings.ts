@@ -10,9 +10,9 @@ import {
   saveProviderSettings,
 } from "@orc/core/provider-service";
 import { ProviderSettingsSchema } from "@orc/core/providers";
-import { AuditLog } from "@orc/db/audit";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
+import { diffSummary, recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
@@ -41,7 +41,15 @@ app.openapi(
     request: { body: { content: { "application/json": { schema: ProviderSettingsSchema } } } },
     responses: providerResponse,
   }),
-  (c) => c.json(saveProviderSettings(c.req.valid("json"))),
+  (c) => {
+    const saved = saveProviderSettings(c.req.valid("json"));
+    recordAudit(c, {
+      action: "settings.providers_changed",
+      subject_ids: [],
+      snapshot: { providers: saved.providers.map((provider) => provider.name).slice(0, 50) },
+    });
+    return c.json(saved);
+  },
 );
 const mcpResponse = {
   200: {
@@ -79,11 +87,22 @@ app.openapi(
   }),
   (c) => {
     const { prompts, ...settings } = c.req.valid("json");
+    const previousMode = loadConfig().mcp.default_mode;
     if (Object.keys(settings).length)
       updateGlobalConfig((raw) => {
         raw.mcp = { ...(raw.mcp as Record<string, unknown> | undefined), ...settings };
       });
     if (prompts) new McpPromptStore(getSqlite()).replace(prompts);
+    const mode = loadConfig().mcp.default_mode;
+    if (mode !== previousMode || prompts)
+      recordAudit(c, {
+        action: "settings.mcp_changed",
+        subject_ids: [],
+        snapshot: {
+          ...(mode !== previousMode ? { default_mode: { before: previousMode, after: mode } } : {}),
+          ...(prompts ? { prompts: prompts.length } : {}),
+        },
+      });
     return c.json(mcpSettings());
   },
 );
@@ -129,10 +148,23 @@ app.openapi(
   }),
   (c) => {
     const settings = c.req.valid("json");
+    const before = securitySettings();
     updateGlobalConfig((raw) => {
       raw.api = { ...(raw.api as Record<string, unknown> | undefined), ...settings };
     });
-    return c.json(securitySettings());
+    const after = securitySettings();
+    const changed = Object.keys(settings).filter(
+      (key) =>
+        JSON.stringify(before[key as keyof typeof before]) !==
+        JSON.stringify(after[key as keyof typeof after]),
+    );
+    if (changed.length)
+      recordAudit(c, {
+        action: "settings.security_changed",
+        subject_ids: [],
+        snapshot: { changed, before, after },
+      });
+    return c.json(after);
   },
 );
 
@@ -201,13 +233,21 @@ app.openapi(
       before.notification_retention_days !== after.notification_retention_days ||
       before.audit_retention_days !== after.audit_retention_days
     )
-      new AuditLog(getSqlite()).record({
+      recordAudit(c, {
         action: "settings.retention_changed",
         subject_ids: [],
-        actor: c.req.header("x-orc-actor-name")?.slice(0, 80) ?? null,
-        session_id: c.req.header("x-orc-session-id")?.slice(0, 200) ?? null,
         snapshot: { before, after },
       });
+    const others = Object.fromEntries(
+      Object.entries(preferences).filter(([key]) => !key.endsWith("_retention_days")),
+    );
+    const diff = diffSummary(
+      previous as Record<string, unknown>,
+      others,
+      config.preferences as Record<string, unknown>,
+    );
+    if (diff.changed.length)
+      recordAudit(c, { action: "settings.preferences_changed", subject_ids: [], snapshot: diff });
     return c.json(PreferencesSchema.parse(config.preferences));
   },
 );

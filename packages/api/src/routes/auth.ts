@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { UnauthorizedError, ValidationError } from "@orc/core/errors";
+import type { Context } from "hono";
 import {
   browserSessionExpiry,
   endBrowserSession,
@@ -9,6 +10,7 @@ import {
   startBrowserSession,
   tokenExpiry,
 } from "../lib/access-tokens.js";
+import { recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
@@ -34,9 +36,20 @@ const AccessTokenSchema = z
   .object({ token: z.string(), expires_at: z.number() })
   .openapi("AccessToken");
 
-function verifiedSecret(candidate: string): string | undefined {
+const FAILED_AUDIT_INTERVAL_MS = 60_000;
+let lastFailedAudit = 0;
+
+// Failures are sampled to one per minute so guessing the secret cannot flood the audit log.
+function verifiedSecret(c: Context, candidate: string, method: "session" | "token") {
   const required = configuredApiSecret(loadConfig().api.secret);
-  if (required && !secretMatches(candidate, required)) throw new UnauthorizedError();
+  if (required && !secretMatches(candidate, required)) {
+    const now = Date.now();
+    if (now - lastFailedAudit >= FAILED_AUDIT_INTERVAL_MS) {
+      lastFailedAudit = now;
+      recordAudit(c, { action: "auth.sign_in_failed", subject_ids: [], snapshot: { method } });
+    }
+    throw new UnauthorizedError();
+  }
   return required;
 }
 
@@ -89,7 +102,7 @@ app.openapi(
   }),
   async (c) => {
     const body = c.req.valid("json");
-    const required = verifiedSecret(body.secret);
+    const required = verifiedSecret(c, body.secret, "session");
     const default_expires_at = tokenExpiry();
     if (!required)
       return c.json(
@@ -98,6 +111,11 @@ app.openapi(
       );
     const exp = tokenExpiry(body.expires_at);
     await startBrowserSession(c, required, exp);
+    recordAudit(c, {
+      action: "auth.signed_in",
+      subject_ids: [],
+      snapshot: { method: "session", expires_at: exp },
+    });
     return c.json({ required: true, signed_in: true, expires_at: exp, default_expires_at }, 200);
   },
 );
@@ -136,11 +154,17 @@ app.openapi(
   }),
   async (c) => {
     const body = c.req.valid("json");
-    const required = verifiedSecret(body.secret);
+    const required = verifiedSecret(c, body.secret, "token");
     if (!required)
       throw new ValidationError("This server has no API secret, so no token is needed.");
     const exp = tokenExpiry(body.expires_at);
-    return c.json({ token: await issueAccessToken(required, exp), expires_at: exp }, 200);
+    const token = await issueAccessToken(required, exp);
+    recordAudit(c, {
+      action: "auth.token_issued",
+      subject_ids: [],
+      snapshot: { expires_at: exp },
+    });
+    return c.json({ token, expires_at: exp }, 200);
   },
 );
 

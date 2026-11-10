@@ -20,6 +20,7 @@ import { executeJob } from "@orc/runner/executor";
 import { syncJob, unscheduleJob } from "@orc/runner/scheduler";
 import { Cron } from "croner";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { diffSummary, recordAudit } from "../lib/audit-actor.js";
 import { readJobWebhooks, saveJobWebhooks, validateJobWebhooks } from "../lib/job-webhooks.js";
 import { createRouter } from "../lib/router.js";
 import { discoverJobSession } from "../session-watcher.js";
@@ -543,6 +544,17 @@ app.openapi(createRoute_, async (c) => {
   const job = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!job) throw new Error("Expected job to exist after write");
   syncJob(job);
+  recordAudit(c, {
+    action: "job.created",
+    subject_ids: [id],
+    project_id: job.project_id ?? null,
+    snapshot: {
+      name: job.name,
+      trigger_type: job.trigger_type,
+      enabled: job.enabled,
+      action_type: action.type,
+    },
+  });
   return c.json(toDto(job), 201);
 });
 
@@ -623,6 +635,15 @@ app.openapi(updateRoute, async (c) => {
   const updated = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!updated) throw new Error("Expected job to exist after write");
   syncJob(updated);
+  const diff = diffSummary(existing, body, updated);
+  if (diff.changed.length)
+    recordAudit(c, {
+      action: "job.updated",
+      subject_ids: [id],
+      project_id: updated.project_id ?? null,
+      note: updated.name,
+      snapshot: diff,
+    });
   return c.json(toDto(updated));
 });
 
@@ -637,6 +658,12 @@ app.openapi(deleteRoute, async (c) => {
     );
   deleteJob(id);
   unscheduleJob(id);
+  recordAudit(c, {
+    action: "job.deleted",
+    subject_ids: [id],
+    project_id: existing.project_id ?? null,
+    snapshot: { name: existing.name, trigger_type: existing.trigger_type },
+  });
   return new Response(null, { status: 204 });
 });
 
