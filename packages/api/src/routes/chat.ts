@@ -542,17 +542,6 @@ async function newThread(
       throw new ValidationError("Session has no valid native session identity or working folder.");
     await getHandoffService().verifyResume(source.id);
     const runtime = hostRuntime(execHostFor(source.execution_host ?? null));
-    if (
-      source.backend !== "codex" &&
-      (source.status === "running" || source.status === "idle") &&
-      source.pid &&
-      (await runtime.processAlive(source.pid))
-    )
-      throw new ConflictError(
-        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
-      );
-    if (source.backend === "codex" && (await codexWriterOwned(runtime, source.runtime_session_id)))
-      throw new ConflictError("End the original agent session before resuming it in chat.");
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;

@@ -105,7 +105,12 @@ async function saveRecording(
       body: blob,
     },
   );
-  if (!response.ok) throw new Error("Recording could not be saved to this session workspace");
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(
+      `Recording could not be saved to this session workspace: ${body?.error ?? `HTTP ${response.status}`}`,
+    );
+  }
   return response.json();
 }
 
@@ -862,7 +867,27 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
               >
                 <GripVertical size={15} />
               </button>
-              <span className="flex-1 text-sm font-medium">Preview</span>
+              {model.active === "browser" ? (
+                <div className="flex min-w-0 flex-1">
+                  <select
+                    aria-label="Browser profile"
+                    data-testid="preview-browser-profile"
+                    className="form-control h-8 min-w-0 max-w-48 text-xs"
+                    disabled={selectedProfile?.session !== nativeId}
+                    value={selectedProfile?.session === nativeId ? (selectedProfile.id ?? "") : ""}
+                    onChange={(event) => void changeProfile(event.target.value || null)}
+                  >
+                    <option value="">Temporary · this chat</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <span className="flex-1 text-sm font-medium">Preview</span>
+              )}
               <button
                 type="button"
                 className={button}
@@ -1030,21 +1055,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                   </div>
                 )}
                 <div className="flex items-center gap-1 border-b border-border px-2 py-1">
-                  <select
-                    aria-label="Browser profile"
-                    data-testid="preview-browser-profile"
-                    className="form-control h-8 min-w-0 max-w-40 text-xs"
-                    disabled={selectedProfile?.session !== nativeId}
-                    value={selectedProfile?.session === nativeId ? (selectedProfile.id ?? "") : ""}
-                    onChange={(event) => void changeProfile(event.target.value || null)}
-                  >
-                    <option value="">Temporary · this chat</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
                   <nav className="flex min-w-0 flex-1 overflow-x-auto" aria-label="Browser tabs">
                     {model.browser?.tabs?.map((tab, index) => (
                       <div key={tab.tab_id} className="flex shrink-0 items-center">

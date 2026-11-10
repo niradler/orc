@@ -866,7 +866,9 @@ describe("native chat runtime", () => {
         })
         .run();
     }
-    expect((await request("/chat/threads", { sourceSessionId: "claude-owned" })).status).toBe(409);
+    const ownedResponse = await request("/chat/threads", { sourceSessionId: "claude-owned" });
+    expect(ownedResponse.status).toBe(200);
+    const ownedThread = (await ownedResponse.json()) as ChatThread;
     const staleResponse = await request("/chat/threads", { sourceSessionId: "claude-stale" });
     expect(staleResponse.status).toBe(200);
     const staleThread = (await staleResponse.json()) as ChatThread;
@@ -883,6 +885,15 @@ describe("native chat runtime", () => {
       else process.env.ANTHROPIC_API_KEY = apiKey;
     });
     expect(nowOwned.events).toContainEqual({
+      type: "error",
+      message:
+        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+    });
+    const stillOwned = await turn({
+      threadId: ownedThread.id,
+      messages: [{ role: "user", content: "Do not take over an open agent" }],
+    });
+    expect(stillOwned.events).toContainEqual({
       type: "error",
       message:
         "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
