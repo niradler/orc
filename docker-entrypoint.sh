@@ -23,4 +23,22 @@ if [ -n "${ORC_SSH_SOURCE:-}" ] && [ -d "$ORC_SSH_SOURCE" ]; then
   find "$ssh_dir" -type f -name '*.pub' -exec chmod 644 {} \;
 fi
 
+# Older images kept the database, config and secret key in ~/.orc and used
+# ORC_HOME only for daemon files. Adopt that state into the data root once, so
+# an upgraded container keeps its projects, settings and encrypted secrets.
+legacy_home="/home/bun/.orc"
+if [ -n "${ORC_HOME:-}" ] && [ "$ORC_HOME" != "$legacy_home" ] && [ -d "$legacy_home" ]; then
+  install -d "$ORC_HOME"
+  for name in config.json secret.key orc.db orc.db-wal orc.db-shm; do
+    if [ -e "$legacy_home/$name" ] && [ ! -e "$ORC_HOME/$name" ]; then
+      mv "$legacy_home/$name" "$ORC_HOME/$name" ||
+        printf 'orc: could not move %s/%s to %s\n' "$legacy_home" "$name" "$ORC_HOME" >&2
+    fi
+  done
+  if [ -d "$legacy_home/knowledge" ] && [ ! -e "$ORC_HOME/knowledge" ]; then
+    mv "$legacy_home/knowledge" "$ORC_HOME/knowledge" ||
+      printf 'orc: could not move %s/knowledge to %s\n' "$legacy_home" "$ORC_HOME" >&2
+  fi
+fi
+
 exec tini -- "$@"

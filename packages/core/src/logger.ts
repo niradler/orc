@@ -6,8 +6,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { orcHome } from "./home.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -49,7 +49,7 @@ function getLogFilePath(): string | null {
   if (!fileEnabled()) return null;
   if (logFilePath) return logFilePath;
   try {
-    logDir = join(process.env.ORC_LOG_DIR ?? join(homedir(), ".orc"), "logs");
+    logDir = join(process.env.ORC_LOG_DIR ?? orcHome(), "logs");
     if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
     logFilePath = join(logDir, "orc.log");
     return logFilePath;

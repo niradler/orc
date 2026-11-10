@@ -86,7 +86,7 @@ immutable; create another provider to change adapters.
 
 Private configuration lives under `providers.instances` and
 `providers.default_id` in the server's JSON config. Encrypted values use ORC's
-machine key at `~/.orc/secret.key`; back up that key with the config. Provider
+machine key at `ORC_HOME/secret.key`; back up that key with the config. Provider
 secrets are excluded from readable workspace preferences. Existing
 `preferences.agents`, `preferences.provider_paths` and chat defaults are migrated
 when saving Providers and remain compatible with `GET/PATCH /api/settings`.
@@ -168,19 +168,19 @@ shrink. See [Notifications](./notifications.md).
 
 | Path | Holds |
 | --- | --- |
-| `~/.orc/config.json` | Global config. The CLI (`orc project use`), the dashboard and the desktop app write here. |
+| `ORC_HOME/config.json` | Global config. The CLI (`orc project use`), the dashboard and the desktop app write here. |
 | `./.orc/config.json` | Optional config read from the directory the process starts in |
-| `~/.orc/orc.db` | SQLite database (`db.path`) |
-| `~/.orc/knowledge/` | Knowledge base files and index (beside the database) |
-| `~/.orc/secret.key` | Key that encrypts stored secrets. Back it up with the database. |
-| `~/.orc/logs/orc.log` | Structured log |
-| `~/.orc/daemon.log` | Daemon stdout/stderr when run as a launchd or systemd service |
-| `~/.orc/daemon.pid` | PID of the running daemon |
-| `~/.orc/daemon.json` | Private runtime identity and current port of the running daemon; contains no credentials |
-| `~/.orc/desktop-daemon.log` | Daemon output when the desktop app started it |
+| `ORC_HOME/orc.db` | SQLite database (`db.path`) |
+| `ORC_HOME/knowledge/` | Knowledge base files and index (beside the database) |
+| `ORC_HOME/secret.key` | Key that encrypts stored secrets. Back it up with the database. |
+| `ORC_HOME/logs/orc.log` | Structured log |
+| `ORC_HOME/daemon.log` | Daemon stdout/stderr when run as a launchd or systemd service |
+| `ORC_HOME/daemon.pid` | PID of the running daemon |
+| `ORC_HOME/daemon.json` | Private runtime identity and current port of the running daemon; contains no credentials |
+| `ORC_HOME/desktop-daemon.log` | Daemon output when the desktop app started it |
 | `~/.orc/bin/` | CLI installed by the desktop app |
 
-`~` is `HOME` (`USERPROFILE` on Windows). Show the resolved paths and daemon state:
+`ORC_HOME` defaults to `~/.orc`, where `~` is `HOME` (`USERPROFILE` on Windows). Show the resolved paths and daemon state:
 
 ```bash
 orc home
@@ -225,7 +225,7 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
 
 | Key | Default | Env | Purpose |
 | --- | --- | --- | --- |
-| `db.path` | `~/.orc/orc.db` | `ORC_DB_PATH` | SQLite file |
+| `db.path` | `ORC_HOME/orc.db` | `ORC_DB_PATH` | SQLite file |
 | `activeProject` | none | `ORC_ACTIVE_PROJECT` | Default project for CLI and MCP calls |
 
 ### `agent_loop`
@@ -329,11 +329,11 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ORC_HOME` | `~/.orc` | Location of `daemon.pid`, `daemon.json`, `daemon.log` and `desktop-daemon.log`. Config and database stay under `~/.orc`. |
+| `ORC_HOME` | `~/.orc` | Data root: location of the database, `config.json`, `secret.key`, logs and the daemon files (`daemon.pid`, `daemon.json`, `daemon.log`, `desktop-daemon.log`). |
 | `ORC_API_BASE` | from `api.host`/`api.port` | ORC origin for the CLI, stdio MCP and hooks |
 | `ORC_SESSION_ID` | none | Session attribution for MCP and CLI writes |
 | `ORC_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `ORC_LOG_DIR` | `~/.orc` | Parent of the `logs/` directory |
+| `ORC_LOG_DIR` | `ORC_HOME` | Parent of the `logs/` directory |
 | `ORC_LOG_FILE` | on | `0` disables the log file |
 | `ORC_WEB_DIST` | bundled | Serve a different dashboard build |
 | `ORC_SQLITE_VEC_PATH` | bundled | sqlite-vec library for vector search |

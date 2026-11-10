@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, resetConfig } from "./config.js";
@@ -45,6 +45,20 @@ describe("secrets", () => {
     const parts = enc.split(":");
     parts[4] = Buffer.from("other").toString("base64url");
     expect(() => decryptSecret(parts.join(":"))).toThrow();
+  });
+
+  test("ORC_HOME moves the secret key out of the home directory", () => {
+    const previous = process.env.ORC_HOME;
+    const data = join(home, "data");
+    process.env.ORC_HOME = data;
+    try {
+      expect(secretKeyPath()).toBe(join(data, "secret.key"));
+      encryptSecret("sk-test-123");
+      expect(existsSync(join(data, "secret.key"))).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = previous;
+    }
   });
 
   test("config load decrypts the embedding key; an unreadable one is dropped", () => {

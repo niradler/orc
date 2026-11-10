@@ -109,11 +109,12 @@ Published image: `niradler/orc` (`latest` and one tag per version, `linux/amd64`
 docker run -d --name orc \
   -p 127.0.0.1:7700:7700 \
   -v orc-data:/data \
-  -v orc-home:/home/bun \
   -e ORC_API_SECRET=$(openssl rand -hex 32) \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   niradler/orc:latest
 ```
+
+`orc-data` holds the database, config, secret key, knowledge and logs. Add `-v orc-home:/home/bun` to keep agent CLI logins and the user flows, agents and packages under `~/.orc`.
 
 Or, from a clone of the repository, with the bundled [`docker-compose.yml`](https://github.com/niradler/orc/blob/master/docker-compose.yml):
 
@@ -124,8 +125,8 @@ docker compose up -d
 | Item | Value |
 | --- | --- |
 | Port | `7700`, bound to `0.0.0.0` inside the container |
-| Database, config, logs | `/home/bun/.orc/` (persist `/home/bun` as a volume) |
-| `/data` | `ORC_HOME`: daemon PID file |
+| Database, config, secret, knowledge and logs | `/data/` (`ORC_HOME`, mounted as `orc-data`) |
+| `/home/bun` | Optional: agent CLI logins, session histories, and user flows/agents/packages under `~/.orc` |
 | Health check | `GET /api/health` every 30 s |
 | Bundled agent CLIs | Node, ACPX, Claude Code, Codex (versions pinned in the `Dockerfile`) |
 | Default backend | `claude` (Anthropic SDK) |
