@@ -3,6 +3,7 @@ import { expect, type Page, type Request, test } from "@playwright/test";
 import { CHAT_DASHBOARD_HTML } from "../fixtures/chat-dashboard";
 import { chatUiGalleryMessage } from "../fixtures/chat-ui-gallery";
 import { API_SECRET } from "./_helpers";
+import { checkHtmlKit, HTML_KIT_EXAMPLE } from "./_html-kit";
 
 const THREAD = "60000000-0000-4000-8000-000000000001";
 const stamp = "2026-10-30T10:00:00.000Z";
@@ -90,6 +91,29 @@ const artifactSpec = {
   root: "artifact",
   elements: { artifact: { type: "Scratchpad", props: { id: "s1" } } },
 };
+
+for (const width of [1280, 390]) {
+  test(`HTML kit chat tabs and theme follow the dashboard at ${width}px`, async ({
+    page,
+  }, info) => {
+    await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(artifactSpec)}\n\`\`\``);
+    await page.route("**/api/scratchpads/s1", (route) =>
+      route.fulfill({
+        json: {
+          id: "s1",
+          title: "Kit example",
+          kind: "html",
+          content: HTML_KIT_EXAMPLE,
+          tags: [],
+          updated_at: stamp,
+        },
+      }),
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+    await checkHtmlKit(page, "chat-ui-scratchpad-html", info);
+  });
+}
 
 for (const width of [1440, 390, 320]) {
   test(`HTML dashboard is interactive and isolated at ${width}px`, async ({ page }, testInfo) => {

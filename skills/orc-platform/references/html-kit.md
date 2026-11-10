@@ -32,7 +32,7 @@ Bump the `content` only when you intentionally re-style an old pad.
 | Numbers | `.orc-stat` with `.orc-stat-label` + `.orc-stat-value` (put them in a card or the grid) |
 | Status | `.orc-badge` with `orc-badge-success` / `orc-badge-warning` / `orc-badge-error`; keep surfaces neutral, color the badge only |
 | Table | `.orc-table-wrap` > `table.orc-table` (th/td styled) |
-| Tabs | `.orc-tabs` — see skeleton; the injected kit script switches panels on `data-orc-tab` buttons |
+| Tabs | `.orc-tabs` — see skeleton; the kit initializes after parsing, shows only the selected panel, and supports click, Left/Right (wrapping), Home/End; Tab leaves the tab strip |
 | Chart | `.orc-chart` wrapper: inline SVG gets themed text/grid from `--chart-text`, `--chart-grid`, `--chart-line` |
 | Controls | `.orc-button` (`data-variant="quiet"` for ghost), bare `input`/`select`/`textarea` are themed, checkboxes/`label` pairs work |
 
@@ -56,12 +56,12 @@ Bump the `content` only when you intentionally re-style an old pad.
     </div>
     <div class="orc-card">
       <div class="orc-tabs">
-        <div class="orc-tab-list" role="tablist">
-          <button class="orc-tab" role="tab" data-orc-tab data-orc-panel="p1" aria-selected="true">Now</button>
-          <button class="orc-tab" role="tab" data-orc-tab data-orc-panel="p2" aria-selected="false">Next</button>
+        <div class="orc-tab-list" role="tablist" aria-label="Release timeline">
+          <button class="orc-tab" id="tab-now" role="tab" data-orc-tab data-orc-panel="p1" aria-controls="p1" aria-selected="true">Now</button>
+          <button class="orc-tab" id="tab-next" role="tab" data-orc-tab data-orc-panel="p2" aria-controls="p2" aria-selected="false">Next</button>
         </div>
-        <div class="orc-tab-panel" id="p1" role="tabpanel">…</div>
-        <div class="orc-tab-panel" id="p2" role="tabpanel" hidden>…</div>
+        <div class="orc-tab-panel" id="p1" role="tabpanel" aria-labelledby="tab-now" tabindex="0">…</div>
+        <div class="orc-tab-panel" id="p2" role="tabpanel" aria-labelledby="tab-next" tabindex="0" hidden>…</div>
       </div>
     </div>
     <div class="orc-card orc-chart">
@@ -75,6 +75,12 @@ Bump the `content` only when you intentionally re-style an old pad.
 </body>
 </html>
 ```
+
+Use unique tab and panel IDs for each group. Set one tab's `aria-selected` to
+`true`; if omitted, the kit selects the first enabled tab. For a vertical tab
+list, set `aria-orientation="vertical"` and use Up/Down. Changing the dashboard
+theme rebuilds the iframe, so tab selection and other running page state reset;
+the saved HTML and version pin stay unchanged.
 
 ## Charts and libraries
 

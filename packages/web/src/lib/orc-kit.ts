@@ -138,6 +138,7 @@ hr { border: 0; border-top: 1px solid rgb(var(--border)); margin: 4px 0; }
   border-bottom-color: rgb(var(--primary));
 }
 .orc-tab-panel { padding: 10px 0; display: grid; gap: 10px; }
+.orc-tab-panel[hidden] { display: none; }
 .orc-chart {
   --chart-line: rgb(var(--progress));
   --chart-grid: rgb(var(--border));
@@ -186,6 +187,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .orc-tab:focu
 @media (min-width: 640px) and (pointer: fine) {
   input, select, textarea { font-size: 13px; padding-block: 5px; }
 }
+@media (max-width: 639px), (pointer: coarse) {
+  .orc-tab, .orc-button, input:not([type="checkbox"]), select, label { min-height: 44px; }
+}
 label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .orc-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; }
 .orc-muted { color: rgb(var(--muted-foreground)); }
@@ -198,26 +202,54 @@ export const ORC_KIT_STYLESHEETS: Readonly<Record<number, string>> = {
   1: ORC_KIT_1_CSS,
 };
 
-/** Handles `[data-orc-tab]` buttons: marks the pressed tab selected and shows its panel. */
+/** Selects tabs by pointer or keyboard; initialization waits for the head-injected markup. */
 const ORC_KIT_JS = `(() => {
-  document.addEventListener("click", (event) => {
-    const tab = event.target instanceof Element ? event.target.closest("[data-orc-tab]") : null;
-    if (!tab) return;
+  const buttonsFor = (tabs) => Array.from(tabs.querySelectorAll("[data-orc-tab]"))
+    .filter((button) => button.closest(".orc-tabs") === tabs);
+  const select = (tab) => {
     const tabs = tab.closest(".orc-tabs");
-    if (!tabs) return;
-    for (const button of tabs.querySelectorAll("[data-orc-tab]")) {
+    if (!tabs || tab.disabled) return;
+    for (const button of buttonsFor(tabs)) {
       const selected = button === tab;
       button.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected ? 0 : -1;
-      const panel = tabs.querySelector("#" + CSS.escape(button.dataset.orcPanel ?? ""));
-      if (panel) panel.hidden = !selected;
+      const panel = document.getElementById(button.dataset.orcPanel ?? "");
+      if (panel && panel.closest(".orc-tabs") === tabs) panel.hidden = !selected;
     }
+  };
+  const eventTab = (event) => event.target instanceof Element
+    ? event.target.closest("[data-orc-tab]") : null;
+  document.addEventListener("click", (event) => {
+    const tab = eventTab(event);
+    if (tab) select(tab);
   });
-  for (const button of document.querySelectorAll("[data-orc-tab]:not([aria-selected='true'])")) {
-    button.tabIndex = -1;
-    const panel = document.querySelector("#" + CSS.escape(button.dataset.orcPanel ?? ""));
-    if (panel) panel.hidden = true;
-  }
+  document.addEventListener("keydown", (event) => {
+    const tab = eventTab(event);
+    if (!tab || tab.disabled) return;
+    const tabs = tab.closest(".orc-tabs");
+    if (!tabs) return;
+    const buttons = buttonsFor(tabs).filter((button) => !button.disabled);
+    const index = buttons.indexOf(tab);
+    const vertical = tab.closest('[role="tablist"]')?.getAttribute("aria-orientation") === "vertical";
+    let next;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = buttons.length - 1;
+    else if (event.key === (vertical ? "ArrowUp" : "ArrowLeft")) next = (index - 1 + buttons.length) % buttons.length;
+    else if (event.key === (vertical ? "ArrowDown" : "ArrowRight")) next = (index + 1) % buttons.length;
+    else return;
+    event.preventDefault();
+    select(buttons[next]);
+    buttons[next].focus();
+  });
+  const initialize = () => {
+    for (const tabs of document.querySelectorAll(".orc-tabs")) {
+      const buttons = buttonsFor(tabs).filter((button) => !button.disabled);
+      const selected = buttons.find((button) => button.getAttribute("aria-selected") === "true") ?? buttons[0];
+      if (selected) select(selected);
+    }
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialize, { once: true });
+  else initialize();
 })();`;
 
 /** The version a pad asks for with `<meta name="orc-kit" content="N">`; latest when absent or unknown. */
