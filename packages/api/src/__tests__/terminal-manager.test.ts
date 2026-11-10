@@ -42,6 +42,8 @@ function setup(
     scrollbackBytes?: number;
     now?: () => number;
     answerDeviceAttributes?: boolean;
+    onPreviewUrl?: (info: { id: string }, url: string) => void;
+    onTerminalClosed?: (info: { id: string }) => void;
   } = {},
 ) {
   const ptys: FakePty[] = [];
@@ -56,6 +58,8 @@ function setup(
     scrollbackBytes: over.scrollbackBytes ?? 1024,
     now: over.now,
     answerDeviceAttributes: over.answerDeviceAttributes,
+    onPreviewUrl: over.onPreviewUrl,
+    onTerminalClosed: over.onTerminalClosed,
   });
   return { manager, ptys };
 }
@@ -292,6 +296,33 @@ describe("TerminalManager", () => {
     ptys[0]?.exit(0);
     await tick();
     expect(manager.linkLiveSession(input)).toBeNull();
+  });
+
+  test("reports the first dev-server URL once and forgets it on exit", async () => {
+    const urls: [string, string][] = [];
+    const closed: string[] = [];
+    const { manager, ptys } = setup({
+      onPreviewUrl: (info, url) => urls.push([info.id, url]),
+      onTerminalClosed: (info) => closed.push(info.id),
+    });
+    const { id } = manager.create({
+      launch: launch(),
+      metadata: { projectId: "project-1", worktreePath: "/work/app", dev: true },
+    });
+    expect(manager.get(id)).toMatchObject({
+      dev: true,
+      project_id: "project-1",
+      worktree_path: "/work/app",
+      preview_url: null,
+    });
+    ptys[0]?.emit("starting\n  Local: http://0.0.0.0:3100/\n");
+    expect(manager.get(id).preview_url).toBe("http://localhost:3100");
+    ptys[0]?.emit("also http://localhost:4000");
+    expect(manager.get(id).preview_url).toBe("http://localhost:3100");
+    expect(urls).toEqual([[id, "http://localhost:3100"]]);
+    ptys[0]?.exit(0);
+    await tick();
+    expect(closed).toEqual([id]);
   });
 
   test("shutdown kills everything", () => {

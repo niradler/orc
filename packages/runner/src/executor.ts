@@ -12,6 +12,7 @@ import { jobShellArgv } from "@orc/core/job-settings";
 import { createLogger } from "@orc/core/logger";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
+import { workspaceEnvFor } from "./workspace-env.js";
 import { kbDigestKbId } from "@orc/db/kb-digest";
 import { publishJobNotification } from "@orc/db/notification-producers";
 import { job_run_logs, job_runs, jobs, sessions } from "@orc/db/schema";
@@ -165,10 +166,6 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       return runId;
     }
 
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      ...jobEnv,
-    };
     const stdin = opts.execution?.stdin ?? opts.input?.stdin;
     const stdinBytes = stdin === undefined ? "ignore" : new TextEncoder().encode(stdin);
 
@@ -179,6 +176,24 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       : job.settings?.host === undefined
         ? resolveExecHost()
         : execHostFor(job.settings.host);
+    const projectDirectory =
+      job.settings && job.settings.inherit_project_directory !== false && job.project_id
+        ? getSqlite()
+            .query<{ scope: string | null }, [string]>("SELECT scope FROM projects WHERE id=?")
+            .get(job.project_id)?.scope
+        : undefined;
+    const commandDirectory = job.working_dir ?? projectDirectory ?? undefined;
+    // Project settings only apply to the job's folder, and a managed worktree is
+    // installed before the command starts. Job variables still win over them.
+    const projectWorkspace =
+      host && commandDirectory
+        ? await workspaceEnvFor(host, commandDirectory, job.project_id)
+        : { env: {} };
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      ...projectWorkspace.env,
+      ...jobEnv,
+    };
     const argv =
       opts.execution?.argv ??
       jobShellArgv(job.settings, job.command, host ? hostPlatform(host) : process.platform);
@@ -200,13 +215,6 @@ export async function executeJob(opts: RunOptions): Promise<string> {
             ).code === 0;
       if (!available) throw new Error("Configured shell is not available on the selected host");
     }
-    const projectDirectory =
-      job.settings && job.settings.inherit_project_directory !== false && job.project_id
-        ? getSqlite()
-            .query<{ scope: string | null }, [string]>("SELECT scope FROM projects WHERE id=?")
-            .get(job.project_id)?.scope
-        : undefined;
-    const commandDirectory = job.working_dir ?? projectDirectory ?? undefined;
     let handle: HostProcess;
     if (host?.kind === "ssh") {
       handle = await hostSpawn(host, argv, {
@@ -214,6 +222,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         env,
         passEnv: [
           "ORC_JOB_RUN_ID",
+          ...Object.keys(projectWorkspace.env),
           ...Object.keys(jobEnv),
           ...Object.keys(opts.input?.env ?? {}),
           ...Object.keys(opts.envOverrides ?? {}),

@@ -2,6 +2,7 @@ import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/cor
 import type { JobAction } from "@orc/core/job-actions";
 import type { JobEnvironment, JobSettings } from "@orc/core/job-settings";
 import type { SessionHandoffRequest } from "@orc/core/session-handoff";
+import type { WorkspaceEnvironment } from "@orc/core/workspace-settings";
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -38,6 +39,7 @@ export const projects = sqliteTable(
     obsidian_path: text("obsidian_path"),
     max_workers: integer("max_workers"),
     upload_directory: text("upload_directory"),
+    workspace: text("workspace", { mode: "json" }).$type<WorkspaceEnvironment>(),
     ...timestamps,
   },
   (t) => [uniqueIndex("projects_name_idx").on(t.name)],

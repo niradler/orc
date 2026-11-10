@@ -31,6 +31,8 @@
     "./git-remote": "./src/git-remote.ts",
     "./job-settings": "./src/job-settings.ts",
     "./job-environment": "./src/job-environment.ts",
+    "./workspace-environment": "./src/workspace-environment.ts",
+    "./workspace-settings": "./src/workspace-settings.ts",
     "./job-actions": "./src/job-actions.ts",
     "./changes": "./src/changes.ts",
     ".": "./src/index.ts",

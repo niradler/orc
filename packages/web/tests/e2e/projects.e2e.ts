@@ -7,6 +7,13 @@ interface Project {
   name: string;
   status: string;
   git_remote_url: string | null;
+  workspace?: {
+    setup_script: string | null;
+    dev_script: string | null;
+    port_base: number | null;
+    port_count: number;
+    env: { name: string; value: string | null; secret: boolean }[];
+  };
 }
 
 test.describe("Projects CRUD", () => {
@@ -50,6 +57,53 @@ test.describe("Projects CRUD", () => {
       await row.click();
       await expect(remote).toHaveValue("");
       expect((await apiGet<Project>(request, `/projects/${id}`)).git_remote_url).toBeNull();
+    } finally {
+      await apiDelete(request, `/projects/${id}`);
+    }
+  });
+  test("saves workspace scripts, ports and a masked secret", async ({ page, request }) => {
+    const name = tid("pw-project-workspace");
+    await gotoView(page, "projects");
+    await page.getByTestId("new-project-button").click();
+    await revealFormField(page, page.getByTestId("project-name-input"));
+    await page.getByTestId("project-name-input").fill(name);
+    await revealFormField(page, page.getByTestId("project-first-task"));
+    await page.getByTestId("project-first-task").uncheck();
+    await revealFormField(page, page.getByTestId("project-setup-script"));
+    await page.getByTestId("project-setup-script").fill("bun install");
+    await page.getByTestId("project-dev-script").fill("bun run dev --port $ORC_PORT");
+    await page.getByTestId("project-port-base").fill("4100");
+    await page.getByTestId("project-port-count").fill("4");
+    await page.locator("summary", { hasText: "Workspace environment variables" }).click();
+    await page.getByTestId("project-env-add").click();
+    await page.getByLabel("Variable 1 name").fill("API_TOKEN");
+    await page.getByLabel("Variable 1 value").fill("super-secret");
+    await page.getByLabel("Secret").check();
+    await openFinalFormStep(page);
+    await page.getByTestId("project-submit").click();
+    const row = page.locator(`[data-testid="project-row"][data-project-name="${name}"]`);
+    await expect(row).toBeVisible();
+    const id = await row.getAttribute("data-project-id");
+    try {
+      const saved = await apiGet<Project>(request, `/projects/${id}`);
+      expect(saved.workspace).toMatchObject({
+        setup_script: "bun install",
+        dev_script: "bun run dev --port $ORC_PORT",
+        port_base: 4100,
+        port_count: 4,
+        env: [{ name: "API_TOKEN", value: null, secret: true }],
+      });
+      await page.reload();
+      await row.click();
+      await revealFormField(page, page.getByTestId("project-setup-script"));
+      await expect(page.getByTestId("project-setup-script")).toHaveValue("bun install");
+      await expect(page.getByTestId("project-dev-script")).toHaveValue(
+        "bun run dev --port $ORC_PORT",
+      );
+      await expect(page.getByTestId("project-port-base")).toHaveValue("4100");
+      await expect(page.getByTestId("project-port-count")).toHaveValue("4");
+      await expect(page.getByLabel("Variable 1 name")).toHaveValue("API_TOKEN");
+      await expect(page.getByLabel("Variable 1 value")).toHaveValue("");
     } finally {
       await apiDelete(request, `/projects/${id}`);
     }

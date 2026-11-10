@@ -13,6 +13,7 @@ import { withTx } from "@orc/db/tx";
 import { eq } from "drizzle-orm";
 import { drainPendingNodes, startFlowForTask } from "./flow-runner.js";
 import { type JobWorkspace, prepareJobWorkspace } from "./job-workspace.js";
+import { workspaceEnvFor } from "./workspace-env.js";
 
 type ActionJob = {
   id: string;
@@ -121,6 +122,7 @@ export async function runJobAction(
     workspace = await prepareJobWorkspace(host, repository, runId, job.settings?.workspace);
     cwd = workspace.cwd;
     sqlite.query("UPDATE gateway_sessions SET cwd=? WHERE id=?").run(cwd, sessionId);
+    const projectWorkspace = await workspaceEnvFor(host, cwd, job.project_id);
     if (expired) {
       const retained = await workspace.cleanup(false);
       if (retained)
@@ -129,7 +131,7 @@ export async function runJobAction(
     }
     session = await openAgentSession(action.backend, {
       cwd,
-      env,
+      env: { ...projectWorkspace.env, ...env },
       redactOutput: redact,
       executionHost: hostAlias(host),
       chatAgentOptions: action.options,

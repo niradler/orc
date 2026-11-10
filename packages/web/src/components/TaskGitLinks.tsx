@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Task } from "@/api/client";
+import { WorkspaceStatus } from "@/components/WorkspaceStatus";
 import { useUpdateTask } from "@/hooks/useTasks";
 
 const fields = ["git_repo", "git_branch", "git_worktree", "github_issue", "github_pr"] as const;
@@ -100,6 +101,11 @@ export function TaskGitLinks({ task }: { task: Task }) {
               No links yet. Link a checkout from its terminal Git panel, or edit here.
             </p>
           )}
+        </div>
+      )}
+      {task.git_worktree && (
+        <div className="border-t border-outline-variant pt-2">
+          <WorkspaceStatus path={task.git_worktree} showOutput />
         </div>
       )}
     </section>

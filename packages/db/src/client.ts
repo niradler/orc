@@ -17,6 +17,7 @@ import * as schema from "./schema.js";
 import { installScratchpads } from "./scratchpads.js";
 import { installSessionArchive } from "./session-archive.js";
 import { installSkillHistory } from "./skill-history.js";
+import { installWorkspaceEnvironments } from "./workspaces.js";
 
 export type OrcDb = ReturnType<typeof createDb>;
 
@@ -380,6 +381,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE projects ADD COLUMN max_workers INTEGER",
     "ALTER TABLE projects ADD COLUMN upload_directory TEXT",
     "ALTER TABLE projects ADD COLUMN git_remote_url TEXT",
+    // JSON: setup script, dev script, port block and environment for agent worktrees.
+    "ALTER TABLE projects ADD COLUMN workspace TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN acpx_agent TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN a2a_url TEXT",
     "ALTER TABLE tasks ADD COLUMN skill_name TEXT",
@@ -595,6 +598,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installRules(sqlite);
   installScratchpads(sqlite);
   installMcpPrompts(sqlite);
+  installWorkspaceEnvironments(sqlite);
   new HumanRequestStore(sqlite);
   new NotificationStore(sqlite);
 
