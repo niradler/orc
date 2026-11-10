@@ -371,6 +371,13 @@ still require **Render with ORC access**, and chat artifacts retain their opaque
 sandbox and network-blocking policy. Prefer inline SVG for charts that must work
 in both views; a CDN chart library is blocked in chat.
 
+For concise component markup, use built-in custom elements such as
+`<orc-card>`, `<orc-stat label="Open tasks" value="12">`,
+`<orc-badge tone="success">`, `<orc-table>` and `<orc-chart>`.
+`<orc-tabs>` generates accessible tab controls from labeled `<orc-tab>` panels.
+These components reuse the kit with no additional dependencies or network
+requests; ordinary HTML with `orc-*` classes remains supported.
+
 Agents can load the component list, copy-paste skeleton and chart guidance with
 `skill_read` for `orc-platform`, ref `references/html-kit.md`. See [Skills](./skills.md).
 

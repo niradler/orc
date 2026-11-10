@@ -7,6 +7,10 @@ and follows the dashboard's light/dark theme without any work from you. **Write 
 not CSS: a kit pad has no custom `<style>` block.** Custom CSS/JS still works if the
 page needs something the kit does not cover; keep it small.
 
+Prefer the [component tags](#component-tags) for concise pages: `<orc-card>`,
+`<orc-stat label="Open tasks" value="12">`, `<orc-badge>` and `<orc-tabs>` generate
+the reusable markup and behavior. The classes below are also available for custom layouts.
+
 The kit is injected at render time into the iframe document. It never changes the saved
 pad, needs no network fetch, and costs the page zero bytes.
 
@@ -81,6 +85,56 @@ Use unique tab and panel IDs for each group. Set one tab's `aria-selected` to
 list, set `aria-orientation="vertical"` and use Up/Down. Changing the dashboard
 theme rebuilds the iframe, so tab selection and other running page state reset;
 the saved HTML and version pin stay unchanged.
+
+## Component tags
+
+For shorter markup, use the kit's built-in Web Components. They reuse the same
+styles and tab behavior without a framework, network request or custom script.
+Existing `orc-*` classes remain supported. Elements use the document's normal DOM
+so your CSS and scripts can inspect them.
+
+```html
+<!doctype html>
+<html><head><meta name="orc-kit" content="1"><title>Release status</title></head>
+<body>
+  <orc-page>
+    <h1>Release status</h1>
+    <orc-grid>
+      <orc-card><orc-stat label="Open tasks" value="12"></orc-stat></orc-card>
+    </orc-grid>
+    <orc-card>
+      <orc-badge tone="success">Healthy</orc-badge>
+      <orc-tabs label="Release timeline">
+        <orc-tab label="Now">Current release</orc-tab>
+        <orc-tab label="Next">Next release</orc-tab>
+      </orc-tabs>
+    </orc-card>
+    <orc-table>
+      <table><thead><tr><th>Task</th><th>Status</th></tr></thead>
+      <tbody><tr><td>Ship kit</td><td>Ready</td></tr></tbody></table>
+    </orc-table>
+    <orc-card><orc-chart>
+      <svg viewBox="0 0 300 80" role="img" aria-label="trend">
+        <polyline points="0,70 60,40 120,55 180,20 240,35 300,10"
+                  fill="none" stroke="var(--chart-line)" stroke-width="2" />
+      </svg>
+    </orc-chart></orc-card>
+  </orc-page>
+</body></html>
+```
+
+`orc-page`, `orc-grid`, `orc-row`, `orc-card` and `orc-chart` wrap ordinary
+content. `orc-stat` renders its `label` and `value` attributes as text and updates
+when they change. `orc-badge` accepts `tone="success"`, `warning` or `error`;
+omitting it uses neutral styling. Keep a standard `<table>` inside `orc-table`
+so browsers preserve table markup correctly.
+
+`orc-tabs` generates labeled buttons and panel relationships from its direct
+`orc-tab` children. Add `selected` to select an initial panel, `disabled` to skip
+a tab, or `orientation="vertical"` on the group for Up/Down navigation. Define
+the tab structure before inserting the group; changing its child tabs after
+initialization is not supported. All tabs disabled leaves all panels hidden.
+The theme and sandbox rules above apply equally to these components.
 
 ## Charts and libraries
 

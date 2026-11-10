@@ -28,6 +28,104 @@ export const HTML_KIT_EXAMPLE = skeleton
     </div></body>`,
   );
 
+const componentSkeleton = Array.from(reference.matchAll(/```html\n([\s\S]*?)\n```/g)).find(
+  (match) => match[1].includes("<orc-page>"),
+)?.[1];
+if (!componentSkeleton) throw new Error("HTML kit component skeleton missing");
+export const HTML_KIT_COMPONENT_EXAMPLE = componentSkeleton;
+
+export async function checkHtmlKitElements(page: Page, frameTestId: string): Promise<void> {
+  const iframe = page.getByTestId(frameTestId);
+  const frame = page.frameLocator(`[data-testid="${frameTestId}"]`);
+  await expect(iframe).not.toHaveAttribute("sandbox", /allow-same-origin/);
+  const contentFrame = await (await iframe.elementHandle())?.contentFrame();
+  if (!contentFrame) throw new Error("Kit iframe missing");
+  for (let pass = 0; pass < 2; pass++) {
+    const theme = await page.evaluate(() => document.documentElement.dataset.theme);
+    await expect(frame.locator("orc-card").first()).toHaveCSS("display", "grid");
+    await expect(frame.locator("orc-stat .orc-stat-label")).toHaveText("Open tasks");
+    await expect(frame.locator("orc-stat .orc-stat-value")).toHaveText("12");
+    await expect(frame.locator("orc-stat")).toHaveCSS(
+      "color",
+      theme === "light" ? "rgb(37, 38, 42)" : "rgb(229, 229, 229)",
+    );
+    await expect(frame.locator("orc-badge")).toHaveCSS(
+      "color",
+      theme === "light" ? "rgb(70, 102, 83)" : "rgb(133, 193, 157)",
+    );
+    await expect(frame.locator("orc-table > table")).toHaveClass("orc-table");
+    await expect(frame.locator("orc-table")).toHaveCSS("overflow-x", "auto");
+    await expect(frame.locator("orc-chart")).toHaveCSS("display", "grid");
+    const now = frame.getByRole("tab", { name: "Now", exact: true });
+    const next = frame.getByRole("tab", { name: "Next", exact: true });
+    await expect(frame.getByRole("tabpanel", { name: "Now", exact: true })).toBeVisible();
+    await expect(frame.getByRole("tabpanel", { name: "Next", exact: true })).toBeHidden();
+    await next.click();
+    await expect(frame.getByRole("tabpanel", { name: "Next", exact: true })).toBeVisible();
+    await next.press("ArrowLeft");
+    await expect(now).toBeFocused();
+    await expect(frame.getByRole("tabpanel", { name: "Next", exact: true })).toBeHidden();
+    if ((page.viewportSize()?.width ?? 1280) < 640) {
+      expect(
+        await now.evaluate((tab) => tab.getBoundingClientRect().height),
+      ).toBeGreaterThanOrEqual(44);
+    }
+    // Attributes are reactive text, even if the supplied value looks like executable HTML.
+    await contentFrame.evaluate(() => {
+      document.querySelector("orc-stat")?.setAttribute("value", '<img src=x onerror="alert(1)">');
+      document.querySelector("orc-badge")?.setAttribute("tone", "warning");
+    });
+    await expect(frame.locator("orc-stat .orc-stat-value")).toHaveText(
+      '<img src=x onerror="alert(1)">',
+    );
+    await expect(frame.locator("orc-stat img")).toHaveCount(0);
+    await expect(frame.locator("orc-badge")).toHaveClass(/orc-badge-warning/);
+    await contentFrame.evaluate(() => {
+      const tabs = document.createElement("orc-tabs");
+      tabs.setAttribute("label", "Independent tabs");
+      tabs.setAttribute("orientation", "vertical");
+      for (const label of ["Unavailable", "First", "Last"]) {
+        const panel = document.createElement("orc-tab");
+        panel.setAttribute("label", label);
+        panel.textContent = label;
+        if (label === "Unavailable") {
+          panel.setAttribute("disabled", "");
+          panel.setAttribute("selected", "");
+        }
+        tabs.append(panel);
+      }
+      document.body.append(tabs);
+    });
+    const first = frame.getByRole("tab", { name: "First", exact: true });
+    const last = frame.getByRole("tab", { name: "Last", exact: true });
+    await expect(first).toHaveAttribute("aria-selected", "true");
+    await expect(frame.getByRole("tab", { name: "Unavailable" })).toBeDisabled();
+    await first.focus();
+    await first.press("ArrowUp");
+    await expect(last).toBeFocused();
+    await expect(frame.getByRole("tabpanel", { name: "Last", exact: true })).toBeVisible();
+    await expect(now).toHaveAttribute("aria-selected", "true");
+    if (pass === 0) {
+      if (await page.getByTestId("theme-toggle").isVisible()) {
+        await page.getByTestId("theme-toggle").click();
+      } else {
+        await page.evaluate(
+          (nextTheme) => {
+            localStorage.setItem("orc_theme", nextTheme);
+            window.dispatchEvent(
+              new StorageEvent("storage", { key: "orc_theme", newValue: nextTheme }),
+            );
+          },
+          theme === "light" ? "dark" : "light",
+        );
+      }
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
+        .not.toBe(theme);
+    }
+  }
+}
+
 export async function checkHtmlKit(page: Page, frameTestId: string, info: TestInfo): Promise<void> {
   const iframe = page.getByTestId(frameTestId);
   const frame = page.frameLocator(`[data-testid="${frameTestId}"]`);

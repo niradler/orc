@@ -12,7 +12,12 @@ import {
   gotoView,
   tid,
 } from "./_helpers";
-import { checkHtmlKit, HTML_KIT_EXAMPLE } from "./_html-kit";
+import {
+  checkHtmlKit,
+  checkHtmlKitElements,
+  HTML_KIT_COMPONENT_EXAMPLE,
+  HTML_KIT_EXAMPLE,
+} from "./_html-kit";
 
 interface Scratchpad {
   id: string;
@@ -121,6 +126,22 @@ function preview(page: Page) {
 }
 
 for (const width of [1280, 390]) {
+  test(`HTML kit component tags work in the editor at ${width}px`, async ({ page, request }) => {
+    const pad = await createPad(request, { kind: "html", content: HTML_KIT_COMPONENT_EXAMPLE });
+    try {
+      await page.setViewportSize({ width, height: 900 });
+      await openPad(page, pad.id);
+      await checkHtmlKitElements(page, "scratchpad-html-preview");
+      await page.reload();
+      await expect(preview(page).getByRole("tab", { name: "Now", exact: true })).toBeVisible();
+      expect((await apiGet<Scratchpad>(request, `/scratchpads/${pad.id}`)).content).toBe(
+        HTML_KIT_COMPONENT_EXAMPLE,
+      );
+    } finally {
+      await apiDelete(request, `/scratchpads/${pad.id}`);
+    }
+  });
+
   test(`HTML kit editor tabs and theme follow the dashboard at ${width}px`, async ({
     page,
     request,

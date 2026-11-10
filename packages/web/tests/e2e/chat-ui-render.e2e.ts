@@ -3,7 +3,12 @@ import { expect, type Page, type Request, test } from "@playwright/test";
 import { CHAT_DASHBOARD_HTML } from "../fixtures/chat-dashboard";
 import { chatUiGalleryMessage } from "../fixtures/chat-ui-gallery";
 import { API_SECRET } from "./_helpers";
-import { checkHtmlKit, HTML_KIT_EXAMPLE } from "./_html-kit";
+import {
+  checkHtmlKit,
+  checkHtmlKitElements,
+  HTML_KIT_COMPONENT_EXAMPLE,
+  HTML_KIT_EXAMPLE,
+} from "./_html-kit";
 
 const THREAD = "60000000-0000-4000-8000-000000000001";
 const stamp = "2026-10-30T10:00:00.000Z";
@@ -93,6 +98,25 @@ const artifactSpec = {
 };
 
 for (const width of [1280, 390]) {
+  test(`HTML kit component tags work in chat at ${width}px`, async ({ page }) => {
+    await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(artifactSpec)}\n\`\`\``);
+    await page.route("**/api/scratchpads/s1", (route) =>
+      route.fulfill({
+        json: {
+          id: "s1",
+          title: "Kit components",
+          kind: "html",
+          content: HTML_KIT_COMPONENT_EXAMPLE,
+          tags: [],
+          updated_at: stamp,
+        },
+      }),
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+    await checkHtmlKitElements(page, "chat-ui-scratchpad-html");
+  });
+
   test(`HTML kit chat tabs and theme follow the dashboard at ${width}px`, async ({
     page,
   }, info) => {

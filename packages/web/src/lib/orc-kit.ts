@@ -8,6 +8,7 @@
 // Copy the blocks from index.css when a token changes and bump ORC_KIT_VERSION (keeping the
 // previous CSS bundled as a retired version entry).
 
+import { ORC_KIT_ELEMENTS_JS } from "./orc-kit-elements";
 import type { Theme } from "./theme";
 
 export const ORC_KIT_META_NAME = "orc-kit";
@@ -204,6 +205,7 @@ export const ORC_KIT_STYLESHEETS: Readonly<Record<number, string>> = {
 
 /** Selects tabs by pointer or keyboard; initialization waits for the head-injected markup. */
 const ORC_KIT_JS = `(() => {
+  ${ORC_KIT_ELEMENTS_JS}
   const buttonsFor = (tabs) => Array.from(tabs.querySelectorAll("[data-orc-tab]"))
     .filter((button) => button.closest(".orc-tabs") === tabs);
   const select = (tab) => {
@@ -242,6 +244,7 @@ const ORC_KIT_JS = `(() => {
     buttons[next].focus();
   });
   const initialize = () => {
+    registerOrcElements(select);
     for (const tabs of document.querySelectorAll(".orc-tabs")) {
       const buttons = buttonsFor(tabs).filter((button) => !button.disabled);
       const selected = buttons.find((button) => button.getAttribute("aria-selected") === "true") ?? buttons[0];

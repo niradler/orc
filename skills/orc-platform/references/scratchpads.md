@@ -102,8 +102,9 @@ human action in the UI.
 
 ## Interactive pages (`html`)
 
-The page is one HTML document. ORC injects the look-and-feel kit (theme tokens and
-component classes) into every render, so write markup with `orc-*` classes and no custom
+The page is one HTML document. ORC injects the look-and-feel kit (theme tokens,
+component tags and classes) into every render, so use `<orc-card>`, `<orc-stat>`,
+`<orc-tabs>` and other kit components or `orc-*` classes without a custom
 `<style>` — see [HTML kit](html-kit.md). Custom CSS/JS you inline still applies; keep it
 small. Libraries from a CDN need a pinned version with `integrity` + `crossorigin` and
 load only in the editor preview (chat artifacts run a blocking CSP).
