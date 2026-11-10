@@ -20,9 +20,11 @@ export function JobEnvironmentFields({
   const [keys, setKeys] = useState(() => value.map(() => crypto.randomUUID()));
   return (
     <details className="space-y-3 rounded-md border border-border p-3">
-      <summary className="flex cursor-pointer items-center gap-1 text-sm">
-        {title}
-        {value.length ? ` (${value.length})` : ""}
+      <summary className="flex cursor-pointer items-center justify-between gap-1 text-sm">
+        <span>
+          {title}
+          {value.length ? ` (${value.length})` : ""}
+        </span>
         <HelpPopover label={title} testId={`${addTestId}-help`}>
           {help}
         </HelpPopover>
