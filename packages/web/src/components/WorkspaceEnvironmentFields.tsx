@@ -15,8 +15,8 @@ export function WorkspaceEnvironmentFields({
   return (
     <div className="space-y-4 md:col-span-2" data-testid="project-workspace-settings">
       <p className="text-sm text-muted-foreground">
-        Applies to terminals, flow nodes and jobs ORC starts for this project. Each worktree gets
-        its own port block and runs the setup script once.
+        Applies to terminals, chats, flow nodes and jobs ORC starts for this project. Each worktree
+        gets its own port block and runs the setup script once.
       </p>
       <div className="space-y-1.5">
         <Label htmlFor="project-setup-script">Setup script</Label>
@@ -44,7 +44,7 @@ export function WorkspaceEnvironmentFields({
           onChange={(event) => update({ dev_script: event.target.value || null })}
         />
         <p className="text-xs text-muted-foreground">
-          Start it from a task or session to get a Preview link from the first URL it prints.
+          Start it from a project terminal's menu. The first URL it prints becomes the Preview link.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
