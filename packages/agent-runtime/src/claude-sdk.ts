@@ -439,6 +439,7 @@ class ClaudeSDKSession implements AgentSession {
           },
           ...(this.runtimeSessionId ? { resume: this.runtimeSessionId } : {}),
           ...(this.opts.model ? { model: this.opts.model } : {}),
+          includePartialMessages: true,
         },
       });
       nativeQuery = q;
@@ -446,7 +447,18 @@ class ClaudeSDKSession implements AgentSession {
       // Each text block is its own paragraph; joined bare, text before and after a tool
       // call runs together and breaks markdown such as a code fence opening mid-line.
       let wroteText = false;
+      let streamedText = false;
       for await (const msg of q) {
+        if (msg.type === "stream_event") {
+          const event = msg.event;
+          if (event.type === "content_block_start" && event.content_block.type === "text") {
+            if (wroteText) this.push({ type: "text", data: "\n\n" });
+            wroteText = true;
+            streamedText = true;
+          } else if (event.type === "content_block_delta" && event.delta.type === "text_delta")
+            this.push({ type: "text", data: event.delta.text });
+          continue;
+        }
         if (msg.type === "rate_limit_event") {
           const event = claudeLimitEvent(msg.rate_limit_info);
           if (event) this.push(event);
@@ -465,7 +477,8 @@ class ClaudeSDKSession implements AgentSession {
         if (msg.type === "assistant") {
           for (const block of msg.message.content) {
             if (block.type === "text" && block.text) {
-              this.push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
+              if (!streamedText)
+                this.push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
               wroteText = true;
             } else if (block.type === "thinking" && "thinking" in block && block.thinking) {
               this.push({ type: "thinking", data: block.thinking as string });
@@ -480,6 +493,7 @@ class ClaudeSDKSession implements AgentSession {
               });
             }
           }
+          streamedText = false;
           continue;
         }
 

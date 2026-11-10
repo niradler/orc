@@ -64,3 +64,54 @@ try {
     expect(result.stdout.toString()).toContain("SDK cleanup verified");
   });
 }
+
+test("should stream Claude text deltas once, separating text blocks around a tool call", () => {
+  const script = `
+import { mock } from "bun:test";
+const start = { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } };
+const delta = (text) => ({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } });
+const assistant = (content) => ({ type: "assistant", message: { content } });
+mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+  HOOK_EVENTS: [],
+  query: ({options}) => {
+    if (options.includePartialMessages !== true) throw new Error("partial messages were not requested");
+    const stream = (async function* () {
+      yield {type:"system",subtype:"init",session_id:"stream-fixture"};
+      yield start; yield delta("Hel"); yield delta("lo");
+      yield assistant([{ type: "text", text: "Hello" }, { type: "tool_use", id: "t1", name: "Bash", input: {} }]);
+      yield start; yield delta("Done");
+      yield assistant([{ type: "text", text: "Done" }]);
+      yield {type:"result",subtype:"success",session_id:"stream-fixture",is_error:false,usage:{},duration_ms:1};
+    })();
+    return { [Symbol.asyncIterator]: () => stream, close: () => {}, return: async () => stream.return() };
+  },
+}));
+const {loadConfig} = await import(${JSON.stringify(new URL("../../../core/src/config.ts", import.meta.url).href)});
+const config = loadConfig();
+loadConfig({rules:{...config.rules,enabled:false},preferences:{}});
+await import(${JSON.stringify(new URL("../claude-sdk.ts", import.meta.url).href)});
+const {createBackend} = await import(${JSON.stringify(new URL("../registry.ts", import.meta.url).href)});
+const session = await createBackend("claude").startSession({cwd:process.cwd(),orcMcp:false,executionHost:null});
+try {
+  await session.send("Fixture request");
+  const texts = [];
+  for await (const event of session.events()) if (event.type === "text") texts.push(event.data);
+  console.log(JSON.stringify(texts));
+} finally { await session.close(); }
+`;
+  const result = Bun.spawnSync([process.execPath, "-e", script], {
+    cwd: resolve(import.meta.dir, "../.."),
+    timeout: 15000,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect({ exitCode: result.exitCode, stderr: result.stderr.toString() }).toMatchObject({
+    exitCode: 0,
+  });
+  expect(JSON.parse(result.stdout.toString().trim().split("\n").at(-1) ?? "[]")).toEqual([
+    "Hel",
+    "lo",
+    "\n\n",
+    "Done",
+  ]);
+});
