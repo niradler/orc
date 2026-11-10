@@ -157,16 +157,22 @@ const PromptResultSchema = z
 // Set when the server advertises the feature but listing it failed; tools keep working regardless.
 const featureError = z.string().nullable();
 
+let legacySpecHome: string | undefined;
+export function useLegacySpecHome(home = homedir()): void {
+  if (legacySpecHome && process.env.SPEC_HOME === legacySpecHome) delete process.env.SPEC_HOME;
+  legacySpecHome = undefined;
+  const legacy = join(home, "spec-cli-config");
+  if (!process.env.SPEC_HOME && !existsSync(join(home, ".spec-cli")) && existsSync(legacy)) {
+    process.env.SPEC_HOME = legacy;
+    legacySpecHome = legacy;
+  }
+}
+
 /**
  * Runs one SDK call with a fresh client. spec-cli reports every failure as a plain Error, so a
  * missing spec or tool becomes a 404 and anything else `failure` (400 for edits, 503 for reaching a
  * server).
  */
-export function useLegacySpecHome(home = homedir()): void {
-  const legacy = join(home, "spec-cli-config");
-  if (!process.env.SPEC_HOME && !existsSync(join(home, ".spec-cli")) && existsSync(legacy))
-    process.env.SPEC_HOME = legacy;
-}
 
 async function withSpecs<T>(failure: 400 | 503, run: (client: SpecClient) => Promise<T> | T) {
   useLegacySpecHome();

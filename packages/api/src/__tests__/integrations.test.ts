@@ -439,10 +439,12 @@ test("reads the pre-0.6 spec-cli registry in place when ~/.spec-cli does not exi
     setSpecHome(undefined);
     expect(specHome()).toBe(join(user, "spec-cli-config"));
     expect(existsSync(join(user, "spec-cli-config"))).toBe(true);
-    delete process.env.SPEC_HOME;
     mkdirSync(join(user, ".spec-cli"));
     useLegacySpecHome(user);
     expect(configured()).toBeUndefined();
+    process.env.SPEC_HOME = join(user, "explicit");
+    useLegacySpecHome(user);
+    expect(configured()).toBe(join(user, "explicit"));
   } finally {
     if (previous === undefined) delete process.env.SPEC_HOME;
     else process.env.SPEC_HOME = previous;

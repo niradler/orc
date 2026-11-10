@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { typedWebUrl } from "./desktop-preview";
+import { httpFallbackAllowed, typedWebUrl } from "./desktop-preview";
 
 test("typed addresses default to https with an http fallback and keep explicit schemes", () => {
   expect(typedWebUrl("example.com")).toEqual({
@@ -15,4 +15,9 @@ test("typed addresses default to https with an http fallback and keep explicit s
   expect(typedWebUrl("ftp://example.com")).toBeNull();
   expect(typedWebUrl("javascript:alert(1)")).toBeNull();
   expect(typedWebUrl("user:pass@example.com")).toBeNull();
+});
+
+test("only connection failures fall back to http; certificate errors and aborts never do", () => {
+  for (const code of [-102, -105, -107, -118, -101]) expect(httpFallbackAllowed(code)).toBe(true);
+  for (const code of [-3, -200, -202, -207, -299]) expect(httpFallbackAllowed(code)).toBe(false);
 });

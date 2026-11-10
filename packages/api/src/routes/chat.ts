@@ -1470,7 +1470,7 @@ async function beginTurn(
         let outputBytes = 0;
         for await (const event of run.session.events()) {
           if (stopped) break;
-          outputBytes += JSON.stringify(event).length;
+          outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
           if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
           if (event.type === "capabilities") {
             thread.capabilities = event.data;

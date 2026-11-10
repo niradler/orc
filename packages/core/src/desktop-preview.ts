@@ -26,6 +26,10 @@ export function typedWebUrl(value: string): { url: string; fallback: string | nu
   return url ? { url, fallback: previewWebUrl(`http://${input}`) } : null;
 }
 
+export function httpFallbackAllowed(code: number): boolean {
+  return code !== -3 && (code > -200 || code < -299);
+}
+
 const sessionId = z.string().min(1).max(200);
 export const PreviewOpenSchema = z
   .object({

@@ -4,6 +4,7 @@ import {
   type BrowserAction,
   BrowserActionSchema,
   type BrowserSelector,
+  httpFallbackAllowed,
   type PreviewBrowserState,
   previewWebUrl,
   typedWebUrl,
@@ -289,7 +290,7 @@ export class PreviewBrowser {
         changed();
       });
       view.webContents.on("did-fail-load", (_event, code, _reason, _url, main) => {
-        if (main && code !== -3 && ownPage.httpFallback) {
+        if (main && httpFallbackAllowed(code) && ownPage.httpFallback) {
           const fallback = ownPage.httpFallback;
           ownPage.httpFallback = null;
           state.url = fallback;
@@ -403,6 +404,7 @@ export class PreviewBrowser {
   }
   navigation(id: string, action: "back" | "forward" | "reload"): void {
     const page = this.page(id);
+    page.httpFallback = null;
     if (page.interrupted || page.contents.isDestroyed()) {
       if (action === "reload") {
         this.open(id, page.state.url);
