@@ -271,8 +271,10 @@ export async function channelDirectCommand(
         ],
       };
     const target =
-      sessions.find((session) => session.id === targetArg || session.id.endsWith(targetArg)) ??
-      (/^\d+$/.test(targetArg) ? sessions[Number(targetArg) - 1] : undefined);
+      sessions.find((session) => session.id === targetArg) ??
+      (/^\d+$/.test(targetArg)
+        ? sessions[Number(targetArg) - 1]
+        : sessions.find((session) => session.id.endsWith(targetArg)));
     if (!target) return { text: "Session is unavailable. Use /send to list live sessions." };
     try {
       const queued = new SessionMessageStore(getSqlite()).create(
