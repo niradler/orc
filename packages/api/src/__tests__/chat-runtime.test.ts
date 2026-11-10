@@ -848,9 +848,10 @@ describe("native chat runtime", () => {
     expect((await request("/chat/threads", { sourceSessionId: "source-running" })).status).toBe(
       200,
     );
-    for (const [id, pid] of [
-      ["claude-owned", process.pid],
-      ["claude-stale", 2147483647],
+    for (const [id, pid, status] of [
+      ["claude-owned", process.pid, "running"],
+      ["claude-open-idle", process.pid, "idle"],
+      ["claude-stale", 2147483647, "idle"],
     ] as const) {
       getDb()
         .insert(gateway_sessions)
@@ -858,7 +859,7 @@ describe("native chat runtime", () => {
           id,
           backend: "claude",
           mode: "direct",
-          status: "idle",
+          status,
           pid,
           chat_id: LIVE_CHAT_ID,
           runtime_session_id: id,
@@ -873,7 +874,7 @@ describe("native chat runtime", () => {
     expect(staleResponse.status).toBe(200);
     const staleThread = (await staleResponse.json()) as ChatThread;
     getSqlite()
-      .query("UPDATE gateway_sessions SET pid = ? WHERE id = ?")
+      .query("UPDATE gateway_sessions SET pid = ?, status = 'running' WHERE id = ?")
       .run(process.pid, "claude-stale");
     const apiKey = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY ||= "orc-test-placeholder";
@@ -887,7 +888,31 @@ describe("native chat runtime", () => {
     expect(nowOwned.events).toContainEqual({
       type: "error",
       message:
-        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
+    });
+    const idleOpen = (await (
+      await request("/chat/threads", { sourceSessionId: "claude-open-idle" })
+    ).json()) as ChatThread;
+    const originalClaude = createBackend("claude");
+    const resumed: string[] = [];
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => {
+        resumed.push(id);
+        return session({ id, opts });
+      },
+    }));
+    const idleTurn = await turn({
+      threadId: idleOpen.id,
+      messages: [{ role: "user", content: "Continue an idle open conversation" }],
+    }).finally(() => registerBackend("claude", () => originalClaude));
+    expect(resumed).toEqual(["claude-open-idle"]);
+    expect(idleTurn.events).not.toContainEqual({
+      type: "error",
+      message:
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
     });
     const stillOwned = await turn({
       threadId: ownedThread.id,
@@ -896,7 +921,7 @@ describe("native chat runtime", () => {
     expect(stillOwned.events).toContainEqual({
       type: "error",
       message:
-        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
     });
     expect((await request("/chat/threads", { sourceSessionId: "source-other" })).status).toBe(400);
     getDb()

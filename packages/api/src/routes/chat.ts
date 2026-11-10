@@ -1436,11 +1436,11 @@ async function beginTurn(
             source &&
             source.backend !== "codex" &&
             source.pid &&
-            (source.status === "running" || source.status === "idle") &&
+            source.status === "running" &&
             (await hostRuntime(execHostFor(source.execution_host ?? null)).processAlive(source.pid))
           )
             throw new ConflictError(
-              "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+              "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
             );
           if (
             thread.config.agent === "codex" &&
