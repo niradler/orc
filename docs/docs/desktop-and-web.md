@@ -10,7 +10,7 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 | --- | --- |
 | Sidebar | Activity, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
 | Project picker | Scopes most pages to one project, all projects, or unassigned items. A project with sessions waiting on you shows how many. |
-| Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; other agents run through ACPX. |
+| Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; OpenCode uses direct ACP; other agents run through ACPX. |
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
 | Next session | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing. |
 
@@ -316,8 +316,10 @@ questions, chat replies and job results while ORC is unfocused. Job pushes follo
 the job's notify setting and start with new runs. See [Installation](./install.md).
 
 The Electron desktop app also sends native notifications while its window is
-unfocused, minimized or hidden. Clicking one brings ORC forward and opens its
-destination. Done notifications are silent; native Needs-you sound follows the OS.
+unfocused, minimized or hidden. Clicking one brings ORC forward, opens its
+destination and marks that notification read, clearing it from the inbox.
+A grouped done toast opens its destination only; clear the collapsed items from
+the notification menu. Done notifications are silent; native Needs-you sound follows the OS.
 
 ## Audit
 
@@ -358,7 +360,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
 | Server | **Restart ORC server** (closes terminals, keeps settings, reconnects) |
 | Notifications | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions, chat replies and job results. Push needs HTTPS. |
-| Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code and Codex are native; Cursor, Gemini CLI, GitHub Copilot, OpenCode, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. The terminal launcher only lists enabled agents installed on the selected host. |
+| Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code and Codex are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. |
 | Channels | Telegram and Slack connections |
 | Chat | Default models, instructions, tools and permission mode for chat |
 | MCP | Build the MCP config snippet for your agent. See [Connect agents](./connect-agents.md). |

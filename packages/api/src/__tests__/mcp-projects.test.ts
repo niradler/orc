@@ -242,4 +242,30 @@ describe("connection-wide MCP project defaults", () => {
     const global = await rpc(multi, "skill_list", { scope: "global", source: "builtin" });
     expect(global.text).toContain("No skills found");
   });
+
+  test("project_create is refused on a scoped connection and is retry-safe unscoped", async () => {
+    for (const meta of [false, true]) {
+      const scoped = await rpc(multi, "project_create", { name: "scoped-create" }, meta);
+      expect(scoped.error).toBe(true);
+      expect(scoped.text).toContain("unscoped connection");
+    }
+    const created = await rpc("", "project_create", { name: "unscoped-create" });
+    expect(created.error).not.toBe(true);
+    expect(created.text).toContain("Created project unscoped-create [id: ");
+    expect(created.text).toContain("link: ");
+    // A retry with different casing hits the same project and never duplicates it.
+    const duplicate = await rpc("", "project_create", { name: "UNSCOPED-CREATE" });
+    expect(duplicate.error).toBe(true);
+    expect(duplicate.text).toContain("already exists");
+    expect(duplicate.text).toContain("no duplicate was created");
+    const count = getSqlite()
+      .query<{ n: number }, []>(
+        "SELECT COUNT(*) AS n FROM projects WHERE name = 'unscoped-create' COLLATE NOCASE",
+      )
+      .get()?.n;
+    expect(count).toBe(1);
+    const invalid = await rpc("", "project_create", { name: "has space" });
+    expect(invalid.error).toBe(true);
+    expect(invalid.text).toContain("Invalid args");
+  });
 });

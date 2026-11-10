@@ -15,6 +15,8 @@ export interface DesktopNotification {
   body: string;
   path: string;
   level: NotificationLevel;
+  /** ORC notification id, echoed back through onOpen so a click can mark it read. */
+  id?: string;
 }
 
 export type DesktopUpdateChannel = "stable" | "preview";
@@ -107,7 +109,7 @@ export interface OrcDesktopBridge {
     onOpen(listener: (request: { kind: "url" | "panel"; target?: string }) => void): () => void;
   };
   notify(notification: DesktopNotification): void;
-  onOpen(listener: (path: string) => void): () => void;
+  onOpen(listener: (path: string, id?: string) => void): () => void;
   updates?: DesktopUpdates;
 }
 

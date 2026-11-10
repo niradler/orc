@@ -12,6 +12,7 @@ describe("backend registry", () => {
     expect(backends).toContain("claude-cli");
     expect(backends).toContain("codex-cli");
     expect(backends).toContain("cursor");
+    expect(backends).toContain("opencode");
   });
 
   it("creates a claude backend", () => {

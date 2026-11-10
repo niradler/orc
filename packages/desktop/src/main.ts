@@ -294,7 +294,7 @@ function listenForNotifications(): void {
     notification.on("click", () => {
       notifications.delete(notification);
       showWindow();
-      win?.webContents.send(OPEN_CHANNEL, request.path);
+      win?.webContents.send(OPEN_CHANNEL, { path: request.path, id: request.id ?? null });
     });
     notification.show();
   });

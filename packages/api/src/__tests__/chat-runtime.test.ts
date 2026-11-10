@@ -1673,6 +1673,81 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
   }
 });
 
+test("opencode runs and resumes through the chat API on its builtin ACP backend", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  const source = join(home, "opencode.ts");
+  const script = process.platform === "win32" ? join(home, "opencode.exe") : source;
+  writeFileSync(
+    source,
+    `#!/usr/bin/env bun
+import {createInterface} from 'node:readline';
+const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
+const configOptions=[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'custom-provider/example-model',name:'Example model'}]}];
+let selected=false;
+for await(const line of createInterface({input:process.stdin})) { const m=JSON.parse(line);
+ if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
+ if(m.method==='session/new')emit({id:m.id,result:{sessionId:'api-opencode-session',configOptions}});
+ if(m.method==='session/load')emit({id:m.id,result:{configOptions}});
+ if(m.method==='session/set_config_option'){if(m.params.value!=='custom-provider/example-model')throw Error('Wrong model');selected=true;emit({id:m.id,result:{configOptions}});}
+ if(m.method==='session/prompt'){if(!selected)throw Error('Model not selected');emit({method:'session/update',params:{sessionId:'api-opencode-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OpenCode through API'}}}});emit({id:m.id,result:{stopReason:'end_turn'}});}
+}`,
+    { mode: 0o755 },
+  );
+  if (process.platform === "win32")
+    expect(
+      Bun.spawnSync([process.execPath, "build", source, "--compile", "--outfile", script], {
+        timeout: 30_000,
+      }).exitCode,
+    ).toBe(0);
+  const initial = readProviderSettings();
+  saveProviderSettings({
+    ...initial,
+    providers: [
+      ...initial.providers.filter((profile) => profile.agent !== "opencode"),
+      {
+        id: "opencode",
+        name: "OpenCode fixture",
+        agent: "opencode",
+        enabled: true,
+        executable: script,
+        model: "custom-provider/example-model",
+        environment: [],
+      },
+    ],
+  });
+  const prefs = loadConfig().preferences;
+  updateGlobalConfig((raw) => {
+    raw.preferences = { ...prefs, chat: { ...prefs.chat, model: "", mcp: "native" } };
+  });
+  try {
+    const result = await turn({
+      agent: "opencode",
+      messages: [{ role: "user", content: "Hello OpenCode" }],
+    });
+    expect(result.response.status).toBe(200);
+    expect(result.events).toContainEqual({ type: "text", text: "OpenCode through API" });
+    const thread = result.events.find((event) => event.type === "thread");
+    if (thread?.type !== "thread") throw new Error("No thread");
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${thread.thread.id}`)).json(),
+    );
+    expect(saved).toMatchObject({
+      backend: "opencode",
+      runtimeId: "api-opencode-session",
+      capabilities: { source: "negotiated", resume: true, images: true, mcp: true },
+    });
+    const continued = await turn({
+      threadId: saved.id,
+      messages: [{ role: "user", content: "Continue" }],
+    });
+    expect(continued.events).toContainEqual({ type: "text", text: "OpenCode through API" });
+    expect(continued.events.filter((event) => event.type === "error")).toEqual([]);
+  } finally {
+    writeFileSync(globalConfigPath(), previous);
+    resetConfig();
+  }
+});
+
 test("named provider defaults reach launches and remain pinned across a default change", async () => {
   const previous = readFileSync(globalConfigPath(), "utf8");
   try {

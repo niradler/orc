@@ -204,6 +204,73 @@ test("read state is shared across pages and survives reload", async ({ page, req
   }
 });
 
+test("clicking a desktop OS notification marks it read and still navigates", async ({
+  page,
+  request,
+}) => {
+  const source = await apiPost<HumanRequest>(request, "/human-requests", {
+    kind: "question",
+    title: "Desktop click clears",
+    prompt: "Which window?",
+    origin: { backend: "test", session_id: tid("desktop-click"), request_id: "desktop-click" },
+  });
+  try {
+    const item = (await apiGet<NotificationPage>(request, "/notifications")).notifications.find(
+      (notification) => notification.source_id === source.id,
+    );
+    expect(item).toBeDefined();
+    // Fake the Electron bridge: capture onOpen listeners so the test can emit a
+    // notification click exactly like the desktop main process does.
+    await page.addInitScript(() => {
+      const listeners: Array<(path: string, id?: string) => void> = [];
+      Object.defineProperty(window, "orcDesktop", {
+        value: {
+          notify: () => {},
+          onOpen: (listener: (path: string, id?: string) => void) => {
+            listeners.push(listener);
+            return () => {};
+          },
+          emitOpen: (path: string, id?: string) => {
+            for (const listener of [...listeners]) listener(path, id);
+          },
+        },
+      });
+    });
+    await gotoView(page, "tasks");
+    const bell = page.locator('[data-testid="notification-bell"]:visible').last();
+    await expect(bell).toHaveAccessibleName("Notifications: 1 unread");
+    await page.evaluate(
+      ({ path, id }) =>
+        (
+          window as unknown as { orcDesktop: { emitOpen(p: string, i?: string): void } }
+        ).orcDesktop.emitOpen(path, id),
+      { path: item?.path, id: item?.id },
+    );
+    // Intended navigation still happens.
+    await expect(page).toHaveURL(
+      new RegExp(`/activity\\?notifications=open&request=${source.id}.*project=all`),
+    );
+    // The clicked notification no longer counts as outstanding, in the UI...
+    // The open dialog aria-hides the backdrop, so check the label attribute.
+    await expect(page.locator('[data-testid="notification-bell"]:visible').last()).toHaveAttribute(
+      "aria-label",
+      "Notifications: 0 unread",
+    );
+    // ...and in the shared server state.
+    await expect
+      .poll(async () => {
+        const history = await apiGet<NotificationPage>(request, "/notifications");
+        return (
+          history.notifications.find((notification) => notification.id === item?.id)?.read_at ??
+          null
+        );
+      })
+      .not.toBeNull();
+  } finally {
+    await apiPost(request, `/human-requests/${source.id}/cancel`, { version: source.version });
+  }
+});
+
 test("reading a request preserves the active draft and focus as its inbox row disappears", async ({
   page,
   request,

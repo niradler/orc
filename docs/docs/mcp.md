@@ -227,6 +227,17 @@ Start each session with `context`.
 | `context` | Compact context index: active tasks and the project's memories by priority |
 | `search` | Search knowledge base documents first, then memories and tasks |
 | `project_list` | List all projects |
+| `project_create` | Create a project: unique name, optional description, status, tags and `git_remote_url`; returns the stable id, name and a UI link |
+
+#### Reuse or create a project, then store project-scoped data
+
+```text
+project_list({})                                       // does a fitting project already exist?
+project_create({ name: "my-app", description: "Shop rewrite" })   // only when none matches
+memory_create({ project: "my-app", name: "api-port", description: "Dev API port", content: "7701" })
+```
+
+Names are unique case-insensitively: a duplicate `project_create` fails with a conflict that names the existing project's id, and a retry never creates a second one — reuse the reported id. `project_create` needs an unscoped connection; a URL that selected `project`/`projects` (see [Query parameters](#query-parameters)) can read its chosen projects but cannot create new ones.
 
 ### Memory
 

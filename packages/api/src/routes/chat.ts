@@ -38,6 +38,7 @@ import {
   withOrcContext,
 } from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
+import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
@@ -83,7 +84,8 @@ import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
-import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
+import { readTranscriptBytes } from "../sessions/transcript.js";
+import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
 import { activeTurns, registerChatTurns, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
@@ -291,7 +293,7 @@ app.openapi(
     providerForAgent(agent, selectedProvider, true);
     if (thread && (requestedHost !== undefined || requestedCwd !== undefined))
       throw new ValidationError("A conversation owns its execution host and working directory.");
-    if (agent !== "codex" && agent !== "claude") return c.json({ models: [], warning: null });
+    if (!supportsModelDiscovery(agent)) return c.json({ models: [], warning: null });
     const host = thread
       ? execHostFor(thread.host)
       : requestedHost === undefined
@@ -602,8 +604,19 @@ async function importTranscript(thread: ChatThread, source: NativeSource): Promi
   const runtime = hostRuntime(execHostFor(thread.host));
   if (!source.transcript_path || !(await runtime.isFile(source.transcript_path))) return false;
   const mark = await transcriptMark(thread, source);
-  const bytes = await runtime.readFile(source.transcript_path, MAX_TRANSCRIPT_BYTES);
-  const cacheKey = `${thread.host ?? "local"}:${source.transcript_path}`;
+  const externalId = source.runtime_session_id ?? null;
+  const bytes = await loadTranscriptBytes(
+    runtime,
+    source.backend,
+    source.transcript_path,
+    externalId,
+  );
+  const cacheKey = transcriptCacheKey(
+    thread.host ?? "local",
+    source.backend,
+    source.transcript_path,
+    externalId,
+  );
   let transcript = await readTranscriptBytes(bytes, source.backend, cacheKey, {
     offset: 0,
     limit: CHAT_HISTORY_PAGE_SIZE,
@@ -799,12 +812,23 @@ app.openapi(
     const runtime = hostRuntime(execHostFor(thread.host));
     if (!(await runtime.isFile(source.transcript_path)))
       throw new NotFoundError("Native transcript", thread.id);
-    const bytes = await runtime.readFile(source.transcript_path, MAX_TRANSCRIPT_BYTES);
+    const externalId = source.runtime_session_id ?? null;
+    const bytes = await loadTranscriptBytes(
+      runtime,
+      source.backend,
+      source.transcript_path,
+      externalId,
+    );
     const offset = Math.max(0, before - CHAT_HISTORY_PAGE_SIZE);
     const page = await readTranscriptBytes(
       bytes,
       source.backend,
-      `${thread.host ?? "local"}:${source.transcript_path}`,
+      transcriptCacheKey(
+        thread.host ?? "local",
+        source.backend,
+        source.transcript_path,
+        externalId,
+      ),
       { offset, limit: before - offset },
     );
     if (page.total < before)

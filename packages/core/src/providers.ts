@@ -79,7 +79,7 @@ export const ProviderProfileSchema = z
         path: ["options"],
         message: "Launch options must match the selected adapter",
       });
-    if (profile.executable && !["claude", "codex"].includes(profile.agent))
+    if (profile.executable && !["claude", "codex", "opencode"].includes(profile.agent))
       context.addIssue({
         code: "custom",
         path: ["executable"],
@@ -110,9 +110,11 @@ export const ProviderSettingsSchema = z
         message: "Provider names must be unique",
       });
     if (
-      !settings.providers.some(
-        (profile) => profile.id === settings.default_provider_id && profile.enabled,
-      )
+      !settings.providers.some((profile) => profile.id === settings.default_provider_id) ||
+      (settings.providers.some((profile) => profile.enabled) &&
+        !settings.providers.some(
+          (profile) => profile.id === settings.default_provider_id && profile.enabled,
+        ))
     )
       context.addIssue({
         code: "custom",

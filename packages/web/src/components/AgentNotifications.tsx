@@ -208,6 +208,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
           body: item.body || labels[item.type] || "Update",
           level: item.level,
           path: item.path,
+          id: item.id,
         });
     }, 250);
     return () => window.clearInterval(timer);
@@ -257,9 +258,14 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       document.removeEventListener("keydown", unlock, { capture: true });
     };
   }, []);
+  // A desktop OS notification click reports its ORC notification id; acknowledge it
+  // (same as clicking in-app) so it stops counting as outstanding, then navigate.
+  const acknowledgeRef = useRef<(id: string) => void>(() => {});
+  acknowledgeRef.current = (id: string) => update.mutate({ id, read: true });
   useEffect(
     () =>
-      desktopBridge()?.onOpen((path) => {
+      desktopBridge()?.onOpen((path, id) => {
+        if (id) acknowledgeRef.current(id);
         if (path.startsWith("/") && !path.startsWith("//") && !path.includes("\\")) navigate(path);
       }),
     [navigate],

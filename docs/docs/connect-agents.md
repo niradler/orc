@@ -209,7 +209,7 @@ Separate from connecting your own agent: ORC can start agents for tasks, jobs an
 orc doctor
 ```
 
-Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `acpx`, `acp`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
+Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `opencode`, `acpx`, `acp`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
 
 
 ## Capabilities and direct ACP
@@ -230,6 +230,29 @@ continue to use execution mode, without chat's interactive controls.
 ACPX remains the compatibility path for other coding agents. It streams text,
 reasoning and tool results and keeps named sessions. Its CLI permissions are chosen
 through launch flags; ORC cannot answer individual live ACPX permission requests.
+
+On first API startup, ORC enables installed agents from the default list: Codex,
+Claude Code, Cursor, Gemini CLI and OpenCode. Missing agents start unchecked in
+**Settings → Agents**. This selection is saved once, including an empty selection
+when none are installed. Existing explicit agent/provider selections are preserved.
+Later enabling an unavailable agent keeps that choice and reports installation
+guidance when you try to run it. Copilot remains supported; enable it in Settings.
+
+OpenCode speaks ACP directly: ORC launches `opencode acp`
+on the execution host (an installation with ACP support) and negotiates capabilities per
+session, including native resume, model selection, image input, HTTP MCP,
+per-request approvals and interruption. A missing install reports installation
+guidance instead of falling back to ACPX. The OpenCode provider profile's
+**Executable path** selects a specific installation, model choices load from
+`opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides the
+built-in command entirely.
+
+Configure and authenticate providers in OpenCode on the execution host. In ORC, leave
+**Default model** blank to use OpenCode's selection, or enter the exact
+`provider/model` ID returned by `opencode models`. The profile model is applied to
+new and resumed ACP sessions; an explicit session model takes precedence. Provider
+environment overrides also apply to model discovery. Native OpenCode provider and
+model options belong in OpenCode configuration, rather than ACPX launch flags.
 
 For an installed agent that speaks ACP directly, configure a separate agent ID in
 `~/.orc/config.json`:

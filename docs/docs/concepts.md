@@ -66,6 +66,7 @@ A backend is the coding agent that runs a task node, job or chat session.
 | `codex-cli` | The `codex` binary |
 | `acpx` | ACP CLI, which drives 14+ agents (Gemini, Copilot, Cursor, Kiro, ...) |
 | `acp` | An explicitly configured direct ACP command with negotiated capabilities |
+| `opencode` | OpenCode over direct ACP (`opencode acp`) with negotiated capabilities |
 | `agentapi` | A coder/agentapi server wrapping any local agent |
 | `a2a` | A remote A2A endpoint |
 | any other name | A configured `agent_loop.acp_commands` entry, otherwise passed to acpx as the agent name |

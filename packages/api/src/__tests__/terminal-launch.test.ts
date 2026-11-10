@@ -231,7 +231,14 @@ describe("platform shells", () => {
   });
 
   test("only installed launchers are offered", async () => {
-    expect(availableLaunchers(deps())).toEqual(["shell", "claude", "codex", "cursor", "gemini"]);
+    expect(availableLaunchers(deps())).toEqual([
+      "shell",
+      "claude",
+      "codex",
+      "cursor",
+      "gemini",
+      "opencode",
+    ]);
     expect(
       availableLaunchers(deps({ which: (c) => (c === "claude" ? "/bin/claude" : null) })),
     ).toEqual(["shell", "claude"]);
