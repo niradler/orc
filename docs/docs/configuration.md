@@ -232,6 +232,8 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
 
 The task loop picks up `todo` and `changes_requested` tasks and runs agents on them.
 
+`agent_loop.enabled` only turns the subsystem on at startup. Its cycles are recorded under the `orc-task-loop` system job, and disabling that job (Jobs page, `orc jobs`) stops every automatic cycle — scheduled ticks, task-change triggers and follow-ups — even while the setting is `true`. The disabled state survives restarts and re-enabling the job resumes the loop without an environment change. Disabling does not stop agents that are already running.
+
 | Key | Default | Env |
 | --- | --- | --- |
 | `agent_loop.enabled` | `false` | `ORC_AGENT_LOOP_ENABLED` |

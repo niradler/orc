@@ -115,6 +115,46 @@ describe("recordedCycle", () => {
   });
 });
 
+describe("disabled system job", () => {
+  const setEnabled = (enabled: boolean) =>
+    getSqlite()
+      .query("UPDATE jobs SET enabled = ? WHERE name = ?")
+      .run(enabled ? 1 : 0, SYSTEM_JOB_NAME);
+  const runCount = () =>
+    (getSqlite().query("SELECT count(*) AS n FROM job_runs").get() as { n: number }).n;
+
+  afterAll(() => setEnabled(true));
+
+  test("records no run while the job is disabled", async () => {
+    await ensureSystemJob();
+    setEnabled(false);
+    const before = runCount();
+    await recordedCycle();
+    expect(runCount()).toBe(before);
+  });
+
+  test("a task-change follow-up does not run while disabled", async () => {
+    const before = runCount();
+    const running = recordedCycle();
+    await recordedCycle();
+    await running;
+    expect(runCount()).toBe(before);
+  });
+
+  test("ensureSystemJob keeps the job disabled", async () => {
+    await ensureSystemJob();
+    const job = await getDb().query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+    expect(job?.enabled).toBe(false);
+  });
+
+  test("re-enabling resumes cycles", async () => {
+    setEnabled(true);
+    const before = runCount();
+    await recordedCycle();
+    expect(runCount()).toBe(before + 1);
+  });
+});
+
 describe("cleanupStaleSessions", () => {
   test("marks idle worker sessions as error and releases tasks", async () => {
     const db = getDb();

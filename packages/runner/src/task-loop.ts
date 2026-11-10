@@ -165,7 +165,7 @@ async function runRecordedCycle(): Promise<void> {
   const job = await db.query.jobs.findFirst({
     where: eq(jobs.name, SYSTEM_JOB_NAME),
   });
-  if (!job) return;
+  if (!job?.enabled) return;
 
   const runId = ulid();
   const now = new Date();
