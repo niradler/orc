@@ -348,6 +348,39 @@ Applied rules and their outcomes per workspace, plus rule settings for enforceme
 
 Working documents, diagrams and HTML pages that you or an agent create and come back to. Agents use the `pad_*` MCP tools. Share one by copying its link.
 
+HTML pads receive the **ORC HTML kit** in both the editor preview and chat artifacts:
+dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and chart
+wrappers. Use `orc-*` classes to build a native-looking page without a custom
+`<style>` block. The kit is inlined at render time, needs no network request, and
+does not change the saved HTML. Custom CSS and JavaScript still work.
+
+Pin the kit stylesheet in your HTML head to keep its version as the kit evolves:
+
+```html
+<meta name="orc-kit" content="1">
+```
+
+Bundled older versions remain available. A missing or unknown version uses the
+current kit. Both previews follow the dashboard's light/dark theme; changing the
+theme rebuilds the iframe document, resetting its running scripts and local UI
+state. The saved pad content stays the same.
+
+Kit tabs support clicking, Left/Right arrows with wrapping, and Home/End. Only
+the selected panel is shown. The kit does not grant ORC API access: editor pads
+still require **Render with ORC access**, and chat artifacts retain their opaque
+sandbox and network-blocking policy. Prefer inline SVG for charts that must work
+in both views; a CDN chart library is blocked in chat.
+
+For concise component markup, use built-in custom elements such as
+`<orc-card>`, `<orc-stat label="Open tasks" value="12">`,
+`<orc-badge tone="success">`, `<orc-table>` and `<orc-chart>`.
+`<orc-tabs>` generates accessible tab controls from labeled `<orc-tab>` panels.
+These components reuse the kit with no additional dependencies or network
+requests; ordinary HTML with `orc-*` classes remains supported.
+
+Agents can load the component list, copy-paste skeleton and chart guidance with
+`skill_read` for `orc-platform`, ref `references/html-kit.md`. See [Skills](./skills.md).
+
 ## Settings
 
 ![Settings](/screens/settings.png)
