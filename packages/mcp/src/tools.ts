@@ -131,7 +131,20 @@ const channelEditParams = ChannelUpdateSchema.extend({
 });
 const auditParams = scopeParams.extend({
   entity_type: z
-    .enum(["memory", "skill", "kb", "task", "job", "rule", "settings", "terminal", "auth"])
+    .enum([
+      "memory",
+      "skill",
+      "kb",
+      "notification",
+      "human_request",
+      "job_run",
+      "task",
+      "job",
+      "rule",
+      "settings",
+      "terminal",
+      "auth",
+    ])
     .optional(),
   session_id: z.string().min(1).max(200).optional(),
   since: z.number().int().min(0).optional(),

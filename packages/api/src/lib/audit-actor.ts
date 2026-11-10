@@ -17,7 +17,7 @@ export function auditActor(c: Context): { actor: string; session_id: string | nu
 }
 
 /** The mutation already succeeded, so a failed audit write is logged instead of failing the request. */
-export function recordAudit(c: Context, input: Omit<AuditInput, "actor" | "session_id">): void {
+export function recordAudit(c: Context, input: AuditInput): void {
   try {
     new AuditLog(getSqlite()).record({ ...auditActor(c), ...input });
   } catch (error) {

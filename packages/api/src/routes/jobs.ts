@@ -597,6 +597,7 @@ app.openapi(updateRoute, async (c) => {
     body.cron_expr !== undefined ? body.cron_expr : (existing.cron_expr ?? undefined);
   assertValidCron(effectiveTrigger, effectiveCron);
 
+  const webhooksBefore = JSON.stringify(readJobWebhooks(id));
   withTx((tx) => {
     tx.update(jobs)
       .set({
@@ -636,6 +637,7 @@ app.openapi(updateRoute, async (c) => {
   if (!updated) throw new Error("Expected job to exist after write");
   syncJob(updated);
   const diff = diffSummary(existing, body, updated);
+  if (JSON.stringify(readJobWebhooks(id)) !== webhooksBefore) diff.changed.push("webhooks");
   if (diff.changed.length)
     recordAudit(c, {
       action: "job.updated",

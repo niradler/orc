@@ -356,6 +356,11 @@ app.openapi(createTerminalRoute, async (c) => {
       name: body.name ?? plan.setup.name,
     });
     rememberTerminalFolder(info.cwd, info.host);
+    recordAudit(c, {
+      action: "terminal.created",
+      subject_ids: [info.id],
+      snapshot: { kind: info.kind, host: info.host, cwd: info.cwd, source: "setup" },
+    });
     return c.json(info, 201);
   }
 
@@ -428,6 +433,17 @@ app.openapi(createTerminalRoute, async (c) => {
     });
     if (handoff) await getHandoffService().markResumed(row.id);
     rememberTerminalFolder(info.cwd, info.host);
+    recordAudit(c, {
+      action: "terminal.created",
+      subject_ids: [info.id],
+      snapshot: {
+        kind: info.kind,
+        host: info.host,
+        cwd: info.cwd,
+        source: "resume",
+        live_session_id: row.id,
+      },
+    });
     return c.json(info, 201);
   }
 
@@ -461,6 +477,7 @@ app.openapi(createTerminalRoute, async (c) => {
       host: info.host,
       cwd: info.cwd,
       worktree: Boolean(body.worktree),
+      source: "launch",
     },
   });
   return c.json(info, 201);

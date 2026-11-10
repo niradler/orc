@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getSqlite } from "@orc/db/client";
+import { resetFailedSignInSampling } from "../routes/auth.js";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -17,6 +18,7 @@ const root = mkdtempSync(join(tmpdir(), "orc-audit-coverage-"));
 let app: ReturnType<typeof createApp>;
 beforeAll(() => {
   app = setupTestApp();
+  resetFailedSignInSampling();
 });
 afterAll(() => {
   teardownTestApp();

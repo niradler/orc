@@ -39,6 +39,10 @@ const AccessTokenSchema = z
 const FAILED_AUDIT_INTERVAL_MS = 60_000;
 let lastFailedAudit = 0;
 
+export function resetFailedSignInSampling(): void {
+  lastFailedAudit = 0;
+}
+
 // Failures are sampled to one per minute so guessing the secret cannot flood the audit log.
 function verifiedSecret(c: Context, candidate: string, method: "session" | "token") {
   const required = configuredApiSecret(loadConfig().api.secret);
@@ -46,7 +50,13 @@ function verifiedSecret(c: Context, candidate: string, method: "session" | "toke
     const now = Date.now();
     if (now - lastFailedAudit >= FAILED_AUDIT_INTERVAL_MS) {
       lastFailedAudit = now;
-      recordAudit(c, { action: "auth.sign_in_failed", subject_ids: [], snapshot: { method } });
+      recordAudit(c, {
+        action: "auth.sign_in_failed",
+        actor: "unauthenticated",
+        session_id: null,
+        subject_ids: [],
+        snapshot: { method },
+      });
     }
     throw new UnauthorizedError();
   }

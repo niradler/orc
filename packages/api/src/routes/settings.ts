@@ -88,19 +88,23 @@ app.openapi(
   (c) => {
     const { prompts, ...settings } = c.req.valid("json");
     const previousMode = loadConfig().mcp.default_mode;
+    const previousPrompts = prompts ? JSON.stringify(new McpPromptStore(getSqlite()).list()) : null;
     if (Object.keys(settings).length)
       updateGlobalConfig((raw) => {
         raw.mcp = { ...(raw.mcp as Record<string, unknown> | undefined), ...settings };
       });
     if (prompts) new McpPromptStore(getSqlite()).replace(prompts);
     const mode = loadConfig().mcp.default_mode;
-    if (mode !== previousMode || prompts)
+    const promptsChanged =
+      prompts !== undefined &&
+      previousPrompts !== JSON.stringify(new McpPromptStore(getSqlite()).list());
+    if (mode !== previousMode || promptsChanged)
       recordAudit(c, {
         action: "settings.mcp_changed",
         subject_ids: [],
         snapshot: {
           ...(mode !== previousMode ? { default_mode: { before: previousMode, after: mode } } : {}),
-          ...(prompts ? { prompts: prompts.length } : {}),
+          ...(promptsChanged ? { prompts: prompts?.length } : {}),
         },
       });
     return c.json(mcpSettings());
