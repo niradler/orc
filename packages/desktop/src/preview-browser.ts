@@ -4,8 +4,10 @@ import {
   type BrowserAction,
   BrowserActionSchema,
   type BrowserSelector,
+  httpFallbackAllowed,
   type PreviewBrowserState,
   previewWebUrl,
+  typedWebUrl,
 } from "@orc/core/desktop-preview";
 import {
   app,
@@ -39,6 +41,7 @@ interface BrowserPage {
   recording?: PreviewRecording | undefined;
   prompt?: IpcMainEvent | undefined;
   downloads: PreviewDownloads;
+  httpFallback?: string | null;
 }
 
 /** Only unprivileged guest pages are reachable here, never the ORC renderer. */
@@ -158,8 +161,9 @@ export class PreviewBrowser {
     };
   }
   open(id: string, value: string, newTab = false, restoredTabId?: string): PreviewBrowserState {
-    const url = previewWebUrl(value);
-    if (!url) throw new Error("Use an HTTP/HTTPS URL without embedded credentials");
+    const typed = typedWebUrl(value);
+    if (!typed) throw new Error("Use an HTTP/HTTPS URL without embedded credentials");
+    const url = typed.url;
     let tabId = restoredTabId ?? (!newTab ? this.activeTabs.get(id) : undefined);
     let page = tabId ? this.pages.get(tabId) : undefined;
     if (page && (page.interrupted || page.contents.isDestroyed())) {
@@ -268,6 +272,7 @@ export class PreviewBrowser {
         changed();
       });
       view.webContents.on("did-navigate", (_event, target) => {
+        ownPage.httpFallback = null;
         state.url = target;
         state.error = null;
         changed();
@@ -285,7 +290,13 @@ export class PreviewBrowser {
         changed();
       });
       view.webContents.on("did-fail-load", (_event, code, _reason, _url, main) => {
-        if (main && code !== -3) {
+        if (main && httpFallbackAllowed(code) && ownPage.httpFallback) {
+          const fallback = ownPage.httpFallback;
+          ownPage.httpFallback = null;
+          state.url = fallback;
+          void view.webContents.loadURL(fallback).catch(() => {});
+          changed();
+        } else if (main && code !== -3) {
           state.error = `Page could not load (${code}). Check the address and retry.`;
           changed();
         }
@@ -322,6 +333,7 @@ export class PreviewBrowser {
     }
     page.state.url = url;
     page.state.error = null;
+    page.httpFallback = typed.fallback;
     if (this.selected === id && this.rectangle) this.bounds(id, this.rectangle);
     void page.contents.loadURL(url).catch(() => {});
     const state = this.state(page);
@@ -392,6 +404,7 @@ export class PreviewBrowser {
   }
   navigation(id: string, action: "back" | "forward" | "reload"): void {
     const page = this.page(id);
+    page.httpFallback = null;
     if (page.interrupted || page.contents.isDestroyed()) {
       if (action === "reload") {
         this.open(id, page.state.url);
