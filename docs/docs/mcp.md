@@ -381,4 +381,4 @@ See [Human requests](./human-requests.md) and [Command requests](./command-reque
 
 | Tool | Description |
 | --- | --- |
-| `audit_list` | Review knowledge audit entries, optionally by `session_id` |
+| `audit_list` | Review audit entries (knowledge, task, job, rule, settings, terminal, auth), optionally by `entity_type` or `session_id` |

@@ -337,7 +337,7 @@ Expiry and dismissal do not mutate the source request. SDK methods are
 `client.notifications.list`, `.update` and `.markAllRead`.
 
 `GET /audit` accepts `entity_type` (`notification`, `human_request`, `job_run`,
-`task`, `settings`, `memory`, `skill`, `kb`), `session_id`, `since` (Unix seconds),
+`task`, `settings`, `job`, `rule`, `terminal`, `auth`, `memory`, `skill`, `kb`), `session_id`, `since` (Unix seconds),
 `limit` (1–100, default50), and `project_id` or `scope=global|all`.
 `scope=all` includes project and global entries. `snapshot=preview` substitutes
 a bounded marker for snapshots larger than4096 bytes; default `full` preserves

@@ -11,6 +11,7 @@ import {
   retireSshMaster,
   sshBinary,
 } from "@orc/core/exec-host";
+import { recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
 import { refreshConfiguredSessionAdapters } from "../session-watcher.js";
 
@@ -147,6 +148,12 @@ app.openapi(putRoute, async (c) => {
     throw new ConflictError("ssh.host is overridden by ./.orc/config.json in orc's working folder");
   if (before.ssh.host && before.ssh.host !== after.ssh.host) await retireSshMaster(before.ssh.host);
   refreshConfiguredSessionAdapters();
+  if ((before.ssh.host ?? null) !== (after.ssh.host ?? null))
+    recordAudit(c, {
+      action: "settings.ssh_changed",
+      subject_ids: [],
+      snapshot: { host: { before: before.ssh.host ?? null, after: after.ssh.host ?? null } },
+    });
   return c.json(sshState());
 });
 
