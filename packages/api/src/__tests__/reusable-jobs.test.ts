@@ -30,6 +30,7 @@ beforeAll(() => {
   fixtureHome = mkdtempSync(join(tmpdir(), "orc-job-action-test-"));
   process.env.HOME = fixtureHome;
   process.env.USERPROFILE = fixtureHome;
+  expect(getUserFlowsDir()).toBe(join(fixtureHome, ".orc", "flows"));
   reloadFlows();
   app = setupTestApp();
   registerBackend("job-fixture", () => ({
@@ -95,9 +96,6 @@ afterAll(() => {
   else process.env.HOME = originalHome;
   if (originalProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = originalProfile;
-  // Bun's homedir() ignores the fixture HOME, so createFlow wrote into the real
-  // user flows directory; remove the owned fixture to keep reruns green.
-  rmSync(join(getUserFlowsDir(), "job-human-fixture"), { recursive: true, force: true });
   reloadFlows();
   rmSync(fixtureHome, { recursive: true, force: true });
 });
@@ -299,18 +297,15 @@ test("should run an agent through the backend registry, link its session and bou
 });
 
 test("should keep generated backlog tasks out of the loop and start only explicitly opted-in flows", async () => {
-  createFlow(
-    {
-      name: "job-human-fixture",
-      entry: "wait",
-      nodes: {
-        wait: { kind: "human", prompt: "Review event", task_status: "review" },
-        done: { kind: "terminal", task_status: "done" },
-      },
-      edges: [{ from: "wait", to: "done", when: { outcome: "approved" } }],
+  createFlow({
+    name: "job-human-fixture",
+    entry: "wait",
+    nodes: {
+      wait: { kind: "human", prompt: "Review event", task_status: "review" },
+      done: { kind: "terminal", task_status: "done" },
     },
-    { overwrite: true },
-  );
+    edges: [{ from: "wait", to: "done", when: { outcome: "approved" } }],
+  });
   for (const automatic of [false, true]) {
     const job = await (
       await req(app, "POST", "/jobs", {

@@ -440,7 +440,7 @@ export const OPENCODE_BUILTIN: BuiltinAcpAgent = {
   command: ["opencode", "acp"],
   capabilities: OPENCODE_CAPABILITIES,
   requires:
-    "opencode 2.x or newer on the execution host, or an agent_loop.acp_commands.opencode override",
+    "OpenCode with ACP support on the execution host, or an agent_loop.acp_commands.opencode override",
   missing:
     "OpenCode is not installed on the selected execution host. Install it (npm install -g opencode-ai, see https://opencode.ai) or point agent_loop.acp_commands.opencode at an installed ACP command.",
 };

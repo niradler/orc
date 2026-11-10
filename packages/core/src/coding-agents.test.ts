@@ -10,7 +10,7 @@ test("should default to the built-in agents and drop invalid or duplicate ids", 
   expect(DEFAULT_ENABLED_AGENTS).toContain("opencode");
   expect(DEFAULT_ENABLED_AGENTS).not.toContain("copilot");
   expect(enabledAgents(undefined)).toEqual([...DEFAULT_ENABLED_AGENTS]);
-  expect(enabledAgents([])).toEqual([...DEFAULT_ENABLED_AGENTS]);
+  expect(enabledAgents([])).toEqual([]);
   expect(enabledAgents(["opencode", "opencode", "Bad Id", "qoder"])).toEqual(["opencode", "qoder"]);
 });
 

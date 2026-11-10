@@ -67,7 +67,7 @@ describe("native model discovery", () => {
   });
 
   test("OpenCode text catalog validates ids, drops junk and deduplicates", async () => {
-    const script = `console.log("provider/model-a");console.log("provider/model-a");console.log("--flag");console.log("");console.log("has space");console.log("bailian-cli/qwen3.8-max");`;
+    const script = `console.log("provider/model-a");console.log("provider/model-a");console.log("--flag");console.log("");console.log("has space");console.log("custom-provider/example-model");`;
     expect(
       await readTextModelCatalog(
         { kind: "local" },
@@ -76,7 +76,7 @@ describe("native model discovery", () => {
       ),
     ).toEqual([
       { id: "provider/model-a", label: "provider/model-a" },
-      { id: "bailian-cli/qwen3.8-max", label: "bailian-cli/qwen3.8-max" },
+      { id: "custom-provider/example-model", label: "custom-provider/example-model" },
     ]);
   });
 
@@ -88,5 +88,15 @@ describe("native model discovery", () => {
         process.cwd(),
       ),
     ).rejects.toThrow("size limit");
+  });
+
+  test("should reject failed OpenCode discovery even when it printed a partial catalog", async () => {
+    await expect(
+      readTextModelCatalog(
+        { kind: "local" },
+        [process.execPath, "-e", 'console.log("custom-provider/example-model");process.exit(1)'],
+        process.cwd(),
+      ),
+    ).rejects.toThrow("could not list its models");
   });
 });

@@ -3,11 +3,84 @@ import { openChatActions, settingsSection } from "./_chat-ui";
 import { API_BASE, API_SECRET, AUTH_HEADERS, apiPatch, gotoView, repoRoot } from "./_helpers";
 
 for (const width of [1440, 390]) {
+  test(`empty provider selection recovers to OpenCode with a custom model at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    const initial = await (
+      await request.get(`${API_BASE}/settings/providers`, { headers: AUTH_HEADERS })
+    ).json();
+    const disabled = await request.put(`${API_BASE}/settings/providers`, {
+      headers: AUTH_HEADERS,
+      data: {
+        ...initial,
+        providers: initial.providers.map((profile: { enabled: boolean }) => ({
+          ...profile,
+          enabled: false,
+        })),
+      },
+    });
+    expect(disabled.ok()).toBe(true);
+    try {
+      await page.addInitScript(
+        (secret) =>
+          localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+        API_SECRET,
+      );
+      await page.route("**/api/chat/models?**", (route) =>
+        route.fulfill({
+          json: {
+            models: [{ id: "custom-provider/example-model", label: "Example model" }],
+            warning: null,
+          },
+        }),
+      );
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/settings");
+      await settingsSection(page, "agents");
+      await expect(page.getByTestId("provider-none-enabled")).toBeVisible();
+      await page.getByTestId("provider-select-opencode").click();
+      await expect(page.getByTestId("agent-enabled-opencode")).not.toBeChecked();
+      await page.getByTestId("agent-enabled-opencode").check();
+      await page.getByTestId("provider-default").selectOption("opencode");
+      await page.getByTestId("provider-model").fill("custom-provider/example-model");
+      await page.getByTestId("provider-advanced").locator("summary").click();
+      await expect(page.getByTestId("provider-options")).toHaveCount(0);
+      await page.getByTestId("provider-options-help").scrollIntoViewIfNeeded();
+      await page.getByTestId("provider-options-help").focus();
+      await page.keyboard.press("Escape");
+      await page.getByTestId("provider-options-help").press("Enter");
+      await expect(page.getByTestId("provider-options-help-content")).toContainText("OpenCode");
+      await page.keyboard.press("Escape");
+      await page.getByTestId("agent-settings-save").click();
+      await expect(page.getByTestId("agent-settings-saved")).toBeVisible();
+      await page.reload();
+      await settingsSection(page, "agents");
+      await expect(page.getByTestId("provider-model")).toHaveValue("custom-provider/example-model");
+      await expect(page.getByTestId("agent-enabled-opencode")).toBeChecked();
+      await expect(page.getByTestId("agent-enabled-copilot")).not.toBeChecked();
+      await page.getByRole("region", { name: /Coding providers/ }).screenshot({
+        path: testInfo.outputPath(`opencode-recovery-${width}.png`),
+      });
+    } finally {
+      const current = await (
+        await request.get(`${API_BASE}/settings/providers`, { headers: AUTH_HEADERS })
+      ).json();
+      const restored = await request.put(`${API_BASE}/settings/providers`, {
+        headers: AUTH_HEADERS,
+        data: { ...initial, revision: current.revision },
+      });
+      expect(restored.ok()).toBe(true);
+    }
+  });
+
   test(`enabled coding agents drive the chat agent picker at ${width}px`, async ({
     page,
     request,
   }, testInfo) => {
-    await apiPatch(request, "/settings", { agents: [] });
+    await apiPatch(request, "/settings", {
+      agents: ["codex", "claude", "cursor", "gemini", "opencode"],
+    });
     const initial = await (
       await request.get(`${API_BASE}/settings/providers`, { headers: AUTH_HEADERS })
     ).json();

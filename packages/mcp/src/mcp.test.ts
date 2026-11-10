@@ -560,6 +560,18 @@ describe("MCP project_create tool", () => {
     expect(count).toBe(1);
   });
 
+  test("should reject concurrent project creates with different casing", async () => {
+    const name = uniqueName();
+    created.push(name);
+    const results = await Promise.allSettled([
+      executeTool("project_create", { name }),
+      executeTool("project_create", { name: name.toUpperCase() }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const failure = results.find((result) => result.status === "rejected");
+    expect(failure?.status === "rejected" && failure.reason).toBeInstanceOf(ConflictError);
+  });
+
   test("project-scoped connections are refused with actionable guidance", async () => {
     const error = await executeTool(
       "project_create",

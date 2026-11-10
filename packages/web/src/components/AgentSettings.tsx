@@ -203,6 +203,15 @@ export function AgentSettings() {
           </Button>
         </div>
       )}
+      {settings && !settings.providers.some((item) => item.enabled) && (
+        <p
+          role="status"
+          data-testid="provider-none-enabled"
+          className="text-sm text-muted-foreground"
+        >
+          No coding providers enabled. Install an agent, then enable it here.
+        </p>
+      )}
       {settings && (
         <div className="grid items-center gap-2 sm:grid-cols-[140px_minmax(0,1fr)]">
           <Label htmlFor="provider-default">Default provider</Label>
@@ -363,6 +372,11 @@ export function AgentSettings() {
                   </option>
                 ))}
               </datalist>
+              {(catalog.data?.warning || catalog.isError) && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {catalog.data?.warning ?? "Models could not be loaded. Enter a custom model ID."}
+                </p>
+              )}
             </div>
             <details
               key={profile.id}
@@ -496,27 +510,42 @@ export function AgentSettings() {
               </div>
               <div className="space-y-2 border-t border-border pt-3">
                 <div className="flex items-center gap-1">
-                  <Label htmlFor="provider-options">Chat launch options (JSON)</Label>
-                  <HelpPopover label="Chat launch options" testId="provider-options-help">
-                    {chatRuntime(profile.agent) === "claude-sdk"
-                      ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
-                      : chatRuntime(profile.agent) === "codex"
-                        ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
-                        : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
+                  <Label htmlFor={profile.agent === "opencode" ? undefined : "provider-options"}>
+                    {profile.agent === "opencode"
+                      ? "OpenCode configuration"
+                      : "Chat launch options (JSON)"}
+                  </Label>
+                  <HelpPopover
+                    label={
+                      profile.agent === "opencode"
+                        ? "OpenCode configuration"
+                        : "Chat launch options"
+                    }
+                    testId="provider-options-help"
+                  >
+                    {profile.agent === "opencode"
+                      ? "Configure custom providers and model options in OpenCode on the execution host. Use Default model above for a provider/model override, or leave it blank for OpenCode's default. Environment overrides apply to ACP and model discovery. ACPX launch flags do not apply to OpenCode."
+                      : chatRuntime(profile.agent) === "claude-sdk"
+                        ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
+                        : chatRuntime(profile.agent) === "codex"
+                          ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
+                          : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
                     Session options override these defaults. These options apply to chat, not native
                     terminal launches.
                   </HelpPopover>
                 </div>
-                <Textarea
-                  id="provider-options"
-                  data-testid="provider-options"
-                  rows={4}
-                  maxLength={20000}
-                  className="font-mono text-xs"
-                  disabled={busy}
-                  value={optionDrafts[profile.id] ?? optionsText(profile)}
-                  onChange={(event) => changeOptions(event.target.value)}
-                />
+                {profile.agent !== "opencode" && (
+                  <Textarea
+                    id="provider-options"
+                    data-testid="provider-options"
+                    rows={4}
+                    maxLength={20000}
+                    className="font-mono text-xs"
+                    disabled={busy}
+                    value={optionDrafts[profile.id] ?? optionsText(profile)}
+                    onChange={(event) => changeOptions(event.target.value)}
+                  />
+                )}
                 {optionErrors[profile.id] && (
                   <p role="alert" className="text-xs text-error">
                     {optionErrors[profile.id]}

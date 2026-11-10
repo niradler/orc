@@ -123,7 +123,7 @@ export function chatRuntimeFor(agent: string): ChatRuntime {
 }
 
 export function enabledAgents(configured: readonly string[] | undefined): string[] {
-  const ids = configured?.length ? configured : DEFAULT_ENABLED_AGENTS;
+  const ids = configured ?? DEFAULT_ENABLED_AGENTS;
   return Array.from(new Set(ids.filter((id) => AGENT_ID_PATTERN.test(id))));
 }
 

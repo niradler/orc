@@ -110,9 +110,11 @@ export const ProviderSettingsSchema = z
         message: "Provider names must be unique",
       });
     if (
-      !settings.providers.some(
-        (profile) => profile.id === settings.default_provider_id && profile.enabled,
-      )
+      !settings.providers.some((profile) => profile.id === settings.default_provider_id) ||
+      (settings.providers.some((profile) => profile.enabled) &&
+        !settings.providers.some(
+          (profile) => profile.id === settings.default_provider_id && profile.enabled,
+        ))
     )
       context.addIssue({
         code: "custom",

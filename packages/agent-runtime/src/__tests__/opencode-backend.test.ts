@@ -29,15 +29,15 @@ afterAll(() => {
 /** A minimal `opencode acp` peer: records its argv and answers the handshake and one prompt. */
 function peerSource(argvFile: string): string {
   return `import {createInterface} from 'node:readline';
-import {writeFileSync} from 'node:fs';
+import {writeFileSync,appendFileSync} from 'node:fs';
 const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
 const update=(sessionId,u)=>emit({method:'session/update',params:{sessionId,update:u}});
 writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
 for await (const line of createInterface({input:process.stdin})) {
-  const m=JSON.parse(line);
+  const m=JSON.parse(line);appendFileSync(${JSON.stringify(`${argvFile}.wire`)},line+'\\n');
   if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
   else if(m.method==='session/new')emit({id:m.id,result:{sessionId:'oc-ses-1',configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'a',options:[{value:'test/model',name:'Test'}]}]}});
-  else if(m.method==='session/load')emit({id:m.id,result:{}});
+  else if(m.method==='session/load')emit({id:m.id,result:{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'a',options:[{value:'custom-provider/example-model',name:'Example model'}]}]}});
   else if(m.method==='session/set_config_option')emit({id:m.id,result:{configOptions:[]}});
   else if(m.method==='session/prompt'){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OPENCODE REPLY'}});emit({id:m.id,result:{stopReason:'end_turn'}});}
 }`;
@@ -60,8 +60,15 @@ test("opencode backend runs the builtin ACP command with a provider executable o
   const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-backend-"));
   try {
     const argvFile = join(cwd, "argv.json");
-    const script = join(cwd, "opencode");
-    writeFileSync(script, `#!/usr/bin/env bun\n${peerSource(argvFile)}`, { mode: 0o755 });
+    const source = join(cwd, "opencode.ts");
+    writeFileSync(source, `#!/usr/bin/env bun\n${peerSource(argvFile)}`, { mode: 0o755 });
+    const script = process.platform === "win32" ? join(cwd, "opencode.exe") : source;
+    if (process.platform === "win32")
+      expect(
+        Bun.spawnSync([process.execPath, "build", source, "--compile", "--outfile", script], {
+          timeout: 30_000,
+        }).exitCode,
+      ).toBe(0);
     expect(chatBackendFor("opencode")).toBe("opencode");
     const backend = createBackend("opencode");
     expect(backend.name).toBe("opencode");
@@ -76,6 +83,7 @@ test("opencode backend runs the builtin ACP command with a provider executable o
       orcMcp: false,
       providerExecutable: script,
       acpAgent: "opencode",
+      model: "custom-provider/example-model",
     });
     try {
       expect(JSON.parse(readFileSync(argvFile, "utf8"))).toEqual(["acp"]);
@@ -96,6 +104,27 @@ test("opencode backend runs the builtin ACP command with a provider executable o
       expect(session.getRuntimeSessionId?.()).toBe("oc-ses-1");
     } finally {
       await session.close();
+    }
+    const resumed = await backend.resumeSession("oc-ses-1", {
+      cwd,
+      orcMcp: false,
+      providerExecutable: script,
+      model: "custom-provider/example-model",
+    });
+    try {
+      expect((await drainText(resumed)).some((event) => event.type === "text")).toBe(true);
+      const requests = readFileSync(`${argvFile}.wire`, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(requests.some((request) => request.method === "session/load")).toBe(true);
+      expect(
+        requests
+          .filter((request) => request.method === "session/set_config_option")
+          .map((request) => request.params.value),
+      ).toEqual(["custom-provider/example-model", "custom-provider/example-model"]);
+    } finally {
+      await resumed.close();
     }
   } finally {
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });

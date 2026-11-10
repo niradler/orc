@@ -2458,21 +2458,28 @@ export async function executeTool(
             )
           : null;
       };
-      const conflict = duplicate();
-      if (conflict) throw conflict;
       const now = new Date();
       const id = ulid();
       try {
-        await db.insert(projects).values({
-          id,
-          name,
-          description: description ?? null,
-          status: status ?? "active",
-          git_remote_url: git_remote_url?.trim() || null,
-          tags: tags ?? null,
-          created_at: now,
-          updated_at: now,
-        });
+        // The existing index is case-sensitive: serialize the NOCASE check and insert.
+        getSqlite()
+          .transaction(() => {
+            const conflict = duplicate();
+            if (conflict) throw conflict;
+            db.insert(projects)
+              .values({
+                id,
+                name,
+                description: description ?? null,
+                status: status ?? "active",
+                git_remote_url: git_remote_url?.trim() || null,
+                tags: tags ?? null,
+                created_at: now,
+                updated_at: now,
+              })
+              .run();
+          })
+          .immediate();
       } catch (error) {
         // Lost a race against a concurrent create: the unique index on name caught it.
         const raced = isUniqueNameFailure(error) ? duplicate() : null;

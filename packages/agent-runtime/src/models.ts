@@ -123,17 +123,21 @@ export async function readTextModelCatalog(
     const read = async () => {
       const decoder = new TextDecoder();
       let text = "";
+      let bytes = 0;
       while (true) {
         const chunk = await reader.read();
         if (chunk.done) break;
+        bytes += chunk.value.byteLength;
         text += decoder.decode(chunk.value, { stream: true });
-        if (text.length > 1024 * 1024)
+        if (bytes > 1024 * 1024)
           throw new Error("The agent model catalog exceeded its size limit.");
       }
+      if ((await child.proc.exited) !== 0)
+        throw new Error("The agent could not list its models. Check its login and configuration.");
       const models = new Map<string, AgentModel>();
       for (const line of (text + decoder.decode()).split("\n").slice(0, 500)) {
         const parsed = ChatModelSchema.safeParse(line.trim());
-        if (parsed.success && parsed.data)
+        if (parsed.success && parsed.data.includes("/"))
           models.set(parsed.data, { id: parsed.data, label: parsed.data });
       }
       return [...models.values()];

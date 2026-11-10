@@ -1675,20 +1675,30 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
 
 test("opencode runs and resumes through the chat API on its builtin ACP backend", async () => {
   const previous = readFileSync(globalConfigPath(), "utf8");
-  const script = join(home, "opencode");
+  const source = join(home, "opencode.ts");
+  const script = process.platform === "win32" ? join(home, "opencode.exe") : source;
   writeFileSync(
-    script,
+    source,
     `#!/usr/bin/env bun
 import {createInterface} from 'node:readline';
 const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
+const configOptions=[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'custom-provider/example-model',name:'Example model'}]}];
+let selected=false;
 for await(const line of createInterface({input:process.stdin})) { const m=JSON.parse(line);
  if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
- if(m.method==='session/new')emit({id:m.id,result:{sessionId:'api-opencode-session'}});
- if(m.method==='session/load')emit({id:m.id,result:{}});
- if(m.method==='session/prompt'){emit({method:'session/update',params:{sessionId:'api-opencode-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OpenCode through API'}}}});emit({id:m.id,result:{stopReason:'end_turn'}});}
+ if(m.method==='session/new')emit({id:m.id,result:{sessionId:'api-opencode-session',configOptions}});
+ if(m.method==='session/load')emit({id:m.id,result:{configOptions}});
+ if(m.method==='session/set_config_option'){if(m.params.value!=='custom-provider/example-model')throw Error('Wrong model');selected=true;emit({id:m.id,result:{configOptions}});}
+ if(m.method==='session/prompt'){if(!selected)throw Error('Model not selected');emit({method:'session/update',params:{sessionId:'api-opencode-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OpenCode through API'}}}});emit({id:m.id,result:{stopReason:'end_turn'}});}
 }`,
     { mode: 0o755 },
   );
+  if (process.platform === "win32")
+    expect(
+      Bun.spawnSync([process.execPath, "build", source, "--compile", "--outfile", script], {
+        timeout: 30_000,
+      }).exitCode,
+    ).toBe(0);
   const initial = readProviderSettings();
   saveProviderSettings({
     ...initial,
@@ -1700,7 +1710,7 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
         agent: "opencode",
         enabled: true,
         executable: script,
-        model: "",
+        model: "custom-provider/example-model",
         environment: [],
       },
     ],
@@ -1712,7 +1722,6 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
   try {
     const result = await turn({
       agent: "opencode",
-      model: "",
       messages: [{ role: "user", content: "Hello OpenCode" }],
     });
     expect(result.response.status).toBe(200);
