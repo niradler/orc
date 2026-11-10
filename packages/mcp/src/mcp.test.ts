@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getUserAgentsDir } from "@orc/core/agent-service";
 import { resetConfig } from "@orc/core/config";
-import { shortId } from "@orc/core/ids";
+import { ConflictError, ValidationError } from "@orc/core/errors";
+import { shortId, ulid } from "@orc/core/ids";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { toolListing } from "./server.js";
-import { executeTool } from "./tools.js";
+import { executeTool, toolDefinitions } from "./tools.js";
 
 const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
 
@@ -477,6 +478,99 @@ describe("MCP session_log tool", () => {
     });
     delete process.env.ORC_JOB_RUN_ID;
     expect(result).toMatch(/^Session logged:/);
+  });
+});
+
+// ── Project creation (issue #236) ─────────────────────────────────────────────
+
+describe("MCP project_create tool", () => {
+  const created: string[] = [];
+  const uniqueName = () => `pc-${ulid()}`;
+  const inputSchema = () => toolDefinitions.find((t) => t.name === "project_create")?.inputSchema;
+
+  afterAll(async () => {
+    if (created.length === 0) return;
+    const { getDb } = await import("@orc/db/client");
+    const { projects } = await import("@orc/db/schema");
+    const { inArray } = await import("drizzle-orm");
+    await getDb().delete(projects).where(inArray(projects.name, created));
+  });
+
+  test("creates a project and returns a stable id, name and link", async () => {
+    const name = uniqueName();
+    created.push(name);
+    const result = await executeTool(
+      "project_create",
+      { name, description: "Created via MCP", tags: ["mcp"], status: "paused" },
+      { publicApiBaseUrl: "https://orc.example" },
+    );
+    const id = /\[id: ([a-z0-9]{4,})\]/.exec(result)?.[1];
+    expect(result).toContain(`Created project ${name}`);
+    expect(id).toBeDefined();
+    expect(result).toContain(`link: https://orc.example/tasks?project=${name}`);
+    const { getDb } = await import("@orc/db/client");
+    const { projects } = await import("@orc/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const row = await getDb().query.projects.findFirst({ where: eq(projects.name, name) });
+    expect(row?.id).toBe(id);
+    expect(row?.description).toBe("Created via MCP");
+    expect(row?.tags).toEqual(["mcp"]);
+    expect(row?.status).toBe("paused");
+    expect(await executeTool("project_list", {})).toContain(name);
+  });
+
+  test("validates name, status and git_remote_url like the projects API", () => {
+    const schema = inputSchema();
+    expect(schema).toBeDefined();
+    for (const name of ["", "has space", "slash/name", "dot.name", "x".repeat(101)])
+      expect(schema?.safeParse({ name }).success).toBe(false);
+    expect(schema?.safeParse({ name: "Ok-Name_1" }).success).toBe(true);
+    expect(schema?.safeParse({ name: "ok", status: "done" }).success).toBe(false);
+    for (const git_remote_url of [
+      "https://user:pass@github.com/a/b.git",
+      "https://github.com/a/b?token=x",
+      "not a url",
+    ])
+      expect(schema?.safeParse({ name: "ok", git_remote_url }).success).toBe(false);
+    for (const git_remote_url of ["https://github.com/a/b.git", "git@github.com:a/b.git"])
+      expect(schema?.safeParse({ name: "ok", git_remote_url }).success).toBe(true);
+  });
+
+  test("duplicate names conflict with the existing project and a retry never inserts twice", async () => {
+    const name = uniqueName();
+    created.push(name);
+    const first = await executeTool("project_create", { name });
+    const id = /\[id: ([a-z0-9]{4,})\]/.exec(first)?.[1];
+    expect(id).toBeDefined();
+    for (const duplicate of [name, name.toUpperCase()]) {
+      const error = await executeTool("project_create", { name: duplicate }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).message).toContain(`[id: ${id}]`);
+      expect((error as ConflictError).message).toContain("no duplicate was created");
+    }
+    const { getSqlite } = await import("@orc/db/client");
+    const count = getSqlite()
+      .query<{ n: number }, [string]>(
+        "SELECT COUNT(*) AS n FROM projects WHERE name = ? COLLATE NOCASE",
+      )
+      .get(name)?.n;
+    expect(count).toBe(1);
+  });
+
+  test("project-scoped connections are refused with actionable guidance", async () => {
+    const error = await executeTool(
+      "project_create",
+      { name: uniqueName() },
+      { projectScopes: [{ id: "scope-id", name: "scope" }] },
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as ValidationError).message).toContain("unscoped connection");
   });
 });
 

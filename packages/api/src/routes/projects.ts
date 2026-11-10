@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { createRoute, z } from "@hono/zod-openapi";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import { GitRemoteUrlSchema } from "@orc/core/git-remote";
 import {
   GithubSyncConfigSchema,
   GithubSyncStateSchema,
@@ -17,41 +18,6 @@ import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
-
-function isGitRemoteUrl(value: string): boolean {
-  if (
-    /\s/.test(value) ||
-    Array.from(value).some(
-      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
-    )
-  )
-    return false;
-  if (/^[A-Za-z0-9._-]+@(?:[A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\]):[^\s?#]+$/.test(value)) return true;
-  try {
-    const url = new URL(value);
-    return (
-      ["https:", "http:", "ssh:", "git:"].includes(url.protocol) &&
-      Boolean(url.hostname) &&
-      !url.password &&
-      !url.search &&
-      !url.hash &&
-      (url.protocol === "ssh:" || !url.username)
-    );
-  } catch {
-    return false;
-  }
-}
-
-const GitRemoteUrlSchema = z
-  .string()
-  .trim()
-  .max(2048)
-  .refine(
-    (value) => !value || isGitRemoteUrl(value),
-    "Enter a Git remote URL without passwords, access tokens, query parameters or fragments",
-  )
-  .transform((value) => value || null)
-  .nullable();
 
 const ProjectSchema = z
   .object({
