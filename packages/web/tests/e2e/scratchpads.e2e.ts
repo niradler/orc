@@ -126,12 +126,15 @@ function preview(page: Page) {
 }
 
 for (const width of [1280, 390]) {
-  test(`HTML kit component tags work in the editor at ${width}px`, async ({ page, request }) => {
+  test(`HTML kit component tags work in the editor at ${width}px`, async ({
+    page,
+    request,
+  }, info) => {
     const pad = await createPad(request, { kind: "html", content: HTML_KIT_COMPONENT_EXAMPLE });
     try {
       await page.setViewportSize({ width, height: 900 });
       await openPad(page, pad.id);
-      await checkHtmlKitElements(page, "scratchpad-html-preview");
+      await checkHtmlKitElements(page, "scratchpad-html-preview", info);
       await page.reload();
       await expect(preview(page).getByRole("tab", { name: "Now", exact: true })).toBeVisible();
       expect((await apiGet<Scratchpad>(request, `/scratchpads/${pad.id}`)).content).toBe(

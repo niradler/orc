@@ -98,7 +98,7 @@ const artifactSpec = {
 };
 
 for (const width of [1280, 390]) {
-  test(`HTML kit component tags work in chat at ${width}px`, async ({ page }) => {
+  test(`HTML kit component tags work in chat at ${width}px`, async ({ page }, info) => {
     await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(artifactSpec)}\n\`\`\``);
     await page.route("**/api/scratchpads/s1", (route) =>
       route.fulfill({
@@ -114,7 +114,7 @@ for (const width of [1280, 390]) {
     );
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
-    await checkHtmlKitElements(page, "chat-ui-scratchpad-html");
+    await checkHtmlKitElements(page, "chat-ui-scratchpad-html", info);
   });
 
   test(`HTML kit chat tabs and theme follow the dashboard at ${width}px`, async ({

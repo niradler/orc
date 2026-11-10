@@ -34,7 +34,11 @@ const componentSkeleton = Array.from(reference.matchAll(/```html\n([\s\S]*?)\n``
 if (!componentSkeleton) throw new Error("HTML kit component skeleton missing");
 export const HTML_KIT_COMPONENT_EXAMPLE = componentSkeleton;
 
-export async function checkHtmlKitElements(page: Page, frameTestId: string): Promise<void> {
+export async function checkHtmlKitElements(
+  page: Page,
+  frameTestId: string,
+  info: TestInfo,
+): Promise<void> {
   const iframe = page.getByTestId(frameTestId);
   const frame = page.frameLocator(`[data-testid="${frameTestId}"]`);
   await expect(iframe).not.toHaveAttribute("sandbox", /allow-same-origin/);
@@ -56,6 +60,7 @@ export async function checkHtmlKitElements(page: Page, frameTestId: string): Pro
     await expect(frame.locator("orc-table > table")).toHaveClass("orc-table");
     await expect(frame.locator("orc-table")).toHaveCSS("overflow-x", "auto");
     await expect(frame.locator("orc-chart")).toHaveCSS("display", "grid");
+    await page.screenshot({ path: info.outputPath(`${frameTestId}-components-${theme}.png`) });
     const now = frame.getByRole("tab", { name: "Now", exact: true });
     const next = frame.getByRole("tab", { name: "Next", exact: true });
     await expect(frame.getByRole("tabpanel", { name: "Now", exact: true })).toBeVisible();
