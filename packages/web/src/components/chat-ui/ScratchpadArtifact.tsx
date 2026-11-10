@@ -1,6 +1,8 @@
 import type { Scratchpad } from "@orc/core/scratchpad";
 import { lazy, Suspense } from "react";
 import { Markdown } from "@/components/Markdown";
+import { withOrcKit } from "@/lib/orc-kit";
+import { useTheme } from "@/lib/theme";
 
 const DiagramPreview = lazy(() => import("./ScratchpadDiagramPreview"));
 
@@ -17,6 +19,7 @@ function isolatedHtml(content: string): string {
 }
 
 export function ScratchpadArtifact({ pad, expanded }: { pad: Scratchpad; expanded: boolean }) {
+  const { theme } = useTheme();
   if (pad.kind === "html") {
     return (
       <iframe
@@ -24,7 +27,7 @@ export function ScratchpadArtifact({ pad, expanded }: { pad: Scratchpad; expande
         title={`${pad.title} preview`}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
-        srcDoc={isolatedHtml(pad.content)}
+        srcDoc={isolatedHtml(withOrcKit(pad.content, theme))}
         className={`w-full border border-outline-variant bg-white ${expanded ? "h-[70vh] min-h-80" : "h-72"}`}
       />
     );
