@@ -27,7 +27,7 @@ ORC is a self-hosted hub that every agent session connects to. It holds shared s
 | Task flows | Per-task graphs: build, verify, review loops, parallel fan-out, human gates, hard termination limits |
 | Shared memory | Short project facts loaded into every session's context |
 | Knowledge bases | Uploaded documents and folders with full-text and vector search, cited passages |
-| Sessions | One view of live and ended Claude Code, Codex, Cursor and Gemini sessions, with transcripts, resume and handoff |
+| Sessions | One view of live and ended Claude Code, Codex, Cursor, Gemini and OpenCode sessions, with transcripts, resume and handoff |
 | Scratchpads | Plans, diagrams and HTML pages that you and agents edit together, with revisions |
 | Jobs and webhooks | Commands, agent runs or task creation on cron, file-watch, webhook or manual triggers |
 | Channels | Telegram and Slack: get notified, approve, chat with agents from your phone |

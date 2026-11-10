@@ -48,6 +48,14 @@ export const ACP_CAPABILITIES: AgentCapabilities = Object.freeze({
   approvals: true,
   interrupt: true,
 });
+/** What `opencode acp` advertises; re-negotiated from the live handshake on every session. */
+export const OPENCODE_CAPABILITIES: AgentCapabilities = Object.freeze({
+  ...ACP_CAPABILITIES,
+  resume: true,
+  modelSelection: true,
+  images: true,
+  mcp: true,
+});
 
 export function chatBackendFor(agent: string): string {
   return loadConfig().agent_loop.acp_commands?.[agent] ? "acp" : chatRuntimeFor(agent);

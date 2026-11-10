@@ -1,5 +1,11 @@
 import { ChatAgentOptionsSchema, chatRuntime } from "@orc/core/chat-options";
-import { agentLabel, CODING_AGENTS, supportsManualCompaction } from "@orc/core/coding-agents";
+import {
+  agentLabel,
+  CODING_AGENTS,
+  chatRuntimeFor,
+  supportsManualCompaction,
+  supportsModelDiscovery,
+} from "@orc/core/coding-agents";
 import { ulid } from "@orc/core/ids";
 import {
   type ProviderProfile,
@@ -289,12 +295,16 @@ export function AgentSettings() {
                   <AgentIcon agent={profile.agent} decorative size={16} />
                   {agentLabel(profile.agent)}
                   <span className="text-xs text-muted-foreground">
-                    {supportsManualCompaction(profile.agent) ? "native" : "acpx"}
+                    {supportsManualCompaction(profile.agent)
+                      ? "native"
+                      : chatRuntimeFor(profile.agent) === "opencode"
+                        ? "acp"
+                        : "acpx"}
                   </span>
                 </p>
               </div>
             </div>
-            {["claude", "codex"].includes(profile.agent) && (
+            {["claude", "codex", "opencode"].includes(profile.agent) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
@@ -342,7 +352,7 @@ export function AgentSettings() {
                 list="provider-model-choices"
                 disabled={busy}
                 onFocus={() => {
-                  if (!dirty && supportsManualCompaction(profile.agent)) void catalog.refetch();
+                  if (!dirty && supportsModelDiscovery(profile.agent)) void catalog.refetch();
                 }}
                 onChange={(event) => patch({ model: event.target.value })}
               />
@@ -645,7 +655,11 @@ export function AgentSettings() {
                 {CODING_AGENTS.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}
-                    {supportsManualCompaction(item.id) ? "" : " (acpx)"}
+                    {supportsManualCompaction(item.id)
+                      ? ""
+                      : chatRuntimeFor(item.id) === "opencode"
+                        ? " (acp)"
+                        : " (acpx)"}
                   </option>
                 ))}
                 <option value="other">Other acpx agent</option>

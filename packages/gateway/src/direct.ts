@@ -111,7 +111,7 @@ function helpText(mode: GatewayMode, projectName?: string): string {
     "/mem add &lt;name&gt; &lt;description&gt; | &lt;content&gt; - store a memory",
     "",
     "<b>Agents</b>",
-    "/agent &lt;name&gt; - switch active agent (claude, codex, gemini, copilot, a2a, ...)",
+    "/agent &lt;name&gt; - switch active agent (claude, codex, gemini, opencode, a2a, ...)",
     "/sessions - list all agent sessions",
     "/session new|list|switch &lt;id&gt;|stop - session lifecycle",
   ];
@@ -192,7 +192,7 @@ export async function handleDirectCommand(input: {
   if (command === "/agent") {
     if (!argText) {
       return {
-        text: "Usage: /agent <name> (e.g. claude, codex, gemini, copilot, a2a)",
+        text: "Usage: /agent <name> (e.g. claude, codex, gemini, opencode, a2a)",
       };
     }
     const mode = `agent:${argText}` as GatewayMode;

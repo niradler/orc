@@ -209,7 +209,7 @@ Separate from connecting your own agent: ORC can start agents for tasks, jobs an
 orc doctor
 ```
 
-Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `acpx`, `acp`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
+Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `opencode`, `acpx`, `acp`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
 
 
 ## Capabilities and direct ACP
@@ -230,6 +230,15 @@ continue to use execution mode, without chat's interactive controls.
 ACPX remains the compatibility path for other coding agents. It streams text,
 reasoning and tool results and keeps named sessions. Its CLI permissions are chosen
 through launch flags; ORC cannot answer individual live ACPX permission requests.
+
+OpenCode is enabled by default and speaks ACP directly: ORC launches `opencode acp`
+on the execution host (OpenCode 2.x or newer) and negotiates capabilities per
+session, including native resume, model selection, image input, HTTP MCP,
+per-request approvals and interruption. A missing install reports installation
+guidance instead of falling back to ACPX. The OpenCode provider profile's
+**Executable path** selects a specific installation, model choices load from
+`opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides the
+built-in command entirely.
 
 For an installed agent that speaks ACP directly, configure a separate agent ID in
 `~/.orc/config.json`:

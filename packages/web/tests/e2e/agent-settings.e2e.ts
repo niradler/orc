@@ -22,11 +22,11 @@ for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/settings");
       await settingsSection(page, "agents");
-      await expect(page.getByTestId("agent-enabled-copilot")).toBeChecked();
-      await expect(page.getByTestId("agent-enabled-opencode")).not.toBeChecked();
+      await expect(page.getByTestId("agent-enabled-opencode")).toBeChecked();
+      await expect(page.getByTestId("agent-enabled-copilot")).not.toBeChecked();
       await expect(page.getByTestId("agent-settings-save")).toBeDisabled();
-      await page.getByTestId("agent-enabled-copilot").uncheck();
-      await page.getByTestId("agent-enabled-opencode").check();
+      await page.getByTestId("agent-enabled-opencode").uncheck();
+      await page.getByTestId("agent-enabled-copilot").check();
       await page.getByTestId("provider-new").click();
       await page.getByTestId("provider-new-name").fill("Qoder work");
       await page.getByTestId("provider-new-adapter").selectOption("other");
@@ -43,17 +43,17 @@ for (const width of [1440, 390]) {
 
       await page.reload();
       await settingsSection(page, "agents");
-      await expect(page.getByTestId("agent-enabled-opencode")).toBeChecked();
-      await expect(page.getByTestId("agent-enabled-copilot")).not.toBeChecked();
+      await expect(page.getByTestId("agent-enabled-copilot")).toBeChecked();
+      await expect(page.getByTestId("agent-enabled-opencode")).not.toBeChecked();
 
       await gotoView(page, "tasks");
       await page.goto("/tasks?chat=full");
       await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
-      await expect(page.getByTestId("chat-agent-option-opencode")).toHaveText("OpenCode");
+      await expect(page.getByTestId("chat-agent-option-copilot")).toHaveText("GitHub Copilot");
       await expect(
         page.getByRole("menuitemradio", { name: "Qoder work", exact: true }),
       ).toBeVisible();
-      await expect(page.getByTestId("chat-agent-option-copilot")).toHaveCount(0);
+      await expect(page.getByTestId("chat-agent-option-opencode")).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath(`chat-agent-picker-${width}.png`) });
       expect(errors).toEqual([]);
     } finally {

@@ -17,7 +17,7 @@ import { type HostProcess, hostBinary, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import type { AgentCapabilities } from "@orc/core/types";
 import { createAcpxParser } from "./acpx.js";
-import { ACP_CAPABILITIES } from "./capabilities.js";
+import { ACP_CAPABILITIES, OPENCODE_CAPABILITIES } from "./capabilities.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
@@ -71,7 +71,9 @@ export class AcpSession implements AgentSession {
   constructor(
     private readonly opts: SessionOpts,
     private readonly command: readonly string[],
+    initial: AgentCapabilities = ACP_CAPABILITIES,
   ) {
+    this.capabilities = { ...initial };
     this.runtimeId = opts.runtimeSessionId;
   }
 
@@ -233,7 +235,7 @@ export class AcpSession implements AgentSession {
         throw new Error("Unsupported ACP protocol version.");
       const native = initialized.agentCapabilities;
       this.capabilities = {
-        ...ACP_CAPABILITIES,
+        ...this.capabilities,
         source: "negotiated",
         resume: native?.loadSession === true,
         images: native?.promptCapabilities?.image === true,
@@ -424,16 +426,36 @@ export class AcpSession implements AgentSession {
   }
 }
 
-function configuredCommand(opts?: SessionOpts): string[] {
-  const id = opts?.acpAgent ?? opts?.acpxAgent;
-  const command = id ? loadConfig().agent_loop.acp_commands?.[id] : undefined;
-  if (!command)
-    throw new Error(
-      "Configure agent_loop.acp_commands.<agent> with an ACP command and select that agent.",
-    );
-  return [command.command, ...command.args];
+/** An ACP agent ORC ships a launch command for; config can still override the command. */
+type BuiltinAcpAgent = {
+  name: string;
+  command: readonly [string, ...string[]];
+  capabilities: AgentCapabilities;
+  requires: string;
+  missing: string;
+};
+
+export const OPENCODE_BUILTIN: BuiltinAcpAgent = {
+  name: "opencode",
+  command: ["opencode", "acp"],
+  capabilities: OPENCODE_CAPABILITIES,
+  requires:
+    "opencode 2.x or newer on the execution host, or an agent_loop.acp_commands.opencode override",
+  missing:
+    "OpenCode is not installed on the selected execution host. Install it (npm install -g opencode-ai, see https://opencode.ai) or point agent_loop.acp_commands.opencode at an installed ACP command.",
+};
+
+function acpCommand(opts: SessionOpts, builtin?: BuiltinAcpAgent): string[] {
+  const id = opts.acpAgent ?? opts.acpxAgent ?? builtin?.name;
+  const configured = id ? loadConfig().agent_loop.acp_commands?.[id] : undefined;
+  if (configured) return [configured.command, ...configured.args];
+  if (builtin && id === builtin.name)
+    return [opts.providerExecutable ?? builtin.command[0], ...builtin.command.slice(1)];
+  throw new Error(
+    "Configure agent_loop.acp_commands.<agent> with an ACP command and select that agent.",
+  );
 }
-function createAcpBackend(): AgentBackend {
+function createAcpBackend(builtin?: BuiltinAcpAgent): AgentBackend {
   const open = async (opts: SessionOpts) => {
     if (opts.toolAllowlist !== undefined || opts.ruleGuard)
       throw new Error("Direct ACP cannot enforce a tool whitelist or native ORC hooks.");
@@ -441,39 +463,46 @@ function createAcpBackend(): AgentBackend {
       throw new Error(
         "ACPX launch flags do not apply to direct ACP. Configure the ACP command in ORC config.",
       );
-    const session = new AcpSession(opts, configuredCommand(opts));
+    const session = new AcpSession(opts, acpCommand(opts, builtin), builtin?.capabilities);
     await session.initialize();
     return session;
   };
   return {
-    name: "acp",
-    capabilities: ACP_CAPABILITIES,
+    name: builtin?.name ?? "acp",
+    capabilities: builtin?.capabilities ?? ACP_CAPABILITIES,
     profileCapabilities: { model: true, toolAllowlist: false },
     preflight: async (opts = {}) => {
       const commands = loadConfig().agent_loop.acp_commands ?? {};
-      const selected = opts.acpAgent ?? opts.acpxAgent;
-      const selectedCommand = selected ? commands[selected] : undefined;
-      const entries = selected
-        ? selectedCommand
-          ? [selectedCommand]
-          : []
-        : Object.values(commands);
-      for (const entry of entries)
-        if (await hostBinary(sessionExecHost(opts), entry.command)) return { ok: true };
+      const selected = opts.acpAgent ?? opts.acpxAgent ?? builtin?.name;
+      const configured = selected ? commands[selected] : undefined;
+      if (configured) {
+        if (await hostBinary(sessionExecHost(opts), configured.command)) return { ok: true };
+      } else if (builtin && selected === builtin.name) {
+        const binary = opts.providerExecutable ?? builtin.command[0];
+        if (await hostBinary(sessionExecHost(opts), binary)) return { ok: true };
+        return { ok: false, error: builtin.missing };
+      } else if (!selected) {
+        for (const entry of Object.values(commands))
+          if (await hostBinary(sessionExecHost(opts), entry.command)) return { ok: true };
+      }
       return {
         ok: false,
         error:
           "Configure an installed ACP executable in agent_loop.acp_commands on the selected execution host.",
       };
     },
-    describe: () => ({
-      kind: "cli",
-      requires: "an installed, authenticated ACP command in agent_loop.acp_commands",
-      source: "config",
-    }),
+    describe: () =>
+      builtin
+        ? { kind: "cli", requires: builtin.requires, source: "builtin" }
+        : {
+            kind: "cli",
+            requires: "an installed, authenticated ACP command in agent_loop.acp_commands",
+            source: "config",
+          },
     startSession: open,
     resumeSession: (id, opts) => open({ ...opts, runtimeSessionId: id }),
     stop: async () => {},
   };
 }
 registerBackend("acp", createAcpBackend);
+registerBackend("opencode", () => createAcpBackend(OPENCODE_BUILTIN));

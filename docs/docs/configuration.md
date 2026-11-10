@@ -24,7 +24,7 @@ Conversations saved before profiles existed remain pinned to their original nati
 [Phone layout](/screens/settings-providers-phone.png) ·
 [Compact context action](/screens/provider-compaction-phone.png)
 
-For Claude and Codex, **Executable path** overrides the local binary for native
+For Claude, Codex and OpenCode, **Executable path** overrides the local binary for native
 chat, model discovery and provider terminal launches. Enter a path without
 arguments, or leave it blank for the default installation. Paths with spaces and
 `~/` work. SSH uses the remote installation. Changes apply at the next launch;
@@ -449,7 +449,9 @@ For exposing ORC beyond localhost, see [Self-hosting](./self-hosted.md).
 
 `agent_loop.acp_commands` optionally maps agent IDs to `{ "command": "executable",
 "args": ["literal", "arguments"] }`. Add the ID to `preferences.agents` to select it
-in chat. Commands run on the chosen execution host; authenticate using that agent's
+in chat. The `opencode` agent already ships a built-in direct ACP command
+(`opencode acp`); an `acp_commands.opencode` entry overrides it, for example to pin a
+specific installation. Commands run on the chosen execution host; authenticate using that agent's
 own login or existing secure environment configuration. Arguments are not shell
 expressions and must not contain secrets. See [Connect agents](./connect-agents.md#capabilities-and-direct-acp)
 for setup, capability negotiation and permission limitations. Existing chats retain

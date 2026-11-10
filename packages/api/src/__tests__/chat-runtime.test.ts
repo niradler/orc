@@ -1673,6 +1673,72 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
   }
 });
 
+test("opencode runs and resumes through the chat API on its builtin ACP backend", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  const script = join(home, "opencode");
+  writeFileSync(
+    script,
+    `#!/usr/bin/env bun
+import {createInterface} from 'node:readline';
+const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
+for await(const line of createInterface({input:process.stdin})) { const m=JSON.parse(line);
+ if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
+ if(m.method==='session/new')emit({id:m.id,result:{sessionId:'api-opencode-session'}});
+ if(m.method==='session/load')emit({id:m.id,result:{}});
+ if(m.method==='session/prompt'){emit({method:'session/update',params:{sessionId:'api-opencode-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OpenCode through API'}}}});emit({id:m.id,result:{stopReason:'end_turn'}});}
+}`,
+    { mode: 0o755 },
+  );
+  const initial = readProviderSettings();
+  saveProviderSettings({
+    ...initial,
+    providers: [
+      ...initial.providers.filter((profile) => profile.agent !== "opencode"),
+      {
+        id: "opencode",
+        name: "OpenCode fixture",
+        agent: "opencode",
+        enabled: true,
+        executable: script,
+        model: "",
+        environment: [],
+      },
+    ],
+  });
+  const prefs = loadConfig().preferences;
+  updateGlobalConfig((raw) => {
+    raw.preferences = { ...prefs, chat: { ...prefs.chat, model: "", mcp: "native" } };
+  });
+  try {
+    const result = await turn({
+      agent: "opencode",
+      model: "",
+      messages: [{ role: "user", content: "Hello OpenCode" }],
+    });
+    expect(result.response.status).toBe(200);
+    expect(result.events).toContainEqual({ type: "text", text: "OpenCode through API" });
+    const thread = result.events.find((event) => event.type === "thread");
+    if (thread?.type !== "thread") throw new Error("No thread");
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${thread.thread.id}`)).json(),
+    );
+    expect(saved).toMatchObject({
+      backend: "opencode",
+      runtimeId: "api-opencode-session",
+      capabilities: { source: "negotiated", resume: true, images: true, mcp: true },
+    });
+    const continued = await turn({
+      threadId: saved.id,
+      messages: [{ role: "user", content: "Continue" }],
+    });
+    expect(continued.events).toContainEqual({ type: "text", text: "OpenCode through API" });
+    expect(continued.events.filter((event) => event.type === "error")).toEqual([]);
+  } finally {
+    writeFileSync(globalConfigPath(), previous);
+    resetConfig();
+  }
+});
+
 test("named provider defaults reach launches and remain pinned across a default change", async () => {
   const previous = readFileSync(globalConfigPath(), "utf8");
   try {

@@ -24,7 +24,12 @@ export function supportsManualCompaction(agent: string): boolean {
   return agent === "claude" || agent === "codex";
 }
 
-export type ChatRuntime = "claude" | "codex-cli" | "acpx";
+/** Agents whose model catalog ORC can discover without starting a conversation turn. */
+export function supportsModelDiscovery(agent: string): boolean {
+  return agent === "claude" || agent === "codex" || agent === "opencode";
+}
+
+export type ChatRuntime = "claude" | "codex-cli" | "acpx" | "opencode";
 
 export type CodingAgent = {
   id: string;
@@ -79,7 +84,7 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     id: "opencode",
     label: "OpenCode",
     binaries: ["opencode"],
-    chatRuntime: "acpx",
+    chatRuntime: "opencode",
     sessionBackends: ["opencode"],
     resumeArgs: (id) => ["--session", id],
   },
@@ -101,7 +106,7 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
   },
 ];
 
-export const DEFAULT_ENABLED_AGENTS = ["codex", "claude", "cursor", "gemini", "copilot"] as const;
+export const DEFAULT_ENABLED_AGENTS = ["codex", "claude", "cursor", "gemini", "opencode"] as const;
 
 export const AGENT_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 

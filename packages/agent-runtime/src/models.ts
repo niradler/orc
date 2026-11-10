@@ -1,4 +1,5 @@
 import { ChatModelSchema } from "@orc/core/chat";
+import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { type ExecHost, hostBinary, hostSpawn } from "@orc/core/exec-host";
 import {
   providerExecutable,
@@ -48,13 +49,13 @@ export async function discoverAgentModels(
   cwd: string,
   providerId?: string,
 ): Promise<AgentModel[]> {
-  if (agent !== "codex" && agent !== "claude") return [];
+  if (!supportsModelDiscovery(agent)) return [];
   const profile = providerForAgent(agent, providerId, true);
   const custom = host.kind === "local" ? providerExecutable(profile) : undefined;
   const binary = custom ? Bun.which(custom) : await hostBinary(host, agent);
   if (!binary) throw new Error("The selected agent is not installed on its execution host.");
   let command = [binary];
-  if (host.kind === "local") {
+  if (host.kind === "local" && agent !== "opencode") {
     if (agent === "codex") command = resolveCodexLaunch(binary);
     else {
       const launch = resolveClaudeSdkLaunch(true, (name) =>
@@ -66,6 +67,10 @@ export async function discoverAgentModels(
       ];
     }
   }
+  const environment = resolveProviderEnvironment(profile).env;
+  // `opencode models` prints a plain `provider/model` list; no protocol handshake exists.
+  if (agent === "opencode")
+    return readTextModelCatalog(host, [...command, "models"], cwd, environment);
   return readAgentModelCatalog(
     agent,
     host,
@@ -89,8 +94,63 @@ export async function discoverAgentModels(
           ]),
     ],
     cwd,
-    resolveProviderEnvironment(profile).env,
+    environment,
   );
+}
+
+/** Reads a model catalog printed as plain text, one model id per line. */
+export async function readTextModelCatalog(
+  host: ExecHost,
+  command: string[],
+  cwd: string,
+  environment: Record<string, string> = {},
+): Promise<AgentModel[]> {
+  const child = await hostSpawn(host, command, {
+    cwd,
+    stdin: "pipe",
+    stderr: "ignore",
+    env: providerProcessEnvironment(environment),
+    passEnv: Object.keys(environment),
+  });
+  const stdout = child.proc.stdout;
+  if (!stdout || typeof stdout === "number") {
+    child.kill();
+    throw new Error("The agent model discovery stream is unavailable.");
+  }
+  const reader = stdout.getReader();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const read = async () => {
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += decoder.decode(chunk.value, { stream: true });
+        if (text.length > 1024 * 1024)
+          throw new Error("The agent model catalog exceeded its size limit.");
+      }
+      const models = new Map<string, AgentModel>();
+      for (const line of (text + decoder.decode()).split("\n").slice(0, 500)) {
+        const parsed = ChatModelSchema.safeParse(line.trim());
+        if (parsed.success && parsed.data)
+          models.set(parsed.data, { id: parsed.data, label: parsed.data });
+      }
+      return [...models.values()];
+    };
+    return await Promise.race([
+      read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Agent model discovery timed out.")), 15_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    endStdin(child.proc.stdin);
+    child.kill();
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }
 
 export async function readAgentModelCatalog(

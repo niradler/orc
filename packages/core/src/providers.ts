@@ -79,7 +79,7 @@ export const ProviderProfileSchema = z
         path: ["options"],
         message: "Launch options must match the selected adapter",
       });
-    if (profile.executable && !["claude", "codex"].includes(profile.agent))
+    if (profile.executable && !["claude", "codex", "opencode"].includes(profile.agent))
       context.addIssue({
         code: "custom",
         path: ["executable"],

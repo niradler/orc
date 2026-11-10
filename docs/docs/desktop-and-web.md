@@ -360,7 +360,7 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
 | Server | **Restart ORC server** (closes terminals, keeps settings, reconnects) |
 | Notifications | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions, chat replies and job results. Push needs HTTPS. |
-| Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code and Codex are native; Cursor, Gemini CLI, GitHub Copilot, OpenCode, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. The terminal launcher only lists enabled agents installed on the selected host. |
+| Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code and Codex are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. Codex, Claude, Cursor, Gemini CLI and OpenCode are selected by default. The terminal launcher only lists enabled agents installed on the selected host. |
 | Channels | Telegram and Slack connections |
 | Chat | Default models, instructions, tools and permission mode for chat |
 | MCP | Build the MCP config snippet for your agent. See [Connect agents](./connect-agents.md). |
