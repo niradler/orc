@@ -9,6 +9,7 @@ import {
 import { useState } from "react";
 import type { CreateJobInput, Job, JobTriggerType } from "@/api/client";
 import { FormDialog } from "@/components/FormDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { JobActionFields, jobActionValid } from "@/components/JobActionFields";
 import { JobDestinationFields } from "@/components/JobDestinationFields";
 import { JobEnvironmentFields } from "@/components/JobEnvironmentFields";
@@ -72,7 +73,7 @@ export function JobEditorDialog({
   const initialOptions =
     job?.action?.type === "agent" && job.action.options
       ? JSON.stringify(
-          job.action.options.runtime === "claude-sdk"
+          job.action.options.runtime === "claude-sdk" || job.action.options.runtime === "pi"
             ? job.action.options.options
             : job.action.options.args,
           null,
@@ -119,13 +120,17 @@ export function JobEditorDialog({
       const runtime =
         action.backend === "claude"
           ? "claude-sdk"
-          : action.backend === "codex-cli"
-            ? "codex"
-            : "acpx";
+          : action.backend === "pi"
+            ? "pi"
+            : action.backend === "codex-cli"
+              ? "codex"
+              : "acpx";
       try {
         const raw: unknown = JSON.parse(optionsDraft);
         const options = ChatAgentOptionsSchema.parse(
-          runtime === "claude-sdk" ? { runtime, options: raw } : { runtime, args: raw },
+          runtime === "claude-sdk" || runtime === "pi"
+            ? { runtime, options: raw }
+            : { runtime, args: raw },
         );
         action = { ...action, options };
       } catch {
@@ -336,9 +341,11 @@ export function JobEditorDialog({
                         Advanced agent options
                       </summary>
                       <Label htmlFor="job-agent-options">
-                        {draft.action.backend === "claude"
-                          ? "SDK options (JSON object)"
-                          : "Launch arguments (JSON array)"}
+                        {draft.action.backend === "pi"
+                          ? "Pi options (JSON object)"
+                          : draft.action.backend === "claude"
+                            ? "SDK options (JSON object)"
+                            : "Launch arguments (JSON array)"}
                       </Label>
                       <textarea
                         id="job-agent-options"
@@ -349,10 +356,10 @@ export function JobEditorDialog({
                         value={optionsDraft}
                         onChange={(event) => setOptionsDraft(event.target.value)}
                       />
-                      <p className="text-xs text-outline">
+                      <HelpPopover label="Agent launch options" testId="job-agent-options-help">
                         Uses the same supported options as Chat. Set the model above; keep
                         credentials in environment variables. Unsupported options are rejected.
-                      </p>
+                      </HelpPopover>
                     </details>
                   )}
                   <div className="md:col-span-2">

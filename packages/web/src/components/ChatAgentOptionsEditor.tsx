@@ -1,5 +1,6 @@
 import { ChatAgentOptionsSchema, chatRuntime } from "@orc/core/chat-options";
 import { useEffect, useId, useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useChat } from "@/hooks/useChat";
@@ -10,9 +11,9 @@ export function ChatAgentOptionsEditor() {
   const runtime = chatRuntime(config.agent);
   const saved = config.agentOptions[config.agent];
   const initial = JSON.stringify(
-    saved?.runtime === "claude-sdk"
+    saved?.runtime === "claude-sdk" || saved?.runtime === "pi"
       ? saved.options
-      : (saved?.args ?? (runtime === "claude-sdk" ? {} : [])),
+      : (saved?.args ?? (["claude-sdk", "pi"].includes(runtime) ? {} : [])),
     null,
     2,
   );
@@ -32,14 +33,16 @@ export function ChatAgentOptionsEditor() {
       raw = JSON.parse(draft);
     } catch {
       setError(
-        runtime === "claude-sdk"
+        runtime === "claude-sdk" || runtime === "pi"
           ? "Enter SDK options as a JSON object."
           : "Enter arguments as a JSON array of strings.",
       );
       return;
     }
     const parsed = ChatAgentOptionsSchema.safeParse(
-      runtime === "claude-sdk" ? { runtime, options: raw } : { runtime, args: raw },
+      runtime === "claude-sdk" || runtime === "pi"
+        ? { runtime, options: raw }
+        : { runtime, args: raw },
     );
     if (!parsed.success) {
       setError(parsed.error.issues.map((issue) => issue.message).join(" "));
@@ -71,6 +74,14 @@ export function ChatAgentOptionsEditor() {
           2,
         ),
       );
+    } else if (runtime === "pi") {
+      setDraft(
+        JSON.stringify(
+          { ...(saved?.runtime === "pi" ? saved.options : {}), thinkingLevel: "high" },
+          null,
+          2,
+        ),
+      );
     } else if (runtime === "acpx") {
       const values =
         saved?.runtime === "acpx"
@@ -90,7 +101,9 @@ export function ChatAgentOptionsEditor() {
         <span>
           {runtime === "claude-sdk"
             ? "Claude SDK options (JSON)"
-            : `${runtime === "codex" ? "Codex App Server" : "ACPX"} arguments (JSON array)`}
+            : runtime === "pi"
+              ? "Pi options (JSON)"
+              : `${runtime === "codex" ? "Codex App Server" : "ACPX"} arguments (JSON array)`}
         </span>
         <Textarea
           id={inputId}
@@ -107,14 +120,16 @@ export function ChatAgentOptionsEditor() {
           className="font-mono text-xs"
         />
       </label>
-      <p className="text-xs text-muted-foreground" data-testid="chat-agent-options-help">
+      <HelpPopover label="Agent launch options" testId="chat-agent-options-help">
         {runtime === "claude-sdk"
           ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}.'
-          : runtime === "acpx"
-            ? 'Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions.'
-            : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above."}{" "}
+          : runtime === "pi"
+            ? 'Pi fields: thinkingLevel, steeringMode, followUpMode, autoCompaction, autoRetry. Example: {"thinkingLevel":"high"}.'
+            : runtime === "acpx"
+              ? 'Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions.'
+              : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above."}{" "}
         Options are kept separately for each agent. Credentials stay in host configuration.
-      </p>
+      </HelpPopover>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
@@ -123,7 +138,9 @@ export function ChatAgentOptionsEditor() {
           disabled={streaming || pending}
           onClick={example}
         >
-          {runtime === "codex" ? "High reasoning example" : "Bypass permissions example"}
+          {runtime === "codex" || runtime === "pi"
+            ? "High reasoning example"
+            : "Bypass permissions example"}
         </Button>
         <Button
           type="button"

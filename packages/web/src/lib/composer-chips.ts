@@ -86,7 +86,7 @@ export function effectivePermissionMode(config: ChatSettings): PermissionMode {
     sdkMode ??
     config.permissionMode ??
     (config.autoApprove
-      ? config.agent === "claude"
+      ? ["claude", "pi"].includes(config.agent)
         ? "bypassPermissions"
         : "acceptEdits"
       : "default")
@@ -124,6 +124,10 @@ export function agentEffort(config: ChatSettings): string | null {
   if (!options) return null;
   if (options.runtime === "claude-sdk")
     return options.options.effort ? EFFORT_LABELS[options.options.effort] : null;
+  if (options.runtime === "pi")
+    return options.options.thinkingLevel
+      ? (EFFORT_LABELS[options.options.thinkingLevel] ?? options.options.thinkingLevel)
+      : null;
   if (options.runtime !== "codex") return null;
   for (const arg of options.args) {
     const match = /^model_reasoning_effort\s*=\s*"?([a-z]+)"?$/i.exec(arg.trim());

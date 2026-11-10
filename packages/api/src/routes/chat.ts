@@ -1261,7 +1261,7 @@ async function beginTurn(
   if (input.trim() === "/compact") {
     if (!thread.runtimeId)
       throw new ValidationError("Start a conversation before compacting context.");
-    if (thread.backend !== "claude" && thread.backend !== "codex-cli")
+    if (thread.backend !== "claude" && thread.backend !== "codex-cli" && thread.backend !== "pi")
       throw new ValidationError("This integration does not support manual context compaction.");
     const options = thread.config.agentOptions.claude;
     if (
@@ -1409,7 +1409,7 @@ async function beginTurn(
           cwd: thread.cwd,
           executionHost: thread.host,
           autoApprove: thread.config.autoApprove,
-          permissionMode: ["claude", "codex"].includes(thread.config.agent)
+          permissionMode: ["claude", "codex", "pi"].includes(thread.config.agent)
             ? thread.config.permissionMode
             : undefined,
           model: thread.config.model,

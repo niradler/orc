@@ -21,15 +21,15 @@ export const ProviderPathsSchema = z
 export type ProviderPaths = z.infer<typeof ProviderPathsSchema>;
 
 export function supportsManualCompaction(agent: string): boolean {
-  return agent === "claude" || agent === "codex";
+  return agent === "claude" || agent === "codex" || agent === "pi";
 }
 
 /** Agents whose model catalog ORC can discover without starting a conversation turn. */
 export function supportsModelDiscovery(agent: string): boolean {
-  return agent === "claude" || agent === "codex" || agent === "opencode";
+  return agent === "claude" || agent === "codex" || agent === "pi" || agent === "opencode";
 }
 
-export type ChatRuntime = "claude" | "codex-cli" | "acpx" | "opencode";
+export type ChatRuntime = "claude" | "codex-cli" | "acpx" | "opencode" | "pi";
 
 export type CodingAgent = {
   id: string;
@@ -41,6 +41,14 @@ export type CodingAgent = {
 };
 
 export const CODING_AGENTS: readonly CodingAgent[] = [
+  {
+    id: "pi",
+    label: "Pi",
+    binaries: ["pi"],
+    chatRuntime: "pi",
+    sessionBackends: [],
+    resumeArgs: (id) => ["--session", id],
+  },
   {
     id: "claude",
     label: "Claude Code",
