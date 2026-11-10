@@ -66,6 +66,7 @@ test("should validate the actual pushed commits and reject dirty or unrelated ch
     writeFileSync(join(directory, "untracked.ts"), "export const hidden = true;\n");
     expect(() => validatePush(directory, records)).toThrow("clean checkout");
   } finally {
-    rmSync(directory, { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
-});
+  // The fixture spawns ~20 Git processes; that reaches bun's 5s default on Windows.
+}, 30_000);
