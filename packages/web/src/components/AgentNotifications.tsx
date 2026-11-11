@@ -369,9 +369,11 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       setSelected(item.source_id);
       if (phone) {
         if (location.pathname !== "/notifications") {
-          const params = new URLSearchParams(notificationsPath(location.search));
-          params.set("request", item.source_id);
-          navigate(`/notifications?${params}`);
+          // Parse the path as a URL: URLSearchParams alone would treat
+          // "/notifications?project=…" as one query key and drop the scope.
+          const target = new URL(notificationsPath(location.search), window.location.origin);
+          target.searchParams.set("request", item.source_id);
+          navigate(target.pathname + target.search);
         }
         return;
       }
@@ -563,7 +565,8 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
       )
       ?.focus();
   }, [center.selected, shown]);
-  const chip = "rounded-md aria-pressed:bg-surface-highest aria-pressed:text-on-surface";
+  const chip =
+    "max-md:min-h-11 pointer-coarse:min-h-11 rounded-md aria-pressed:bg-surface-highest aria-pressed:text-on-surface";
   return (
     <>
       <div className="flex flex-wrap items-center gap-1 border-b border-border px-3 py-1.5">
@@ -685,7 +688,7 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
           <Button
             variant="ghost"
             size="sm"
-            className="my-2 w-full"
+            className="my-2 w-full max-md:min-h-11"
             disabled={center.fetchingNextPage}
             onClick={center.fetchNextPage}
           >

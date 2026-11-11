@@ -3,7 +3,8 @@
  * Usage: bun packages/web/scripts/capture-mobile-screens.ts [shot-filter]
  * Env: PREVIEW_URL (default http://127.0.0.1:3087), PREVIEW_API (default :7711),
  *      PREVIEW_OUT (default <repo>/.claude/previews).
- * Seed first with .claude/scripts/seed-mobile-demo.ts against the same isolated API.
+ * Seed first with packages/web/scripts/seed-mobile-demo.ts against the same
+ * isolated API (ORC_DEMO_SEED=1 ORC_DB_PATH=<preview db>).
  */
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";

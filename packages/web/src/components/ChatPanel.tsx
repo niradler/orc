@@ -307,7 +307,7 @@ export function ChatPanel({
                 data-testid="chat-sessions-button"
                 aria-label="Sessions, session history"
                 title="Session history"
-                className={cn(iconButton, "max-sm:min-h-11 max-sm:min-w-11")}
+                className={cn(iconButton, "min-h-11 min-w-11")}
                 onClick={() => home.go({ listOpen: true })}
               >
                 <History size={17} />
@@ -698,7 +698,7 @@ export function ChatPanel({
                       type="button"
                       data-testid="chat-permission-deny"
                       disabled={responding}
-                      className="min-h-8 rounded-md border border-control-border px-3 max-sm:min-h-11"
+                      className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
                       onClick={() => void respondPermission("denied")}
                     >
                       Deny
@@ -707,7 +707,7 @@ export function ChatPanel({
                       type="button"
                       data-testid="chat-permission-allow"
                       disabled={responding}
-                      className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground max-sm:min-h-11"
+                      className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground max-md:min-h-11 pointer-coarse:min-h-11"
                       onClick={() => void respondPermission("approved")}
                     >
                       Allow once
@@ -718,7 +718,7 @@ export function ChatPanel({
                         data-testid="chat-permission-allow-all"
                         disabled={responding}
                         title="Switch this session to full access / bypass permissions"
-                        className="min-h-8 rounded-md border border-control-border px-3 max-sm:min-h-11"
+                        className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
                         onClick={() =>
                           void changePermissions({ ...config, permissionMode: "bypassPermissions" })
                         }
