@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Settings2,
   Square,
+  SquarePen,
   Trash2,
   X,
 } from "lucide-react";
@@ -123,6 +124,7 @@ export function ChatPanel({
     responding,
     activeKey,
     tabs,
+    newTab,
     draft,
     files,
     addFiles,
@@ -311,6 +313,24 @@ export function ChatPanel({
                 onClick={() => home.go({ listOpen: true })}
               >
                 <History size={17} />
+              </button>
+              <button
+                type="button"
+                data-testid="chat-clear-button"
+                aria-label="New session"
+                title="New session"
+                disabled={tabs.some(
+                  (tab) =>
+                    tab.key !== activeKey &&
+                    (tab.permissions.length || tab.questions.length || tab.attention || tab.error),
+                )}
+                className={cn(iconButton, "min-h-11 min-w-11")}
+                onClick={() => {
+                  newTab();
+                  home.go({ terminalId: null });
+                }}
+              >
+                <SquarePen size={17} />
               </button>
               <div className="min-w-0 flex-1">
                 <h2

@@ -58,45 +58,30 @@ const db = new Database(dbPath);
 db.exec("DELETE FROM notifications; DELETE FROM notification_session_sources;");
 const store = new NotificationStore(db);
 
-const billing = (await post("/projects", { name: "billing-api" })) as { id: string };
-const console_ = (await post("/projects", { name: "web-console" })) as { id: string };
+const existingProjects = (await (await fetch(`${API}/projects`)).json()) as {
+  projects: Array<{ id: string; name: string }>;
+};
+async function project(name: string): Promise<{ id: string }> {
+  const existing = existingProjects.projects.find((entry) => entry.name === name);
+  return existing ?? ((await post("/projects", { name })) as { id: string });
+}
+const billing = await project("billing-api");
+const console_ = await project("web-console");
 
-await post("/tasks", {
-  title: "Retry flaky invoice export",
-  project_id: billing.id,
-  status: "in-progress",
-  priority: "high",
-});
-await post("/tasks", {
-  title: "Add proration to plan upgrades",
-  project_id: billing.id,
-  status: "todo",
-  priority: "normal",
-});
-await post("/tasks", {
-  title: "Ship nightly compaction report",
-  project_id: billing.id,
-  status: "done",
-  priority: "low",
-});
-await post("/tasks", {
-  title: "Fix booking sheet jump on resize",
-  project_id: console_.id,
-  status: "in-progress",
-  priority: "critical",
-});
-await post("/tasks", {
-  title: "Pick a cache strategy for session lists",
-  project_id: console_.id,
-  status: "todo",
-  priority: "high",
-});
-await post("/tasks", {
-  title: "Dark theme contrast audit",
-  project_id: console_.id,
-  status: "todo",
-  priority: "normal",
-});
+const existingTasks = (await (await fetch(`${API}/tasks`)).json()) as {
+  tasks: Array<{ title: string; project_id: string | null }>;
+};
+async function task(title: string, projectId: string, status: string, priority: string) {
+  if (existingTasks.tasks.some((entry) => entry.title === title && entry.project_id === projectId))
+    return;
+  await post("/tasks", { title, project_id: projectId, status, priority });
+}
+await task("Retry flaky invoice export", billing.id, "doing", "high");
+await task("Add proration to plan upgrades", billing.id, "todo", "normal");
+await task("Ship nightly compaction report", billing.id, "todo", "low");
+await task("Fix booking sheet jump on resize", console_.id, "doing", "critical");
+await task("Pick a cache strategy for session lists", console_.id, "todo", "high");
+await task("Dark theme contrast audit", console_.id, "blocked", "normal");
 
 await post("/human-requests", {
   kind: "approval",
