@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { repoRoot, reviewAttentionRequest } from "./_helpers";
+import { notificationInbox, repoRoot, reviewAttentionRequest } from "./_helpers";
 
 let server: ChildProcess;
 let base: string;
@@ -34,10 +34,13 @@ for (const width of [1440, 390]) {
       await page.getByTestId("chat-input").press("Enter");
       await blocked;
       await page.locator('[data-testid="notification-bell"]:visible').last().click();
-      const menu = page.getByTestId("notification-menu");
+      const menu = notificationInbox(page);
       await expect(menu).toBeVisible();
       release();
-      await expect.poll(() => new URL(page.url()).searchParams.get("chatThread")).not.toBeNull();
+      // Desktop keeps the chat URL identity beside the open popover; phones
+      // review on the full page, which replaces the chat sheet.
+      if (width === 1440)
+        await expect.poll(() => new URL(page.url()).searchParams.get("chatThread")).not.toBeNull();
       await expect(menu).toBeVisible();
       const card = menu.locator('[data-testid^="attention-request-"]');
       await expect(card).toHaveCount(1);
@@ -147,6 +150,8 @@ test("a managed approval survives reload, opens its chat and clears after a chat
   await expect(page.getByTestId("chat-panel")).toContainText("Fixture response: denied");
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
   await page.locator('[data-testid="notification-bell"]:visible').last().click();
+  // The request was marked read when reviewed; its answered card lives in history.
+  await page.getByTestId("notifications-show-read").click();
   await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-response")).toHaveText("Denied");
 });

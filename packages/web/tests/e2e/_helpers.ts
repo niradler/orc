@@ -8,6 +8,28 @@ export async function reviewAttentionRequest(card: Locator): Promise<void> {
   if ((await review.getAttribute("aria-expanded")) !== "true") await review.click();
 }
 
+/** The inbox is an anchored popover on desktop and a full page on phones. */
+export function notificationInbox(page: Page): Locator {
+  return page.locator('[data-testid="notification-menu"], [data-testid="notifications-page"]');
+}
+
+export async function closeNotificationInbox(page: Page): Promise<void> {
+  if ((await notificationInbox(page).count()) === 0) return;
+  const close = page.getByRole("button", { name: "Close notifications", exact: true });
+  if (await close.isVisible()) await close.click();
+  else await page.getByTestId("notifications-back").click();
+}
+
+/** Desktop rows expose direct icon actions; phone rows keep them in a named menu. */
+export async function clickNotificationMarkRead(page: Page, row: Locator): Promise<void> {
+  const direct = row.getByTestId("notification-mark-read");
+  if (await direct.isVisible()) await direct.click();
+  else {
+    await row.getByTestId("notification-actions").click();
+    await page.getByTestId("notification-mark-read").click();
+  }
+}
+
 export async function openTerminalOptions(page: Page, touch = false): Promise<void> {
   const button = page.locator('[data-testid="terminal-options"]:visible').first();
   if (!(await button.isVisible())) {

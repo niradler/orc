@@ -54,12 +54,14 @@ export function ChatSessionPicker({
   docked = false,
   rail = false,
   wide = false,
+  hideTrigger = false,
   home,
 }: {
   enabled?: boolean;
   docked?: boolean;
   rail?: boolean;
   wide?: boolean;
+  hideTrigger?: boolean;
   home?: SessionHomeNav;
 }) {
   const chat = useChat();
@@ -258,6 +260,7 @@ export function ChatSessionPicker({
     <SessionHistoryFrame
       docked={docked}
       wide={wide}
+      hideTrigger={hideTrigger}
       open={open}
       onOpenChange={setOpen}
       onCollapse={home ? () => home.go({ listHidden: true }) : undefined}
@@ -387,6 +390,7 @@ export function ChatSessionPicker({
 function SessionHistoryFrame({
   docked,
   wide,
+  hideTrigger = false,
   open,
   onOpenChange,
   onCollapse,
@@ -397,6 +401,7 @@ function SessionHistoryFrame({
   newDisabled: boolean;
   docked: boolean;
   wide: boolean;
+  hideTrigger?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCollapse?: () => void;
@@ -501,22 +506,25 @@ function SessionHistoryFrame({
     );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <div className="absolute left-2 top-1 z-10 flex items-center gap-1">
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="chat-clear-button"
-          aria-label="New session"
-          disabled={newDisabled}
-          onClick={() => {
-            chat.newTab();
-            onNew();
-          }}
-        >
-          <SquarePen size={16} />
-        </Button>
-      </div>
+      {/* Phones render the Sessions trigger inline in the chat header instead. */}
+      {!hideTrigger && (
+        <div className="absolute left-2 top-1 z-10 flex items-center gap-1">
+          <DialogTrigger asChild>{trigger}</DialogTrigger>
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="chat-clear-button"
+            aria-label="New session"
+            disabled={newDisabled}
+            onClick={() => {
+              chat.newTab();
+              onNew();
+            }}
+          >
+            <SquarePen size={16} />
+          </Button>
+        </div>
+      )}
       <DialogContent
         ref={content}
         data-testid="chat-sessions-dialog"

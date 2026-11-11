@@ -68,7 +68,7 @@ export function ChatQuestionForm({
             (question) => !answers[question.id]?.some((answer) => answer.trim()),
           )
         }
-        className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground disabled:opacity-50"
+        className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground disabled:opacity-50 max-sm:min-h-11"
       >
         {busy ? "Sending…" : "Send answer"}
       </button>

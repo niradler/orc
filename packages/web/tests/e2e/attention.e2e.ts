@@ -9,7 +9,9 @@ import {
   AUTH_HEADERS,
   apiGet,
   apiPost,
+  closeNotificationInbox,
   gotoView,
+  notificationInbox,
   repoRoot,
   reviewAttentionRequest,
   tid,
@@ -65,9 +67,7 @@ test("should show dated unavailable questions and contextual help on desktop and
       new Date(entry.created_at).toISOString(),
     );
     await expect(
-      page
-        .getByTestId("notification-menu")
-        .getByRole("heading", { name: "Notifications", exact: true }),
+      notificationInbox(page).getByRole("heading", { name: "Notifications", exact: true }),
     ).toBeVisible();
     await expect(page.getByTestId("nav-attention")).toHaveCount(0);
     await page.screenshot({
@@ -75,8 +75,8 @@ test("should show dated unavailable questions and contextual help on desktop and
       fullPage: true,
       animations: "disabled",
     });
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("notification-menu")).toHaveCount(0);
+    await closeNotificationInbox(page);
+    await expect(notificationInbox(page)).toHaveCount(0);
     await page.locator('[data-testid="notification-bell"]:visible').first().click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
