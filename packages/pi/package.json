@@ -1,6 +1,6 @@
 {
   "name": "@orc/pi",
-  "version": "0.1.62",
+  "version": "0.1.63",
   "description": "porc - one-stop ORC integration for the Pi coding agent: context, memories, skills, jobs, enforced rules and the ORC theme",
   "type": "module",
   "keywords": [
