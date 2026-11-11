@@ -1,8 +1,10 @@
 # Notifications
 
-The bell in workspace and chat headers opens your notification menu on desktop
-and phone. New arrivals show an unread indicator without opening the menu. Use
-**Alt+N** or **Open notifications** in the command palette to open it.
+The bell in workspace and chat headers opens your notification inbox: an
+anchored menu on desktop and a full page at `/notifications` on phones. New
+arrivals show an unread indicator without opening it. Use **Alt+N** or **Open
+notifications** in the command palette to open it; on phones both navigate to
+the page, and its back bar returns to where you were.
 
 Notifications cover human questions, approvals and commands, agent questions and
 outcomes, and job outcomes. Open an item to review the request or visit its source.
@@ -10,12 +12,23 @@ Request forms stay collapsed until opened; drafts survive closing and reopening
 the menu. Read and dismissed state is stored on the server and shared by clients.
 Dismissal does not approve, answer, cancel or delete a source request.
 
-The menu shows **unread notifications** by default. Opening an item or choosing
+The inbox shows **unread notifications** by default. Opening an item or choosing
 **Mark read** clears it from the inbox. Clicking a native desktop notification
 opens its destination and marks that item read; a grouped done toast only opens
 its destination. **Show read** includes read history; use
 **Mark unread** to return an item to the inbox, or **Mark all read** to clear it.
 An opened human request stays available while you answer it.
+
+Desktop and phone share one inbox logic. Updates from the same session or
+request collapse into a quiet summary row with a count and the most urgent
+state; expand it to see each update. **Latest** lists groups newest first;
+**By project** adds a section per project with sticky headers and counts, and
+the choice persists across reloads. **Needs you** narrows the inbox to items
+that require an action. Human requests keep their review card in the row, so
+questions, approvals and commands are answered inline without leaving the
+inbox; drafts survive closing and reopening. Phone rows keep mark-read and
+dismiss in one named row menu with 44px targets; desktop rows keep direct
+icons.
 
 Each session keeps only its latest **Agent finished** notification. A newer finish
 physically replaces older completion notifications, including read and dismissed
@@ -32,7 +45,11 @@ Failures and pending questions or approvals are kept independently.
 
 ![Read history on desktop with demo data](/screens/notification-center-light-1440.png)
 
-![Read history on phone with demo data](/screens/notification-center-dark-390.png)
+![The phone inbox as a full page with demo data](/screens/mobile-notifications-dark-390.png)
+
+![Phone inbox grouped by project with demo data](/screens/mobile-notifications-project-390.png)
+
+![A session's updates collapsed into one summary row, expanded](/screens/mobile-notifications-group-390.png)
 
 Job delivery follows `notify_on`: `never` creates no alert, `failure` reports
 failed runs, and `always` also reports successful runs. Notification types are
@@ -122,6 +139,8 @@ The authenticated API exposes `GET/PUT /api/channels/notification-policy`,
 The preview body is `{filter, project_ids, event: {type, level, project_id}}`.
 These use the existing `channel_send` transport, destinations and secure credentials.
 
-Links to `/activity?notifications=open` (optionally with `&request=<id>`) open the notification menu.
+Links to `/activity?notifications=open` (optionally with `&request=<id>`) open the
+notification menu on desktop and redirect to the phone page, which expands the
+linked request. `/notifications` is shareable at every viewport size.
 See [Human requests](./human-requests.md) for source request actions and timeouts,
 and [API reference](./api.md) for notification and audit routes.

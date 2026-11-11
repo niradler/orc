@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   Globe,
+  History,
   LoaderCircle,
   Maximize2,
   Minimize2,
@@ -16,6 +17,7 @@ import {
   RefreshCw,
   Settings2,
   Square,
+  SquarePen,
   Trash2,
   X,
 } from "lucide-react";
@@ -122,6 +124,7 @@ export function ChatPanel({
     responding,
     activeKey,
     tabs,
+    newTab,
     draft,
     files,
     addFiles,
@@ -287,6 +290,7 @@ export function ChatPanel({
         docked={docked}
         rail={rail}
         wide={fullscreen && !desktop}
+        hideTrigger={phone}
         home={fullscreen ? home : undefined}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -294,10 +298,55 @@ export function ChatPanel({
           ref={header}
           className={cn(
             "chat-header flex min-h-12 shrink-0 items-center gap-1 px-3 py-1",
-            !docked && !rail && "pl-40",
+            !docked && !rail && !phone && "pl-40",
+            phone && "px-2",
           )}
         >
-          {!(fullscreen && phone) && (title || fullscreen) ? (
+          {phone ? (
+            <>
+              <button
+                type="button"
+                data-testid="chat-sessions-button"
+                aria-label="Sessions, session history"
+                title="Session history"
+                className={cn(iconButton, "min-h-11 min-w-11")}
+                onClick={() => home.go({ listOpen: true })}
+              >
+                <History size={17} />
+              </button>
+              <button
+                type="button"
+                data-testid="chat-clear-button"
+                aria-label="New session"
+                title="New session"
+                disabled={tabs.some(
+                  (tab) =>
+                    tab.key !== activeKey &&
+                    (tab.permissions.length || tab.questions.length || tab.attention || tab.error),
+                )}
+                className={cn(iconButton, "min-h-11 min-w-11")}
+                onClick={() => {
+                  newTab();
+                  home.go({ terminalId: null });
+                }}
+              >
+                <SquarePen size={17} />
+              </button>
+              <div className="min-w-0 flex-1">
+                <h2
+                  className="truncate text-sm font-medium"
+                  title={`${projectName} / ${title ?? "New session"}`}
+                >
+                  {title ?? "New session"}
+                </h2>
+                <p className="truncate text-xs text-muted-foreground">
+                  <span data-testid="session-project-breadcrumb">{projectName}</span>
+                  {" · "}
+                  {thread?.host ?? "local"}
+                </p>
+              </div>
+            </>
+          ) : title || fullscreen ? (
             <h2
               className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
               title={fullscreen ? `${projectName} / ${title ?? "New session"}` : title}
@@ -507,22 +556,7 @@ export function ChatPanel({
           </ActionHelp>
         </header>
         {fullscreen && phone && (
-          <div className="flex min-w-0 shrink-0 items-center gap-1 px-4 pb-1">
-            <h2
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]"
-              title={`${projectName} / ${title ?? "New session"}`}
-            >
-              <span
-                data-testid="session-project-breadcrumb"
-                className="max-w-[40%] truncate text-muted-foreground"
-              >
-                {projectName}
-              </span>
-              <span aria-hidden="true" className="text-muted-foreground">
-                /
-              </span>
-              <span className="min-w-0 truncate">{title ?? "New session"}</span>
-            </h2>
+          <div className="flex shrink-0 items-center justify-end gap-1 px-2 pb-1">
             <SessionHomeToggles home={home} />
           </div>
         )}
@@ -684,7 +718,7 @@ export function ChatPanel({
                       type="button"
                       data-testid="chat-permission-deny"
                       disabled={responding}
-                      className="min-h-8 rounded-md border border-control-border px-3"
+                      className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
                       onClick={() => void respondPermission("denied")}
                     >
                       Deny
@@ -693,7 +727,7 @@ export function ChatPanel({
                       type="button"
                       data-testid="chat-permission-allow"
                       disabled={responding}
-                      className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground"
+                      className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground max-md:min-h-11 pointer-coarse:min-h-11"
                       onClick={() => void respondPermission("approved")}
                     >
                       Allow once
@@ -704,7 +738,7 @@ export function ChatPanel({
                         data-testid="chat-permission-allow-all"
                         disabled={responding}
                         title="Switch this session to full access / bypass permissions"
-                        className="min-h-8 rounded-md border border-control-border px-3"
+                        className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
                         onClick={() =>
                           void changePermissions({ ...config, permissionMode: "bypassPermissions" })
                         }

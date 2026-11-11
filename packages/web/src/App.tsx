@@ -49,6 +49,8 @@ const Skills = lazy(() => import("@/views/Skills"));
 
 const Tasks = lazy(() => import("@/views/Tasks"));
 
+const Notifications = lazy(() => import("@/views/Notifications"));
+
 const Terminals = lazy(() => import("@/views/Terminals"));
 
 function DefaultWorkspaceRedirect() {
@@ -149,7 +151,8 @@ export default function App() {
   const fullBleed =
     pathname === "/terminals" ||
     pathname.startsWith("/terminals/") ||
-    pathname.startsWith("/knowledge/base");
+    pathname.startsWith("/knowledge/base") ||
+    pathname === "/notifications";
 
   useEffect(() => {
     try {
@@ -223,15 +226,18 @@ export default function App() {
                     homeOpen && "hidden",
                   )}
                 >
-                  <WorkspaceHeader
-                    onShowChat={() => setChatVisible(true)}
-                    onProjectChange={setProjectId}
-                    navButtonRef={navButtonRef}
-                    chatButtonRef={chatButtonRef}
-                    projectId={projectId}
-                    onOpenNav={() => setMobileNavOpen(true)}
-                    onOpenChat={() => setChatVisible(!chatRequested)}
-                  />
+                  {/* The phone notifications page owns its top bar; keep the global header on desktop. */}
+                  <div className={cn(pathname === "/notifications" && "max-md:hidden")}>
+                    <WorkspaceHeader
+                      onShowChat={() => setChatVisible(true)}
+                      onProjectChange={setProjectId}
+                      navButtonRef={navButtonRef}
+                      chatButtonRef={chatButtonRef}
+                      projectId={projectId}
+                      onOpenNav={() => setMobileNavOpen(true)}
+                      onOpenChat={() => setChatVisible(!chatRequested)}
+                    />
+                  </div>
                   {!homeOpen && (
                     <main
                       className={cn(
@@ -256,6 +262,7 @@ export default function App() {
                           <Routes>
                             <Route path="/" element={<DefaultWorkspaceRedirect />} />
                             <Route path="/activity" element={<Dashboard projectId={projectId} />} />
+                            <Route path="/notifications" element={<Notifications />} />
                             <Route path="/tasks" element={<Tasks projectId={projectId} />} />
                             <Route
                               path="/tasks/:taskId"

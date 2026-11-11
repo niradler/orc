@@ -6,6 +6,7 @@ import {
   poll,
   sourcesLoaded,
 } from "./_agent-notifications";
+import { notificationInbox } from "./_helpers";
 
 test.beforeEach(async ({ page }) => {
   await page.clock.install();
@@ -165,7 +166,7 @@ test("phone bell keeps updates closed, retains Done updates, and works inside ch
   );
   await page.clock.fastForward(8000);
   await chat.getByTestId("notification-bell").click();
-  const menu = page.getByTestId("notification-menu");
+  const menu = notificationInbox(page);
   await expect(menu).toBeVisible();
   await expect(menu.getByTestId("notification-item")).toHaveCount(2);
   await page.screenshot({
@@ -226,7 +227,7 @@ test("phone bell preserves access to requests that already exist at startup", as
   await expect(bell).toHaveAccessibleName("Notifications: 1 unread");
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
   await page.keyboard.press("Alt+KeyN");
-  await expect(page.getByTestId("notification-menu")).toBeVisible();
+  await expect(notificationInbox(page)).toBeVisible();
   await expect(page.getByTestId("attention-request-notify-approval-0")).toBeVisible();
 });
 
@@ -284,7 +285,7 @@ test("opening a Done update from phone chat reveals the finished session", async
   await poll(page);
   await page.clock.runFor(1500);
   await page.getByTestId("mobile-chat-sheet").getByTestId("notification-bell").click();
-  await page.getByTestId("notification-menu").getByTestId("notification-open").click();
+  await notificationInbox(page).getByTestId("notification-open").click();
   await expect(page).toHaveURL(/\/sessions\?session=notify-live-1&project=all$/);
   await expect(page.getByTestId("mobile-chat-sheet")).toHaveCount(0);
 });
