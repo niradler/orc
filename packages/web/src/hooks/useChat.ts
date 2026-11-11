@@ -870,6 +870,7 @@ function useChatController() {
           const payload = {
             ...(!thread && current.projectId ? { projectId: current.projectId } : {}),
             messages: [{ role: "user", content: userMessage.content }],
+            clientMessageId: userMessage.id,
             agent: config.agent,
             providerId: config.providerId,
             model: config.model,
@@ -917,6 +918,28 @@ function useChatController() {
           turn: undefined,
         }));
         releaseQueue(key);
+        return;
+      }
+      const after = find(key);
+      // false = the server had no turn; its fresh messages show whether this send was stored.
+      const lost =
+        !accepted &&
+        !!thread &&
+        !!after &&
+        (followed === false
+          ? !after.messages.some((entry) => entry.id === userMessage.id)
+          : !!after.error);
+      if (lost) {
+        update(key, (tab) => ({
+          messages: tab.messages.filter((entry) => entry.id !== userMessage.id),
+          queued: tab.queued.some((entry) => entry.id === userMessage.id)
+            ? tab.queued
+            : [userMessage, ...tab.queued],
+          queuePaused: true,
+          error:
+            tab.error ??
+            "Your message didn't reach the agent. It's back in the queue; send it again when ready.",
+        }));
         return;
       }
       update(key, (tab) => ({
@@ -1337,26 +1360,36 @@ function useChatLink(chat: ReturnType<typeof useChatController>) {
   }, [current, chatShown, linked, setParams]);
 }
 
+const threadMessages = new WeakMap<ChatMessage, ThreadMessageLike>();
+// Reusing each stored message's converted form keeps assistant-ui's per-message cache warm while tokens stream.
+function toThreadMessage(message: ChatMessage): ThreadMessageLike {
+  let converted = threadMessages.get(message);
+  if (!converted) {
+    converted = {
+      id: message.id,
+      role: message.role,
+      content: [{ type: "text", text: message.content }],
+      createdAt: new Date(message.timestamp),
+      metadata: {
+        custom: {
+          agent: message.agent,
+          activity: message.activity,
+          attachments: message.attachments,
+          turn: message.turn,
+        },
+      },
+    };
+    threadMessages.set(message, converted);
+  }
+  return converted;
+}
+const asThreadMessage = (message: ThreadMessageLike) => message;
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChatController();
   useChatLink(chat);
   const messages = useMemo<ThreadMessageLike[]>(() => {
-    const history: ThreadMessageLike[] = chat.messages.map((message) => {
-      return {
-        id: message.id,
-        role: message.role,
-        content: [{ type: "text", text: message.content }],
-        createdAt: new Date(message.timestamp),
-        metadata: {
-          custom: {
-            agent: message.agent,
-            activity: message.activity,
-            attachments: message.attachments,
-            turn: message.turn,
-          },
-        },
-      };
-    });
+    const history = chat.messages.map(toThreadMessage);
     if (chat.streaming)
       history.push({
         id: chat.streamingId,
@@ -1384,7 +1417,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   ]);
   const runtime = useExternalStoreRuntime({
     messages,
-    convertMessage: (message: ThreadMessageLike) => message,
+    convertMessage: asThreadMessage,
     isRunning: chat.streaming,
     onNew: async (message: AppendMessage) => {
       await chat.send(
