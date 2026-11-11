@@ -82,6 +82,12 @@ interface ChatPanelProps {
 }
 const iconButton =
   "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
+// Slim segmented control: the representation switch is a frequent, low-stakes toggle, so it
+// stays quiet and compact instead of competing with the session title and actions.
+const representationButton =
+  "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 max-sm:h-9";
+const representationActive = "bg-surface-highest text-on-surface shadow-sm";
+const representationIdle = "text-on-surface-variant hover:bg-surface hover:text-on-surface";
 const actionButton =
   "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
 const textParts = {
@@ -377,7 +383,7 @@ export function ChatPanel({
           {fullscreen && (
             <fieldset
               aria-label="Session representation"
-              className="flex shrink-0 items-center rounded-md bg-surface p-0.5"
+              className="flex shrink-0 items-center gap-0.5 rounded-lg bg-surface p-0.5"
             >
               {terminalCenter && context.terminal ? (
                 <ContinueInChat terminal={context.terminal} inWorkspace showLabel />
@@ -385,9 +391,9 @@ export function ChatPanel({
                 <button
                   type="button"
                   aria-pressed="true"
-                  className={cn(iconButton, "gap-1 px-2 bg-surface-highest")}
+                  className={cn(representationButton, representationActive)}
                 >
-                  <MessageSquare size={15} />
+                  <MessageSquare size={14} />
                   <span className="hidden sm:inline">Chat</span>
                 </button>
               )}
@@ -408,9 +414,12 @@ export function ChatPanel({
                 onClick={() => {
                   if (!terminalCenter) void terminalControl.open();
                 }}
-                className={cn(iconButton, "gap-1 px-2", terminalCenter && "bg-surface-highest")}
+                className={cn(
+                  representationButton,
+                  terminalCenter ? representationActive : representationIdle,
+                )}
               >
-                <SquareTerminal size={15} />
+                <SquareTerminal size={14} />
                 <span className="hidden sm:inline">Terminal</span>
               </button>
             </fieldset>
@@ -623,16 +632,27 @@ export function ChatPanel({
             </p>
           )}
           <div className="relative flex min-h-0 flex-1 flex-col">
-            {home.liveId && (
-              <LiveSessionDetail
-                key={home.liveId}
-                embedded
-                sessionId={home.liveId}
-                initialQuery=""
-                resumeNotice={linkError || "Opening session…"}
-                onClose={() => home.go({ liveId: null })}
-              />
-            )}
+            {home.liveId &&
+              (linkError ? (
+                <LiveSessionDetail
+                  key={home.liveId}
+                  embedded
+                  sessionId={home.liveId}
+                  initialQuery=""
+                  resumeNotice={linkError}
+                  onClose={() => home.go({ liveId: null })}
+                />
+              ) : (
+                // While the live link resolves, keep a quiet placeholder instead of flashing the
+                // native transcript loader and then swapping to chat once resume lands.
+                <div
+                  role="status"
+                  data-testid="chat-opening-session"
+                  className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground"
+                >
+                  Opening session…
+                </div>
+              ))}
             {terminalCenter && <SessionTerminalCenter context={context} />}
             <ThreadPrimitive.Viewport
               ref={scroll.viewportRef}
@@ -677,7 +697,7 @@ export function ChatPanel({
                       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
                       data-testid="chat-message"
                       data-role={message.role}
-                      className="mx-auto mb-6 w-full max-w-3xl min-w-0 text-base leading-[1.65]"
+                      className="mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
                     >
                       <div
                         className={
@@ -691,7 +711,7 @@ export function ChatPanel({
                           className={
                             message.role === "user"
                               ? "sr-only"
-                              : "mb-2 text-xs font-medium text-on-surface-variant"
+                              : "mb-1 text-xs font-medium text-on-surface-variant"
                           }
                         >
                           {message.role === "user"

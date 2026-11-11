@@ -579,6 +579,17 @@ html:root select:not([multiple])[size="1"]:dir(rtl) {
   pointer-events: none;
 }
 
+/* The representation switch is a compact segmented control on wide screens. The global
+   touch rule (any-pointer: coarse) forces 44px even on touch-capable desktops, which made
+   the toggle bulky; keep it slim there while phones retain full-size tap targets. */
+@media (min-width: 640px) {
+  html:root fieldset[aria-label="Session representation"] > button,
+  html:root fieldset[aria-label="Session representation"] > a {
+    min-height: 1.75rem;
+    min-width: 0;
+  }
+}
+
 @media (forced-colors: active) {
   html:root select:not([multiple]):not([size]),
   html:root select:not([multiple])[size="1"] {
