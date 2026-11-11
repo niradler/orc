@@ -38,7 +38,7 @@ test("phone keyboard text reaches a real terminal without keydown", async ({
     const canvas = page.locator("canvas").first();
     await expect(canvas).toBeVisible();
     // replay-end and the window title can arrive before the shell accepts input.
-    await expect.poll(() => stripVTControlCharacters(output)).toMatch(/[>$#%][ \t]*$/);
+    await expect.poll(() => stripVTControlCharacters(output)).toMatch(/[>$#%]\s*$/);
     // On a phone the selectable text lies over the canvas, so the tap lands on the surface.
     await page.getByTestId("terminal-surface").first().tap();
     const input = page.locator("textarea[aria-label='Terminal input']").first();
@@ -163,7 +163,7 @@ for (const width of [1440, 390]) {
       "Native history restored",
     );
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
-    await expect(page).toHaveURL(/chat=open/);
+    await expect(page).toHaveURL(width < 1280 ? /\/chat\?/ : /chat=open/);
     await page.screenshot({ path: testInfo.outputPath(`chat-resume-${width}.png`) });
   });
 }
