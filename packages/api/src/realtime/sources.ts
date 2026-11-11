@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { getUserAgentsDir } from "@orc/core/agent-service";
 import { type ChangeResource, changes } from "@orc/core/changes";
-import { resetConfig } from "@orc/core/config";
+import { globalConfigPath, resetConfig } from "@orc/core/config";
 import { type ExecHost, hostExec } from "@orc/core/exec-host";
 import { getProjectFlowsDir, getUserFlowsDir, reloadFlows } from "@orc/core/flow-service";
 import { createLogger } from "@orc/core/logger";
@@ -178,7 +178,7 @@ export function retainChangeSources(): () => void {
       register(path, ["flows"], reloadFlows);
     register(getPackagesDir(), ["packages", "agents", "skills"], reloadCache);
     register(
-      join(homedir(), ".orc", "config.json"),
+      globalConfigPath(),
       ["settings", "ssh", "terminals", "backends", "health"],
       resetConfig,
     );

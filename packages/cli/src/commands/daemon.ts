@@ -11,7 +11,12 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { instanceId, registerShutdownHook } from "@orc/api/lifecycle";
 import { configuredApiSecret, globalConfigPath, loadConfig } from "@orc/core/config";
-import { canonicalPath, clearDaemonRuntime, writeDaemonRuntime } from "@orc/core/daemon-runtime";
+import {
+  canonicalPath,
+  clearDaemonRuntime,
+  daemonHome,
+  writeDaemonRuntime,
+} from "@orc/core/daemon-runtime";
 import { superviseServer } from "@orc/core/process-supervisor";
 import { ORC_VERSION } from "@orc/core/version";
 import { startGateway, stopGateway } from "@orc/gateway";
@@ -28,7 +33,7 @@ import { Command } from "commander";
 import { inheritLoginShellPath } from "../login-path.js";
 import { listAllJobs } from "./job.js";
 
-export const ORC_HOME = process.env.ORC_HOME ?? join(homedir(), ".orc");
+export const ORC_HOME = daemonHome();
 export const ORC_LOG = join(ORC_HOME, "daemon.log");
 export const ORC_PID = join(ORC_HOME, "daemon.pid");
 
@@ -316,7 +321,7 @@ export function daemonCommand() {
     .action(() => {
       const daemonPid = readDaemonPid();
       if (!daemonPid) {
-        console.log("No daemon running (no pid file at ~/.orc/daemon.pid).");
+        console.log(`No daemon running (no pid file at ${ORC_PID}).`);
         return;
       }
       try {
@@ -341,7 +346,7 @@ export function daemonCommand() {
       else if (os === "darwin") installMacos();
       else installLinux();
       console.log(`\n  Log:     ${ORC_LOG}`);
-      console.log(`  Config:  ~/.orc/config.json`);
+      console.log(`  Config:  ${globalConfigPath()}`);
 
       // macOS (launchctl load) and Linux (systemctl --now) already started it.
       // On Windows, use WScript.Shell Run(cmd, 0) - window style 0 = SW_HIDE.

@@ -1,7 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { loadConfig } from "@orc/core/config";
+import { globalConfigPath, loadConfig } from "@orc/core/config";
 import { DEFAULT_GITHUB_STATUS_LABELS, GithubSyncConfigSchema } from "@orc/core/github-sync";
 import { shortId } from "@orc/core/ids";
 import { TaskStatusSchema } from "@orc/core/types";
@@ -62,7 +60,7 @@ function priorityIcon(priority: string): string {
 }
 
 function configPath(): string {
-  return join(homedir(), ".orc", "config.json");
+  return globalConfigPath();
 }
 
 function readConfigFile(): Record<string, unknown> {
