@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChangeResource, changes } from "@orc/core/changes";
 import { globalConfigPath, resetConfig } from "@orc/core/config";
-import { initializeAgentPreferences } from "@orc/core/provider-service";
+import {
+  initializeAgentPreferences,
+  readProviderSettings,
+  saveProviderSettings,
+} from "@orc/core/provider-service";
+import { continuationPrompt } from "../routes/chat.js";
 import type { createApp } from "../server.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -189,6 +194,105 @@ describe("/chat/stream client message id", () => {
       while (reader && !(await reader.read()).done) {}
     } finally {
       unsubscribe();
+    }
+  });
+});
+
+describe("/chat/stream account switching", () => {
+  test("replays bounded prior context after the native session is replaced", () => {
+    const messages = Array.from({ length: 40 }, (_, index) => ({
+      id: `m-${index}`,
+      role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+      content: `message ${index} ${"x".repeat(600)}`,
+      timestamp: index,
+    }));
+    const prompt = continuationPrompt(messages);
+    if (!prompt) throw new Error("Continuation prompt was not built");
+    expect(prompt).toContain("[ORC account switch]");
+    expect(prompt).toContain("--- End of prior conversation ---");
+    expect(prompt).toContain("message 39");
+    expect(prompt).not.toContain("message 0 ");
+    expect(prompt.length).toBeLessThan(14_000);
+    expect(continuationPrompt([])).toBeUndefined();
+  });
+
+  test("switches a live conversation to another account of the same agent", async () => {
+    const home = mkdtempSync(join(tmpdir(), "orc-chat-accounts-"));
+    const previousHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    mkdirSync(join(home, ".orc"), { recursive: true });
+    writeFileSync(globalConfigPath(), "{}");
+    resetConfig();
+    initializeAgentPreferences(() => null);
+    resetConfig();
+    const initial = readProviderSettings();
+    saveProviderSettings({
+      ...initial,
+      default_provider_id: "claude",
+      providers: [
+        ...initial.providers.map((profile) =>
+          profile.id === "claude" ? { ...profile, enabled: true } : profile,
+        ),
+        {
+          id: "claude-two",
+          name: "Claude 2",
+          agent: "claude",
+          enabled: true,
+          executable: "",
+          home: join(home, "accounts", "claude-two"),
+          model: "",
+          environment: [],
+        },
+      ],
+    });
+    try {
+      const first = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Reply with exactly: FIRST." }],
+          agent: "claude",
+          providerId: "claude",
+          model: "",
+          agentOptions: {},
+        }),
+      });
+      expect(first.status).toBe(200);
+      const threadId = await threadOf(first);
+
+      const second = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Reply with exactly: SECOND." }],
+          threadId,
+          agent: "claude",
+          providerId: "claude-two",
+          model: "",
+          agentOptions: {},
+        }),
+      });
+      expect(second.status).toBe(200);
+      expect(await second.text()).toContain("SECOND");
+
+      const thread = (await (
+        await app.request(`/api/chat/threads/${threadId}`, { headers: AUTH })
+      ).json()) as {
+        config: { providerId: string };
+        messages: unknown[];
+        providerSwitch?: unknown;
+      };
+      expect(thread.config.providerId).toBe("claude-two");
+      expect(thread.providerSwitch).toBeUndefined();
+      expect(thread.messages).toHaveLength(4);
+    } finally {
+      for (const [key, value] of Object.entries(previousHome)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      resetConfig();
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });

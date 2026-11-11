@@ -60,6 +60,7 @@ function profiles(config: OrcConfig): { instances: StoredProviderProfile[]; defa
         agent === "claude" || agent === "codex"
           ? (config.preferences.provider_paths?.[agent] ?? "")
           : "",
+      home: "",
       model: chat.agent === agent ? chat.model : "",
       options: chat.agentOptions[agent],
       environment: [],
@@ -162,8 +163,18 @@ export function resolveProviderEnvironment(profile: StoredProviderProfile | unde
   stream: () => { push: (text: string) => string; flush: () => string };
 } {
   const resolved = resolveJobEnvironment(profile?.environment ?? []);
+  const variable = profile ? agentHomeVariable(profile.agent) : undefined;
+  const env = { ...resolved.env };
+  // A profile's own home is the generic way to isolate one CLI login; an explicit
+  // environment row still wins, including an empty value that clears it.
+  const explicit =
+    !!variable && !!profile?.environment.some((row) => row.name === variable && row.value !== null);
+  if (variable && profile?.home && !explicit)
+    env[variable] = expandAgentHome(profile.home) ?? profile.home;
+  if (variable && env[variable]?.startsWith("~"))
+    env[variable] = expandAgentHome(env[variable]) ?? env[variable];
   return {
-    env: resolved.env,
+    env,
     redact: resolved.redact,
     stream: () => {
       const stream = resolved.createRedactor();
@@ -177,6 +188,52 @@ export function providerExecutable(profile: StoredProviderProfile | undefined): 
   return value.startsWith("~/") || value.startsWith("~\\")
     ? join(userHome(), value.slice(2))
     : value;
+}
+export function agentHomeVariable(agent: string): string | undefined {
+  if (agent === "claude") return "CLAUDE_CONFIG_DIR";
+  if (agent === "codex") return "CODEX_HOME";
+  return undefined;
+}
+export function expandAgentHome(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.startsWith("~/") || value.startsWith("~\\")
+    ? join(userHome(), value.slice(2))
+    : value;
+}
+export function agentDefaultHome(agent: string): string | undefined {
+  const variable = agentHomeVariable(agent);
+  if (!variable) return undefined;
+  return expandAgentHome(
+    process.env[variable] || join(userHome(), agent === "claude" ? ".claude" : ".codex"),
+  );
+}
+/** The home a profile explicitly configures, before falling back to the host default. */
+export function providerConfiguredHome(profile: {
+  agent: string;
+  home?: string | undefined;
+  environment: { name: string; value: string | null; secret: boolean }[];
+}): string | undefined {
+  if (profile.home) return expandAgentHome(profile.home);
+  const variable = agentHomeVariable(profile.agent);
+  if (!variable) return undefined;
+  const row = profile.environment.find(
+    (item) => item.name === variable && item.value && !item.secret,
+  );
+  return expandAgentHome(row?.value ?? undefined);
+}
+export function providerEffectiveHome(profile: {
+  agent: string;
+  home?: string | undefined;
+  environment: { name: string; value: string | null; secret: boolean }[];
+}): string | undefined {
+  return providerConfiguredHome(profile) ?? agentDefaultHome(profile.agent);
+}
+/** Every home that can hold this agent's native state on the local host, default first. */
+export function agentHomes(agent: string): string[] {
+  const homes = profiles(loadConfig())
+    .instances.filter((profile) => profile.agent === agent)
+    .map(providerEffectiveHome);
+  return [...new Set([agentDefaultHome(agent), ...homes].filter((home): home is string => !!home))];
 }
 
 export function providerProcessEnvironment(
@@ -238,6 +295,7 @@ export function applyProviderPreferencePatch(
           agent,
           enabled: true,
           executable: "",
+          home: "",
           model: "",
           environment: [],
         });

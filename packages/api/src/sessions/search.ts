@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { agentHomes } from "@orc/core/provider-service";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
@@ -39,18 +40,26 @@ export function findRg(locations: string[] = RG_LOCATIONS): string | null {
 async function roots(runtime: HostRuntime): Promise<string[]> {
   const configured = process.env.ORC_SESSION_SEARCH_ROOTS;
   const home = await runtime.home();
+  const profileHomes =
+    runtime.host.kind === "local"
+      ? [
+          ...agentHomes("claude").map((dir) => join(dir, "projects")),
+          ...agentHomes("codex").map((dir) => join(dir, "sessions")),
+        ]
+      : [];
   const all = configured
     ? configured.split(delimiter)
     : [
         join(home, ".claude", "projects"),
         join(home, ".codex", "sessions"),
+        ...profileHomes,
         join(home, ".cursor", "projects"),
         join(home, ".gemini", "tmp"),
         ...(await piSessionRoots(runtime)),
         join(home, ".orc", "live-sessions", "transcripts"),
       ];
   const present = await Promise.all(
-    all.map(async (dir) => ((await runtime.isDirectory(dir)) ? dir : null)),
+    [...new Set(all)].map(async (dir) => ((await runtime.isDirectory(dir)) ? dir : null)),
   );
   return present.filter((dir): dir is string => dir !== null);
 }

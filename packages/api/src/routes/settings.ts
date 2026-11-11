@@ -9,11 +9,12 @@ import {
   readProviderSettings,
   saveProviderSettings,
 } from "@orc/core/provider-service";
-import { ProviderSettingsSchema } from "@orc/core/providers";
+import { ProviderAccountsSchema, ProviderSettingsSchema } from "@orc/core/providers";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { diffSummary, recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
+import { readProviderAccounts } from "../provider-accounts.js";
 
 const app = createRouter();
 const providerResponse = {
@@ -50,6 +51,21 @@ app.openapi(
     });
     return c.json(saved);
   },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/settings/providers/accounts",
+    tags: ["System"],
+    summary: "Read the CLI account behind each coding provider, without credentials",
+    responses: {
+      200: {
+        description: "Account identity read from the CLI's own config directory",
+        content: { "application/json": { schema: ProviderAccountsSchema } },
+      },
+    },
+  }),
+  async (c) => c.json({ accounts: await readProviderAccounts() }),
 );
 const mcpResponse = {
   200: {

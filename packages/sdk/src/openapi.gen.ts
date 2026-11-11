@@ -629,6 +629,9 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            providerSwitch?: {
+                                from: string;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -877,6 +880,9 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            providerSwitch?: {
+                                from: string;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -1068,6 +1074,9 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            providerSwitch?: {
+                                from: string;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -1309,6 +1318,9 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            providerSwitch?: {
+                                from: string;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -1561,6 +1573,9 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            providerSwitch?: {
+                                from: string;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -1888,6 +1903,9 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            providerSwitch?: {
+                                from: string;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -1978,6 +1996,8 @@ export interface paths {
                         providerId?: string;
                         /** Format: uuid */
                         threadId?: string;
+                        /** Format: uuid */
+                        clientMessageId?: string;
                         workspace?: {
                             host?: string | null;
                             cwd?: string;
@@ -6206,6 +6226,7 @@ export interface paths {
                                 enabled: boolean;
                                 /** @default  */
                                 executable: string;
+                                home?: string;
                                 /** @default  */
                                 model: string;
                                 options?: {
@@ -6289,6 +6310,7 @@ export interface paths {
                             enabled: boolean;
                             /** @default  */
                             executable?: string;
+                            home?: string;
                             /** @default  */
                             model?: string;
                             options?: {
@@ -6367,6 +6389,7 @@ export interface paths {
                                 enabled: boolean;
                                 /** @default  */
                                 executable: string;
+                                home?: string;
                                 /** @default  */
                                 model: string;
                                 options?: {
@@ -6432,6 +6455,57 @@ export interface paths {
                 };
             };
         };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/providers/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the CLI account behind each coding provider, without credentials */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Account identity read from the CLI's own config directory */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accounts: {
+                                provider_id: string;
+                                name: string;
+                                agent: string;
+                                home: string;
+                                /** @enum {string} */
+                                status: "signed_in" | "signed_out" | "unknown";
+                                label: string | null;
+                                organization: string | null;
+                                plan: string | null;
+                                duplicate_of: string | null;
+                                message: string | null;
+                                sign_in_command: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -7044,6 +7118,8 @@ export interface paths {
                             accounts: {
                                 /** @enum {string} */
                                 provider: "codex" | "claude";
+                                provider_id?: string;
+                                name?: string;
                                 /** @enum {string} */
                                 status: "available" | "unavailable" | "signed_out";
                                 message: string | null;

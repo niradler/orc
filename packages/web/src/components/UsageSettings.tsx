@@ -60,12 +60,17 @@ export function UsageSettings() {
         )}
         {quotas.data?.accounts.map((account) => (
           <div
-            key={account.provider}
-            data-testid={`usage-quota-${account.provider}`}
+            key={account.provider_id ?? account.provider}
+            data-testid={`usage-quota-${account.provider_id ?? account.provider}`}
             className="border-b border-border py-3"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h4 className="text-sm font-medium">{names[account.provider]}</h4>
+              <h4 className="text-sm font-medium">
+                {names[account.provider] ?? account.provider}
+                {account.provider_id && account.provider_id !== account.provider && account.name
+                  ? ` · ${account.name}`
+                  : ""}
+              </h4>
               <span className="text-xs text-muted-foreground">
                 Checked {new Date(account.checked_at).toLocaleTimeString()}
               </span>

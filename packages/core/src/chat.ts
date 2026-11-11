@@ -176,6 +176,9 @@ export const ChatThreadSchema = z.object({
   importedMessages: z.number().int().nonnegative().optional(),
   projectId: z.string().optional(),
   transcriptMark: z.string().max(100).optional(),
+  // Set when an account switch drops the native session; the next turn replays
+  // bounded prior context so the conversation can continue in the new account.
+  providerSwitch: z.object({ from: z.string() }).optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

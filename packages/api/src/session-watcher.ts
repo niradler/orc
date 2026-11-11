@@ -6,6 +6,7 @@ import { type ExecHost, execHostFor, hostRuntime, resolveExecHost } from "@orc/c
 import { ulid } from "@orc/core/ids";
 import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
+import { agentHomes } from "@orc/core/provider-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
@@ -43,9 +44,23 @@ export type SyncResult = {
 
 const defaultAdapters = (host: ExecHost = resolveExecHost()): SessionAdapter[] => {
   const runtime = hostRuntime(host);
+  const localHomes = host.kind === "local";
+  const claudeHomes = localHomes ? agentHomes("claude") : [];
+  const codexHomes = localHomes ? agentHomes("codex") : [];
   return [
-    claudeAdapter({}, runtime),
-    codexAdapter(undefined, { runtime }),
+    claudeAdapter(
+      localHomes
+        ? {
+            registry: claudeHomes.map((home) => join(home, "sessions")),
+            projects: claudeHomes.map((home) => join(home, "projects")),
+          }
+        : {},
+      runtime,
+    ),
+    codexAdapter(undefined, {
+      runtime,
+      ...(localHomes ? { dbPaths: codexHomes.map((home) => join(home, "state_5.sqlite")) } : {}),
+    }),
     cursorAdapter({ runtime }),
     cursorAgentAdapter(undefined, runtime),
     geminiAdapter(undefined, runtime),
@@ -486,6 +501,20 @@ export function startSessionWatcher(
         );
       else {
         for (const source of sources) local.add(join(homedir(), source));
+        for (const home of agentHomes("claude")) {
+          local.add(join(home, "sessions"));
+          local.add(join(home, "projects"));
+        }
+        for (const home of agentHomes("codex"))
+          for (const entry of [
+            "sessions",
+            "state_5.sqlite",
+            "state_5.sqlite-wal",
+            "thread_history_1.sqlite",
+            "thread_history_1.sqlite-wal",
+            "thread-writer-locks",
+          ])
+            local.add(join(home, entry));
         local.add(cursorStateDbPath());
         local.add(`${cursorStateDbPath()}-wal`);
       }

@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, loadConfig, resetConfig } from "./config.js";
 import {
+  agentDefaultHome,
+  agentHomes,
+  agentHomeVariable,
   providerChatDefaults,
+  providerEffectiveHome,
   providerForAgent,
   readProviderSettings,
   resolveProviderEnvironment,
@@ -149,4 +153,71 @@ test("should reject unsafe environment input and a disabled default without losi
       ),
     }),
   ).toThrow("Re-enter a secret");
+});
+
+test("should isolate Claude and Codex accounts by CLI config directory", () => {
+  const initial = readProviderSettings();
+  const accountHome = join(home, "accounts", "claude-work");
+  const explicitHome = join(home, "explicit-claude");
+  const saved = saveProviderSettings({
+    ...initial,
+    providers: [
+      ...initial.providers,
+      {
+        id: "claude-work",
+        name: "Claude Work",
+        agent: "claude",
+        enabled: true,
+        executable: "",
+        home: accountHome,
+        model: "",
+        environment: [],
+      },
+      {
+        id: "claude-env",
+        name: "Claude Env",
+        agent: "claude",
+        enabled: true,
+        executable: "",
+        home: accountHome,
+        model: "",
+        environment: [{ name: "CLAUDE_CONFIG_DIR", value: explicitHome, secret: false }],
+      },
+      {
+        id: "codex-work",
+        name: "Codex Work",
+        agent: "codex",
+        enabled: true,
+        executable: "",
+        home: accountHome,
+        model: "",
+        environment: [],
+      },
+    ],
+  });
+  const claudeWork = saved.providers.find((profile) => profile.id === "claude-work");
+  const claudeEnv = saved.providers.find((profile) => profile.id === "claude-env");
+  const codexWork = saved.providers.find((profile) => profile.id === "codex-work");
+  if (!claudeWork || !claudeEnv || !codexWork) throw new Error("Fixture providers are missing");
+  expect(agentHomeVariable("claude")).toBe("CLAUDE_CONFIG_DIR");
+  expect(agentHomeVariable("codex")).toBe("CODEX_HOME");
+  expect(agentHomeVariable("opencode")).toBeUndefined();
+  expect(providerEffectiveHome(claudeWork)).toBe(accountHome);
+  expect(providerEffectiveHome({ ...claudeWork, home: "~/accounts/tilde" })).toBe(
+    join(home, "accounts", "tilde"),
+  );
+  const storedClaude = providerForAgent("claude", "claude-work");
+  const storedEnv = providerForAgent("claude", "claude-env");
+  const storedCodex = providerForAgent("codex", "codex-work");
+  if (!storedClaude || !storedEnv || !storedCodex)
+    throw new Error("Fixture provider settings are missing");
+  expect(resolveProviderEnvironment(storedClaude).env.CLAUDE_CONFIG_DIR).toBe(accountHome);
+  // An explicit environment row is the escape hatch and wins over the field.
+  expect(resolveProviderEnvironment(storedEnv).env.CLAUDE_CONFIG_DIR).toBe(explicitHome);
+  expect(resolveProviderEnvironment(storedCodex).env.CODEX_HOME).toBe(accountHome);
+  expect(agentHomes("claude")).toContain(accountHome);
+  expect(agentHomes("codex")).toContain(accountHome);
+  const defaultClaudeHome = agentDefaultHome("claude");
+  if (!defaultClaudeHome) throw new Error("Claude default home is missing");
+  expect(agentHomes("claude")).toContain(defaultClaudeHome);
 });
