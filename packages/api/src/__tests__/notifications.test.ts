@@ -8,6 +8,7 @@ import { publishJobNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
 import { executeJob } from "@orc/runner/executor";
 import {
+  maintainNotifications,
   recordChatNotification,
   recordObservedNotification,
   retireChatFinishedNotifications,
@@ -141,6 +142,8 @@ test("should backfill existing chat aliases before listing and remove superseded
       expires_at: now + 60000,
     });
   }
+  // The 60 s maintenance sweep, not the list read, backfills legacy rows.
+  maintainNotifications();
   const response = await req(app, "GET", "/notifications");
   expect(response.status).toBe(200);
   const items = (await response.json<NotificationPage>()).notifications.filter((item) =>
