@@ -66,9 +66,10 @@ account**, or open an existing provider and set **Config directory**:
 
 Each directory holds that account's CLI login, session history and state. The
 provider passes it to native chat, model discovery and terminal launches for
-Claude/Codex profiles; other adapters ignore the field. `~/` expands on the
-execution host. Leave it blank to use the host default. An explicit
-`CLAUDE_CONFIG_DIR` or `CODEX_HOME` environment row still wins.
+Claude/Codex profiles; other adapters ignore the field. `~/` expands on the API
+host, so use an absolute path for an SSH execution host. Leave it blank to use
+the host default. An explicit `CLAUDE_CONFIG_DIR` or `CODEX_HOME` environment
+row still wins.
 
 The provider card reads the account label, plan and organization from the CLI's
 own files on the API host and shows a copyable sign-in command. Run that command
