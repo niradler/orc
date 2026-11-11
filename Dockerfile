@@ -56,7 +56,8 @@ COPY --from=builder --chown=bun:bun /app/packages        ./packages
 COPY --from=builder --chown=bun:bun /app/skills          ./skills
 COPY --from=builder --chown=bun:bun /app/package.json    ./
 
-# Persistent data dir (SQLite DB, logs). Mount a named volume here.
+# Persistent ORC data (database, config, secret key, knowledge, logs) and daemon
+# files. Mount a named volume here.
 RUN mkdir -p /data && chown bun:bun /data
 
 COPY docker-entrypoint.sh /usr/local/bin/orc-entrypoint
@@ -65,6 +66,8 @@ RUN chmod 755 /usr/local/bin/orc-entrypoint && \
 
 # ── Environment defaults ───────────────────────────────────────────────────────
 ENV ORC_HOME=/data
+# ORC_HOME is the data root: the database, config.json, secret.key and logs live
+# in /data, so mounting that volume alone keeps projects and tasks.
 ENV NODE_ENV=production
 ENV ORC_API_HOST=0.0.0.0
 # Default backend: claude (Anthropic SDK). Local CLI launchers are also included.

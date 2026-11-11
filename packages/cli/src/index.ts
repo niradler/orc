@@ -95,7 +95,7 @@ program
 
 program
   .command("home")
-  .description("Show ~/.orc directory contents and daemon state")
+  .description("Show the ORC data directory (ORC_HOME) and daemon state")
   .action(() => {
     const config = loadConfig();
 

@@ -47,9 +47,10 @@ services:
       - ORC_SSH_SOURCE=/ssh-host
 
     volumes:
-      # Persistent ORC data: SQLite DB, logs, sessions
+      # Persistent ORC data: SQLite DB, config, secret key, knowledge and logs
       - orc-data:/data
-      # Container-local coding-agent config/session stores when no SSH host is selected.
+      # Agent CLI config/session stores when no SSH host is selected. Optional:
+      # ORC's own data now lives in /data.
       - orc-home:/home/bun
       # Read-only source copied into /home/bun/.ssh with OpenSSH-safe ownership/modes.
       - ${HOME}/.ssh:/ssh-host:ro

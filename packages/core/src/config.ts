@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ChannelConnectionSchema } from "./channels.js";
 import { ChatSettingsSchema } from "./chat.js";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "./coding-agents.js";
-import { userHome } from "./home.js";
+import { orcHome, userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
 import { StoredProvidersSchema } from "./providers.js";
 import { decryptSecret } from "./secrets.js";
@@ -88,6 +88,8 @@ export const TtsConfigSchema = z.object({
   qwen: SpeechProviderConfigSchema.default({}),
 });
 
+const defaultDbPath = () => join(orcHome(), "orc.db");
+
 export const OrcConfigSchema = z.object({
   providers: StoredProvidersSchema.optional(),
   preferences: z
@@ -111,9 +113,9 @@ export const OrcConfigSchema = z.object({
   github: z.object({ token: z.string().optional() }).default({}),
   db: z
     .object({
-      path: z.string().default("~/.orc/orc.db"),
+      path: z.string().default(() => defaultDbPath()),
     })
-    .default({ path: "~/.orc/orc.db" }),
+    .default(() => ({ path: defaultDbPath() })),
 
   api: z
     .object({
@@ -598,7 +600,7 @@ export function resetConfig(): void {
 }
 
 export function globalConfigPath(): string {
-  return join(userHome(), ".orc", "config.json");
+  return join(orcHome(), "config.json");
 }
 
 export function hiddenBuiltinSkills(): string[] {

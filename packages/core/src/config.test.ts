@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, OrcConfigSchema, resetConfig, resolveApiBase } from "./config.js";
+import {
+  globalConfigPath,
+  loadConfig,
+  OrcConfigSchema,
+  resetConfig,
+  resolveApiBase,
+} from "./config.js";
 
 test("should accept literal shell argv while preserving executable string overrides", () => {
   expect(OrcConfigSchema.parse({ terminals: { shell: "pwsh" } }).terminals.shell).toBe("pwsh");
@@ -48,6 +54,42 @@ test("an explicitly empty environment secret overrides a stored secret", () => {
     process.chdir(previousDirectory);
     if (previousSecret === undefined) delete process.env.ORC_API_SECRET;
     else process.env.ORC_API_SECRET = previousSecret;
+    resetConfig();
+  }
+});
+
+test("ORC_HOME is the data root for config and the database", () => {
+  const previous = {
+    orcHome: process.env.ORC_HOME,
+    dbPath: process.env.ORC_DB_PATH,
+    directory: process.cwd(),
+  };
+  const root = mkdtempSync(join(tmpdir(), "orc-home-"));
+  const data = join(root, "data");
+  const cwd = mkdtempSync(join(tmpdir(), "orc-cwd-"));
+  try {
+    process.chdir(cwd);
+    process.env.ORC_HOME = data;
+    delete process.env.ORC_DB_PATH;
+    resetConfig();
+    expect(globalConfigPath()).toBe(join(data, "config.json"));
+    expect(loadConfig().db.path).toBe(join(data, "orc.db"));
+    expect(loadConfig().knowledge.root).toBe(join(data, "knowledge"));
+
+    mkdirSync(data, { recursive: true });
+    writeFileSync(join(data, "config.json"), JSON.stringify({ preferences: { theme: "light" } }));
+    resetConfig();
+    expect(loadConfig().preferences.theme).toBe("light");
+
+    process.env.ORC_DB_PATH = join(root, "explicit.db");
+    resetConfig();
+    expect(loadConfig().db.path).toBe(join(root, "explicit.db"));
+  } finally {
+    process.chdir(previous.directory);
+    if (previous.orcHome === undefined) delete process.env.ORC_HOME;
+    else process.env.ORC_HOME = previous.orcHome;
+    if (previous.dbPath === undefined) delete process.env.ORC_DB_PATH;
+    else process.env.ORC_DB_PATH = previous.dbPath;
     resetConfig();
   }
 });

@@ -10,7 +10,7 @@ A laptop ORC and a server ORC are two independent installations. Each has its ow
 | --- | --- | --- |
 | Typical install | Desktop app or `orc daemon start` | Docker Compose |
 | Address | `http://127.0.0.1:7700` | `https://orc.example.com` behind a reverse proxy |
-| Data | `~/.orc` on the laptop | `/home/bun/.orc` inside the container, on a volume |
+| Data | `~/.orc` on the laptop | `/data` (`ORC_HOME`) inside the container, on a volume |
 | Agents run on | The laptop (or its SSH execution host) | The container (or its SSH execution host) |
 | Sees live sessions from | Agents on the laptop | Agents in the container or its SSH host |
 
@@ -25,7 +25,7 @@ flowchart LR
 
   subgraph Server["Server (Docker)"]
     PX[Reverse proxy :443<br/>TLS, WebSocket, SSE]
-    CORC[Server ORC daemon :7700<br/>/home/bun/.orc/orc.db]
+    CORC[Server ORC daemon :7700<br/>/data/orc.db]
     RUN[Runner: task loop, flows, jobs]
     TERM[Terminals]
     SSH[(Optional SSH execution host)]
@@ -78,13 +78,13 @@ The image includes Node, ACPX, Claude Code and Codex CLI. The default backend is
 
 | Mount | Holds | Required |
 | --- | --- | --- |
-| `orc-home:/home/bun` | `~/.orc`: `orc.db`, `secret.key`, `config.json`, knowledge originals, agents, packages, flows; agent CLI logins and session histories | Yes |
-| `orc-data:/data` | `ORC_HOME`: daemon PID file | Recommended |
+| `orc-data:/data` | `ORC_HOME`: `orc.db`, `secret.key`, `config.json`, knowledge originals, logs, daemon PID/log files | Yes |
+| `orc-home:/home/bun` | Agent CLI logins and session histories; user flows, agents, packages, handoffs and live-session files under `~/.orc` | Optional |
 | `${HOME}/.ssh:/ssh-host:ro` | SSH keys and config, copied into `/home/bun/.ssh` at start | Only for Git over SSH or an SSH execution host |
 | Your repositories | Checkouts that projects point at | For any agent work |
 
 ::: warning
-The container runs as user `bun` with `HOME=/home/bun`, and ORC stores its database at `~/.orc/orc.db`. A `docker run` with only `-v orc-data:/data` does not persist the database. Mount a volume at `/home/bun` as the Compose file does, or set `ORC_DB_PATH=/data/orc.db`; note that `secret.key` and the rest of `~/.orc` still live under `/home/bun`.
+The container runs as user `bun` with `HOME=/home/bun`. `ORC_HOME=/data` is the data root, so `docker run` with only `-v orc-data:/data` keeps projects, tasks, settings and encrypted secrets across container replacement. An existing deployment that stored its database in `/home/bun/.orc` has that state moved into `/data` on the first start of the updated image.
 :::
 
 Project folders are container paths. Mount a repository, for example `- /srv/repos/my-app:/repos/my-app`, and set the project's folder to `/repos/my-app`.
