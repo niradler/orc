@@ -1097,6 +1097,8 @@ const requestSchema = z
     model: ChatModelSchema.optional(),
     providerId: ProviderIdSchema.optional(),
     threadId: id.optional(),
+    // Stored as the user message id so a client can tell whether an interrupted send landed.
+    clientMessageId: z.string().uuid().optional(),
     workspace: ChatWorkspaceSchema.optional(),
     // Retained for older clients; server settings own the effective prompt and permissions.
     system: z.string().max(20000).optional(),
@@ -1241,6 +1243,7 @@ async function streamChat(
   }
   const { run } = await beginTurn(thread, input, {
     context: body.context,
+    messageId: body.clientMessageId,
     prepare: async () => {
       if (!body.threadId && body.workspace?.worktree) {
         const host = selectedTerminalHost(loadConfig(), thread.host);
@@ -1270,6 +1273,7 @@ async function streamChat(
 type TurnSetup = {
   context?: ChatTurnContext | undefined;
   reserved?: boolean;
+  messageId?: string | undefined;
   prepare?: () => Promise<SessionFile[]>;
 };
 
@@ -1293,6 +1297,8 @@ async function beginTurn(
         "Enable Claude slash commands in session settings before compacting context.",
       );
   }
+  if (setup.messageId && thread.messages.some((message) => message.id === setup.messageId))
+    throw new ConflictError("This message was already sent.");
   if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
     throw new ValidationError("This chat reached its history size limit. Start a new chat.");
   const key = thread.runtimeId ? turnKey(thread.host, thread.backend, thread.runtimeId) : thread.id;
@@ -1352,7 +1358,7 @@ async function beginTurn(
     throw error;
   }
   thread.messages.push({
-    id: crypto.randomUUID(),
+    id: setup.messageId ?? crypto.randomUUID(),
     role: "user",
     content: input,
     ...(attachments.length ? { attachments } : {}),
@@ -1373,6 +1379,7 @@ async function beginTurn(
   try {
     store().save(thread);
     retireChatFinishedNotifications(thread);
+    changes.publish("sessions");
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
