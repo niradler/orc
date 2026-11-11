@@ -112,7 +112,7 @@ test("stopping a chunked response preserves partial text and a new send finishes
   await expect(page.getByTestId("chat-model-option-custom")).toBeDisabled();
   await page.getByTestId("chat-agent-model-help").click();
   await expect(page.getByTestId("chat-agent-model-note")).toContainText(
-    "Model changes are available after the current response",
+    "Provider and model changes are available after the current response",
   );
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");

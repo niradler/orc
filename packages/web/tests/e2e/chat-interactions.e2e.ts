@@ -197,7 +197,7 @@ for (const width of [390, 1440]) {
     await expect(toChat).toHaveAttribute("title", "Resume in chat");
     await expect(toChat).toHaveText("Resume");
     await toChat.click();
-    await expect(page).toHaveURL(/chat=open/);
+    await expect(page).toHaveURL(width < 1280 ? /\/chat\?/ : /chat=open/);
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
