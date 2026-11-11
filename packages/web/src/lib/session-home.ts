@@ -63,7 +63,7 @@ export function clearSessionHome(params: URLSearchParams): URLSearchParams {
   return next;
 }
 
-/** A link into the full-width sessions view from another page, keeping the project scope. */
+/** A link into the Chat page from another page, keeping the project scope. */
 export function sessionHomeSearch(
   search: string,
   target: { terminalId?: string; liveId?: string } = {},
@@ -72,7 +72,6 @@ export function sessionHomeSearch(
   const next = new URLSearchParams();
   const project = current.get("project");
   if (project) next.set("project", project);
-  next.set("chat", "full");
   if (target.terminalId) next.set(SESSION_TERMINAL_PARAM, target.terminalId);
   else if (target.liveId) next.set(SESSION_LIVE_PARAM, target.liveId);
   return `?${next.toString()}`;

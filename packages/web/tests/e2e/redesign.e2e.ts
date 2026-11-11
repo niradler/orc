@@ -13,7 +13,7 @@ test("themes persist, grouped navigation works, and the mobile project shortcut 
   });
   await gotoView(page, "tasks");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(page.getByTestId("workspace-sidebar").locator("nav > button")).toHaveCount(6);
+  await expect(page.getByTestId("workspace-sidebar").locator("nav > button")).toHaveCount(7);
   // Reloading before the server save lands would load the old theme back.
   const saved = page.waitForResponse(
     (response) => response.url().endsWith("/settings") && response.request().method() === "PATCH",
@@ -130,10 +130,13 @@ test("Codex chat streams and keeps history while switching between desktop and m
     marker,
   );
   await page.getByRole("button", { name: "Close chat", exact: true }).click();
+  await expect(page.getByTestId("chat-panel")).toBeHidden();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("chat-open-button").click();
-  await expect(page.getByTestId("mobile-chat-sheet")).toContainText(marker);
+  await expect(page.getByTestId("session-home")).toContainText(marker);
   await page.getByRole("button", { name: "Close chat", exact: true }).click();
+  await expect(page.getByTestId("session-home")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/tasks\?/);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId("chat-open-button").click();
   await expect(page.getByTestId("chat-messages")).toContainText(marker);

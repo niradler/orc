@@ -82,16 +82,17 @@ test("Chat is generic and its open view restores from the URL across breakpoints
   await page.reload();
   await expect(page.getByTestId("chat-panel")).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId("mobile-chat-sheet")).toBeVisible();
+  // Below the side-panel breakpoint the side chat becomes the Chat page.
+  await expect(page).toHaveURL(/\/chat\?/);
+  await expect(page.getByTestId("session-home")).toBeVisible();
   await page.getByRole("button", { name: "Close chat", exact: true }).click();
-  await expect(page.getByTestId("mobile-chat-sheet")).not.toBeVisible();
-  await expect(page.getByTestId("chat-open-button")).toBeFocused();
+  await expect(page.getByTestId("session-home")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/activity\?/);
   expect(new URL(page.url()).searchParams.has("chat")).toBe(false);
   await page.goBack();
-  await expect(page.getByTestId("mobile-chat-sheet")).toBeVisible();
+  await expect(page.getByTestId("session-home")).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.getByTestId("mobile-chat-sheet")).not.toBeVisible();
-  await expect(page.getByTestId("chat-panel")).toBeVisible();
+  await expect(page.getByTestId("session-home")).toBeVisible();
 });
 
 test("root link preserves shared state and mobile navigation returns focus", async ({ page }) => {

@@ -12,6 +12,12 @@ export const WORKSPACE_SECTIONS = [
     ],
   },
   {
+    id: "chat",
+    label: "Chat",
+    path: "/chat",
+    pages: [{ id: "chat", label: "Chat", path: "/chat" }],
+  },
+  {
     id: "tasks",
     label: "Tasks",
     path: "/tasks",

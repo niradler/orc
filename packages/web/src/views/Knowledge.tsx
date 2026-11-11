@@ -98,6 +98,7 @@ function KnowledgeBases({
   globalOnly?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
+  const { pathname } = useLocation();
   const kbId = params.get("kb");
   const documentId = params.get("document");
   const label = params.get("label") ?? "";
@@ -142,6 +143,8 @@ function KnowledgeBases({
   const uploads = useKbUploads();
 
   function update(changes: Record<string, string | null>, replace = false) {
+    // setParams resolves against this page, so a late effect would pull the user back here.
+    if (window.location.pathname !== pathname) return;
     setParams(
       () => {
         // Another workspace action may navigate before this render's effects run.

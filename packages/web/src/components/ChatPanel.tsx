@@ -25,7 +25,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
-import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
@@ -542,7 +541,6 @@ export function ChatPanel({
               </button>
             </ActionHelp>
           )}
-          <AgentNotificationBell />
           <ActionHelp label="Close chat">
             <button
               type="button"
@@ -556,7 +554,7 @@ export function ChatPanel({
           </ActionHelp>
         </header>
         {fullscreen && phone && (
-          <div className="flex shrink-0 items-center justify-end gap-1 px-2 pb-1">
+          <div className="chat-page-subheader flex shrink-0 items-center justify-end gap-1 px-2 pb-1">
             <SessionHomeToggles home={home} />
           </div>
         )}

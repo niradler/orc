@@ -33,7 +33,8 @@ for (const width of [1440, 390]) {
       await page.getByTestId("chat-input").fill("Menu identity approval fixture");
       await page.getByTestId("chat-input").press("Enter");
       await blocked;
-      await page.locator('[data-testid="notification-bell"]:visible').last().click();
+      // The workspace header owns the only bell at every width.
+      await page.locator('[data-testid="notification-bell"]:visible').click();
       const menu = notificationInbox(page);
       await expect(menu).toBeVisible();
       release();

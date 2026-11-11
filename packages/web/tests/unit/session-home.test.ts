@@ -53,10 +53,10 @@ test("clearing removes every session view param and nothing else", () => {
 });
 
 test("links from other pages keep only the project scope and prefer the terminal target", () => {
-  expect(sessionHomeSearch("?project=p&session=old&q=x")).toBe("?project=p&chat=full");
-  expect(sessionHomeSearch("", { liveId: "l1" })).toBe("?chat=full&sessionLive=l1");
+  expect(sessionHomeSearch("?project=p&session=old&q=x")).toBe("?project=p");
+  expect(sessionHomeSearch("", { liveId: "l1" })).toBe("?sessionLive=l1");
   expect(sessionHomeSearch("?project=p", { terminalId: "t1", liveId: "l1" })).toBe(
-    "?project=p&chat=full&sessionTerminal=t1",
+    "?project=p&sessionTerminal=t1",
   );
 });
 

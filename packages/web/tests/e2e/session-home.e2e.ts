@@ -20,6 +20,16 @@ async function sessionList(page: Page, narrow: boolean) {
 const row = (list: ReturnType<Page["getByTestId"]>, id: string) =>
   list.locator(`[data-history-id="${id}"]`);
 
+/** Escape closes the drawer and returns focus to its trigger, whose help tooltip
+ *  would then cover the chat header's own controls. */
+async function closeMobileNav(page: Page) {
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("mobile-nav-drawer")).toBeHidden();
+  await expect(page.getByTestId("mobile-nav-open")).toBeFocused();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect(page.getByTestId("action-help-content")).toHaveCount(0);
+}
+
 for (const width of [1440, 390])
   test.describe(`session home at ${width}px`, () => {
     const narrow = width < 1280;
@@ -29,13 +39,24 @@ for (const width of [1440, 390])
       page,
     }) => {
       await mockSessionHome(page);
-      await page.goto(`/tasks?project=all&chat=full&chatThread=${HOME.chatA}`);
+      await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
       await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
-      if (!narrow) {
-        await expect(page.getByTestId("session-home")).toBeVisible();
-        const sidebar = await page.getByTestId("workspace-sidebar").boundingBox();
-        expect(sidebar?.width).toBeLessThanOrEqual(64);
-      }
+      // Chat is a regular workspace page: one notification bell in the header and
+      // the Chat destination highlighted in the sidebar.
+      await expect(page.locator('[data-testid="notification-bell"]:visible')).toHaveCount(1);
+      if (width === 390) {
+        await page.getByTestId("mobile-nav-open").click();
+        await expect(page.getByTestId("mobile-nav-drawer").getByTestId("nav-chat")).toHaveAttribute(
+          "aria-current",
+          "page",
+        );
+        await closeMobileNav(page);
+      } else
+        await expect(page.getByTestId("workspace-sidebar").getByTestId("nav-chat")).toHaveAttribute(
+          "aria-current",
+          "page",
+        );
+      if (!narrow) await expect(page.getByTestId("session-home")).toBeVisible();
 
       let list = await sessionList(page, narrow);
       for (const id of rowIds) await expect(row(list, id)).toHaveCount(1);
@@ -69,7 +90,7 @@ for (const width of [1440, 390])
       page,
     }) => {
       await mockSessionHome(page);
-      await page.goto(`/tasks?project=all&chat=full&sessionTerminal=${HOME.terminal}`);
+      await page.goto(`/chat?project=all&sessionTerminal=${HOME.terminal}`);
       await expect(page.getByTestId("session-terminal")).toBeVisible();
       await expect(page.getByTestId("session-inspector")).toHaveCount(0);
 
@@ -161,7 +182,7 @@ test.describe("session home on desktop", () => {
 
   test("collapses the list to a rail that keeps every session reachable", async ({ page }) => {
     await mockSessionHome(page);
-    await page.goto(`/tasks?project=all&chat=full&chatThread=${HOME.chatA}`);
+    await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
     await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
     await page.getByTestId("session-list-collapse").click();
     await expect(page).toHaveURL(/sessionList=hide/);
@@ -185,7 +206,9 @@ test.describe("session home on desktop", () => {
     await mockSessionHome(page);
     await page.goto(`/terminals/${HOME.terminal}?project=all`);
     await page.getByTestId("terminals-open-home").click();
-    await expect(page).toHaveURL(new RegExp(`chat=full&sessionTerminal=${HOME.terminal}`));
+    await expect(page).toHaveURL(
+      new RegExp(`/chat\\?project=all&sessionTerminal=${HOME.terminal}`),
+    );
     await expect(page.getByTestId("session-terminal")).toBeVisible();
     await page.getByTestId("chat-fullscreen-button").click();
     await expect(page).toHaveURL(new RegExp(`/terminals/${HOME.terminal}\\?project=all$`));
@@ -259,7 +282,7 @@ test("phone session list is full screen and URL, reload, Back and Escape preserv
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockSessionHome(page);
-  await page.goto(`/tasks?project=all&chat=full&chatThread=${HOME.chatA}`);
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await sessionList(page, true);
   await expect(page).toHaveURL(/sessionList=show/);
   const dialog = page.getByTestId("chat-sessions-dialog");
@@ -304,6 +327,19 @@ test("Exit full screen returns to its source after Back and Forward", async ({ p
   await expect(page).toHaveURL(/\/sessions\?project=all$/);
 });
 
+test("closing the phone chat page leaves history as it was before opening it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockSessionHome(page);
+  await page.goto("/activity?project=all");
+  await page.goto("/tasks?project=all");
+  await page.getByTestId("chat-open-button").click();
+  await expect(page.getByTestId("session-home")).toBeVisible();
+  await page.getByRole("button", { name: "Close chat", exact: true }).click();
+  await expect(page).toHaveURL(/\/tasks\?project=all$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/activity\?project=all$/);
+});
+
 test("breadcrumb uses recorded project ownership and unlinked terminal state stays unknown", async ({
   page,
 }) => {
@@ -332,7 +368,7 @@ test("breadcrumb uses recorded project ownership and unlinked terminal state sta
       },
     }),
   );
-  await page.goto(`/tasks?project=all&chat=full&chatThread=${HOME.chatA}`);
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await expect(page.getByTestId("session-project-breadcrumb").filter({ visible: true })).toHaveText(
     "Shop",
   );

@@ -377,12 +377,14 @@ expandable details.
 The shell is project-centered: a compact sidebar, project dropdown and one
 contextual navigation row. Keep Activity first and the default at `/activity`.
 Knowledge has exactly Knowledge base and Memories as sibling destinations.
-KB settings, digest, comments and document history are contextual actions. Chat opens from
-the header; it is not another sidebar destination. Agent sessions have one
-full-width presentation, reached from that header action's fullscreen mode:
-session list, conversation and an inspector opened on demand. In full width the
-workspace sidebar stays visible as its collapsed icon rail; Minimize returns to the
-previous page. Other surfaces that list sessions link into it and reuse its row
+KB settings, digest, comments and document history are contextual actions. Chat
+is a sidebar destination under Activity, at `/chat`, and also opens from the
+header's chat action. The chat page is a normal page: session list, conversation
+and an inspector opened on demand, with the workspace header in place, the
+sidebar at the width the user chose and Chat marked active. It replaces the side
+panel below the wide breakpoint, so phones and narrow windows never get two chat
+surfaces. **Close chat** returns to the previous page. Other surfaces that list
+sessions link into it and reuse its row
 design. The separate Agents/Packages
 relationship remains an open UX decision; this document does not silently resolve it.
 

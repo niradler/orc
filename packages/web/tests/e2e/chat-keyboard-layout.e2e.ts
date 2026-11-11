@@ -65,7 +65,11 @@ test.describe("phone keyboard composer", () => {
         });
         await gotoView(page, "tasks");
         await page.getByTestId("chat-open-button").tap();
-        const sheet = page.getByTestId("mobile-chat-sheet");
+        const sheet = page.getByTestId("session-home");
+        const pageHeight = async () => {
+          const header = await page.locator(".workspace-header").boundingBox();
+          return Math.round(((await sheet.boundingBox())?.height ?? 0) + (header?.height ?? 0));
+        };
         const input = sheet.getByTestId("chat-input");
         const send = sheet.getByTestId("chat-send-button");
         const actions = sheet.getByTestId("chat-composer-tools");
@@ -92,7 +96,7 @@ test.describe("phone keyboard composer", () => {
               ).setKeyboardHeight(height),
             height,
           );
-          await expect.poll(async () => (await sheet.boundingBox())?.height).toBe(height);
+          await expect.poll(pageHeight).toBe(height);
           await actions.evaluate((element) => {
             element.scrollLeft = 0;
           });
@@ -151,13 +155,11 @@ test.describe("phone keyboard composer", () => {
             844,
           ),
         );
-        await expect.poll(async () => (await sheet.boundingBox())?.height).toBe(844);
+        await expect.poll(pageHeight).toBe(844);
         await expect(input).toHaveValue(draft);
         await sheet.getByTestId("chat-close-button").tap();
         await page.getByTestId("chat-open-button").tap();
-        await expect(page.getByTestId("mobile-chat-sheet").getByTestId("chat-input")).toHaveValue(
-          draft,
-        );
+        await expect(page.getByTestId("session-home").getByTestId("chat-input")).toHaveValue(draft);
       });
     }
   }

@@ -1,10 +1,10 @@
 # Notifications
 
-The bell in workspace and chat headers opens your notification inbox: an
-anchored menu on desktop and a full page at `/notifications` on phones. New
-arrivals show an unread indicator without opening it. Use **Alt+N** or **Open
-notifications** in the command palette to open it; on phones both navigate to
-the page, and its back bar returns to where you were.
+The bell in the workspace header opens your notification inbox: an anchored
+menu on desktop and a full page at `/notifications` on phones, including while
+the chat is open. New arrivals show an unread indicator without opening it. Use
+**Alt+N** or **Open notifications** in the command palette to open it; on
+phones both navigate to the page, and its back bar returns to where you were.
 
 Notifications cover human questions, approvals and commands, agent questions and
 outcomes, and job outcomes. Open an item to review the request or visit its source.
