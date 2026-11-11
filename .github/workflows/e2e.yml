@@ -25,9 +25,16 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Playwright Chromium
+      # Same baked-browser contract as CI: the installer cannot write its lock
+      # into the read-only PLAYWRIGHT_BROWSERS_PATH.
+      - name: Verify the baked Playwright browser is usable
         working-directory: packages/web
-        run: bunx playwright install chromium
+        run: |
+          binary=$(bun -e "process.stdout.write(require('@playwright/test').chromium.executablePath())")
+          test -x "$binary" || {
+            echo "::error::No Chromium at $binary. Rebuild the runner image for the @playwright/test version in this checkout, then re-dispatch."
+            exit 1
+          }
 
       - name: Browser suite
         run: bun packages/web/scripts/run-e2e.ts

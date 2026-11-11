@@ -1,7 +1,9 @@
 name: CI
 
 on:
-  # Automatic runner use stays disabled until public-PR isolation is verified.
+  # Same-repository pull requests run here; fork pull requests are skipped
+  # because this image is not verified to isolate untrusted code.
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -13,7 +15,12 @@ concurrency:
 
 jobs:
   changed:
-    if: github.event_name == 'workflow_dispatch' && github.actor == 'niradler' && github.triggering_actor == 'niradler' && github.repository == 'niradler/orc'
+    if: >
+      github.repository == 'niradler/orc' &&
+      github.actor == 'niradler' &&
+      github.triggering_actor == 'niradler' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: homelab
     timeout-minutes: 60
     steps:
