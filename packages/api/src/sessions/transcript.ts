@@ -1,5 +1,7 @@
 import { statSync } from "node:fs";
+import { z } from "zod";
 import { GeminiSession, geminiText } from "./gemini.js";
+import { parsePiSession, piText } from "./pi.js";
 
 export type TranscriptBlock =
   | { type: "text"; text: string }
@@ -310,7 +312,60 @@ async function* opencodeTurns(content: string): AsyncGenerator<Draft> {
   }
 }
 
+async function* piTurns(content: string): AsyncGenerator<Draft> {
+  const session = parsePiSession(content);
+  if (!session) return;
+  const blockSchema = z.object({
+    type: z.string(),
+    text: z.string().optional(),
+    thinking: z.string().optional(),
+    id: z.string().optional(),
+    name: z.string().optional(),
+    arguments: z.unknown().optional(),
+  });
+  for (const entry of session.messages) {
+    const message = entry.message;
+    if (!["user", "assistant", "toolResult"].includes(message.role)) continue;
+    const blocks: TranscriptBlock[] = [];
+    if (message.role === "toolResult") {
+      blocks.push({
+        type: "tool_result",
+        text: cut(piText(message.content), TOOL_RESULT_MAX),
+        ...(message.toolCallId ? { forId: message.toolCallId } : {}),
+      });
+    } else if (typeof message.content === "string") {
+      blocks.push({ type: "text", text: cut(message.content, TEXT_MAX) });
+    } else if (Array.isArray(message.content)) {
+      for (const raw of message.content) {
+        const parsed = blockSchema.safeParse(raw);
+        if (!parsed.success) continue;
+        const block = parsed.data;
+        if (block.type === "text" && block.text)
+          blocks.push({ type: "text", text: cut(block.text, TEXT_MAX) });
+        else if (block.type === "thinking" && block.thinking)
+          blocks.push({ type: "thinking", text: cut(block.thinking, TEXT_MAX) });
+        else if (block.type === "toolCall" && block.id && block.name)
+          blocks.push({
+            type: "tool_use",
+            id: block.id,
+            name: block.name,
+            input: cut(stringify(block.arguments), TOOL_INPUT_MAX),
+          });
+        else if (block.type === "image") blocks.push({ type: "text", text: "[Image]" });
+      }
+    }
+    if (blocks.length)
+      yield {
+        role:
+          message.role === "toolResult" ? "tool" : message.role === "user" ? "user" : "assistant",
+        time: entry.timestamp,
+        blocks,
+      };
+  }
+}
+
 const readers: Record<string, (content: string) => AsyncGenerator<Draft>> = {
+  pi: piTurns,
   claude: claudeTurns,
   codex: codexTurns,
   cursor: cursorTurns,

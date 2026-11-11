@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { loadConfig, resetConfig } from "@orc/core/config";
+import { runSync } from "../session-watcher.js";
+import { piAdapter } from "../sessions/pi.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers";
 
 for (const retry of [false, true])
@@ -141,6 +143,40 @@ for (const retry of [false, true])
       const threadId = first.find((event: { type: string }) => event.type === "thread")?.thread.id;
       expect(typeof threadId).toBe("string");
       expect(await Bun.file(join(cwd, "proof.txt")).text()).toBe("edit permissions honored");
+      const original = await (await req(app, "GET", `/chat/threads/${threadId}`)).json();
+      config.providers.instances.push({
+        id: "codex",
+        name: "Other default",
+        agent: "codex",
+        enabled: true,
+        executable: "",
+        model: "",
+        environment: [],
+      });
+      config.providers.default_id = "codex";
+      await runSync([piAdapter(join(agentDir, "sessions"))], { force: true });
+      const imported = await (await req(app, "GET", "/sessions/live?active=false&agent=pi")).json();
+      const source = imported.sessions.find(
+        (row: { session_id: string }) => row.session_id === original.runtimeId,
+      );
+      expect(source).toBeDefined();
+      const transcript = await req(app, "GET", `/sessions/live/${source.id}/transcript`);
+      expect(transcript.status).toBe(200);
+      expect(JSON.stringify(await transcript.json())).toContain("Pi API reply");
+      const opened = await req(app, "POST", "/chat/threads", { sourceSessionId: source.id });
+      expect(opened.status).toBe(200);
+      const resumed = await opened.json();
+      expect(resumed.runtimeId).toBe(original.runtimeId);
+      expect(resumed.config.providerId).toBe("pi-api-fixture");
+      expect(
+        resumed.messages.some((message: { content: string }) =>
+          message.content.includes("Pi API reply"),
+        ),
+      ).toBe(true);
+      const resumedEvents = await turn(resumed.id);
+      expect(
+        resumedEvents.find((event: { type: string }) => event.type === "session")?.runtimeId,
+      ).toBe(original.runtimeId);
       await turn(threadId);
       await turn(threadId, true);
     } finally {

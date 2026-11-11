@@ -46,7 +46,7 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     label: "Pi",
     binaries: ["pi"],
     chatRuntime: "pi",
-    sessionBackends: [],
+    sessionBackends: ["pi"],
     resumeArgs: (id) => ["--session", id],
   },
   {

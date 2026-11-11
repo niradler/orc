@@ -101,7 +101,9 @@ instead of creating another conversation. Keep the execution host and its
 Pi session directory available for saved conversations.
 
 Pi's terminal-only custom components and editor replacement are not reproduced in
-ORC. External Pi sessions are not automatically imported into ORC's session list. Fork/rollback and native account quota controls are not exposed. Active ORC
+ORC. Native Pi sessions are discovered and can resume in chat or a terminal; see
+[Live agent sessions](./live-sessions.md) for session directories and provider selection.
+Fork/rollback and native account quota controls are not exposed. Active ORC
 rules that require unavailable interception prevent the session from starting.
 
 ### Bedrock and LiteLLM examples

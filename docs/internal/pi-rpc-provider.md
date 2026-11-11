@@ -1,5 +1,28 @@
 # Native Pi RPC provider
 
+## PR 254 completion review (2026-11-11)
+
+Current scope supersedes the earlier leave-unmerged handoff: Nir requested review/fixes,
+external Pi session import/resume, real E2E and merge when ready. Integrated master.
+Added native v3 JSONL discovery, configured agent-directory roots, file watching/search,
+active-branch/context-edit transcript rendering, native-chat allowlist and backend mapping,
+and enabled named-provider selection. Regressions continue a real pinned CLI-written
+session through the API without changing its UUID, including a different default provider.
+
+Live Windows validation used the installed Pi 1.5.2 and configured digitalocean/kimi-k3
+model: native CLI wrote a proof file, ORC discovered/imported it, browser Resume continued
+the same UUID and the final completed model reply recalled the native conversation code.
+Reload, 1440px/390px layouts and zero page errors verified. API auth: anonymous 401,
+authenticated 200. No credentials changed, no model/MCP fixture in this live flow.
+Evidence: output/playwright/pi-live/result.json and desktop.png/phone.png (local, ignored).
+Full ci:full and final review pending at this checkpoint. SSH remains unverified.
+
+Pi external sessions have no owner lifecycle registration: shown ended; close the native
+client before resuming to avoid concurrent writers. Custom --session-dir outside discovered
+agent directories, old formats, cross-host handoff and archive embeddings are unsupported.
+
+## Original implementation record
+
 Approved: native RPC provider and PR; use upstream SDK schemas; production lifecycle and capability coverage.
 
 Architecture: `pi --mode rpc` under ORC host transport. Import upstream public protocol types only (SDK pinned dev dependency); no SDK runtime embedded in ORC. A private, temporary Pi extension registers the scoped ORC MCP server and gates tool calls through RPC confirm dialogs. Existing provider secrets, host selection, session identity, events and UI controls remain authoritative.

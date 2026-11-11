@@ -43,13 +43,13 @@ import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
-import { workspaceLaunch } from "../workspaces/service.js";
 import { createLogger } from "@orc/core/logger";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import {
   providerChatDefaults,
   providerForAgent,
   providerRevision,
+  readProviderSettings,
 } from "@orc/core/provider-service";
 import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
@@ -92,6 +92,7 @@ import { activeTurns, registerChatTurns, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
+import { workspaceLaunch } from "../workspaces/service.js";
 
 const logger = createLogger("api:chat");
 
@@ -547,7 +548,21 @@ async function newThread(
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;
-    thread.config.providerId = agent;
+    if (agent === "pi") {
+      const settings = readProviderSettings();
+      const candidates = settings.providers.filter(
+        (profile) => profile.agent === "pi" && profile.enabled,
+      );
+      const selected =
+        candidates.find((profile) => profile.id === settings.default_provider_id) ??
+        candidates.find((profile) => profile.id === "pi") ??
+        (candidates.length === 1 ? candidates[0] : undefined);
+      if (!selected)
+        throw new ValidationError(
+          "Enable a Pi provider and make it the default when several Pi providers are configured before resuming this session.",
+        );
+      thread.config.providerId = selected.id;
+    } else thread.config.providerId = agent;
     thread.config.agentOptions = {};
     thread.config.model = model ?? source.model ?? "";
     thread.backend = chatBackendFor(agent);
