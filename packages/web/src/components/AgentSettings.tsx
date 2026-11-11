@@ -29,9 +29,10 @@ import { PROVIDER_SETTINGS_KEY, useProviders, WORKSPACE_PREFERENCES_KEY } from "
 
 function optionsText(profile: ProviderProfile): string {
   return JSON.stringify(
-    profile.options?.runtime === "claude-sdk"
+    profile.options?.runtime === "claude-sdk" || profile.options?.runtime === "pi"
       ? profile.options.options
-      : (profile.options?.args ?? (chatRuntime(profile.agent) === "claude-sdk" ? {} : [])),
+      : (profile.options?.args ??
+          (["claude-sdk", "pi"].includes(chatRuntime(profile.agent)) ? {} : [])),
     null,
     2,
   );
@@ -155,7 +156,9 @@ export function AgentSettings() {
       const raw = JSON.parse(value);
       const runtime = chatRuntime(profile.agent);
       const options = ChatAgentOptionsSchema.parse(
-        runtime === "claude-sdk" ? { runtime, options: raw } : { runtime, args: raw },
+        runtime === "claude-sdk" || runtime === "pi"
+          ? { runtime, options: raw }
+          : { runtime, args: raw },
       );
       patch({ options });
       setOptionErrors((current) => ({ ...current, [profile.id]: "" }));
@@ -313,7 +316,7 @@ export function AgentSettings() {
                 </p>
               </div>
             </div>
-            {["claude", "codex", "opencode"].includes(profile.agent) && (
+            {["claude", "codex", "opencode", "pi"].includes(profile.agent) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
@@ -527,9 +530,11 @@ export function AgentSettings() {
                       ? "Configure custom providers and model options in OpenCode on the execution host. Use Default model above for a provider/model override, or leave it blank for OpenCode's default. Environment overrides apply to ACP and model discovery. ACPX launch flags do not apply to OpenCode."
                       : chatRuntime(profile.agent) === "claude-sdk"
                         ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
-                        : chatRuntime(profile.agent) === "codex"
-                          ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
-                          : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
+                        : chatRuntime(profile.agent) === "pi"
+                          ? 'Pi options, for example {"thinkingLevel":"high","autoCompaction":true}. Queue mode, auto-retry and auto-compaction changes are saved to Pi\'s own settings on the execution host; thinking level is session-only.'
+                          : chatRuntime(profile.agent) === "codex"
+                            ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
+                            : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
                     Session options override these defaults. These options apply to chat, not native
                     terminal launches.
                   </HelpPopover>
@@ -561,7 +566,7 @@ export function AgentSettings() {
                   : "Manual compaction is not available through this adapter."}
               </HelpPopover>
             </div>
-            {supportsManualCompaction(profile.agent) && (
+            {["claude", "codex"].includes(profile.agent) && (
               <details className="space-y-2 border-t border-border pt-3">
                 <summary className="min-h-11 cursor-pointer text-sm">Local account limits</summary>
                 <div className="flex items-center gap-1">

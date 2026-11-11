@@ -26,9 +26,11 @@ export const JobActionSchema = z.discriminatedUnion("type", [
       const runtime =
         action.backend === "claude"
           ? "claude-sdk"
-          : action.backend === "codex-cli"
-            ? "codex"
-            : "acpx";
+          : action.backend === "pi"
+            ? "pi"
+            : action.backend === "codex-cli"
+              ? "codex"
+              : "acpx";
       if (action.options.runtime !== runtime)
         context.addIssue({
           code: "custom",

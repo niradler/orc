@@ -10,7 +10,7 @@ for (const width of [390, 1440]) {
   }, info) => {
     await request.patch("/api/settings", {
       headers: { Authorization: `Bearer ${API_SECRET}` },
-      data: { chat: ChatSettingsSchema.parse({ mcp: "native" }) },
+      data: { agents: ["claude", "gemini"], chat: ChatSettingsSchema.parse({ mcp: "native" }) },
     });
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),
@@ -23,7 +23,11 @@ for (const width of [390, 1440]) {
     await chooseChatAgent(page, "gemini");
     await openChatSettings(page);
     await page.getByTestId("chat-agent-options").locator("summary").click();
-    await expect(page.getByTestId("chat-agent-options-help")).toContainText("--approve-all");
+    await page.getByTestId("chat-agent-options-help").focus();
+    await expect(page.getByTestId("chat-agent-options-help-content")).toContainText(
+      "--approve-all",
+    );
+    await page.keyboard.press("Escape");
     await editor.fill('["--format", "text"]');
     await apply.click();
     await expect(page.getByTestId("chat-agent-options-error")).toContainText(

@@ -7,9 +7,12 @@ import {
   providerProcessEnvironment,
   resolveProviderEnvironment,
 } from "@orc/core/provider-service";
+import { z } from "zod";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { resolveCodexLaunch } from "./codex.js";
 import { endStdin, writeToStdin } from "./io.js";
+import { piCommand } from "./pi.js";
+import { PiRpc } from "./pi-rpc.js";
 
 export interface AgentModel {
   id: string;
@@ -26,13 +29,19 @@ export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
   for (const item of value.slice(0, 500)) {
     const row = object(item);
     if (!row || row.hidden === true) continue;
+    if (agent === "pi" && (typeof row.provider !== "string" || typeof row.id !== "string"))
+      continue;
     const parsed = ChatModelSchema.safeParse(
-      agent === "claude" ? row.value : (row.model ?? row.id),
+      agent === "claude"
+        ? row.value
+        : agent === "pi"
+          ? `${row.provider}/${row.id}`
+          : (row.model ?? row.id),
     );
     if (!parsed.success || !parsed.data) continue;
     const label =
-      typeof row.displayName === "string"
-        ? Array.from(row.displayName)
+      typeof (row.displayName ?? row.name) === "string"
+        ? Array.from(String(row.displayName ?? row.name))
             .filter((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127)
             .join("")
             .slice(0, 120)
@@ -51,6 +60,45 @@ export async function discoverAgentModels(
 ): Promise<AgentModel[]> {
   if (!supportsModelDiscovery(agent)) return [];
   const profile = providerForAgent(agent, providerId, true);
+  if (agent === "pi") {
+    const environment = resolveProviderEnvironment(profile).env;
+    const executable = providerExecutable(profile);
+    const command = await piCommand({
+      executionHost: host.kind === "ssh" ? host.alias : null,
+      ...(executable ? { providerExecutable: executable } : {}),
+    });
+    const rpc = await PiRpc.start(
+      host,
+      [
+        ...command,
+        "--mode",
+        "rpc",
+        "--no-session",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-context-files",
+        "--no-mcp",
+        "--no-approve",
+      ],
+      cwd,
+      environment,
+    );
+    try {
+      const catalog = z
+        .object({
+          models: z.array(
+            z
+              .object({ id: z.string(), provider: z.string(), name: z.string().optional() })
+              .passthrough(),
+          ),
+        })
+        .parse((await rpc.request({ type: "get_available_models" }, 15_000)).data);
+      return parseAgentModels(catalog.models, "pi");
+    } finally {
+      await rpc.close();
+    }
+  }
   const custom = host.kind === "local" ? providerExecutable(profile) : undefined;
   const binary = custom ? Bun.which(custom) : await hostBinary(host, agent);
   if (!binary) throw new Error("The selected agent is not installed on its execution host.");
