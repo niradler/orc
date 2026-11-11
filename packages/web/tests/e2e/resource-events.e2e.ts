@@ -47,7 +47,8 @@ test("one shared stream keeps two tabs fresh, stays idle, and resynchronizes aft
   await expect.poll(() => pending.size === 0 && Date.now() - lastActivity >= 500).toBe(true);
   expect(requests.filter((path) => path === "/api/events")).toHaveLength(1);
   const baseline = requests.length;
-  await page.waitForTimeout(6500);
+  // Longer than the 15 s poll this used to return, so a reintroduced interval fails here.
+  await page.waitForTimeout(17_000);
   expect(requests.slice(baseline)).toEqual([]);
 
   const title = tid("changed-outside-browser");
