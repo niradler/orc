@@ -199,24 +199,7 @@ describe("/chat/stream client message id", () => {
 });
 
 describe("/chat/stream account switching", () => {
-  test("replays bounded prior context after the native session is replaced", () => {
-    const messages = Array.from({ length: 40 }, (_, index) => ({
-      id: `m-${index}`,
-      role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
-      content: `message ${index} ${"x".repeat(600)}`,
-      timestamp: index,
-    }));
-    const prompt = continuationPrompt(messages);
-    if (!prompt) throw new Error("Continuation prompt was not built");
-    expect(prompt).toContain("[ORC account switch]");
-    expect(prompt).toContain("--- End of prior conversation ---");
-    expect(prompt).toContain("message 39");
-    expect(prompt).not.toContain("message 0 ");
-    expect(prompt.length).toBeLessThan(14_000);
-    expect(continuationPrompt([])).toBeUndefined();
-  });
-
-  test("switches a live conversation to another account of the same agent", async () => {
+  function accountFixture() {
     const home = mkdtempSync(join(tmpdir(), "orc-chat-accounts-"));
     const previousHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
     process.env.HOME = home;
@@ -246,17 +229,91 @@ describe("/chat/stream account switching", () => {
         },
       ],
     });
+    const restore = () => {
+      for (const [key, value] of Object.entries(previousHome)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      resetConfig();
+      rmSync(home, { recursive: true, force: true });
+    };
+    return { home, restore };
+  }
+
+  function streamBody(content: string, extra: Record<string, unknown> = {}) {
+    return JSON.stringify({
+      messages: [{ role: "user", content }],
+      agent: "claude",
+      model: "",
+      agentOptions: {},
+      ...extra,
+    });
+  }
+
+  async function threadState(threadId: string) {
+    return (await (
+      await app.request(`/api/chat/threads/${threadId}`, { headers: AUTH })
+    ).json()) as {
+      config: { providerId: string };
+      messages: unknown[];
+      providerSwitch?: unknown;
+    };
+  }
+
+  /** Reads the SSE stream until the thread event names the conversation and its run. */
+  async function readUntilThread(res: Response) {
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    const decoder = new TextDecoder();
+    let text = "";
+    let threadId = "";
+    let runId = "";
+    while (!threadId) {
+      const part = await reader.read();
+      if (part.done) throw new Error("Stream ended before the thread was announced");
+      text += decoder.decode(part.value);
+      for (const line of text.split("\n").filter((l) => l.startsWith("data:"))) {
+        const event = JSON.parse(line.slice(5)) as {
+          type: string;
+          thread?: { id: string };
+          runId?: string;
+        };
+        if (event.type === "thread" && event.thread) {
+          threadId = event.thread.id;
+          runId = event.runId ?? "";
+        }
+      }
+    }
+    const drain = async () => {
+      while (!(await reader.read()).done) {}
+    };
+    return { threadId, runId, drain };
+  }
+
+  test("replays bounded prior context after the native session is replaced", () => {
+    const messages = Array.from({ length: 40 }, (_, index) => ({
+      id: `m-${index}`,
+      role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+      content: `message ${index} ${"x".repeat(600)}`,
+      timestamp: index,
+    }));
+    const prompt = continuationPrompt(messages);
+    if (!prompt) throw new Error("Continuation prompt was not built");
+    expect(prompt).toContain("[ORC account switch]");
+    expect(prompt).toContain("--- End of prior conversation ---");
+    expect(prompt).toContain("message 39");
+    expect(prompt).not.toContain("message 0 ");
+    expect(prompt.length).toBeLessThan(14_000);
+    expect(continuationPrompt([])).toBeUndefined();
+  });
+
+  test("switches a live conversation to another account of the same agent", async () => {
+    const { restore } = accountFixture();
     try {
       const first = await app.request("/api/chat/stream", {
         method: "POST",
         headers: AUTH,
-        body: JSON.stringify({
-          messages: [{ role: "user", content: "Reply with exactly: FIRST." }],
-          agent: "claude",
-          providerId: "claude",
-          model: "",
-          agentOptions: {},
-        }),
+        body: streamBody("Reply with exactly: FIRST.", { providerId: "claude" }),
       });
       expect(first.status).toBe(200);
       const threadId = await threadOf(first);
@@ -264,35 +321,112 @@ describe("/chat/stream account switching", () => {
       const second = await app.request("/api/chat/stream", {
         method: "POST",
         headers: AUTH,
-        body: JSON.stringify({
-          messages: [{ role: "user", content: "Reply with exactly: SECOND." }],
+        body: streamBody("Reply with exactly: SECOND.", {
           threadId,
-          agent: "claude",
           providerId: "claude-two",
-          model: "",
-          agentOptions: {},
         }),
       });
       expect(second.status).toBe(200);
       expect(await second.text()).toContain("SECOND");
 
-      const thread = (await (
-        await app.request(`/api/chat/threads/${threadId}`, { headers: AUTH })
-      ).json()) as {
-        config: { providerId: string };
-        messages: unknown[];
-        providerSwitch?: unknown;
-      };
+      const thread = await threadState(threadId);
       expect(thread.config.providerId).toBe("claude-two");
       expect(thread.providerSwitch).toBeUndefined();
       expect(thread.messages).toHaveLength(4);
     } finally {
-      for (const [key, value] of Object.entries(previousHome)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
-      resetConfig();
-      rmSync(home, { recursive: true, force: true });
+      restore();
+    }
+  });
+
+  test("rejects a switch while a response is running and keeps the provider", async () => {
+    const { restore } = accountFixture();
+    try {
+      const first = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: streamBody("reply after 1000ms", { providerId: "claude" }),
+      });
+      expect(first.status).toBe(200);
+      const { threadId, drain } = await readUntilThread(first);
+      const switching = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: streamBody("Reply with exactly: SECOND.", {
+          threadId,
+          providerId: "claude-two",
+        }),
+      });
+      expect(switching.status).toBe(409);
+      expect(await switching.text()).toContain("Wait for the current response");
+      await drain();
+      expect((await threadState(threadId)).config.providerId).toBe("claude");
+    } finally {
+      restore();
+    }
+  });
+
+  test("does not apply a switch when the send is invalid", async () => {
+    const { restore } = accountFixture();
+    try {
+      const first = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: streamBody("Reply with exactly: FIRST.", { providerId: "claude" }),
+      });
+      expect(first.status).toBe(200);
+      const threadId = await threadOf(first);
+      const invalid = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: streamBody("   ", { threadId, providerId: "claude-two" }),
+      });
+      expect(invalid.status).toBe(400);
+      expect((await threadState(threadId)).config.providerId).toBe("claude");
+    } finally {
+      restore();
+    }
+  });
+
+  test("does not replay the transcript into a session the switch already established", async () => {
+    const { restore } = accountFixture();
+    try {
+      const first = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: streamBody("Reply with exactly: FIRST.", { providerId: "claude" }),
+      });
+      expect(first.status).toBe(200);
+      const threadId = await threadOf(first);
+
+      // The switch turn is stopped after the new session received the continuation.
+      const switching = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: streamBody("reply after 1000ms", { threadId, providerId: "claude-two" }),
+      });
+      expect(switching.status).toBe(200);
+      const { runId, drain } = await readUntilThread(switching);
+      const cancelled = await app.request(`/api/chat/runs/${runId}/cancel`, {
+        method: "POST",
+        headers: AUTH,
+      });
+      expect(cancelled.status).toBe(200);
+      await drain();
+
+      const next = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: streamBody("Reply with exactly: THIRD.", { threadId, providerId: "claude-two" }),
+      });
+      expect(next.status).toBe(200);
+      const text = await next.text();
+      expect(text).toContain("THIRD");
+      expect(text).not.toContain("[ORC account switch]");
+      const thread = await threadState(threadId);
+      expect(thread.providerSwitch).toBeUndefined();
+      expect(thread.messages).toHaveLength(6);
+    } finally {
+      restore();
     }
   });
 });

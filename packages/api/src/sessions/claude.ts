@@ -144,9 +144,9 @@ export function claudeAdapter(
         for (const file of await runtime.listFiles(projectsDir)) {
           if (!file.path.endsWith(".jsonl")) continue;
           const id = basename(file.path, ".jsonl");
-          const previous = transcripts.get(id);
-          if (!previous || file.mtimeMs > previous.mtimeMs)
-            transcripts.set(id, { path: file.path, mtimeMs: file.mtimeMs });
+          // Copied account directories can repeat a session id; the first home
+          // (default first) keeps it so metadata and transcript stay together.
+          if (!transcripts.has(id)) transcripts.set(id, { path: file.path, mtimeMs: file.mtimeMs });
         }
       }
       const records = new Map<string, SessionRecord>();
@@ -183,6 +183,7 @@ export function claudeAdapter(
         }
       }
 
+      const registrySeen = new Set<string>();
       for (const registryDir of registryDirs) {
         for (const file of await runtime.listFiles(registryDir, 10_000)) {
           if (!file.path.endsWith(".json")) continue;
@@ -194,6 +195,8 @@ export function claudeAdapter(
           } catch {
             continue;
           }
+          if (registrySeen.has(entry.sessionId)) continue;
+          registrySeen.add(entry.sessionId);
           const now = Date.now();
           const live: SessionRecord = {
             backend: "claude",

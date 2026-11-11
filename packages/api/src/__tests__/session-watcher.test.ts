@@ -618,3 +618,116 @@ test("lists Codex threads from every configured account database", async () => {
     rmSync(base, { recursive: true, force: true });
   }
 });
+
+test("a corrupt Codex account database does not hide the healthy homes", async () => {
+  const base = mkdtempSync(join(tmpdir(), "orc-accounts-codex-corrupt-"));
+  try {
+    const healthy = join(base, "healthy");
+    mkdirSync(join(healthy, "sessions"), { recursive: true });
+    const database = join(healthy, "state_5.sqlite");
+    const db = new Database(database);
+    db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT,
+      preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT,
+      created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER,
+      archived INTEGER)`);
+    const insert = db.prepare("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    insert.run(
+      "healthy-thread",
+      "Healthy",
+      null,
+      "/tmp/healthy",
+      "",
+      "",
+      0,
+      "/nope",
+      1,
+      1,
+      1,
+      1,
+      0,
+    );
+    insert.finalize();
+    db.close();
+    const corrupt = join(base, "corrupt", "state_5.sqlite");
+    mkdirSync(join(base, "corrupt"), { recursive: true });
+    writeFileSync(corrupt, "this is not a sqlite database");
+    const rows = await codexAdapter(undefined, {
+      dbPaths: [corrupt, database],
+      writer: () => false,
+    }).list(new Map());
+    expect(rows.map((row) => row.externalId)).toEqual(["healthy-thread"]);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("duplicate session ids across Claude homes keep the first home's record together", async () => {
+  const base = mkdtempSync(join(tmpdir(), "orc-accounts-claude-dup-"));
+  try {
+    const id = "shared-session";
+    const projectsDirs: string[] = [];
+    const registryDirs: string[] = [];
+    for (const [index, cwd] of ["/tmp/first", "/tmp/second"].entries()) {
+      const account = join(base, `account-${index}`);
+      const projects = join(account, "projects");
+      const registryDir = join(account, "sessions");
+      mkdirSync(projects, { recursive: true });
+      mkdirSync(registryDir, { recursive: true });
+      writeFileSync(
+        join(registryDir, `${id}.json`),
+        JSON.stringify({
+          pid: DEAD_PID,
+          sessionId: id,
+          cwd,
+          name: `Account ${index}`,
+          status: "idle",
+        }),
+      );
+      writeFileSync(
+        join(projects, `${id}.jsonl`),
+        JSON.stringify({ type: "user", message: { content: `prompt ${index}` } }),
+      );
+      projectsDirs.push(projects);
+      registryDirs.push(registryDir);
+    }
+    const rows = await claudeAdapter({
+      registry: registryDirs,
+      desktop: null,
+      projects: projectsDirs,
+    }).list(new Map());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.cwd).toBe("/tmp/first");
+    expect(rows[0]?.transcriptPath).toContain(join(base, "account-0"));
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("duplicate thread ids across Codex homes keep the first home's record", async () => {
+  const base = mkdtempSync(join(tmpdir(), "orc-accounts-codex-dup-"));
+  try {
+    const databases: string[] = [];
+    for (const [index, cwd] of ["/tmp/first", "/tmp/second"].entries()) {
+      const account = join(base, `account-${index}`);
+      mkdirSync(join(account, "sessions"), { recursive: true });
+      const database = join(account, "state_5.sqlite");
+      const db = new Database(database);
+      db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT,
+        preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT,
+        created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER,
+        archived INTEGER)`);
+      const insert = db.prepare("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      insert.run("shared-thread", `Thread ${index}`, null, cwd, "", "", 0, "/nope", 1, 1, 1, 1, 0);
+      insert.finalize();
+      db.close();
+      databases.push(database);
+    }
+    const rows = await codexAdapter(undefined, { dbPaths: databases, writer: () => false }).list(
+      new Map(),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.cwd).toBe("/tmp/first");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { providerEffectiveHome, readProviderSettings } from "@orc/core/provider-service";
+import { providerEffectiveHome, storedProviderProfiles } from "@orc/core/provider-service";
 import type { UsageQuota } from "@orc/core/usage";
 import { z } from "zod";
 
@@ -198,8 +198,8 @@ export function createQuotaReader(dependencies: QuotaDependencies): () => Promis
 }
 
 function configuredTargets(): QuotaTarget[] {
-  return readProviderSettings()
-    .providers.filter((profile) => profile.agent === "claude" || profile.agent === "codex")
+  return storedProviderProfiles()
+    .filter((profile) => profile.agent === "claude" || profile.agent === "codex")
     .map((profile) => ({
       provider: profile.agent as QuotaTarget["provider"],
       providerId: profile.id,

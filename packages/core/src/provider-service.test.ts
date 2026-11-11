@@ -221,3 +221,61 @@ test("should isolate Claude and Codex accounts by CLI config directory", () => {
   if (!defaultClaudeHome) throw new Error("Claude default home is missing");
   expect(agentHomes("claude")).toContain(defaultClaudeHome);
 });
+
+test("should resolve the configured home with the same precedence as the launched CLI", () => {
+  const initial = readProviderSettings();
+  const fieldHome = join(home, "accounts", "field");
+  const envHome = join(home, "accounts", "env-row");
+  const secretHome = join(home, "accounts", "secret-row");
+  saveProviderSettings({
+    ...initial,
+    providers: [
+      ...initial.providers,
+      {
+        id: "claude-both",
+        name: "Claude Both",
+        agent: "claude",
+        enabled: true,
+        executable: "",
+        home: fieldHome,
+        model: "",
+        environment: [{ name: "CLAUDE_CONFIG_DIR", value: envHome, secret: false }],
+      },
+      {
+        id: "claude-cleared",
+        name: "Claude Cleared",
+        agent: "claude",
+        enabled: true,
+        executable: "",
+        home: fieldHome,
+        model: "",
+        environment: [{ name: "CLAUDE_CONFIG_DIR", value: "", secret: false }],
+      },
+      {
+        id: "claude-secret-home",
+        name: "Claude Secret Home",
+        agent: "claude",
+        enabled: true,
+        executable: "",
+        home: "",
+        model: "",
+        environment: [{ name: "CLAUDE_CONFIG_DIR", value: secretHome, secret: true }],
+      },
+    ],
+  });
+  const both = providerForAgent("claude", "claude-both");
+  const cleared = providerForAgent("claude", "claude-cleared");
+  const secret = providerForAgent("claude", "claude-secret-home");
+  if (!both || !cleared || !secret) throw new Error("Fixture providers are missing");
+  // The explicit row wins over the field, exactly as in the spawned environment.
+  expect(providerEffectiveHome(both)).toBe(envHome);
+  expect(resolveProviderEnvironment(both).env.CLAUDE_CONFIG_DIR).toBe(envHome);
+  // An empty row clears the override back to the host default.
+  expect(providerEffectiveHome(cleared)).toBe(agentDefaultHome("claude"));
+  expect(resolveProviderEnvironment(cleared).env.CLAUDE_CONFIG_DIR).toBe("");
+  // A secret row still names the directory the CLI uses.
+  expect(providerEffectiveHome(secret)).toBe(secretHome);
+  expect(resolveProviderEnvironment(secret).env.CLAUDE_CONFIG_DIR).toBe(secretHome);
+  expect(agentHomes("claude")).toContain(envHome);
+  expect(agentHomes("claude")).toContain(secretHome);
+});

@@ -5,7 +5,7 @@ import {
   agentHomeVariable,
   providerConfiguredHome,
   providerEffectiveHome,
-  readProviderSettings,
+  storedProviderProfiles,
 } from "@orc/core/provider-service";
 import type { ProviderAccount, ProviderProfile } from "@orc/core/providers";
 
@@ -122,6 +122,13 @@ export async function readCodexIdentity(
   };
 }
 
+/** Single-quoted shell literal: neither POSIX sh nor PowerShell expands anything inside. */
+function shellLiteral(value: string, platform: NodeJS.Platform): string {
+  return platform === "win32"
+    ? `'${value.replace(/'/g, "''")}'`
+    : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 export function signInCommand(
   profile: ProviderProfile,
   home: string,
@@ -130,15 +137,16 @@ export function signInCommand(
   const variable = agentHomeVariable(profile.agent);
   if (!variable || !providerConfiguredHome(profile)) return null;
   const command = profile.agent === "claude" ? "claude" : "codex";
+  const quoted = shellLiteral(home, platform);
   return platform === "win32"
-    ? `$env:${variable}="${home}"; ${command}`
-    : `${variable}="${home}" ${command}`;
+    ? `$env:${variable}=${quoted}; ${command}`
+    : `${variable}=${quoted} ${command}`;
 }
 
 export function readProviderAccounts(dependencies: Dependencies = defaultDependencies()) {
-  const settings = readProviderSettings();
+  const profiles = storedProviderProfiles();
   return Promise.all(
-    settings.providers.map(async (profile): Promise<ProviderAccount> => {
+    profiles.map(async (profile): Promise<ProviderAccount> => {
       const home = providerEffectiveHome(profile) ?? "";
       const identity =
         profile.agent === "claude"

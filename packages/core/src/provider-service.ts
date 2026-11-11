@@ -17,7 +17,7 @@ import {
   type StoredProviderProfile,
   StoredProvidersSchema,
 } from "./providers.js";
-import { encryptSecret } from "./secrets.js";
+import { decryptSecret, encryptSecret } from "./secrets.js";
 
 /** Persist discovery once; a later missing installation must not erase user intent. */
 export function initializeAgentPreferences(
@@ -86,6 +86,10 @@ export function readProviderSettings(config = loadConfig()): ProviderSettings {
     default_provider_id: saved.default_id,
     revision: providerRevision(config),
   };
+}
+/** Stored profiles with encrypted secret values intact; for server-side readers only. */
+export function storedProviderProfiles(config = loadConfig()): StoredProviderProfile[] {
+  return profiles(config).instances;
 }
 export function saveProviderSettings(input: ProviderSettings): ProviderSettings {
   const next = ProviderSettingsSchema.parse(input);
@@ -207,19 +211,32 @@ export function agentDefaultHome(agent: string): string | undefined {
     process.env[variable] || join(userHome(), agent === "claude" ? ".claude" : ".codex"),
   );
 }
-/** The home a profile explicitly configures, before falling back to the host default. */
+/**
+ * The home a profile explicitly configures, before falling back to the host default.
+ * Mirrors resolveProviderEnvironment: an explicit environment row wins over the home
+ * field (an empty value clears the override), so identity, quotas and session scans
+ * read the same directory the spawned CLI uses.
+ */
 export function providerConfiguredHome(profile: {
   agent: string;
   home?: string | undefined;
   environment: { name: string; value: string | null; secret: boolean }[];
 }): string | undefined {
-  if (profile.home) return expandAgentHome(profile.home);
   const variable = agentHomeVariable(profile.agent);
   if (!variable) return undefined;
-  const row = profile.environment.find(
-    (item) => item.name === variable && item.value && !item.secret,
-  );
-  return expandAgentHome(row?.value ?? undefined);
+  const row = profile.environment.find((item) => item.name === variable && item.value !== null);
+  if (row) {
+    let value = row.value ?? "";
+    if (row.secret) {
+      try {
+        value = decryptSecret(value);
+      } catch {
+        return undefined;
+      }
+    }
+    return value ? expandAgentHome(value) : undefined;
+  }
+  return profile.home ? expandAgentHome(profile.home) : undefined;
 }
 export function providerEffectiveHome(profile: {
   agent: string;

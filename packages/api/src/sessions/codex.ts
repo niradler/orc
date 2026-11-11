@@ -133,7 +133,29 @@ export function codexAdapter(
         );
       };
       const records: SessionRecord[] = [];
-      for (const database of databases) records.push(...(await listDatabase(database)));
+      const seen = new Set<string>();
+      let failures = 0;
+      let lastError: unknown;
+      for (const database of databases) {
+        // One unreadable account database must not hide the healthy homes.
+        let rows: SessionRecord[];
+        try {
+          rows = await listDatabase(database);
+        } catch (error) {
+          failures += 1;
+          lastError = error;
+          logger.warn("Cannot read a Codex account database", { database, error });
+          continue;
+        }
+        for (const record of rows) {
+          // Copied account directories can repeat a thread id; the first home wins.
+          if (seen.has(record.externalId)) continue;
+          seen.add(record.externalId);
+          records.push(record);
+        }
+      }
+      // A total outage stays an error so the watcher keeps the last known sessions.
+      if (failures === databases.length) throw lastError;
       return records;
     },
   };

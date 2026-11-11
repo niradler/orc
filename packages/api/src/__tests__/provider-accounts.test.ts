@@ -128,12 +128,22 @@ describe("provider account identity", () => {
 
   test("offers a sign-in command only for a configured directory", () => {
     expect(signInCommand(claudeProfile({ home: accountHome }), accountHome, "linux")).toBe(
-      `CLAUDE_CONFIG_DIR="${accountHome}" claude`,
+      `CLAUDE_CONFIG_DIR='${accountHome}' claude`,
     );
     expect(signInCommand(claudeProfile({ home: accountHome }), accountHome, "win32")).toBe(
-      `$env:CLAUDE_CONFIG_DIR="${accountHome}"; claude`,
+      `$env:CLAUDE_CONFIG_DIR='${accountHome}'; claude`,
     );
     expect(signInCommand(claudeProfile(), accountHome, "linux")).toBeNull();
+  });
+
+  test("sign-in commands quote the directory as a shell literal", () => {
+    const hostile = "/tmp/$(printf INJECTED)'\"`";
+    expect(signInCommand(claudeProfile({ home: hostile }), hostile, "linux")).toBe(
+      "CLAUDE_CONFIG_DIR='/tmp/$(printf INJECTED)'\\''\"`' claude",
+    );
+    expect(signInCommand(claudeProfile({ home: hostile }), hostile, "win32")).toBe(
+      "$env:CLAUDE_CONFIG_DIR='/tmp/$(printf INJECTED)''\"`'; claude",
+    );
   });
 
   test("marks later profiles that resolve to the same account", () => {
