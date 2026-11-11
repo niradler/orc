@@ -24,6 +24,11 @@ How agents connect to ORC's MCP server, how tool discovery works, and every tool
 
 The stdio server reads the local ORC database and calls the API for work only the daemon does (job runs, scheduling), so the daemon must be running. It finds the API through `ORC_API_BASE`, falling back to `api.host` / `api.port` from config.
 
+HTTP clients that need to attribute work to a live agent session add
+`?session=<session-id>` to the MCP URL. ORC resolves the ORC live session id or
+the agent's native id, and `session_send` uses it as the sender identity. Stdio
+MCP reads the same identity from the agent's environment instead.
+
 ## Desktop preview tools
 
 These tools require a connected Electron desktop viewing the requested ORC chat
@@ -342,6 +347,7 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_restore` | Restore session state after compaction or restart |
 | `session_log` | Log a session summary after a unit of work |
 | `session_handoff` | Move a Claude Code or Codex session to ORC |
+| `session_send` | Send a note to another live or idle session at its next safe point |
 | `session_search` | Search archived and indexed session passages |
 | `session_read` | Read a cited archived-session passage or a page of turns |
 | `session_sync` | Request a one-hour upload capability for local session sync |
