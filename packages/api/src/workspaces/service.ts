@@ -1,6 +1,6 @@
 import { changes } from "@orc/core/changes";
-import { createLogger } from "@orc/core/logger";
 import type { ExecHost } from "@orc/core/exec-host";
+import { createLogger } from "@orc/core/logger";
 import {
   ensureWorkspaceEnvironment,
   isWorktreePath,

@@ -50,8 +50,8 @@ import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
 import { usageRouter } from "./routes/usage.js";
-import { workspacesRouter } from "./routes/workspaces.js";
 import { webhookPublicRouter, webhooksRouter } from "./routes/webhooks.js";
+import { workspacesRouter } from "./routes/workspaces.js";
 import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
