@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "release": "bun scripts/release.ts",
+    "dev:desktop": "bun scripts/dev-desktop.ts",
     "dev": "bun run --filter @orc/api dev & bun run --filter orc-ai dev & bun run --filter @orc/web dev",
     "dev-daemon": "bun run --filter orc-ai dev-daemon:start & bun run --filter @orc/web dev",
     "build": "bun run --sequential --filter '*' build",
