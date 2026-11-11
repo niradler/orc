@@ -9,15 +9,26 @@ import {
 } from "@orc/core/github-sync";
 import { ulid } from "@orc/core/ids";
 import { UploadDirectorySchema } from "@orc/core/session-file-types";
+import {
+  defaultWorkspaceEnvironment,
+  parseWorkspaceEnvironment,
+  publicWorkspaceEnvironment,
+  storeWorkspaceEnvironment,
+  type WorkspaceEnvironment,
+  WorkspaceEnvironmentSchema,
+} from "@orc/core/workspace-environment";
 import { getDb } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
 import { bridge_chats, comments, jobs, projects, sessions, tasks } from "@orc/db/schema";
 import { withTx } from "@orc/db/tx";
+import { deleteProjectWorkspaceEnvironments } from "@orc/db/workspaces";
 import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
+
+const WorkspaceSchema = WorkspaceEnvironmentSchema;
 
 const ProjectSchema = z
   .object({
@@ -33,6 +44,7 @@ const ProjectSchema = z
     obsidian_path: z.string().nullable(),
     max_workers: z.number().int().nullable(),
     upload_directory: z.string().nullable(),
+    workspace: WorkspaceSchema,
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
@@ -54,6 +66,7 @@ const CreateProjectSchema = z
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).optional(),
     upload_directory: UploadDirectorySchema.nullable().optional(),
+    workspace: WorkspaceSchema.optional(),
   })
   .openapi("CreateProject");
 
@@ -74,6 +87,7 @@ const UpdateProjectSchema = z
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).nullable().optional(),
     upload_directory: UploadDirectorySchema.nullable().optional(),
+    workspace: WorkspaceSchema.optional(),
   })
   .openapi("UpdateProject");
 
@@ -208,12 +222,27 @@ const summaryRoute = createRoute({
   },
 });
 
+/** Keeps the job-environment secret contract: a null value keeps the stored secret or fails as 400. */
+function prepareWorkspace(
+  input: WorkspaceEnvironment,
+  previous: WorkspaceEnvironment,
+): WorkspaceEnvironment {
+  try {
+    return storeWorkspaceEnvironment(input, previous);
+  } catch {
+    throw new ValidationError(
+      "Cannot keep a secret that was not previously saved. Enter its value.",
+    );
+  }
+}
+
 function toDto(p: typeof projects.$inferSelect) {
   return {
     ...p,
     max_workers: p.max_workers ?? null,
     upload_directory: p.upload_directory ?? null,
     git_remote_url: p.git_remote_url ?? null,
+    workspace: publicWorkspaceEnvironment(p.workspace),
     created_at: p.created_at.toISOString(),
     updated_at: p.updated_at.toISOString(),
   };
@@ -229,6 +258,7 @@ function rawToDto(row: Record<string, unknown>) {
       typeof row.github_sync_state === "string"
         ? JSON.parse(row.github_sync_state)
         : row.github_sync_state,
+    workspace: publicWorkspaceEnvironment(row.workspace),
     created_at: new Date((row.created_at as number) * 1000).toISOString(),
     updated_at: new Date((row.updated_at as number) * 1000).toISOString(),
   };
@@ -358,6 +388,10 @@ app.openapi(createRoute_, async (c) => {
     obsidian_path: body.obsidian_path,
     max_workers: body.max_workers,
     upload_directory: body.upload_directory,
+    workspace: prepareWorkspace(
+      body.workspace ?? defaultWorkspaceEnvironment(),
+      defaultWorkspaceEnvironment(),
+    ),
     created_at: now,
     updated_at: now,
   });
@@ -401,6 +435,14 @@ app.openapi(updateRoute, async (c) => {
       ...(body.obsidian_path !== undefined ? { obsidian_path: body.obsidian_path } : {}),
       ...(body.max_workers !== undefined ? { max_workers: body.max_workers } : {}),
       ...(body.upload_directory !== undefined ? { upload_directory: body.upload_directory } : {}),
+      ...(body.workspace !== undefined
+        ? {
+            workspace: prepareWorkspace(
+              body.workspace,
+              parseWorkspaceEnvironment(existing.workspace),
+            ),
+          }
+        : {}),
       updated_at: new Date(),
     })
     .where(eq(projects.id, id));
@@ -443,6 +485,7 @@ app.openapi(deleteRoute, async (c) => {
     tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id)).run();
     tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id)).run();
     detachLegacyKnowledgeCollections(sqlite, id);
+    deleteProjectWorkspaceEnvironments(sqlite, id);
     tx.delete(comments)
       .where(and(eq(comments.resource_type, "project"), eq(comments.resource_id, id)))
       .run();

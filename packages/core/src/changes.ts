@@ -14,6 +14,7 @@ export const CHANGE_RESOURCES = [
   "flows",
   "rules",
   "human-requests",
+  "session-messages",
   "settings",
   "ssh",
   "terminals",
@@ -25,6 +26,7 @@ export const CHANGE_RESOURCES = [
   "github",
   "audit",
   "scratchpads",
+  "workspaces",
 ] as const;
 
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];

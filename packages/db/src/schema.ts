@@ -2,6 +2,7 @@ import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/cor
 import type { JobAction } from "@orc/core/job-actions";
 import type { JobEnvironment, JobSettings } from "@orc/core/job-settings";
 import type { SessionHandoffRequest } from "@orc/core/session-handoff";
+import type { WorkspaceEnvironment } from "@orc/core/workspace-settings";
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -38,6 +39,7 @@ export const projects = sqliteTable(
     obsidian_path: text("obsidian_path"),
     max_workers: integer("max_workers"),
     upload_directory: text("upload_directory"),
+    workspace: text("workspace", { mode: "json" }).$type<WorkspaceEnvironment>(),
     ...timestamps,
   },
   (t) => [uniqueIndex("projects_name_idx").on(t.name)],
@@ -364,8 +366,45 @@ export const session_handoffs = sqliteTable("session_handoffs", {
 });
 
 /**
- * One execution of a flow graph against one task.
- *
+ * Durable inbox for messages sent to a live or exited agent session. Rows are
+ * delivered at the next hook safe point, or by a bounded resume for idle sessions.
+ */
+export const session_messages = sqliteTable(
+  "session_messages",
+  {
+    id: text("id").primaryKey(),
+    project_id: text("project_id"),
+    target_session_id: text("target_session_id").notNull(),
+    target_native_id: text("target_native_id"),
+    target_backend: text("target_backend").notNull(),
+    sender_kind: text("sender_kind", {
+      enum: ["session", "human", "channel", "system"],
+    }).notNull(),
+    sender_session_id: text("sender_session_id"),
+    sender_native_id: text("sender_native_id"),
+    sender_backend: text("sender_backend"),
+    sender_label: text("sender_label").notNull(),
+    sender_key: text("sender_key").notNull(),
+    body: text("body").notNull(),
+    position: integer("position").notNull(),
+    hop: integer("hop").notNull().default(0),
+    state: text("state", {
+      enum: ["queued", "delivering", "delivered", "cancelled", "interrupted", "failed"],
+    }).notNull(),
+    delivered_via: text("delivered_via", { enum: ["hook", "chat", "resume"] }),
+    delivery_error: text("delivery_error"),
+    request_id: text("request_id"),
+    created_at: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updated_at: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    delivered_at: integer("delivered_at", { mode: "timestamp_ms" }),
+  },
+  (t) => [
+    index("session_messages_target_idx").on(t.target_session_id, t.state, t.position),
+    index("session_messages_native_idx").on(t.target_native_id, t.target_backend, t.state),
+  ],
+);
+
+/**
  * `definition` is a frozen snapshot of the graph as it was when the run
  * started: editing a flow file (or a user shadowing a builtin) must not change
  * the shape of a run already in flight.

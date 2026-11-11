@@ -986,7 +986,8 @@ describe("native chat runtime", () => {
     expect(stdout).toContain(
       "stopped Codex record rejects a held writer, resumes after release and blocks re-acquisition",
     );
-  });
+    // Waits on a Bun child process, which alone can take seconds on Windows.
+  }, 30_000);
   test("starts a chat without a chosen folder in the home folder, not the server's working directory", async () => {
     const original = process.cwd();
     process.chdir("/");

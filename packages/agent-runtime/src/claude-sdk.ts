@@ -35,7 +35,12 @@ import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
 import { claudeLimitEvent } from "./provider-limits.js";
 import { registerBackend } from "./registry.js";
-import { createRulesHook, sessionStartRuleContext } from "./rules-hook.js";
+import {
+  createRulesHook,
+  createSessionMessagesHook,
+  sessionMessagesContext,
+  sessionStartRuleContext,
+} from "./rules-hook.js";
 import {
   type AgentBackend,
   type AgentEvent,
@@ -248,7 +253,7 @@ class ClaudeSDKSession implements AgentSession {
               this.humanReceipts.set(id, receipts);
             },
           )
-        : undefined;
+        : createSessionMessagesHook(this.runtimeSessionId ?? this.id);
       const startupContext = this.opts.ruleGuard
         ? await sessionStartRuleContext(
             this.opts.ruleGuard,
@@ -257,7 +262,7 @@ class ClaudeSDKSession implements AgentSession {
             ulid(),
             this.runtimeSessionId ? "resume" : "startup",
           )
-        : "";
+        : await sessionMessagesContext(this.runtimeSessionId);
 
       const launch =
         this.host.kind === "ssh"

@@ -182,7 +182,8 @@ describe("worktrees with git", () => {
     await removeWorktree({ cwd: repo, path, delete_branch: true, merged_head: merged }, deps);
     expect(existsSync(path)).toBe(false);
     expect(await git(["branch", "--list", "orc/squash1"], repo)).toBe("");
-  });
+    // Spawns several Git processes; the 5s default is tight on Windows under suite load.
+  }, 30_000);
 
   afterAll(() => {
     rmSync(root, { recursive: true, force: true });
