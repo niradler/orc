@@ -94,6 +94,42 @@ describe("resource events", () => {
       client.clear();
     }
   });
+  test("should coalesce a burst of one resource into a single refresh", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    let listReads = 0;
+    let detailReads = 0;
+    let terminalReads = 0;
+    const list = new QueryObserver(client, {
+      queryKey: ["sessions", "live", true],
+      queryFn: async () => ({ sessions: [], read: ++listReads }),
+    });
+    const detail = new QueryObserver(client, {
+      queryKey: ["session", "one"],
+      queryFn: async () => ({ read: ++detailReads }),
+    });
+    const terminals = new QueryObserver(client, {
+      queryKey: ["terminals"],
+      queryFn: async () => ({ read: ++terminalReads }),
+    });
+    const observers = [list, detail, terminals];
+    const unsubscribe = observers.map((observer) => observer.subscribe(() => {}));
+    try {
+      await Promise.all(observers.map((observer) => observer.refetch()));
+      await Promise.all([
+        invalidateResources(client, ["sessions"]),
+        invalidateResources(client, ["sessions"]),
+        invalidateResources(client, ["session-messages"]),
+      ]);
+      expect(listReads).toBe(2);
+      expect(detailReads).toBe(2);
+      expect(terminalReads).toBe(1);
+    } finally {
+      for (const stop of unsubscribe) stop();
+      client.clear();
+    }
+  });
   test("should decode fragmented SSE frames, CRLF, comments and multiline data", () => {
     const events: [string, string][] = [];
     const frames = new EventFrames((event, data) => events.push([event, data]));
