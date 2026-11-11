@@ -91,7 +91,7 @@ describe("/chat/stream contract", () => {
       expect(res.status).toBe(200);
       expect(await res.text()).toContain("MOCK-OK");
     } finally {
-      delete process.env.ORC_E2E_CHAT_MOCK;
+      process.env.ORC_E2E_CHAT_MOCK = "1";
       for (const [key, value] of Object.entries(previousHome)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
