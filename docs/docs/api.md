@@ -291,6 +291,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` | `/sessions/archive` | Search archived session passages |
 | `POST` | `/session-handoffs` | Start a session handoff |
 | `GET` `POST` | `/chat/threads` | Chat threads |
+| `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
@@ -304,6 +305,14 @@ or `failed`). The same optional `turn` object is persisted on assistant messages
 elapsed time. Replay includes the original start; legacy messages may omit `turn`.
 Before a tool call, a `narration` event moves accumulated prose out of the current
 reply and into its folded activity. Its `text` preserves that prose for expansion.
+
+A turn opens with a `thread` event carrying the conversation metadata and only
+that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
+`POST /chat/stream` accepts an optional `clientMessageId` (UUID) and stores it as
+the user message id, rejecting a repeat with `409`. If a first send's response is
+lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the
+server stores the message, then the full thread — and attach to
+`/chat/threads/{id}/live` instead of sending the message again.
 
 `POST /terminals` accepts `project_id` to use that project's workspace environment
 and ports, and `dev: true` to run its dev script in a shell terminal. A dev

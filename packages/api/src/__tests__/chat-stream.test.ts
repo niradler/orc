@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChangeResource, changes } from "@orc/core/changes";
+import type { ChatThread } from "@orc/core/chat";
 import { globalConfigPath, resetConfig } from "@orc/core/config";
 import {
   initializeAgentPreferences,
@@ -428,5 +429,155 @@ describe("/chat/stream account switching", () => {
     } finally {
       restore();
     }
+  });
+});
+
+async function streamTurn(body: Record<string, unknown>): Promise<Response> {
+  const res = await app.request("/api/chat/stream", {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify(body),
+  });
+  expect(res.status).toBe(200);
+  return res;
+}
+
+function eventsOf(text: string): { type: string; thread?: ChatThread; runId?: string }[] {
+  return text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)) as { type: string; thread?: ChatThread });
+}
+
+describe("/chat/threads/by-message", () => {
+  test("finds the thread that stored a client message id", async () => {
+    const clientMessageId = crypto.randomUUID();
+    const res = await streamTurn({
+      messages: [{ role: "user", content: "Reply with exactly: LOOKUP." }],
+      clientMessageId,
+    });
+    const threadId = await threadOf(res);
+    const found = await app.request(`/api/chat/threads/by-message/${clientMessageId}`, {
+      headers: AUTH,
+    });
+    expect(found.status).toBe(200);
+    const thread = (await found.json()) as ChatThread;
+    expect(thread.id).toBe(threadId);
+    expect(
+      thread.messages.some((message) => message.id === clientMessageId && message.role === "user"),
+    ).toBe(true);
+  });
+
+  test("answers 404 for an unknown message id", async () => {
+    const res = await app.request(`/api/chat/threads/by-message/${crypto.randomUUID()}`, {
+      headers: AUTH,
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: string }).error).toMatch(/not found/i);
+  });
+
+  test("does not match assistant message ids", async () => {
+    const res = await streamTurn({
+      messages: [{ role: "user", content: "Reply with exactly: ASSISTANT-ID." }],
+    });
+    const threadId = await threadOf(res);
+    const thread = (await (
+      await app.request(`/api/chat/threads/${threadId}`, { headers: AUTH })
+    ).json()) as ChatThread;
+    const assistantId = thread.messages.find((message) => message.role === "assistant")?.id;
+    expect(assistantId).toBeTruthy();
+    const found = await app.request(`/api/chat/threads/by-message/${assistantId}`, {
+      headers: AUTH,
+    });
+    expect(found.status).toBe(404);
+  });
+
+  test("rejects a non-uuid message id with 400", async () => {
+    const res = await app.request("/api/chat/threads/by-message/not-a-uuid", { headers: AUTH });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("slim thread event", () => {
+  test("carries only the current user message on a multi-turn conversation", async () => {
+    const first = await streamTurn({
+      messages: [{ role: "user", content: "Reply with exactly: ONE." }],
+    });
+    const threadId = await threadOf(first);
+    const clientMessageId = crypto.randomUUID();
+    const second = await streamTurn({
+      threadId,
+      messages: [{ role: "user", content: "Reply with exactly: TWO." }],
+      clientMessageId,
+    });
+    const event = eventsOf(await second.text()).find((entry) => entry.type === "thread");
+    expect(event?.thread?.id).toBe(threadId);
+    expect(event?.thread?.messages).toHaveLength(1);
+    expect(event?.thread?.messages[0]?.id).toBe(clientMessageId);
+    expect(event?.thread?.messages[0]?.role).toBe("user");
+    const full = (await (
+      await app.request(`/api/chat/threads/${threadId}`, { headers: AUTH })
+    ).json()) as ChatThread;
+    expect(full.messages).toHaveLength(4);
+  });
+
+  test("stays small even with a large stored history", async () => {
+    const first = await streamTurn({
+      messages: [{ role: "user", content: `Reply with exactly: ${"x".repeat(300_000)}` }],
+    });
+    const threadId = await threadOf(first);
+    const clientMessageId = crypto.randomUUID();
+    const second = await streamTurn({
+      threadId,
+      messages: [{ role: "user", content: "Reply with exactly: SMALL." }],
+      clientMessageId,
+    });
+    const text = await second.text();
+    const line = text.split("\n").find((entry) => entry.includes('"type":"thread"'));
+    expect(line).toBeTruthy();
+    expect((line ?? "").length).toBeLessThan(50_000);
+    const event = JSON.parse((line ?? "").slice(5)) as { thread: ChatThread };
+    expect(event.thread.messages).toHaveLength(1);
+    expect(event.thread.messages[0]?.id).toBe(clientMessageId);
+  });
+
+  test("replays the slim event when attaching mid-turn", async () => {
+    const first = await streamTurn({
+      messages: [{ role: "user", content: "Reply with exactly: HISTORY." }],
+    });
+    const threadId = await threadOf(first);
+    const clientMessageId = crypto.randomUUID();
+    const res = await streamTurn({
+      threadId,
+      messages: [{ role: "user", content: "reply after 1500ms" }],
+      clientMessageId,
+    });
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    const decoder = new TextDecoder();
+    let announced = false;
+    let buffered = "";
+    while (!announced) {
+      const part = await reader.read();
+      if (part.done) throw new Error("Stream ended before the thread was announced");
+      buffered += decoder.decode(part.value);
+      announced = eventsOf(buffered).some((entry) => entry.type === "thread");
+    }
+    const live = await app.request(`/api/chat/threads/${threadId}/live`, { headers: AUTH });
+    expect(live.status).toBe(200);
+    const liveReader = live.body?.getReader();
+    if (!liveReader) throw new Error("No live stream");
+    let liveText = "";
+    let replayed: { thread?: ChatThread } | undefined;
+    while (!replayed) {
+      const part = await liveReader.read();
+      if (part.done) throw new Error("Live stream ended before the thread replay");
+      liveText += decoder.decode(part.value);
+      replayed = eventsOf(liveText).find((entry) => entry.type === "thread");
+    }
+    expect(replayed?.thread?.messages).toHaveLength(1);
+    expect(replayed?.thread?.messages[0]?.id).toBe(clientMessageId);
+    await liveReader.cancel();
+    while (!(await reader.read()).done) {}
   });
 });

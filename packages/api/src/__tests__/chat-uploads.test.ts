@@ -109,7 +109,13 @@ test("should save multiple binary files, pass host paths to the agent and persis
   const saved = await app.request(`/api/chat/threads/${thread.id}`, { headers: auth });
   expect(((await saved.json()) as ChatThread).messages[0]?.attachments).toEqual(files);
   const next = await upload(form(thread.id));
-  expect(next.thread.messages.filter((message) => message.attachments?.length)).toHaveLength(2);
+  // The thread event is slim (current user message only); follow-up history is read from the thread.
+  const savedNext = await app.request(`/api/chat/threads/${next.thread.id}`, { headers: auth });
+  expect(
+    ((await savedNext.json()) as ChatThread).messages.filter(
+      (message) => message.attachments?.length,
+    ),
+  ).toHaveLength(2);
 });
 test("should honor a saved project upload directory", async () => {
   getSqlite()

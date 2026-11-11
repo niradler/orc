@@ -242,7 +242,8 @@ test("a rejected turn pauses the rest of the queue without retrying POST", async
   release();
   await expect(panel.getByTestId("chat-error")).toContainText("Rejected turn");
   await expect(panel).toHaveAttribute("data-streaming", "false");
-  await expect(panel.getByTestId("chat-queued-content")).toHaveText("KEEP PENDING");
+  // The rejected first send returns to the queue head ahead of the pending one.
+  await expect(panel.getByTestId("chat-queued-content")).toHaveText(["FIRST", "KEEP PENDING"]);
   expect(sent).toHaveLength(1);
 });
 

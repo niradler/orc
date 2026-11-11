@@ -441,6 +441,7 @@ function useChatController() {
       key: string,
       open: (signal: AbortSignal) => Promise<Response>,
       onOpen?: () => void,
+      recover?: { messageId: string },
     ): Promise<boolean | "busy"> => {
       streams.current.get(key)?.controller.abort();
       const stream = { controller: new AbortController(), cancel: false, closed: false };
@@ -529,7 +530,56 @@ function useChatController() {
           } catch (cause) {
             if (!current() || stream.controller.signal.aborted) return true;
             const threadId = find(key)?.thread?.id;
-            if (!threadId || (cause instanceof ApiError && cause.status < 500)) throw cause;
+            if (!threadId) {
+              // A 4xx means the server rejected the send before storing anything.
+              // Any other failure may still land a turn: the server creates the
+              // thread up front, so look it up by the client message id instead
+              // of orphaning the send. The window is longer when the server may
+              // still be preparing (idle header timeout or 5xx).
+              if (!recover || (cause instanceof ApiError && cause.status < 500)) throw cause;
+              const slowFailure =
+                (cause instanceof ApiError && cause.status >= 500) ||
+                (cause instanceof Error && cause.name === "AbortError");
+              const deadline = Date.now() + (slowFailure ? 60_000 : 15_000);
+              let found: ChatThread | null = null;
+              let attempts = 0;
+              update(key, () => ({ reconnecting: true }));
+              while (
+                !found &&
+                current() &&
+                !stream.controller.signal.aborted &&
+                Date.now() < deadline
+              ) {
+                await waitToReconnect(
+                  reconnectDelay(++attempts),
+                  stream.controller.signal,
+                  wakeOnConnectivity,
+                );
+                if (!current() || stream.controller.signal.aborted) return true;
+                found = await api.chat
+                  .byMessage(recover.messageId, stream.controller.signal)
+                  .catch(() => null);
+              }
+              if (!current() || stream.controller.signal.aborted) return true;
+              if (!found) throw cause;
+              const adopted = found;
+              update(key, () => ({
+                thread: adopted,
+                messages: adopted.messages,
+                config: adopted.config,
+                historyBefore: adopted.historyBefore ?? null,
+                error: null,
+              }));
+              onOpen?.();
+              retried = true;
+              connect = (signal) =>
+                fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(adopted.id)}/live`, {
+                  credentials: "include",
+                  signal,
+                });
+              continue;
+            }
+            if (cause instanceof ApiError && cause.status < 500) throw cause;
             retried = true;
             failures++;
             update(key, () => ({ reconnecting: true }));
@@ -559,7 +609,12 @@ function useChatController() {
         }
         if (current() && !stream.controller.signal.aborted)
           update(key, () => ({
-            error: `${message(cause, "The chat connection failed.")} Use Refresh to reconnect.`,
+            // Refresh needs a thread; a failed first send returns to the queue instead.
+            error: find(key)?.thread
+              ? `${message(cause, "The chat connection failed.")} Use Refresh to reconnect.`
+              : cause instanceof ApiError
+                ? message(cause, "The chat connection failed.")
+                : "Your message didn't reach the agent.",
           }));
         return true;
       } finally {
@@ -902,6 +957,7 @@ function useChatController() {
         () => {
           accepted = true;
         },
+        thread ? undefined : { messageId: userMessage.id },
       );
       if (followed === "busy") {
         update(key, (tab) => ({
@@ -921,13 +977,15 @@ function useChatController() {
         return;
       }
       const after = find(key);
-      // false = the server had no turn; its fresh messages show whether this send was stored.
+      // false = the server had no turn; its fresh messages show whether this send was
+      // stored. A new chat has no thread to inspect, so an error means the send was lost.
       const lost =
         !accepted &&
-        !!thread &&
         !!after &&
-        (followed === false
-          ? !after.messages.some((entry) => entry.id === userMessage.id)
+        (after.thread
+          ? followed === false
+            ? !after.messages.some((entry) => entry.id === userMessage.id)
+            : !!after.error
           : !!after.error);
       if (lost) {
         update(key, (tab) => ({
@@ -936,9 +994,14 @@ function useChatController() {
             ? tab.queued
             : [userMessage, ...tab.queued],
           queuePaused: true,
-          error:
-            tab.error ??
-            "Your message didn't reach the agent. It's back in the queue; send it again when ready.",
+          // A new chat keeps the server's rejection reason but never points at
+          // Refresh, which is a no-op without a thread.
+          error: after.thread
+            ? (tab.error ??
+              "Your message didn't reach the agent. It's back in the queue; send it again when ready.")
+            : tab.error
+              ? `${tab.error} It's back in the queue; send it again when ready.`
+              : "Your message didn't reach the agent. It's back in the queue; send it again when ready.",
         }));
         return;
       }
