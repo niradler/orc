@@ -54,6 +54,8 @@ test("should review compact requests, preserve masked drafts and return redacted
   const other = page.getByTestId(`attention-request-${entries[1]?.id}`);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    // Phones switch from the popover to the full page; wait for the remount.
+    await expect(card).toBeVisible();
     await expect(card.getByTestId("attention-review")).toHaveAttribute("aria-expanded", "false");
     for (const entry of entries) {
       const bounds = await page.getByTestId(`attention-request-${entry.id}`).boundingBox();

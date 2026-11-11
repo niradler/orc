@@ -5,6 +5,7 @@ import { useRef } from "react";
 import type { Task } from "@/api/client";
 import { GithubTaskBadge } from "@/components/GithubTaskBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { formatRelative } from "@/lib/relative-time";
 import { mappedStatusLabel } from "./board-utils";
 
 interface KanbanCardProps {
@@ -176,15 +177,4 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
       </div>
     </div>
   );
-}
-
-function formatRelative(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d`;
 }

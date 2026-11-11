@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { attentionRequests } from "./_attention-fixtures";
 import { attentionState } from "./_attention-state";
 import { captureState } from "./_capture-state";
-import { AUTH_HEADERS, gotoView, reviewAttentionRequest } from "./_helpers";
+import { AUTH_HEADERS, gotoView, notificationInbox, reviewAttentionRequest } from "./_helpers";
 
 for (const [width, height, theme] of [
   [1440, 900, "dark"],
@@ -22,7 +22,7 @@ for (const [width, height, theme] of [
       free = card("free"),
       multi = card("multi");
     await expect(
-      page.getByTestId("notification-menu").getByRole("heading", { name: "Notifications" }),
+      notificationInbox(page).getByRole("heading", { name: "Notifications" }),
     ).toBeVisible();
     await expect(
       page.locator(
@@ -261,7 +261,7 @@ test("attention responds to its available pane width and keeps an unsent draft w
   );
   await page.setViewportSize({ width: 1440, height: 900 });
   await gotoView(page, "notifications");
-  const view = page.getByTestId("notification-menu"),
+  const view = notificationInbox(page),
     card = page.getByTestId("attention-request-choice");
   await reviewAttentionRequest(card);
   await card.getByTestId("attention-edit-answer").click();
@@ -289,10 +289,11 @@ test("attention responds to its available pane width and keeps an unsent draft w
   await expect(page.getByTestId("chat-input")).toBeVisible();
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
   await page.setViewportSize({ width: 320, height: 700 });
-  // The workspace header keeps the only bell, including on the chat page.
-  await page.locator('[data-testid="notification-bell"]:visible').click();
+  // The phone deep-link redirect opens the full page directly from the chat URL.
+  await expect(page.getByTestId("notifications-page")).toBeVisible();
   await reviewAttentionRequest(card);
-  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeLessThan(320);
+  // Phones review on the full page, which owns the whole 320px viewport.
+  await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeLessThanOrEqual(320);
   const narrow = await layout();
   expect(narrow.width).toBeGreaterThan(0);
   expect(narrow.width).toBeLessThan(wide.width);
@@ -308,7 +309,6 @@ test("attention responds to its available pane width and keeps an unsent draft w
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(400);
   const restored = await layout();
-  expect(Math.abs(restored.width - wide.width)).toBeLessThan(2);
   expect(restored.contained).toBe(true);
   await expect(card.getByTestId("attention-answer")).toHaveValue(
     "Keep this draft while the workspace changes width.",

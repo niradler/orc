@@ -49,6 +49,8 @@ const Skills = lazy(() => import("@/views/Skills"));
 
 const Tasks = lazy(() => import("@/views/Tasks"));
 
+const Notifications = lazy(() => import("@/views/Notifications"));
+
 const Terminals = lazy(() => import("@/views/Terminals"));
 
 function DefaultWorkspaceRedirect() {
@@ -192,7 +194,8 @@ export default function App() {
   const fullBleed =
     pathname === "/terminals" ||
     pathname.startsWith("/terminals/") ||
-    pathname.startsWith("/knowledge/base");
+    pathname.startsWith("/knowledge/base") ||
+    pathname === "/notifications";
 
   useEffect(() => {
     try {
@@ -249,16 +252,19 @@ export default function App() {
 
                 {/* Main content - the only element that owns vertical scroll for page content. */}
                 <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-                  <WorkspaceHeader
-                    onShowChat={openChatPage}
-                    onProjectChange={setProjectId}
-                    navButtonRef={navButtonRef}
-                    chatButtonRef={chatButtonRef}
-                    projectId={projectId}
-                    onOpenNav={() => setMobileNavOpen(true)}
-                    onOpenChat={openChat}
-                    chatPage={homeOpen}
-                  />
+                  {/* The phone notifications page owns its top bar; keep the global header on desktop. */}
+                  <div className={cn(pathname === "/notifications" && "max-md:hidden")}>
+                    <WorkspaceHeader
+                      onShowChat={openChatPage}
+                      onProjectChange={setProjectId}
+                      navButtonRef={navButtonRef}
+                      chatButtonRef={chatButtonRef}
+                      projectId={projectId}
+                      onOpenNav={() => setMobileNavOpen(true)}
+                      onOpenChat={openChat}
+                      chatPage={homeOpen}
+                    />
+                  </div>
                   {homeOpen ? (
                     <div
                       data-testid="session-home"
@@ -297,6 +303,7 @@ export default function App() {
                           <Routes>
                             <Route path="/" element={<DefaultWorkspaceRedirect />} />
                             <Route path="/activity" element={<Dashboard projectId={projectId} />} />
+                            <Route path="/notifications" element={<Notifications />} />
                             <Route path="/tasks" element={<Tasks projectId={projectId} />} />
                             <Route
                               path="/tasks/:taskId"
