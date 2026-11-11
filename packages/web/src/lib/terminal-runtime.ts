@@ -54,10 +54,10 @@ export interface TerminalRuntime {
   retryTimer: ReturnType<typeof setTimeout> | null;
   resizeTimer: ReturnType<typeof setTimeout> | null;
   canvasObserver: ResizeObserver | null;
-  /** Socket chunks waiting for the next frame; one coalesced write keeps VT parsing cheap. */
   pendingOutput: Uint8Array[];
   pendingBytes: number;
   outputFrame: number | null;
+  onVisibilityChange: (() => void) | null;
   onFontSizeChange?: (size: number) => void;
   textInput?: TerminalTextInput | null;
 }
@@ -166,8 +166,7 @@ function scheduleResize(runtime: TerminalRuntime): void {
   runtime.resizeTimer = setTimeout(() => sendResize(runtime), RESIZE_SETTLE_MS);
 }
 
-/** One coalesced write per frame: ghostty answers queries inside write(), so replayed
- * history is muted, and the scrolled-back viewport is preserved once for the whole burst. */
+/** ghostty answers queries inside write(), so replies to replayed history are muted. */
 function writeOutput(runtime: TerminalRuntime, data: Uint8Array): void {
   runtime.muteReplies = runtime.replaying;
   try {
@@ -238,8 +237,14 @@ export function createRuntime(
     pendingOutput: [],
     pendingBytes: 0,
     outputFrame: null,
+    onVisibilityChange: null,
     ...(onFontSizeChange ? { onFontSizeChange } : {}),
   };
+  // Frames stop in a hidden tab; a pending burst may hold a query the agent is waiting on.
+  runtime.onVisibilityChange = () => {
+    if (document.hidden) flushTerminalOutput(runtime);
+  };
+  document.addEventListener("visibilitychange", runtime.onVisibilityChange);
 
   // Keystrokes go out as binary frames; text frames are reserved for control messages.
   const encoder = new TextEncoder();
@@ -598,8 +603,7 @@ export async function connectRuntime(
 
   socket.onopen = () => {
     runtime.attempts = 0;
-    // The server replays scrollback on connect; chunks left from a dropped connection
-    // would duplicate it.
+    // Leftover chunks would duplicate the scrollback the server replays on connect.
     clearOutputBuffer(runtime);
     runtime.replaying = true;
     if (runtime.everConnected) runtime.term.reset();
@@ -650,6 +654,10 @@ export function disposeRuntime(runtime: TerminalRuntime): void {
   if (runtime.resizeTimer) clearTimeout(runtime.resizeTimer);
   runtime.resizeTimer = null;
   clearOutputBuffer(runtime);
+  if (runtime.onVisibilityChange) {
+    document.removeEventListener("visibilitychange", runtime.onVisibilityChange);
+    runtime.onVisibilityChange = null;
+  }
   const socket = runtime.socket;
   runtime.socket = null;
   if (socket) {

@@ -48,7 +48,7 @@ export function ChatActivityList({
     >
       <summary
         data-testid="chat-turn-fold-summary"
-        className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-10 [&::-webkit-details-marker]:hidden"
+        className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11[&::-webkit-details-marker]:hidden"
       >
         <span data-testid="chat-turn-fold-label" className="min-w-0 truncate">
           {label}

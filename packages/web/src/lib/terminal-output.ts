@@ -17,8 +17,6 @@ export function writeTerminalOutput(term: OutputTerminal, data: Uint8Array): voi
   }
 }
 
-/** Socket frames arrive faster than the screen refreshes; one write per frame keeps
- * VT parsing, query replies and viewport restoration from running per chunk. */
 export interface OutputBuffer {
   pendingOutput: Uint8Array[];
   pendingBytes: number;
@@ -28,17 +26,19 @@ export interface OutputBuffer {
 export interface OutputFrameScheduler {
   schedule(callback: () => void): number;
   cancel(id: number): void;
+  /** True when frames will not fire (hidden tab), so output must be written immediately. */
+  paused(): boolean;
 }
 
 const defaultFrames: OutputFrameScheduler = {
   schedule: (callback) => requestAnimationFrame(callback),
   cancel: (id) => cancelAnimationFrame(id),
+  paused: () => typeof document !== "undefined" && document.hidden,
 };
 
 // A burst larger than this is written immediately so memory and per-write work stay bounded.
 export const OUTPUT_FLUSH_BYTES = 128 * 1024;
 
-/** Write everything queued so far as a single chunk. */
 export function flushOutputBuffer(
   buffer: OutputBuffer,
   write: (data: Uint8Array) => void,
@@ -65,7 +65,7 @@ export function flushOutputBuffer(
   write(data);
 }
 
-/** Queue a socket chunk for the next frame, flushing early once the burst grows large. */
+/** One write per frame; flushes now when the burst is large or frames are paused. */
 export function queueOutputChunk(
   buffer: OutputBuffer,
   chunk: Uint8Array,
@@ -75,7 +75,7 @@ export function queueOutputChunk(
 ): void {
   buffer.pendingOutput.push(chunk);
   buffer.pendingBytes += chunk.length;
-  if (buffer.pendingBytes >= flushBytes) {
+  if (buffer.pendingBytes >= flushBytes || frames.paused()) {
     flushOutputBuffer(buffer, write, frames);
     return;
   }
@@ -87,7 +87,7 @@ export function queueOutputChunk(
   }
 }
 
-/** Drop queued chunks without writing them; a reconnect replays scrollback instead. */
+/** Drop queued chunks; a reconnect replays scrollback instead. */
 export function clearOutputBuffer(
   buffer: OutputBuffer,
   frames: OutputFrameScheduler = defaultFrames,

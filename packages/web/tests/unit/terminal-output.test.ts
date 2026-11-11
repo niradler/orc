@@ -48,7 +48,9 @@ function fakeFrames() {
   const scheduled = new Map<number, () => void>();
   let nextId = 1;
   const cancelled: number[] = [];
+  const state = { hidden: false };
   const frames: OutputFrameScheduler = {
+    paused: () => state.hidden,
     schedule(callback) {
       const id = nextId++;
       scheduled.set(id, callback);
@@ -62,6 +64,7 @@ function fakeFrames() {
   return {
     frames,
     cancelled,
+    state,
     fire() {
       const pending = [...scheduled.entries()];
       scheduled.clear();
@@ -168,6 +171,20 @@ test("chunks after a flush schedule a fresh frame", () => {
   clock.fire();
   expect(writes.length).toBe(2);
   expect([...writes[1]]).toEqual([2]);
+});
+
+test("writes immediately while frames are paused so hidden tabs still answer queries", () => {
+  const out = buffer();
+  const clock = fakeFrames();
+  const writes: Uint8Array[] = [];
+  const write = (data: Uint8Array) => writes.push(data);
+  queueOutputChunk(out, bytes(1), write, clock.frames);
+  clock.state.hidden = true;
+  queueOutputChunk(out, bytes(0x1b, 0x5b, 0x36, 0x6e), write, clock.frames);
+  expect(writes.length).toBe(1);
+  expect([...writes[0]]).toEqual([1, 0x1b, 0x5b, 0x36, 0x6e]);
+  expect(clock.size).toBe(0);
+  expect(out.pendingBytes).toBe(0);
 });
 
 test("a coalesced burst restores the scrolled-back viewport once", () => {
