@@ -4,6 +4,7 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
   Package,
   Settings,
   Terminal,
@@ -28,6 +29,7 @@ const icons: Record<string, ElementType> = {
   knowledge: BookOpen,
   terminals: Terminal,
   activity: Activity,
+  chat: MessageSquare,
   library: Package,
   settings: Settings,
 };

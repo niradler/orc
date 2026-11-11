@@ -189,7 +189,7 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await expect(panel).not.toContainText("stale response");
   expect(requestedAgents).toEqual(["codex", "claude"]);
   await page.setViewportSize({ width: 390, height: 844 });
-  const mobile = page.getByTestId("mobile-chat-sheet");
+  const mobile = page.getByTestId("session-home");
   await expect(mobile.getByTestId("chat-message-content").last()).toContainText("fresh response");
   await mobile.getByLabel("Close chat", { exact: true }).click();
   await page.getByTestId("chat-open-button").click();
@@ -197,7 +197,7 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await saveClaudeDefault(page);
   await page.reload();
   await expect(page.getByTestId("chat-panel")).toBeVisible();
-  await expect(page.getByTestId("mobile-chat-sheet").getByTestId("chat-agent-current")).toHaveText(
+  await expect(page.getByTestId("session-home").getByTestId("chat-agent-current")).toHaveText(
     "Claude Code",
   );
 });

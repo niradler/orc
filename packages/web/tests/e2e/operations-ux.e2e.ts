@@ -65,7 +65,8 @@ for (const theme of ["dark", "light"] as const) {
         page.locator('[data-stat-label="Memories"] [data-testid="stat-card-value"]'),
       ).toHaveText("1");
       await page.screenshot({ path: testInfo.outputPath("overview.png"), fullPage: true });
-      await page.goto(`/tasks?project=${project.id}`);
+      // Phones default to the compact list; this workflow exercises the board.
+      await page.goto(`/tasks?project=${project.id}&view=board`);
       const title = (await apiGet<{ title: string }>(request, `/tasks/${task.id}`)).title;
       await page.getByLabel("Search tasks", { exact: true }).fill(title);
       await expect(

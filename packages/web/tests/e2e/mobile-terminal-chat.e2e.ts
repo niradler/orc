@@ -192,7 +192,7 @@ test("chat swipes independently and switching back preserves the terminal", asyn
   await page.goto(`/terminals/${terminal.id}?project=all`);
   await expect(page.getByTestId("terminal-surface")).toBeVisible();
   await page.getByTestId("chat-open-button").tap();
-  const sheet = page.getByTestId("mobile-chat-sheet");
+  const sheet = page.getByTestId("session-home");
   await sheet.getByTestId("chat-input").fill("Give a long answer");
   await sheet.getByTestId("chat-send-button").tap();
   await expect(sheet.getByTestId("chat-message-content").last()).toContainText(
@@ -271,7 +271,7 @@ test("Android chat keeps a long draft and send control above the software keyboa
   );
   await gotoView(page, "tasks");
   await page.getByTestId("chat-open-button").tap();
-  const sheet = page.getByTestId("mobile-chat-sheet");
+  const sheet = page.getByTestId("session-home");
   const input = sheet.getByTestId("chat-input");
   await input.fill("A long draft\n".repeat(30));
   await page.evaluate(() =>

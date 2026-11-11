@@ -140,6 +140,20 @@
   }
 }
 
+/* With the software keyboard open the chat page gives its space to messages:
+   the shell header and the breadcrumb row would leave the composer off-screen. */
+@utility chat-page {
+  html[data-compact-viewport="true"]:has(&) .workspace-header {
+    display: none;
+  }
+}
+
+@utility chat-page-subheader {
+  html[data-compact-viewport="true"] & {
+    display: none;
+  }
+}
+
 @utility chat-header-controls {
   html[data-compact-viewport="true"] & {
     display: none;

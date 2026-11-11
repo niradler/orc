@@ -17,7 +17,7 @@ export function SessionHomeLink({
   return (
     <Link
       to={{
-        pathname: location.pathname,
+        pathname: "/chat",
         search: sessionHomeSearch(location.search, { terminalId, liveId }),
       }}
       data-testid={testId}

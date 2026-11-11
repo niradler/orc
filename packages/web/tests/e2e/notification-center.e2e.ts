@@ -1,7 +1,18 @@
 import type { HumanRequest } from "@orc/core/human-requests";
 import type { NotificationPage } from "@orc/core/notifications";
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
+import {
+  API_BASE,
+  AUTH_HEADERS,
+  apiGet,
+  apiPost,
+  clickNotificationMarkRead,
+  closeNotificationInbox,
+  gotoView,
+  notificationInbox,
+  repoRoot,
+  tid,
+} from "./_helpers";
 
 async function dismissNotifications(request: APIRequestContext): Promise<void> {
   const dismissed = new Set<string>();
@@ -100,20 +111,16 @@ for (const theme of ["dark", "light"] as const)
       await gotoView(page, "tasks");
       await expect(page.getByTestId("nav-attention")).toHaveCount(0);
       await expect(page.getByTestId("notification-menu")).toHaveCount(0);
-      if (width === 390) {
-        await page.getByTestId("chat-open-button").click();
-        await expect(page.getByTestId("mobile-chat-sheet")).toBeVisible();
-      }
       const bell = page.locator('[data-testid="notification-bell"]:visible').last();
       await expect(bell).toHaveAccessibleName("Notifications: 3 unread");
       await bell.click();
-      const menu = page.getByTestId("notification-menu");
+      const menu = notificationInbox(page);
       await expect(menu).toBeVisible();
       const questionCard = page.getByTestId(`attention-request-${question.id}`);
       await questionCard.getByTestId("attention-review").click();
       await questionCard.getByTestId("attention-answer").fill("Tomorrow at 09:00");
-      await menu.getByRole("button", { name: "Close notifications", exact: true }).click();
-      await expect(bell).toBeFocused();
+      await closeNotificationInbox(page);
+      if (width === 1440) await expect(bell).toBeFocused();
       await bell.click();
       await expect(questionCard.getByTestId("attention-answer")).toHaveValue("Tomorrow at 09:00");
       await questionCard.getByTestId("attention-send").click();
@@ -134,7 +141,7 @@ for (const theme of ["dark", "light"] as const)
       await jobItem.getByTestId("notification-open").click();
       await expect(page).toHaveURL(new RegExp(`/jobs/${job.id}\\?run=.*project=all`));
       await expect(page.getByTestId("job-detail-sheet")).toBeVisible();
-      await expect(page.getByTestId("mobile-chat-sheet")).toHaveCount(0);
+      await expect(page.getByTestId("session-home")).toHaveCount(0);
       const history = await apiGet<NotificationPage>(request, "/notifications");
       expect(
         history.notifications.find((item) => item.source_id === question.id)?.requires_action,
@@ -323,18 +330,28 @@ for (const theme of ["dark", "light"] as const)
           }),
         );
       await gotoView(page, "notifications");
-      const menu = page.getByTestId("notification-menu");
+      const menu = notificationInbox(page);
       const toggle = menu.getByTestId("notifications-show-read");
       const rows = menu.getByTestId("notification-item");
       await expect(toggle).toHaveAttribute("aria-pressed", "false");
       await expect(rows).toHaveCount(2);
       const first = menu.locator(`[data-source-id="${sources[0]?.id}"]`);
-      await first.getByTestId("notification-mark-read").click();
+      await clickNotificationMarkRead(page, first);
       await expect(first).toHaveCount(0);
       await toggle.click();
       await expect(rows).toHaveCount(2);
-      await expect(first.getByTestId("notification-mark-read")).toHaveAccessibleName("Mark unread");
-      await first.getByTestId("notification-mark-read").click();
+      if (width === 390) {
+        await first.getByTestId("notification-actions").click();
+        await expect(page.getByTestId("notification-mark-read")).toHaveAccessibleName(
+          "Mark unread",
+        );
+        await page.getByTestId("notification-mark-read").click();
+      } else {
+        await expect(first.getByTestId("notification-mark-read")).toHaveAccessibleName(
+          "Mark unread",
+        );
+        await first.getByTestId("notification-mark-read").click();
+      }
       await toggle.click();
       await expect(rows).toHaveCount(2);
       await first.getByTestId("attention-review").click();
@@ -347,7 +364,15 @@ for (const theme of ["dark", "light"] as const)
       await expect(menu.getByTestId("notifications-empty")).toHaveText("No unread notifications.");
       await toggle.click();
       await expect(rows).toHaveCount(2);
-      await expect(rows.getByRole("button", { name: "Mark unread", exact: true })).toHaveCount(2);
+      if (width === 390) {
+        await rows.nth(0).getByTestId("notification-actions").click();
+        await expect(page.getByTestId("notification-mark-read")).toHaveAccessibleName(
+          "Mark unread",
+        );
+        await page.keyboard.press("Escape");
+      } else {
+        await expect(rows.getByRole("button", { name: "Mark unread", exact: true })).toHaveCount(2);
+      }
       await page.screenshot({
         path: testInfo.outputPath(`inbox-${theme}-${width}.png`),
         animations: "disabled",

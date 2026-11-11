@@ -12,6 +12,12 @@ export const WORKSPACE_SECTIONS = [
     ],
   },
   {
+    id: "chat",
+    label: "Chat",
+    path: "/chat",
+    pages: [{ id: "chat", label: "Chat", path: "/chat" }],
+  },
+  {
     id: "tasks",
     label: "Tasks",
     path: "/tasks",
@@ -76,9 +82,15 @@ export function workspaceSection(pathname: string) {
   );
 }
 
+/** Header-reachable pages that are not sidebar destinations (like chat). */
+const STANDALONE_PAGES = [
+  { id: "notifications", label: "Notifications", path: "/notifications" },
+] as const;
+
 export function workspacePage(pathname: string) {
-  return workspaceSection(pathname)
-    ?.pages.slice()
+  const pages = workspaceSection(pathname)?.pages ?? STANDALONE_PAGES;
+  return pages
+    .slice()
     .reverse()
     .find((page) => pathMatches(pathname, page.path));
 }

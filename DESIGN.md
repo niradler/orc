@@ -377,12 +377,14 @@ expandable details.
 The shell is project-centered: a compact sidebar, project dropdown and one
 contextual navigation row. Keep Activity first and the default at `/activity`.
 Knowledge has exactly Knowledge base and Memories as sibling destinations.
-KB settings, digest, comments and document history are contextual actions. Chat opens from
-the header; it is not another sidebar destination. Agent sessions have one
-full-width presentation, reached from that header action's fullscreen mode:
-session list, conversation and an inspector opened on demand. In full width the
-workspace sidebar stays visible as its collapsed icon rail; Minimize returns to the
-previous page. Other surfaces that list sessions link into it and reuse its row
+KB settings, digest, comments and document history are contextual actions. Chat
+is a sidebar destination under Activity, at `/chat`, and also opens from the
+header's chat action. The chat page is a normal page: session list, conversation
+and an inspector opened on demand, with the workspace header in place, the
+sidebar at the width the user chose and Chat marked active. It replaces the side
+panel below the wide breakpoint, so phones and narrow windows never get two chat
+surfaces. **Close chat** returns to the previous page. Other surfaces that list
+sessions link into it and reuse its row
 design. The separate Agents/Packages
 relationship remains an open UX decision; this document does not silently resolve it.
 
@@ -434,6 +436,46 @@ On narrow screens, Knowledge Browse is a modal with trapped focus and a visible
 close action. Restore focus to its trigger when dismissed; selecting a document
 closes it. Document details use the shared sheet. Validate phone portrait and
 landscape, tablet and desktop, in both themes and Chromium/WebKit.
+
+## Mobile
+
+Phone means below 768px. One useful working pane at a time; navigation lives in
+the drawer; detail surfaces fill the width instead of squeezing desktop columns.
+Keep 44px touch targets, 16px input text, safe-area insets and the themed
+scrollbars from the global stylesheet. Presentation may adapt per surface, but
+the logic and available actions stay the same on desktop and phone.
+
+- **Notifications are a page on phone, never a modal.** The bell, Alt+N and
+  `/activity?notifications=open` links navigate to `/notifications`, a full page
+  with a compact back bar (back, title, unread count, mark-all-read). Desktop
+  keeps the anchored popover; the page URL is shareable at every size. Both
+  surfaces render the same inbox: unread by default, Show read and Needs you
+  filters, and Latest / By project grouping (persisted). Updates from one
+  session or request collapse into a quiet summary row — count, most urgent
+  state, newest title — and expand to slim child rows; project sections use
+  sticky quiet headers. Human requests keep the shared review card in the row
+  so questions, approvals and commands are answered inline; drafts and focus
+  survive the row leaving the unread list. Phone row actions live in one named
+  menu; desktop rows keep direct icons.
+- **Compact views are the phone default for repeated work.** Tasks opens as the
+  compact list on phone (title-first slim rows, status and priority visible,
+  related edits in the row menu); the board remains one tap away and scrolls
+  locally. Tables never squeeze their columns onto a phone. Detail sheets fill
+  the phone width with a page-like header and close action.
+- **Chat on phone is a full-screen sheet with one compact header row:** a
+  Sessions trigger, truncated title with a project · host subtitle, then
+  actions. Session history opens as a full-screen drawer. Pending permissions
+  and questions stay pinned above the composer with 44px answer controls, so a
+  notification can be answered without hunting through the conversation. The
+  composer respects the visual viewport and safe areas; opening chat does not
+  force the keyboard.
+- **Answering complex sessions:** human requests answer inline in the inbox;
+  managed chat sessions open their thread with the pending request above the
+  composer; observed external sessions open Sessions with resume/continue
+  actions. No request type requires a desktop-only modal.
+
+Verify phone and desktop renders of every changed surface, both themes, with
+populated data, and keep the E2E coverage for each flow above.
 
 ## Elevation & Depth
 

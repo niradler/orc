@@ -49,6 +49,8 @@ const Skills = lazy(() => import("@/views/Skills"));
 
 const Tasks = lazy(() => import("@/views/Tasks"));
 
+const Notifications = lazy(() => import("@/views/Notifications"));
+
 const Terminals = lazy(() => import("@/views/Terminals"));
 
 function DefaultWorkspaceRedirect() {
@@ -74,14 +76,15 @@ export default function App() {
   });
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { pathname, hash } = useLocation();
   const projectId = searchParams.get("project") ?? savedProjectId;
-  const chatFullscreen = searchParams.get("chat") === "full";
-  const chatRequested = searchParams.get("chat") === "open" || chatFullscreen;
+  const chatFullscreen = pathname === "/chat" || searchParams.get("chat") === "full";
+  const chatRequested = searchParams.get("chat") === "open";
   useSessionHomeEntry(chatFullscreen);
-  function setChatVisible(open: boolean, fullscreen = false): void {
+  function setChatVisible(open: boolean): void {
     const current = new URLSearchParams(window.location.search);
     const next = open ? current : clearSessionHome(current);
-    if (open) next.set("chat", fullscreen ? "full" : "open");
+    if (open) next.set("chat", "open");
     else {
       next.delete("chat");
       next.delete(CHAT_THREAD_PARAM);
@@ -89,20 +92,38 @@ export default function App() {
     if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
     navigate({ search: next.toString(), hash: window.location.hash });
   }
+  function chatPageSearch(): string {
+    const current = new URLSearchParams(window.location.search);
+    const next = new URLSearchParams();
+    const project = current.get("project") ?? projectId;
+    if (project) next.set("project", project);
+    const thread = current.get(CHAT_THREAD_PARAM);
+    if (thread) next.set(CHAT_THREAD_PARAM, thread);
+    return next.toString();
+  }
+  function openChatPage(): void {
+    if (chatFullscreen) return;
+    navigate({ pathname: "/chat", search: chatPageSearch(), hash: window.location.hash });
+  }
+  function openChat(): void {
+    if (chatFullscreen) return;
+    if (desktopViewport) setChatVisible(!chatRequested);
+    else openChatPage();
+  }
   function minimizeChat(): void {
+    // Only a redirect that replaced its source records it; a pushed chat page closes through history.
+    const state = window.history.state as { usr?: { chatSource?: unknown } } | null;
+    const source = state?.usr?.chatSource;
+    if (typeof source === "string" && source.startsWith("/") && !source.startsWith("/chat")) {
+      navigate(source, { replace: true });
+      return;
+    }
     const steps = sessionHomeExitSteps();
     if (steps > 0) navigate(-steps);
     else {
-      const next = clearSessionHome(new URLSearchParams(window.location.search));
-      next.set("chat", "open");
-      navigate({ search: next.toString(), hash: window.location.hash }, { replace: true });
+      const search = new URLSearchParams({ project: searchParams.get("project") ?? projectId });
+      navigate({ pathname: "/activity", search: search.toString() }, { replace: true });
     }
-  }
-  function closeChat(): void {
-    const next = clearSessionHome(new URLSearchParams(window.location.search));
-    next.delete("chat");
-    next.delete(CHAT_THREAD_PARAM);
-    navigate({ search: next.toString(), hash: window.location.hash });
   }
   function setProjectId(nextProjectId: string): void {
     setSavedProjectId(nextProjectId);
@@ -119,21 +140,22 @@ export default function App() {
     return window.innerWidth < BREAKPOINTS.lg;
   });
 
-  const [chatOpen, setChatOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [desktopViewport, setDesktopViewport] = useState(
+    () => window.matchMedia(`(min-width: ${BREAKPOINTS.xl}px)`).matches,
+  );
   const homeOpen = chatFullscreen;
+  const chatOpen = chatRequested && desktopViewport;
   const navButtonRef = useRef<HTMLButtonElement>(null);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
-  const chatDialogRef = useRef<HTMLDivElement>(null);
 
+  // The side chat only exists on wide screens. Narrower screens use the Chat page.
   useEffect(() => {
     const desktop = window.matchMedia(`(min-width: ${BREAKPOINTS.xl}px)`);
     const navDesktop = window.matchMedia(`(min-width: ${BREAKPOINTS.md}px)`);
     const syncResponsiveChat = () => {
       if (navDesktop.matches) setMobileNavOpen(false);
-      setMobileChatOpen(chatRequested && !desktop.matches && !chatFullscreen);
-      setChatOpen(chatRequested && desktop.matches && !chatFullscreen);
+      setDesktopViewport(desktop.matches);
     };
     syncResponsiveChat();
     desktop.addEventListener("change", syncResponsiveChat);
@@ -142,14 +164,38 @@ export default function App() {
       desktop.removeEventListener("change", syncResponsiveChat);
       navDesktop.removeEventListener("change", syncResponsiveChat);
     };
-  }, [chatRequested, chatFullscreen]);
+  }, []);
 
-  const { pathname } = useLocation();
+  // `/chat` is the phone presentation; the legacy `chat=full` links point there too.
+  useEffect(() => {
+    // Read the live URL: closing the chat and crossing the breakpoint can land in one render.
+    const live = new URLSearchParams(window.location.search);
+    const legacy = live.get("chat") === "full";
+    const narrow = live.get("chat") === "open" && !desktopViewport;
+    if (!legacy && !narrow) return;
+    const next = new URLSearchParams(live);
+    next.delete("chat");
+    // `searchParams` re-runs this when a chat link arrives; the live URL decides what to do.
+    if (pathname === "/chat" && next.toString() === searchParams.toString()) return;
+    const source = clearSessionHome(new URLSearchParams(window.location.search));
+    source.delete("chat");
+    source.delete(CHAT_THREAD_PARAM);
+    const query = source.toString();
+    navigate(
+      { pathname: "/chat", search: next.toString(), hash },
+      {
+        replace: true,
+        state: { chatSource: `${window.location.pathname}${query ? `?${query}` : ""}` },
+      },
+    );
+  }, [searchParams, navigate, pathname, hash, desktopViewport]);
+
   // Workspaces whose columns own their scroll fill the main area without page padding.
   const fullBleed =
     pathname === "/terminals" ||
     pathname.startsWith("/terminals/") ||
-    pathname.startsWith("/knowledge/base");
+    pathname.startsWith("/knowledge/base") ||
+    pathname === "/notifications";
 
   useEffect(() => {
     try {
@@ -199,40 +245,41 @@ export default function App() {
                   <Sidebar
                     projectId={projectId}
                     onProjectChange={setProjectId}
-                    collapsed={sidebarCollapsed || homeOpen}
-                    onToggle={homeOpen ? undefined : () => setSidebarCollapsed((v) => !v)}
+                    collapsed={sidebarCollapsed}
+                    onToggle={() => setSidebarCollapsed((v) => !v)}
                   />
                 </div>
 
                 {/* Main content - the only element that owns vertical scroll for page content. */}
-                {homeOpen && (
-                  <div data-testid="session-home" className="flex min-h-0 min-w-0 flex-1">
-                    <ChatPanel
-                      open
-                      embedded
-                      fullscreen
-                      onToggle={closeChat}
-                      onClose={closeChat}
-                      onToggleFullscreen={minimizeChat}
+                <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                  {/* The phone notifications page owns its top bar; keep the global header on desktop. */}
+                  <div className={cn(pathname === "/notifications" && "max-md:hidden")}>
+                    <WorkspaceHeader
+                      onShowChat={openChatPage}
+                      onProjectChange={setProjectId}
+                      navButtonRef={navButtonRef}
+                      chatButtonRef={chatButtonRef}
+                      projectId={projectId}
+                      onOpenNav={() => setMobileNavOpen(true)}
+                      onOpenChat={openChat}
+                      chatPage={homeOpen}
                     />
                   </div>
-                )}
-                <div
-                  className={cn(
-                    "relative flex min-h-0 min-w-0 flex-1 flex-col",
-                    homeOpen && "hidden",
-                  )}
-                >
-                  <WorkspaceHeader
-                    onShowChat={() => setChatVisible(true)}
-                    onProjectChange={setProjectId}
-                    navButtonRef={navButtonRef}
-                    chatButtonRef={chatButtonRef}
-                    projectId={projectId}
-                    onOpenNav={() => setMobileNavOpen(true)}
-                    onOpenChat={() => setChatVisible(!chatRequested)}
-                  />
-                  {!homeOpen && (
+                  {homeOpen ? (
+                    <div
+                      data-testid="session-home"
+                      className="chat-page flex min-h-0 min-w-0 flex-1"
+                    >
+                      <ChatPanel
+                        open
+                        embedded
+                        fullscreen
+                        onToggle={minimizeChat}
+                        onClose={minimizeChat}
+                        onToggleFullscreen={minimizeChat}
+                      />
+                    </div>
+                  ) : (
                     <main
                       className={cn(
                         "relative flex-1 min-w-0 min-h-0",
@@ -256,6 +303,7 @@ export default function App() {
                           <Routes>
                             <Route path="/" element={<DefaultWorkspaceRedirect />} />
                             <Route path="/activity" element={<Dashboard projectId={projectId} />} />
+                            <Route path="/notifications" element={<Notifications />} />
                             <Route path="/tasks" element={<Tasks projectId={projectId} />} />
                             <Route
                               path="/tasks/:taskId"
@@ -323,7 +371,7 @@ export default function App() {
                   <ChatPanel
                     open={chatOpen}
                     onToggle={() => setChatVisible(false)}
-                    onToggleFullscreen={() => setChatVisible(true, true)}
+                    onToggleFullscreen={openChatPage}
                   />
                 </div>
               </div>
@@ -352,38 +400,6 @@ export default function App() {
                       onToggle={() => {}}
                       embedded
                       onNavigate={() => setMobileNavOpen(false)}
-                    />
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-
-              {/* Mobile chat sheet (full-screen on mobile). */}
-              <Dialog.Root open={mobileChatOpen} onOpenChange={(open) => setChatVisible(open)}>
-                <Dialog.Portal>
-                  <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-                  <Dialog.Content
-                    ref={chatDialogRef}
-                    data-testid="mobile-chat-sheet"
-                    onCloseAutoFocus={(event) => {
-                      event.preventDefault();
-                      if (!chatRequested) chatButtonRef.current?.focus();
-                    }}
-                    className="viewport-sheet fixed inset-x-0 z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
-                    onOpenAutoFocus={(event) => {
-                      event.preventDefault();
-                      chatDialogRef.current?.focus();
-                    }}
-                  >
-                    <Dialog.Title className="sr-only">Chat</Dialog.Title>
-                    <Dialog.Description className="sr-only">
-                      Chat with your configured agent
-                    </Dialog.Description>
-                    <ChatPanel
-                      open
-                      onToggle={() => setChatVisible(false)}
-                      embedded
-                      onClose={closeChat}
-                      onToggleFullscreen={() => setChatVisible(true, true)}
                     />
                   </Dialog.Content>
                 </Dialog.Portal>

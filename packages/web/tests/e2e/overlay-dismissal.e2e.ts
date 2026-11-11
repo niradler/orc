@@ -123,7 +123,16 @@ for (const width of [320, 390, 1440]) {
         await page.keyboard.press("Escape");
         await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
         await expect(input).toHaveValue("Picker draft");
-        await page.getByTestId("chat-panel").getByTestId("notification-bell").click();
+        // The workspace header owns the only bell, including on the chat page.
+        await expect(page.locator('[data-testid="notification-bell"]:visible')).toHaveCount(1);
+        await page.locator('[data-testid="notification-bell"]:visible').click();
+        if (width < 768) {
+          // Phones open the full notifications page; back returns to the same draft.
+          await expect(page.getByTestId("notifications-page")).toBeVisible();
+          await page.getByTestId("notifications-back").click();
+          await expect(input).toHaveValue("Picker draft");
+          return;
+        }
         await expect(page.getByTestId("notification-menu")).toBeVisible();
         const messages = page.getByTestId("chat-messages").filter({ visible: true });
         const outside = await messages.boundingBox();

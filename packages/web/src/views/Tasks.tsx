@@ -86,6 +86,7 @@ interface TasksProps {
 
 export default function Tasks({ projectId: savedProjectId }: TasksProps) {
   const desktop = useBreakpoint("xl");
+  const phone = !useBreakpoint("md");
   const projectId = useProjectScope(savedProjectId);
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingParams = useRef(searchParams);
@@ -114,7 +115,10 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
     priorityParam && PRIORITY_VALUES.has(priorityParam) ? priorityParam : "all"
   ) as TaskPriority | "all";
   const search = searchParams.get("q") ?? "";
-  const viewMode: "board" | "table" = searchParams.get("view") === "table" ? "table" : "board";
+  // Phones default to the compact list; the board stays one tap away.
+  const viewParam = searchParams.get("view");
+  const viewMode: "board" | "table" =
+    viewParam === "board" ? "board" : viewParam === "table" || phone ? "table" : "board";
 
   const updateParam = useCallback(
     (key: string, value: string | null, defaultValue?: string) => {
