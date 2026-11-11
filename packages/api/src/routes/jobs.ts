@@ -23,7 +23,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { diffSummary, recordAudit } from "../lib/audit-actor.js";
 import { readJobWebhooks, saveJobWebhooks, validateJobWebhooks } from "../lib/job-webhooks.js";
 import { createRouter } from "../lib/router.js";
-import { discoverJobSession } from "../session-watcher.js";
+import { discoverNativeSession } from "../session-watcher.js";
 
 const logger = createLogger("api:jobs");
 
@@ -759,7 +759,7 @@ app.openapi(
       : null;
     if (!session?.runtime_session_id) return c.json({ session_id: null });
     return c.json({
-      session_id: await discoverJobSession(
+      session_id: await discoverNativeSession(
         session.backend,
         session.runtime_session_id,
         session.execution_host ?? null,

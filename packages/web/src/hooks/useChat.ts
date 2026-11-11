@@ -33,6 +33,7 @@ import { useSearchParams } from "react-router-dom";
 import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
+import { CHAT_DRAFT_ACTIVE_KEY, CHAT_DRAFTS_KEY, parseChatDrafts } from "@/lib/chat-drafts";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
 import { getResourceConnection, subscribeResourceConnection } from "@/lib/resource-events";
@@ -219,7 +220,55 @@ function useChatController() {
       creationProject.current,
     ),
   );
-  const [tabs, setTabs] = useState<ChatTab[]>([initial]);
+  const [savedDrafts] = useState(() => {
+    try {
+      return parseChatDrafts(sessionStorage.getItem(CHAT_DRAFTS_KEY));
+    } catch {
+      return [];
+    }
+  });
+  const [tabs, setTabs] = useState<ChatTab[]>(() => {
+    const blanks = savedDrafts
+      .filter((saved) => !saved.threadId)
+      .map((saved) => ({
+        ...blankTab(saved.config, saved.projectId),
+        key: saved.key,
+        draft: saved.draft,
+        workspace: saved.workspace,
+        hidden: saved.hidden,
+      }));
+    return blanks.some((tab) => !tab.hidden) ? blanks : [...blanks, initial];
+  });
+  useEffect(() => {
+    try {
+      const restored = new Set(tabs.flatMap((tab) => (tab.thread ? [tab.thread.id] : [])));
+      const unresolved = savedDrafts.filter(
+        (saved) => saved.threadId && !restored.has(saved.threadId),
+      );
+      sessionStorage.setItem(
+        CHAT_DRAFTS_KEY,
+        JSON.stringify(
+          [
+            ...unresolved,
+            ...tabs
+              .filter((tab) => tab.draft || tab.workspace)
+              .slice(-50)
+              .map((tab) => ({
+                key: tab.key,
+                threadId: tab.thread?.id ?? null,
+                projectId: tab.projectId,
+                draft: tab.draft,
+                config: tab.config,
+                workspace: tab.workspace,
+                hidden: tab.hidden,
+              })),
+          ].slice(-50),
+        ),
+      );
+    } catch {
+      /* The in-memory draft remains available if browser storage is full. */
+    }
+  }, [tabs, savedDrafts]);
   useEffect(() => {
     if (
       !tabs.some(
@@ -234,7 +283,25 @@ function useChatController() {
     window.addEventListener("beforeunload", protectUploads);
     return () => window.removeEventListener("beforeunload", protectUploads);
   }, [tabs]);
-  const [activeKey, setActiveKey] = useState(initial.key);
+  const [activeKey, setActiveKey] = useState(() => {
+    let saved: string | null = null;
+    try {
+      saved = sessionStorage.getItem(CHAT_DRAFT_ACTIVE_KEY);
+    } catch {
+      /* Storage may be disabled. */
+    }
+    return (
+      (tabs.find((tab) => tab.key === saved && !tab.hidden) ?? tabs.find((tab) => !tab.hidden))
+        ?.key ?? initial.key
+    );
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(CHAT_DRAFT_ACTIVE_KEY, activeKey);
+    } catch {
+      /* Selection still works without storage. */
+    }
+  }, [activeKey]);
   const workspacePickerSession = useFolderPickerSession();
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const pickerConversation = useRef(activeKey);
@@ -249,6 +316,7 @@ function useChatController() {
   // Refs hold the latest tabs synchronously, so concurrent streams never update stale copies.
   const tabsRef = useRef(tabs);
   const activeRef = useRef(activeKey);
+  const viewedTabs = useRef(new Set<string>());
   // `cancel` waits for the server to name the run; `closed` marks a tab that is gone but
   // whose stream is kept open only so that pending cancel can still be sent.
   const streams = useRef(
@@ -277,6 +345,16 @@ function useChatController() {
     [update],
   );
   const find = useCallback((key: string) => tabsRef.current.find((tab) => tab.key === key), []);
+  const observeTab = useCallback(
+    (key: string) => {
+      viewedTabs.current.add(key);
+      update(key, () => ({ attention: false }));
+      return () => {
+        viewedTabs.current.delete(key);
+      };
+    },
+    [update],
+  );
 
   const loadSettings = useCallback(async () => {
     try {
@@ -336,7 +414,9 @@ function useChatController() {
 
   const apply = useCallback(
     (key: string, event: ChatEvent) => {
-      const background = key !== activeRef.current;
+      const background = viewedTabs.current.size
+        ? !viewedTabs.current.has(key)
+        : key !== activeRef.current;
       if (event.type === "thread") {
         const stream = streams.current.get(key);
         if (stream?.cancel)
@@ -428,7 +508,10 @@ function useChatController() {
         turn: undefined,
         permissions: [],
         questions: [],
-        attention: tab.attention || (tab.streaming && key !== activeRef.current),
+        attention:
+          tab.attention ||
+          (tab.streaming &&
+            (viewedTabs.current.size ? !viewedTabs.current.has(key) : key !== activeRef.current)),
       })),
     [update],
   );
@@ -595,8 +678,7 @@ function useChatController() {
   );
 
   const refresh = useCallback(
-    async (rebuild = false) => {
-      const key = activeRef.current;
+    async (rebuild = false, key = activeRef.current) => {
       const tab = find(key);
       if (!tab?.thread || tab.refreshing) return;
       update(key, () => ({ refreshing: true, error: null }));
@@ -635,8 +717,13 @@ function useChatController() {
       options: { activate?: boolean; follow?: boolean; projectId?: string | null } = {},
     ) => {
       const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
+      const saved = existing ? undefined : savedDrafts.find((draft) => draft.threadId === next.id);
+      let projectId = next.projectId ?? saved?.projectId;
+      if (existing?.projectId !== undefined) projectId = existing.projectId;
+      if (options.projectId !== undefined) projectId = options.projectId;
       const loaded = {
-        projectId: options.projectId !== undefined ? options.projectId : existing?.projectId,
+        projectId,
+        ...(saved ? { draft: saved.draft, hidden: saved.hidden } : {}),
         thread: next,
         messages: next.messages,
         config: next.config,
@@ -656,16 +743,25 @@ function useChatController() {
           key = active.key;
           update(key, () => loaded);
         } else {
-          const tab = { ...blankTab(next.config), ...loaded };
+          const tab = {
+            ...blankTab(next.config),
+            ...loaded,
+            ...(saved ? { key: saved.key } : {}),
+          };
           key = tab.key;
           mutate((current) => [...current, tab]);
         }
       }
       if (options.activate !== false) activate(key);
-      if (existing?.streaming) return;
+      if (existing?.streaming) return key;
       if (options.follow !== false) void attach(key, next.id);
+      return key;
     },
-    [activate, attach, mutate, update, find],
+    [activate, attach, mutate, update, find, savedDrafts],
+  );
+  const openBackgroundThread = useCallback(
+    (next: ChatThread) => openThread(next, { activate: false }),
+    [openThread],
   );
   const showThread = useCallback(
     async (id: string) => {
@@ -675,36 +771,65 @@ function useChatController() {
     },
     [activate, openThread],
   );
-  const newTab = useCallback(() => {
-    const blank = tabsRef.current.find(isBlank);
-    if (blank) {
-      update(blank.key, () => ({
-        config: defaults.current,
-        projectId: creationProject.current,
-        error: null,
-      }));
-      return activate(blank.key);
-    }
-    const tab = blankTab(defaults.current, creationProject.current);
-    mutate((current) => [...current, tab]);
-    activate(tab.key);
-  }, [activate, mutate, update]);
+  const newTab = useCallback(
+    (
+      options: {
+        activate?: boolean;
+        projectId?: string | null;
+        fresh?: boolean;
+        workspace?: ChatWorkspace;
+      } = {},
+    ) => {
+      const blank = !options.fresh && tabsRef.current.find(isBlank);
+      if (blank) {
+        update(blank.key, () => ({
+          config: defaults.current,
+          projectId: options.projectId === undefined ? creationProject.current : options.projectId,
+          ...(options.workspace ? { workspace: options.workspace } : {}),
+          error: null,
+        }));
+        if (options.activate !== false) activate(blank.key);
+        return blank.key;
+      }
+      const tab = blankTab(
+        defaults.current,
+        options.projectId === undefined ? creationProject.current : options.projectId,
+      );
+      tab.workspace = options.workspace;
+      mutate((current) => [...current, tab]);
+      if (options.activate !== false) activate(tab.key);
+      return tab.key;
+    },
+    [activate, mutate, update],
+  );
   const startAgentConversation = useCallback(
-    (agent: string, providerId?: string, model = "", options?: ChatAgentOptions) => {
+    (
+      agent: string,
+      providerId?: string,
+      model = "",
+      options?: ChatAgentOptions,
+      shouldActivate = true,
+      key = activeRef.current,
+    ) => {
+      const source = find(key);
       const agentOptions = providerId ? {} : { ...defaults.current.agentOptions };
       if (options) agentOptions[agent] = options;
       const next = blankTab(
         { ...defaults.current, agent, providerId, model, agentOptions },
-        creationProject.current,
+        source?.projectId ?? creationProject.current,
       );
+      next.workspace = source?.thread
+        ? { host: source.thread.host, cwd: source.thread.cwd, worktree: false }
+        : source?.workspace;
       mutate((current) => [...current, next]);
-      activate(next.key);
+      if (shouldActivate) activate(next.key);
+      return next.key;
     },
-    [activate, mutate],
+    [activate, mutate, find],
   );
   const selectProvider = useCallback(
-    (profile: ProviderProfile) => {
-      const current = find(activeRef.current);
+    (profile: ProviderProfile, key = activeRef.current) => {
+      const current = find(key);
       if (!current) return;
       const next = providerSelection(current.config, current.providerDrafts, profile);
       update(current.key, () => next);
@@ -731,7 +856,13 @@ function useChatController() {
   const linked = useRef(params.get(CHAT_THREAD_PARAM));
   useEffect(() => {
     const stored = parseChatTabs(readStorage(CHAT_TABS_KEY));
-    void Promise.allSettled(stored.threads.map((id) => api.chat.get(id))).then((results) => {
+    const ids = [
+      ...new Set([
+        ...stored.threads,
+        ...savedDrafts.flatMap((saved) => (saved.threadId ? [saved.threadId] : [])),
+      ]),
+    ];
+    void Promise.allSettled(ids.map((id) => api.chat.get(id))).then((results) => {
       for (const result of results)
         if (result.status === "fulfilled")
           openThread(result.value, {
@@ -739,7 +870,7 @@ function useChatController() {
             projectId: stored.projectIds?.[result.value.id],
           });
     });
-  }, [openThread]);
+  }, [openThread, savedDrafts]);
   useEffect(() => {
     const threads = tabs.flatMap((tab) => (tab.thread && !tab.hidden ? [tab.thread.id] : []));
     const active = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
@@ -765,29 +896,31 @@ function useChatController() {
   const question = tab.questions[0] ?? null;
 
   const setConfig = useCallback(
-    (next: ChatConfig) => {
-      update(activeRef.current, () => ({ config: next }));
+    (next: ChatConfig, key = activeRef.current) => {
+      update(key, () => ({ config: next }));
       savePreferences(next);
     },
     [update],
   );
-  const loadOlder = useCallback(async () => {
-    const key = activeRef.current;
-    const current = find(key);
-    if (!current?.thread || current.historyBefore === null || current.loadingHistory) return;
-    update(key, () => ({ loadingHistory: true, error: null }));
-    try {
-      const page = await api.chat.history(current.thread.id, current.historyBefore);
-      update(key, (tab) => ({
-        historyBefore: page.before,
-        messages: [...page.messages, ...tab.messages],
-      }));
-    } catch (cause) {
-      update(key, () => ({ error: message(cause, "Older messages could not be loaded.") }));
-    } finally {
-      update(key, () => ({ loadingHistory: false }));
-    }
-  }, [update, find]);
+  const loadOlder = useCallback(
+    async (key = activeRef.current) => {
+      const current = find(key);
+      if (!current?.thread || current.historyBefore === null || current.loadingHistory) return;
+      update(key, () => ({ loadingHistory: true, error: null }));
+      try {
+        const page = await api.chat.history(current.thread.id, current.historyBefore);
+        update(key, (tab) => ({
+          historyBefore: page.before,
+          messages: [...page.messages, ...tab.messages],
+        }));
+      } catch (cause) {
+        update(key, () => ({ error: message(cause, "Older messages could not be loaded.") }));
+      } finally {
+        update(key, () => ({ loadingHistory: false }));
+      }
+    },
+    [update, find],
+  );
 
   const releaseQueue = useCallback(
     (key: string) => {
@@ -949,8 +1082,7 @@ function useChatController() {
   }, [tabs, ready, sendQueued]);
 
   const send = useCallback(
-    async (input: string) => {
-      const key = activeRef.current;
+    async (input: string, key = activeRef.current) => {
       const current = find(key);
       if (!ready || !current || (!input.trim() && !current.files.length)) return;
       const entry: ChatMessage = {
@@ -991,15 +1123,16 @@ function useChatController() {
     [update, find],
   );
 
-  const cancel = useCallback(() => {
-    const key = activeRef.current;
-    update(key, () => ({ queuePaused: true }));
-    stop(key);
-  }, [stop, update]);
+  const cancel = useCallback(
+    (key = activeRef.current) => {
+      update(key, () => ({ queuePaused: true }));
+      stop(key);
+    },
+    [stop, update],
+  );
 
   const editQueued = useCallback(
-    (id: string | null, content?: string) => {
-      const key = activeRef.current;
+    (id: string | null, content?: string, key = activeRef.current) => {
       update(key, (tab) => {
         if (id && !tab.queued.some((entry) => entry.id === id)) return {};
         if (content !== undefined && !content.trim()) return {};
@@ -1022,16 +1155,16 @@ function useChatController() {
   );
 
   const setDraft = useCallback(
-    (draft: string) =>
-      update(activeRef.current, (tab) => ({
+    (draft: string, key = activeRef.current) =>
+      update(key, (tab) => ({
         draft,
         ...(!tab.thread && !tab.draft.trim() && draft.trim() ? { createdAt: Date.now() } : {}),
       })),
     [update],
   );
   const removeQueued = useCallback(
-    (id: string) =>
-      update(activeRef.current, (tab) => ({
+    (id: string, key = activeRef.current) =>
+      update(key, (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== id),
         queueHeld: tab.queued.some((entry) => entry.id !== id) && tab.queueHeld,
         queuedFiles: Object.fromEntries(
@@ -1042,13 +1175,12 @@ function useChatController() {
     [update],
   );
   const setQueuedDraft = useCallback(
-    (queuedDraft: string) => update(activeRef.current, () => ({ queuedDraft })),
+    (queuedDraft: string, key = activeRef.current) => update(key, () => ({ queuedDraft })),
     [update],
   );
 
   const forceQueued = useCallback(
-    (id: string) => {
-      const key = activeRef.current;
+    (id: string, key = activeRef.current) => {
       const tab = find(key);
       const entry = tab?.queued.find((entry) => entry.id === id);
       if (!tab || !entry || tab.refreshing || tab.editingQueuedId) return;
@@ -1064,8 +1196,8 @@ function useChatController() {
     [find, stop, update],
   );
   const moveQueued = useCallback(
-    (id: string, direction: -1 | 1) => {
-      update(activeRef.current, (tab) => {
+    (id: string, direction: -1 | 1, key = activeRef.current) => {
+      update(key, (tab) => {
         const index = tab.queued.findIndex((entry) => entry.id === id);
         const target = index + direction;
         if (index < 0 || target < 0 || target >= tab.queued.length) return {};
@@ -1086,53 +1218,54 @@ function useChatController() {
     input: string;
     requestId: string;
   } | null>(null);
-  const steer = useCallback(async () => {
-    const key = activeRef.current;
-    const current = find(key);
-    if (
-      !current?.streaming ||
-      !current.runId ||
-      !current.draft.trim() ||
-      current.files.length ||
-      responding
-    )
-      return;
-    setResponding(true);
-    try {
-      const input = current.draft;
-      const previous = steeringRequest.current;
-      const requestId =
-        previous?.key === key && previous.runId === current.runId && previous.input === input
-          ? previous.requestId
-          : crypto.randomUUID();
-      steeringRequest.current = { key, runId: current.runId, input, requestId };
-      const thread = await api.chat.steer(current.runId, input, requestId);
-      steeringRequest.current = null;
-      const delivered = thread.messages.find((message) => message.id === requestId) ?? {
-        id: requestId,
-        role: "user" as const,
-        content: input,
-        timestamp: Date.now(),
-      };
-      update(key, (tab) => ({
-        thread,
-        draft: tab.draft === input ? "" : tab.draft,
-        messages: tab.messages.some((message) => message.id === requestId)
-          ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
-          : [...tab.messages, delivered],
-      }));
-    } catch (cause) {
-      update(key, () => ({
-        error: message(cause, "The message could not be sent into the active response."),
-      }));
-    } finally {
-      setResponding(false);
-    }
-  }, [find, update, responding]);
+  const steer = useCallback(
+    async (key = activeRef.current) => {
+      const current = find(key);
+      if (
+        !current?.streaming ||
+        !current.runId ||
+        !current.draft.trim() ||
+        current.files.length ||
+        responding
+      )
+        return;
+      setResponding(true);
+      try {
+        const input = current.draft;
+        const previous = steeringRequest.current;
+        const requestId =
+          previous?.key === key && previous.runId === current.runId && previous.input === input
+            ? previous.requestId
+            : crypto.randomUUID();
+        steeringRequest.current = { key, runId: current.runId, input, requestId };
+        const thread = await api.chat.steer(current.runId, input, requestId);
+        steeringRequest.current = null;
+        const delivered = thread.messages.find((message) => message.id === requestId) ?? {
+          id: requestId,
+          role: "user" as const,
+          content: input,
+          timestamp: Date.now(),
+        };
+        update(key, (tab) => ({
+          thread,
+          draft: tab.draft === input ? "" : tab.draft,
+          messages: tab.messages.some((message) => message.id === requestId)
+            ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
+            : [...tab.messages, delivered],
+        }));
+      } catch (cause) {
+        update(key, () => ({
+          error: message(cause, "The message could not be sent into the active response."),
+        }));
+      } finally {
+        setResponding(false);
+      }
+    },
+    [find, update, responding],
+  );
 
   const respondPermission = useCallback(
-    async (decision: "approved" | "denied") => {
-      const key = activeRef.current;
+    async (decision: "approved" | "denied", key = activeRef.current) => {
       const current = find(key);
       const pending = current?.permissions[0];
       if (!current || !pending || responding) return;
@@ -1151,8 +1284,7 @@ function useChatController() {
     [responding, update, find],
   );
   const respondQuestion = useCallback(
-    async (answers: Record<string, string[]>) => {
-      const key = activeRef.current;
+    async (answers: Record<string, string[]>, key = activeRef.current) => {
       const current = find(key);
       const pending = current?.questions[0];
       if (!current || !pending || responding) return;
@@ -1173,9 +1305,8 @@ function useChatController() {
   // While the agent is responding the change goes to the live run, which approves prompts
   // the new mode would not ask for; otherwise it applies to the next message.
   const changePermissions = useCallback(
-    async (next: ChatConfig) => {
-      const key = activeRef.current;
-      setConfig(next);
+    async (next: ChatConfig, key = activeRef.current) => {
+      setConfig(next, key);
       const current = find(key);
       const mode = next.permissionMode;
       if (!mode || !current?.streaming || !current.runId) return;
@@ -1200,8 +1331,7 @@ function useChatController() {
     [setConfig, update, find],
   );
   const applyAgentOptions = useCallback(
-    async (agent: string, options: ChatAgentOptions) => {
-      const key = activeRef.current;
+    async (agent: string, options: ChatAgentOptions, key = activeRef.current) => {
       const current = find(key);
       if (!current) return false;
       const agentOptions = { ...current.config.agentOptions, [agent]: options };
@@ -1224,6 +1354,7 @@ function useChatController() {
     projectScope: selectedProject ?? "all",
     projectId: tab.projectId ?? null,
     tabs,
+    observeTab,
     activeKey,
     selectTab: activate,
     closeTab,
@@ -1234,8 +1365,8 @@ function useChatController() {
     messages: tab.messages,
     draft: tab.draft,
     files: tab.files,
-    addFiles: (files: File[]) =>
-      update(activeRef.current, (current) => {
+    addFiles: (files: File[], key = activeRef.current) =>
+      update(key, (current) => {
         const next = [...new Set([...current.files, ...files])];
         if (
           next.length > UPLOAD_MAX_FILES ||
@@ -1244,8 +1375,8 @@ function useChatController() {
           return { error: "Attach at most 10 files, totaling at most 20 MB" };
         return { files: next, error: null };
       }),
-    removeFile: (index: number) =>
-      update(activeRef.current, (current) => ({
+    removeFile: (index: number, key = activeRef.current) =>
+      update(key, (current) => ({
         files: current.files.filter((_, candidate) => candidate !== index),
       })),
     setDraft,
@@ -1273,10 +1404,8 @@ function useChatController() {
       workspacePickerSession.reset(initial);
       setWorkspacePickerOpen(true);
     },
-    setWorkspace: (workspace: ChatWorkspace) =>
-      update(activeRef.current, (current) =>
-        current.thread || current.streaming ? {} : { workspace },
-      ),
+    setWorkspace: (workspace: ChatWorkspace, key = activeRef.current) =>
+      update(key, (current) => (current.thread || current.streaming ? {} : { workspace })),
     config: tab.config,
     setConfig,
     changePermissions,
@@ -1284,6 +1413,7 @@ function useChatController() {
     ready,
     thread: tab.thread,
     openThread,
+    openBackgroundThread,
     historyBefore: tab.historyBefore,
     loadingHistory: tab.loadingHistory,
     loadOlder,
@@ -1300,7 +1430,82 @@ function useChatController() {
     turn: tab.turn,
   };
 }
-const ChatContext = createContext<ReturnType<typeof useChatController> | null>(null);
+type ChatController = ReturnType<typeof useChatController>;
+const ControllerContext = createContext<ChatController | null>(null);
+const ChatContext = createContext<ReturnType<typeof useChatView> | null>(null);
+
+function useChatView(controller: ChatController, key: string, select: (key: string) => void) {
+  const latest = useRef(controller);
+  latest.current = controller;
+  const tab = controller.tabs.find((candidate) => candidate.key === key) ?? controller.tabs[0];
+  const actions = useMemo(
+    () => ({
+      selectTab: select,
+      newTab: (options: Parameters<ChatController["newTab"]>[0] = {}) => {
+        const created = latest.current.newTab({ ...options, activate: false });
+        if (options.activate !== false) select(created);
+        return created;
+      },
+      openThread: (
+        thread: ChatThread,
+        options: Parameters<ChatController["openThread"]>[1] = {},
+      ) => {
+        const opened = latest.current.openThread(thread, { ...options, activate: false });
+        if (options.activate !== false) select(opened);
+        return opened;
+      },
+      startAgentConversation: (
+        agent: string,
+        providerId?: string,
+        model = "",
+        options?: ChatAgentOptions,
+      ) =>
+        select(
+          latest.current.startAgentConversation(agent, providerId, model, options, false, key),
+        ),
+      setDraft: (draft: string) => latest.current.setDraft(draft, key),
+      addFiles: (files: File[]) => latest.current.addFiles(files, key),
+      removeFile: (index: number) => latest.current.removeFile(index, key),
+      setWorkspace: (workspace: ChatWorkspace) => latest.current.setWorkspace(workspace, key),
+      setConfig: (config: ChatConfig) => latest.current.setConfig(config, key),
+      selectProvider: (profile: ProviderProfile) => latest.current.selectProvider(profile, key),
+      changePermissions: (config: ChatConfig) => latest.current.changePermissions(config, key),
+      applyAgentOptions: (agent: string, options: ChatAgentOptions) =>
+        latest.current.applyAgentOptions(agent, options, key),
+      refresh: (rebuild = false) => latest.current.refresh(rebuild, key),
+      loadOlder: () => latest.current.loadOlder(key),
+      send: (input: string) => latest.current.send(input, key),
+      cancel: () => latest.current.cancel(key),
+      steer: () => latest.current.steer(key),
+      respondPermission: (decision: "approved" | "denied") =>
+        latest.current.respondPermission(decision, key),
+      respondQuestion: (answers: Record<string, string[]>) =>
+        latest.current.respondQuestion(answers, key),
+      editQueued: (id: string | null, content?: string) =>
+        latest.current.editQueued(id, content, key),
+      removeQueued: (id: string) => latest.current.removeQueued(id, key),
+      moveQueued: (id: string, direction: -1 | 1) => latest.current.moveQueued(id, direction, key),
+      forceQueued: (id: string) => latest.current.forceQueued(id, key),
+      setQueuedDraft: (draft: string) => latest.current.setQueuedDraft(draft, key),
+    }),
+    [key, select],
+  );
+  return {
+    ...controller,
+    ...(tab
+      ? {
+          ...tab,
+          activeKey: tab.key,
+          projectId: tab.projectId ?? null,
+          permission: tab.permissions[0] ?? null,
+          question: tab.questions[0] ?? null,
+          streamingId: tab.assistantId,
+          streamingAgent: tab.respondingAgent,
+        }
+      : {}),
+    ...actions,
+  };
+}
 
 /** Keeps `?chatThread=` naming the open conversation while chat is shown, and opens linked ones. */
 function useChatLink(chat: ReturnType<typeof useChatController>) {
@@ -1336,8 +1541,77 @@ function useChatLink(chat: ReturnType<typeof useChatController>) {
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const chat = useChatController();
-  useChatLink(chat);
+  const controller = useChatController();
+  useChatLink(controller);
+  const chat = useChatView(controller, controller.activeKey, controller.selectTab);
+  return createElement(
+    ControllerContext.Provider,
+    { value: controller },
+    createElement(ChatRuntime, { chat }, children),
+  );
+}
+
+export function ChatPaneProvider({
+  tabKey,
+  onSelect,
+  children,
+  visible = true,
+}: {
+  tabKey: string;
+  onSelect: (key: string) => void;
+  children: ReactNode;
+  visible?: boolean;
+}) {
+  const controller = useContext(ControllerContext);
+  if (!controller) throw new Error("ChatPaneProvider requires ChatProvider");
+  return createElement(ChatPaneRuntime, { controller, tabKey, onSelect, children, visible });
+}
+
+function ChatPaneRuntime({
+  controller,
+  tabKey,
+  onSelect,
+  children,
+  visible,
+}: {
+  controller: ChatController;
+  tabKey: string;
+  onSelect: (key: string) => void;
+  children?: ReactNode;
+  visible: boolean;
+}) {
+  const chat = useChatView(controller, tabKey, onSelect);
+  const observeTab = controller.observeTab;
+  useEffect(() => (visible ? observeTab(tabKey) : undefined), [observeTab, tabKey, visible]);
+  const workspacePickerSession = useFolderPickerSession();
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const pickerTab = useRef(tabKey);
+  useEffect(() => {
+    if (pickerTab.current === tabKey) return;
+    pickerTab.current = tabKey;
+    setWorkspacePickerOpen(false);
+    workspacePickerSession.reset("");
+  }, [tabKey, workspacePickerSession.reset]);
+  const scoped = {
+    ...chat,
+    workspacePickerSession,
+    workspacePickerOpen,
+    setWorkspacePickerOpen,
+    openWorkspacePicker: (initial: string) => {
+      workspacePickerSession.reset(initial);
+      setWorkspacePickerOpen(true);
+    },
+  };
+  return createElement(ChatRuntime, { chat: scoped, children });
+}
+
+function ChatRuntime({
+  chat,
+  children,
+}: {
+  chat: ReturnType<typeof useChatView>;
+  children?: ReactNode;
+}) {
   const messages = useMemo<ThreadMessageLike[]>(() => {
     const history: ThreadMessageLike[] = chat.messages.map((message) => {
       return {

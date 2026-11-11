@@ -106,7 +106,11 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     ...(r.tokensUsed !== undefined && { tokens_used: r.tokensUsed }),
   };
   if (existing) {
-    const changed = Object.entries(fields).some(([key, value]) => {
+    const matchedProject = existing.project_id
+      ? null
+      : await projectIdFor(r.cwd ?? existing.cwd, hostRuntime(execHostFor(executionHost)));
+    const nextFields = matchedProject ? { ...fields, project_id: matchedProject } : fields;
+    const changed = Object.entries(nextFields).some(([key, value]) => {
       if (key === "updated_at") return false;
       const previous = existing[key as keyof typeof existing];
       return previous instanceof Date && value instanceof Date
@@ -114,7 +118,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
         : previous !== value;
     });
     if (changed)
-      await db.update(gateway_sessions).set(fields).where(eq(gateway_sessions.id, existing.id));
+      await db.update(gateway_sessions).set(nextFields).where(eq(gateway_sessions.id, existing.id));
     recordObservedNotification(
       {
         id: existing.id,
@@ -122,7 +126,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
         host: executionHost,
         nativeId: r.externalId,
         title: r.title,
-        projectId: existing.project_id,
+        projectId: existing.project_id ?? matchedProject,
         previous: existing.status,
         status: r.status,
         waiting: r.pendingHuman === true && r.status !== "stopped",
@@ -139,7 +143,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     return existing.id;
   }
   const id = ulid();
-  const projectId = await projectIdFor(r.cwd, hostRuntime(resolveExecHost()));
+  const projectId = await projectIdFor(r.cwd, hostRuntime(execHostFor(executionHost)));
   await db.insert(gateway_sessions).values({
     id,
     chat_id: LIVE_CHAT_ID,
@@ -303,7 +307,7 @@ export function runSync(
 
 export const syncNow = () => runSync(currentAdapters, { force: true });
 
-export function discoverJobSession(
+export function discoverNativeSession(
   backend: string,
   nativeId: string,
   host: string | null,
@@ -311,12 +315,17 @@ export function discoverJobSession(
   return serialized(async () => {
     const nativeBackend =
       backend === "codex-cli" ? "codex" : backend === "claude-cli" ? "claude" : backend;
-    const adapter = defaultAdapters(execHostFor(host)).find(
-      (entry) => entry.backend === nativeBackend,
-    );
+    const runtime = hostRuntime(execHostFor(host));
+    const adapter =
+      nativeBackend === "codex"
+        ? codexAdapter(undefined, { runtime, sessionId: nativeId })
+        : defaultAdapters(execHostFor(host)).find((entry) => entry.backend === nativeBackend);
     if (!adapter) return null;
     const record = (await adapter.list(new Map())).find((entry) => entry.externalId === nativeId);
-    return record ? upsertRecord(record, host) : null;
+    if (!record) return null;
+    const id = await upsertRecord(record, host);
+    changes.publish("sessions");
+    return id;
   });
 }
 

@@ -97,14 +97,26 @@ export function ChatAgentOptionsEditor() {
   return (
     <details data-testid="chat-agent-options" className="min-w-0 space-y-3 text-sm">
       <summary className="min-h-11 cursor-pointer py-3">Advanced launch options</summary>
-      <label htmlFor={inputId} className="block space-y-2">
-        <span>
-          {runtime === "claude-sdk"
-            ? "Claude SDK options (JSON)"
-            : runtime === "pi"
-              ? "Pi options (JSON)"
-              : `${runtime === "codex" ? "Codex App Server" : "ACPX"} arguments (JSON array)`}
-        </span>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor={inputId}>
+            {runtime === "claude-sdk"
+              ? "Claude SDK options (JSON)"
+              : runtime === "pi"
+                ? "Pi options (JSON)"
+                : `${runtime === "codex" ? "Codex App Server" : "ACPX"} arguments (JSON array)`}
+          </label>
+          <HelpPopover label="agent launch options" testId="chat-agent-options-help">
+            {runtime === "claude-sdk"
+              ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}.'
+              : runtime === "pi"
+                ? 'Pi fields: thinkingLevel, steeringMode, followUpMode, autoCompaction, autoRetry. Example: {"thinkingLevel":"high"}. Queue mode, auto-retry and auto-compaction are saved to Pi\'s own settings on the execution host; thinking level is session-only.'
+                : runtime === "acpx"
+                  ? 'Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions.'
+                  : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above."}{" "}
+            Options are kept separately for each agent. Credentials stay in host configuration.
+          </HelpPopover>
+        </div>
         <Textarea
           id={inputId}
           data-testid="chat-agent-options-input"
@@ -119,17 +131,7 @@ export function ChatAgentOptionsEditor() {
           }}
           className="font-mono text-xs"
         />
-      </label>
-      <HelpPopover label="Agent launch options" testId="chat-agent-options-help">
-        {runtime === "claude-sdk"
-          ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}.'
-          : runtime === "pi"
-            ? 'Pi fields: thinkingLevel, steeringMode, followUpMode, autoCompaction, autoRetry. Example: {"thinkingLevel":"high"}. Queue mode, auto-retry and auto-compaction are saved to Pi\'s own settings on the execution host; thinking level is session-only.'
-            : runtime === "acpx"
-              ? 'Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions.'
-              : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above."}{" "}
-        Options are kept separately for each agent. Credentials stay in host configuration.
-      </HelpPopover>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"

@@ -8,9 +8,9 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 
 | Area | Contents |
 | --- | --- |
-| Sidebar | Activity, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
+| Sidebar | Sessions, Activity, Tasks, Knowledge, Library, Settings. Shows the execution host, for example `Connected (local)`. |
 | Project picker | Scopes most pages to one project, all projects, or unassigned items. A project with sessions waiting on you shows how many. |
-| Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; OpenCode uses direct ACP; other agents run through ACPX. |
+| Chat workspace | The default landing page at `/workspace`. Talk to any enabled coding agent, or keep the same chat beside another page. Pick the agent and model in the composer. Claude and Codex run natively; OpenCode uses direct ACP; other agents run through ACPX. |
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
 | Next session | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing. |
 
@@ -23,10 +23,10 @@ Pages are grouped in the sidebar:
 
 | Group | Pages |
 | --- | --- |
+| Sessions | Chat and terminal workspace |
 | Activity | Activity, Sessions, Jobs, Webhooks, Audit |
 | Tasks | Tasks |
 | Knowledge | Knowledge base, Memories |
-| Terminals | Terminals |
 | Library | Skills, Packages, Agents, Rules, Scratchpads |
 | Settings | Settings |
 
@@ -38,14 +38,27 @@ The sun and moon button in the header switches between the dark and light themes
 
 ## Full-width sessions view
 
-Open the chat panel and click **Full screen chat** to work with every agent session in one place. The same view opens from the full-screen button on **Sessions** (on the page or on a row) and in the **Terminals** session list.
+The dashboard opens the full-page chat workspace by default. Open it again from **Sessions** in the app rail, or expand side chat with **Full screen chat**. Chats and terminals share this destination; existing terminal links still work. Tasks and the other pages retain their own layouts.
 
-- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
-- **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
+**Projects** browses project sessions and offers a plus action to start a session in that project. **Recents** keeps the flat list in newest-activity order with the existing state filters and deferred sorting while you interact with it. **New session** starts a chat; its adjacent dropdown opens **New terminal** with the available shell, coding-agent and agent-profile launchers.
+
+Unassigned sessions and shells match a project's **Scope** folder, including subfolders and worktrees beneath it. The most specific matching folder wins; Windows path casing and separators are normalized. Existing project assignments are preserved. Older sessions load within the expanded project rather than disappearing behind newer sessions from other projects.
+
+The gear above the input opens session settings, including permissions, agent options, instructions and the native session's reported **Tokens used**. Backend estimates are labeled; missing telemetry is shown as unavailable. The compact row retains refresh, attachments, folder/host, branch/worktree and agent/model controls. Field explanations open from adjacent info icons on hover, keyboard focus or tap. A started session keeps its original folder and host. Terminal mode keeps a slim controls row and puts split actions in its own toolbar; existing `/terminals` links still work.
+
+Use **Show parallel sessions** for two independently selected sessions. Each pane owns its draft, attachments and controls; streams continue under the shared providers. Phones and tablets show one pane at a time with session tabs. Message drafts survive reload in the same browser tab. Selected upload files stay in memory; leaving with unsent files asks for confirmation.
+
+Selecting a terminal that is already open focuses its existing pane, including
+the correct phone session tab. A restored link cannot mount the same terminal
+canvas twice, and closing a duplicate presentation leaves the original working.
+
+- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. If its original agent still owns the session, its conversation opens for reading in the selected chat pane with the resume restriction visible. The selected conversation survives reload; New session or another conversation leaves that view and preserves existing drafts. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
+- **Inspector**: the panel button shows the host, folder, branch, changed files, linked task and pull request. **Diff**, **Files** and **Worktrees** reuse the terminal workspace tools. Opening checkout tools connects a shell in the selected folder if one is needed; file saves retain conflict detection and unsaved drafts.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
 - The sidebar shows as its collapsed rail while the view is open. **Exit full screen chat** returns to the page you came from.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
+- **Chat / Terminal** switches the representation of a supported native session. A busy response, missing runtime identity or an owned native writer prevents handoff. Returning from a terminal reopens the same stored chat thread, retaining its draft and configuration. A fresh terminal launch is a separate session. See [Terminal workspace](./terminal-workspace.md).
 - The header shows the recorded project and session title. Unlinked terminal agents
   show **Unknown** until agent activity supplies a state; they appear only in All projects
   while project ownership is unavailable. The Activity session list uses the same

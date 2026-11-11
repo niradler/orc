@@ -693,6 +693,23 @@
 }
 
 @container (max-width: 479px) {
+  .git-review-filters {
+    flex-wrap: wrap;
+  }
+  .git-file-search {
+    min-width: 100px;
+  }
+  .git-diff-layout {
+    margin-left: 0;
+  }
+  .git-file-heading {
+    flex-wrap: wrap;
+  }
+  .git-file-state {
+    width: 100%;
+    text-align: left;
+    padding-left: 24px;
+  }
   .git-review-toolbar {
     flex-wrap: nowrap;
     gap: 4px;

@@ -176,7 +176,7 @@ export function FileDiffCard({
           data-testid="git-diff-file-toggle"
           aria-expanded={open}
           onClick={toggle}
-          className="flex-1 min-w-0 min-h-11 sm:min-h-9 flex items-center gap-2 text-left px-2 py-2 hover:bg-surface"
+          className="git-file-heading flex-1 min-w-0 min-h-11 sm:min-h-9 flex items-center gap-2 text-left px-2 py-2 hover:bg-surface"
         >
           {open ? (
             <ChevronDown size={16} className="shrink-0" />
@@ -189,7 +189,7 @@ export function FileDiffCard({
           </span>
           <span
             data-testid="git-file-status"
-            className="shrink-0 text-xs text-on-surface-variant text-right"
+            className="git-file-state shrink-0 text-xs text-on-surface-variant text-right"
           >
             {label}
             {" · "}

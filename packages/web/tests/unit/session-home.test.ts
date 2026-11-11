@@ -3,8 +3,32 @@ import {
   clearSessionHome,
   patchSessionHome,
   readSessionHome,
+  sameSessionFolder,
   sessionHomeSearch,
+  swapSessionPanes,
 } from "../../src/lib/session-home";
+
+test("should promote a parallel session with its own terminal, file and inspector navigation", () => {
+  const original = new URLSearchParams(
+    "project=p&chat=full&chatThread=first&sessionTerminal=t1&inspectorfile=a.txt&parallelchatThread=second&parallelsessionTerminal=t2&parallelinspectorfile=b.txt&q=keep",
+  );
+  const swapped = swapSessionPanes(original);
+  expect(swapped.get("chatThread")).toBe("second");
+  expect(swapped.get("sessionTerminal")).toBe("t2");
+  expect(swapped.get("inspectorfile")).toBe("b.txt");
+  expect(swapped.get("parallelchatThread")).toBe("first");
+  expect(swapped.get("parallelsessionTerminal")).toBe("t1");
+  expect(swapped.get("project")).toBe("p");
+  expect(swapped.get("q")).toBe("keep");
+  expect(swapSessionPanes(swapped).toString()).toBe(original.toString());
+});
+
+test("should reuse Windows folder spellings without treating distinct POSIX paths as one checkout", () => {
+  expect(sameSessionFolder("C:/Projects/ORC", "\\\\?\\C:\\Projects\\orc\\")).toBe(true);
+  expect(sameSessionFolder("/work/ORC", "/work/orc")).toBe(false);
+  expect(sameSessionFolder("/work/orc", "/work/orc/")).toBe(true);
+  expect(sameSessionFolder(null, null)).toBe(false);
+});
 
 test("reads the full-width session view state from the URL and ignores unknown values", () => {
   expect(readSessionHome(new URLSearchParams("chat=full"))).toEqual({

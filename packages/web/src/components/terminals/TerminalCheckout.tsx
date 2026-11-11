@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { GitBranch } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
+import { useWorkspaceSearchParams } from "@/hooks/useSessionHome";
 
 export function TerminalCheckout({ terminal, paneId }: { terminal: Terminal; paneId?: string }) {
-  const [, setParams] = useSearchParams();
+  const [, setParams] = useWorkspaceSearchParams();
   const status = useQuery({
     queryKey: ["git", terminal.id, "status"],
     queryFn: () => api.git.status(terminal.id),

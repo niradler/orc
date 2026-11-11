@@ -13,11 +13,13 @@ import {
 import {
   type ChatEvent,
   ChatHistoryPageSchema,
+  ChatSettingsSchema,
   type ChatThread,
   ChatThreadSchema,
 } from "@orc/core/chat";
 import { globalConfigPath, loadConfig, resetConfig, updateGlobalConfig } from "@orc/core/config";
 import { readProviderSettings, saveProviderSettings } from "@orc/core/provider-service";
+import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -969,6 +971,65 @@ describe("native chat runtime", () => {
     expect(failed.events).toContainEqual({ type: "error", message: "Native resume rejected" });
     expect(calls.length).toBe(count);
     failResume = false;
+  });
+
+  test("should reopen the same chat thread and configuration after a terminal handoff", async () => {
+    getDb()
+      .insert(bridge_chats)
+      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+      .onConflictDoNothing()
+      .run();
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "workspace-roundtrip",
+        backend: "codex",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "workspace-native-runtime",
+        cwd: home,
+      })
+      .run();
+    const originalThread: ChatThread = {
+      id: crypto.randomUUID(),
+      title: "Original workspace conversation",
+      config: ChatSettingsSchema.parse({
+        ...loadConfig().preferences.chat,
+        agent: "codex",
+        model: "chosen-model",
+        permissionMode: "acceptEdits",
+      }),
+      backend: "codex-cli",
+      runtimeId: "workspace-native-runtime",
+      cwd: home,
+      host: null,
+      sourceId: null,
+      updatedAt: Date.now(),
+      messages: [
+        {
+          id: "original-message",
+          role: "user",
+          content: "Keep this history",
+          timestamp: Date.now(),
+        },
+      ],
+    };
+    new ChatStore(getSqlite()).save(originalThread);
+    const resumedResponse = await request("/chat/threads", {
+      sourceSessionId: "workspace-roundtrip",
+    });
+    expect(resumedResponse.status).toBe(200);
+    const resumed = (await resumedResponse.json()) as ChatThread;
+    expect(resumed.id).toBe(originalThread.id);
+    expect(resumed.config).toEqual(originalThread.config);
+    expect(resumed.messages).toEqual(originalThread.messages);
+    expect(resumed.cwd).toBe(originalThread.cwd);
+    expect(resumed.host).toBeNull();
+    expect(resumed.runtimeId).toBe(originalThread.runtimeId);
+    expect(
+      new ChatStore(getSqlite()).byRuntime("codex-cli", null, "workspace-native-runtime"),
+    ).toHaveLength(1);
   });
 
   test("rejects a stale stopped record when the Codex writer is still owned", async () => {

@@ -4,17 +4,21 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { useChat } from "@/hooks/useChat";
+import { useSessionHome } from "@/hooks/useSessionHome";
 
 export function ContinueInChat({
   terminal,
   showLabel = false,
   onContinued,
+  inWorkspace = false,
 }: {
   terminal: Terminal;
   showLabel?: boolean;
   onContinued?: () => void;
+  inWorkspace?: boolean;
 }) {
   const chat = useChat();
+  const home = useSessionHome();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [pending, setPending] = useState(false);
@@ -25,7 +29,13 @@ export function ContinueInChat({
     setPending(true);
     setError("");
     try {
-      chat.openThread(await api.chat.resume(terminal.live_session_id));
+      const thread = await api.chat.resume(terminal.live_session_id);
+      chat.openThread(thread);
+      if (inWorkspace) {
+        home.go({ terminalId: null }, { chatThread: thread.id });
+        onContinued?.();
+        return;
+      }
       const next = new URLSearchParams(params);
       next.delete("session");
       next.set("chat", "open");
@@ -42,7 +52,7 @@ export function ContinueInChat({
       <button
         type="button"
         data-testid="terminal-continue-chat"
-        aria-label="Resume"
+        aria-label={inWorkspace ? "Show chat" : "Resume"}
         title={
           terminal.live_session_id
             ? "Resume in chat"
@@ -53,7 +63,7 @@ export function ContinueInChat({
         className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md px-2 text-sm text-on-surface-variant hover:bg-surface disabled:opacity-40"
       >
         <MessageSquare size={17} />
-        {showLabel && "Resume"}
+        {showLabel && (inWorkspace ? "Chat" : "Resume")}
       </button>
       {error && (
         <p

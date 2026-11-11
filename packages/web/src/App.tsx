@@ -11,6 +11,7 @@ import {
 import { AgentNotifications } from "@/components/AgentNotifications";
 import { ChatPanel } from "@/components/ChatPanel";
 import { DesktopPreviewWorkspace } from "@/components/DesktopPreviewWorkspace";
+import { SessionWorkspace } from "@/components/SessionWorkspace";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
 import { CHAT_THREAD_PARAM, ChatProvider } from "@/hooks/useChat";
@@ -53,7 +54,18 @@ const Terminals = lazy(() => import("@/views/Terminals"));
 
 function DefaultWorkspaceRedirect() {
   const { search, hash } = useLocation();
-  return <Navigate replace to={{ pathname: "/activity", search, hash }} />;
+  const next = new URLSearchParams(search);
+  if (!next.has("chat")) next.set("chat", "full");
+  return (
+    <Navigate
+      replace
+      to={{
+        pathname: next.get("chat") === "open" ? "/activity" : "/workspace",
+        search: next.toString(),
+        hash,
+      }}
+    />
+  );
 }
 
 const STORAGE_KEY = "orc_selected_project";
@@ -73,9 +85,21 @@ export default function App() {
     }
   });
   const [searchParams] = useSearchParams();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const projectId = searchParams.get("project") ?? savedProjectId;
-  const chatFullscreen = searchParams.get("chat") === "full";
+  const defaultWorkspace = pathname === "/" || pathname === "/workspace";
+  const chatFullscreen =
+    searchParams.get("chat") === "full" || (defaultWorkspace && !searchParams.has("chat"));
+  useEffect(() => {
+    if (!defaultWorkspace || searchParams.has("chat")) return;
+    const next = new URLSearchParams(window.location.search);
+    next.set("chat", "full");
+    navigate(
+      { pathname: "/workspace", search: next.toString(), hash: window.location.hash },
+      { replace: true },
+    );
+  }, [defaultWorkspace, searchParams, navigate]);
   const chatRequested = searchParams.get("chat") === "open" || chatFullscreen;
   useSessionHomeEntry(chatFullscreen);
   function setChatVisible(open: boolean, fullscreen = false): void {
@@ -95,14 +119,26 @@ export default function App() {
     else {
       const next = clearSessionHome(new URLSearchParams(window.location.search));
       next.set("chat", "open");
-      navigate({ search: next.toString(), hash: window.location.hash }, { replace: true });
+      navigate(
+        {
+          pathname:
+            window.location.pathname === "/workspace" ? "/activity" : window.location.pathname,
+          search: next.toString(),
+          hash: window.location.hash,
+        },
+        { replace: true },
+      );
     }
   }
   function closeChat(): void {
     const next = clearSessionHome(new URLSearchParams(window.location.search));
     next.delete("chat");
     next.delete(CHAT_THREAD_PARAM);
-    navigate({ search: next.toString(), hash: window.location.hash });
+    navigate({
+      pathname: window.location.pathname === "/workspace" ? "/activity" : window.location.pathname,
+      search: next.toString(),
+      hash: window.location.hash,
+    });
   }
   function setProjectId(nextProjectId: string): void {
     setSavedProjectId(nextProjectId);
@@ -144,7 +180,6 @@ export default function App() {
     };
   }, [chatRequested, chatFullscreen]);
 
-  const { pathname } = useLocation();
   // Workspaces whose columns own their scroll fill the main area without page padding.
   const fullBleed =
     pathname === "/terminals" ||
@@ -207,10 +242,8 @@ export default function App() {
                 {/* Main content - the only element that owns vertical scroll for page content. */}
                 {homeOpen && (
                   <div data-testid="session-home" className="flex min-h-0 min-w-0 flex-1">
-                    <ChatPanel
-                      open
-                      embedded
-                      fullscreen
+                    <SessionWorkspace
+                      onOpenNavigation={() => setMobileNavOpen(true)}
                       onToggle={closeChat}
                       onClose={closeChat}
                       onToggleFullscreen={minimizeChat}
@@ -255,6 +288,7 @@ export default function App() {
                         >
                           <Routes>
                             <Route path="/" element={<DefaultWorkspaceRedirect />} />
+                            <Route path="/workspace" element={<DefaultWorkspaceRedirect />} />
                             <Route path="/activity" element={<Dashboard projectId={projectId} />} />
                             <Route path="/tasks" element={<Tasks projectId={projectId} />} />
                             <Route

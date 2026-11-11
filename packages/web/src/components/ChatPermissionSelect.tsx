@@ -1,6 +1,6 @@
 import type { ChatSettings } from "@orc/core/chat";
 import { Check, ChevronDown, ShieldAlert, ShieldCheck } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   chipHeading,
   chipOption,
@@ -8,6 +8,7 @@ import {
   focusChipOption,
   onChipListKeyDown,
 } from "@/components/ComposerChip";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
@@ -30,10 +31,27 @@ export function ChatPermissionSelect({
 }) {
   const supported = useAgentCapabilities(config.agent)?.livePermissions === true;
   const mode = effectivePermissionMode(config);
+  const inputId = useId();
   return (
-    <label className="block space-y-2 text-sm">
-      <span>Permissions</span>
+    <div className="space-y-1 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <label htmlFor={inputId}>Permissions</label>
+        <HelpPopover label="agent permissions" testId="chat-permission-help">
+          <p>
+            {!supported
+              ? "This backend does not expose live permission modes. ACP approvals appear individually; ACPX uses Advanced launch options."
+              : mode === "bypassPermissions"
+                ? "Allows actions without permission prompts. Codex also runs without a sandbox. Workspace rules still apply."
+                : "Ask in chat keeps approval prompts. Workspace edits allow changes within the agent’s workspace policy."}
+          </p>
+          <p className="mt-2">
+            Loosening permissions applies right away, including to a pending approval. Stricter
+            permissions apply to your next message. Change new-chat defaults in Settings.
+          </p>
+        </HelpPopover>
+      </div>
       <select
+        id={inputId}
         data-testid="chat-permission-mode"
         aria-label="Agent permissions"
         disabled={disabled || !supported}
@@ -47,14 +65,10 @@ export function ChatPermissionSelect({
         <option value="acceptEdits">Allow workspace edits</option>
         <option value="bypassPermissions">Full access / bypass permissions</option>
       </select>
-      <span className="block text-xs text-muted-foreground">
-        {!supported
-          ? "This backend does not expose live permission modes. ACP approvals appear individually; ACPX uses Advanced launch options."
-          : mode === "bypassPermissions"
-            ? "Allows actions without permission prompts. Codex also runs without a sandbox. Workspace rules still apply."
-            : "Ask in chat keeps approval prompts. Workspace edits allow changes within the agent’s workspace policy."}
-      </span>
-    </label>
+      {supported && mode === "bypassPermissions" && (
+        <p className="text-xs text-warning">Approval prompts disabled</p>
+      )}
+    </div>
   );
 }
 

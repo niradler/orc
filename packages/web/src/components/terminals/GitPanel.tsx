@@ -13,8 +13,10 @@ import {
   Search,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
+import { useChat } from "@/hooks/useChat";
+import { useSessionHome, useWorkspaceSearchParams } from "@/hooks/useSessionHome";
 import { fileChangeState } from "@/lib/git-status";
 import { useTerminals } from "@/lib/terminals";
 import { FileDiffCard } from "./FileDiffCard";
@@ -32,9 +34,11 @@ function sameCheckout(left: string, right: string | null) {
 }
 
 export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId: string }) {
+  const home = useSessionHome();
+  const chat = useChat();
   const { create } = useTerminals();
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useWorkspaceSearchParams();
   const client = useQueryClient();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [filesHidden, setFilesHidden] = useState(false);
@@ -90,6 +94,11 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
   const openShell = useMutation({
     mutationFn: (cwd: string) => create({ kind: "shell", cwd, host: terminal.host }),
     onSuccess: (created) => {
+      if (params.get("chat") === "full") {
+        chat.newTab({ fresh: true });
+        home.go({ terminalId: created.id, inspector: null });
+        return;
+      }
       const next = new URLSearchParams(params);
       next.set("view", "git");
       next.set("pane", paneId);

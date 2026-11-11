@@ -4,7 +4,19 @@ export const SESSION_LIST_PARAM = "sessionList";
 export const INSPECTOR_PARAM = "inspector";
 export const DRAWER_PARAM = "drawer";
 
-export type InspectorTab = "overview" | "diff";
+export function sameSessionFolder(left: string | null, right: string | null): boolean {
+  if (!left || !right) return false;
+  const normalize = (path: string): string => {
+    const clean = path
+      .replace(/\\/g, "/")
+      .replace(/^\/\/\?\//, "")
+      .replace(/\/$/, "");
+    return /^[A-Za-z]:\//.test(clean) ? clean.toLowerCase() : clean;
+  };
+  return normalize(left) === normalize(right);
+}
+
+export type InspectorTab = "overview" | "diff" | "files" | "worktrees";
 
 export interface SessionHomeState {
   terminalId: string | null;
@@ -23,6 +35,34 @@ const HOME_PARAMS = [
   DRAWER_PARAM,
 ];
 
+const PANE_PARAMS = [
+  "chatThread",
+  ...HOME_PARAMS,
+  "view",
+  "pane",
+  "paneTerminal",
+  "file",
+  "pr",
+  "editorMode",
+  "inspectorview",
+  "inspectorpane",
+  "inspectorpaneTerminal",
+  "inspectorfile",
+  "inspectorpr",
+  "inspectoreditorMode",
+];
+
+export function swapSessionPanes(params: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(params);
+  for (const key of PANE_PARAMS) {
+    const primary = params.get(key);
+    const secondary = params.get(`parallel${key}`);
+    put(next, key, secondary);
+    put(next, `parallel${key}`, primary);
+  }
+  return next;
+}
+
 export function readSessionHome(params: URLSearchParams): SessionHomeState {
   const inspector = params.get(INSPECTOR_PARAM);
   return {
@@ -30,7 +70,13 @@ export function readSessionHome(params: URLSearchParams): SessionHomeState {
     liveId: params.get(SESSION_LIVE_PARAM) || null,
     listHidden: params.get(SESSION_LIST_PARAM) === "hide",
     listOpen: params.get(SESSION_LIST_PARAM) === "show",
-    inspector: inspector === "overview" || inspector === "diff" ? inspector : null,
+    inspector:
+      inspector === "overview" ||
+      inspector === "diff" ||
+      inspector === "files" ||
+      inspector === "worktrees"
+        ? inspector
+        : null,
     drawer: params.get(DRAWER_PARAM) === "terminal",
   };
 }
@@ -59,7 +105,7 @@ export function patchSessionHome(
 
 export function clearSessionHome(params: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(params);
-  for (const key of HOME_PARAMS) next.delete(key);
+  for (const key of [...HOME_PARAMS, "sessionPane"]) next.delete(key);
   return next;
 }
 

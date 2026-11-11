@@ -1,7 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
 import { FolderOpen, GitBranch, Plus, Trash2, X } from "lucide-react";
-import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   ApiError,
   api,
@@ -41,6 +41,7 @@ interface NewTerminalMenuProps {
   className?: string;
   compact?: boolean;
   iconOnly?: boolean;
+  triggerIcon?: ReactNode;
   draft?: ReturnType<typeof useTerminalLaunchDraft>;
 }
 
@@ -121,6 +122,7 @@ export function NewTerminalMenu({
   className,
   compact = false,
   iconOnly = false,
+  triggerIcon,
   draft,
 }: NewTerminalMenuProps) {
   const hostSelectId = useId();
@@ -278,7 +280,7 @@ export function NewTerminalMenu({
                 : "w-full px-3 py-2 bg-primary border border-primary text-primary-foreground hover:bg-primary/90",
             )}
           >
-            <Plus size={14} />
+            {triggerIcon ?? <Plus size={14} />}
             <span className={compact || iconOnly ? "sr-only" : undefined}>New terminal</span>
           </button>
         </MenuTrigger>

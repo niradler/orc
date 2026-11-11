@@ -1,5 +1,6 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { supportsManualCompaction } from "@orc/core/coding-agents";
+import { projectForFolder } from "@orc/core/project-path";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -9,6 +10,7 @@ import {
   Globe,
   LoaderCircle,
   Maximize2,
+  MessageSquare,
   Minimize2,
   MoreHorizontal,
   Paperclip,
@@ -16,10 +18,11 @@ import {
   RefreshCw,
   Settings2,
   Square,
+  SquareTerminal,
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
@@ -41,6 +44,7 @@ import {
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
+import { LiveSessionDetail } from "@/components/LiveSessionDetail";
 import {
   SessionDrawer,
   SessionHomeToggles,
@@ -49,6 +53,7 @@ import {
   useSessionContext,
   useSessionLiveLink,
 } from "@/components/SessionHome";
+import { ContinueInChat } from "@/components/terminals/ContinueInChat";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -70,10 +75,19 @@ interface ChatPanelProps {
   embedded?: boolean;
   onClose?: () => void;
   fullscreen?: boolean;
+  compactPane?: boolean;
+  visible?: boolean;
+  workspaceActions?: ReactNode;
   onToggleFullscreen?: () => void;
 }
 const iconButton =
   "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
+// Slim segmented control: the representation switch is a frequent, low-stakes toggle, so it
+// stays quiet and compact instead of competing with the session title and actions.
+const representationButton =
+  "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 max-sm:h-9";
+const representationActive = "bg-surface-highest text-on-surface shadow-sm";
+const representationIdle = "text-on-surface-variant hover:bg-surface hover:text-on-surface";
 const actionButton =
   "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
 const textParts = {
@@ -94,6 +108,9 @@ export function ChatPanel({
   embedded = false,
   onClose,
   fullscreen = false,
+  compactPane = false,
+  visible = true,
+  workspaceActions,
   onToggleFullscreen,
 }: ChatPanelProps) {
   const preview = useDesktopPreview();
@@ -156,20 +173,39 @@ export function ChatPanel({
     await refresh(sessionChanged);
     void session.refetch();
   };
-  const terminalControl = useChatContinueInTerminal();
+  const terminalControl = useChatContinueInTerminal(fullscreen);
   const desktop = useBreakpoint("xl");
   const phone = !useBreakpoint("sm");
   const home = useSessionHome();
-  const docked = fullscreen && desktop && !home.listHidden;
-  const rail = fullscreen && desktop && home.listHidden;
-  const context = useSessionContext(fullscreen ? home.terminalId : null);
+  const docked = fullscreen && desktop && !compactPane && !home.listHidden;
+  const rail = fullscreen && desktop && !compactPane && home.listHidden;
+  const context = useSessionContext(fullscreen ? home.terminalId : null, home.liveId);
   const terminalCenter = fullscreen && !!home.terminalId;
-  const linkError = useSessionLiveLink(home, fullscreen);
-  const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
+  const nativeCenter = !!home.liveId;
+  const unrelatedTerminal =
+    terminalCenter &&
+    context.terminal &&
+    !(
+      thread?.runtimeId &&
+      context.session?.session_id === thread.runtimeId &&
+      context.session.agent === config.agent &&
+      context.session.host === thread.host
+    )
+      ? context.terminal
+      : undefined;
+  const linkError = useSessionLiveLink(home, open, fullscreen);
+  const title = nativeCenter
+    ? (context.session?.name ?? "Session")
+    : terminalCenter
+      ? (context.terminal?.name ?? "Terminal")
+      : thread?.title;
   const projects = useProjects();
-  const owner = terminalCenter
-    ? context.session?.project_id
-    : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
+  const recordedOwner =
+    terminalCenter || nativeCenter
+      ? context.session?.project_id
+      : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
+  const owner =
+    recordedOwner ?? projectForFolder(context.cwd, projects.data ?? [])?.id ?? recordedOwner;
   const projectName =
     owner === null
       ? "Unassigned"
@@ -180,7 +216,7 @@ export function ChatPanel({
     restoring: loadingHistory,
   });
   const submit = () => {
-    if (!ready || (!draft.trim() && !files.length)) return;
+    if (terminalCenter || !ready || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
     void send(draft);
     setDraft("");
@@ -188,6 +224,8 @@ export function ChatPanel({
   const header = useRef<HTMLElement>(null);
   const [headerWide, setHeaderWide] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsMounted, setSettingsMounted] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   useEffect(() => {
     if (!open || headerWide) setActionsOpen(false);
@@ -259,6 +297,8 @@ export function ChatPanel({
   return (
     <ThreadPrimitive.Root
       data-testid="chat-panel"
+      data-thread-id={nativeCenter ? "" : (thread?.id ?? "")}
+      data-live-session-id={home.liveId ?? undefined}
       data-streaming={streaming ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(
@@ -283,7 +323,7 @@ export function ChatPanel({
         />
       )}
       <ChatSessionPicker
-        enabled={open}
+        enabled={open && visible}
         docked={docked}
         rail={rail}
         wide={fullscreen && !desktop}
@@ -333,14 +373,58 @@ export function ChatPanel({
               <Globe size={16} />
             </button>
           )}
-          {streaming && (
+          {streaming && !nativeCenter && (
             <LoaderCircle
               size={14}
               aria-hidden="true"
               className="chat-compact-activity shrink-0 text-progress"
             />
           )}
-          {terminalCenter ? null : headerWide ? (
+          {fullscreen && (
+            <fieldset
+              aria-label="Session representation"
+              className="flex shrink-0 items-center gap-0.5 rounded-lg bg-surface p-0.5"
+            >
+              {terminalCenter && context.terminal ? (
+                <ContinueInChat terminal={context.terminal} inWorkspace showLabel />
+              ) : (
+                <button
+                  type="button"
+                  aria-pressed="true"
+                  className={cn(representationButton, representationActive)}
+                >
+                  <MessageSquare size={14} />
+                  <span className="hidden sm:inline">Chat</span>
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="session-view-terminal"
+                aria-label="Show terminal"
+                aria-pressed={terminalCenter}
+                disabled={
+                  nativeCenter ||
+                  (!terminalCenter && (!terminalControl.available || terminalControl.disabled))
+                }
+                title={
+                  terminalCenter
+                    ? "Same session terminal"
+                    : "Continue this runtime in terminal after the response finishes"
+                }
+                onClick={() => {
+                  if (!terminalCenter) void terminalControl.open();
+                }}
+                className={cn(
+                  representationButton,
+                  terminalCenter ? representationActive : representationIdle,
+                )}
+              >
+                <SquareTerminal size={14} />
+                <span className="hidden sm:inline">Terminal</span>
+              </button>
+            </fieldset>
+          )}
+          {terminalCenter || nativeCenter ? null : headerWide ? (
             <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
               <ActionHelp label="Refresh session">
                 <button
@@ -390,7 +474,7 @@ export function ChatPanel({
                   data-testid="chat-config-button"
                   aria-label="Session settings"
                   className={iconButton}
-                  onClick={() => setSettingsOpen(true)}
+                  onClick={() => setSettingsDialogOpen(true)}
                 >
                   <Settings2 size={17} />
                 </button>
@@ -470,7 +554,7 @@ export function ChatPanel({
                   className={actionButton}
                   onClick={() => {
                     setActionsOpen(false);
-                    setSettingsOpen(true);
+                    setSettingsDialogOpen(true);
                   }}
                 >
                   <Settings2 size={17} />
@@ -479,7 +563,8 @@ export function ChatPanel({
               </PopoverContent>
             </Popover>
           )}
-          {fullscreen && !phone && <SessionHomeToggles home={home} />}
+          {workspaceActions}
+          {fullscreen && !phone && !terminalCenter && <SessionHomeToggles home={home} />}
           {onToggleFullscreen && (
             <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
               <button
@@ -523,17 +608,20 @@ export function ChatPanel({
               </span>
               <span className="min-w-0 truncate">{title ?? "New session"}</span>
             </h2>
-            <SessionHomeToggles home={home} />
+            {!terminalCenter && <SessionHomeToggles home={home} />}
           </div>
         )}
-        {linkError && (
+        <ChatConversationInfo
+          open={settingsDialogOpen}
+          onOpenChange={setSettingsDialogOpen}
+          terminalOnly={unrelatedTerminal}
+        />
+        {linkError && !nativeCenter && (
           <p role="alert" className="px-4 py-1 text-xs text-error">
             {linkError}
           </p>
         )}
-        {terminalCenter && <SessionTerminalCenter context={context} />}
-        <div className={cn("flex min-h-0 flex-1 flex-col", terminalCenter && "hidden")}>
-          <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
+        <div className="flex min-h-0 flex-1 flex-col">
           {reconnecting && (
             <p
               role="status"
@@ -544,6 +632,28 @@ export function ChatPanel({
             </p>
           )}
           <div className="relative flex min-h-0 flex-1 flex-col">
+            {home.liveId &&
+              (linkError ? (
+                <LiveSessionDetail
+                  key={home.liveId}
+                  embedded
+                  sessionId={home.liveId}
+                  initialQuery=""
+                  resumeNotice={linkError}
+                  onClose={() => home.go({ liveId: null })}
+                />
+              ) : (
+                // While the live link resolves, keep a quiet placeholder instead of flashing the
+                // native transcript loader and then swapping to chat once resume lands.
+                <div
+                  role="status"
+                  data-testid="chat-opening-session"
+                  className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground"
+                >
+                  Opening session…
+                </div>
+              ))}
+            {terminalCenter && <SessionTerminalCenter context={context} />}
             <ThreadPrimitive.Viewport
               ref={scroll.viewportRef}
               autoScroll={false}
@@ -552,7 +662,10 @@ export function ChatPanel({
               scrollToBottomOnThreadSwitch={false}
               data-testid="chat-messages"
               data-pinned={scroll.pinned}
-              className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
+              className={cn(
+                "chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6",
+                (terminalCenter || nativeCenter) && "hidden",
+              )}
             >
               <div ref={scroll.contentRef} className="flex min-h-full flex-col">
                 {historyBefore !== null && (
@@ -584,7 +697,7 @@ export function ChatPanel({
                       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
                       data-testid="chat-message"
                       data-role={message.role}
-                      className="mx-auto mb-6 w-full max-w-3xl min-w-0 text-base leading-[1.65]"
+                      className="mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
                     >
                       <div
                         className={
@@ -598,7 +711,7 @@ export function ChatPanel({
                           className={
                             message.role === "user"
                               ? "sr-only"
-                              : "mb-2 text-xs font-medium text-on-surface-variant"
+                              : "mb-1 text-xs font-medium text-on-surface-variant"
                           }
                         >
                           {message.role === "user"
@@ -643,20 +756,22 @@ export function ChatPanel({
               </div>
             )}
           </div>
-          {streaming && (
+          {streaming && !nativeCenter && (
             <ChatLiveStatus
               agent={streamingAgent}
               startedAt={turn?.startedAt}
               activity={activity}
             />
           )}
-          <ChatLiveAnnouncer
-            streaming={streaming}
-            agent={streamingAgent}
-            text={streamText}
-            last={messages[messages.length - 1]}
-          />
-          {error && (
+          {!nativeCenter && (
+            <ChatLiveAnnouncer
+              streaming={streaming}
+              agent={streamingAgent}
+              text={streamText}
+              last={messages[messages.length - 1]}
+            />
+          )}
+          {error && !nativeCenter && (
             <div
               role="alert"
               data-testid="chat-error"
@@ -665,7 +780,7 @@ export function ChatPanel({
               {error}
             </div>
           )}
-          {(permission || question) && (
+          {!nativeCenter && (permission || question) && (
             <div
               className="shrink-0 max-h-[45vh] overflow-auto"
               data-testid="chat-pending-requests"
@@ -725,7 +840,7 @@ export function ChatPanel({
               )}
             </div>
           )}
-          {queued.length + answers.length > 0 && (
+          {!nativeCenter && queued.length + answers.length > 0 && (
             <details
               key={activeKey}
               open={queueDisclosure.key === activeKey && queueDisclosure.open}
@@ -781,7 +896,13 @@ export function ChatPanel({
               </ol>
             </details>
           )}
-          <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
+          <div
+            className={cn(
+              "chat-composer-footer relative w-full shrink-0",
+              nativeCenter && "hidden",
+              terminalCenter ? "border-t border-border px-2 py-1" : "px-4 pt-2 pb-3 sm:px-6",
+            )}
+          >
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -798,7 +919,12 @@ export function ChatPanel({
                   addFiles(Array.from(event.dataTransfer.files));
                 }
               }}
-              className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+              className={cn(
+                "chat-composer-box mx-auto w-full max-w-3xl",
+                terminalCenter
+                  ? "bg-background"
+                  : "rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus",
+              )}
             >
               {files.length > 0 && (
                 <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">
@@ -821,8 +947,16 @@ export function ChatPanel({
                   ))}
                 </ul>
               )}
+              {settingsMounted && (
+                <ChatConversationInfo
+                  inline
+                  open={settingsOpen}
+                  onOpenChange={setSettingsOpen}
+                  terminalOnly={unrelatedTerminal}
+                />
+              )}
               <ChatPromptMenu {...promptMenu} />
-              <div className="relative">
+              <div className={cn("relative", terminalCenter && "hidden")}>
                 {highlighted && (
                   <div
                     ref={inputBackdrop}
@@ -857,7 +991,7 @@ export function ChatPanel({
                     activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                   }
                   placeholder="Ask anything. / for prompts and skills"
-                  disabled={!ready}
+                  disabled={!ready || terminalCenter}
                   value={draft}
                   onChange={(event) => {
                     setDraft(event.target.value);
@@ -907,6 +1041,29 @@ export function ChatPanel({
                   data-testid="chat-composer-tools"
                   className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5"
                 >
+                  <button
+                    type="button"
+                    data-testid="composer-settings"
+                    aria-label="Session settings"
+                    aria-expanded={settingsOpen}
+                    onClick={() => {
+                      setSettingsMounted(true);
+                      setSettingsOpen((value) => !value);
+                    }}
+                    className={iconButton}
+                  >
+                    <Settings2 size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="composer-refresh"
+                    aria-label="Refresh session"
+                    disabled={!thread || refreshing}
+                    onClick={() => void reload()}
+                    className={cn(iconButton, sessionChanged && "text-warning")}
+                  >
+                    <RefreshCw size={16} className={refreshing ? "animate-spin" : undefined} />
+                  </button>
                   <label
                     className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 focus-within:ring-2 focus-within:ring-focus`}
                     aria-label="Attach files"
@@ -927,9 +1084,17 @@ export function ChatPanel({
                       }}
                     />
                   </label>
-                  <ChatAgentModelPicker key={thread?.id ?? "new"} />
-                  <ChatWorkspaceControls />
-                  <ChatPermissionChip />
+                  <ChatWorkspaceControls context={context} />
+                  {unrelatedTerminal ? (
+                    <span className="px-2 text-xs text-muted-foreground">
+                      {unrelatedTerminal.kind}
+                    </span>
+                  ) : (
+                    <>
+                      <ChatAgentModelPicker key={thread?.id ?? "new"} />
+                      <ChatPermissionChip />
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   {streaming && thread?.capabilities?.steering && (
@@ -962,23 +1127,25 @@ export function ChatPanel({
                       </button>
                     </ActionHelp>
                   )}
-                  <ActionHelp label={streaming ? "Queue message" : "Send message"}>
-                    <button
-                      type="submit"
-                      disabled={!ready || (!draft.trim() && !files.length)}
-                      data-testid="chat-send-button"
-                      aria-label={streaming ? "Queue message" : "Send message"}
-                      className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-                    >
-                      <ArrowUp size={18} />
-                    </button>
-                  </ActionHelp>
+                  {!terminalCenter && (
+                    <ActionHelp label={streaming ? "Queue message" : "Send message"}>
+                      <button
+                        type="submit"
+                        disabled={terminalCenter || !ready || (!draft.trim() && !files.length)}
+                        data-testid="chat-send-button"
+                        aria-label={streaming ? "Queue message" : "Send message"}
+                        className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+                      >
+                        <ArrowUp size={18} />
+                      </button>
+                    </ActionHelp>
+                  )}
                 </div>
               </div>
             </form>
           </div>
         </div>
-        {fullscreen && home.drawer && <SessionDrawer context={context} />}
+        {fullscreen && !terminalCenter && home.drawer && <SessionDrawer context={context} />}
       </div>
       {fullscreen && <SessionInspector context={context} home={home} narrow={!desktop} />}
     </ThreadPrimitive.Root>

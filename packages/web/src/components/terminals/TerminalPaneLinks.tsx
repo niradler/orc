@@ -9,8 +9,9 @@ import {
   ListTodo,
   LoaderCircle,
 } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
+import { useWorkspaceSearchParams } from "@/hooks/useSessionHome";
 import { useTasks } from "@/hooks/useTasks";
 import { workspaceDestination } from "@/lib/workspace-navigation";
 
@@ -23,7 +24,7 @@ function samePath(left: string | null | undefined, right: string): boolean {
 }
 
 export function TerminalPaneLinks({ terminal, paneId }: { terminal: Terminal; paneId: string }) {
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useWorkspaceSearchParams();
   const tasks = useTasks();
   const status = useQuery({
     queryKey: ["git", terminal.id, "status"],

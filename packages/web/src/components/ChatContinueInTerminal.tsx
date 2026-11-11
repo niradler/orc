@@ -3,11 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { useChat } from "@/hooks/useChat";
+import { useSessionHome } from "@/hooks/useSessionHome";
 import { useTerminals } from "@/lib/terminals";
 
-export function useChatContinueInTerminal() {
+export function useChatContinueInTerminal(inWorkspace = false) {
   const { thread, streaming } = useChat();
   const { openLiveSession } = useTerminals();
+  const home = useSessionHome();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const threadId = useRef(thread?.id);
@@ -17,7 +19,14 @@ export function useChatContinueInTerminal() {
     setPending(false);
   }, [thread?.id]);
   async function open() {
-    if (!thread) return false;
+    if (
+      !thread ||
+      streaming ||
+      pending ||
+      !thread.runtimeId ||
+      !["codex", "claude"].includes(thread.config.agent)
+    )
+      return false;
     setPending(true);
     setError("");
     try {
@@ -32,7 +41,10 @@ export function useChatContinueInTerminal() {
         throw new Error(
           "This session is not available in Sessions yet. Try again after session discovery refreshes.",
         );
-      await openLiveSession(session, thread.config.providerId);
+      const terminal = await openLiveSession(session, thread.config.providerId, {
+        navigate: !inWorkspace,
+      });
+      if (inWorkspace && threadId.current === thread.id) home.go({ terminalId: terminal.id });
       return true;
     } catch (cause) {
       if (threadId.current === thread.id)

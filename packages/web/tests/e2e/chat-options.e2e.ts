@@ -23,7 +23,7 @@ for (const width of [390, 1440]) {
     await chooseChatAgent(page, "gemini");
     await openChatSettings(page);
     await page.getByTestId("chat-agent-options").locator("summary").click();
-    await page.getByTestId("chat-agent-options-help").focus();
+    await page.getByTestId("chat-agent-options-help").click();
     await expect(page.getByTestId("chat-agent-options-help-content")).toContainText(
       "--approve-all",
     );

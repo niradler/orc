@@ -1,13 +1,24 @@
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { History, PanelLeftClose, PanelLeftOpen, Plus, SquareTerminal, X } from "lucide-react";
+import {
+  ChevronRight,
+  Folder,
+  History,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/api/client";
+import { api, type Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { HelpPopover } from "@/components/HelpPopover";
+import { SessionLaunchMenu } from "@/components/SessionLaunchMenu";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -27,8 +38,10 @@ import { Input } from "@/components/ui/input";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { useProjects } from "@/hooks/useProjects";
 import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionSeen } from "@/hooks/useSessionSeen";
+import { useSsh } from "@/hooks/useSsh";
 import { useStableOrder } from "@/hooks/useStableOrder";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
@@ -67,12 +80,17 @@ export function ChatSessionPicker({
   const { terminals } = useTerminals();
   const projectScope = chat.projectScope;
   const navigation = useSessionHome();
-  const setOpen = (next: boolean) => navigation.go({ listOpen: next });
-  const open = enabled && (docked || rail || navigation.listOpen);
+  const sessionNav = home ?? navigation;
+  const setOpen = (next: boolean) => sessionNav.go({ listOpen: next });
+  const open = enabled && (docked || rail || (home ?? navigation).listOpen);
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const { data: projects } = useProjects({ status: "active" });
+  const { data: ssh } = useSsh();
+  const [section, setSection] = useState<"projects" | "recents">("recents");
+  const [expandedProject, setExpandedProject] = useState<string | null>(null);
 
   const [selectedArchive, setSelectedArchive] = useState<ArchiveSession | null>(null);
   const [repository, setRepository] = useState("");
@@ -91,7 +109,6 @@ export function ChatSessionPicker({
       api.sessions.live({
         active: false,
         limit: 5000,
-        ...(projectScope === "all" ? {} : { project_id: projectScope }),
       }),
     enabled: open,
     staleTime: 0,
@@ -110,10 +127,12 @@ export function ChatSessionPicker({
     setPending(true);
     setError("");
     try {
-      chat.openThread(await load(), { projectId });
-      setOpen(false);
+      const thread = await load();
+      chat.openThread(thread, { projectId });
+      sessionNav.go({ terminalId: null, liveId: null, listOpen: false }, { chatThread: thread.id });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Session could not be opened.");
+      const message = cause instanceof Error ? cause.message : "Session could not be opened.";
+      setError(message);
     } finally {
       setPending(false);
     }
@@ -128,11 +147,15 @@ export function ChatSessionPicker({
     search,
     projectScope,
     terminals,
+    !!home,
+    projects ?? [],
   );
   const isSelected = (entry: ChatHistoryEntry) =>
-    home?.terminalId
-      ? entry.terminalId === home.terminalId
-      : entry.kind === "local" && entry.tab.key === chat.activeKey;
+    sessionNav.liveId
+      ? entry.kind === "native" && entry.session.id === sessionNav.liveId
+      : home?.terminalId
+        ? entry.terminalId === home.terminalId
+        : entry.kind === "local" && entry.tab.key === chat.activeKey;
   const states = new Map(
     entries.map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
   );
@@ -148,36 +171,36 @@ export function ChatSessionPicker({
     loading,
   });
   const shown = stable.items.slice(0, visibleCount);
-  const active = entries.find(
-    (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
-  );
+  const projectEntries = stable.items.filter((entry) => entry.projectId === expandedProject);
+  const visibleEntries = section === "projects" ? projectEntries : stable.items;
+  const active = entries.find(isSelected);
   const activeKeys = active?.seenKeys.join("\n") ?? "";
   const activeUpdated = active?.updatedAt ?? 0;
   useEffect(() => {
-    if (!activeKeys) return;
+    if (!enabled || !activeKeys) return;
     const keys = activeKeys.split("\n");
     markSeen(keys, Math.max(Date.now(), activeUpdated));
     return () => markSeen(keys);
-  }, [activeKeys, activeUpdated]);
+  }, [activeKeys, activeUpdated, enabled]);
   const selectEntry = (entry: ChatHistoryEntry) => {
     markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
     const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
     if (terminalId) {
       setOpen(false);
-      if (home) home.go({ terminalId });
+      if (home) home.go({ terminalId, liveId: null });
       else navigate(terminalPath(terminalId));
     } else if (entry.kind === "local") {
       chat.selectTab(entry.tab.key);
-      home?.go({ terminalId: null }, { chatThread: entry.tab.thread?.id });
+      sessionNav.go(
+        { terminalId: null, liveId: null },
+        { chatThread: entry.tab.thread?.id ?? null },
+      );
       setOpen(false);
     } else if (entry.kind === "saved") {
-      if (home) {
-        home.go({ terminalId: null }, { chatThread: entry.thread.id });
-        setOpen(false);
-      } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
+      sessionNav.go({ terminalId: null, liveId: null });
+      void select(() => api.chat.get(entry.thread.id), entry.projectId);
     } else if (entry.kind === "native") {
-      home?.go({ terminalId: null });
-      void select(() => api.chat.resume(entry.session.id), entry.projectId);
+      sessionNav.go({ terminalId: null, liveId: entry.session.id, listOpen: false });
     } else if (entry.kind === "archive") {
       const session = entry.session;
       setSelectedArchive(session);
@@ -215,7 +238,7 @@ export function ChatSessionPicker({
             disabled={pending}
             onClick={() => {
               chat.newTab();
-              home?.go({ terminalId: null });
+              sessionNav.go({ terminalId: null, liveId: null }, { chatThread: null });
             }}
           >
             <Plus size={16} />
@@ -261,7 +284,7 @@ export function ChatSessionPicker({
       open={open}
       onOpenChange={setOpen}
       onCollapse={home ? () => home.go({ listHidden: true }) : undefined}
-      onNew={() => home?.go({ terminalId: null })}
+      onNew={() => sessionNav.go({ terminalId: null, liveId: null }, { chatThread: null })}
       newDisabled={pending}
     >
       {selectedArchive ? (
@@ -316,6 +339,21 @@ export function ChatSessionPicker({
         </section>
       ) : (
         <>
+          <div role="tablist" aria-label="Session navigation" className="flex gap-1">
+            {(["projects", "recents"] as const).map((value) => (
+              <Button
+                key={value}
+                role="tab"
+                variant="ghost"
+                aria-selected={section === value}
+                onClick={() => setSection(value)}
+                data-testid={`session-navigation-${value}`}
+                className={section === value ? "bg-surface-highest" : undefined}
+              >
+                {value === "projects" ? "Projects" : "Recents"}
+              </Button>
+            ))}
+          </div>
           <Input
             data-testid="chat-session-search"
             aria-label="Search sessions"
@@ -340,7 +378,85 @@ export function ChatSessionPicker({
             >
               <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             </SessionStateFilters>
-            <div data-testid="chat-session-list" className="min-w-0 space-y-1">
+            {section === "projects" && (
+              <section aria-label="Projects" className="space-y-1">
+                {(projects ?? []).map((project) => (
+                  <div key={project.id} className="group">
+                    <div className="flex min-w-0 items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        className="min-w-0 flex-1 justify-start truncate"
+                        aria-expanded={expandedProject === project.id}
+                        onClick={() => {
+                          setVisibleCount(50);
+                          setExpandedProject(expandedProject === project.id ? null : project.id);
+                        }}
+                      >
+                        <ChevronRight
+                          size={13}
+                          className={cn("shrink-0", expandedProject === project.id && "rotate-90")}
+                        />
+                        <Folder size={14} className="shrink-0" />
+                        <span className="truncate">{project.name}</span>
+                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                          {stable.items.filter((entry) => entry.projectId === project.id).length}
+                        </span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`New session in ${project.name}`}
+                        className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100"
+                        onClick={() => {
+                          chat.newTab({
+                            projectId: project.id,
+                            fresh: true,
+                            ...(project.scope?.trim()
+                              ? {
+                                  workspace: {
+                                    cwd: project.scope,
+                                    host: ssh?.host ?? null,
+                                    worktree: false,
+                                  },
+                                }
+                              : {}),
+                          });
+                          sessionNav.go({ terminalId: null, liveId: null }, { chatThread: null });
+                          setOpen(false);
+                        }}
+                      >
+                        <Plus size={15} />
+                      </Button>
+                    </div>
+                    {expandedProject === project.id && (
+                      <div className="pl-2">
+                        {projectEntries.slice(0, visibleCount).map((entry) => (
+                          <HistoryRow
+                            key={entry.id}
+                            entry={entry}
+                            state={states.get(entry.id) ?? "idle"}
+                            pending={pending}
+                            selected={isSelected(entry)}
+                            terminal={!!entry.terminalId}
+                            onSelect={() => selectEntry(entry)}
+                          />
+                        ))}
+                        {!projectEntries.length && !loading && (
+                          <p className="px-2 py-2 text-xs text-muted-foreground">
+                            No sessions match this project.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </section>
+            )}
+            <div
+              data-testid="chat-session-list"
+              hidden={section !== "recents"}
+              className="min-w-0 space-y-1"
+            >
               {shown.map((entry) => (
                 <HistoryRow
                   key={entry.id}
@@ -359,12 +475,12 @@ export function ChatSessionPicker({
               Loading sessions…
             </p>
           )}
-          {!loading && !shown.length && (
+          {!loading && section === "recents" && !shown.length && (
             <p className="px-2 text-sm text-muted-foreground">
               {search || filter !== "all" ? "No sessions match." : "No sessions yet."}
             </p>
           )}
-          {stable.items.length > visibleCount && (
+          {visibleEntries.length > visibleCount && (
             <Button
               variant="ghost"
               data-testid="chat-history-more"
@@ -432,7 +548,7 @@ function SessionHistoryFrame({
       variant="ghost"
       size="icon"
       data-testid="chat-history-new"
-      className="max-sm:size-11 pointer-coarse:size-11"
+      className="w-auto min-w-0 flex-1 justify-start gap-1 px-2 max-sm:min-h-11 pointer-coarse:min-h-11"
       aria-label="New session"
       disabled={newDisabled}
       onClick={() => {
@@ -444,6 +560,7 @@ function SessionHistoryFrame({
       <span data-testid={docked ? "chat-clear-button" : undefined} className="inline-flex">
         <Plus size={16} />
       </span>
+      <span>New session</span>
     </Button>
   );
   const trigger = (
@@ -481,9 +598,10 @@ function SessionHistoryFrame({
           className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
           {...sidebarWidth.handleProps}
         />
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="px-2 text-sm font-medium flex-1">Sessions</h2>
+        <div className="mb-3 flex items-center gap-1">
+          <h2 className="sr-only">Sessions</h2>
           {newSession}
+          <SessionLaunchMenu />
           {onCollapse && (
             <Button
               variant="ghost"
@@ -522,7 +640,7 @@ function SessionHistoryFrame({
         data-testid="chat-sessions-dialog"
         data-session-list-wide={wide || undefined}
         className={cn(
-          "chat-history-drawer left-0 top-[var(--app-top,0px)] flex h-[var(--app-height,100dvh)] max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-4 rounded-none p-4",
+          "chat-history-drawer left-0 top-[var(--app-top,0px)] flex h-[var(--app-height,100dvh)] max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-4 overflow-hidden rounded-none p-4",
           wide ? "w-screen" : "w-[min(340px,calc(100vw-24px))] max-sm:w-screen",
         )}
         onOpenAutoFocus={(event) => {
@@ -530,11 +648,12 @@ function SessionHistoryFrame({
           content.current?.focus();
         }}
       >
-        <div className="flex items-center gap-2 pr-8">
+        <div className="flex shrink-0 items-center gap-2 pr-8">
           <DialogTitle className="flex-1">Sessions</DialogTitle>
           {newSession}
+          <SessionLaunchMenu />
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto space-y-4">{children}</div>
       </DialogContent>
     </Dialog>
   );
@@ -659,102 +778,197 @@ function HistoryRow({
 export function ChatConversationInfo({
   open,
   onOpenChange,
+  inline = false,
+  terminalOnly,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  inline?: boolean;
+  terminalOnly?: Terminal;
 }) {
-  const { config, changePermissions, thread } = useChat();
+  const { config, changePermissions, thread, workspace } = useChat();
+  const { data: ssh } = useSsh();
   const preview = useDesktopPreview();
+  const dialog = useRef<HTMLDivElement>(null);
+  const usage = useQuery({
+    queryKey: [
+      "chat-session-usage",
+      thread?.runtimeId,
+      config.agent,
+      thread?.host,
+      terminalOnly?.live_session_id,
+    ],
+    queryFn: () => api.sessions.live({ active: false, limit: 5000 }),
+    enabled: open && !!(terminalOnly?.live_session_id ?? thread?.runtimeId),
+    refetchInterval: open ? 5000 : false,
+  });
+  const runtime = terminalOnly
+    ? usage.data?.sessions.find((session) => session.id === terminalOnly.live_session_id)
+    : usage.data?.sessions.find(
+        (session) =>
+          session.session_id === thread?.runtimeId &&
+          session.agent === config.agent &&
+          session.host === thread?.host,
+      );
+  const tokens = runtime?.tokens_used;
+  const tokenLabel =
+    typeof tokens === "number" && Number.isFinite(tokens) && tokens >= 0
+      ? `${new Intl.NumberFormat().format(tokens)}${runtime?.tokens_estimated ? " (estimated)" : ""}`
+      : usage.isLoading
+        ? "Loading…"
+        : "Not reported by this backend";
   const capabilities = useAgentCapabilities(config.agent, thread);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-testid="chat-config-dialog"
-        className="w-[calc(100%-1rem)] min-w-0 grid-cols-[minmax(0,1fr)]"
-      >
-        <DialogTitle>Session settings</DialogTitle>
-        <DialogDescription>
-          Loosening permissions applies right away, including to a pending approval. Stricter
-          permissions apply to your next message. Change new-chat defaults in Settings.
-        </DialogDescription>
-        <dl className="space-y-3 text-sm wrap-break-word">
-          <div>
-            <dt className="text-muted-foreground">Agent and working folder</dt>
-            <dd>
-              {config.agent} · {thread?.host || "Selected execution host"}
-              {thread?.cwd && <span className="block font-mono text-xs">{thread.cwd}</span>}
-            </dd>
+  const body = terminalOnly ? (
+    <dl className="space-y-3 text-sm break-words">
+      <div>
+        <dt className="flex items-center justify-between text-muted-foreground">
+          Agent
+          <HelpPopover label="terminal configuration" testId="chat-terminal-config-help">
+            The terminal keeps its launch configuration. Use Chat to resume a supported agent, or
+            New terminal for a different configuration.
+          </HelpPopover>
+        </dt>
+        <dd>{terminalOnly.kind}</dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Host</dt>
+        <dd>{terminalOnly.host ?? "Local"}</dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Folder</dt>
+        <dd>{terminalOnly.cwd ?? "Unknown folder"}</dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Tokens used</dt>
+        <dd data-testid="chat-token-count">{tokenLabel}</dd>
+      </div>
+    </dl>
+  ) : (
+    <>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 text-sm wrap-break-word">
+        <div className="contents">
+          <dt className="text-muted-foreground">Tokens used</dt>
+          <dd data-testid="chat-token-count">{tokenLabel}</dd>
+        </div>
+        <div className="contents">
+          <dt className="text-muted-foreground">Agent / host</dt>
+          <dd>
+            {config.agent} ·{" "}
+            {thread
+              ? (thread.host ?? "Local")
+              : workspace?.host === undefined
+                ? (ssh?.host ?? "Local")
+                : (workspace.host ?? "Local")}
+          </dd>
+        </div>
+        {(thread?.cwd ?? workspace?.cwd) && (
+          <div className="contents">
+            <dt className="text-muted-foreground">Folder</dt>
+            <dd className="min-w-0 font-mono text-xs">{thread?.cwd ?? workspace?.cwd}</dd>
           </div>
-          <div>
-            <dt className="text-muted-foreground">Tools</dt>
-            <dd>
+        )}
+        <div className="contents">
+          <dt className="text-muted-foreground">Tools</dt>
+          <dd className="flex min-w-0 items-center justify-between gap-2">
+            {config.mcp === "orc" ? "ORC + host" : "Host"}
+            <HelpPopover label="session tools" testId="chat-tools-help">
               {config.mcp === "orc"
                 ? "ORC MCP connection plus agent host configuration"
                 : "Agent host configuration"}
-            </dd>
-          </div>
-          <div>
-            <dd>
-              <ChatPermissionSelect
-                config={config}
-                onChange={(next) => void changePermissions(next)}
-              />
-            </dd>
-          </div>
-        </dl>
-        {preview && (
-          <div className="flex items-start justify-between gap-6 border-y border-border py-3">
-            <div>
-              <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
-                Allow agent browser control
-              </label>
-              <p
-                id="chat-browser-control-description"
-                className="mt-1 text-xs text-muted-foreground"
-              >
-                {preview.browserControl.globallyEnabled
-                  ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
-                  : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
-              </p>
-            </div>
-            <input
-              type="checkbox"
-              id="chat-browser-agent-access"
-              data-testid="chat-browser-agent-access"
-              aria-describedby="chat-browser-control-description"
-              className="mt-1 h-4 w-4 shrink-0"
-              checked={preview.browserControl.enabled}
-              disabled={preview.browserControl.pending || !preview.browserControl.globallyEnabled}
-              onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
+            </HelpPopover>
+          </dd>
+        </div>
+        <div className="col-span-2">
+          <dd>
+            <ChatPermissionSelect
+              config={config}
+              onChange={(next) => void changePermissions(next)}
             />
+          </dd>
+        </div>
+      </dl>
+      {preview && (
+        <div className="flex items-start justify-between gap-6 border-y border-border py-3">
+          <div>
+            <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
+              Allow agent browser control
+            </label>
+            <p id="chat-browser-control-description" className="mt-1 text-xs text-muted-foreground">
+              {preview.browserControl.globallyEnabled
+                ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
+                : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
+            </p>
           </div>
-        )}
-        {capabilities && (
-          <p data-testid="chat-capabilities" className="text-xs text-muted-foreground">
-            {[
-              capabilities.resume && "Resume",
-              capabilities.approvals && "Approvals in chat",
-              capabilities.questions && "Questions",
-              capabilities.steering && "Send now",
-              capabilities.interrupt && "Native stop",
-            ]
-              .filter(Boolean)
-              .join(" · ") || "Basic text conversation"}
-          </p>
-        )}
-        <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
-        <details className="text-sm">
-          <summary className="min-h-11 cursor-pointer py-3">Session instructions</summary>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
-            {config.system || "No additional instructions"}
-          </pre>
-          <p className="mt-2 text-xs text-muted-foreground">
-            {config.agent === "claude"
-              ? "Appended to Claude’s coding system prompt."
-              : "Sent as turn instructions to the agent."}{" "}
-            Agent and workspace instructions may also apply.
-          </p>
-        </details>
+          <input
+            type="checkbox"
+            id="chat-browser-agent-access"
+            data-testid="chat-browser-agent-access"
+            aria-describedby="chat-browser-control-description"
+            className="mt-1 h-4 w-4 shrink-0"
+            checked={preview.browserControl.enabled}
+            disabled={preview.browserControl.pending || !preview.browserControl.globallyEnabled}
+            onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
+          />
+        </div>
+      )}
+      {capabilities && (
+        <p data-testid="chat-capabilities" className="text-xs text-muted-foreground">
+          {[
+            capabilities.resume && "Resume",
+            capabilities.approvals && "Approvals in chat",
+            capabilities.questions && "Questions",
+            capabilities.steering && "Send now",
+            capabilities.interrupt && "Native stop",
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Basic text conversation"}
+        </p>
+      )}
+      <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
+      <details className="text-sm">
+        <summary className="min-h-11 cursor-pointer py-3">Session instructions</summary>
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
+          {config.system || "No additional instructions"}
+        </pre>
+        <HelpPopover label="session instructions" testId="chat-instructions-help">
+          {config.agent === "claude"
+            ? "Appended to Claude’s coding system prompt."
+            : "Sent as turn instructions to the agent."}{" "}
+          Agent and workspace instructions may also apply.
+        </HelpPopover>
+      </details>
+    </>
+  );
+  if (inline)
+    return (
+      <section
+        hidden={!open}
+        data-testid="chat-settings-panel"
+        aria-label="Session settings"
+        className="max-h-[40vh] overflow-y-auto border-b border-border px-2 py-3"
+      >
+        {body}
+      </section>
+    );
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        ref={dialog}
+        data-testid="chat-config-dialog"
+        className="w-[calc(100%-1rem)]"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          const control = Array.from(
+            dialog.current?.querySelectorAll<HTMLElement>(
+              "select:not(:disabled), textarea:not(:disabled), input:not(:disabled)",
+            ) ?? [],
+          ).find((element) => element.getClientRects().length > 0);
+          (control ?? dialog.current)?.focus();
+        }}
+      >
+        <DialogTitle>Session settings</DialogTitle>
+        <DialogDescription className="sr-only">Configure this session</DialogDescription>
+        {body}
       </DialogContent>
     </Dialog>
   );

@@ -83,7 +83,7 @@ import {
   retireChatFinishedNotifications,
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
-import { LIVE_CHAT_ID } from "../session-watcher.js";
+import { discoverNativeSession, LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
@@ -916,7 +916,31 @@ app.openapi(
       )
         throw new ValidationError("Package installation cannot bypass protected workspace rules");
       thread.cwd = await installPackageForChat(setup, host);
-    } else thread = await newThread(undefined, undefined, body.sourceSessionId);
+    } else {
+      const resumed = await newThread(undefined, undefined, body.sourceSessionId);
+      const candidates = resumed.runtimeId
+        ? store()
+            .byRuntime(resumed.backend, resumed.host, resumed.runtimeId)
+            .filter((item) => item.config.agent === resumed.config.agent)
+        : [];
+      const existing = candidates.find((item) => !item.sourceId) ?? candidates[0];
+      if (existing) {
+        if (
+          threadRun(existing.id) ||
+          (existing.runtimeId &&
+            active.has(turnKey(existing.host, existing.backend, existing.runtimeId)))
+        )
+          throw new ConflictError("Wait for the agent to finish before resuming.");
+        thread = existing;
+        if (resumed.transcriptMark && resumed.transcriptMark !== existing.transcriptMark) {
+          thread.messages = resumed.messages;
+          thread.importedMessages = resumed.importedMessages;
+          thread.historyBefore = resumed.historyBefore;
+          thread.transcriptMark = resumed.transcriptMark;
+        }
+        thread.sourceId = body.sourceSessionId;
+      } else thread = resumed;
+    }
     store().save(thread);
     return c.json(thread);
   },
@@ -1593,6 +1617,14 @@ async function beginTurn(
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
       await run.session?.close().catch(() => {});
+      if (!mock && thread.runtimeId && ["codex", "claude"].includes(thread.config.agent)) {
+        try {
+          if (thread.host || !(await nativeSource(thread)))
+            await discoverNativeSession(thread.config.agent, thread.runtimeId, thread.host);
+        } catch {
+          logger.warn("Native chat session discovery failed", { runId });
+        }
+      }
       thread.messages.push(assistant);
       if (synced) {
         const mark = await transcriptMark(thread).catch(() => null);
