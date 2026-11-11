@@ -187,7 +187,7 @@ test("queued attachments remain bound to their message and can warn before losin
   }
 });
 
-test("oversized files preserve the draft and an admission error restores selected files", async ({
+test("oversized files preserve the draft and an admission error keeps files with the queued message", async ({
   page,
 }) => {
   await gotoView(page, "tasks");
@@ -203,10 +203,26 @@ test("oversized files preserve the draft and an admission error restores selecte
   await page
     .getByTestId("chat-file-input")
     .setInputFiles({ name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("keep") });
-  await page.route("**/api/chat/uploads", (route) =>
-    route.fulfill({ status: 400, json: { error: "Upload folder is not writable" } }),
-  );
+  let uploads = 0;
+  let resent: Buffer | null = null;
+  await page.route("**/api/chat/uploads", async (route) => {
+    uploads++;
+    if (uploads === 1)
+      return route.fulfill({ status: 400, json: { error: "Upload folder is not writable" } });
+    resent = route.request().postDataBuffer();
+    return route.fallback();
+  });
   await page.getByTestId("chat-send-button").click();
   await expect(page.getByTestId("chat-panel")).toContainText("Upload folder is not writable");
-  await expect(page.getByTestId("chat-attachments")).toContainText("keep.txt");
+  // The rejected send returns to the queue with its file attached; forcing it
+  // re-uploads the same file instead of losing it.
+  await expect(page.getByTestId("chat-pending-count")).toContainText("Paused");
+  if ((await page.getByTestId("chat-message-queue").getAttribute("open")) === null)
+    await page.getByTestId("chat-queue-toggle").click();
+  await expect(page.getByTestId("chat-queued-content")).toContainText("Keep my draft");
+  await page.getByTestId("chat-queued-force").click();
+  await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
+  await expect(page.getByTestId("chat-message-content").last()).toContainText("Keep my draft");
+  expect(uploads).toBe(2);
+  expect(resent?.toString("utf8")).toContain("keep.txt");
 });
