@@ -16,6 +16,7 @@ bun.lockb
 .worktrees/
 .examples
 .claude
+.qwen
 .agents/*
 !.agents/skills/
 .agents/skills/*

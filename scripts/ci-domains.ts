@@ -22,6 +22,7 @@ const SKIP_DIRECTORIES = new Set([
   ".git",
   ".orc",
   ".claude",
+  ".qwen",
   ".demo",
   ".examples",
   ".temp",
