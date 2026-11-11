@@ -171,10 +171,9 @@ first. The handoff records a particular run; this document is the reusable proce
    recovery material and credentials private. Do not silently republish an immutable
    version. Keep concise verification and failure evidence in the handoff/logs.
 
-8. **Prune old release backups after successful verification.** Default retention
-   is the newest verified backup for each of the two most recent distinct release
-   versions, separately for the PC and each lab installation. This retains the
-   current pre-upgrade recovery point and the preceding release's recovery point.
+8. **Prune old release backups after successful verification.** Retention is one
+   backup: the newest verified pre-upgrade backup, separately for the PC and each lab
+   installation.
    After all installation, auth and data checks pass, remove older release backup
    folders, superseded same-release duplicates and failed-attempt archives. Preserve
    useful failure diagnostics in the existing release log before retiring a failed
