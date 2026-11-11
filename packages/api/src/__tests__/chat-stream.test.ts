@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type ChangeResource, changes } from "@orc/core/changes";
 import { globalConfigPath, resetConfig } from "@orc/core/config";
 import { initializeAgentPreferences } from "@orc/core/provider-service";
 import type { createApp } from "../server.js";
@@ -130,5 +131,64 @@ describe("/chat SSE proxy buffering", () => {
     expectUnbuffered(live);
     await live.body?.cancel();
     while (!(await reader.read()).done) {}
+  });
+});
+
+async function threadOf(res: Response): Promise<string> {
+  const text = await res.text();
+  for (const line of text.split("\n").filter((l) => l.startsWith("data:"))) {
+    const event = JSON.parse(line.slice(5)) as { type: string; thread?: { id: string } };
+    if (event.type === "thread" && event.thread) return event.thread.id;
+  }
+  throw new Error("No thread event");
+}
+
+describe("/chat/stream client message id", () => {
+  test("stores the client id on the user message and rejects a repeated send", async () => {
+    const clientMessageId = crypto.randomUUID();
+    const first = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: AUTH,
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Reply with exactly: FIRST." }],
+        clientMessageId,
+      }),
+    });
+    expect(first.status).toBe(200);
+    const threadId = await threadOf(first);
+    const thread = (await (
+      await app.request(`/api/chat/threads/${threadId}`, { headers: AUTH })
+    ).json()) as { messages: { id: string; role: string }[] };
+    expect(thread.messages.find((message) => message.role === "user")?.id).toBe(clientMessageId);
+
+    const repeat = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: AUTH,
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Reply with exactly: FIRST." }],
+        threadId,
+        clientMessageId,
+      }),
+    });
+    expect(repeat.status).toBe(409);
+  });
+
+  test("announces a starting turn so other clients refresh", async () => {
+    const seen: ChangeResource[] = [];
+    const unsubscribe = changes.subscribe(({ resources }) => seen.push(...resources));
+    try {
+      const res = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify({ messages: [{ role: "user", content: "reply after 300ms" }] }),
+      });
+      expect(res.status).toBe(200);
+      const reader = res.body?.getReader();
+      await reader?.read();
+      expect(seen).toContain("sessions");
+      while (reader && !(await reader.read()).done) {}
+    } finally {
+      unsubscribe();
+    }
   });
 });
