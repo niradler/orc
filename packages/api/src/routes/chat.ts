@@ -95,6 +95,10 @@ import { prepareSessionDirectory } from "../terminals/session-dir.js";
 
 const logger = createLogger("api:chat");
 
+// Browser suites chat through a mock that never launches a provider, so an
+// installed-but-disabled agent profile must not block the turn.
+const chatMockEnabled = () => process.env.ORC_E2E_CHAT_MOCK === "1";
+
 function expandChatInput(input: string, projectId: string | null): string {
   if (input.trim() === "/compact") return "/compact";
   const prompts = new McpPromptStore(getSqlite());
@@ -502,7 +506,7 @@ async function newThread(
   },
   providerId?: string,
 ): Promise<ChatThread> {
-  const config = providerChatDefaults(providerId, agent);
+  const config = providerChatDefaults(providerId, agent, chatMockEnabled());
   if (agent) config.agent = agent;
   if (model !== undefined) config.model = model;
   const host = launch ? selectedTerminalHost(loadConfig(), launch.host) : resolveExecHost();
@@ -1281,7 +1285,7 @@ async function beginTurn(
     throw new ConflictError("This session is already responding.");
   if (runs.size >= 4)
     throw new ConflictError("All chat workers are busy. Try again when a response finishes.");
-  const mock = process.env.ORC_E2E_CHAT_MOCK === "1";
+  const mock = chatMockEnabled();
   const backend = createBackend(thread.backend);
   active.add(key);
   const runId = crypto.randomUUID();

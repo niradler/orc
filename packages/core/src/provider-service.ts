@@ -194,6 +194,7 @@ export function providerProcessEnvironment(
 export function providerChatDefaults(
   providerId?: string,
   agent?: string,
+  allowDisabled = false,
 ): ReturnType<typeof ChatSettingsSchema.parse> {
   const config = loadConfig();
   const base = ChatSettingsSchema.parse(config.preferences.chat ?? {});
@@ -204,7 +205,7 @@ export function providerChatDefaults(
   const profile = providerForAgent(
     selectedAgent,
     id,
-    !providerId && !agent && !saved.instances.some((item) => item.enabled),
+    allowDisabled || (!providerId && !agent && !saved.instances.some((item) => item.enabled)),
   );
   if (!profile) return { ...base, agent: selectedAgent };
   const agentOptions = config.providers ? {} : { ...base.agentOptions };
