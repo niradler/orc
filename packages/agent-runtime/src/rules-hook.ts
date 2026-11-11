@@ -63,28 +63,11 @@ export async function sessionStartRuleContext(
     guard.builtinActions === false
       ? guard.evaluate(event)
       : await runRuleBuiltinActions(event, guard.evaluate(event));
-  const pending =
-    result.decision === "deny" ? null : await pendingSessionMessages("claude", sessionId);
-  if (pending) result.context.push(pending.context);
-  try {
-    ruleHookOutput("claude", event, result);
-  } catch (error) {
-    pending?.interrupt("The hook could not return the message to the agent");
-    throw error;
-  }
-  pending?.deliver();
+  ruleHookOutput("claude", event, result);
   return [
     ...result.context,
     ...(result.action_errors ?? []).map((error) => `${error.rule_id}: ${error.reason}`),
   ].join("\n");
-}
-
-/** Inject queued session messages without enabling the rules engine. */
-export async function sessionMessagesContext(sessionId: string | undefined): Promise<string> {
-  const pending = await pendingSessionMessages("claude", sessionId);
-  if (!pending) return "";
-  pending.deliver();
-  return pending.context;
 }
 
 export function createSessionMessagesHook(sessionId: string | undefined): HookCallback {

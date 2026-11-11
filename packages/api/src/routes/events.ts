@@ -1,7 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { type ChangeResource, changes } from "@orc/core/changes";
-import { streamSSE } from "hono/streaming";
 import { createRouter } from "../lib/router.js";
+import { unbufferedSSE } from "../lib/sse.js";
 import { retainChangeSources } from "../realtime/sources.js";
 
 const app = createRouter();
@@ -20,9 +20,7 @@ app.openapi(
     },
   }),
   (c) => {
-    c.header("Cache-Control", "no-cache, no-transform");
-    c.header("X-Accel-Buffering", "no");
-    return streamSSE(c, async (stream) => {
+    return unbufferedSSE(c, async (stream) => {
       const release = retainChangeSources();
       const pending = new Set<ChangeResource>();
       let wake: (() => void) | undefined;

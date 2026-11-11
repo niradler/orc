@@ -20,6 +20,7 @@ describe("shared resource event stream", () => {
     const second = await req(app, "GET", "/events");
     expect(first.headers.get("content-type")).toContain("text/event-stream");
     expect(first.headers.get("x-accel-buffering")).toBe("no");
+    expect(first.headers.get("cache-control")).toBe("no-cache, no-transform");
     if (!first.body || !second.body) throw new Error("Missing SSE response body");
     const readers = [first.body.getReader(), second.body.getReader()];
     const decode = (value: Uint8Array | undefined): string => new TextDecoder().decode(value);
