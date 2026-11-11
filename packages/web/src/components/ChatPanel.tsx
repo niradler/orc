@@ -493,7 +493,9 @@ export function ChatPanel({
               </button>
             </ActionHelp>
           )}
-          <AgentNotificationBell />
+          {/* The workspace header owns the bell while the side panel is docked;
+              only show it here when this panel replaces that header. */}
+          {(fullscreen || embedded) && <AgentNotificationBell />}
           <ActionHelp label="Close chat">
             <button
               type="button"

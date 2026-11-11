@@ -123,7 +123,10 @@ for (const width of [320, 390, 1440]) {
         await page.keyboard.press("Escape");
         await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
         await expect(input).toHaveValue("Picker draft");
-        await page.getByTestId("chat-panel").getByTestId("notification-bell").click();
+        // With the side chat docked, the workspace header owns the only bell.
+        if (width === 1440)
+          await expect(page.locator('[data-testid="notification-bell"]:visible')).toHaveCount(1);
+        await page.locator('[data-testid="notification-bell"]:visible').last().click();
         await expect(page.getByTestId("notification-menu")).toBeVisible();
         const messages = page.getByTestId("chat-messages").filter({ visible: true });
         const outside = await messages.boundingBox();
