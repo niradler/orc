@@ -1333,13 +1333,18 @@ export async function listHostFiles(
       const full = join(directory, entry.name);
       if (entry.isDirectory()) visit(full);
       else if (entry.isFile()) {
-        const stat = statSync(full);
-        files.push({
-          path: full,
-          size: stat.size,
-          mtimeMs: stat.mtimeMs,
-          birthtimeMs: stat.birthtimeMs || stat.ctimeMs,
-        });
+        try {
+          const stat = statSync(full);
+          files.push({
+            path: full,
+            size: stat.size,
+            mtimeMs: stat.mtimeMs,
+            birthtimeMs: stat.birthtimeMs || stat.ctimeMs,
+          });
+        } catch {
+          // Agents rotate transcripts mid-scan; a file deleted after readdir is skipped,
+          // not fatal (same as the remote list helper).
+        }
       }
     }
   };
