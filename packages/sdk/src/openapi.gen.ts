@@ -10775,7 +10775,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -10921,7 +10921,7 @@ export interface paths {
                                         kind: "event";
                                         enabled: boolean;
                                         scope: {
-                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                             events: string[];
                                         };
                                         filter: {
@@ -11090,7 +11090,7 @@ export interface paths {
                                 kind: "event";
                                 enabled: boolean;
                                 scope: {
-                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                     events: string[];
                                 };
                                 filter: {
@@ -11209,7 +11209,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -11362,7 +11362,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -17451,6 +17451,404 @@ export interface paths {
                             expires_at: string;
                         };
                     };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Queued and recently delivered messages for a live or idle session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message inbox */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            messages: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /** Queue a message for a live or idle session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        body: string;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued message and its target */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            };
+                            target: {
+                                session_id: string;
+                                backend: string;
+                                status: string;
+                                /** @enum {string} */
+                                delivery: "hook" | "resume" | "unsupported";
+                            };
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description A safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a message from an agent session; pass X-ORC-Session for sender identity */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        backend?: string;
+                        body: string;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued message and its target */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            };
+                            target: {
+                                session_id: string;
+                                backend: string;
+                                status: string;
+                                /** @enum {string} */
+                                delivery: "hook" | "resume" | "unsupported";
+                            };
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description A safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a queued session message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder a queued session message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        direction: "up" | "down";
+                    };
+                };
+            };
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };

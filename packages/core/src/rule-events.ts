@@ -1,4 +1,4 @@
-export type RuleHookBackend = "claude" | "cursor" | "gemini" | "codex";
+export type RuleHookBackend = "claude" | "cursor" | "gemini" | "codex" | "pi";
 export type RuleEventCapability = {
   native: string;
   event: string;
@@ -151,6 +151,21 @@ export const RULE_EVENT_ADAPTERS: Record<RuleHookBackend, RuleEventCapability[]>
     },
     ["PreToolUse"],
     ["PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SubagentStart"],
+  ),
+  pi: events(
+    {
+      tool_call: "pre_tool",
+      tool_result: "post_tool",
+      input: "prompt_submit",
+      session_start: "session_start",
+      session_shutdown: "session_end",
+      session_before_compact: "pre_compact",
+      session_compact: "post_compact",
+      agent_end: "stop",
+    },
+    ["tool_call", "input"],
+    ["tool_call", "tool_result", "input", "session_start", "session_compact"],
+    ["tool_call"],
   ),
 };
 

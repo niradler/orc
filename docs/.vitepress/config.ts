@@ -20,6 +20,7 @@ const sidebar = [
       { text: "MCP", link: "/docs/mcp" },
       { text: "REST API", link: "/docs/api" },
       { text: "Skills", link: "/docs/skills" },
+      { text: "Pi and porc", link: "/docs/pi" },
     ],
   },
   {
