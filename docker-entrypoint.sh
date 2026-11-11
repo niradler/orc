@@ -23,22 +23,34 @@ if [ -n "${ORC_SSH_SOURCE:-}" ] && [ -d "$ORC_SSH_SOURCE" ]; then
   find "$ssh_dir" -type f -name '*.pub' -exec chmod 644 {} \;
 fi
 
-# Older images kept the database, config and secret key in ~/.orc and used
-# ORC_HOME only for daemon files. Adopt that state into the data root once, so
-# an upgraded container keeps its projects, settings and encrypted secrets.
-legacy_home="/home/bun/.orc"
-if [ -n "${ORC_HOME:-}" ] && [ "$ORC_HOME" != "$legacy_home" ] && [ -d "$legacy_home" ]; then
+# Older images kept the database, config and secret key in $HOME/.orc and used
+# ORC_HOME only for daemon files. Adopt that state into the data root once; a
+# failed move stops startup instead of opening an empty database.
+adopt_legacy() {
+  legacy=$1
+  if [ -z "${ORC_HOME:-}" ] || [ "$ORC_HOME" = "$legacy" ] || [ ! -d "$legacy" ]; then
+    return 0
+  fi
   install -d "$ORC_HOME"
-  for name in config.json secret.key orc.db orc.db-wal orc.db-shm; do
-    if [ -e "$legacy_home/$name" ] && [ ! -e "$ORC_HOME/$name" ]; then
-      mv "$legacy_home/$name" "$ORC_HOME/$name" ||
-        printf 'orc: could not move %s/%s to %s\n' "$legacy_home" "$name" "$ORC_HOME" >&2
+  if [ -e "$legacy/orc.db" ] && [ ! -e "$ORC_HOME/orc.db" ]; then
+    for name in orc.db orc.db-wal orc.db-shm; do
+      [ -e "$legacy/$name" ] || continue
+      mv "$legacy/$name" "$ORC_HOME/$name" || {
+        printf 'orc: could not move %s/%s to %s; refusing to start\n' "$legacy" "$name" "$ORC_HOME" >&2
+        exit 1
+      }
+    done
+  fi
+  for name in config.json secret.key knowledge; do
+    if [ -e "$legacy/$name" ] && [ ! -e "$ORC_HOME/$name" ]; then
+      mv "$legacy/$name" "$ORC_HOME/$name" || {
+        printf 'orc: could not move %s/%s to %s; refusing to start\n' "$legacy" "$name" "$ORC_HOME" >&2
+        exit 1
+      }
     fi
   done
-  if [ -d "$legacy_home/knowledge" ] && [ ! -e "$ORC_HOME/knowledge" ]; then
-    mv "$legacy_home/knowledge" "$ORC_HOME/knowledge" ||
-      printf 'orc: could not move %s/knowledge to %s\n' "$legacy_home" "$ORC_HOME" >&2
-  fi
-fi
+}
+adopt_legacy "${HOME:-/home/bun}/.orc"
+adopt_legacy /home/bun/.orc
 
 exec tini -- "$@"
