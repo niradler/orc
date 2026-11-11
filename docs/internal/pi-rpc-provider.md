@@ -15,7 +15,12 @@ the same UUID and the final completed model reply recalled the native conversati
 Reload, 1440px/390px layouts and zero page errors verified. API auth: anonymous 401,
 authenticated 200. No credentials changed, no model/MCP fixture in this live flow.
 Evidence: output/playwright/pi-live/result.json and desktop.png/phone.png (local, ignored).
-Full ci:full and final review pending at this checkpoint. SSH remains unverified.
+Full-gate and final delivery results are recorded on PR #254 and in the local topic
+handoff. SSH remains unverified. The first full gate exposed eight browser failures:
+chat-redesign's fixture inherited Codex disabled by chat-options, and its default-model
+selector also matched a native model ID. The fixture now enables its required agents,
+asserts setup/restore responses, restores prior preferences and targets Agent default
+unambiguously. The two files pass together (10 tests), preserving all original assertions.
 
 Pi external sessions have no owner lifecycle registration: shown ended; close the native
 client before resuming to avoid concurrent writers. Custom --session-dir outside discovered
