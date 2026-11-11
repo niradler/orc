@@ -101,10 +101,7 @@ export default function App() {
   }
   function openChatPage(): void {
     if (chatFullscreen) return;
-    navigate(
-      { pathname: "/chat", search: chatPageSearch(), hash: window.location.hash },
-      { state: { chatSource: `${window.location.pathname}${window.location.search}` } },
-    );
+    navigate({ pathname: "/chat", search: chatPageSearch(), hash: window.location.hash });
   }
   function openChat(): void {
     if (chatFullscreen) return;
@@ -112,6 +109,7 @@ export default function App() {
     else openChatPage();
   }
   function minimizeChat(): void {
+    // Only a redirect that replaced its source records it; a pushed chat page closes through history.
     const state = window.history.state as { usr?: { chatSource?: unknown } } | null;
     const source = state?.usr?.chatSource;
     if (typeof source === "string" && source.startsWith("/") && !source.startsWith("/chat")) {
@@ -121,8 +119,8 @@ export default function App() {
     const steps = sessionHomeExitSteps();
     if (steps > 0) navigate(-steps);
     else {
-      const project = searchParams.get("project") ?? projectId;
-      navigate({ pathname: "/activity", search: `project=${project}` }, { replace: true });
+      const search = new URLSearchParams({ project: searchParams.get("project") ?? projectId });
+      navigate({ pathname: "/activity", search: search.toString() }, { replace: true });
     }
   }
   function setProjectId(nextProjectId: string): void {

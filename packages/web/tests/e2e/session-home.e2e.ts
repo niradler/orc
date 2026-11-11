@@ -24,7 +24,10 @@ const row = (list: ReturnType<Page["getByTestId"]>, id: string) =>
  *  would then cover the chat header's own controls. */
 async function closeMobileNav(page: Page) {
   await page.keyboard.press("Escape");
+  await expect(page.getByTestId("mobile-nav-drawer")).toBeHidden();
+  await expect(page.getByTestId("mobile-nav-open")).toBeFocused();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect(page.getByTestId("action-help-content")).toHaveCount(0);
 }
 
 for (const width of [1440, 390])
@@ -322,6 +325,19 @@ test("Exit full screen returns to its source after Back and Forward", async ({ p
   await expect(page.getByTestId("session-home")).toBeVisible();
   await page.getByTestId("chat-fullscreen-button").filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/sessions\?project=all$/);
+});
+
+test("closing the phone chat page leaves history as it was before opening it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockSessionHome(page);
+  await page.goto("/activity?project=all");
+  await page.goto("/tasks?project=all");
+  await page.getByTestId("chat-open-button").click();
+  await expect(page.getByTestId("session-home")).toBeVisible();
+  await page.getByRole("button", { name: "Close chat", exact: true }).click();
+  await expect(page).toHaveURL(/\/tasks\?project=all$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/activity\?project=all$/);
 });
 
 test("breadcrumb uses recorded project ownership and unlinked terminal state stays unknown", async ({
