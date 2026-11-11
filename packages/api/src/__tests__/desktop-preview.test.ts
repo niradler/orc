@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatThreadSchema } from "@orc/core/chat";
@@ -140,7 +140,7 @@ describe("desktop preview API", () => {
   const session = crypto.randomUUID();
   beforeAll(async () => {
     app = setupTestApp();
-    directory = await mkdtemp(join(tmpdir(), "orc-preview-"));
+    directory = await realpath(await mkdtemp(join(tmpdir(), "orc-preview-")));
     workspace = join(directory, "workspace");
     await mkdir(workspace);
     const initialized = Bun.spawnSync(["git", "init", "--quiet", directory], { timeout: 10000 });

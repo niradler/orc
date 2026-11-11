@@ -506,6 +506,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -741,6 +754,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -918,6 +944,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -1147,6 +1186,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -1297,6 +1349,19 @@ export interface paths {
                         agentOptions: {
                             [key: string]: {
                                 /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
@@ -1372,6 +1437,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -1687,6 +1765,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -1899,6 +1990,19 @@ export interface paths {
                         permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
                         agentOptions?: {
                             [key: string]: {
+                                /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
                                 /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
@@ -6106,6 +6210,19 @@ export interface paths {
                                 model: string;
                                 options?: {
                                     /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
@@ -6176,6 +6293,19 @@ export interface paths {
                             model?: string;
                             options?: {
                                 /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
@@ -6240,6 +6370,19 @@ export interface paths {
                                 /** @default  */
                                 model: string;
                                 options?: {
+                                    /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
                                     /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
@@ -6531,6 +6674,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -6631,6 +6787,19 @@ export interface paths {
                             agentOptions?: {
                                 [key: string]: {
                                     /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
@@ -6720,6 +6889,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -10593,7 +10775,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -10739,7 +10921,7 @@ export interface paths {
                                         kind: "event";
                                         enabled: boolean;
                                         scope: {
-                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                             events: string[];
                                         };
                                         filter: {
@@ -10908,7 +11090,7 @@ export interface paths {
                                 kind: "event";
                                 enabled: boolean;
                                 scope: {
-                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                     events: string[];
                                 };
                                 filter: {
@@ -11027,7 +11209,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -11180,7 +11362,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -14219,7 +14401,7 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global" | "all";
-                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task";
+                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task" | "job" | "rule" | "terminal" | "auth";
                     session_id?: string;
                     since?: number | null;
                     limit?: number;
@@ -17278,6 +17460,404 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Queued and recently delivered messages for a live or idle session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message inbox */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            messages: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /** Queue a message for a live or idle session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        body: string;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued message and its target */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            };
+                            target: {
+                                session_id: string;
+                                backend: string;
+                                status: string;
+                                /** @enum {string} */
+                                delivery: "hook" | "resume" | "unsupported";
+                            };
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description A safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a message from an agent session; pass X-ORC-Session for sender identity */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        backend?: string;
+                        body: string;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued message and its target */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            };
+                            target: {
+                                session_id: string;
+                                backend: string;
+                                status: string;
+                                /** @enum {string} */
+                                delivery: "hook" | "resume" | "unsupported";
+                            };
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description A safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a queued session message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder a queued session message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        direction: "up" | "down";
+                    };
+                };
+            };
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -17799,6 +18379,10 @@ export interface paths {
                         live_session_id?: string;
                         /** @description Start an agent in a new git worktree of the cwd's repo */
                         worktree?: boolean;
+                        /** @description Project whose workspace environment and ports this terminal uses */
+                        project_id?: string;
+                        /** @description Run the project's dev script in a shell and publish the first printed URL as a preview */
+                        dev?: boolean;
                         setup?: {
                             name: string;
                             packages: string[];
@@ -18104,6 +18688,45 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List prepared workspaces with setup status, port block and preview URL */
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                    path?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Workspaces */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspacePage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -19655,6 +20278,18 @@ export interface components {
             obsidian_path: string | null;
             max_workers: number | null;
             upload_directory: string | null;
+            workspace: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -19701,6 +20336,18 @@ export interface components {
             obsidian_path?: string;
             max_workers?: number;
             upload_directory?: string | null;
+            workspace?: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
         };
         UpdateProject: {
             name?: string;
@@ -19740,6 +20387,18 @@ export interface components {
             obsidian_path?: string;
             max_workers?: number | null;
             upload_directory?: string | null;
+            workspace?: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
         };
         ProjectComment: {
             id: string;
@@ -20451,6 +21110,19 @@ export interface components {
                 backend: string;
                 options?: {
                     /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
+                    /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
                         /** @enum {string} */
@@ -20560,6 +21232,19 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
@@ -20674,6 +21359,19 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
@@ -20805,8 +21503,33 @@ export interface components {
             exit_code: number | null;
             pid: number | null;
             live_session_id: string | null;
+            project_id: string | null;
+            worktree_path: string | null;
+            dev: boolean;
+            preview_url: string | null;
             /** Format: date-time */
             created_at: string;
+        };
+        WorkspacePage: {
+            workspaces: components["schemas"]["Workspace"][];
+        };
+        Workspace: {
+            worktree_path: string;
+            project_id: string | null;
+            repo_root: string | null;
+            git_branch: string | null;
+            host: string | null;
+            /** @enum {string} */
+            setup_status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+            setup_output: string | null;
+            setup_started_at: number | null;
+            setup_ended_at: number | null;
+            port_base: number | null;
+            port_count: number | null;
+            preview_url: string | null;
+            dev_terminal_id: string | null;
+            created_at: number;
+            updated_at: number;
         };
         Worktree: {
             path: string;

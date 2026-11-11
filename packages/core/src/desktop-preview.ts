@@ -16,6 +16,20 @@ export function previewWebUrl(value: string): string | null {
   }
 }
 
+export function typedWebUrl(value: string): { url: string; fallback: string | null } | null {
+  const input = value.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(input)) {
+    const url = previewWebUrl(input);
+    return url ? { url, fallback: null } : null;
+  }
+  const url = previewWebUrl(`https://${input}`);
+  return url ? { url, fallback: previewWebUrl(`http://${input}`) } : null;
+}
+
+export function httpFallbackAllowed(code: number): boolean {
+  return code !== -3 && (code > -200 || code < -299);
+}
+
 const sessionId = z.string().min(1).max(200);
 export const PreviewOpenSchema = z
   .object({

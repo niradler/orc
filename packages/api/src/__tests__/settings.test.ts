@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { globalConfigPath, resetConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { ProviderSettingsSchema } from "@orc/core/providers";
-import { closeDb, createTestDb } from "@orc/db/client";
+import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth";
 import { mcpRouter } from "../routes/mcp";
@@ -414,4 +414,26 @@ test("named provider API authenticates, masks secrets and preserves them on edit
     writeFileSync(globalConfigPath(), previous);
     resetConfig();
   }
+});
+
+test("should audit changed preferences with the actor and omit unchanged ones", async () => {
+  const patch = (body: unknown) =>
+    app.request("/api/settings", {
+      method: "PATCH",
+      headers: { ...headers, "X-Orc-Actor-Name": "ui-test" },
+      body: JSON.stringify(body),
+    });
+  expect((await patch({ terminal_font: "Audit Mono" })).status).toBe(200);
+  expect((await patch({ terminal_font: "Audit Mono" })).status).toBe(200);
+  const rows = getSqlite()
+    .query<{ actor: string; snapshot: string }, []>(
+      "SELECT actor, snapshot FROM audit_log WHERE action='settings.preferences_changed' AND actor='ui-test'",
+    )
+    .all();
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.actor).toBe("ui-test");
+  expect(JSON.parse(rows[0]?.snapshot ?? "{}")).toMatchObject({
+    changed: ["terminal_font"],
+    values: { terminal_font: { after: "Audit Mono" } },
+  });
 });

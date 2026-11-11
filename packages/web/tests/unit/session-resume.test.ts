@@ -31,6 +31,7 @@ describe("agent session actions", () => {
     ["cursor-agent", "agent --resume session-id"],
     ["gemini", "gemini --resume session-id"],
     ["opencode", "opencode --session session-id"],
+    ["pi", "pi --session session-id"],
   ])("should offer the native resume command for %s", (agent, command) => {
     expect(resumeCommand({ ...session, agent: agent as string })).toBe(command);
     expect(resumeCommand({ ...session, agent: agent as string, session_id: null })).toBeNull();

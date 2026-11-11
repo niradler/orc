@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
@@ -48,6 +49,7 @@ import {
   providerChatDefaults,
   providerForAgent,
   providerRevision,
+  readProviderSettings,
 } from "@orc/core/provider-service";
 import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
@@ -90,6 +92,7 @@ import { activeTurns, registerChatTurns, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
+import { workspaceLaunch } from "../workspaces/service.js";
 
 const logger = createLogger("api:chat");
 
@@ -300,7 +303,7 @@ app.openapi(
         ? resolveExecHost()
         : execHostFor(requestedHost === "__local__" ? null : requestedHost);
     const cwd =
-      thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
+      thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : homedir());
     const key = JSON.stringify([
       agent,
       host.kind === "ssh" ? host.alias : null,
@@ -511,7 +514,7 @@ async function newThread(
       )
     : host.kind === "ssh"
       ? await hostHome(host)
-      : process.cwd();
+      : homedir();
   const thread: ChatThread = {
     id: crypto.randomUUID(),
     title: "New chat",
@@ -542,21 +545,24 @@ async function newThread(
       throw new ValidationError("Session has no valid native session identity or working folder.");
     await getHandoffService().verifyResume(source.id);
     const runtime = hostRuntime(execHostFor(source.execution_host ?? null));
-    if (
-      source.backend !== "codex" &&
-      (source.status === "running" || source.status === "idle") &&
-      source.pid &&
-      (await runtime.processAlive(source.pid))
-    )
-      throw new ConflictError(
-        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
-      );
-    if (source.backend === "codex" && (await codexWriterOwned(runtime, source.runtime_session_id)))
-      throw new ConflictError("End the original agent session before resuming it in chat.");
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = agent;
-    thread.config.providerId = agent;
+    if (agent === "pi") {
+      const settings = readProviderSettings();
+      const candidates = settings.providers.filter(
+        (profile) => profile.agent === "pi" && profile.enabled,
+      );
+      const selected =
+        candidates.find((profile) => profile.id === settings.default_provider_id) ??
+        candidates.find((profile) => profile.id === "pi") ??
+        (candidates.length === 1 ? candidates[0] : undefined);
+      if (!selected)
+        throw new ValidationError(
+          "Enable a Pi provider and make it the default when several Pi providers are configured before resuming this session.",
+        );
+      thread.config.providerId = selected.id;
+    } else thread.config.providerId = agent;
     thread.config.agentOptions = {};
     thread.config.model = model ?? source.model ?? "";
     thread.backend = chatBackendFor(agent);
@@ -1271,7 +1277,7 @@ async function beginTurn(
   if (input.trim() === "/compact") {
     if (!thread.runtimeId)
       throw new ValidationError("Start a conversation before compacting context.");
-    if (thread.backend !== "claude" && thread.backend !== "codex-cli")
+    if (thread.backend !== "claude" && thread.backend !== "codex-cli" && thread.backend !== "pi")
       throw new ValidationError("This integration does not support manual context compaction.");
     const options = thread.config.agentOptions.claude;
     if (
@@ -1410,7 +1416,13 @@ async function beginTurn(
         thread.runtimeId ??= `mock-${thread.id}`;
         completed = !stopped;
       } else {
+        const projectWorkspace = thread.projectId
+          ? await workspaceLaunch(execHostFor(thread.host), thread.cwd, thread.projectId)
+          : null;
         const opts: SessionOpts = {
+          ...(projectWorkspace && Object.keys(projectWorkspace.env).length
+            ? { env: projectWorkspace.env }
+            : {}),
           providerId: thread.config.providerId,
           toolAllowlist: thread.toolAllowlist,
           chatAgentOptions: thread.config.agentOptions[thread.config.agent],
@@ -1419,7 +1431,7 @@ async function beginTurn(
           cwd: thread.cwd,
           executionHost: thread.host,
           autoApprove: thread.config.autoApprove,
-          permissionMode: ["claude", "codex"].includes(thread.config.agent)
+          permissionMode: ["claude", "codex", "pi"].includes(thread.config.agent)
             ? thread.config.permissionMode
             : undefined,
           model: thread.config.model,
@@ -1447,11 +1459,11 @@ async function beginTurn(
             source &&
             source.backend !== "codex" &&
             source.pid &&
-            (source.status === "running" || source.status === "idle") &&
+            source.status === "running" &&
             (await hostRuntime(execHostFor(source.execution_host ?? null)).processAlive(source.pid))
           )
             throw new ConflictError(
-              "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+              "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
             );
           if (
             thread.config.agent === "codex" &&
@@ -1480,7 +1492,7 @@ async function beginTurn(
         let outputBytes = 0;
         for await (const event of run.session.events()) {
           if (stopped) break;
-          outputBytes += JSON.stringify(event).length;
+          outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
           if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
           if (event.type === "capabilities") {
             thread.capabilities = event.data;

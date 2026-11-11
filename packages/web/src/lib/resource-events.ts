@@ -44,6 +44,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "chat-resume-sessions",
     "chat-resume-archive",
   ],
+  "session-messages": ["sessions"],
   jobs: [
     "jobs",
     "job",
@@ -93,6 +94,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   health: ["health"],
   github: ["github", "git"],
   audit: ["knowledge-audit", "skill-history"],
+  workspaces: ["workspaces", "terminals", "project-summary"],
 };
 
 export function invalidateResources(

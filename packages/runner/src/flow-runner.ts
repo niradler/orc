@@ -19,6 +19,7 @@ import type { EffectiveSkill } from "@orc/db/skill-history";
 import { SkillHistory } from "@orc/db/skill-history";
 import { withTaskAudit } from "@orc/db/task-audit";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
+import { workspaceEnvFor } from "./workspace-env.js";
 
 const logger = createLogger("runner:flow");
 
@@ -1297,6 +1298,8 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
       return false;
     }
   }
+  // Installs the worktree once and hands the node its port block and secrets.
+  const workspace = await workspaceEnvFor(host, cwd, task.project_id);
   const model =
     nodeModel(node, task) ?? (node.agent ? readAgent(node.agent, cwd)?.fields.model : undefined);
 
@@ -1376,6 +1379,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
     executionHost,
     prompt,
     cwd,
+    env: workspace.env,
     ...(model ? { model } : {}),
     ...(prev ? { previousRuntimeSessionId: prev.runtime_session_id } : {}),
     ...(node.agent ? { agentProfile: node.agent } : {}),
@@ -1396,6 +1400,7 @@ async function driveNodeSession(opts: {
   executionHost: string | null;
   prompt: string;
   cwd: string;
+  env?: Record<string, string> | undefined;
   model?: string | undefined;
   previousRuntimeSessionId?: string | undefined;
   agentProfile?: string | undefined;
@@ -1416,6 +1421,7 @@ async function driveNodeSession(opts: {
         cwd: opts.cwd,
         executionHost: opts.executionHost,
         autoApprove: loadConfig().agent_loop.worker_auto_approve,
+        ...(opts.env && Object.keys(opts.env).length ? { env: opts.env } : {}),
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.agentProfile ? { agentProfile: opts.agentProfile } : {}),
       },

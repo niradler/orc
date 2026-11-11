@@ -28,7 +28,7 @@ test("should save an all-agent regex rule and retain its scope/filter/target aft
     await page.getByTestId("rule-filter-value").fill("\\brm\\s+-rf\\b");
     await page.getByTestId("event-rule-save").click();
     await expect(savedRule).toContainText("block-rm-rf");
-    for (const backend of ["claude", "cursor", "gemini", "codex"]) {
+    for (const backend of ["claude", "cursor", "gemini", "codex", "pi"]) {
       const base = {
         id: `probe-${backend}`,
         session_id: "browser",

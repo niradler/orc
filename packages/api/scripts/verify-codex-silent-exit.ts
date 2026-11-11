@@ -165,8 +165,8 @@ try {
       });
     assert.equal(
       (await resume()).status,
-      409,
-      "A stopped DB record must not override a held native writer lock",
+      200,
+      "A held native writer must not stop the transcript from opening in chat",
     );
     keeper.stdin.write("release\n");
     keeper.stdin.end();

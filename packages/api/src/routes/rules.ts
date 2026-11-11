@@ -19,6 +19,7 @@ import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
 import { bodyLimit } from "hono/body-limit";
+import { recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
 import { executeBuiltinRuleAction } from "../rule-builtins.js";
 
@@ -308,6 +309,7 @@ app.openapi(
             backend: "codex",
             interception: "native_hook_requires_install_trust_and_conformance",
           },
+          { backend: "pi", interception: "pi_package_extension" },
           { backend: "other", interception: "unsupported" },
         ],
       },
@@ -344,7 +346,15 @@ app.openapi(
   }),
   (c) => {
     const input = c.req.valid("json");
-    return c.json(controls().activate(input.policy, input.expected_id, input.reason), 201);
+    const revision = controls().activate(input.policy, input.expected_id, input.reason);
+    recordAudit(c, {
+      action: "rule.activated",
+      subject_ids: [revision.id],
+      project_id: revision.project_id,
+      note: input.reason.slice(0, 500),
+      snapshot: { workspace: revision.workspace, previous_id: revision.previous_id },
+    });
+    return c.json(revision, 201);
   },
 );
 app.openapi(
@@ -375,7 +385,15 @@ app.openapi(
   }),
   (c) => {
     const input = c.req.valid("json");
-    return c.json(controls().revert(input.id, input.reason), 200);
+    const revision = controls().revert(input.id, input.reason);
+    recordAudit(c, {
+      action: "rule.reverted",
+      subject_ids: [revision.id],
+      project_id: revision.project_id,
+      note: input.reason.slice(0, 500),
+      snapshot: { workspace: revision.workspace, restored_from: input.id },
+    });
+    return c.json(revision, 200);
   },
 );
 app.openapi(

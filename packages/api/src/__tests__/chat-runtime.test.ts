@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AgentBackend,
@@ -437,7 +437,7 @@ describe("native chat runtime", () => {
     try {
       const store = new RuleStore(getSqlite());
       const policy = {
-        workspace: process.cwd(),
+        workspace: homedir(),
         project_id: null,
         rules: [
           {
@@ -848,9 +848,10 @@ describe("native chat runtime", () => {
     expect((await request("/chat/threads", { sourceSessionId: "source-running" })).status).toBe(
       200,
     );
-    for (const [id, pid] of [
-      ["claude-owned", process.pid],
-      ["claude-stale", 2147483647],
+    for (const [id, pid, status] of [
+      ["claude-owned", process.pid, "running"],
+      ["claude-open-idle", process.pid, "idle"],
+      ["claude-stale", 2147483647, "idle"],
     ] as const) {
       getDb()
         .insert(gateway_sessions)
@@ -858,7 +859,7 @@ describe("native chat runtime", () => {
           id,
           backend: "claude",
           mode: "direct",
-          status: "idle",
+          status,
           pid,
           chat_id: LIVE_CHAT_ID,
           runtime_session_id: id,
@@ -866,12 +867,14 @@ describe("native chat runtime", () => {
         })
         .run();
     }
-    expect((await request("/chat/threads", { sourceSessionId: "claude-owned" })).status).toBe(409);
+    const ownedResponse = await request("/chat/threads", { sourceSessionId: "claude-owned" });
+    expect(ownedResponse.status).toBe(200);
+    const ownedThread = (await ownedResponse.json()) as ChatThread;
     const staleResponse = await request("/chat/threads", { sourceSessionId: "claude-stale" });
     expect(staleResponse.status).toBe(200);
     const staleThread = (await staleResponse.json()) as ChatThread;
     getSqlite()
-      .query("UPDATE gateway_sessions SET pid = ? WHERE id = ?")
+      .query("UPDATE gateway_sessions SET pid = ?, status = 'running' WHERE id = ?")
       .run(process.pid, "claude-stale");
     const apiKey = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY ||= "orc-test-placeholder";
@@ -885,7 +888,45 @@ describe("native chat runtime", () => {
     expect(nowOwned.events).toContainEqual({
       type: "error",
       message:
-        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
+    });
+    const idleOpen = (await (
+      await request("/chat/threads", { sourceSessionId: "claude-open-idle" })
+    ).json()) as ChatThread;
+    const originalClaude = createBackend("claude");
+    const resumed: string[] = [];
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => {
+        resumed.push(id);
+        return session({ id, opts });
+      },
+    }));
+    let idleTurn: Awaited<ReturnType<typeof turn>>, stillOwned: Awaited<ReturnType<typeof turn>>;
+    try {
+      idleTurn = await turn({
+        threadId: idleOpen.id,
+        messages: [{ role: "user", content: "Continue an idle open conversation" }],
+      });
+      stillOwned = await turn({
+        threadId: ownedThread.id,
+        messages: [{ role: "user", content: "Do not take over an open agent" }],
+      });
+    } finally {
+      registerBackend("claude", () => originalClaude);
+    }
+    expect(resumed).toEqual(["claude-open-idle"]);
+    expect(idleTurn.events).not.toContainEqual({
+      type: "error",
+      message:
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
+    });
+    expect(stillOwned.events).toContainEqual({
+      type: "error",
+      message:
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
     });
     expect((await request("/chat/threads", { sourceSessionId: "source-other" })).status).toBe(400);
     getDb()
@@ -945,6 +986,30 @@ describe("native chat runtime", () => {
     expect(stdout).toContain(
       "stopped Codex record rejects a held writer, resumes after release and blocks re-acquisition",
     );
+    // Waits on a Bun child process, which alone can take seconds on Windows.
+  }, 30_000);
+  test("starts a chat without a chosen folder in the home folder, not the server's working directory", async () => {
+    const original = process.cwd();
+    process.chdir("/");
+    const originalClaude = createBackend("claude");
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => session({ id, opts }),
+    }));
+    try {
+      const started = await turn({
+        agent: "claude",
+        messages: [{ role: "user", content: "Start without choosing a folder" }],
+      });
+      const opened = started.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing Claude thread");
+      expect(opened.thread.cwd).toBe(homedir());
+    } finally {
+      registerBackend("claude", () => originalClaude);
+      process.chdir(original);
+    }
   });
   test("requires auth, validates shapes and denies unknown conversations and permission requests", async () => {
     for (const [path, body] of [

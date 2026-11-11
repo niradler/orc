@@ -6,6 +6,7 @@ import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { LIVE_CHAT_ID, oneLine } from "./common.js";
+import { piSessionRoots } from "./pi.js";
 
 export type SearchHit = {
   row: typeof gateway_sessions.$inferSelect;
@@ -45,6 +46,7 @@ async function roots(runtime: HostRuntime): Promise<string[]> {
         join(home, ".codex", "sessions"),
         join(home, ".cursor", "projects"),
         join(home, ".gemini", "tmp"),
+        ...(await piSessionRoots(runtime)),
         join(home, ".orc", "live-sessions", "transcripts"),
       ];
   const present = await Promise.all(

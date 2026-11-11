@@ -443,3 +443,12 @@ test("should not retry unrelated audit or notification constraint failures", () 
   expect(notificationCalls).toBe(1);
   expect(store.list().notifications).toHaveLength(1);
 });
+
+test("should trim the oldest rows beyond the size cap even when none have expired", () => {
+  const { sqlite, audit } = setup();
+  for (let index = 0; index < 5; index++)
+    audit.record({ action: "job.created", subject_ids: [`job-${index}`] });
+  expect(cleanupAuditLog(sqlite, 90, Date.UTC(2026, 0, 1), 10, 3)).toBe(2);
+  expect(audit.list().map((entry) => entry.subject_ids[0])).toEqual(["job-4", "job-3", "job-2"]);
+  expect(cleanupAuditLog(sqlite, 90, Date.UTC(2026, 0, 1), 10, 3)).toBe(0);
+});

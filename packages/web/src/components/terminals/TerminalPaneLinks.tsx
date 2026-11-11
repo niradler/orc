@@ -5,6 +5,7 @@ import {
   CircleX,
   ExternalLink,
   GitPullRequest,
+  Globe,
   ListTodo,
   LoaderCircle,
 } from "lucide-react";
@@ -61,6 +62,20 @@ export function TerminalPaneLinks({ terminal, paneId }: { terminal: Terminal; pa
     "items-center gap-1.5 min-h-8 min-w-0 text-xs text-on-surface-variant hover:text-on-surface";
   return (
     <>
+      {terminal.preview_url && (
+        <a
+          data-testid="pane-linked-preview"
+          href={terminal.preview_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Open preview: ${terminal.preview_url}`}
+          aria-label="Open preview"
+          className={`inline-flex max-w-40 shrink-0 ${linkClass}`}
+        >
+          <Globe size={13} className="shrink-0" />
+          <span className="truncate">Preview</span>
+        </a>
+      )}
       {task && (
         <Link
           data-testid="pane-linked-task"

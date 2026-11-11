@@ -12,6 +12,7 @@ export const ChannelBuiltinCommands = [
   { command: "session", description: "New, list, switch or stop a conversation" },
   { command: "session_new", description: "Start a new conversation" },
   { command: "session_list", description: "Choose a conversation" },
+  { command: "send", description: "Send a message to another live session" },
   { command: "stop", description: "Stop the current turn and queued messages" },
 ] as const;
 export const ChannelCommandsSchema = z

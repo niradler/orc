@@ -5,7 +5,7 @@
 Open **Settings → Providers**. Choose **New provider**, name it (for example,
 **Claude LiteLLM**), select a coding-agent adapter, and configure its connection.
 You can create several providers using the same adapter. Claude Code and Codex
-use native integrations; other coding agents use acpx.
+use native integrations; Pi uses its native RPC interface, OpenCode uses direct ACP, and other coding agents use acpx.
 Field guidance and examples live behind info icons: hover, focus or tap to read them.
 
 Choose an enabled **Default provider** for new chats. Each provider has a default
@@ -24,7 +24,7 @@ Conversations saved before profiles existed remain pinned to their original nati
 [Phone layout](/screens/settings-providers-phone.png) ·
 [Compact context action](/screens/provider-compaction-phone.png)
 
-For Claude, Codex and OpenCode, **Executable path** overrides the local binary for native
+For Claude, Codex, OpenCode and Pi, **Executable path** overrides the local binary for native
 chat, model discovery and provider terminal launches. Enter a path without
 arguments, or leave it blank for the default installation. Paths with spaces and
 `~/` work. SSH uses the remote installation. Changes apply at the next launch;
@@ -53,6 +53,58 @@ together. Drafts survive switching providers and Settings sections. **Use defaul
 clears an executable override; **Discard changes** restores saved values. Failed
 saves retain the draft. Concurrent edits are rejected rather than overwriting
 another device's settings; **Discard draft and reload** loads the saved version.
+
+### Pi
+
+Install [Pi](https://pi.dev/) 1.5.2 or newer on the execution host, with Node.js
+22.19 or newer, and configure its model credentials in Pi. Create a provider in
+**Settings → Providers** and choose **Pi**. Pi is optional and is not enabled by
+default. ORC uses `pi --mode rpc`, preserving Pi's own credentials, extensions,
+skills and session files. An executable override selects the local Pi installation;
+SSH uses the remote installation.
+
+The model picker discovers configured models without an inference turn. Use
+`provider/model` to distinguish identical model IDs from different providers.
+**Chat launch options (JSON)** accepts an object such as:
+
+```json
+{
+  "thinkingLevel": "high",
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "one-at-a-time",
+  "autoCompaction": true,
+  "autoRetry": true
+}
+```
+
+Thinking levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`;
+Pi applies the selected model's limits. Queue modes are `all` or `one-at-a-time`.
+These controls also work as native Pi options for agent jobs using backend `pi`.
+Queue mode, auto-retry and auto-compaction changes are saved to Pi's own settings
+on the execution host, so external Pi sessions use them too. Thinking level is
+scoped to the ORC session. ORC owns transport, session identity, working folder
+and its permission bridge; arbitrary Pi command-line arguments are not accepted.
+
+Pi supports streamed text/thinking and tool results, images on compatible models,
+native session resume, **Send now** steering, cooperative Stop, extension questions,
+permission prompts, live permission changes and `/compact`. Default permissions ask
+before each tool; **Accept edits** allows Pi's edit/write tools, and bypass permits
+all tools. An approval for the session applies to that tool name. This gates Pi's
+tool calls; it is not an operating-system sandbox or a restriction on extension code.
+Plan permissions and ORC tool whitelists are rejected rather than silently ignored.
+
+With ORC tools enabled, ORC registers an authenticated, scoped MCP connection through
+a temporary session extension. It waits for tools to connect and refuses to start
+if the bridge fails. It does not edit `~/.pi/agent/mcp.json` or `.pi/mcp.json`.
+Resume uses Pi's exact native session UUID; missing sessions produce an error
+instead of creating another conversation. Keep the execution host and its
+Pi session directory available for saved conversations.
+
+Pi's terminal-only custom components and editor replacement are not reproduced in
+ORC. Native Pi sessions are discovered and can resume in chat or a terminal; see
+[Live agent sessions](./live-sessions.md) for session directories and provider selection.
+Fork/rollback and native account quota controls are not exposed. Active ORC
+rules that require unavailable interception prevent the session from starting.
 
 ### Bedrock and LiteLLM examples
 
@@ -100,11 +152,51 @@ usage is distinguished from a blocked request. A failed turn holds queued messag
 retry explicitly after access returns. ORC does not switch accounts or schedule
 automatic quota retries.
 
+## Project workspace environment
+
+Open a project and use **Edit → Workspace**, or fill the **Workspace** step while
+creating a project. These settings apply to terminals, flow-node sessions, chat
+turns and job actions that run in that project's folders.
+
+- **Setup script** runs once in each new managed worktree under
+  `.orc/worktrees`, `.claude/worktrees` or `.codex/worktrees`, before the first
+  agent or terminal starts there. ORC runs it with the project's shell on the
+  terminal's host, from the worktree folder. A failed or timed-out script is
+  recorded with its output and the agent still starts. The script does not rerun
+  for an existing worktree, and a project's main checkout is never prepared for
+  you. **Setup timeout** is 900 seconds by default (30–3600).
+- **Dev script** starts with **Start dev server** in the terminal launcher. It
+  opens as a shell terminal in the current folder; the first printed `http(s)`
+  URL becomes the workspace preview link. Loopback hosts such as `0.0.0.0` and
+  `::` are shown as `localhost`, and later URLs in the same terminal are ignored.
+- **Port range** gives each workspace a stable block instead of a single port.
+  The first workspace of a project starts at 3100 with 10 ports unless
+  **Port range start** or **Ports per workspace** is changed (1-100). Later workspaces
+  take the next free block, and blocks never overlap on the same API host, even
+  across projects. Ports already bound on a local host are skipped; SSH hosts
+  cannot be probed, so only ORC's own allocations are avoided there.
+- **Environment** holds extra variables for every launch in the project. Mark
+  sensitive values **Secret** to encrypt them with ORC's machine key; secrets are
+  write-only and read back as empty placeholders. An untouched placeholder keeps
+  the saved value. `ORC_` names are reserved for ORC.
+
+Workspaces export `PORT`, `ORC_PORT`, `ORC_PORT_END`, `ORC_PORT_COUNT` and
+`ORC_PORT_1`…`ORC_PORT_<count>`, plus `ORC_PROJECT_ID` and `ORC_WORKSPACE`
+(`ORC_WORKTREE` only inside a managed worktree). Project environment values are
+added last.
+
+Setup status, ports and the preview link appear in a session's inspector and on a
+task's Git links, and are readable through `GET /api/workspaces`. The preview
+belongs to the workspace path and is cleared when its dev terminal exits. Deleting
+a project removes its workspace rows. Flow nodes run in the task's checkout;
+per-node worktrees are not created yet.
+
 ## Manual context compaction
 
-For an existing idle Claude or Codex chat, choose **Compact context** from session
+For an existing idle Claude, Codex or Pi chat, choose **Compact context** from session
 actions (an icon in the expanded desktop header), or send `/compact`. This uses the
-same native session: Claude's SDK command or Codex's `thread/compact/start` RPC.
+same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, or
+Pi's `compact` RPC.
 Progress, failures and completion use the normal conversation stream and history.
 Running turns, attachments and integrations without native support cannot be
 compacted this way. Keep automatic compaction under the agent's own control;
@@ -160,7 +252,7 @@ Set these server-wide preferences in **Settings → Storage** or the JSON config
 
 All notifications expire, including unresolved requests' alerts. Audit history
 retains the notification title and message independently until the audit event
-expires. Expiry filters apply immediately; the API performs bounded cleanup at
+expires. The audit log is also capped at 200,000 rows, oldest removed first. Expiry filters apply immediately; the API performs bounded cleanup at
 startup and every minute. Freed SQLite pages are reusable but the file may not
 shrink. See [Notifications](./notifications.md).
 

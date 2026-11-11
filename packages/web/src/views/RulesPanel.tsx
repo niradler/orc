@@ -22,7 +22,8 @@ import { EventRuleEditor } from "./EventRuleEditor";
 type Revision = Awaited<ReturnType<typeof api.rules.list>>["history"][number];
 type Rule = RulePolicy["rules"][number];
 const selectClass = "w-full rounded-md border border-control-border bg-background p-2 text-sm";
-const agents = ["claude", "codex", "cursor", "gemini"] as const;
+const agents = ["claude", "codex", "cursor", "gemini", "pi"] as const;
+const hookAgents = agents.filter((agent) => agent !== "pi");
 
 function workspaceKey(value: string): string {
   const path = value.trim().split("\\").join("/");
@@ -494,9 +495,10 @@ export function RulesPanel() {
                 <summary className="cursor-pointer font-medium">Agent connections</summary>
                 <p className="text-xs text-muted-foreground">
                   Claude SDK sessions connect when rule enforcement is enabled. Native agents need
-                  installed, trusted hooks and a supported host.
+                  installed, trusted hooks and a supported host. Pi enforces rules through the
+                  @orc/pi package.
                 </p>
-                {agents.map((agent) => (
+                {hookAgents.map((agent) => (
                   <p key={agent} className="text-xs break-all">
                     <code>
                       orc rules install-hook {agent} --target "

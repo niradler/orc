@@ -86,7 +86,32 @@ async function findTarget(request: HumanRequest): Promise<PushTarget | null> {
   };
 }
 
-async function sessionIdle(target: PushTarget): Promise<boolean> {
+export async function pushTargetForSession(sourceId: string): Promise<PushTarget | null> {
+  const row = await getDb().query.gateway_sessions.findFirst({
+    where: eq(gateway_sessions.id, sourceId),
+  });
+  const agent = row && nativeChatAgent(row.backend);
+  if (
+    !row ||
+    !agent ||
+    !row.cwd ||
+    !row.runtime_session_id ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(row.runtime_session_id)
+  )
+    return null;
+  return {
+    sourceId: row.id,
+    agent,
+    backend: chatRuntimeFor(agent),
+    runtimeId: row.runtime_session_id,
+    host: row.execution_host ?? null,
+    cwd: row.cwd,
+    model: row.model ?? null,
+    fingerprint: `${row.status}:${row.pid ?? ""}:${row.updated_at?.getTime() ?? ""}`,
+  };
+}
+
+export async function sessionIdle(target: PushTarget): Promise<boolean> {
   await getHandoffService().verifyResume(target.sourceId);
   const runtime = hostRuntime(execHostFor(target.host));
   if (target.agent === "codex") {
@@ -130,13 +155,17 @@ function mockBackend(): AgentBackend {
   };
 }
 
+export function defaultDeliveryBackend(): (name: string) => AgentBackend {
+  return process.env.ORC_E2E_CHAT_MOCK === "1" ? mockBackend : createBackend;
+}
+
 function defaultDeps(): DeliveryDeps {
   return {
     store: new HumanRequestStore(getSqlite()),
     target: findTarget,
     idle: sessionIdle,
     resumed: (target) => getHandoffService().markResumed(target.sourceId),
-    backend: process.env.ORC_E2E_CHAT_MOCK === "1" ? mockBackend : createBackend,
+    backend: defaultDeliveryBackend(),
     chatTurn: (target, prompt) => runChatTurn(target, prompt),
   };
 }
@@ -175,7 +204,11 @@ export function deliveryMessage(requests: HumanRequest[]): string {
   ].join("\n\n");
 }
 
-async function runTurn(deps: DeliveryDeps, target: PushTarget, prompt: string): Promise<void> {
+export async function runTurn(
+  deps: Pick<DeliveryDeps, "backend">,
+  target: PushTarget,
+  prompt: string,
+): Promise<void> {
   const backend = deps.backend(target.backend);
   const check = await backend.preflight({ executionHost: target.host });
   if (!check.ok) throw new Error(check.error ?? "The agent is unavailable.");
