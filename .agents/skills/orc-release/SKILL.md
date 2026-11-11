@@ -70,6 +70,9 @@ Speed rules:
 | Desktop verify timeout | `~/.orc/bin/orc.exe` locked by editor `orc mcp` processes | Ask Nir to close them, then `--resume --yes` |
 | Lab `docker build` prints usage | Lab docker has no build subcommand | `/usr/libexec/docker/cli-plugins/docker-buildx build --load` |
 | Bump collides with an existing npm version | Previous release commit never reached master | Preflight version check (step 1) |
+| Fix PR's `changed` check sits queued | Homelab runner session went stale (container replaced) | Cancel the run, then `gh run rerun <id>`; check `gha-runner-pool.service` on the lab |
+| Backup tar prints `socket ignored` | SSH control sockets in `/data/.orc/ssh` | Harmless; sockets don't need backing up |
+| Log stays empty during the release | autho buffers child output | Watch `.orc/release-state.json` `completed[]` |
 
 ## Self-improvement (required)
 
