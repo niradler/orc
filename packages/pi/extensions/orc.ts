@@ -1,6 +1,5 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
   defineTool,
@@ -9,21 +8,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { OrcApiClient } from "../src/api.js";
-import {
-  loadPorcConfig,
-  MCP_MODES,
-  type McpMode,
-  type PorcConfig,
-  type PorcOverrides,
-  porcPaths,
-  projectArgs,
-  SKILL_MODES,
-  type SkillMode,
-} from "../src/config.js";
-import { buildMcpRegistration, redact } from "../src/mcp.js";
+import { OrcApiClient, OrcApiError, type OrcProjectRoot } from "../src/api.js";
+import { loadPorcConfig, type PorcConfig, type PorcOverrides, porcPaths } from "../src/config.js";
+import { redact } from "../src/mcp.js";
 import { OrcMcpClient } from "../src/mcp-client.js";
-import { findProjectByName, matchProjectRoot } from "../src/project.js";
+import {
+  findProjectByName,
+  matchProjectRoot,
+  type ProjectChoice,
+  projectNameFor,
+  savedProjectChoice,
+  saveProjectChoice,
+  shouldAskForProject,
+} from "../src/project.js";
 import { formatContextMessage, renderOrcPromptSection } from "../src/prompt.js";
 import {
   filterRecall,
@@ -34,11 +31,15 @@ import {
   queryWindows,
   recallKeys,
 } from "../src/recall.js";
-import { BUNDLED_SKILLS, type SyncReport, syncOrcSkills } from "../src/skills.js";
-import { runSpec, type SpecAction, specAvailable } from "../src/spec.js";
-
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const skillDir = join(packageRoot, "skills");
+import {
+  type OrcRule,
+  type PiNativeEvent,
+  planRules,
+  type RulePlan,
+  removeRule,
+  runRuleHook,
+  upsertRule,
+} from "../src/rules.js";
 
 type Health = "unknown" | "up" | "down";
 
@@ -49,15 +50,15 @@ type SessionState = {
   client?: OrcMcpClient;
   project?: string | undefined;
   projectId?: string | undefined;
+  projectRoot?: string | undefined;
   health: Health;
-  mcpRegistered: boolean;
-  mcpError?: string | undefined;
   contextInjected: boolean;
   contextError?: string | undefined;
-  skillReport?: SyncReport;
   offered: Set<string>;
   recallError?: string | undefined;
-  specAvailable?: boolean;
+  rules?: RulePlan | undefined;
+  rulesError?: string | undefined;
+  pendingContext: string[];
   sessionId: string;
   cwd: string;
 };
@@ -71,8 +72,7 @@ type ReportData = {
 };
 
 function errorText(err: unknown, secret: string | undefined): string {
-  const message = err instanceof Error ? err.message : String(err);
-  return redact(message, secret);
+  return redact(err instanceof Error ? err.message : String(err), secret);
 }
 
 function withTimeout<T>(value: Promise<T>, ms: number, label: string): Promise<T> {
@@ -107,45 +107,20 @@ function sessionOf(state: PluginState): SessionState {
   return state.session;
 }
 
+function projectArgs(project: string | undefined): Record<string, unknown> {
+  return project ? { project } : { scope: "global" };
+}
+
 function flagOverrides(pi: ExtensionAPI): PorcOverrides {
   const overrides: PorcOverrides = {};
   const apiBase = pi.getFlag("porc-api-base");
   if (typeof apiBase === "string" && apiBase.trim()) overrides.apiBase = apiBase.trim();
   const project = pi.getFlag("porc-project");
   if (typeof project === "string" && project.trim()) overrides.project = project.trim();
-  const mode = pi.getFlag("porc-mode");
-  if (typeof mode === "string" && mode.trim()) {
-    if (!(MCP_MODES as readonly string[]).includes(mode)) {
-      throw new Error(`--porc-mode must be ${MCP_MODES.join(" or ")}, got "${mode}"`);
-    }
-    overrides.mode = mode as McpMode;
-  }
   if (pi.getFlag("porc-no-context") === true) overrides.autoContext = false;
-  if (pi.getFlag("porc-no-mcp") === true) overrides.mcp = false;
-  if (pi.getFlag("porc-no-spec") === true) overrides.spec = false;
-  const skills = pi.getFlag("porc-skills");
-  if (typeof skills === "string" && skills.trim()) {
-    if (!(SKILL_MODES as readonly string[]).includes(skills)) {
-      throw new Error(`--porc-skills must be ${SKILL_MODES.join(", ")}, got "${skills}"`);
-    }
-    overrides.skillMode = skills as SkillMode;
-  }
   if (pi.getFlag("porc-no-recall") === true) overrides.recall = false;
+  if (pi.getFlag("porc-no-rules") === true) overrides.rules = false;
   return overrides;
-}
-
-function selectedProject(ctx: ExtensionContext): {
-  project: string | undefined;
-  explicit: boolean;
-} {
-  const branch = ctx.sessionManager.getBranch();
-  for (let index = branch.length - 1; index >= 0; index -= 1) {
-    const entry = branch[index];
-    if (entry?.type !== "custom" || entry.customType !== "porc-project") continue;
-    const data = entry.data as { project?: string | null } | undefined;
-    return { project: data?.project ?? undefined, explicit: true };
-  }
-  return { project: undefined, explicit: false };
 }
 
 function setStatus(ctx: ExtensionContext, session: SessionState): void {
@@ -157,85 +132,141 @@ function setStatus(ctx: ExtensionContext, session: SessionState): void {
     ctx.ui.setStatus("porc", "orc: disabled");
     return;
   }
-  const project = session.project ?? "no project";
+  const project = session.project ?? "global";
   const health = session.health === "up" ? "online" : session.health === "down" ? "offline" : "…";
-  ctx.ui.setStatus("porc", `orc: ${project} · ${health} · ${session.config.mode}`);
+  const rules = session.rules?.count ? ` · ${session.rules.count} rules` : "";
+  ctx.ui.setStatus("porc", `orc: ${project} · ${health}${rules}`);
 }
 
-function registerOrcMcp(pi: ExtensionAPI, session: SessionState): void {
-  const config = session.config;
-  if (!config) return;
+function applyProject(session: SessionState, match: OrcProjectRoot | undefined): void {
+  session.project = match?.project_name;
+  session.projectId = match?.project_id;
+  session.projectRoot = match?.root || undefined;
+}
+
+function rootOf(roots: readonly OrcProjectRoot[], name: string): OrcProjectRoot | undefined {
+  const match = findProjectByName(roots, name);
+  return match
+    ? {
+        project_id: match.projectId,
+        project_name: match.projectName,
+        root: match.root,
+        folders: [],
+      }
+    : undefined;
+}
+
+async function createProjectForCwd(
+  session: SessionState,
+  cwd: string,
+  name: string,
+): Promise<OrcProjectRoot> {
+  const api = requireApi(session);
   try {
-    if (session.mcpRegistered) pi.unregisterMcpServer("orc");
-  } catch {
-    // The server may already be gone after a reload.
-  }
-  session.mcpRegistered = false;
-  delete session.mcpError;
-  if (!config.mcp) return;
-  try {
-    pi.registerMcpServer(
-      "orc",
-      buildMcpRegistration(config, session.project, session.sessionId, session.cwd),
-    );
-    session.mcpRegistered = true;
+    const created = await api.createProject({ name, scope: cwd });
+    return { project_id: created.id, project_name: created.name, root: cwd, folders: [] };
   } catch (err) {
-    session.mcpError = errorText(err, config.secret);
+    if (!(err instanceof OrcApiError) || err.status !== 409) throw err;
+    const existing = rootOf(await api.projectRoots(), name);
+    if (!existing) throw err;
+    return existing;
   }
 }
 
-async function refreshSkills(session: SessionState): Promise<void> {
-  const config = session.config;
-  if (!config) return;
-  mkdirSync(config.skillDir, { recursive: true });
-  if (config.skillMode !== "search" && (!session.api || session.health !== "up")) return;
-  try {
-    session.skillReport = await withTimeout(
-      syncOrcSkills(session.api as OrcApiClient, config.skillDir, {
-        mode: config.skillMode,
-        names: config.pinnedSkills,
-        ...(session.projectId ? { projectId: session.projectId } : {}),
-      }),
-      12_000,
-      "ORC skill sync",
+async function askForProject(
+  session: SessionState,
+  ctx: ExtensionContext,
+  roots: readonly OrcProjectRoot[],
+): Promise<ProjectChoice | undefined> {
+  const name = projectNameFor(ctx.cwd);
+  const create = name ? `Create ORC project "${name}" for this folder` : undefined;
+  const existing = "Use an existing ORC project";
+  const global = "Work globally, no project";
+  const later = "Decide later";
+  const picked = await ctx.ui.select(
+    `ORC: no project for ${ctx.cwd}`,
+    [create, roots.length ? existing : undefined, global, later].filter(
+      (option): option is string => Boolean(option),
+    ),
+  );
+  if (!picked || picked === later) return undefined;
+  if (picked === global) return { global: true };
+  if (picked === existing) {
+    const project = await ctx.ui.select(
+      "ORC project",
+      roots.map((root) => root.project_name),
     );
-  } catch (err) {
-    session.skillReport = {
-      dir: config.skillDir,
-      written: [],
-      removed: [],
-      skipped: [],
-      errors: [errorText(err, config.secret)],
-    };
+    return project ? { project } : undefined;
   }
+  if (!name) return undefined;
+  const created = await createProjectForCwd(session, ctx.cwd, name);
+  return { project: created.project_name };
 }
 
-async function resolveProject(session: SessionState, ctx: ExtensionContext): Promise<void> {
+async function resolveProject(
+  session: SessionState,
+  ctx: ExtensionContext,
+  interactive: boolean,
+): Promise<void> {
   const config = session.config;
   if (!config) return;
-  const selection = selectedProject(ctx);
-  const configured = selection.explicit ? selection.project : config.project;
-  const auto = selection.explicit ? !selection.project : config.autoProject;
-  if (!configured && !auto) return;
   if (!session.api || session.health !== "up") {
-    if (configured) session.project = configured;
+    session.project = config.project;
     return;
   }
   try {
-    const roots = await session.api.projectRoots();
-    if (configured) {
-      const match = findProjectByName(roots, configured);
-      session.project = match?.projectName ?? configured;
-      session.projectId = match?.projectId;
+    let roots = await session.api.projectRoots();
+    if (config.project) {
+      applyProject(
+        session,
+        rootOf(roots, config.project) ?? {
+          project_id: "",
+          project_name: config.project,
+          root: "",
+          folders: [],
+        },
+      );
+      if (!session.projectId) session.projectId = undefined;
       return;
     }
+    if (!config.autoProject) return;
+    const { choicesFile } = porcPaths({ cwd: ctx.cwd });
+    const saved = savedProjectChoice(choicesFile, ctx.cwd);
     const match = matchProjectRoot(roots, ctx.cwd);
-    if (match) {
-      session.project = match.projectName;
-      session.projectId = match.projectId;
+    if (saved && (!match || saved.path.length >= match.root.length)) {
+      applyProject(
+        session,
+        "project" in saved.choice ? rootOf(roots, saved.choice.project) : undefined,
+      );
+      return;
     }
-  } catch {
-    if (configured) session.project = configured;
+    if (match) {
+      applyProject(session, rootOf(roots, match.projectName));
+      return;
+    }
+    if (!interactive || !config.askProject || !ctx.hasUI) return;
+    if (!shouldAskForProject(ctx.cwd, homedir())) return;
+    const choice = await askForProject(session, ctx, roots);
+    if (!choice) return;
+    saveProjectChoice(choicesFile, ctx.cwd, choice);
+    if ("project" in choice) roots = await session.api.projectRoots();
+    applyProject(session, "project" in choice ? rootOf(roots, choice.project) : undefined);
+  } catch (err) {
+    session.project = config.project;
+    ctx.ui.notify(`ORC project lookup failed: ${errorText(err, config.secret)}`, "warning");
+  }
+}
+
+async function refreshRules(session: SessionState): Promise<void> {
+  const config = session.config;
+  session.rules = undefined;
+  session.rulesError = undefined;
+  if (!config?.rules || !session.api || session.health !== "up") return;
+  try {
+    const data = await session.api.rules();
+    if (data.enabled) session.rules = planRules(data.history, session.cwd);
+  } catch (err) {
+    session.rulesError = errorText(err, config.secret);
   }
 }
 
@@ -243,16 +274,16 @@ async function initialize(
   pi: ExtensionAPI,
   state: PluginState,
   ctx: ExtensionContext,
-  options: { announce?: boolean } = {},
+  options: { announce?: boolean; interactive?: boolean } = {},
 ): Promise<void> {
   const previous = state.session;
   if (previous?.client) await previous.client.close().catch(() => undefined);
 
   const session: SessionState = {
     health: "unknown",
-    mcpRegistered: false,
     contextInjected: false,
     offered: new Set(),
+    pendingContext: [],
     sessionId: ctx.sessionManager.getSessionId(),
     cwd: ctx.cwd,
   };
@@ -287,66 +318,340 @@ async function initialize(
   session.client = new OrcMcpClient(config, session.sessionId, ctx.cwd);
   session.health = (await session.api.health()) ? "up" : "down";
 
-  await resolveProject(session, ctx);
-  registerOrcMcp(pi, session);
-  await refreshSkills(session);
+  await resolveProject(session, ctx, options.interactive === true);
+  await refreshRules(session);
   setStatus(ctx, session);
 
   if (options.announce) {
     ctx.ui.notify(
       session.health === "up"
-        ? `porc ready: ${session.project ?? "no project"} (${config.mode})`
+        ? `porc ready: ${session.project ?? "global"}${session.rules?.count ? ` · ${session.rules.count} ORC rules active` : ""}`
         : `ORC is offline at ${config.apiBase}; porc is limited until it starts`,
       session.health === "up" ? "info" : "warning",
     );
   }
 }
 
+const ACTIONS = [
+  "context",
+  "search",
+  "describe",
+  "invoke",
+  "memory_list",
+  "memory_read",
+  "memory_create",
+  "memory_update",
+  "skill_list",
+  "skill_read",
+  "skill_create",
+  "project_list",
+  "job_create",
+  "job_list",
+  "rule_add",
+  "rule_remove",
+  "rule_list",
+] as const;
+
+type Action = (typeof ACTIONS)[number];
+
 const OrcParams = Type.Object({
-  action: StringEnum(
-    [
-      "context",
-      "memory_list",
-      "memory_read",
-      "memory_create",
-      "memory_update",
-      "skill_list",
-      "skill_read",
-      "project_list",
-      "call",
-    ] as const,
-    { description: "ORC operation to run" },
-  ),
+  action: StringEnum(ACTIONS, { description: "ORC operation to run" }),
   project: Type.Optional(
     Type.String({ description: "ORC project name; defaults to the active project" }),
   ),
-  name: Type.Optional(Type.String({ description: "Memory or skill name" })),
-  query: Type.Optional(Type.String({ description: "Search text for memory_list or skill_list" })),
+  name: Type.Optional(
+    Type.String({ description: "Memory, skill or job name; ORC tool name for describe/invoke" }),
+  ),
+  query: Type.Optional(
+    Type.String({ description: "Search text for search, memory_list or skill_list" }),
+  ),
   description: Type.Optional(Type.String({ description: "Memory description: when it matters" })),
-  content: Type.Optional(Type.String({ description: "Memory content" })),
+  content: Type.Optional(
+    Type.String({
+      description: "Memory content, or full SKILL.md (with frontmatter) for skill_create",
+    }),
+  ),
   priority: Type.Optional(
     Type.Number({ minimum: 0, maximum: 100, description: "Memory priority, higher loads first" }),
   ),
-  limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500, description: "Page size" })),
-  sort: Type.Optional(
-    StringEnum(["reads", "recent", "priority"] as const, { description: "Memory sort order" }),
-  ),
+  limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100, description: "Page size" })),
   ref: Type.Optional(Type.String({ description: "Skill-relative supporting file path" })),
-  tool: Type.Optional(Type.String({ description: "ORC tool name for action call" })),
   arguments: Type.Optional(
-    Type.Record(Type.String(), Type.Unknown(), {
-      description: "Arguments for action call",
-    }),
+    Type.Record(Type.String(), Type.Unknown(), { description: "Arguments for invoke" }),
   ),
+  cron: Type.Optional(
+    Type.String({ description: "5-field cron expression for job_create, e.g. '0 * * * *'" }),
+  ),
+  prompt: Type.Optional(
+    Type.String({ description: "Self-contained instructions the scheduled Pi agent runs" }),
+  ),
+  rule: Type.Optional(
+    Type.Object(
+      {
+        id: Type.String({ description: "Stable rule id, e.g. no-ssh" }),
+        reason: Type.String({ description: "Why the rule exists; shown when it fires" }),
+        events: Type.Optional(
+          Type.Array(Type.String(), {
+            description: "Phases such as pre_tool, post_tool, prompt_submit (default pre_tool)",
+          }),
+        ),
+        agents: Type.Optional(
+          Type.Union([Type.Literal("all"), Type.Array(Type.String())], {
+            description: "Agents the rule applies to (default all)",
+          }),
+        ),
+        filter: Type.Optional(
+          Type.Record(Type.String(), Type.Unknown(), {
+            description:
+              "ORC rule filter {match, conditions:[{predicate:{field, operator, value}}]}; fields read the event, e.g. input.command",
+          }),
+        ),
+        target: Type.Optional(
+          Type.Record(Type.String(), Type.Unknown(), {
+            description:
+              "Rule target, default {type:'block'}; also inject_context or ask_user {kind:'approval', prompt}",
+          }),
+        ),
+      },
+      { description: "Rule for rule_add" },
+    ),
+  ),
+  id: Type.Optional(Type.String({ description: "Rule id for rule_remove" })),
 });
 
-const SpecParams = Type.Object({
-  action: StringEnum(["list", "show", "call"] as const, { description: "spec operation" }),
-  operation: Type.Optional(Type.String({ description: "Operation or tool id for show or call" })),
-  filter: Type.Optional(Type.String({ description: "Filter for list" })),
-  limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
-  data: Type.Optional(Type.Unknown({ description: "JSON arguments for call" })),
-});
+type OrcInput = {
+  action: Action;
+  project?: string;
+  name?: string;
+  query?: string;
+  description?: string;
+  content?: string;
+  priority?: number;
+  limit?: number;
+  ref?: string;
+  arguments?: Record<string, unknown>;
+  cron?: string;
+  prompt?: string;
+  rule?: {
+    id: string;
+    reason: string;
+    events?: string[];
+    agents?: "all" | string[];
+    filter?: Record<string, unknown>;
+    target?: Record<string, unknown>;
+  };
+  id?: string;
+};
+
+function need<T>(value: T | undefined, message: string): T {
+  if (value === undefined || (typeof value === "string" && !value.trim())) throw new Error(message);
+  return value;
+}
+
+async function confirm(ctx: ExtensionContext, title: string, message: string): Promise<void> {
+  if (!ctx.hasUI) return;
+  if (!(await ctx.ui.confirm(title, message))) throw new Error(`${title} cancelled by the user`);
+}
+
+function ruleWorkspace(session: SessionState): string {
+  return session.projectRoot || session.cwd;
+}
+
+async function mcpAction(session: SessionState, params: OrcInput): Promise<string> {
+  const client = requireClient(session);
+  const project = params.project ?? session.project;
+  const action = params.action;
+  const scope = action.startsWith("skill_") ? projectArgs(project) : project ? { project } : {};
+  let tool: string = action;
+  let args: Record<string, unknown> = { ...scope };
+  switch (action) {
+    case "context":
+      args = project ? { project } : {};
+      break;
+    case "search":
+      tool = "tool_search";
+      args = { ...(params.query ? { query: params.query } : {}), limit: params.limit ?? 8 };
+      break;
+    case "describe":
+      tool = "tool_describe";
+      args = { name: need(params.name, "describe requires name") };
+      break;
+    case "invoke": {
+      tool = "tool_invoke";
+      const inner = { ...(params.arguments ?? {}) };
+      if (project && inner.project === undefined && inner.project_id === undefined)
+        inner.project = project;
+      args = { name: need(params.name, "invoke requires name (the ORC tool)"), arguments: inner };
+      break;
+    }
+    case "memory_list":
+      if (params.query) args.q = params.query;
+      if (params.limit) args.limit = params.limit;
+      break;
+    case "memory_read":
+      args.name = need(params.name, "memory_read requires name");
+      break;
+    case "memory_create":
+      args = {
+        ...scope,
+        name: need(params.name, "memory_create requires name"),
+        description: need(params.description, "memory_create requires description"),
+        content: need(params.content, "memory_create requires content"),
+        ...(params.priority === undefined ? {} : { priority: params.priority }),
+      };
+      break;
+    case "memory_update":
+      args = {
+        ...scope,
+        name: need(params.name, "memory_update requires name"),
+        ...(params.description ? { description: params.description } : {}),
+        ...(params.content ? { content: params.content } : {}),
+        ...(params.priority === undefined ? {} : { priority: params.priority }),
+      };
+      break;
+    case "skill_list":
+      if (params.query) args.q = params.query;
+      args.limit = params.limit ?? 20;
+      break;
+    case "skill_read":
+      args.name = need(params.name, "skill_read requires name");
+      if (params.ref) args.ref = params.ref;
+      break;
+    case "skill_create":
+      args = {
+        ...scope,
+        name: need(params.name, "skill_create requires name"),
+        content: need(params.content, "skill_create requires content (full SKILL.md)"),
+      };
+      break;
+    case "project_list":
+      args = {};
+      break;
+    default:
+      throw new Error(`Unsupported action ${action}`);
+  }
+  const result = await client.call(tool, args);
+  if (result.isError) throw new Error(result.text || `ORC tool ${tool} failed`);
+  return result.text || `${action}: no output`;
+}
+
+async function restAction(
+  session: SessionState,
+  params: OrcInput,
+  ctx: ExtensionContext,
+): Promise<string> {
+  const api = requireApi(session);
+  const project = params.project ?? session.project;
+  const roots = project ? await api.projectRoots() : [];
+  const projectId = project ? (rootOf(roots, project)?.project_id ?? session.projectId) : undefined;
+  switch (params.action) {
+    case "job_create": {
+      const name = need(params.name, "job_create requires name");
+      const cron = need(params.cron, "job_create requires cron");
+      const prompt = need(params.prompt, "job_create requires prompt");
+      await confirm(
+        ctx,
+        "Schedule ORC job",
+        `${name}\nSchedule: ${cron}\nProject: ${project ?? "global"}\nRuns Pi in ${ctx.cwd}:\n${prompt}`,
+      );
+      const job = await api.createJob({
+        name,
+        trigger_type: "cron",
+        cron_expr: cron,
+        enabled: true,
+        action: { type: "agent", prompt, backend: "pi" },
+        working_dir: ctx.cwd,
+        project_id: projectId ?? null,
+      });
+      return `Scheduled job "${job.name}" (${job.id}) with cron ${job.cron_expr}; next run ${job.next_run_at ?? "pending"}. Manage it in ORC under Jobs.`;
+    }
+    case "job_list": {
+      const jobs = await api.listJobs(projectId);
+      if (!jobs.length) return "No ORC jobs.";
+      return jobs
+        .map(
+          (job) =>
+            `- ${job.name} [${job.enabled ? "on" : "off"}] ${job.trigger_type}${job.cron_expr ? ` ${job.cron_expr}` : ""}${job.next_run_at ? ` · next ${job.next_run_at}` : ""} (${job.id})`,
+        )
+        .join("\n");
+    }
+    case "rule_list": {
+      const data = await api.rules();
+      const plan = planRules(data.history, ctx.cwd);
+      const current = data.history.filter((revision) => revision.current && revision.policy);
+      const lines = current.flatMap((revision) =>
+        (revision.policy?.rules ?? []).map(
+          (rule) =>
+            `- ${rule.id} [${rule.enabled ? "on" : "off"}] ${rule.scope.events.join(",")} → ${rule.target.type}: ${rule.reason} (${revision.workspace})`,
+        ),
+      );
+      return [
+        `Rules ${data.enabled ? "enabled" : "disabled in ORC settings"}; ${plan.count} apply to Pi here.`,
+        ...lines,
+      ].join("\n");
+    }
+    case "rule_add": {
+      const input = need(params.rule, "rule_add requires rule");
+      const rule: OrcRule = {
+        id: need(input.id, "rule.id is required"),
+        reason: need(input.reason, "rule.reason is required"),
+        kind: "event",
+        enabled: true,
+        scope: { agents: input.agents ?? "all", events: input.events ?? ["pre_tool"] },
+        filter: (input.filter as OrcRule["filter"]) ?? { match: "all", conditions: [] },
+        target: (input.target as OrcRule["target"]) ?? { type: "block" },
+      };
+      const workspace = ruleWorkspace(session);
+      await confirm(
+        ctx,
+        "Activate ORC rule",
+        `${rule.id}: ${rule.reason}\nWorkspace: ${workspace}\nEvents: ${rule.scope.events.join(", ")} · agents: ${Array.isArray(rule.scope.agents) ? rule.scope.agents.join(", ") : rule.scope.agents}\nTarget: ${JSON.stringify(rule.target)}\nFilter: ${JSON.stringify(rule.filter)}`,
+      );
+      const data = await api.rules(workspace);
+      const current = data.history.find(
+        (revision) => revision.current && revision.workspace === workspace,
+      );
+      const policy = upsertRule(current?.policy ?? null, rule, workspace, projectId ?? null);
+      const revision = await api.activateRules(
+        policy,
+        current?.id ?? null,
+        `Pi: ${rule.id} - ${rule.reason}`.slice(0, 4000),
+      );
+      await refreshRules(session);
+      setStatus(ctx, session);
+      return `Activated rule ${rule.id} in ${revision.workspace} (revision ${revision.id}).${data.enabled ? "" : " Rules are disabled in ORC settings; enable them for enforcement."}`;
+    }
+    case "rule_remove": {
+      const id = need(params.id, "rule_remove requires id");
+      const workspace = ruleWorkspace(session);
+      const data = await api.rules(workspace);
+      const current = data.history.find(
+        (revision) => revision.current && revision.workspace === workspace && revision.policy,
+      );
+      const next = current?.policy ? removeRule(current.policy, id) : undefined;
+      if (!current || !next) throw new Error(`No rule ${id} in ${workspace}`);
+      if (!next.rules.length)
+        throw new Error(
+          `${id} is the last rule in ${workspace}; disable it or revert the revision in ORC's Rules page`,
+        );
+      await confirm(ctx, "Remove ORC rule", `${id}\nWorkspace: ${workspace}`);
+      const revision = await api.activateRules(next, current.id, `Pi: remove ${id}`);
+      await refreshRules(session);
+      setStatus(ctx, session);
+      return `Removed rule ${id} (revision ${revision.id}).`;
+    }
+    default:
+      throw new Error(`Unsupported action ${params.action}`);
+  }
+}
+
+const REST_ACTIONS = new Set<Action>([
+  "job_create",
+  "job_list",
+  "rule_add",
+  "rule_remove",
+  "rule_list",
+]);
 
 async function recallHint(
   session: SessionState,
@@ -363,7 +668,15 @@ async function recallHint(
     const [skillRes, memoryRes] = await withTimeout(
       Promise.all([
         Promise.all(windows.map((q) => client.call("skill_list", { ...base, q, limit: 5 }))),
-        Promise.all(windows.map((q) => client.call("memory_list", { ...base, q, limit: 5 }))),
+        Promise.all(
+          windows.map((q) =>
+            client.call("memory_list", {
+              ...(session.project ? { project: session.project } : {}),
+              q,
+              limit: 5,
+            }),
+          ),
+        ),
       ]),
       4000,
       "recall",
@@ -398,130 +711,32 @@ function registerTools(pi: ExtensionAPI, state: PluginState): void {
       name: "orc",
       label: "ORC",
       description:
-        "Read ORC project context, memories and skills, or call any ORC tool. Use action context before substantive work. Use skill_read before topic-specific platform or delivery work.",
-      promptSnippet: "Read ORC context, memories and skills; call any ORC tool",
+        "ORC system of record: project context, memories, skills, scheduled jobs and guardrail rules. search/describe/invoke reach every other ORC tool (tasks, knowledge, sessions…).",
+      promptSnippet: "ORC memories, skills, jobs, rules and any ORC tool via search/invoke",
       promptGuidelines: [
-        "Use `orc` `memory_list` / `memory_read` instead of guessing about prior decisions, and `memory_create` / `memory_update` to save durable preferences and lessons.",
-        "Use `orc` action `call` only for an ORC tool not already exposed by the native ORC MCP server.",
+        "Save memories and skills to ORC with `orc` (`memory_create`, `skill_create`), not local files.",
+        "For an ORC capability without its own action, `search` then `describe` and `invoke` it.",
+        "Use `job_create` for recurring work and `rule_add` to block or gate agent behaviour.",
       ],
       parameters: OrcParams,
-      async execute(_toolCallId, params) {
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
         const session = sessionOf(state);
         const config = requireConfig(session);
-        const client = requireClient(session);
-        const project = params.project ?? session.project;
-        const base = projectArgs(project);
-        const action = params.action;
-        let tool = action as string;
-        let args: Record<string, unknown> = { ...base };
-        if (action === "memory_list") {
-          if (params.query) args.q = params.query;
-          if (params.sort) args.sort = params.sort;
-          if (params.limit) args.limit = params.limit;
-        } else if (action === "memory_read") {
-          if (!params.name) throw new Error("memory_read requires name");
-          args.name = params.name;
-        } else if (action === "memory_create") {
-          if (!params.name) throw new Error("memory_create requires name");
-          if (!params.description) throw new Error("memory_create requires description");
-          if (!params.content) throw new Error("memory_create requires content");
-          args = {
-            name: params.name,
-            description: params.description,
-            content: params.content,
-            ...base,
-            ...(params.priority === undefined ? {} : { priority: params.priority }),
+        const input = params as OrcInput;
+        try {
+          const text = REST_ACTIONS.has(input.action)
+            ? await restAction(session, input, ctx)
+            : await mcpAction(session, input);
+          return {
+            content: [{ type: "text" as const, text: redact(text, config.secret) }],
+            details: { action: input.action, project: input.project ?? session.project },
           };
-        } else if (action === "memory_update") {
-          if (!params.name) throw new Error("memory_update requires name");
-          args = {
-            name: params.name,
-            ...base,
-            ...(params.description ? { description: params.description } : {}),
-            ...(params.content ? { content: params.content } : {}),
-            ...(params.priority === undefined ? {} : { priority: params.priority }),
-          };
-        } else if (action === "skill_list") {
-          if (params.query) args.q = params.query;
-          if (params.limit) args.limit = params.limit;
-        } else if (action === "skill_read") {
-          if (!params.name) throw new Error("skill_read requires name");
-          args.name = params.name;
-          if (params.ref) args.ref = params.ref;
-        } else if (action === "call") {
-          if (!params.tool) throw new Error("action call requires tool");
-          tool = params.tool;
-          args = { ...base, ...(params.arguments ?? {}) };
+        } catch (err) {
+          throw new Error(errorText(err, config.secret));
         }
-        const result = await client.call(tool, args);
-        if (result.isError) {
-          throw new Error(redact(result.text || `ORC tool ${tool} failed`, config.secret));
-        }
-        return {
-          content: [{ type: "text" as const, text: result.text || `${tool}: no output` }],
-          details: { action, tool, project },
-        };
       },
     }),
   );
-
-  pi.registerTool(
-    defineTool({
-      name: "orc_spec",
-      label: "ORC spec",
-      description:
-        "Explore or call ORC operations through the spec CLI when an operation is not exposed as a tool. Requires the spec CLI.",
-      promptSnippet: "Use the spec CLI against ORC for operations missing from MCP",
-      parameters: SpecParams,
-      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-        const session = sessionOf(state);
-        const config = requireConfig(session);
-        if (!config.spec)
-          throw new Error("The spec bridge is disabled (PORC_SPEC=false or --porc-no-spec)");
-        if (!session.specAvailable) session.specAvailable = await specAvailable(execOf(pi, signal));
-        if (!session.specAvailable) throw new Error("The spec CLI is not available on PATH");
-        const action: SpecAction =
-          params.action === "list"
-            ? {
-                action: "list",
-                ...(params.filter ? { filter: params.filter } : {}),
-                ...(params.limit ? { limit: params.limit } : {}),
-              }
-            : params.action === "show"
-              ? { action: "show", operation: required(params.operation, "operation") }
-              : {
-                  action: "call",
-                  operation: required(params.operation, "operation"),
-                  ...(params.data === undefined ? {} : { data: params.data }),
-                };
-        const result = await runSpec(execOf(pi, signal), config, action, {
-          ...(session.project ? { project: session.project } : {}),
-          sessionId: session.sessionId,
-          cwd: ctx.cwd,
-        });
-        const output = redact(result.output, config.secret);
-        if (!result.ok) throw new Error(output || "spec command failed");
-        return {
-          content: [{ type: "text" as const, text: output || "spec command returned no output" }],
-          details: { action: params.action, project: session.project },
-        };
-      },
-    }),
-  );
-}
-
-function required(value: string | undefined, name: string): string {
-  if (!value?.trim()) throw new Error(`Missing ${name}`);
-  return value.trim();
-}
-
-function execOf(pi: ExtensionAPI, signal: AbortSignal | undefined) {
-  return (command: string, args: string[], options?: { timeout?: number; cwd?: string }) =>
-    pi.exec(command, args, {
-      ...(signal ? { signal } : {}),
-      ...(options?.timeout ? { timeout: options.timeout } : {}),
-      ...(options?.cwd ? { cwd: options.cwd } : {}),
-    });
 }
 
 function statusBody(session: SessionState): string {
@@ -530,15 +745,13 @@ function statusBody(session: SessionState): string {
   const config = session.config;
   if (!config) return "porc is not initialized.";
   return [
-    `API: ${config.apiBase} (${session.health})`,
-    `Project: ${session.project ?? "none"}${session.projectId ? ` [${session.projectId}]` : ""}`,
-    `Mode: ${config.mode} · transport: ${config.transport} · exposure: ${config.exposure}`,
-    `MCP: ${session.mcpRegistered ? "registered as orc" : config.mcp ? `not registered${session.mcpError ? ` (${session.mcpError})` : ""}` : "disabled"}`,
-    `Skills: ${config.skillMode} mode${config.skillMode === "search" ? " (searched per prompt, none preloaded)" : session.skillReport ? ` (${session.skillReport.written.length} synced)` : ""}`,
+    `API: ${config.apiBase} (${session.health}) · transport ${config.transport}`,
+    `Project: ${session.project ?? "global"}${session.projectId ? ` [${session.projectId}]` : ""}${session.projectRoot ? ` · ${session.projectRoot}` : ""}`,
+    `Rules: ${config.rules ? (session.rules ? `${session.rules.count} apply here (${[...session.rules.events].join(", ") || "no Pi events"})` : session.rulesError ? `error: ${session.rulesError}` : "none loaded") : "off"}`,
     `Recall: ${config.recall.enabled ? `on (≤${config.recall.maxMemories} memories, ≤${config.recall.maxSkills} skills per prompt)${session.recallError ? ` · last error: ${session.recallError}` : ""}` : "off"}`,
-    `Spec: ${config.spec ? (session.specAvailable === undefined ? "available on demand" : session.specAvailable ? "available" : "not found") : "disabled"}`,
+    `Context: ${config.autoContext ? (session.contextError ? `error: ${session.contextError}` : session.contextInjected ? "loaded" : "on first prompt") : "off"}`,
     "",
-    "Commands: /orc-context, /orc-project, /orc-skills, /orc-remember, /orc-spec, /orc-doctor, /orc-theme, /orc-reload",
+    "Commands: /orc-context, /orc-project, /orc-skills, /orc-remember, /orc-doctor, /orc-theme, /orc-reload",
   ].join("\n");
 }
 
@@ -555,7 +768,6 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
       body: text.length > 8000 ? `${text.slice(0, 8000)}\n… truncated` : text,
       level,
     };
-    // The entry is durable and visible in the transcript but never sent to the model.
     ctx.ui.setWidget("porc", [title, ...(data.body ? data.body.split("\n").slice(0, 12) : [])]);
     pi.appendEntry<ReportData>("porc-report", data);
   };
@@ -563,10 +775,7 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
   pi.registerCommand("orc", {
     description: "Show porc status and ORC connection details",
     handler: async (_args, ctx) => {
-      if (!state.session) {
-        report(ctx, "porc", "No active porc session.", "warning");
-        return;
-      }
+      if (!state.session) return report(ctx, "porc", "No active porc session.", "warning");
       report(ctx, "porc", statusBody(state.session));
     },
   });
@@ -577,11 +786,10 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
       const session = state.session;
       if (!session) return report(ctx, "ORC context", "No active porc session.", "warning");
       try {
-        requireConfig(session);
         const project = args.trim() || session.project;
-        const result = await requireClient(session).call("context", projectArgs(project));
+        const result = await requireClient(session).call("context", project ? { project } : {});
         if (result.isError) throw new Error(result.text);
-        report(ctx, "ORC context", formatContextMessage(project, result.text), "info");
+        report(ctx, "ORC context", formatContextMessage(project, result.text));
       } catch (err) {
         report(ctx, "ORC context failed", errorText(err, session.config?.secret), "error");
       }
@@ -589,62 +797,63 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
   });
 
   pi.registerCommand("orc-project", {
-    description: "Select the ORC project (name, or auto)",
+    description: "Choose the ORC project for this folder: <name>, new, global, auto or reset",
     handler: async (args, ctx) => {
       const session = state.session;
       if (!session) return report(ctx, "ORC project", "No active porc session.", "warning");
       try {
         const api = requireApi(session);
+        const { choicesFile } = porcPaths({ cwd: ctx.cwd });
+        let roots = await api.projectRoots();
         let choice = args.trim();
         if (!choice) {
-          if (!ctx.hasUI) {
-            report(
+          if (!ctx.hasUI)
+            return report(
               ctx,
               "ORC project",
-              "Pass a project name, or run this in the TUI to select one.",
+              "Usage: /orc-project <name> | new | global | auto | reset",
               "warning",
             );
-            return;
-          }
-          const roots = await api.projectRoots();
-          const selected = await ctx.ui.select("ORC project", [
-            "auto",
+          const picked = await ctx.ui.select("ORC project for this folder", [
+            "auto (match ORC project folders)",
+            "new (create a project for this folder)",
+            "global (no project)",
             ...roots.map((root) => root.project_name),
           ]);
-          if (!selected) return;
-          choice = selected;
+          if (!picked) return;
+          choice = picked.split(" ")[0] ?? picked;
         }
-        if (choice === "auto") {
-          const roots = await api.projectRoots();
+        if (choice === "auto" || choice === "reset") {
+          saveProjectChoice(choicesFile, ctx.cwd, null);
           const match = matchProjectRoot(roots, ctx.cwd);
-          session.project = match?.projectName;
-          session.projectId = match?.projectId;
-          pi.appendEntry("porc-project", { project: match?.projectName ?? null });
+          applyProject(session, match ? rootOf(roots, match.projectName) : undefined);
+        } else if (choice === "global") {
+          saveProjectChoice(choicesFile, ctx.cwd, { global: true });
+          applyProject(session, undefined);
+        } else if (choice === "new") {
+          const name = projectNameFor(ctx.cwd);
+          if (!name) throw new Error("This folder name cannot become an ORC project name");
+          const created = await createProjectForCwd(session, ctx.cwd, name);
+          saveProjectChoice(choicesFile, ctx.cwd, { project: created.project_name });
+          roots = await api.projectRoots();
+          applyProject(session, rootOf(roots, created.project_name) ?? created);
         } else {
-          const roots = await api.projectRoots();
-          const match = findProjectByName(roots, choice);
-          if (!match) {
-            report(
+          const match = rootOf(roots, choice);
+          if (!match)
+            return report(
               ctx,
               "ORC project",
-              `Unknown project "${choice}". Known projects: ${roots.map((root) => root.project_name).join(", ") || "none"}`,
+              `Unknown project "${choice}". Known: ${roots.map((root) => root.project_name).join(", ") || "none"}`,
               "error",
             );
-            return;
-          }
-          session.project = match.projectName;
-          session.projectId = match.projectId;
-          pi.appendEntry("porc-project", { project: match.projectName });
+          saveProjectChoice(choicesFile, ctx.cwd, { project: match.project_name });
+          applyProject(session, match);
         }
         session.contextInjected = false;
-        registerOrcMcp(pi, session);
-        await refreshSkills(session);
+        session.offered.clear();
+        await refreshRules(session);
         setStatus(ctx, session);
-        report(
-          ctx,
-          "ORC project",
-          `Active project: ${session.project ?? "none (auto-detect found no match)"}`,
-        );
+        report(ctx, "ORC project", `Active: ${session.project ?? "global (no project)"}`);
       } catch (err) {
         report(ctx, "ORC project failed", errorText(err, session.config?.secret), "error");
       }
@@ -652,40 +861,19 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
   });
 
   pi.registerCommand("orc-skills", {
-    description: "List ORC skills visible to this project (add `sync` to refresh pinned/all mode)",
+    description: "Search ORC skills for this project: /orc-skills [query]",
     handler: async (args, ctx) => {
       const session = state.session;
       if (!session) return report(ctx, "ORC skills", "No active porc session.", "warning");
       try {
-        const config = requireConfig(session);
-        if (!session.api) throw new Error("ORC API client is not available");
-        if (session.health !== "up") throw new Error(`ORC is offline at ${config.apiBase}`);
-        const shouldSync = /(^|\s)sync(\s|$)/.test(args) || !session.skillReport;
-        if (shouldSync) await refreshSkills(session);
-        const skills = await session.api.listSkills();
-        const visible = skills.filter(
-          (skill) =>
-            skill.project_ids.length === 0 ||
-            !session.projectId ||
-            skill.project_ids.includes(session.projectId),
-        );
-        const bundled = new Set<string>(BUNDLED_SKILLS);
-        const lines = visible.map(
-          (skill) =>
-            `${bundled.has(skill.name) ? "•" : "-"} ${skill.name} [${skill.source}]${skill.project_ids.length ? ` (${skill.project_ids.length} project${skill.project_ids.length === 1 ? "" : "s"})` : " (global)"}`,
-        );
-        const reportData = session.skillReport;
-        const syncLines = reportData
-          ? [
-              "",
-              `Directory: ${reportData.dir}`,
-              `Synced: ${reportData.written.join(", ") || "none"}`,
-              ...(reportData.removed.length ? [`Removed: ${reportData.removed.join(", ")}`] : []),
-              ...(reportData.skipped.length ? [`Skipped: ${reportData.skipped.join("; ")}`] : []),
-              ...(reportData.errors.length ? [`Errors: ${reportData.errors.join("; ")}`] : []),
-            ]
-          : [];
-        report(ctx, `ORC skills (${visible.length})`, [...lines, ...syncLines].join("\n"));
+        const query = args.trim();
+        const result = await requireClient(session).call("skill_list", {
+          ...projectArgs(session.project),
+          ...(query ? { q: query } : {}),
+          limit: 30,
+        });
+        if (result.isError) throw new Error(result.text);
+        report(ctx, query ? `ORC skills: ${query}` : "ORC skills", result.text || "No skills.");
       } catch (err) {
         report(ctx, "ORC skills failed", errorText(err, session.config?.secret), "error");
       }
@@ -701,19 +889,18 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
         const config = requireConfig(session);
         const [name, description, ...rest] = args.split("|").map((part) => part.trim());
         const content = rest.join(" | ").trim();
-        if (!name || !description || !content) {
+        if (!name || !description || !content)
           return report(
             ctx,
             "ORC remember",
             "Usage: /orc-remember <name> | <when it matters> | <content>",
             "warning",
           );
-        }
         const result = await requireClient(session).call("memory_create", {
+          ...(session.project ? { project: session.project } : {}),
           name,
           description,
           content,
-          ...projectArgs(session.project),
         });
         report(
           ctx,
@@ -727,107 +914,41 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
     },
   });
 
-  pi.registerCommand("orc-spec", {
-    description: "Run spec against ORC: list [filter] | show <op> | call <op> [json]",
-    handler: async (args, ctx) => {
-      const session = state.session;
-      if (!session) return report(ctx, "ORC spec", "No active porc session.", "warning");
-      try {
-        const config = requireConfig(session);
-        if (!config.spec) throw new Error("The spec bridge is disabled");
-        const [sub = "list", ...rest] = args.trim().split(/\s+/).filter(Boolean);
-        let action: SpecAction;
-        if (sub === "show") {
-          action = { action: "show", operation: required(rest[0], "operation") };
-        } else if (sub === "call") {
-          action = {
-            action: "call",
-            operation: required(rest[0], "operation"),
-            ...(rest.length > 1 ? { data: JSON.parse(rest.slice(1).join(" ")) } : {}),
-          };
-        } else {
-          action = {
-            action: "list",
-            ...(rest.length ? { filter: rest.join(" ") } : {}),
-            limit: 20,
-          };
-        }
-        if (!(await specAvailable(execOf(pi, ctx.signal)))) {
-          session.specAvailable = false;
-          throw new Error("The spec CLI is not available on PATH");
-        }
-        session.specAvailable = true;
-        const result = await runSpec(execOf(pi, ctx.signal), config, action, {
-          ...(session.project ? { project: session.project } : {}),
-          sessionId: session.sessionId,
-          cwd: ctx.cwd,
-        });
-        report(
-          ctx,
-          "ORC spec",
-          redact(result.output || "No output", config.secret),
-          result.ok ? "info" : "error",
-        );
-      } catch (err) {
-        report(ctx, "ORC spec failed", errorText(err, session.config?.secret), "error");
-      }
-    },
-  });
-
   pi.registerCommand("orc-doctor", {
     description: "Diagnose the porc configuration and ORC connection",
     handler: async (_args, ctx) => {
       const session = state.session;
       if (!session) return report(ctx, "porc doctor", "No active porc session.", "warning");
-      const lines: string[] = [];
       const paths = porcPaths({ cwd: ctx.cwd });
-      lines.push(`Config error: ${session.configError ?? "none"}`);
-      lines.push(`Project trust: ${ctx.isProjectTrusted() ? "granted" : "not granted"}`);
-      lines.push(
-        `User config: ${paths.userFile} ${existsSync(paths.userFile) ? "(present)" : "(missing)"}`,
-      );
-      lines.push(
-        `Project config: ${paths.projectFile} ${existsSync(paths.projectFile) ? "(present)" : "(missing)"}`,
-      );
-      lines.push(
-        `ORC config: ${paths.orcFile} ${existsSync(paths.orcFile) ? "(present)" : "(missing)"}`,
-      );
+      const present = (path: string): string =>
+        `${path} ${existsSync(path) ? "(present)" : "(missing)"}`;
+      const lines = [
+        `Config error: ${session.configError ?? "none"}`,
+        `Project trust: ${ctx.isProjectTrusted() ? "granted" : "not granted"}`,
+        `User config: ${present(paths.userFile)}`,
+        `Project config: ${present(paths.projectFile)}`,
+        `ORC config: ${present(paths.orcFile)}`,
+        `Project choices: ${present(paths.choicesFile)}`,
+      ];
       const config = session.config;
       if (config) {
         lines.push(`API: ${config.apiBase} · health ${session.health}`);
         lines.push(
           `Secret: ${config.secret ? `set (${config.secretSource ?? "unknown"} source)` : "not set"}`,
         );
-        lines.push(
-          `Project: ${session.project ?? "none"}${session.projectId ? ` [${session.projectId}]` : ""}`,
-        );
-        lines.push(
-          `MCP: ${session.mcpRegistered ? "registered" : "not registered"}${session.mcpError ? ` · ${session.mcpError}` : ""}`,
-        );
-        lines.push(
-          `Skills directory: ${config.skillDir} ${existsSync(config.skillDir) ? "(present)" : "(missing)"}`,
-        );
-        try {
-          const managed = readdirSync(config.skillDir).length;
-          lines.push(`Managed skills: ${managed} · bundled: ${BUNDLED_SKILLS.join(", ")}`);
-        } catch {
-          lines.push("Managed skills: unreadable");
-        }
-        lines.push(
-          `Bundled skills directory: ${skillDir} ${existsSync(skillDir) ? "(present)" : "(missing)"}`,
-        );
-        if (session.api) {
+        lines.push(`ORC command: ${config.command} (MCP over ${config.transport}, rule hooks)`);
+        if (session.api)
           lines.push(`API reachable now: ${(await session.api.health()) ? "yes" : "no"}`);
+        if (session.client) {
+          try {
+            const tools = await session.client.listTools();
+            lines.push(`MCP: ${tools.map((tool) => tool.name).join(", ")}`);
+          } catch (err) {
+            lines.push(`MCP: ${errorText(err, config.secret)}`);
+          }
         }
       }
-      const available = await specAvailable(execOf(pi, ctx.signal));
-      session.specAvailable = available;
-      lines.push(`spec CLI: ${available ? "available" : "not found"}`);
-      if (session.project && !session.projectId && session.health === "up") {
-        lines.push(
-          "Note: project name is not matched to an id; scoped skill sync may be incomplete.",
-        );
-      }
+      lines.push(statusBody(session));
       report(ctx, "porc doctor", lines.join("\n"), session.configError ? "error" : "info");
     },
   });
@@ -835,10 +956,9 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
   pi.registerCommand("orc-theme", {
     description: "Apply the ORC theme (porc or porc-light)",
     handler: async (args, ctx) => {
-      const requested = args.trim();
-      const name = requested || (ctx.ui.theme.appearance === "light" ? "porc-light" : "porc");
-      if (!ctx.ui.getTheme(name)) {
-        report(
+      const name = args.trim() || (ctx.ui.theme.appearance === "light" ? "porc-light" : "porc");
+      if (!ctx.ui.getTheme(name))
+        return report(
           ctx,
           "ORC theme",
           `Theme "${name}" is not loaded. Available: ${ctx.ui
@@ -847,25 +967,110 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
             .join(", ")}`,
           "error",
         );
-        return;
-      }
       const result = ctx.ui.setTheme(name);
       report(
         ctx,
         "ORC theme",
         result.success
           ? `Applied ${name}.`
-          : `Could not apply ${name}: ${result.error ?? "unknown error"}`,
+          : `Could not apply ${name}: ${result.error ?? "unknown"}`,
         result.success ? "info" : "error",
       );
     },
   });
 
   pi.registerCommand("orc-reload", {
-    description: "Reload porc, ORC resources and Pi extensions",
+    description: "Reload porc, ORC rules and Pi extensions",
     handler: async (_args, ctx) => {
       await ctx.reload();
     },
+  });
+}
+
+function hookEnv(session: SessionState): Record<string, string> {
+  const config = session.config;
+  return {
+    ...(config ? { ORC_API_BASE: config.apiBase } : {}),
+    ...(config?.secret ? { ORC_API_SECRET: config.secret } : {}),
+    ORC_SESSION_ID: session.sessionId,
+  };
+}
+
+async function checkRules(
+  session: SessionState | undefined,
+  native: PiNativeEvent,
+  payload: Record<string, unknown>,
+  ctx: ExtensionContext,
+) {
+  if (!session?.config?.rules || !session.rules?.events.has(native)) return undefined;
+  return runRuleHook({
+    command: session.config.command,
+    native,
+    payload: { session_id: session.sessionId, cwd: ctx.cwd, ...payload },
+    cwd: ctx.cwd,
+    env: hookEnv(session),
+    timeoutMs: session.rules.timeoutMs.get(native) ?? 30_000,
+    signal: ctx.signal,
+  });
+}
+
+function registerRuleHooks(pi: ExtensionAPI, state: PluginState): void {
+  pi.on("tool_call", async (event, ctx) => {
+    const session = state.session;
+    const decision = await checkRules(
+      session,
+      "tool_call",
+      { tool_call_id: event.toolCallId, tool_name: event.toolName, tool_input: event.input },
+      ctx,
+    );
+    if (!decision) return undefined;
+    if (decision.block) return { block: true, reason: decision.reason ?? "Blocked by an ORC rule" };
+    if (decision.updatedInput) Object.assign(event.input, decision.updatedInput);
+    if (decision.context) session?.pendingContext.push(decision.context);
+    return undefined;
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    const session = state.session;
+    const text = event.content
+      .flatMap((item) => (item.type === "text" ? [item.text] : []))
+      .join("\n");
+    const decision = await checkRules(
+      session,
+      "tool_result",
+      {
+        tool_call_id: event.toolCallId,
+        tool_name: event.toolName,
+        tool_input: event.input,
+        tool_response: event.isError
+          ? { error: text.slice(0, 4000) }
+          : { output: text.slice(0, 4000) },
+      },
+      ctx,
+    );
+    const pending = session?.pendingContext.splice(0) ?? [];
+    const context = [...pending, ...(decision?.context ? [decision.context] : [])];
+    if (!context.length) return undefined;
+    return {
+      content: [
+        ...event.content,
+        { type: "text" as const, text: `ORC rules:\n${context.join("\n\n")}` },
+      ],
+      ...(event.structuredContent === undefined
+        ? {}
+        : { structuredContent: event.structuredContent }),
+    };
+  });
+
+  pi.on("input", async (event, ctx) => {
+    if (event.source === "extension") return { action: "continue" as const };
+    const decision = await checkRules(state.session, "input", { prompt: event.text }, ctx);
+    if (decision?.block) {
+      ctx.ui.notify(decision.reason ?? "Prompt blocked by an ORC rule", "warning");
+      return { action: "handled" as const };
+    }
+    if (decision?.context) state.session?.pendingContext.push(decision.context);
+    return { action: "continue" as const };
   });
 }
 
@@ -880,31 +1085,18 @@ export default function porc(pi: ExtensionAPI): void {
     description: "ORC project name for this session",
     type: "string",
   });
-  pi.registerFlag("porc-mode", {
-    description: `ORC MCP mode for this session: ${MCP_MODES.join(" or ")}`,
-    type: "string",
-  });
   pi.registerFlag("porc-no-context", {
-    description: "Do not inject the ORC context index at session start",
+    description: "Do not inject the ORC context index on the first prompt",
     type: "boolean",
     default: false,
-  });
-  pi.registerFlag("porc-no-mcp", {
-    description: "Do not register the native ORC MCP server",
-    type: "boolean",
-    default: false,
-  });
-  pi.registerFlag("porc-no-spec", {
-    description: "Do not enable the spec CLI bridge",
-    type: "boolean",
-    default: false,
-  });
-  pi.registerFlag("porc-skills", {
-    description: `How ORC skills reach Pi: ${SKILL_MODES.join(", ")} (default search)`,
-    type: "string",
   });
   pi.registerFlag("porc-no-recall", {
     description: "Do not add relevant ORC memory and skill pointers to each prompt",
+    type: "boolean",
+    default: false,
+  });
+  pi.registerFlag("porc-no-rules", {
+    description: "Do not enforce ORC rules in this session",
     type: "boolean",
     default: false,
   });
@@ -920,15 +1112,29 @@ export default function porc(pi: ExtensionAPI): void {
   });
   registerTools(pi, state);
   registerCommands(pi, state);
+  registerRuleHooks(pi, state);
 
   pi.on("session_start", async (event, ctx) => {
-    await initialize(pi, state, ctx, { announce: event.reason === "startup" });
+    await initialize(pi, state, ctx, {
+      announce: event.reason === "startup",
+      interactive: event.reason === "startup" || event.reason === "new",
+    });
+    const decision = await checkRules(
+      state.session,
+      "session_start",
+      { source: event.reason },
+      ctx,
+    );
+    if (decision?.context) state.session?.pendingContext.push(decision.context);
   });
 
-  pi.on("session_compact", async () => {
-    if (!state.session) return;
-    state.session.contextInjected = false;
-    state.session.offered.clear();
+  pi.on("session_compact", async (_event, ctx) => {
+    const session = state.session;
+    if (!session) return;
+    session.contextInjected = false;
+    session.offered.clear();
+    const decision = await checkRules(session, "session_compact", {}, ctx);
+    if (decision?.context) session.pendingContext.push(decision.context);
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
@@ -938,32 +1144,33 @@ export default function porc(pi: ExtensionAPI): void {
     if (config.systemPrompt) {
       event.systemPromptOptions.sections.orc = renderOrcPromptSection({
         ...(session.project ? { project: session.project } : {}),
-        mode: config.mode,
-        exposure: config.exposure,
         apiBase: config.apiBase,
-        mcp: config.mcp,
-        spec: config.spec,
-        skillMode: config.skillMode,
         recall: config.recall.enabled,
+        rules: config.rules,
       });
     }
-    if (session.health !== "up") return;
     const parts: string[] = [];
-    if (config.autoContext && !session.contextInjected) {
+    const ruleContext = session.pendingContext.splice(0);
+    if (ruleContext.length) parts.push(`ORC rules:\n${ruleContext.join("\n\n")}`);
+    if (session.health === "up" && config.autoContext && !session.contextInjected) {
       session.contextInjected = true;
       try {
-        const result = await requireClient(session).call("context", projectArgs(session.project));
+        const result = await requireClient(session).call(
+          "context",
+          session.project ? { project: session.project } : {},
+        );
         if (result.isError || !result.text.trim()) {
           session.contextError = result.text || "empty ORC context";
         } else {
-          ctx.ui.setStatus("porc", `orc: ${session.project ?? "no project"} · context loaded`);
+          session.contextError = undefined;
           parts.push(formatContextMessage(session.project, result.text));
         }
       } catch (err) {
         session.contextError = errorText(err, config.secret);
       }
+      setStatus(ctx, session);
     }
-    if (config.recall.enabled && event.messageType === "user") {
+    if (session.health === "up" && config.recall.enabled && event.messageType === "user") {
       const hint = await recallHint(session, event.prompt, event.systemPromptOptions.skills);
       if (hint) parts.push(hint);
     }
@@ -973,13 +1180,8 @@ export default function porc(pi: ExtensionAPI): void {
     };
   });
 
-  pi.on("resources_discover", () => {
-    const config = state.session?.config;
-    if (!config?.enabled) return undefined;
-    return { skillPaths: [config.skillDir] };
-  });
-
   pi.on("session_shutdown", async (_event, ctx) => {
+    await checkRules(state.session, "session_shutdown", {}, ctx).catch(() => undefined);
     ctx.ui.setStatus("porc", undefined);
     ctx.ui.setWidget("porc", undefined);
     const session = state.session;

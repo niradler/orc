@@ -1,7 +1,7 @@
 {
   "name": "@orc/pi",
   "version": "0.1.62",
-  "description": "porc - fuses ORC into the Pi coding agent: context, memories, skills, MCP tools, spec bridge and the ORC theme",
+  "description": "porc - one-stop ORC integration for the Pi coding agent: context, memories, skills, jobs, enforced rules and the ORC theme",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -11,6 +11,8 @@
     "agent",
     "mcp",
     "skills",
+    "jobs",
+    "rules",
     "memory",
     "theme"
   ],
@@ -28,12 +30,6 @@
     "extensions": [
       "./extensions/orc.ts"
     ],
-    "skills": [
-      "./skills"
-    ],
-    "prompts": [
-      "./prompts/*.md"
-    ],
     "themes": [
       "./themes/*.json"
     ],
@@ -48,14 +44,10 @@
     "CHANGELOG.md",
     "README.md",
     "extensions",
-    "prompts",
-    "skills",
     "src",
     "themes"
   ],
   "scripts": {
-    "sync:skills": "bun scripts/sync-skills.ts",
-    "check:skills": "bun scripts/sync-skills.ts --check",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "clean": "rm -rf dist"

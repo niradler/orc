@@ -4,9 +4,6 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { DEFAULT_RECALL, type RecallOptions } from "./recall.js";
 
-export const MCP_MODES = ["meta", "full"] as const;
-export type McpMode = (typeof MCP_MODES)[number];
-
 export const PORC_CONFIG_NAME = "porc.json";
 export const DEFAULT_API_BASE = "http://127.0.0.1:7700";
 
@@ -29,20 +26,6 @@ const HttpUrl = z
     }
   }, "Use an http:// or https:// URL");
 
-export const SKILL_MODES = ["search", "pinned", "all"] as const;
-export type SkillMode = (typeof SKILL_MODES)[number];
-
-const SkillName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, "Use a skill name");
-
-const SkillSettings = z
-  .object({
-    bundled: z.boolean().optional(),
-    mode: z.enum(SKILL_MODES).optional(),
-    pinned: z.array(SkillName).max(50).optional(),
-    dir: z.string().trim().min(1).optional(),
-  })
-  .strict();
-
 const RecallSettings = z
   .object({
     enabled: z.boolean().optional(),
@@ -61,18 +44,15 @@ export const PorcFileSchema = z
       .string()
       .regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/, "Use an environment variable name")
       .optional(),
-    mode: z.enum(MCP_MODES).optional(),
     transport: z.enum(["stdio", "http"]).optional(),
     project: z.string().trim().min(1).max(100).optional(),
     autoProject: z.boolean().optional(),
+    askProject: z.boolean().optional(),
     autoContext: z.boolean().optional(),
     systemPrompt: z.boolean().optional(),
-    spec: z.boolean().optional(),
-    mcp: z.boolean().optional(),
-    exposure: z.enum(["direct", "codemode", "deferred"]).optional(),
+    rules: z.boolean().optional(),
     timeoutMs: z.number().int().min(250).max(60_000).optional(),
     command: z.string().trim().min(1).max(2048).optional(),
-    skills: SkillSettings.optional(),
     recall: RecallSettings.optional(),
   })
   .strict();
@@ -91,9 +71,6 @@ const OrcFileSchema = z
   })
   .passthrough();
 
-export type McpExposure = "direct" | "codemode" | "deferred";
-
-/** Where the resolved secret came from, so child processes can inherit it when ORC already reads it. */
 export type SecretSource = "env" | "file" | "orc";
 
 export type PorcConfig = {
@@ -101,35 +78,24 @@ export type PorcConfig = {
   apiBase: string;
   secret?: string;
   secretSource?: SecretSource;
-  mode: McpMode;
   transport: "stdio" | "http";
   project?: string;
   autoProject: boolean;
+  askProject: boolean;
   autoContext: boolean;
   systemPrompt: boolean;
-  spec: boolean;
-  mcp: boolean;
-  exposure: McpExposure;
+  rules: boolean;
   timeoutMs: number;
   command: string;
-  bundledSkills: boolean;
-  skillMode: SkillMode;
-  pinnedSkills: string[];
-  skillDir: string;
   recall: RecallOptions & { enabled: boolean };
 };
 
-/** CLI flags win over environment variables and configuration files. */
 export type PorcOverrides = {
   apiBase?: string;
   project?: string;
-  mode?: McpMode;
   autoContext?: boolean;
-  mcp?: boolean;
-  spec?: boolean;
-  bundledSkills?: boolean;
-  skillMode?: SkillMode;
   recall?: boolean;
+  rules?: boolean;
 };
 
 export type LoadConfigOptions = {
@@ -154,12 +120,14 @@ export function porcPaths(options: { cwd: string; home?: string }): {
   userFile: string;
   projectFile: string;
   orcFile: string;
+  choicesFile: string;
 } {
   const home = options.home ?? homedir();
   return {
     userFile: join(home, ".pi", "agent", PORC_CONFIG_NAME),
     projectFile: join(options.cwd, ".pi", PORC_CONFIG_NAME),
     orcFile: join(home, ".orc", "config.json"),
+    choicesFile: join(home, ".pi", "agent", "porc-projects.json"),
   };
 }
 
@@ -205,7 +173,6 @@ function readOrcApi(path: string): { host?: string; port?: number; secret?: stri
   };
 }
 
-/** Strip `/api` and trailing slashes; wildcard bind addresses are dialled on loopback. */
 export function normalizeApiBase(value: string): string {
   let url: URL;
   try {
@@ -243,18 +210,6 @@ function bool(value: string | undefined, name: string): boolean | undefined {
   const parsed = BooleanString.safeParse(value);
   if (!parsed.success) throw new PorcConfigError(name, `Expected a boolean, got "${value}"`);
   return parsed.data;
-}
-
-function mode(value: string | undefined): McpMode | undefined {
-  if (value === undefined || value.trim() === "") return undefined;
-  if ((MCP_MODES as readonly string[]).includes(value)) return value as McpMode;
-  throw new PorcConfigError("PORC_MCP_MODE", `Expected ${MCP_MODES.join(" or ")}, got "${value}"`);
-}
-
-function skillMode(value: string | undefined): SkillMode | undefined {
-  if (value === undefined || value.trim() === "") return undefined;
-  if ((SKILL_MODES as readonly string[]).includes(value)) return value as SkillMode;
-  throw new PorcConfigError("PORC_SKILLS", `Expected ${SKILL_MODES.join(", ")}, got "${value}"`);
 }
 
 function transport(value: string | undefined): "stdio" | "http" | undefined {
@@ -299,19 +254,9 @@ export function loadPorcConfig(options: LoadConfigOptions): PorcConfig {
   const paths = porcPaths({ cwd, home });
   const user = readPorcFile(paths.userFile);
   const project = options.projectTrusted ? readPorcFile(paths.projectFile) : {};
-  const file = {
-    ...user,
-    ...project,
-    skills: { ...user.skills, ...project.skills },
-    recall: { ...user.recall, ...project.recall },
-  };
+  const file = { ...user, ...project, recall: { ...user.recall, ...project.recall } };
   const orc = readOrcApi(paths.orcFile);
-
-  const resolvedMode =
-    overrides.mode ?? mode(stringEnv(env, "PORC_MCP_MODE")) ?? file.mode ?? "meta";
-  const skillDir = file.skills?.dir
-    ? resolve(cwd, file.skills.dir)
-    : join(home, ".pi", "agent", "porc", "skills");
+  const envBase = stringEnv(env, "PORC_API_BASE") ?? stringEnv(env, "ORC_API_BASE");
 
   const config: PorcConfig = {
     enabled: bool(stringEnv(env, "PORC_DISABLED"), "PORC_DISABLED")
@@ -321,15 +266,14 @@ export function loadPorcConfig(options: LoadConfigOptions): PorcConfig {
       ? normalizeApiBase(overrides.apiBase)
       : resolveApiBase({
           ...(file.apiBase ? { configured: file.apiBase } : {}),
-          ...((stringEnv(env, "PORC_API_BASE") ?? stringEnv(env, "ORC_API_BASE"))
-            ? { env: stringEnv(env, "PORC_API_BASE") ?? stringEnv(env, "ORC_API_BASE") }
-            : {}),
+          ...(envBase ? { env: envBase } : {}),
           orc,
         }),
-    mode: resolvedMode,
     transport: transport(stringEnv(env, "PORC_MCP_TRANSPORT")) ?? file.transport ?? "stdio",
     autoProject:
       bool(stringEnv(env, "PORC_AUTO_PROJECT"), "PORC_AUTO_PROJECT") ?? file.autoProject ?? true,
+    askProject:
+      bool(stringEnv(env, "PORC_ASK_PROJECT"), "PORC_ASK_PROJECT") ?? file.askProject ?? true,
     autoContext:
       overrides.autoContext ??
       bool(stringEnv(env, "PORC_CONTEXT"), "PORC_CONTEXT") ??
@@ -337,19 +281,10 @@ export function loadPorcConfig(options: LoadConfigOptions): PorcConfig {
       true,
     systemPrompt:
       bool(stringEnv(env, "PORC_SYSTEM_PROMPT"), "PORC_SYSTEM_PROMPT") ?? file.systemPrompt ?? true,
-    spec: overrides.spec ?? bool(stringEnv(env, "PORC_SPEC"), "PORC_SPEC") ?? file.spec ?? true,
-    mcp: overrides.mcp ?? bool(stringEnv(env, "PORC_MCP"), "PORC_MCP") ?? file.mcp ?? true,
-    exposure: file.exposure ?? "direct",
+    rules:
+      overrides.rules ?? bool(stringEnv(env, "PORC_RULES"), "PORC_RULES") ?? file.rules ?? true,
     timeoutMs: timeout(stringEnv(env, "PORC_TIMEOUT_MS")) ?? file.timeoutMs ?? 5000,
     command: stringEnv(env, "PORC_ORC_COMMAND") ?? file.command ?? "orc",
-    bundledSkills: overrides.bundledSkills ?? file.skills?.bundled ?? true,
-    skillMode:
-      overrides.skillMode ??
-      skillMode(stringEnv(env, "PORC_SKILLS")) ??
-      file.skills?.mode ??
-      "search",
-    pinnedSkills: file.skills?.pinned ?? [],
-    skillDir,
     recall: {
       enabled:
         overrides.recall ??
@@ -372,7 +307,6 @@ export function loadPorcConfig(options: LoadConfigOptions): PorcConfig {
   return config;
 }
 
-/** Project-scoped tool arguments: omit the project to keep the connection default. */
 export function projectArgs(project: string | undefined): Record<string, string> {
   return project ? { project } : {};
 }

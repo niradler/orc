@@ -4,12 +4,12 @@ How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi and other MCP clients 
 
 ## What each piece gives you
 
-| Piece | Gives the agent | Setup |
-| --- | --- | --- |
-| [MCP server](#mcp) | ORC tools: context, tasks, memories, knowledge, jobs, skills, scratchpads | Register once per agent |
-| [Session tracking](#session-tracking) | The agent's sessions in **Sessions**, with resume and search | Automatic for Claude Code and Codex; hooks for Cursor and Gemini |
-| [Rule hooks](#rule-hooks) | ORC rules enforced inside the agent (block, approve, inject context) | `orc rules install-hook` |
-| [Skills](#skills) | ORC's `orc-platform` and `orc-sdlc` skills in the agent | `npx skills add` or `orc skill export-to` |
+| Piece                                 | Gives the agent                                                           | Setup                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [MCP server](#mcp)                    | ORC tools: context, tasks, memories, knowledge, jobs, skills, scratchpads | Register once per agent                                          |
+| [Session tracking](#session-tracking) | The agent's sessions in **Sessions**, with resume and search              | Automatic for Claude Code and Codex; hooks for Cursor and Gemini |
+| [Rule hooks](#rule-hooks)             | ORC rules enforced inside the agent (block, approve, inject context)      | `orc rules install-hook`                                         |
+| [Skills](#skills)                     | ORC's `orc-platform` and `orc-sdlc` skills in the agent                   | `npx skills add` or `orc skill export-to`                        |
 
 MCP and hooks are independent. Hooks alone do not give the agent ORC tools.
 
@@ -17,18 +17,18 @@ MCP and hooks are independent. Hooks alone do not give the agent ORC tools.
 
 ORC serves MCP two ways:
 
-| Transport | Endpoint | Auth |
-| --- | --- | --- |
-| Streamable HTTP | `http://127.0.0.1:7700/mcp` | `Authorization: Bearer <secret or token>` when a secret is set |
-| stdio | `orc mcp` | Reads `api.secret` from `~/.orc/config.json` or `ORC_API_SECRET` |
+| Transport       | Endpoint                    | Auth                                                             |
+| --------------- | --------------------------- | ---------------------------------------------------------------- |
+| Streamable HTTP | `http://127.0.0.1:7700/mcp` | `Authorization: Bearer <secret or token>` when a secret is set   |
+| stdio           | `orc mcp`                   | Reads `api.secret` from `~/.orc/config.json` or `ORC_API_SECRET` |
 
 Both default to meta mode: three tools (`tool_search`, `tool_describe`, `tool_invoke`) that let the agent find and call any ORC tool without loading every schema. Use `?mode=full` (HTTP) or `orc mcp --mode full` (stdio) for the full tool list.
 
 Scope a connection to projects with query parameters:
 
-| Parameter | Effect |
-| --- | --- |
-| `?project=my-app` | Project-aware tools default to `my-app` |
+| Parameter              | Effect                                      |
+| ---------------------- | ------------------------------------------- |
+| `?project=my-app`      | Project-aware tools default to `my-app`     |
 | `?projects=my-app,lib` | Several projects in priority order (max 50) |
 
 Pass `project` or `projects`, not both. Unknown project names are rejected.
@@ -115,24 +115,25 @@ Clients that support HTTP can use `http://127.0.0.1:7700/mcp` with the bearer he
 ### Pi (porc)
 
 [`@orc/pi`](https://www.npmjs.com/package/@orc/pi), or **porc**, packages the ORC
-connection for [Pi](https://pi.dev): native MCP, context and memories, skill sync, the
-`spec` bridge, an ORC system prompt section and the ORC theme.
+connection for [Pi](https://pi.dev): context, memories and skills read from and written
+to ORC, cron jobs, enforced ORC rules, an ORC system prompt section and the ORC theme.
 
 ```bash
 pi install npm:@orc/pi
 ```
 
-It registers the `orc` stdio MCP server automatically, scoped to the matched project,
-and sets `ORC_SESSION_ID` so writes are attributed to the Pi session. Configure it in
+It talks to ORC through `orc mcp` (meta tools), scoped to the matched project, enforces
+rules through `orc rules hook pi`, and sets `ORC_SESSION_ID` so writes are attributed to
+the Pi session. No `install-hook` step is needed for Pi. Configure it in
 `~/.pi/agent/porc.json` or `.pi/porc.json`; environment variables and session flags
 override the files. See [Pi and porc](./pi.md) for configuration, commands and
 security notes.
 
-| stdio variable | Purpose |
-| --- | --- |
-| `ORC_API_BASE` | ORC origin to call (default from `api.host` / `api.port`) |
-| `ORC_SESSION_ID` | Attribution for memory, knowledge and scratchpad writes |
-| `ORC_API_SECRET` | Secret, when not in `~/.orc/config.json` |
+| stdio variable   | Purpose                                                   |
+| ---------------- | --------------------------------------------------------- |
+| `ORC_API_BASE`   | ORC origin to call (default from `api.host` / `api.port`) |
+| `ORC_SESSION_ID` | Attribution for memory, knowledge and scratchpad writes   |
+| `ORC_API_SECRET` | Secret, when not in `~/.orc/config.json`                  |
 
 ### spec CLI
 
@@ -155,13 +156,13 @@ It returns the project's active tasks and its memories by priority.
 
 ## Session tracking
 
-| Agent | How sessions reach ORC |
-| --- | --- |
-| Claude Code | Discovered from its local session files. Waiting on a permission prompt or question needs the lifecycle hooks. |
-| Codex | Discovered from its local session files and writer locks. No setup. |
-| Cursor (IDE and CLI) | History is discovered; live state needs lifecycle hooks |
-| Gemini CLI | History is discovered; live state and permission waits need lifecycle hooks |
-| OpenCode | History is read from its SQLite store. No setup; no live state. |
+| Agent                | How sessions reach ORC                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Claude Code          | Discovered from its local session files. Waiting on a permission prompt or question needs the lifecycle hooks. |
+| Codex                | Discovered from its local session files and writer locks. No setup.                                            |
+| Cursor (IDE and CLI) | History is discovered; live state needs lifecycle hooks                                                        |
+| Gemini CLI           | History is discovered; live state and permission waits need lifecycle hooks                                    |
+| OpenCode             | History is read from its SQLite store. No setup; no live state.                                                |
 
 Install the Cursor and Gemini lifecycle hooks from a clone of the repository (needs Bun):
 
@@ -182,12 +183,12 @@ orc rules install-hook cursor --target ~/.cursor/hooks.json
 orc rules install-hook gemini --target ~/.gemini/settings.json
 ```
 
-| Option | Purpose |
-| --- | --- |
-| `--target <file>` | Settings file to merge into (required). Existing hooks are kept and a backup is written. |
-| `--events <list>` | Comma-separated event names; default is every supported event |
-| `--timeout-seconds <n>` | Hook timeout (default `10`). Raise it above the ask-user request lifetime when using [human requests](./human-requests.md). |
-| `--legacy-hooks-dir <dir>` | Replace old `hooks/*.ts` continuity handlers in that directory |
+| Option                     | Purpose                                                                                                                     |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `--target <file>`          | Settings file to merge into (required). Existing hooks are kept and a backup is written.                                    |
+| `--events <list>`          | Comma-separated event names; default is every supported event                                                               |
+| `--timeout-seconds <n>`    | Hook timeout (default `10`). Raise it above the ask-user request lifetime when using [human requests](./human-requests.md). |
+| `--legacy-hooks-dir <dir>` | Replace old `hooks/*.ts` continuity handlers in that directory                                                              |
 
 Rule enforcement also needs `rules.enabled: true` (or `ORC_RULES_ENABLED=true`). See [Agent rules](./agent-rules.md) and [Human requests](./human-requests.md).
 
@@ -217,9 +218,8 @@ orc skill export-to claude --dry-run
 
 Agents connected over MCP can also list and read skills without installing them (`skill_list`, `skill_read`). See [Skills](./skills.md).
 
-Pi users do not need a separate skill install: `@orc/pi` loads `orc-platform` and
-`orc-sdlc` from the package and syncs the skills visible to the active project. See
-[Pi and porc](./pi.md).
+Pi users do not need a skill install: `@orc/pi` reads ORC skills on demand, and Pi still
+loads local `.agents/skills` and `.pi/skills`. See [Pi and porc](./pi.md).
 
 ## Agents ORC runs itself
 

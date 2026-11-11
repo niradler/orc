@@ -1,32 +1,25 @@
-export type OrcSkillRef = {
+import type { OrcRulePolicy, OrcRuleRevision } from "./rules.js";
+
+export type OrcJobInput = {
   name: string;
-  path: string;
-  size?: number;
+  description?: string;
+  trigger_type: "cron";
+  cron_expr: string;
+  enabled: boolean;
+  action: { type: "agent"; prompt: string; backend: string; auto_approve?: boolean };
+  working_dir?: string;
+  project_id?: string | null;
 };
 
-export type OrcSkill = {
+export type OrcJob = {
+  id: string;
   name: string;
-  description: string;
-  source: "builtin" | "user" | string;
-  path?: string;
-  project_ids?: string[];
-  content: string;
-  references?: OrcSkillRef[];
-  files?: OrcSkillRef[];
-};
-
-export type OrcSkillFile = {
-  name: string;
-  path: string;
-  content: string;
-  encoding: "utf8" | "base64" | string;
-};
-
-export type OrcSkillListItem = {
-  name: string;
-  description: string;
-  source: string;
-  project_ids: string[];
+  enabled: boolean;
+  trigger_type: string;
+  cron_expr: string | null;
+  next_run_at: string | null;
+  project_id: string | null;
+  run_count?: number;
 };
 
 export type OrcProjectRoot = {
@@ -36,8 +29,6 @@ export type OrcProjectRoot = {
   folders: Array<{ agent: string; label: string; dir: string; skills: number }>;
 };
 
-type Scope = { projectId?: string; global?: boolean };
-
 export class OrcApiError extends Error {
   constructor(
     message: string,
@@ -46,12 +37,6 @@ export class OrcApiError extends Error {
     super(message);
     this.name = "OrcApiError";
   }
-}
-
-function scopeQuery(scope: Scope): string {
-  if (scope.projectId) return `project_id=${encodeURIComponent(scope.projectId)}`;
-  if (scope.global) return "scope=global";
-  return "";
 }
 
 function withQuery(path: string, query: string): string {
@@ -89,9 +74,7 @@ export class OrcApiClient {
         const parsed = JSON.parse(body) as { error?: { message?: string } | string };
         if (typeof parsed.error === "string") message = parsed.error;
         else if (parsed.error?.message) message = parsed.error.message;
-      } catch {
-        // Plain-text errors are already handled.
-      }
+      } catch {}
       const hint =
         response.status === 401
           ? ` (${this.secret ? `secret from ${this.secretSource ?? "config"} was rejected; set PORC_API_SECRET to the secret of ${this.base}` : `no secret configured; set PORC_API_SECRET or api.secret in ~/.orc/config.json`})`
@@ -106,6 +89,48 @@ export class OrcApiClient {
 
   private async json<T>(path: string): Promise<T> {
     return (await (await this.request(path)).json()) as T;
+  }
+
+  private async send<T>(path: string, body: unknown, method = "POST"): Promise<T> {
+    const response = await this.request(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return (await response.json()) as T;
+  }
+
+  async createProject(input: {
+    name: string;
+    scope?: string;
+    description?: string;
+  }): Promise<{ id: string; name: string }> {
+    return this.send("/projects", input);
+  }
+
+  async createJob(input: OrcJobInput): Promise<OrcJob> {
+    return this.send("/jobs", input);
+  }
+
+  async listJobs(projectId?: string): Promise<OrcJob[]> {
+    const query = projectId
+      ? `?project_id=${encodeURIComponent(projectId)}&limit=100`
+      : "?limit=100";
+    return (await this.json<{ jobs: OrcJob[] }>(`/jobs${query}`)).jobs;
+  }
+
+  async rules(workspace?: string): Promise<{ enabled: boolean; history: OrcRuleRevision[] }> {
+    return this.json(
+      withQuery("/rules", workspace ? `workspace=${encodeURIComponent(workspace)}` : ""),
+    );
+  }
+
+  async activateRules(
+    policy: OrcRulePolicy,
+    expectedId: string | null,
+    reason: string,
+  ): Promise<OrcRuleRevision> {
+    return this.send("/rules/activate", { policy, expected_id: expectedId, reason });
   }
 
   async health(): Promise<boolean> {
@@ -123,31 +148,5 @@ export class OrcApiClient {
   async projectRoots(): Promise<OrcProjectRoot[]> {
     const data = await this.json<{ projects: OrcProjectRoot[] }>("/skills/project-folders");
     return data.projects;
-  }
-
-  async projectIdByName(name: string): Promise<string | undefined> {
-    try {
-      const data = await this.json<{ id?: string; project?: { id?: string } }>(
-        `/projects/by-name/${encodeURIComponent(name)}`,
-      );
-      return data.id ?? data.project?.id;
-    } catch (err) {
-      if (err instanceof OrcApiError && err.status === 404) return undefined;
-      throw err;
-    }
-  }
-
-  async listSkills(): Promise<OrcSkillListItem[]> {
-    const data = await this.json<{ skills: OrcSkillListItem[] }>("/skills?scope=all&limit=500");
-    return data.skills;
-  }
-
-  async readSkill(name: string, scope: Scope = {}): Promise<OrcSkill> {
-    return this.json<OrcSkill>(withQuery(`/skills/${encodeURIComponent(name)}`, scopeQuery(scope)));
-  }
-
-  async readSkillFile(name: string, ref: string, scope: Scope = {}): Promise<OrcSkillFile> {
-    const query = [scopeQuery(scope), `ref=${encodeURIComponent(ref)}`].filter(Boolean).join("&");
-    return this.json<OrcSkillFile>(withQuery(`/skills/${encodeURIComponent(name)}`, query));
   }
 }

@@ -179,6 +179,10 @@ export function rulesCommand(): Command {
     )
     .action((backend, opts) => {
       if (!Object.hasOwn(RULE_EVENT_ADAPTERS, backend)) throw new Error("Unsupported hook backend");
+      if (backend === "pi")
+        throw new Error(
+          "Pi enforces ORC rules through the @orc/pi package; no hook install needed",
+        );
       const hookTimeout = Number(opts.timeoutSeconds);
       if (!Number.isInteger(hookTimeout) || hookTimeout < 1 || hookTimeout > 604815)
         throw new Error("Hook timeout must be an integer from 1 to 604815 seconds");

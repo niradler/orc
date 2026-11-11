@@ -40,20 +40,14 @@ describe("loadPorcConfig", () => {
     expect(config).toMatchObject({
       enabled: true,
       apiBase: "http://127.0.0.1:7700",
-      mode: "meta",
       transport: "stdio",
       autoProject: true,
+      askProject: true,
       autoContext: true,
       systemPrompt: true,
-      spec: true,
-      mcp: true,
-      exposure: "direct",
+      rules: true,
       timeoutMs: 5000,
       command: "orc",
-      bundledSkills: true,
-      skillMode: "search",
-      pinnedSkills: [],
-      skillDir: join(home, ".pi", "agent", "porc", "skills"),
     });
     expect(config.secret).toBeUndefined();
     expect(config.project).toBeUndefined();
@@ -75,16 +69,14 @@ describe("loadPorcConfig", () => {
     const { home, cwd } = workspace();
     write(join(home, ".pi", "agent", "porc.json"), {
       apiBase: "http://127.0.0.1:7000/api/",
-      mode: "full",
+      transport: "http",
       project: "user-project",
       autoContext: true,
-      skills: { dir: "managed-skills" },
     });
     write(join(cwd, ".pi", "porc.json"), {
       autoContext: false,
-      exposure: "deferred",
+      askProject: false,
       project: "project-project",
-      skills: { mode: "pinned", pinned: ["release-notes"] },
       recall: { maxSkills: 1 },
     });
     write(join(home, ".orc", "config.json"), { api: { secret: "orc-secret" } });
@@ -94,7 +86,7 @@ describe("loadPorcConfig", () => {
       home,
       projectTrusted: true,
       env: {
-        PORC_MCP_MODE: "meta",
+        PORC_MCP_TRANSPORT: "stdio",
         PORC_API_BASE: "http://0.0.0.0:7100/api",
         PORC_PROJECT: "env-project",
         PORC_API_SECRET: "env-secret",
@@ -102,28 +94,36 @@ describe("loadPorcConfig", () => {
     });
 
     expect(config.apiBase).toBe("http://127.0.0.1:7100");
-    expect(config.mode).toBe("meta");
+    expect(config.transport).toBe("stdio");
     expect(config.project).toBe("env-project");
     expect(config.autoContext).toBe(false);
-    expect(config.exposure).toBe("deferred");
+    expect(config.askProject).toBe(false);
     expect(config.secret).toBe("env-secret");
     expect(config.secretSource).toBe("env");
-    expect(config.skillMode).toBe("pinned");
-    expect(config.pinnedSkills).toEqual(["release-notes"]);
     expect(config.recall.maxSkills).toBe(1);
     expect(config.recall.maxMemories).toBe(4);
-    expect(config.skillDir).toBe(join(cwd, "managed-skills"));
   });
 
-  test("skills default to search mode with recall on, and env switches them", () => {
+  test("recall and rules default on, and env switches them", () => {
     const { home, cwd } = workspace();
     const defaults = loadPorcConfig({ cwd, home, env: {} });
-    expect(defaults.skillMode).toBe("search");
     expect(defaults.recall.enabled).toBe(true);
-    const tuned = loadPorcConfig({ cwd, home, env: { PORC_SKILLS: "all", PORC_RECALL: "false" } });
-    expect(tuned.skillMode).toBe("all");
+    expect(defaults.rules).toBe(true);
+    const tuned = loadPorcConfig({
+      cwd,
+      home,
+      env: { PORC_RECALL: "false", PORC_RULES: "off", PORC_ASK_PROJECT: "no" },
+    });
     expect(tuned.recall.enabled).toBe(false);
-    expect(() => loadPorcConfig({ cwd, home, env: { PORC_SKILLS: "everything" } })).toThrow();
+    expect(tuned.rules).toBe(false);
+    expect(tuned.askProject).toBe(false);
+    expect(() => loadPorcConfig({ cwd, home, env: { PORC_RULES: "maybe" } })).toThrow();
+  });
+
+  test("rejects removed skill and MCP mode settings", () => {
+    const { home, cwd } = workspace();
+    write(join(home, ".pi", "agent", "porc.json"), { skills: { mode: "all" } });
+    expect(() => loadPorcConfig({ cwd, home, env: {} })).toThrow(PorcConfigError);
   });
 
   test("ignores project config until the project is trusted", () => {
@@ -149,25 +149,17 @@ describe("loadPorcConfig", () => {
       overrides: {
         apiBase: "http://127.0.0.1:7200",
         project: "flag-project",
-        mode: "full",
         autoContext: false,
-        mcp: false,
-        spec: false,
-        skillMode: "all",
         recall: false,
-        bundledSkills: false,
+        rules: false,
       },
     });
 
     expect(config.apiBase).toBe("http://127.0.0.1:7200");
     expect(config.project).toBe("flag-project");
-    expect(config.mode).toBe("full");
     expect(config.autoContext).toBe(false);
-    expect(config.mcp).toBe(false);
-    expect(config.spec).toBe(false);
-    expect(config.skillMode).toBe("all");
     expect(config.recall.enabled).toBe(false);
-    expect(config.bundledSkills).toBe(false);
+    expect(config.rules).toBe(false);
   });
 
   test("PORC_DISABLED disables the integration", () => {
@@ -203,7 +195,11 @@ describe("loadPorcConfig", () => {
 
     const good = workspace();
     expect(() =>
-      loadPorcConfig({ cwd: good.cwd, home: good.home, env: { PORC_MCP_MODE: "huge" } }),
+      loadPorcConfig({
+        cwd: good.cwd,
+        home: good.home,
+        env: { PORC_MCP_TRANSPORT: "carrier-pigeon" },
+      }),
     ).toThrow(PorcConfigError);
   });
 });
@@ -245,4 +241,5 @@ test("porcPaths keeps user and project configuration separate", () => {
   expect(paths.userFile).toBe(join("C:/Users/me", ".pi", "agent", "porc.json"));
   expect(paths.projectFile).toBe(join("C:/work/app", ".pi", "porc.json"));
   expect(paths.orcFile).toBe(join("C:/Users/me", ".orc", "config.json"));
+  expect(paths.choicesFile).toBe(join("C:/Users/me", ".pi", "agent", "porc-projects.json"));
 });

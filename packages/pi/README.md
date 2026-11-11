@@ -1,146 +1,152 @@
-# porc — ORC inside Pi
+# porc: ORC inside Pi
 
 `@orc/pi` is a [Pi](https://pi.dev) package that makes [ORC](https://github.com/niradler/orc)
-the engine of a Pi setup: persistent memory, skills, tasks and integrations, a system
-prompt that explains them, the native ORC MCP server, the `spec` CLI and the ORC theme.
+the engine of a Pi setup. Install it once to get:
 
-It is meant as one install instead of a pile of memory, skill and tool extensions. ORC
-extends your local Pi setup and never replaces it: local skills, prompts and extensions
-keep loading and win on name clashes.
+- Memories, skills and project context, read from and written to ORC.
+- Cron jobs scheduled from chat.
+- ORC rules enforced on Pi's tool calls and prompts.
+- The ORC theme.
 
-porc does not configure models or providers. Pi keeps its own model setup.
+porc does not configure models or providers. Pi keeps its own model setup, and local Pi
+skills, prompts and extensions keep loading as usual.
 
 ## What it adds
 
-| Piece           | Behavior                                                                                        |
-| --------------- | ----------------------------------------------------------------------------------------------- |
-| Memory          | ORC memories are the memory: recalled per prompt, saved with `memory_create` / `/orc-remember`  |
-| Skills          | Searched per prompt instead of preloaded; bundled `orc-platform` / `orc-sdlc`; optional pinning |
-| `orc` tool      | Context, memories, skills, project listing, or any ORC tool by name                             |
-| `orc_spec` tool | Bridges to the `spec` CLI for operations that are not exposed as MCP tools                      |
-| Native MCP      | Registers `orc` as a stdio (default) or HTTP MCP server for the session                         |
-| System prompt   | A short static `orc` section; the context index is injected once per session                    |
-| Theme           | `porc` (dark) and `porc-light`, matching the ORC design tokens; apply with `/orc-theme`         |
-| Prompts         | `orc-plan`, `orc-handoff` and `orc-recall` prompt templates                                     |
+| Piece         | Behavior                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------- |
+| `orc` tool    | One tool for context, memories, skills, projects, jobs, rules and any ORC tool via meta search |
+| Recall        | Each prompt gets a small hidden hint of relevant ORC memories and skills (names only)          |
+| Rules         | ORC rules for the workspace run on Pi `tool_call`, `tool_result` and `input`; blocks are real  |
+| Projects      | Detects the ORC project for `cwd`, including nested folders, or asks: existing, new, global    |
+| System prompt | A short static `orc` section; the context index is injected once per session                   |
+| Theme         | `porc` (dark) and `porc-light`, matching ORC's `DESIGN.md`; apply with `/orc-theme`            |
 
-### Context management
+### Reads and writes
 
-porc keeps the token cost flat:
+- **Writes go to ORC.** "Remember X" calls `memory_create`, and "make a skill for Y" calls
+  `skill_create`, so other agents, the CLI and the UI see them too.
+- **Reads come from both places.** ORC memories and skills are read through recall and the
+  `orc` tool. Pi loads local skills natively from `.agents/skills`, `.pi/skills`,
+  `~/.pi/agent/skills` and packages, and local skills win on name clashes.
+- **ORC skills are never copied to disk.** They are fetched when needed, so there is nothing
+  to sync.
 
-- ORC skills are **not** loaded at startup. On each prompt porc searches ORC with the
-  prompt's distinctive terms and adds a small hidden hint (at most 4 memories and 3
-  skills, about 900 characters) with names and one-line descriptions only. The agent
-  reads a full memory or skill only when it needs it.
-- A name already hinted in the session, or already loaded as a local Pi skill, is not
-  hinted again. The set resets after compaction.
-- The system prompt section is static, so it stays prompt-cache friendly; all dynamic
-  content travels in the hidden message.
-- Skills below the relevance threshold (`recall.minSkillScore`) are dropped.
+### Context cost
 
-### Replacing a hand-built Pi setup
-
-| You had                               | With porc                                                           |
-| ------------------------------------- | ------------------------------------------------------------------- |
-| A memory extension and its own store  | ORC memories: shared with ORC itself, CLI, UI and other agents      |
-| A skills folder synced by hand        | Local skills still load; ORC skills are searched, or pinned by name |
-| MCP wiring per server                 | One `orc` MCP server (`meta` mode keeps its schemas out of context) |
-| A custom system prompt section        | Generated static section, plus your own `AGENTS.md` as usual        |
-| Task and job tracking in ad hoc files | ORC tasks, jobs and flows through the `orc` tool                    |
-| A hand-tuned theme                    | `porc` / `porc-light`, aligned with ORC's `DESIGN.md`               |
-
-Other Pi extensions (subagents, web search, LSP and so on) are not replaced; install them
-alongside porc as usual.
+- Nothing is preloaded. The ORC tool surface is reached through the meta tools: `search` →
+  `describe` → `invoke`. Only one tool schema sits in context.
+- Recall adds at most 4 memories and 3 skills per prompt, capped at about 900 characters. A
+  name already hinted in the session is skipped, and the set resets after compaction.
+- The system prompt section is static, which keeps it prompt-cache friendly.
 
 ## Install
 
 ```bash
-pi install npm:@orc/pi
+pi install npm:@orc/pi      # or, from a checkout: pi install ./packages/pi
 ```
 
-Or try it for a single run:
-
-```bash
-pi -e npm:@orc/pi
-```
-
-To develop against a checkout:
-
-```bash
-pi install ./packages/pi
-```
-
-Start Pi inside a repository that ORC knows, then run `/orc` to see the connection
-status.
+Start Pi in a repository and run `/orc`.
 
 ## Prerequisites
 
-- ORC running and reachable, by default at `http://127.0.0.1:7700`.
-- The `orc` executable on `PATH` for the default stdio MCP transport.
-- `spec` on `PATH` only if you want the `orc_spec` tool or `/orc-spec`.
+- ORC running, by default at `http://127.0.0.1:7700`.
+- The `orc` executable on `PATH`. It provides the stdio MCP transport and the rule hook
+  (`orc rules hook pi`).
 - Project trust granted in Pi before a project-level `.pi/porc.json` is read.
 
-If ORC is offline, porc loads in a limited state and reports the API as unreachable.
-It does not block Pi startup.
+If ORC is offline, Pi still starts. porc reports the limited state, and rules fail closed for
+blocking events.
+
+## Projects
+
+On session start, porc resolves the ORC project in this order:
+
+1. `--porc-project`, `PORC_PROJECT` or `porc.json` `project`.
+2. The deepest of these two:
+   - an ORC project whose root contains `cwd`;
+   - a choice you saved earlier for `cwd` or a parent folder.
+3. Otherwise, a prompt with these choices:
+   - create a project for this folder;
+   - pick an existing project;
+   - work globally;
+   - decide later.
+
+Saved choices live in `~/.pi/agent/porc-projects.json`. `/orc-project` changes the
+project: pass a name, `new`, `global`, `auto` or `reset`.
+
+## Jobs and rules from chat
+
+```text
+schedule a check of open PRs every hour
+block the agent from running ssh
+```
+
+**Jobs.** `job_create` creates an ORC cron job that runs Pi in the current folder.
+
+**Rules.**
+
+- `rule_add` adds a rule to the workspace policy and activates a new revision.
+  - The target defaults to `block` and the event to `pre_tool`.
+  - The new revision applies to every agent ORC governs, Pi included.
+- `rule_remove` removes a rule.
+- `rule_list` lists the rules.
+
+**Confirmation.** Each of these writes asks for confirmation first.
+
+**Enforcement.** Enforcement runs `orc rules hook pi <event>`, the same engine Claude and
+Codex hooks use. Rules must be enabled in ORC settings for enforcement.
 
 ## Connection and secrets
 
-porc resolves its ORC connection in this order:
+porc looks up each setting in order and uses the first one found:
 
-1. `PORC_API_BASE` / `ORC_API_BASE`, then `porc.json` `apiBase`, then `~/.orc/config.json`
-   (`api.host` / `api.port`).
-2. `PORC_API_SECRET`, then the environment variable named by `porc.json` `secretEnv`,
-   then `ORC_API_SECRET`, then `api.secret` from `~/.orc/config.json`.
+1. API base:
+   1. `PORC_API_BASE` or `ORC_API_BASE`
+   2. `porc.json` `apiBase`
+   3. `api.host` and `api.port` in `~/.orc/config.json`
+2. Secret:
+   1. `PORC_API_SECRET`
+   2. the variable named by `secretEnv`
+   3. `ORC_API_SECRET`
+   4. `api.secret` in `~/.orc/config.json`
 
-The secret is passed to the ORC stdio child through its environment and is redacted
-from tool output and error messages. When the secret comes from `~/.orc/config.json`,
-porc does not repeat it in the `spec` argv because the child already reads that file.
+Secrets are passed to child processes through the environment, never through argv. They
+are also redacted from tool output and errors.
 
-Common environment variables:
-
-| Variable             | Purpose                                                       |
-| -------------------- | ------------------------------------------------------------- |
-| `PORC_API_BASE`      | ORC API origin, for example `http://127.0.0.1:7700`           |
-| `PORC_API_SECRET`    | Secret or token for the API and MCP                           |
-| `PORC_PROJECT`       | Default ORC project name                                      |
-| `PORC_MCP_MODE`      | `meta` (default) or `full`                                    |
-| `PORC_MCP_TRANSPORT` | `stdio` (default) or `http`                                   |
-| `PORC_CONTEXT`       | `false` disables automatic context injection                  |
-| `PORC_SYSTEM_PROMPT` | `false` disables the ORC system prompt section                |
-| `PORC_SPEC`          | `false` disables the spec bridge                              |
-| `PORC_MCP`           | `false` skips native MCP registration                         |
-| `PORC_SKILLS`        | `search` (default), `pinned` or `all`                         |
-| `PORC_RECALL`        | `false` disables per-prompt memory and skill hints            |
-| `PORC_TIMEOUT_MS`    | API and MCP timeout, `250`–`60000`, default `5000`            |
-| `PORC_ORC_COMMAND`   | Command used for the stdio MCP server and spec, default `orc` |
-| `PORC_DISABLED`      | `true` disables porc for the session                          |
+| Variable             | Purpose                                            |
+| -------------------- | -------------------------------------------------- |
+| `PORC_API_BASE`      | ORC API origin                                     |
+| `PORC_API_SECRET`    | Secret or token for the API and MCP                |
+| `PORC_PROJECT`       | ORC project name                                   |
+| `PORC_AUTO_PROJECT`  | `false` disables project detection                 |
+| `PORC_ASK_PROJECT`   | `false` never prompts for a project                |
+| `PORC_MCP_TRANSPORT` | `stdio` (default, runs `orc mcp`) or `http`        |
+| `PORC_CONTEXT`       | `false` disables the context injection             |
+| `PORC_SYSTEM_PROMPT` | `false` disables the system prompt section         |
+| `PORC_RECALL`        | `false` disables per-prompt recall                 |
+| `PORC_RULES`         | `false` disables rule enforcement in Pi            |
+| `PORC_TIMEOUT_MS`    | API and MCP timeout, `250`–`60000`, default `5000` |
+| `PORC_ORC_COMMAND`   | Command used for MCP and rule hooks, default `orc` |
+| `PORC_DISABLED`      | `true` disables porc for the session               |
 
 ## Configuration
 
-User config: `~/.pi/agent/porc.json`. Project config: `.pi/porc.json`, read only after
-Pi grants project trust. Project values override user values; the `skills` object is
-merged.
+User config lives at `~/.pi/agent/porc.json`. Project config lives at `.pi/porc.json`, and
+project values override user values.
 
 ```json
 {
-  "enabled": true,
   "apiBase": "http://127.0.0.1:7700",
   "secretEnv": "ORC_API_SECRET",
   "project": "my-app",
   "autoProject": true,
+  "askProject": true,
   "autoContext": true,
   "systemPrompt": true,
-  "mode": "meta",
+  "rules": true,
   "transport": "stdio",
-  "exposure": "direct",
-  "spec": true,
-  "mcp": true,
   "timeoutMs": 5000,
-  "skills": {
-    "bundled": true,
-    "mode": "search",
-    "pinned": [],
-    "dir": "~/.pi/agent/porc/skills"
-  },
   "recall": {
     "enabled": true,
     "maxMemories": 4,
@@ -151,91 +157,44 @@ merged.
 }
 ```
 
-- `mode: "meta"` exposes `tool_search`, `tool_describe` and `tool_invoke`; `full`
-  exposes every ORC tool. The `orc` tool works in both modes.
-- `transport: "http"` registers `http://<apiBase>/mcp` with a bearer header instead of
-  spawning `orc mcp`.
-- `exposure` is passed to Pi's MCP registration: `direct` (default), `codemode` or
-  `deferred`.
-- `autoProject` matches `ctx.cwd` against ORC's registered project roots.
-- `skills.mode`: `search` (default) loads no ORC skills and relies on per-prompt recall;
-  `pinned` materializes only the names in `skills.pinned`; `all` materializes every ORC
-  skill visible to the project (costly, use sparingly).
-- `skills.dir` is where `pinned` and `all` write skills. Only folders carrying a
-  `.porc-managed` marker are ever pruned. Bundled `orc-platform` and `orc-sdlc` are always
-  loaded from the package.
+## Commands and flags
 
-## Commands
+| Command                                         | Purpose                                                |
+| ----------------------------------------------- | ------------------------------------------------------ |
+| `/orc`                                          | Connection, project and rules status                   |
+| `/orc-context [project]`                        | Show the ORC context index                             |
+| `/orc-project [name\|new\|global\|auto\|reset]` | Choose the ORC project for this folder                 |
+| `/orc-skills`                                   | List ORC skills visible to the project                 |
+| `/orc-remember a \| b \| c`                     | Save an ORC memory: name, when it matters, content     |
+| `/orc-doctor`                                   | Diagnose config, trust, health, project and rule hooks |
+| `/orc-theme [porc\|porc-light]`                 | Apply the ORC theme                                    |
+| `/orc-reload`                                   | Reload porc and Pi resources                           |
 
-| Command                          | Purpose                                                    |
-| -------------------------------- | ---------------------------------------------------------- |
-| `/orc`                           | Connection, project, MCP, skills and spec status           |
-| `/orc-context [project]`         | Fetch and display the ORC context index                    |
-| `/orc-project [name\|auto]`      | Select a project, or re-run auto detection                 |
-| `/orc-skills [sync]`             | List project ORC skills; `sync` refreshes pinned/all       |
-| `/orc-remember a \| b \| c`      | Save an ORC memory: name, when it matters, content         |
-| `/orc-spec list\|show\|call ...` | Run the `spec` CLI against ORC                             |
-| `/orc-doctor`                    | Diagnose config paths, trust, health, MCP, skills and spec |
-| `/orc-theme [porc\|porc-light]`  | Apply the ORC theme                                        |
-| `/orc-reload`                    | Reload porc, ORC resources and Pi extensions               |
+Session flags: `--porc-api-base`, `--porc-project`, `--porc-no-context`,
+`--porc-no-recall`, `--porc-no-rules`.
 
-Session flags: `--porc-api-base`, `--porc-project`, `--porc-mode`,
-`--porc-no-context`, `--porc-no-mcp`, `--porc-no-spec`, `--porc-skills <mode>`,
-`--porc-no-recall`.
+## The `orc` tool
 
-## Tools
-
-`orc` accepts an `action`:
-
-| Action          | Arguments                                               | Returns                               |
-| --------------- | ------------------------------------------------------- | ------------------------------------- |
-| `context`       | `project`                                               | Active tasks and memories by priority |
-| `memory_list`   | `query`, `sort`, `limit`, `project`                     | Memory summaries                      |
-| `memory_read`   | `name`, `project`                                       | One memory                            |
-| `memory_create` | `name`, `description`, `content`, `priority`, `project` | Created memory                        |
-| `memory_update` | `name`, `description`, `content`, `priority`, `project` | Updated memory (history is kept)      |
-| `skill_list`    | `query`, `limit`, `project`                             | Available skills                      |
-| `skill_read`    | `name`, `ref`, `project`                                | A skill or one of its files           |
-| `project_list`  | —                                                       | Registered ORC projects               |
-| `call`          | `tool`, `arguments`, `project`                          | Any ORC tool result                   |
-
-`orc_spec` accepts `action: "list" | "show" | "call"`, plus `filter`, `limit`,
-`operation` and `data`. It runs `spec` against the same ORC stdio connection, so the
-schemas cannot drift from what ORC serves.
-
-## Skills
-
-Your local Pi skills (project `.pi/skills`, user `~/.pi/agent/skills`, packages) load as
-usual. By default porc adds no ORC skills at startup; relevant ones surface through
-recall, and the agent can search with `orc` `skill_list` and read with `skill_read`.
-
-In `pinned` or `all` mode, porc materializes the selected skills visible to the active
-project into the managed skill directory on session start and `/orc-project`, and removes
-skills it wrote earlier that are no longer selected. The package's own `orc-platform` and
-`orc-sdlc` skills load directly from the package and are never overwritten.
-
-Skill files are written only for safe relative paths; traversal, absolute paths and
-binary files are skipped. A failed sync is reported in `/orc-skills` but does not fail the
-session.
+| Action                                                         | Purpose                                  |
+| -------------------------------------------------------------- | ---------------------------------------- |
+| `context`                                                      | Active tasks and memories by priority    |
+| `search`, `describe`, `invoke`                                 | Find, inspect and call any ORC tool      |
+| `memory_list`, `memory_read`, `memory_create`, `memory_update` | ORC memories                             |
+| `skill_list`, `skill_read`, `skill_create`                     | ORC skills; global scope when no project |
+| `project_list`                                                 | Registered ORC projects                  |
+| `job_create`, `job_list`                                       | Cron jobs that run Pi                    |
+| `rule_add`, `rule_remove`, `rule_list`                         | Workspace rules enforced across agents   |
 
 ## Security
 
-- Project config and project packages load only after Pi grants project trust.
-- The API secret is kept in environment-backed config and redacted from rendered
-  errors and tool output.
-- Tool calls are scoped by project name. porc does not broaden project scope on its own.
-- Retrieved ORC content is evidence for the model, not trusted instructions. The
-  system prompt says so explicitly.
+- Project config loads only after Pi grants project trust.
+- Writes that change shared behavior (jobs and rules) ask for confirmation.
+- Rule hooks fail closed for blocking events when the ORC command cannot run.
+- Retrieved ORC content is evidence for the model, not trusted instructions.
 
 ## Development
-
-From the repository root:
 
 ```bash
 bun run --cwd packages/pi typecheck
 bun run --cwd packages/pi test
-bun run --cwd packages/pi check:skills
 ```
-
-`check:skills` verifies that the bundled copies match `skills/` in the repository.
-Run `bun run --cwd packages/pi sync:skills` after changing the source skills.

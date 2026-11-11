@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { McpMode, PorcConfig } from "./config.js";
+import type { PorcConfig } from "./config.js";
 import { buildMcpUrl } from "./mcp.js";
 
 export type OrcToolResult = {
@@ -53,10 +53,6 @@ function inheritedEnv(): Record<string, string> {
   );
 }
 
-/**
- * Small MCP client for extension commands so they use the same ORC tools and
- * schemas as the model. Meta mode is normalized to `tool_invoke`.
- */
 export class OrcMcpClient {
   private client: Client | undefined;
   private connecting: Promise<Client> | undefined;
@@ -65,7 +61,7 @@ export class OrcMcpClient {
   constructor(
     private readonly config: Pick<
       PorcConfig,
-      "apiBase" | "mode" | "transport" | "command" | "secret" | "timeoutMs"
+      "apiBase" | "transport" | "command" | "secret" | "timeoutMs"
     >,
     private readonly sessionId: string | undefined,
     private readonly cwd: string,
@@ -74,14 +70,14 @@ export class OrcMcpClient {
   private async open(): Promise<Client> {
     const transport =
       this.config.transport === "http"
-        ? new StreamableHTTPClientTransport(new URL(buildMcpUrl(this.config)), {
+        ? new StreamableHTTPClientTransport(new URL(buildMcpUrl(this.config.apiBase)), {
             ...(this.config.secret
               ? { requestInit: { headers: { Authorization: `Bearer ${this.config.secret}` } } }
               : {}),
           })
         : new StdioClientTransport({
             command: this.config.command,
-            args: ["mcp", "--mode", this.config.mode],
+            args: ["mcp", "--mode", "meta"],
             cwd: this.cwd,
             env: {
               ...inheritedEnv(),
@@ -122,10 +118,9 @@ export class OrcMcpClient {
 
   async call(name: string, args: Record<string, unknown> = {}): Promise<OrcToolResult> {
     const client = await this.connect();
-    const forwarded =
-      this.config.mode === "meta" && !META_TOOLS.has(name)
-        ? { name: "tool_invoke", arguments: { name, arguments: args } }
-        : { name, arguments: args };
+    const forwarded = META_TOOLS.has(name)
+      ? { name, arguments: args }
+      : { name: "tool_invoke", arguments: { name, arguments: args } };
     const result = await timeout(
       client.callTool(forwarded, undefined, { timeout: this.config.timeoutMs }),
       this.config.timeoutMs,
@@ -145,8 +140,4 @@ export class OrcMcpClient {
     this.connecting = undefined;
     if (client) await client.close().catch(() => undefined);
   }
-}
-
-export function normalizeMode(mode: McpMode): McpMode {
-  return mode;
 }
