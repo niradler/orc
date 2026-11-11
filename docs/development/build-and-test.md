@@ -51,7 +51,7 @@ Windows browser fixtures explicitly launch real PowerShell with `-NoLogo -NoProf
 
 Automatic PR and master workflows are deliberately disabled. The owner can explicitly dispatch trusted code to the existing `homelab` runner; local `ci:pr` and `ci:full` are the normal gates. The checked-in `.github/homelab-runner` scaffold is inactive by default, has no network access and receives no registration credential. It is not an installation recipe for an untrusted-PR runner.
 
-The manual **CI** workflow retains the unit-only gates validated by the homelab setup: lint, format, typecheck, domain/security checks, sequential package tests and web unit tests. Browser tests are a separate manual **E2E** workflow; `ci:full` combines both locally and remains required before merge. Changing the runner's label does not by itself verify browser-system dependencies or full-suite timing on that image.
+The manual **CI** workflow runs `ci:pr` on the homelab runner: lint, format, typecheck, domain/security checks, affected package tests and browser sanity. Browser tests beyond sanity are a separate manual **E2E** workflow; `ci:full` combines both locally and remains required before merge. Playwright browsers are baked into the runner image at the pinned `@playwright/test` version and `PLAYWRIGHT_BROWSERS_PATH` is read-only, so the workflow checks the baked browser instead of downloading one: a Playwright upgrade needs a runner image rebuild. Changing the runner's label does not by itself verify browser-system dependencies or full-suite timing on that image.
 
 Before enabling automatic runs, implement and verify all of these requirements:
 

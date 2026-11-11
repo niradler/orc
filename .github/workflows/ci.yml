@@ -29,9 +29,16 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Playwright Chromium
+      # The runner image bakes Chromium for the pinned Playwright version into a
+      # read-only PLAYWRIGHT_BROWSERS_PATH, so the installer cannot lock that path.
+      - name: Verify the baked Playwright browser is usable
         working-directory: packages/web
-        run: bunx playwright install chromium
+        run: |
+          binary=$(bun -e "process.stdout.write(require('@playwright/test').chromium.executablePath())")
+          test -x "$binary" || {
+            echo "::error::No Chromium at $binary. Rebuild the runner image for the @playwright/test version in this checkout, then re-dispatch."
+            exit 1
+          }
 
       - name: Changed packages, sanity, type and security gates
         run: bun run ci:pr
