@@ -105,7 +105,7 @@ export class OrcApiClient {
 
   async health(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.base}/health`, {
+      const response = await fetch(`${this.base}/api/health`, {
         signal: AbortSignal.timeout(Math.min(this.timeoutMs, 1500)),
         headers: this.secret ? { Authorization: `Bearer ${this.secret}` } : {},
       });

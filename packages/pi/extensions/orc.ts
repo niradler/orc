@@ -18,11 +18,22 @@ import {
   type PorcOverrides,
   porcPaths,
   projectArgs,
+  SKILL_MODES,
+  type SkillMode,
 } from "../src/config.js";
 import { buildMcpRegistration, redact } from "../src/mcp.js";
 import { OrcMcpClient } from "../src/mcp-client.js";
 import { findProjectByName, matchProjectRoot } from "../src/project.js";
 import { formatContextMessage, renderOrcPromptSection } from "../src/prompt.js";
+import {
+  filterRecall,
+  formatRecall,
+  mergeHits,
+  parseMemoryHits,
+  parseSkillHits,
+  queryWindows,
+  recallKeys,
+} from "../src/recall.js";
 import { BUNDLED_SKILLS, type SyncReport, syncOrcSkills } from "../src/skills.js";
 import { runSpec, type SpecAction, specAvailable } from "../src/spec.js";
 
@@ -44,6 +55,8 @@ type SessionState = {
   contextInjected: boolean;
   contextError?: string | undefined;
   skillReport?: SyncReport;
+  offered: Set<string>;
+  recallError?: string | undefined;
   specAvailable?: boolean;
   sessionId: string;
   cwd: string;
@@ -110,7 +123,14 @@ function flagOverrides(pi: ExtensionAPI): PorcOverrides {
   if (pi.getFlag("porc-no-context") === true) overrides.autoContext = false;
   if (pi.getFlag("porc-no-mcp") === true) overrides.mcp = false;
   if (pi.getFlag("porc-no-spec") === true) overrides.spec = false;
-  if (pi.getFlag("porc-no-skills") === true) overrides.skillsSync = false;
+  const skills = pi.getFlag("porc-skills");
+  if (typeof skills === "string" && skills.trim()) {
+    if (!(SKILL_MODES as readonly string[]).includes(skills)) {
+      throw new Error(`--porc-skills must be ${SKILL_MODES.join(", ")}, got "${skills}"`);
+    }
+    overrides.skillMode = skills as SkillMode;
+  }
+  if (pi.getFlag("porc-no-recall") === true) overrides.recall = false;
   return overrides;
 }
 
@@ -168,10 +188,12 @@ async function refreshSkills(session: SessionState): Promise<void> {
   const config = session.config;
   if (!config) return;
   mkdirSync(config.skillDir, { recursive: true });
-  if (!config.skillsSync || !session.api || session.health !== "up") return;
+  if (config.skillMode !== "search" && (!session.api || session.health !== "up")) return;
   try {
     session.skillReport = await withTimeout(
-      syncOrcSkills(session.api, config.skillDir, {
+      syncOrcSkills(session.api as OrcApiClient, config.skillDir, {
+        mode: config.skillMode,
+        names: config.pinnedSkills,
         ...(session.projectId ? { projectId: session.projectId } : {}),
       }),
       12_000,
@@ -230,6 +252,7 @@ async function initialize(
     health: "unknown",
     mcpRegistered: false,
     contextInjected: false,
+    offered: new Set(),
     sessionId: ctx.sessionManager.getSessionId(),
     cwd: ctx.cwd,
   };
@@ -281,6 +304,7 @@ const OrcParams = Type.Object({
       "memory_list",
       "memory_read",
       "memory_create",
+      "memory_update",
       "skill_list",
       "skill_read",
       "project_list",
@@ -319,6 +343,50 @@ const SpecParams = Type.Object({
   data: Type.Optional(Type.Unknown({ description: "JSON arguments for call" })),
 });
 
+async function recallHint(
+  session: SessionState,
+  prompt: string,
+  skills: ReadonlyArray<{ name: string }> | undefined,
+): Promise<string | undefined> {
+  const config = session.config;
+  if (!config) return undefined;
+  const windows = queryWindows(prompt);
+  if (!windows.length) return undefined;
+  const base = projectArgs(session.project);
+  try {
+    const client = requireClient(session);
+    const [skillRes, memoryRes] = await withTimeout(
+      Promise.all([
+        Promise.all(windows.map((q) => client.call("skill_list", { ...base, q, limit: 5 }))),
+        Promise.all(windows.map((q) => client.call("memory_list", { ...base, q, limit: 5 }))),
+      ]),
+      4000,
+      "recall",
+    );
+    const found = filterRecall(
+      {
+        skills: mergeHits(
+          skillRes.map((res) =>
+            res.isError ? [] : parseSkillHits(res.text, config.recall.minSkillScore),
+          ),
+        ),
+        memories: mergeHits(memoryRes.map((res) => (res.isError ? [] : parseMemoryHits(res.text)))),
+      },
+      config.recall,
+      session.offered,
+      new Set((skills ?? []).map((skill) => skill.name)),
+    );
+    const text = formatRecall(found, config.recall.budgetChars);
+    if (!text) return undefined;
+    for (const key of recallKeys(found)) session.offered.add(key);
+    session.recallError = undefined;
+    return text;
+  } catch (err) {
+    session.recallError = errorText(err, config.secret);
+    return undefined;
+  }
+}
+
 function registerTools(pi: ExtensionAPI, state: PluginState): void {
   pi.registerTool(
     defineTool({
@@ -328,7 +396,7 @@ function registerTools(pi: ExtensionAPI, state: PluginState): void {
         "Read ORC project context, memories and skills, or call any ORC tool. Use action context before substantive work. Use skill_read before topic-specific platform or delivery work.",
       promptSnippet: "Read ORC context, memories and skills; call any ORC tool",
       promptGuidelines: [
-        "Call `orc` with action `context` before substantive work, and use `memory_list` / `memory_read` instead of guessing about prior decisions.",
+        "Use `orc` `memory_list` / `memory_read` instead of guessing about prior decisions, and `memory_create` / `memory_update` to save durable preferences and lessons.",
         "Use `orc` action `call` only for an ORC tool not already exposed by the native ORC MCP server.",
       ],
       parameters: OrcParams,
@@ -357,6 +425,15 @@ function registerTools(pi: ExtensionAPI, state: PluginState): void {
             description: params.description,
             content: params.content,
             ...base,
+            ...(params.priority === undefined ? {} : { priority: params.priority }),
+          };
+        } else if (action === "memory_update") {
+          if (!params.name) throw new Error("memory_update requires name");
+          args = {
+            name: params.name,
+            ...base,
+            ...(params.description ? { description: params.description } : {}),
+            ...(params.content ? { content: params.content } : {}),
             ...(params.priority === undefined ? {} : { priority: params.priority }),
           };
         } else if (action === "skill_list") {
@@ -452,10 +529,11 @@ function statusBody(session: SessionState): string {
     `Project: ${session.project ?? "none"}${session.projectId ? ` [${session.projectId}]` : ""}`,
     `Mode: ${config.mode} · transport: ${config.transport} · exposure: ${config.exposure}`,
     `MCP: ${session.mcpRegistered ? "registered as orc" : config.mcp ? `not registered${session.mcpError ? ` (${session.mcpError})` : ""}` : "disabled"}`,
-    `Skills: ${config.skillDir}${session.skillReport ? ` (${session.skillReport.written.length} synced)` : ""}`,
+    `Skills: ${config.skillMode} mode${config.skillMode === "search" ? " (searched per prompt, none preloaded)" : session.skillReport ? ` (${session.skillReport.written.length} synced)` : ""}`,
+    `Recall: ${config.recall.enabled ? `on (≤${config.recall.maxMemories} memories, ≤${config.recall.maxSkills} skills per prompt)${session.recallError ? ` · last error: ${session.recallError}` : ""}` : "off"}`,
     `Spec: ${config.spec ? (session.specAvailable === undefined ? "available on demand" : session.specAvailable ? "available" : "not found") : "disabled"}`,
     "",
-    "Commands: /orc-context, /orc-project, /orc-skills, /orc-spec, /orc-doctor, /orc-theme, /orc-reload",
+    "Commands: /orc-context, /orc-project, /orc-skills, /orc-remember, /orc-spec, /orc-doctor, /orc-theme, /orc-reload",
   ].join("\n");
 }
 
@@ -569,7 +647,7 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
   });
 
   pi.registerCommand("orc-skills", {
-    description: "List ORC skills and resync them into Pi",
+    description: "List ORC skills visible to this project (add `sync` to refresh pinned/all mode)",
     handler: async (args, ctx) => {
       const session = state.session;
       if (!session) return report(ctx, "ORC skills", "No active porc session.", "warning");
@@ -605,6 +683,41 @@ function registerCommands(pi: ExtensionAPI, state: PluginState): void {
         report(ctx, `ORC skills (${visible.length})`, [...lines, ...syncLines].join("\n"));
       } catch (err) {
         report(ctx, "ORC skills failed", errorText(err, session.config?.secret), "error");
+      }
+    },
+  });
+
+  pi.registerCommand("orc-remember", {
+    description: "Save an ORC memory: /orc-remember <name> | <description> | <content>",
+    handler: async (args, ctx) => {
+      const session = state.session;
+      if (!session) return report(ctx, "ORC remember", "No active porc session.", "warning");
+      try {
+        const config = requireConfig(session);
+        const [name, description, ...rest] = args.split("|").map((part) => part.trim());
+        const content = rest.join(" | ").trim();
+        if (!name || !description || !content) {
+          return report(
+            ctx,
+            "ORC remember",
+            "Usage: /orc-remember <name> | <when it matters> | <content>",
+            "warning",
+          );
+        }
+        const result = await requireClient(session).call("memory_create", {
+          name,
+          description,
+          content,
+          ...projectArgs(session.project),
+        });
+        report(
+          ctx,
+          "ORC remember",
+          redact(result.text || "Saved.", config.secret),
+          result.isError ? "error" : "info",
+        );
+      } catch (err) {
+        report(ctx, "ORC remember failed", errorText(err, session.config?.secret), "error");
       }
     },
   });
@@ -781,8 +894,12 @@ export default function porc(pi: ExtensionAPI): void {
     type: "boolean",
     default: false,
   });
-  pi.registerFlag("porc-no-skills", {
-    description: "Do not sync ORC skills into Pi",
+  pi.registerFlag("porc-skills", {
+    description: `How ORC skills reach Pi: ${SKILL_MODES.join(", ")} (default search)`,
+    type: "string",
+  });
+  pi.registerFlag("porc-no-recall", {
+    description: "Do not add relevant ORC memory and skill pointers to each prompt",
     type: "boolean",
     default: false,
   });
@@ -804,7 +921,9 @@ export default function porc(pi: ExtensionAPI): void {
   });
 
   pi.on("session_compact", async () => {
-    if (state.session) state.session.contextInjected = false;
+    if (!state.session) return;
+    state.session.contextInjected = false;
+    state.session.offered.clear();
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
@@ -819,31 +938,34 @@ export default function porc(pi: ExtensionAPI): void {
         apiBase: config.apiBase,
         mcp: config.mcp,
         spec: config.spec,
-        skills: true,
-        ...(session.skillReport?.written.length
-          ? { skillCount: session.skillReport.written.length }
-          : {}),
+        skillMode: config.skillMode,
+        recall: config.recall.enabled,
       });
     }
-    if (!config.autoContext || session.contextInjected || session.health !== "up") return;
-    session.contextInjected = true;
-    try {
-      const result = await requireClient(session).call("context", projectArgs(session.project));
-      if (result.isError || !result.text.trim()) {
-        session.contextError = result.text || "empty ORC context";
-        return;
+    if (session.health !== "up") return;
+    const parts: string[] = [];
+    if (config.autoContext && !session.contextInjected) {
+      session.contextInjected = true;
+      try {
+        const result = await requireClient(session).call("context", projectArgs(session.project));
+        if (result.isError || !result.text.trim()) {
+          session.contextError = result.text || "empty ORC context";
+        } else {
+          ctx.ui.setStatus("porc", `orc: ${session.project ?? "no project"} · context loaded`);
+          parts.push(formatContextMessage(session.project, result.text));
+        }
+      } catch (err) {
+        session.contextError = errorText(err, config.secret);
       }
-      ctx.ui.setStatus("porc", `orc: ${session.project ?? "no project"} · context loaded`);
-      return {
-        message: {
-          customType: "porc-context",
-          content: formatContextMessage(session.project, result.text),
-          display: false,
-        },
-      };
-    } catch (err) {
-      session.contextError = errorText(err, config.secret);
     }
+    if (config.recall.enabled && event.messageType === "user") {
+      const hint = await recallHint(session, event.prompt, event.systemPromptOptions.skills);
+      if (hint) parts.push(hint);
+    }
+    if (!parts.length) return;
+    return {
+      message: { customType: "porc-context", content: parts.join("\n\n"), display: false },
+    };
   });
 
   pi.on("resources_discover", () => {

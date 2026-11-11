@@ -3,7 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { OrcApiClient, OrcSkill, OrcSkillFile, OrcSkillListItem } from "../src/api.js";
-import { readManagedSkillNames, skillFilePath, syncOrcSkills } from "../src/skills.js";
+import {
+  MANAGED_MARKER,
+  readManagedSkillNames,
+  skillFilePath,
+  syncOrcSkills,
+} from "../src/skills.js";
 
 const roots: string[] = [];
 
@@ -132,6 +137,9 @@ describe("syncOrcSkills", () => {
     const dir = managed();
     mkdirSync(join(dir, "stale"), { recursive: true });
     writeFileSync(join(dir, "stale", "SKILL.md"), "old", "utf8");
+    writeFileSync(join(dir, "stale", MANAGED_MARKER), "x", "utf8");
+    mkdirSync(join(dir, "local-own"), { recursive: true });
+    writeFileSync(join(dir, "local-own", "SKILL.md"), "mine", "utf8");
     writeFileSync(join(dir, "notes.txt"), "keep", "utf8");
     const api = fakeApi({
       listed: [item("current")],
@@ -143,6 +151,26 @@ describe("syncOrcSkills", () => {
     expect(report.removed).toEqual(["stale"]);
     expect(existsSync(join(dir, "stale"))).toBe(false);
     expect(existsSync(join(dir, "notes.txt"))).toBe(true);
+    expect(existsSync(join(dir, "local-own", "SKILL.md"))).toBe(true);
+  });
+
+  test("search mode writes nothing and only prunes porc-managed leftovers", async () => {
+    const dir = managed();
+    mkdirSync(join(dir, "old"), { recursive: true });
+    writeFileSync(join(dir, "old", MANAGED_MARKER), "x", "utf8");
+    let listed = 0;
+    const api = {
+      async listSkills() {
+        listed += 1;
+        return [item("a")];
+      },
+    } as unknown as OrcApiClient;
+
+    const report = await syncOrcSkills(api, dir, { mode: "search" });
+
+    expect(listed).toBe(0);
+    expect(report.written).toEqual([]);
+    expect(report.removed).toEqual(["old"]);
   });
 
   test("reports unsafe names, unsafe references, binary files and read failures", async () => {
@@ -190,7 +218,10 @@ describe("syncOrcSkills", () => {
       skills: { wanted: skill("wanted") },
     });
 
-    const report = await syncOrcSkills(api, dir, { names: ["wanted", "missing", "orc-platform"] });
+    const report = await syncOrcSkills(api, dir, {
+      mode: "pinned",
+      names: ["wanted", "missing", "orc-platform"],
+    });
 
     expect(report.written).toEqual(["wanted"]);
     expect(report.skipped).toContain("missing (not available for this project)");
@@ -199,13 +230,17 @@ describe("syncOrcSkills", () => {
   });
 });
 
-test("readManagedSkillNames lists only safe directories", () => {
+test("readManagedSkillNames lists only marked, safely named directories", () => {
   const dir = managed();
   mkdirSync(join(dir, "one"), { recursive: true });
+  writeFileSync(join(dir, "one", MANAGED_MARKER), "x", "utf8");
+  mkdirSync(join(dir, "unmarked"), { recursive: true });
   mkdirSync(join(dir, "bad name"), { recursive: true });
+  writeFileSync(join(dir, "bad name", MANAGED_MARKER), "x", "utf8");
   writeFileSync(join(dir, "file.txt"), "x", "utf8");
   const names = readManagedSkillNames(dir);
   expect(names).toContain("one");
+  expect(names).not.toContain("unmarked");
   expect(names).not.toContain("bad name");
   expect(names).not.toContain("file.txt");
   expect(readManagedSkillNames(join(dir, "missing"))).toEqual([]);

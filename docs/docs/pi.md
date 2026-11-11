@@ -28,8 +28,9 @@ Start Pi in a repository registered with ORC and run `/orc` to check the connect
 | `orc` tool | Context, memories, skills, project listing and arbitrary ORC tool calls |
 | `orc_spec` tool | Runs `spec` against ORC for operations not exposed as MCP tools |
 | Native MCP | Registers the `orc` stdio MCP server, or HTTP when configured |
-| Skills | Syncs project skills into Pi and bundles `orc-platform` and `orc-sdlc` |
-| System prompt | Adds ORC guidance and injects the context index once per session |
+| Memory | ORC memories recalled per prompt and saved with `memory_create` or `/orc-remember` |
+| Skills | Searched per prompt, not preloaded; bundles `orc-platform` and `orc-sdlc`; optional pinning |
+| System prompt | A short static ORC section; the context index is injected once per session |
 | Theme | `porc` (dark) and `porc-light`, applied with `/orc-theme` |
 | Prompt templates | `orc-plan`, `orc-handoff`, `orc-recall` |
 
@@ -72,7 +73,8 @@ and is read only after Pi grants project trust. Project values override user val
   "exposure": "direct",
   "spec": true,
   "mcp": true,
-  "skills": { "sync": true }
+  "skills": { "mode": "search" },
+  "recall": { "enabled": true }
 }
 ```
 
@@ -91,16 +93,22 @@ and is read only after Pi grants project trust. Project values override user val
 | `mcp` | `true` | Register the native ORC MCP server |
 | `timeoutMs` | `5000` | API and MCP timeout, `250`–`60000` |
 | `command` | `orc` | Command used for stdio MCP and spec |
-| `skills.sync` | `true` | Materialize ORC skills into Pi |
-| `skills.dir` | `~/.pi/agent/porc/skills` | Managed skill directory |
+| `skills.mode` | `search` | `search` loads no ORC skills, `pinned` writes only `skills.pinned`, `all` writes every visible skill |
+| `skills.pinned` | `[]` | Skill names to load in `pinned` mode |
+| `skills.dir` | `~/.pi/agent/porc/skills` | Managed skill directory; only folders porc marked are pruned |
+| `recall.enabled` | `true` | Add relevant memory and skill pointers to each prompt |
+| `recall.maxMemories` / `recall.maxSkills` | `4` / `3` | Pointers per prompt |
+| `recall.minSkillScore` | `6` | Minimum ORC search score for a skill hint |
+| `recall.budgetChars` | `900` | Size cap for one hint |
 
 Environment variables override `porc.json`: `PORC_API_BASE`, `PORC_API_SECRET`,
 `PORC_PROJECT`, `PORC_MCP_MODE`, `PORC_MCP_TRANSPORT`, `PORC_CONTEXT`,
-`PORC_SYSTEM_PROMPT`, `PORC_SPEC`, `PORC_MCP`, `PORC_SKILL_SYNC`, `PORC_TIMEOUT_MS`,
-`PORC_ORC_COMMAND` and `PORC_DISABLED`.
+`PORC_SYSTEM_PROMPT`, `PORC_SPEC`, `PORC_MCP`, `PORC_SKILLS`, `PORC_RECALL`,
+`PORC_TIMEOUT_MS`, `PORC_ORC_COMMAND` and `PORC_DISABLED`.
 
 Session flags are the last word: `--porc-api-base`, `--porc-project`, `--porc-mode`,
-`--porc-no-context`, `--porc-no-mcp`, `--porc-no-spec` and `--porc-no-skills`.
+`--porc-no-context`, `--porc-no-mcp`, `--porc-no-spec`, `--porc-skills <mode>` and
+`--porc-no-recall`.
 
 ## Commands
 
@@ -109,7 +117,8 @@ Session flags are the last word: `--porc-api-base`, `--porc-project`, `--porc-mo
 | `/orc` | Show connection, project, MCP, skills and spec status |
 | `/orc-context [project]` | Fetch and display the context index |
 | `/orc-project [name\|auto]` | Select a project or re-run auto detection |
-| `/orc-skills [sync]` | List ORC skills and resync them |
+| `/orc-skills [sync]` | List ORC skills visible to the project; `sync` refreshes pinned or all mode |
+| `/orc-remember name \| when \| content` | Save an ORC memory |
 | `/orc-spec list\|show\|call ...` | Run `spec` against ORC |
 | `/orc-doctor` | Diagnose paths, trust, health, MCP, skills and spec |
 | `/orc-theme [porc\|porc-light]` | Apply the ORC theme |
@@ -127,10 +136,18 @@ read memories, or create a memory when a decision should persist:
 Use orc action context, then memory_read for the deployment decision.
 ```
 
-At session start porc lists ORC skills and writes the ones visible to the active
-project into the managed skill directory. It removes skills it wrote earlier that are
-no longer available. The bundled `orc-platform` and `orc-sdlc` skills load from the
-package and are never overwritten. Binary files and unsafe paths are skipped.
+ORC memories are Pi's memory. On each prompt porc searches ORC with the prompt's
+distinctive terms and adds a small hidden hint of at most four memories and three skills,
+as names and one-line descriptions only. Names already hinted in the session, or already
+loaded as local Pi skills, are skipped, and the hint is capped at about 900 characters.
+Nothing is preloaded, so a large skill library costs no startup tokens.
+
+Local Pi skills load as usual and win on name clashes; ORC extends them. To always load
+specific ORC skills, set `skills.mode` to `pinned` and list them in `skills.pinned`.
+`all` writes every visible skill into the managed directory and is rarely worth the
+tokens. The bundled `orc-platform` and `orc-sdlc` skills load from the package and are
+never overwritten. Binary files and unsafe paths are skipped, and only folders porc
+marked with `.porc-managed` are ever removed.
 
 ## Verify
 

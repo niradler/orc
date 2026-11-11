@@ -7,7 +7,8 @@ const base = {
   apiBase: "http://127.0.0.1:7700",
   mcp: true,
   spec: true,
-  skills: true,
+  skillMode: "search" as const,
+  recall: true,
 };
 
 describe("renderOrcPromptSection", () => {
@@ -17,6 +18,7 @@ describe("renderOrcPromptSection", () => {
     expect(text).toContain("tool_search");
     expect(text).toContain("tool_invoke");
     expect(text).toContain("memory_list");
+    expect(text).toContain("memory_create");
     expect(text).toContain("orc_spec");
     expect(text).toContain("http://127.0.0.1:7700");
   });
@@ -31,16 +33,27 @@ describe("renderOrcPromptSection", () => {
   });
 
   test("explains disabled MCP and spec", () => {
-    const text = renderOrcPromptSection({ ...base, mcp: false, spec: false, skills: false });
+    const text = renderOrcPromptSection({ ...base, mcp: false, spec: false });
     expect(text).toContain("Native ORC MCP tools are disabled");
     expect(text).not.toContain("Use `orc_spec`");
-    expect(text).toContain("Pi skill discovery is limited to the bundled skills");
   });
 
-  test("mentions synced skill count", () => {
-    expect(renderOrcPromptSection({ ...base, project: "orc", skillCount: 3 })).toContain(
-      "3 project skills",
+  test("search mode says skills are not preloaded and local skills win", () => {
+    const text = renderOrcPromptSection(base);
+    expect(text).toContain("not preloaded");
+    expect(text).toContain("local Pi setup");
+    expect(renderOrcPromptSection({ ...base, skillMode: "pinned" })).toContain(
+      "Selected ORC skills are loaded",
     );
+  });
+
+  test("mentions recall hints only when recall is on", () => {
+    expect(renderOrcPromptSection(base)).toContain("Hidden ORC hints");
+    expect(renderOrcPromptSection({ ...base, recall: false })).not.toContain("Hidden ORC hints");
+  });
+
+  test("is static: identical input renders identical text", () => {
+    expect(renderOrcPromptSection(base)).toBe(renderOrcPromptSection({ ...base }));
   });
 
   test("does not claim a project when none is selected", () => {

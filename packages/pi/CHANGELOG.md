@@ -11,7 +11,12 @@ Initial release of `@orc/pi` (porc).
   transport, `meta` / `full` modes and `direct` / `codemode` / `deferred` exposure.
 - Injects a concise ORC system prompt section and the ORC context index once per
   session, resetting after compaction.
-- Syncs ORC skills into Pi and bundles `orc-platform` and `orc-sdlc`.
+- Recalls relevant ORC memories and skills per prompt as a small hidden pointer hint
+  (deduped per session, budgeted, prompt-cache safe) instead of preloading skills.
+- Skill modes `search` (default), `pinned` and `all`; local Pi skills always keep loading
+  and take precedence. Only porc-marked folders are ever pruned.
+- Adds `memory_update`, `/orc-remember`, `--porc-skills` and `--porc-no-recall`.
+- Bundles `orc-platform` and `orc-sdlc`.
 - Adds `porc` (dark) and `porc-light` themes plus `/orc-theme`.
 - Adds `/orc`, `/orc-context`, `/orc-project`, `/orc-skills`, `/orc-doctor` and
   `/orc-reload` commands, and session flags to override the connection.

@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import type { OrcApiClient, OrcSkillListItem } from "./api.js";
+import type { SkillMode } from "./config.js";
 
 export type SyncReport = {
   dir: string;
@@ -9,6 +10,9 @@ export type SyncReport = {
   skipped: string[];
   errors: string[];
 };
+
+/** Only directories carrying this marker are ever pruned, so a shared skill folder is safe. */
+export const MANAGED_MARKER = ".porc-managed";
 
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -36,11 +40,16 @@ function scopeFor(skill: OrcSkillListItem, projectId: string | undefined) {
 export async function syncOrcSkills(
   api: OrcApiClient,
   syncDir: string,
-  options: { names?: string[]; projectId?: string } = {},
+  options: { mode?: SkillMode; names?: string[]; projectId?: string } = {},
 ): Promise<SyncReport> {
   const report: SyncReport = { dir: syncDir, written: [], removed: [], skipped: [], errors: [] };
+  const mode = options.mode ?? "all";
+  if (mode === "search") {
+    pruneManaged(syncDir, new Set(), report);
+    return report;
+  }
   const listed = await api.listSkills();
-  const wanted = options.names?.length ? new Set(options.names) : undefined;
+  const wanted = mode === "pinned" ? new Set(options.names ?? []) : undefined;
   const bundled = new Set<string>(BUNDLED_SKILLS);
   const selected = listed.filter((skill) => {
     if (bundled.has(skill.name)) return false;
@@ -67,6 +76,7 @@ export async function syncOrcSkills(
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(dir, { recursive: true });
       writeFileSync(resolve(dir, "SKILL.md"), skill.content, "utf8");
+      writeFileSync(resolve(dir, MANAGED_MARKER), "written by porc; safe to delete\n", "utf8");
       for (const file of skill.files ?? []) {
         if (file.path === "SKILL.md" || file.path === "./SKILL.md") continue;
         const target = skillFilePath(dir, file.path);
@@ -87,13 +97,21 @@ export async function syncOrcSkills(
       report.errors.push(`${item.name}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  const keep = new Set([...selected.map((skill) => skill.name), ...report.written]);
+  pruneManaged(
+    syncDir,
+    new Set([...selected.map((skill) => skill.name), ...report.written]),
+    report,
+  );
+  return report;
+}
+
+function pruneManaged(syncDir: string, keep: Set<string>, report: SyncReport): void {
+  const bundled = new Set<string>(BUNDLED_SKILLS);
   for (const name of readManagedSkillNames(syncDir)) {
     if (keep.has(name) || bundled.has(name)) continue;
     rmSync(resolve(syncDir, name), { recursive: true, force: true });
     report.removed.push(name);
   }
-  return report;
 }
 
 /** Directory names in the managed skill dir that look like skills porc wrote. */
@@ -102,7 +120,8 @@ export function readManagedSkillNames(syncDir: string): string[] {
     return readdirSync(syncDir).filter((name) => {
       if (!SAFE_NAME.test(name)) return false;
       try {
-        return statSync(resolve(syncDir, name)).isDirectory();
+        const dir = resolve(syncDir, name);
+        return statSync(dir).isDirectory() && statSync(resolve(dir, MANAGED_MARKER)).isFile();
       } catch {
         return false;
       }

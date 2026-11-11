@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { DEFAULT_RECALL, type RecallOptions } from "./recall.js";
 
 export const MCP_MODES = ["meta", "full"] as const;
 export type McpMode = (typeof MCP_MODES)[number];
@@ -28,11 +29,27 @@ const HttpUrl = z
     }
   }, "Use an http:// or https:// URL");
 
+export const SKILL_MODES = ["search", "pinned", "all"] as const;
+export type SkillMode = (typeof SKILL_MODES)[number];
+
+const SkillName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, "Use a skill name");
+
 const SkillSettings = z
   .object({
     bundled: z.boolean().optional(),
-    sync: z.boolean().optional(),
+    mode: z.enum(SKILL_MODES).optional(),
+    pinned: z.array(SkillName).max(50).optional(),
     dir: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+const RecallSettings = z
+  .object({
+    enabled: z.boolean().optional(),
+    maxSkills: z.number().int().min(0).max(10).optional(),
+    maxMemories: z.number().int().min(0).max(10).optional(),
+    minSkillScore: z.number().min(0).max(100).optional(),
+    budgetChars: z.number().int().min(200).max(4000).optional(),
   })
   .strict();
 
@@ -56,6 +73,7 @@ export const PorcFileSchema = z
     timeoutMs: z.number().int().min(250).max(60_000).optional(),
     command: z.string().trim().min(1).max(2048).optional(),
     skills: SkillSettings.optional(),
+    recall: RecallSettings.optional(),
   })
   .strict();
 
@@ -95,9 +113,10 @@ export type PorcConfig = {
   timeoutMs: number;
   command: string;
   bundledSkills: boolean;
-  skillsSync: boolean;
+  skillMode: SkillMode;
+  pinnedSkills: string[];
   skillDir: string;
-  syncDir: string;
+  recall: RecallOptions & { enabled: boolean };
 };
 
 /** CLI flags win over environment variables and configuration files. */
@@ -109,7 +128,8 @@ export type PorcOverrides = {
   mcp?: boolean;
   spec?: boolean;
   bundledSkills?: boolean;
-  skillsSync?: boolean;
+  skillMode?: SkillMode;
+  recall?: boolean;
 };
 
 export type LoadConfigOptions = {
@@ -231,6 +251,12 @@ function mode(value: string | undefined): McpMode | undefined {
   throw new PorcConfigError("PORC_MCP_MODE", `Expected ${MCP_MODES.join(" or ")}, got "${value}"`);
 }
 
+function skillMode(value: string | undefined): SkillMode | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  if ((SKILL_MODES as readonly string[]).includes(value)) return value as SkillMode;
+  throw new PorcConfigError("PORC_SKILLS", `Expected ${SKILL_MODES.join(", ")}, got "${value}"`);
+}
+
 function transport(value: string | undefined): "stdio" | "http" | undefined {
   if (value === undefined || value.trim() === "") return undefined;
   if (value === "stdio" || value === "http") return value;
@@ -273,7 +299,12 @@ export function loadPorcConfig(options: LoadConfigOptions): PorcConfig {
   const paths = porcPaths({ cwd, home });
   const user = readPorcFile(paths.userFile);
   const project = options.projectTrusted ? readPorcFile(paths.projectFile) : {};
-  const file = { ...user, ...project, skills: { ...user.skills, ...project.skills } };
+  const file = {
+    ...user,
+    ...project,
+    skills: { ...user.skills, ...project.skills },
+    recall: { ...user.recall, ...project.recall },
+  };
   const orc = readOrcApi(paths.orcFile);
 
   const resolvedMode =
@@ -312,13 +343,24 @@ export function loadPorcConfig(options: LoadConfigOptions): PorcConfig {
     timeoutMs: timeout(stringEnv(env, "PORC_TIMEOUT_MS")) ?? file.timeoutMs ?? 5000,
     command: stringEnv(env, "PORC_ORC_COMMAND") ?? file.command ?? "orc",
     bundledSkills: overrides.bundledSkills ?? file.skills?.bundled ?? true,
-    skillsSync:
-      overrides.skillsSync ??
-      bool(stringEnv(env, "PORC_SKILL_SYNC"), "PORC_SKILL_SYNC") ??
-      file.skills?.sync ??
-      true,
+    skillMode:
+      overrides.skillMode ??
+      skillMode(stringEnv(env, "PORC_SKILLS")) ??
+      file.skills?.mode ??
+      "search",
+    pinnedSkills: file.skills?.pinned ?? [],
     skillDir,
-    syncDir: skillDir,
+    recall: {
+      enabled:
+        overrides.recall ??
+        bool(stringEnv(env, "PORC_RECALL"), "PORC_RECALL") ??
+        file.recall.enabled ??
+        true,
+      maxSkills: file.recall.maxSkills ?? DEFAULT_RECALL.maxSkills,
+      maxMemories: file.recall.maxMemories ?? DEFAULT_RECALL.maxMemories,
+      minSkillScore: file.recall.minSkillScore ?? DEFAULT_RECALL.minSkillScore,
+      budgetChars: file.recall.budgetChars ?? DEFAULT_RECALL.budgetChars,
+    },
   };
   const picked = pickSecret(env, file, orc);
   if (picked.secret) {

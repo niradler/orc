@@ -51,7 +51,8 @@ describe("loadPorcConfig", () => {
       timeoutMs: 5000,
       command: "orc",
       bundledSkills: true,
-      skillsSync: true,
+      skillMode: "search",
+      pinnedSkills: [],
       skillDir: join(home, ".pi", "agent", "porc", "skills"),
     });
     expect(config.secret).toBeUndefined();
@@ -83,7 +84,8 @@ describe("loadPorcConfig", () => {
       autoContext: false,
       exposure: "deferred",
       project: "project-project",
-      skills: { sync: false },
+      skills: { mode: "pinned", pinned: ["release-notes"] },
+      recall: { maxSkills: 1 },
     });
     write(join(home, ".orc", "config.json"), { api: { secret: "orc-secret" } });
 
@@ -106,8 +108,22 @@ describe("loadPorcConfig", () => {
     expect(config.exposure).toBe("deferred");
     expect(config.secret).toBe("env-secret");
     expect(config.secretSource).toBe("env");
-    expect(config.skillsSync).toBe(false);
+    expect(config.skillMode).toBe("pinned");
+    expect(config.pinnedSkills).toEqual(["release-notes"]);
+    expect(config.recall.maxSkills).toBe(1);
+    expect(config.recall.maxMemories).toBe(4);
     expect(config.skillDir).toBe(join(cwd, "managed-skills"));
+  });
+
+  test("skills default to search mode with recall on, and env switches them", () => {
+    const { home, cwd } = workspace();
+    const defaults = loadPorcConfig({ cwd, home, env: {} });
+    expect(defaults.skillMode).toBe("search");
+    expect(defaults.recall.enabled).toBe(true);
+    const tuned = loadPorcConfig({ cwd, home, env: { PORC_SKILLS: "all", PORC_RECALL: "false" } });
+    expect(tuned.skillMode).toBe("all");
+    expect(tuned.recall.enabled).toBe(false);
+    expect(() => loadPorcConfig({ cwd, home, env: { PORC_SKILLS: "everything" } })).toThrow();
   });
 
   test("ignores project config until the project is trusted", () => {
@@ -137,7 +153,8 @@ describe("loadPorcConfig", () => {
         autoContext: false,
         mcp: false,
         spec: false,
-        skillsSync: false,
+        skillMode: "all",
+        recall: false,
         bundledSkills: false,
       },
     });
@@ -148,7 +165,8 @@ describe("loadPorcConfig", () => {
     expect(config.autoContext).toBe(false);
     expect(config.mcp).toBe(false);
     expect(config.spec).toBe(false);
-    expect(config.skillsSync).toBe(false);
+    expect(config.skillMode).toBe("all");
+    expect(config.recall.enabled).toBe(false);
     expect(config.bundledSkills).toBe(false);
   });
 
