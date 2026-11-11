@@ -12,13 +12,13 @@ import { jobShellArgv } from "@orc/core/job-settings";
 import { createLogger } from "@orc/core/logger";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
-import { workspaceEnvFor } from "./workspace-env.js";
 import { kbDigestKbId } from "@orc/db/kb-digest";
 import { publishJobNotification } from "@orc/db/notification-producers";
 import { job_run_logs, job_runs, jobs, sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { runJobAction } from "./job-actions.js";
 import { runKbDigest } from "./kb-digest.js";
+import { workspaceEnvFor } from "./workspace-env.js";
 
 const logger = createLogger("runner:executor");
 const LOG_FLUSH_MS = 250;

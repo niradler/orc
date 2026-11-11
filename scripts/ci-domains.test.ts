@@ -181,7 +181,8 @@ test("should keep fork pull requests off the homelab runner until isolation is i
       expect(job.if).toContain("github.actor == 'niradler'");
       expect(job.if).toContain("github.triggering_actor == 'niradler'");
       expect(job.if).toContain("github.repository == 'niradler/orc'");
-      if (Object.keys(workflow.on).includes("pull_request")) expect(job.if).toContain(sameRepoGuard);
+      if (Object.keys(workflow.on).includes("pull_request"))
+        expect(job.if).toContain(sameRepoGuard);
     }
   }
   const source = readFileSync(join(root, ".github/homelab-runner/compose.yml"), "utf8");

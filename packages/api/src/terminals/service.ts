@@ -20,13 +20,13 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { resolvePackageAgentBinary } from "@orc/core/package-launch";
+import { forgetPreview, recordPreview } from "../workspaces/service.js";
 import type { Launch, LaunchDeps } from "./launch.js";
 import { TerminalManager } from "./manager.js";
 import { folderPickerLaunch, pickFolder } from "./pick-folder.js";
 import { buildPtyEnv } from "./pty-env.js";
 import { excludeOrcWorktrees, gitRunner, type SessionDirDeps } from "./session-dir.js";
 import { MIN_BUN_VERSION, spawnPty } from "./spawn.js";
-import { forgetPreview, recordPreview } from "../workspaces/service.js";
 
 export interface Availability {
   ready: boolean;

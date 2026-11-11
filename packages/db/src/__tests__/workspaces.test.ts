@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { closeDb, createTestDb, getSqlite } from "../client.js";
 import {
   clearWorkspacePreview,
