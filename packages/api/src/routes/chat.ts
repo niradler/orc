@@ -71,12 +71,12 @@ import { SkillHistory } from "@orc/db/skill-history";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { streamSSE } from "hono/streaming";
 import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
 import { queuedAnswers } from "../human-request-delivery.js";
 import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
+import { unbufferedSSE } from "../lib/sse.js";
 import {
   recordChatNotification,
   resolveChatNotification,
@@ -200,7 +200,7 @@ function publish(run: ChatRun, event: ChatEvent): void {
 
 // The turn runs independently of its clients: closing a stream only detaches that client.
 function follow(c: Context, run: ChatRun) {
-  return streamSSE(c, async (s) => {
+  return unbufferedSSE(c, async (s) => {
     let write = Promise.resolve();
     let end = () => {};
     const ended = new Promise<void>((resolve) => {
