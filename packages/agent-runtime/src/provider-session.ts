@@ -23,6 +23,7 @@ export function providerSessionOptions<T extends Partial<SessionOpts>>(
   const profile = providerForAgent(agent, opts.providerId, resuming || !opts.providerId);
   if (!profile) return opts;
   const resolved = resolveProviderEnvironment(profile);
+  const executable = providerExecutable(profile);
   return {
     ...opts,
     providerId: profile.id,
@@ -33,7 +34,8 @@ export function providerSessionOptions<T extends Partial<SessionOpts>>(
     ...(opts.chatAgentOptions === undefined && profile.options
       ? { chatAgentOptions: profile.options }
       : {}),
-    ...(opts.executionHost ? {} : { providerExecutable: providerExecutable(profile) }),
+    // An empty profile executable means "default installation": keep an explicitly requested one.
+    ...(opts.executionHost ? {} : { providerExecutable: executable ?? opts.providerExecutable }),
   };
 }
 function redactTree(value: unknown, redact: (text: string) => string): unknown {

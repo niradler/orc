@@ -1,14 +1,14 @@
 {
   "name": "@orc/desktop",
   "productName": "orc",
-  "version": "0.1.61",
+  "version": "0.1.62",
   "private": true,
   "type": "module",
   "description": "orc desktop app - Electron shell around the orc daemon",
   "author": "Nir Adler",
   "main": "dist/main.js",
   "scripts": {
-    "bundle": "bun build src/main.ts --outdir dist --target node --format esm --external electron --external electron-updater && bun build src/preload.ts --outfile dist/preload.cjs --target node --format cjs --external electron",
+    "bundle": "bun run build.ts",
     "bin": "cd ../cli && bun run build.ts",
     "dev": "bun run bundle && electron .",
     "build": "bun run bundle",

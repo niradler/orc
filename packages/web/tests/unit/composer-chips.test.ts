@@ -30,7 +30,10 @@ describe("pathName", () => {
     expect(pathName("/local/projects/orc")).toBe("orc");
     expect(pathName("C:\\Projects\\orc\\")).toBe("orc");
     expect(pathName("/")).toBe("/");
-    expect(pathName("C:\\")).toBe("C:");
+    expect(pathName("C:\\")).toBe("C:/");
+    expect(pathName("\\\\?\\C:\\Projects\\orc\\")).toBe("orc");
+    expect(pathName("file:///C:/Projects/my%20repo")).toBe("my repo");
+    expect(pathName("\\\\?\\UNC\\server\\share\\orc")).toBe("orc");
   });
 });
 
@@ -154,4 +157,20 @@ describe("long paste", () => {
     expect(pastedTextName([])).toBe("pasted-text-1.txt");
     expect(pastedTextName(["Pasted-Text-1.txt", "pasted-text-2.txt"])).toBe("pasted-text-3.txt");
   });
+});
+
+test("Pi legacy automatic approval displays full access consistently with the native adapter", () => {
+  expect(effectivePermissionMode({ ...defaults, agent: "pi", autoApprove: true })).toBe(
+    "bypassPermissions",
+  );
+});
+
+test("Pi thinking level is visible in the selected model label", () => {
+  expect(
+    agentEffort({
+      ...defaults,
+      agent: "pi",
+      agentOptions: { pi: { runtime: "pi", options: { thinkingLevel: "high" } } },
+    }),
+  ).toBe("High");
 });

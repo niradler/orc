@@ -7,6 +7,7 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronsDownUp,
+  Globe,
   LoaderCircle,
   Maximize2,
   MessageSquare,
@@ -62,6 +63,7 @@ import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
 import { commandSegments } from "@/lib/chat-commands";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
+import { useDesktopPreview } from "@/lib/desktop-preview-context";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -105,6 +107,7 @@ export function ChatPanel({
   workspaceActions,
   onToggleFullscreen,
 }: ChatPanelProps) {
+  const preview = useDesktopPreview();
   const {
     messages,
     streaming,
@@ -350,6 +353,19 @@ export function ChatPanel({
             </h2>
           ) : (
             <div className="min-w-0 flex-1" aria-hidden="true" />
+          )}
+          {preview && (
+            <button
+              type="button"
+              data-testid="chat-preview-toggle"
+              aria-label="Toggle preview panel"
+              aria-expanded={preview.visible}
+              title="Browser and files"
+              className={iconButton}
+              onClick={preview.toggle}
+            >
+              <Globe size={16} />
+            </button>
           )}
           {streaming && !nativeCenter && (
             <LoaderCircle
@@ -777,7 +793,7 @@ export function ChatPanel({
                     >
                       Allow once
                     </button>
-                    {["claude", "codex"].includes(config.agent) && (
+                    {["claude", "codex", "pi"].includes(config.agent) && (
                       <button
                         type="button"
                         data-testid="chat-permission-allow-all"

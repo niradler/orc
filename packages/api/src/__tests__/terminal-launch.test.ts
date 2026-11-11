@@ -231,7 +231,14 @@ describe("platform shells", () => {
   });
 
   test("only installed launchers are offered", async () => {
-    expect(availableLaunchers(deps())).toEqual(["shell", "claude", "codex", "cursor", "gemini"]);
+    expect(availableLaunchers(deps())).toEqual([
+      "shell",
+      "claude",
+      "codex",
+      "cursor",
+      "gemini",
+      "opencode",
+    ]);
     expect(
       availableLaunchers(deps({ which: (c) => (c === "claude" ? "/bin/claude" : null) })),
     ).toEqual(["shell", "claude"]);
@@ -244,4 +251,11 @@ describe("platform shells", () => {
       "opencode",
     ]);
   });
+});
+
+test("Pi terminal launch uses the native binary when enabled and installed", async () => {
+  const local = deps({ which: (command) => (command === "pi" ? "/bin/pi" : null) });
+  expect(availableLaunchers(local, ["pi"])).toContain("pi");
+  expect(availableLaunchers(local, [])).not.toContain("pi");
+  expect((await buildLaunch({ kind: "pi", cwd: "/work/pi" }, local)).argv).toEqual(["/bin/pi"]);
 });

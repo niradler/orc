@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { FLOW_NAME_RE, type FlowDefinition, parseFlowDefinition } from "./flow.js";
 import { BUILTIN_FLOW_SOURCES } from "./flows/builtin.js";
+import { userHome } from "./home.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,7 +61,7 @@ export class FlowValidationError extends Error {
 // ---------------------------------------------------------------------------
 
 function userFlowsDir(): string {
-  return join(homedir(), ".orc", "flows");
+  return join(userHome(), ".orc", "flows");
 }
 
 function projectFlowsDir(): string {

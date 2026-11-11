@@ -11,7 +11,9 @@ the menu. Read and dismissed state is stored on the server and shared by clients
 Dismissal does not approve, answer, cancel or delete a source request.
 
 The menu shows **unread notifications** by default. Opening an item or choosing
-**Mark read** clears it from the inbox. **Show read** includes read history; use
+**Mark read** clears it from the inbox. Clicking a native desktop notification
+opens its destination and marks that item read; a grouped done toast only opens
+its destination. **Show read** includes read history; use
 **Mark unread** to return an item to the inbox, or **Mark all read** to clear it.
 An opened human request stays available while you answer it.
 

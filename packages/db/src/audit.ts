@@ -27,6 +27,7 @@ export function installAudit(sqlite: Database): void {
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_AUDIT_RETENTION_DAYS = 90;
 const DEFAULT_CLEANUP_BATCH = 1000;
+export const MAX_AUDIT_ROWS = 200_000;
 const ID_ATTEMPTS = 8;
 
 function retentionCutoff(retentionDays: number, nowMs: number): number {
@@ -37,23 +38,32 @@ function retentionCutoff(retentionDays: number, nowMs: number): number {
   return Math.floor((nowMs - retentionDays * DAY_MS) / 1000);
 }
 
-/** Expired rows are removed in bounded batches without generating more audit rows. */
+/** Expired rows, then rows beyond the size cap, are removed in bounded batches without generating more audit rows. */
 export function cleanupAuditLog(
   sqlite: Database,
   retentionDays = DEFAULT_AUDIT_RETENTION_DAYS,
   nowMs = Date.now(),
   batchSize = DEFAULT_CLEANUP_BATCH,
+  maxRows = MAX_AUDIT_ROWS,
 ): number {
   const cutoff = retentionCutoff(retentionDays, nowMs);
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 10000)
     throw new RangeError("Audit cleanup batch must be an integer from 1 to 10000 rows");
-  return sqlite
+  const expired = sqlite
     .query(
       `DELETE FROM audit_log WHERE rowid IN (
         SELECT rowid FROM audit_log WHERE created_at <= ? ORDER BY created_at, rowid LIMIT ?
       )`,
     )
     .run(cutoff, batchSize).changes;
+  const overflow = sqlite
+    .query(
+      `DELETE FROM audit_log WHERE rowid IN (
+        SELECT rowid FROM audit_log ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?
+      )`,
+    )
+    .run(batchSize, maxRows).changes;
+  return expired + overflow;
 }
 
 export type AuditActor = {

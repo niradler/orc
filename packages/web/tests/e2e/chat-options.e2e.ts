@@ -10,7 +10,7 @@ for (const width of [390, 1440]) {
   }, info) => {
     await request.patch("/api/settings", {
       headers: { Authorization: `Bearer ${API_SECRET}` },
-      data: { chat: ChatSettingsSchema.parse({ mcp: "native" }) },
+      data: { agents: ["claude", "gemini"], chat: ChatSettingsSchema.parse({ mcp: "native" }) },
     });
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),

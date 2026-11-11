@@ -7,6 +7,7 @@ import type {
   ChannelView,
 } from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
+import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
 import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
 import type {
@@ -161,6 +162,8 @@ export type {
   Session,
   SessionDetail,
   SessionEvent,
+  SessionMessage,
+  SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
   SkillFileInput,
@@ -179,6 +182,7 @@ export type {
   UpdateJobInput,
   UpdateProjectInput,
   UpdateTaskInput,
+  WorkspaceRecord,
 } from "@orc/sdk/types";
 
 import type {
@@ -224,6 +228,8 @@ import type {
   ResumeFlowInput,
   Session,
   SessionDetail,
+  SessionMessage,
+  SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
   SkillFileInput,
@@ -236,6 +242,7 @@ import type {
   UpdateJobInput,
   UpdateProjectInput,
   UpdateTaskInput,
+  WorkspaceRecord,
 } from "@orc/sdk/types";
 
 export type SecuritySettings = { session_days: number; cors_origins: string[] };
@@ -266,6 +273,10 @@ export type Terminal = {
   pid: number | null;
   live_session_id: string | null;
   host: string | null;
+  project_id: string | null;
+  worktree_path: string | null;
+  dev: boolean;
+  preview_url: string | null;
   created_at: string;
 };
 
@@ -315,6 +326,8 @@ export type CreateTerminalInput = {
   name?: string;
   live_session_id?: string;
   worktree?: boolean;
+  project_id?: string;
+  dev?: boolean;
   setup?: AgentSetup;
 };
 
@@ -560,7 +573,11 @@ async function req<T>(
   path: string,
   body?: unknown,
   query?: Record<string, string | number | boolean | undefined>,
-  opts?: { nullOn404?: boolean; signal?: AbortSignal | undefined },
+  opts?: {
+    nullOn404?: boolean;
+    signal?: AbortSignal | undefined;
+    headers?: Record<string, string>;
+  },
 ): Promise<T> {
   let url = `${getApiUrl()}${path}`;
   if (query) {
@@ -574,6 +591,7 @@ async function req<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...authHeaders(),
+    ...opts?.headers,
   };
   const res = await fetch(url, {
     method,
@@ -632,6 +650,56 @@ export type UpdateScratchpadInput = {
 // ---- API client ----
 
 export const api = {
+  preview: {
+    session: (session_id: string) =>
+      req<{ id: string; cwd: string; host: string | null; projectId: string | null }>(
+        "GET",
+        "/desktop-preview/session",
+        undefined,
+        { session_id },
+      ),
+    register: (
+      client_id: string,
+      session_id: string | null,
+      agent_access: boolean,
+      lease?: string,
+      browser_ready = false,
+    ) =>
+      req<{ client_id: string; lease: string }>(
+        "POST",
+        "/desktop-preview/clients",
+        { client_id, session_id, agent_access, browser_ready },
+        undefined,
+        { headers: lease ? { "X-Preview-Lease": lease } : {} },
+      ),
+    pending: (id: string, lease: string) =>
+      req<{ requests: PreviewRequest[] }>(
+        "GET",
+        `/desktop-preview/clients/${enc(id)}/requests`,
+        undefined,
+        undefined,
+        { headers: { "X-Preview-Lease": lease } },
+      ),
+    ack: (
+      id: string,
+      client_id: string,
+      lease: string,
+      status: "opened" | "completed" | "failed",
+      error: string | null = null,
+      result?: unknown,
+    ) =>
+      req<PreviewRequest>(
+        "POST",
+        `/desktop-preview/requests/${enc(id)}/ack`,
+        { client_id, status, error, ...(result === undefined ? {} : { result }) },
+        undefined,
+        { headers: { "X-Preview-Lease": lease } },
+      ),
+    file: (session_id: string, target: string) =>
+      req<PreviewFile>("GET", "/desktop-preview/file", undefined, { session_id, target }),
+    save: (session_id: string, target: string, content: string, original: string) =>
+      req<void>("PUT", "/desktop-preview/file", { session_id, target, content, original }),
+  },
   channels: {
     notificationPolicy: () =>
       req<NotificationForwardingPolicy>("GET", "/channels/notification-policy"),
@@ -1217,6 +1285,21 @@ export const api = {
       ),
     linkTask: (id: string, task_id: string | null) =>
       req<LiveSession>("PATCH", `/sessions/live/${id}`, { task_id }),
+    messages: (id: string) =>
+      req<{ messages: SessionMessage[] }>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/messages`,
+      ),
+    sendMessage: (id: string, body: string) =>
+      req<SessionMessageResult>("POST", `/sessions/live/${encodeURIComponent(id)}/messages`, {
+        body,
+      }),
+    cancelMessage: (messageId: string) =>
+      req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/cancel`),
+    moveMessage: (messageId: string, direction: "up" | "down") =>
+      req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/move`, {
+        direction,
+      }),
   },
 
   skills: {
@@ -1564,6 +1647,17 @@ export const api = {
       }),
     createFolder: (host: string | null, parent: string, name: string) =>
       req<{ path: string }>("POST", "/terminals/browse/folders", { host, parent, name }),
+  },
+
+  workspaces: {
+    list: (params: { project_id?: string; path?: string } = {}) =>
+      req<{ workspaces: WorkspaceRecord[] }>("GET", "/workspaces", undefined, params),
+    byPath: async (path: string): Promise<WorkspaceRecord | null> => {
+      const result = await req<{ workspaces: WorkspaceRecord[] }>("GET", "/workspaces", undefined, {
+        path,
+      });
+      return result.workspaces[0] ?? null;
+    },
   },
 
   ssh: {

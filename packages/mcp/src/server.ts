@@ -23,6 +23,7 @@ import {
   runMetaTool,
   type ToolResult,
 } from "./meta-tools.js";
+import { availablePreviewTools, previewToolContent } from "./preview-tools.js";
 import {
   agentSessionFromEnv,
   executeTool,
@@ -69,7 +70,32 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
 
   // The set of tools this connection serves. Every lookup, listing and meta
   // search goes through it, so a future subset filter only changes this line.
-  const served: readonly ListedTool[] = toolDefinitions;
+  async function servedTools(args?: unknown): Promise<readonly ListedTool[]> {
+    const input = z
+      .object({
+        session_id: z.string().min(1).max(200).optional(),
+        client_id: z.string().uuid().optional(),
+      })
+      .safeParse(args);
+    const scope =
+      (options.previewScope
+        ? {
+            ...options.previewScope,
+            clientId:
+              options.previewScope.clientId ?? (input.success ? input.data.client_id : undefined),
+          }
+        : undefined) ??
+      (input.success && input.data.session_id
+        ? { sessionId: input.data.session_id, clientId: input.data.client_id }
+        : undefined);
+    const available = await availablePreviewTools(
+      scope,
+      selected?.map((project) => project.id),
+    );
+    return toolDefinitions.filter(
+      (tool) => !tool.name.startsWith("preview_") || available.has(tool.name),
+    );
+  }
 
   async function callTool(name: string, args: unknown): Promise<ToolResult> {
     logger.debug(
@@ -80,14 +106,28 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
         name === "command_request" ||
         name.startsWith("channel_")
         ? undefined
-        : args,
+        : name.startsWith("preview_")
+          ? undefined
+          : args,
     );
 
     try {
-      const toolDef = served.find((t) => t.name === name);
+      // Request status remains readable after a target disconnects; scope is still checked.
+      const toolDef = (
+        name.startsWith("preview_") && name !== "preview_request_get"
+          ? await servedTools(args)
+          : toolDefinitions
+      ).find((t) => t.name === name);
       if (!toolDef) {
         return {
-          content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: name.startsWith("preview_")
+                ? `Preview capability unavailable for this session/desktop. Connect the intended desktop, select the session and check Browser permissions; refresh discovery. (${name})`
+                : `Unknown tool: ${name}`,
+            },
+          ],
           isError: true,
         };
       }
@@ -151,7 +191,15 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
         ...options,
         ...(callProjects ? { projectScopes: callProjects } : {}),
       });
-      return { content: [{ type: "text" as const, text: result }] };
+      const status = name.startsWith("preview_")
+        ? z.object({ status: z.string() }).safeParse(JSON.parse(result))
+        : null;
+      return {
+        content: previewToolContent(name, result),
+        ...(status?.success && !["opened", "completed"].includes(status.data.status)
+          ? { isError: true }
+          : {}),
+      };
     } catch (err) {
       logger.error(`Tool error: ${name}`, err);
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -160,7 +208,7 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: selectedMode === "meta" ? metaToolListing() : listing(served),
+    tools: selectedMode === "meta" ? metaToolListing() : listing(await servedTools()),
   }));
 
   // In meta mode a CallTool naming a real tool is routed through the same
@@ -169,6 +217,14 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     if (selectedMode === "meta" && isMetaToolName(name)) {
+      const invoke =
+        name === "tool_invoke"
+          ? z.object({ name: z.string().optional(), arguments: z.unknown().optional() }).parse(args)
+          : null;
+      const served =
+        invoke && !invoke.name?.startsWith("preview_")
+          ? toolDefinitions
+          : await servedTools(invoke ? invoke.arguments : args);
       return runMetaTool(served, name, args, callTool);
     }
     return callTool(name, args);
@@ -211,6 +267,9 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
 export async function startStdioServer(mode?: McpMode) {
   const server = createMcpServer({
     agentSessionId: agentSessionFromEnv(),
+    ...(agentSessionFromEnv()
+      ? { previewScope: { sessionId: agentSessionFromEnv() as string } }
+      : {}),
     ...(mode ? { mode } : {}),
   });
   const transport = new StdioServerTransport();

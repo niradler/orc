@@ -20,12 +20,22 @@ Agents connected over [MCP](./mcp.md) do not need a local copy: they discover th
 
 ORC ships two built-in skills. Each keeps its `SKILL.md` short and loads one reference file when needed.
 
+Compiled releases keep bundled skills in a directory identified by their content.
+When an upgrade changes that directory, ORC automatically rebuilds its discovery
+cache so effective reads use the new bundled files. Authored instruction history
+and user skills are preserved.
+
 | Skill | Use for | References |
 | --- | --- | --- |
-| `orc-platform` | Operating ORC: CLI/API/MCP, auth and settings, projects, tasks and flows, memory, knowledge bases and digests, sessions and handoff, terminals and chat, jobs, channels and gateway, human requests, agents and packages, Git/GitHub/SSH, rules and hooks, scratchpads | `setup`, `work`, `memory`, `knowledge`, `execution`, `session-archive`, `channels`, `chat-ui`, `web`, `packages`, `rules`, `scratchpads`; scripts `upload-session.py`, `sync-sessions.py` |
+| `orc-platform` | Operating ORC: CLI/API/MCP, auth and settings, projects, tasks and flows, memory, knowledge bases and digests, sessions and handoff, terminals and chat, jobs, channels and gateway, human requests, agents and packages, Git/GitHub/SSH, rules and hooks, scratchpads | `setup`, `work`, `memory`, `knowledge`, `execution`, `session-archive`, `channels`, `chat-ui`, `web`, `packages`, `rules`, `scratchpads`, `html-kit`; scripts `upload-session.py`, `sync-sessions.py` |
 | `orc-sdlc` | Engineering work on ORC-backed projects: proportional planning, implementation, debugging, validation and review, preserving an assigned flow node's role and outcomes | `planning`, `development`, `review-and-delivery` |
 
 Retired names such as `orc-coder` and `orc-reviewer` still resolve for saved tasks and older flows; they map onto `orc-sdlc` and do not appear in discovery.
+
+For HTML scratchpads, load `orc-platform` with ref `references/html-kit.md` for
+the injected kit's class list, version pin, style-free skeleton and chart guidance.
+The [scratchpad UI](./desktop-and-web.md#scratchpads) uses the kit in both editor
+and chat previews and follows the dashboard theme.
 
 ## Where skills live
 

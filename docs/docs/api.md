@@ -41,6 +41,33 @@ Unauthenticated exceptions: `GET /api/health`, the sign-in routes, `POST /webhoo
 
 ## Usage
 
+### Desktop preview
+
+The desktop panel uses authenticated `/api/desktop-preview/*` routes:
+`GET session?session_id=…` resolves a trusted session; `GET file?session_id=…&target=…`
+reads bounded workspace text/images; `PUT file` saves text using
+`{session_id,target,content,original}` and returns 409 if disk content changed.
+Paths are constrained to that session's working folder and execution host.
+
+`POST clients` registers `{client_id,session_id,agent_access,browser_ready}` and returns a
+private lease. Renewal, `GET clients/{id}/requests`, `POST clients/{id}/close` and
+`POST requests/{id}/ack` require `X-Preview-Lease` as well as normal API auth.
+`GET clients?session_id=…` lists targets (`agent_access`, `browser_ready`) without
+exposing leases. `POST requests` queues `{session_id,client_id?,kind:"url"|"file",target}`;
+`POST browser` queues `{session_id,client_id?,command,tab_id?}` only for an opted-in
+target with an open browser page (`browser_ready`), otherwise it returns 409.
+`GET requests/{id}` reports `queued`, `opened`, `completed`, `failed` or `expired`.
+`POST requests/{id}/cancel` fails a still-queued request so it never runs late; the
+MCP server calls it when a browser action is still queued after its 10-second wait.
+Queued work expires; it is not persisted across daemon restarts.
+
+Browser files stay inside the session workspace: `POST artifact?session_id=…&name=…`
+saves a browser download (octet-stream body), `POST recording?session_id=…` saves a
+WebM recording, and `GET upload?session_id=…&target=…` returns a workspace file as
+base64 for a browser upload. Artifact and recording bodies are capped at 16 MB.
+See [MCP preview tools](./mcp.md#desktop-preview-tools) for browser commands and
+permission behavior.
+
 `GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence from a
 stored native session transcript: `latest` (including optional recorded time and
 a conservative `may_be_cold_after` hint) and `totals`. Missing or unsupported
@@ -110,6 +137,7 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `GET` | `/projects/by-name/{name}` | Look up by name (case-insensitive) |
 | `GET` | `/projects/{id}/summary` | Task, memory and job counts |
 | `GET` `POST` | `/projects/{id}/comments` | Project comments |
+| `GET` | `/workspaces` | Prepared workspaces (`project_id`, `path`) |
 | `GET` `POST` | `/tasks` | List (`project_id`, `status`, `tag`, `limit`) / create |
 | `POST` | `/tasks/batch` | Create tasks with dependency links atomically |
 | `GET` `PATCH` `DELETE` | `/tasks/{id}` | Read / update / delete |
@@ -124,6 +152,21 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `POST` | `/tasks/{id}/flow/halt` | Stop a running flow |
 | `GET` | `/tags` | Unique tags across resources |
 | `GET` | `/search` | Search all projects and resources |
+
+Projects accept an optional `workspace` object with `setup_script`, `dev_script`,
+`setup_timeout_secs`, `port_base`, `port_count` and `env`. `env` is the same
+`{ name, value, secret }` array as job environments: secret values are encrypted
+at rest, read back as `value: null`, and retained when that saved `null`
+placeholder is sent again. Omitting `workspace` on update preserves it; sending
+one without a stored secret's value returns 400. An invalid or missing stored
+value falls back to defaults: no scripts, a 900-second setup timeout, ten ports
+starting from 3100, and no variables.
+
+`GET /workspaces` returns workspace records with `setup_status`, `setup_output`,
+the allocated `port_base`/`port_count` block, `preview_url` and the owning
+project. Filter by `project_id`, or pass `path` for exactly one folder. Setup runs
+once per managed worktree; a project's main checkout gets a port block but no
+setup.
 
 ### Memory
 
@@ -240,6 +283,10 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher |
 | `PATCH` | `/sessions/live/{id}` | Link a live session to a task |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
+| `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
+| `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
+| `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |
+| `POST` | `/session-messages/{id}/move` | Reorder a queued message |
 | `GET` | `/sessions/live/search` | Search sessions |
 | `GET` | `/sessions/archive` | Search archived session passages |
 | `POST` | `/session-handoffs` | Start a session handoff |
@@ -257,6 +304,13 @@ or `failed`). The same optional `turn` object is persisted on assistant messages
 elapsed time. Replay includes the original start; legacy messages may omit `turn`.
 Before a tool call, a `narration` event moves accumulated prose out of the current
 reply and into its folded activity. Its `text` preserves that prose for expansion.
+
+`POST /terminals` accepts `project_id` to use that project's workspace environment
+and ports, and `dev: true` to run its dev script in a shell terminal. A dev
+terminal rejects an agent `kind` or `providerId`, and fails when the project has no
+dev script. Terminal responses include `project_id`, `worktree_path`, `dev` and
+`preview_url`. For a dev terminal, the first printed `http(s)` URL becomes
+`preview_url` and stays until that terminal exits.
 
 ### Human requests, rules and scratchpads
 
@@ -310,7 +364,7 @@ Expiry and dismissal do not mutate the source request. SDK methods are
 `client.notifications.list`, `.update` and `.markAllRead`.
 
 `GET /audit` accepts `entity_type` (`notification`, `human_request`, `job_run`,
-`task`, `settings`, `memory`, `skill`, `kb`), `session_id`, `since` (Unix seconds),
+`task`, `settings`, `job`, `rule`, `terminal`, `auth`, `memory`, `skill`, `kb`), `session_id`, `since` (Unix seconds),
 `limit` (1–100, default50), and `project_id` or `scope=global|all`.
 `scope=all` includes project and global entries. `snapshot=preview` substitutes
 a bounded marker for snapshots larger than4096 bytes; default `full` preserves

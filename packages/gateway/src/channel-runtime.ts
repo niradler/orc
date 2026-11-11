@@ -456,6 +456,7 @@ export async function startChannelRuntime(
           orcMcp: true,
           orcMcpMode: loadConfig().mcp.default_mode,
           orcMcpProject: project.name,
+          orcPreviewSessionId: record.id,
         },
         record.runtime_session_id ?? undefined,
       );

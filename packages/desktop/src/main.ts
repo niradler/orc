@@ -14,7 +14,6 @@ import {
   nativeImage,
   screen,
   session,
-  shell,
   Tray,
 } from "electron";
 import { loadDesktopConfig, saveDesktopConnection } from "./connection.js";
@@ -29,6 +28,7 @@ import {
 import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
 import { withAppVersion } from "./update-policy.js";
 import { startDesktopUpdates } from "./updater.js";
+import { attachDesktopPreview, hasUnsavedPreview, openDesktopViewer } from "./viewer.js";
 
 const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
@@ -130,6 +130,21 @@ function openWindow(url: string): void {
     },
   });
   if (state.maximized) win.maximize();
+  attachDesktopPreview(win, origin);
+  win.webContents.on("will-prevent-unload", (event) => {
+    if (!win) return;
+    const response = dialog.showMessageBoxSync(win, {
+      type: "question",
+      buttons: ["Keep editing", "Discard changes"],
+      defaultId: 0,
+      cancelId: 0,
+      message: "Discard unsaved changes?",
+      detail: "Your preview drafts will be lost if you reload or quit ORC.",
+      noLink: true,
+    });
+    if (response === 1) event.preventDefault();
+    else quitting = false;
+  });
   win.on("page-title-updated", (_event, title) => showNeedsYou(title));
   win.on("focus", closeNotifications);
   win.webContents.setUserAgent(withAppVersion(win.webContents.getUserAgent(), app.getVersion()));
@@ -149,13 +164,13 @@ function openWindow(url: string): void {
     win = null;
   });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (isWeb(target)) void shell.openExternal(target);
+    if (isWeb(target)) openDesktopViewer(target);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, target) => {
     if (new URL(target).origin === origin) return;
     event.preventDefault();
-    if (isWeb(target)) void shell.openExternal(target);
+    if (isWeb(target)) openDesktopViewer(target);
   });
   win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
     if (isMainFrame && code !== -3) void recover(`orc is not reachable (${description}).`);
@@ -279,7 +294,7 @@ function listenForNotifications(): void {
     notification.on("click", () => {
       notifications.delete(notification);
       showWindow();
-      win?.webContents.send(OPEN_CHANNEL, request.path);
+      win?.webContents.send(OPEN_CHANNEL, { path: request.path, id: request.id ?? null });
     });
     notification.show();
   });
@@ -291,6 +306,13 @@ function createTray(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open orc", click: showWindow },
+      {
+        label: "Browser and files",
+        click: () => {
+          showWindow();
+          openDesktopViewer();
+        },
+      },
       {
         label: "Start at login",
         type: "checkbox",
@@ -341,6 +363,28 @@ function hardenSession(): void {
 
 async function start(): Promise<void> {
   hardenSession();
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+      {
+        label: "File",
+        submenu: [
+          {
+            label: "Browser and files",
+            accelerator: "CmdOrCtrl+Shift+B",
+            click: () => {
+              showWindow();
+              openDesktopViewer();
+            },
+          },
+          { role: "close" },
+        ],
+      },
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" },
+    ]),
+  );
   listenForNotifications();
   try {
     await bringUp();
@@ -381,8 +425,11 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   app.on("window-all-closed", () => {
     if (!tray && process.platform !== "darwin") app.quit();
   });
-  app.on("before-quit", (event) => {
+  app.on("before-quit", () => {
     quitting = true;
+  });
+  // Stop the daemon only after all windows accepted closing their drafts.
+  app.on("will-quit", (event) => {
     if (daemon?.owned && !daemonStopped) {
       event.preventDefault();
       daemonStopped = true;
@@ -402,6 +449,8 @@ if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
       showWindow,
       settingsPath: join(app.getPath("userData"), "update-settings.json"),
       stopOwnedDaemon: async () => {
+        if (hasUnsavedPreview())
+          throw new Error("Save or close modified preview files before restarting to update.");
         quitting = true;
         if (daemon?.owned && !daemonStopped) {
           await daemon.stop();

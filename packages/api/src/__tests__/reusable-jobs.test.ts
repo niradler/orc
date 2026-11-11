@@ -9,7 +9,7 @@ import {
   registerBackend,
   type SessionOpts,
 } from "@orc/agent-runtime";
-import { createFlow, reloadFlows } from "@orc/core/flow-service";
+import { createFlow, getUserFlowsDir, reloadFlows } from "@orc/core/flow-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
@@ -30,6 +30,7 @@ beforeAll(() => {
   fixtureHome = mkdtempSync(join(tmpdir(), "orc-job-action-test-"));
   process.env.HOME = fixtureHome;
   process.env.USERPROFILE = fixtureHome;
+  expect(getUserFlowsDir()).toBe(join(fixtureHome, ".orc", "flows"));
   reloadFlows();
   app = setupTestApp();
   registerBackend("job-fixture", () => ({

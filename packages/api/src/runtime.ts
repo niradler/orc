@@ -1,6 +1,7 @@
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { RESTART_EXIT_CODE } from "@orc/core/process-supervisor";
+import { initializeAgentPreferences } from "@orc/core/provider-service";
 import { closeDb, getSqlite } from "@orc/db/client";
 import { importConfigMcpPrompts } from "@orc/db/mcp-prompts";
 import { startChannelRuntime } from "@orc/gateway/channel-runtime";
@@ -16,6 +17,7 @@ import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
 import { startNotificationMaintenance } from "./notifications.js";
 import { startAttentionPush, startJobPush } from "./push/service.js";
 import { createApp } from "./server.js";
+import { startSessionMessageDelivery } from "./session-message-delivery.js";
 import { startSessionWatcher } from "./session-watcher.js";
 import { closeSessionArchive } from "./sessions/archive.js";
 import { shutdownTerminals } from "./terminals/service.js";
@@ -58,11 +60,14 @@ if (server.port === undefined) throw new Error("ORC API did not bind a TCP port"
 // Keep callbacks and spawned clients on the bound port when the OS selected it.
 config.api.port = server.port;
 process.env.ORC_API_PORT = String(server.port);
+// Persist discovery after publishing the bound port to callers holding this config.
+initializeAgentPreferences();
 
 const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
 const stopJobPush = startJobPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();
+const stopSessionMessageDelivery = startSessionMessageDelivery();
 const stopGithubIssueSync = startGithubIssueSync();
 const stopNotificationMaintenance = startNotificationMaintenance();
 const channels = startChannelRuntime().catch(() => {
@@ -92,6 +97,7 @@ async function shutdown(signal: string, exitCode = 0) {
   stopAttentionPush();
   stopJobPush();
   stopHumanRequestDelivery();
+  stopSessionMessageDelivery();
   stopNotificationMaintenance();
   await stopGithubIssueSync();
   await (await channels)();

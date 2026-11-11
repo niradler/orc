@@ -35,7 +35,12 @@ import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
 import { claudeLimitEvent } from "./provider-limits.js";
 import { registerBackend } from "./registry.js";
-import { createRulesHook, sessionStartRuleContext } from "./rules-hook.js";
+import {
+  createRulesHook,
+  createSessionMessagesHook,
+  sessionMessagesContext,
+  sessionStartRuleContext,
+} from "./rules-hook.js";
 import {
   type AgentBackend,
   type AgentEvent,
@@ -248,7 +253,7 @@ class ClaudeSDKSession implements AgentSession {
               this.humanReceipts.set(id, receipts);
             },
           )
-        : undefined;
+        : createSessionMessagesHook(this.runtimeSessionId ?? this.id);
       const startupContext = this.opts.ruleGuard
         ? await sessionStartRuleContext(
             this.opts.ruleGuard,
@@ -257,7 +262,7 @@ class ClaudeSDKSession implements AgentSession {
             ulid(),
             this.runtimeSessionId ? "resume" : "startup",
           )
-        : "";
+        : await sessionMessagesContext(this.runtimeSessionId);
 
       const launch =
         this.host.kind === "ssh"
@@ -306,6 +311,7 @@ class ClaudeSDKSession implements AgentSession {
                   this.opts.mcpAlwaysLoad,
                   this.opts.orcMcpMode,
                   this.opts.orcMcpProject,
+                  this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
                 ),
                 allowedTools: [...this.opts.toolAllowlist, ORC_TOOLS_RULE],
               }
@@ -316,6 +322,7 @@ class ClaudeSDKSession implements AgentSession {
                     this.opts.mcpAlwaysLoad,
                     this.opts.orcMcpMode,
                     this.opts.orcMcpProject,
+                    this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
                   ),
                 }
               : {}),
@@ -437,6 +444,7 @@ class ClaudeSDKSession implements AgentSession {
           },
           ...(this.runtimeSessionId ? { resume: this.runtimeSessionId } : {}),
           ...(this.opts.model ? { model: this.opts.model } : {}),
+          includePartialMessages: true,
         },
       });
       nativeQuery = q;
@@ -444,7 +452,18 @@ class ClaudeSDKSession implements AgentSession {
       // Each text block is its own paragraph; joined bare, text before and after a tool
       // call runs together and breaks markdown such as a code fence opening mid-line.
       let wroteText = false;
+      let streamedText = false;
       for await (const msg of q) {
+        if (msg.type === "stream_event") {
+          const event = msg.event;
+          if (event.type === "content_block_start" && event.content_block.type === "text") {
+            if (wroteText) this.push({ type: "text", data: "\n\n" });
+            wroteText = true;
+            streamedText = true;
+          } else if (event.type === "content_block_delta" && event.delta.type === "text_delta")
+            this.push({ type: "text", data: event.delta.text });
+          continue;
+        }
         if (msg.type === "rate_limit_event") {
           const event = claudeLimitEvent(msg.rate_limit_info);
           if (event) this.push(event);
@@ -463,7 +482,8 @@ class ClaudeSDKSession implements AgentSession {
         if (msg.type === "assistant") {
           for (const block of msg.message.content) {
             if (block.type === "text" && block.text) {
-              this.push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
+              if (!streamedText)
+                this.push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
               wroteText = true;
             } else if (block.type === "thinking" && "thinking" in block && block.thinking) {
               this.push({ type: "thinking", data: block.thinking as string });
@@ -478,6 +498,7 @@ class ClaudeSDKSession implements AgentSession {
               });
             }
           }
+          streamedText = false;
           continue;
         }
 

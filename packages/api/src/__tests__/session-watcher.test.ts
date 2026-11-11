@@ -9,7 +9,7 @@ import { CLAUDE_TOKENS_VERSION } from "@orc/core/usage";
 import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { runSync, startSessionWatcher, tokensSettled } from "../session-watcher.js";
-import { claudeAdapter } from "../sessions/claude.js";
+import { claudeAdapter, registryRecord } from "../sessions/claude.js";
 import { codexAdapter } from "../sessions/codex.js";
 import { projectIdFor } from "../sessions/common.js";
 import { cursorAdapter, cursorStateDbPath, resolveSlugPath } from "../sessions/cursor.js";
@@ -345,6 +345,39 @@ describe("claude adapter: ended sessions, tokens and summary", () => {
 });
 
 describe("codex adapter", () => {
+  test("should use readable cross-platform cwd fallbacks without changing named titles or cwd", async () => {
+    const dbPath = join(root, "codex-titles.sqlite");
+    const db = new Database(dbPath);
+    db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT,
+      preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT,
+      created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER,
+      archived INTEGER)`);
+    const ins = db.prepare("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const cwd = "\\\\?\\C:\\Projects\\orc";
+    const cases = [
+      ["empty", "", null, "", "orc"],
+      ["native-path", cwd, null, "", "orc"],
+      ["prompt", "C:/Projects/orc", null, "Fix the notifications", "Fix the notifications"],
+      ["named", cwd, "Keep this title", "First prompt", "Keep this title"],
+    ] as const;
+    try {
+      for (const [id, title, name, prompt] of cases)
+        ins.run(id, title, name, cwd, "", prompt, 0, "/nope", 1, 1, 1, 1, 0);
+    } finally {
+      ins.finalize();
+      db.close();
+    }
+    const rows = await codexAdapter(dbPath, { writer: () => false }).list(new Map());
+    for (const [id, , , , expected] of cases)
+      expect(rows.find((row) => row.externalId === id)).toMatchObject({ title: expected, cwd });
+    expect(registryRecord({ pid: DEAD_PID, sessionId: "foreign-path", cwd })).toMatchObject({
+      title: "orc",
+      cwd,
+    });
+    expect(
+      registryRecord({ pid: DEAD_PID, sessionId: "posix-path", cwd: "/home/nir/orc/" }).title,
+    ).toBe("orc");
+  });
   test("reads threads with exact tokens and a summary, skipping archived", async () => {
     const dbPath = join(root, "codex-state.sqlite");
     const db = new Database(dbPath);

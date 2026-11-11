@@ -40,6 +40,10 @@ app.openapi(
             "job_run",
             "settings",
             "task",
+            "job",
+            "rule",
+            "terminal",
+            "auth",
           ])
           .optional(),
         session_id: z.string().min(1).max(200).optional(),

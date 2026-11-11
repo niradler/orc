@@ -147,7 +147,13 @@ export class CodexSession implements AgentSession {
     const mcp =
       opts.orcMcp === false
         ? null
-        : buildOrcMcpServer(this.host, false, opts.orcMcpMode, opts.orcMcpProject);
+        : buildOrcMcpServer(
+            this.host,
+            false,
+            opts.orcMcpMode,
+            opts.orcMcpProject,
+            opts.orcPreviewSessionId ?? opts.attentionContext?.chatThreadId,
+          );
     const env = buildCodexEnv(this.opts.env);
     if (mcp?.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
     const command = await this.launcher(this.host);

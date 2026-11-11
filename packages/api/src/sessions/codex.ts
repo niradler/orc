@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
+import { displayPath, pathLabel } from "@orc/core/display-path";
 import { ValidationError } from "@orc/core/errors";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
@@ -113,7 +114,14 @@ export function codexAdapter(
           return {
             backend: "codex",
             externalId: r.id,
-            title: oneLine(r.name || r.title || r.first_user_message || r.cwd, 120),
+            title: oneLine(
+              r.name ||
+                (displayPath(r.title) !== displayPath(r.cwd) ? r.title : "") ||
+                r.first_user_message ||
+                pathLabel(r.cwd) ||
+                "Codex session",
+              120,
+            ),
             summary: oneLine(r.preview || r.first_user_message || "", 400) || null,
             cwd: r.cwd,
             status,

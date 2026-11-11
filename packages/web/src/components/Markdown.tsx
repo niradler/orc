@@ -9,6 +9,7 @@ export const Markdown = memo(function Markdown(props: {
   children: string;
   wikiLinks?: WikiLinks;
   readable?: boolean;
+  previewLinks?: boolean;
   fallback?: ReactNode;
 }) {
   const { fallback, ...rendererProps } = props;

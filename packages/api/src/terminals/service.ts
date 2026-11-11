@@ -26,6 +26,7 @@ import { folderPickerLaunch, pickFolder } from "./pick-folder.js";
 import { buildPtyEnv } from "./pty-env.js";
 import { excludeOrcWorktrees, gitRunner, type SessionDirDeps } from "./session-dir.js";
 import { MIN_BUN_VERSION, spawnPty } from "./spawn.js";
+import { forgetPreview, recordPreview } from "../workspaces/service.js";
 
 export interface Availability {
   ready: boolean;
@@ -169,6 +170,8 @@ export function getTerminalManager(): TerminalManager {
       max: terminals.max,
       scrollbackBytes: terminals.scrollback_bytes,
       answerDeviceAttributes: process.platform !== "win32",
+      onPreviewUrl: recordPreview,
+      onTerminalClosed: forgetPreview,
     });
   }
   return manager;

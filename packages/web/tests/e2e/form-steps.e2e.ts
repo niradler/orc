@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { openFinalFormStep } from "./_form-ui";
 import { apiGet, gotoView, tid } from "./_helpers";
 
 async function footerFits(page: Page, dialog: Locator, width: number) {
@@ -112,6 +113,7 @@ for (const width of [1440, 390, 320]) {
     await page.getByTestId("new-project-button").click();
     const dialog = page.getByTestId("form-dialog");
     await page.getByTestId("form-step-configuration").click();
+    await openFinalFormStep(page);
     await page.getByTestId("project-submit").click();
     await expect(page.getByTestId("project-name-input")).toBeFocused();
     const name = tid("step-project");
@@ -121,6 +123,7 @@ for (const width of [1440, 390, 320]) {
     await page.getByTestId("project-first-task").uncheck();
     await page.getByTestId("project-git-remote-url").fill("https://github.com/acme/steps.git");
     await dialog.getByLabel("Max Workers").fill("0");
+    await openFinalFormStep(page);
     await page.getByTestId("project-submit").click();
     await expect(dialog.getByLabel("Max Workers")).toBeFocused();
     await dialog.getByLabel("Max Workers").fill("2");
@@ -135,6 +138,7 @@ for (const width of [1440, 390, 320]) {
     await footerFits(page, dialog, width);
     await page.screenshot({ path: info.outputPath("project-configuration.png") });
     expect(writes).toEqual({ posts: 0, patches: 0 });
+    await openFinalFormStep(page);
     await page.getByTestId("project-submit").click();
     await expect(dialog).toHaveCount(0);
     expect(writes).toEqual({ posts: 1, patches: 0 });
@@ -158,6 +162,7 @@ for (const width of [1440, 390, 320]) {
     );
     await footerFits(page, edit, width);
     expect(writes).toEqual({ posts: 1, patches: 0 });
+    await openFinalFormStep(page);
     await page.getByTestId("edit-project-submit").click();
     await expect(edit).toHaveCount(0);
     expect(writes).toEqual({ posts: 1, patches: 1 });

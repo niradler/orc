@@ -66,6 +66,7 @@ A backend is the coding agent that runs a task node, job or chat session.
 | `codex-cli` | The `codex` binary |
 | `acpx` | ACP CLI, which drives 14+ agents (Gemini, Copilot, Cursor, Kiro, ...) |
 | `acp` | An explicitly configured direct ACP command with negotiated capabilities |
+| `opencode` | OpenCode over direct ACP (`opencode acp`) with negotiated capabilities |
 | `agentapi` | A coder/agentapi server wrapping any local agent |
 | `a2a` | A remote A2A endpoint |
 | any other name | A configured `agent_loop.acp_commands` entry, otherwise passed to acpx as the agent name |
@@ -166,4 +167,4 @@ A skill is a `SKILL.md` folder of instructions, scripts and references that agen
 
 ## Audit
 
-ORC keeps a central audit log of knowledge changes and notification, human-request, job-run and task lifecycle events. Read it in Activity → Audit or `GET /api/audit`; `audit_list` also exposes knowledge history over MCP. Audit retention defaults to 90 days, configurable independently from the 30-day notification history. See [Notifications](./notifications.md). Memories and skills also keep their own change history with revert.
+ORC keeps a central audit log of knowledge changes and notification, human-request, job-run and task lifecycle events, plus who changed jobs (create, update, delete), activated or reverted rules, changed settings, opened or removed terminals, and signed in or issued tokens. Each entry records the actor (web UI, CLI/API or the agent name) and session, with changed field names but never commands, environment values or secrets; failed sign-ins are sampled to one per minute. Read it in Activity → Audit or `GET /api/audit`; `audit_list` also exposes knowledge history over MCP. Audit retention defaults to 90 days, configurable independently from the 30-day notification history, and the log is also capped at 200,000 rows (oldest removed first). See [Notifications](./notifications.md). Memories and skills also keep their own change history with revert.

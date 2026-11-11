@@ -9,6 +9,7 @@ import {
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import { isGitRemoteUrl } from "@orc/core/git-remote";
 import {
   GithubSyncConfigSchema,
   type GithubSyncState,
@@ -42,6 +43,7 @@ import {
 } from "@orc/core/scratchpad";
 import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-archive";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
+import { SessionMessageCreateSchema, SessionMessageResultSchema } from "@orc/core/session-messages";
 import { type SkillDownload, SkillDownloadSchema } from "@orc/core/skill-download";
 import {
   createSkill as createSkillFs,
@@ -82,6 +84,7 @@ import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orcApi, orcApiBase } from "./api-client.js";
 import { executeKbTool, isKbTool, kbSearchLines, kbToolDefinitions } from "./kb-tools.js";
+import { executePreviewTool, type PreviewScope, previewToolDefinitions } from "./preview-tools.js";
 import type { McpProject } from "./project-scope.js";
 
 const logger = createLogger("mcp:tools");
@@ -128,7 +131,22 @@ const channelEditParams = ChannelUpdateSchema.extend({
   project: projectParam,
 });
 const auditParams = scopeParams.extend({
-  entity_type: z.enum(["memory", "skill", "kb"]).optional(),
+  entity_type: z
+    .enum([
+      "memory",
+      "skill",
+      "kb",
+      "notification",
+      "human_request",
+      "job_run",
+      "task",
+      "job",
+      "rule",
+      "settings",
+      "terminal",
+      "auth",
+    ])
+    .optional(),
   session_id: z.string().min(1).max(200).optional(),
   since: z.number().int().min(0).optional(),
   limit: z.number().int().min(1).max(100).default(50),
@@ -194,6 +212,7 @@ const digestCompleteParams = z
   })
   .strict();
 export const toolDefinitions = [
+  ...previewToolDefinitions,
   {
     name: "command_request",
     description:
@@ -280,7 +299,7 @@ export const toolDefinitions = [
   {
     name: "audit_list",
     description:
-      "Review central knowledge audit entries, optionally by session_id. Removed memories survive in snapshot; result_ids identify replacements. Use with the delivery section of orc-sdlc references/review-and-delivery.md.",
+      "Review central audit entries (knowledge, task, job, rule, settings, terminal, auth events), optionally by entity_type or session_id. Removed memories survive in snapshot; result_ids identify replacements. Use with the delivery section of orc-sdlc references/review-and-delivery.md.",
     inputSchema: auditParams,
   },
   {
@@ -288,6 +307,12 @@ export const toolDefinitions = [
     description:
       "Move a Claude Code or Codex session to ORC. FIRST commit and push the intended changes within the user's Git authorization. Report the pushed repository, branch and exact commit SHA, project name, source cwd and native session ID. Returns a single-use upload URL for native session files. Upload through HTTP; then use Sessions → Open in terminal. See orc-platform references/execution.md.",
     inputSchema: SessionHandoffInputSchema,
+  },
+  {
+    name: "session_send",
+    description:
+      "Send a short note to another live or idle ORC session. Target with the ORC live session id, or the agent's native session id plus backend. Delivery happens at the recipient's next safe point; it cannot approve tools or change configuration. Use the Sessions view or the user's session id for the target. Pass a stable request_id when retrying the same note.",
+    inputSchema: SessionMessageCreateSchema,
   },
   {
     name: "session_search",
@@ -755,6 +780,34 @@ export const toolDefinitions = [
     }),
   },
   {
+    name: "project_create",
+    description:
+      "Create a project when project_list has no match to reuse. Returns the stable project id, " +
+      "name and a UI link. Names are unique case-insensitively: a duplicate is rejected with the " +
+      "existing project's id and name, so retrying a create never makes a second project.",
+    inputSchema: z.object({
+      name: z
+        .string()
+        .regex(/^[a-zA-Z0-9_-]+$/)
+        .min(1)
+        .max(100)
+        .describe("Unique project name; letters, digits, '-' and '_' only"),
+      description: z.string().max(2000).optional(),
+      status: z.enum(["active", "archived", "paused"]).optional().describe("Default: active"),
+      tags: z.array(z.string().min(1).max(64)).max(50).optional(),
+      git_remote_url: z
+        .string()
+        .trim()
+        .max(2048)
+        .refine(
+          (value) => !value || isGitRemoteUrl(value),
+          "Enter a Git remote URL without passwords, access tokens, query parameters or fragments",
+        )
+        .optional()
+        .describe("Optional repository remote, e.g. https://github.com/acme/shop.git"),
+    }),
+  },
+  {
     name: "skill_list",
     description:
       "List installed skills (built-in + user) with name, description and read count. " +
@@ -1038,6 +1091,7 @@ export const toolDefinitions = [
 export type ToolName = (typeof toolDefinitions)[number]["name"];
 
 export type ToolOptions = {
+  previewScope?: PreviewScope;
   projectScopes?: readonly McpProject[];
   publicApiBaseUrl?: string;
   skillDownload?: (name: string, ref: string, projectId: string | null) => SkillDownload;
@@ -1049,8 +1103,8 @@ export type ToolOptions = {
     ifRevision?: number,
   ) => ScratchpadContentUrl;
   /**
-   * Native session id of the calling agent. Stdio MCP runs inside the agent's process tree and
-   * reads it from the environment; HTTP MCP cannot see it, so it stays unset there.
+   * Native session id of the calling agent. Stdio MCP reads it from the agent's environment;
+   * HTTP MCP receives it from the `session` query parameter on the MCP URL.
    */
   agentSessionId?: string | null;
 };
@@ -1155,6 +1209,20 @@ function formatMemoryLine(memory: MemoryListItem): string {
   const reads = ` (${memory.read_count} ${memory.read_count === 1 ? "read" : "reads"})`;
   return `${memory.name.padEnd(28)}${priority}${reads} - ${memory.description}`;
 }
+/** SQLite unique violation on projects.name, possibly wrapped as an error cause. */
+function isUniqueNameFailure(error: unknown): boolean {
+  for (let e = error; e instanceof Error; e = e.cause) {
+    const code = (e as { code?: unknown }).code;
+    if (
+      code === "SQLITE_CONSTRAINT_UNIQUE" ||
+      code === "SQLITE_CONSTRAINT_PRIMARYKEY" ||
+      /UNIQUE constraint failed: projects\.name/i.test(e.message)
+    )
+      return true;
+  }
+  return false;
+}
+
 function resolveProjectId(projectName?: string): { id: string; name: string } | null {
   const name = projectName || loadConfig().activeProject;
   if (!name) return null;
@@ -1210,6 +1278,13 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
+  if (previewToolDefinitions.some((tool) => tool.name === name))
+    return executePreviewTool(
+      name,
+      args,
+      options.projectScopes?.map((project) => project.id),
+      options.previewScope,
+    );
   if (name.startsWith("channel_")) {
     const schema =
       name === "channel_list"
@@ -1374,6 +1449,21 @@ export async function executeTool(
       input,
       resolveProjectId(project)?.id ?? null,
       options.projectScopes?.map((p) => p.id),
+    );
+  }
+  if (name === "session_send") {
+    const input = SessionMessageCreateSchema.parse(args);
+    if (!options.agentSessionId)
+      throw new ValidationError(
+        "session_send needs the calling session identity; reconnect MCP with ?session=<session id> or run inside an agent session",
+      );
+    return JSON.stringify(
+      SessionMessageResultSchema.parse(
+        await orcApi("POST", "/session-messages", {
+          body: input,
+          headers: { "X-ORC-Session": options.agentSessionId },
+        }),
+      ),
     );
   }
   if (name === "session_handoff") {
@@ -2379,6 +2469,65 @@ export async function executeTool(
           return `${p.name.padEnd(24)} ${p.status} [id: ${p.id}]${desc}`;
         })
         .join("\n");
+    }
+
+    case "project_create": {
+      if (options.projectScopes?.length)
+        throw new ValidationError(
+          "project_create needs an unscoped connection: this MCP connection is limited to selected projects. Reconnect without project scopes to create projects.",
+        );
+      const { name, description, status, tags, git_remote_url } = args as {
+        name: string;
+        description?: string;
+        status?: "active" | "archived" | "paused";
+        tags?: string[];
+        git_remote_url?: string;
+      };
+      const duplicate = () => {
+        const row = getSqlite()
+          .query<{ id: string; name: string }, [string]>(
+            "SELECT id, name FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
+          )
+          .get(name);
+        return row
+          ? new ConflictError(
+              `Project ${row.name} already exists [id: ${row.id}]. Reuse that id or choose another name; no duplicate was created.`,
+            )
+          : null;
+      };
+      const now = new Date();
+      const id = ulid();
+      try {
+        // The existing index is case-sensitive: serialize the NOCASE check and insert.
+        getSqlite()
+          .transaction(() => {
+            const conflict = duplicate();
+            if (conflict) throw conflict;
+            db.insert(projects)
+              .values({
+                id,
+                name,
+                description: description ?? null,
+                status: status ?? "active",
+                git_remote_url: git_remote_url?.trim() || null,
+                tags: tags ?? null,
+                created_at: now,
+                updated_at: now,
+              })
+              .run();
+          })
+          .immediate();
+      } catch (error) {
+        // Lost a race against a concurrent create: the unique index on name caught it.
+        const raced = isUniqueNameFailure(error) ? duplicate() : null;
+        if (raced) throw raced;
+        throw error;
+      }
+      const link = new URL(
+        `/tasks?project=${encodeURIComponent(name)}`,
+        options.publicApiBaseUrl ?? orcApiBase(),
+      ).toString();
+      return `Created project ${name} [id: ${id}]\nlink: ${link}`;
     }
 
     case "task_batch_create": {

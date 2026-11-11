@@ -1,6 +1,7 @@
 import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { pathLabel } from "@orc/core/display-path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION } from "@orc/core/usage";
 import { z } from "zod";
@@ -50,7 +51,7 @@ export function registryRecord(entry: RegistryEntry): SessionRecord {
   return {
     backend: "claude",
     externalId: entry.sessionId,
-    title: entry.name ?? basename(entry.cwd),
+    title: entry.name || pathLabel(entry.cwd) || "Claude session",
     cwd: entry.cwd,
     pid: entry.pid,
     status: !isAlive(entry.pid) ? "stopped" : entry.status === "busy" ? "running" : "idle",
@@ -159,7 +160,7 @@ export function claudeAdapter(
                 record = {
                   backend: "claude",
                   externalId: d.cliSessionId,
-                  title: d.title ?? basename(d.cwd),
+                  title: d.title || pathLabel(d.cwd) || "Claude session",
                   cwd: d.cwd,
                   status: "stopped",
                   createdAt: new Date(d.createdAt ?? last.getTime()),
@@ -188,7 +189,7 @@ export function claudeAdapter(
         const live: SessionRecord = {
           backend: "claude",
           externalId: entry.sessionId,
-          title: entry.name ?? basename(entry.cwd),
+          title: entry.name || pathLabel(entry.cwd) || "Claude session",
           cwd: entry.cwd,
           pid: entry.pid,
           status: !(await runtime.processAlive(entry.pid))

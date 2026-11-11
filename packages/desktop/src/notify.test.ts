@@ -28,6 +28,17 @@ describe("parseNotifyRequest", () => {
   test("clips long text", () => {
     expect(parseNotifyRequest({ ...valid, title: "x".repeat(500) })?.title).toHaveLength(120);
   });
+
+  test("keeps a well-formed notification id", () => {
+    expect(parseNotifyRequest({ ...valid, id: "01JABCDE-notification" })?.id).toBe(
+      "01JABCDE-notification",
+    );
+  });
+
+  test("drops malformed notification ids", () => {
+    for (const id of ["", "id with space", "x".repeat(65), 7, null, "../escape"])
+      expect(parseNotifyRequest({ ...valid, id })).toEqual(valid);
+  });
 });
 
 describe("shouldNotifyNatively", () => {

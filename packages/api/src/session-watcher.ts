@@ -22,6 +22,7 @@ import { cursorAgentAdapter } from "./sessions/cursor-agent.js";
 import { geminiAdapter } from "./sessions/gemini.js";
 import { lifecycleRecords, withLifecycle } from "./sessions/lifecycle.js";
 import { opencodeAdapter } from "./sessions/opencode.js";
+import { piAdapter, piSessionRoots } from "./sessions/pi.js";
 import type { KnownSession, SessionAdapter, SessionRecord } from "./sessions/types.js";
 
 export { LIVE_CHAT_ID };
@@ -49,6 +50,7 @@ const defaultAdapters = (host: ExecHost = resolveExecHost()): SessionAdapter[] =
     cursorAgentAdapter(undefined, runtime),
     geminiAdapter(undefined, runtime),
     opencodeAdapter(undefined, runtime),
+    piAdapter(undefined, runtime),
   ].map((adapter) => withLifecycle(adapter, undefined, runtime));
 };
 
@@ -366,6 +368,7 @@ export function startSessionWatcher(
   let expiration: ReturnType<typeof setTimeout> | undefined;
   let watchedHost = selectedHostAlias();
   const fileWatchers: (() => void)[] = [];
+  let watcherGeneration = 0;
   const processes = new Map<string, () => void>();
   const schedule = (fileChanged = false): void => {
     if (stopped) return;
@@ -450,6 +453,7 @@ export function startSessionWatcher(
     }
   };
   const attach = (): void => {
+    const generation = ++watcherGeneration;
     watchedHost = selectedHostAlias();
     for (const stop of fileWatchers.splice(0)) stop();
     const local = new Set<string>();
@@ -457,6 +461,16 @@ export function startSessionWatcher(
     if (registryDir) local.add(registryDir);
     if (!opts.adapters) {
       const host = resolveExecHost();
+      void piSessionRoots(hostRuntime(host))
+        .then((paths) => {
+          if (stopped || generation !== watcherGeneration) return;
+          if (host.kind === "ssh")
+            fileWatchers.push(watchRemotePaths(host, paths, () => schedule(true)));
+          else
+            for (const path of paths)
+              fileWatchers.push(watchResourcePath(path, () => schedule(true)));
+        })
+        .catch((error) => logger.warn("Cannot watch Pi session directories", { error }));
       const sources = [
         ".claude/sessions",
         ".claude/projects",
@@ -490,7 +504,10 @@ export function startSessionWatcher(
   };
   refreshWatchers = attach;
   const unsubscribe = changes.subscribe(({ resources }) => {
-    if (resources.includes("ssh") && watchedHost !== selectedHostAlias())
+    if (
+      (!opts.adapters && resources.includes("settings")) ||
+      (resources.includes("ssh") && watchedHost !== selectedHostAlias())
+    )
       refreshConfiguredSessionAdapters();
   });
   attach();

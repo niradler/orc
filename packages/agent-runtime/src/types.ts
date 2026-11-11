@@ -52,6 +52,8 @@ export type SessionOpts = {
   orcMcp?: boolean | undefined;
   /** Readable project selected for this conversation's injected ORC connection. */
   orcMcpProject?: string | undefined;
+  /** Trusted ORC conversation/live-session ID; binds preview discovery and invocation. */
+  orcPreviewSessionId?: string | undefined;
   /** Tool surface of that connection; `meta` serves three search/describe/invoke tools. */
   orcMcpMode?: OrcMcpMode | undefined;
 };

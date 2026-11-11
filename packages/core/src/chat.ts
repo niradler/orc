@@ -5,7 +5,7 @@ import { SessionFileSchema } from "./session-file-types.js";
 import { AgentCapabilitiesSchema } from "./types.js";
 
 export function nativeChatAgent(agent: string): string | null {
-  return ["claude", "codex", "gemini"].includes(agent) ? agent : null;
+  return ["claude", "codex", "gemini", "opencode", "pi"].includes(agent) ? agent : null;
 }
 
 export function nativeChatResumeUnavailableReason(agent: string): string | null {

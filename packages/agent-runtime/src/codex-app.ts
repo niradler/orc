@@ -534,7 +534,13 @@ export class CodexAppSession implements AgentSession {
       const mcp =
         this.opts.orcMcp === false
           ? null
-          : buildOrcMcpServer(this.host, false, this.opts.orcMcpMode, this.opts.orcMcpProject);
+          : buildOrcMcpServer(
+              this.host,
+              false,
+              this.opts.orcMcpMode,
+              this.opts.orcMcpProject,
+              this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
+            );
       if (mcp) {
         if (await hasConfiguredOrcMcp(this.host, command, this.opts.cwd))
           args.push("-c", "mcp_servers.orc.enabled=false");

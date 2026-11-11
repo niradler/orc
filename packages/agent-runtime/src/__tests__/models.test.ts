@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseAgentModels, readAgentModelCatalog } from "../models";
+import { parseAgentModels, readAgentModelCatalog, readTextModelCatalog } from "../models";
 
 describe("native model discovery", () => {
   test("validates IDs, hides hidden rows and normalizes labels without exposing extra fields", () => {
@@ -64,5 +64,39 @@ describe("native model discovery", () => {
         process.cwd(),
       ),
     ).rejects.toThrow("size limit");
+  });
+
+  test("OpenCode text catalog validates ids, drops junk and deduplicates", async () => {
+    const script = `console.log("provider/model-a");console.log("provider/model-a");console.log("--flag");console.log("");console.log("has space");console.log("custom-provider/example-model");`;
+    expect(
+      await readTextModelCatalog(
+        { kind: "local" },
+        [process.execPath, "-e", script],
+        process.cwd(),
+      ),
+    ).toEqual([
+      { id: "provider/model-a", label: "provider/model-a" },
+      { id: "custom-provider/example-model", label: "custom-provider/example-model" },
+    ]);
+  });
+
+  test("text catalog output beyond the size limit fails cleanly", async () => {
+    await expect(
+      readTextModelCatalog(
+        { kind: "local" },
+        [process.execPath, "-e", 'console.log("x".repeat(1024*1024+1));setInterval(()=>{},1000)'],
+        process.cwd(),
+      ),
+    ).rejects.toThrow("size limit");
+  });
+
+  test("should reject failed OpenCode discovery even when it printed a partial catalog", async () => {
+    await expect(
+      readTextModelCatalog(
+        { kind: "local" },
+        [process.execPath, "-e", 'console.log("custom-provider/example-model");process.exit(1)'],
+        process.cwd(),
+      ),
+    ).rejects.toThrow("could not list its models");
   });
 });

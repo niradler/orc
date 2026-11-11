@@ -6,9 +6,12 @@ nsis:
 directories:
   output: release
 files:
-  - dist/**
+  - dist/main.js
+  - dist/preload.cjs
+  - dist/preview-guest-preload.cjs
   - build/icon.png
   - package.json
+  - THIRD_PARTY_NOTICES.md
 publish:
   provider: github
   owner: niradler

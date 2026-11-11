@@ -506,6 +506,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -741,6 +754,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -918,6 +944,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -1147,6 +1186,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -1297,6 +1349,19 @@ export interface paths {
                         agentOptions: {
                             [key: string]: {
                                 /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
@@ -1372,6 +1437,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -1687,6 +1765,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -1900,6 +1991,19 @@ export interface paths {
                         agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
@@ -2080,6 +2184,2160 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save a bounded browser download in its trusted session workspace */
+        post: {
+            parameters: {
+                query: {
+                    session_id: string;
+                    name: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                            name: string;
+                            size: number;
+                            mimeType: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a bounded browser-upload file from its trusted session workspace */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                    target: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            name: string;
+                            data: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save a bounded browser recording in its trusted session workspace */
+        post: {
+            parameters: {
+                query: {
+                    session_id: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "video/webm": string;
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                            name: string;
+                            size: number;
+                            mimeType: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List desktop targets viewing one session */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            clients: {
+                                client_id: string;
+                                agent_access: boolean;
+                                browser_ready: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Register or renew a desktop viewing one session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        client_id: string;
+                        session_id: string | null;
+                        /** @default false */
+                        agent_access?: boolean;
+                        /** @default false */
+                        browser_ready?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            client_id: string;
+                            lease: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/clients/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release this desktop lease on close or reload */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop lease released */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a preview's trusted session workspace and project */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            cwd: string;
+                            host: string | null;
+                            projectId: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/clients/{id}/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Receive requests for this desktop's selected session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            requests: {
+                                id: string;
+                                client_id: string;
+                                session_id: string;
+                                /** @enum {string} */
+                                kind: "url" | "file" | "browser";
+                                target: string;
+                                /** @enum {string} */
+                                status: "queued" | "opened" | "completed" | "failed" | "expired";
+                                error: string | null;
+                                expires_at: number;
+                                result?: unknown;
+                                command?: {
+                                    /** @enum {string} */
+                                    action: "resize_reset";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "download";
+                                    /** Format: uuid */
+                                    download_id: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "upload";
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    paths: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    action: "frames";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "frame";
+                                    frame_id: string | null;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "dialog";
+                                    /**
+                                     * @default status
+                                     * @enum {string}
+                                     */
+                                    response: "status" | "accept" | "dismiss";
+                                    text?: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "appearance";
+                                    /** @enum {string} */
+                                    color_scheme: "light" | "dark" | "system";
+                                    reduced_motion?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "resize";
+                                    width: number;
+                                    height: number;
+                                    /** @default 1 */
+                                    device_scale_factor: number;
+                                    /** @default false */
+                                    mobile: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "recording_start";
+                                    /** @default 60 */
+                                    max_seconds: number;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "recording_stop";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "tabs";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "tab_select";
+                                    /** Format: uuid */
+                                    tab_id: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "tab_close";
+                                    /** Format: uuid */
+                                    tab_id: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "new_tab";
+                                    url: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "navigate";
+                                    url: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "back";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "forward";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "reload";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "snapshot";
+                                    selector?: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    max_chars?: number;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "screenshot";
+                                } | {
+                                    /** @enum {string} */
+                                    action: "click";
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    action: "hover";
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    action: "select";
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    values: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    action: "drag";
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    target: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    action: "wait";
+                                    selector?: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    text?: string;
+                                    url_includes?: string;
+                                    /**
+                                     * @default visible
+                                     * @enum {string}
+                                     */
+                                    state: "visible" | "hidden" | "attached" | "detached";
+                                    /** @default 5000 */
+                                    timeout_ms: number;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "evaluate";
+                                    expression: string;
+                                    /** @default 5000 */
+                                    timeout_ms: number;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "type";
+                                    selector: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    action: "press";
+                                    modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                    key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
+                                } | {
+                                    /** @enum {string} */
+                                    action: "scroll";
+                                    selector?: string | {
+                                        /** @enum {string} */
+                                        by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                        value: string;
+                                        name?: string;
+                                        exact?: boolean;
+                                    };
+                                    /** @default 0 */
+                                    x: number;
+                                    y: number;
+                                };
+                                /** Format: uuid */
+                                tab_id?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a file or URL in a desktop viewing this session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        /** Format: uuid */
+                        client_id?: string;
+                        /** @enum {string} */
+                        kind: "url" | "file";
+                        target: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
+                                action: "snapshot";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                max_chars?: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                            /** Format: uuid */
+                            tab_id?: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/browser": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue browser automation for an explicitly enabled session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        /** Format: uuid */
+                        client_id?: string;
+                        command: {
+                            /** @enum {string} */
+                            action: "resize_reset";
+                        } | {
+                            /** @enum {string} */
+                            action: "download";
+                            /** Format: uuid */
+                            download_id: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "upload";
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            paths: string[];
+                        } | {
+                            /** @enum {string} */
+                            action: "frames";
+                        } | {
+                            /** @enum {string} */
+                            action: "frame";
+                            frame_id: string | null;
+                        } | {
+                            /** @enum {string} */
+                            action: "dialog";
+                            /**
+                             * @default status
+                             * @enum {string}
+                             */
+                            response?: "status" | "accept" | "dismiss";
+                            text?: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "appearance";
+                            /** @enum {string} */
+                            color_scheme: "light" | "dark" | "system";
+                            reduced_motion?: boolean;
+                        } | {
+                            /** @enum {string} */
+                            action: "resize";
+                            width: number;
+                            height: number;
+                            /** @default 1 */
+                            device_scale_factor?: number;
+                            /** @default false */
+                            mobile?: boolean;
+                        } | {
+                            /** @enum {string} */
+                            action: "recording_start";
+                            /** @default 60 */
+                            max_seconds?: number;
+                        } | {
+                            /** @enum {string} */
+                            action: "recording_stop";
+                        } | {
+                            /** @enum {string} */
+                            action: "tabs";
+                        } | {
+                            /** @enum {string} */
+                            action: "tab_select";
+                            /** Format: uuid */
+                            tab_id: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "tab_close";
+                            /** Format: uuid */
+                            tab_id: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "new_tab";
+                            url: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "navigate";
+                            url: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "back";
+                        } | {
+                            /** @enum {string} */
+                            action: "forward";
+                        } | {
+                            /** @enum {string} */
+                            action: "reload";
+                        } | {
+                            /** @enum {string} */
+                            action: "snapshot";
+                            selector?: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            max_chars?: number;
+                        } | {
+                            /** @enum {string} */
+                            action: "screenshot";
+                        } | {
+                            /** @enum {string} */
+                            action: "click";
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            action: "hover";
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            action: "select";
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            values: string[];
+                        } | {
+                            /** @enum {string} */
+                            action: "drag";
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            target: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            action: "wait";
+                            selector?: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            text?: string;
+                            url_includes?: string;
+                            /**
+                             * @default visible
+                             * @enum {string}
+                             */
+                            state?: "visible" | "hidden" | "attached" | "detached";
+                            /** @default 5000 */
+                            timeout_ms?: number;
+                        } | {
+                            /** @enum {string} */
+                            action: "evaluate";
+                            expression: string;
+                            /** @default 5000 */
+                            timeout_ms?: number;
+                        } | {
+                            /** @enum {string} */
+                            action: "type";
+                            selector: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            action: "press";
+                            modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                            key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
+                        } | {
+                            /** @enum {string} */
+                            action: "scroll";
+                            selector?: string | {
+                                /** @enum {string} */
+                                by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                value: string;
+                                name?: string;
+                                exact?: boolean;
+                            };
+                            /** @default 0 */
+                            x?: number;
+                            y: number;
+                        };
+                        /** Format: uuid */
+                        tab_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
+                                action: "snapshot";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                max_chars?: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                            /** Format: uuid */
+                            tab_id?: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/requests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read truthful queued/opened/completed/failed preview delivery */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
+                                action: "snapshot";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                max_chars?: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                            /** Format: uuid */
+                            tab_id?: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/requests/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fail a still-queued preview request so it never runs late */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
+                                action: "snapshot";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                max_chars?: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                            /** Format: uuid */
+                            tab_id?: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/requests/{id}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge an actual preview or browser action result */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        client_id: string;
+                        /** @enum {string} */
+                        status: "opened" | "completed" | "failed";
+                        /** @default null */
+                        error?: string | null;
+                        result?: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            client_id: string;
+                            session_id: string;
+                            /** @enum {string} */
+                            kind: "url" | "file" | "browser";
+                            target: string;
+                            /** @enum {string} */
+                            status: "queued" | "opened" | "completed" | "failed" | "expired";
+                            error: string | null;
+                            expires_at: number;
+                            result?: unknown;
+                            command?: {
+                                /** @enum {string} */
+                                action: "resize_reset";
+                            } | {
+                                /** @enum {string} */
+                                action: "download";
+                                /** Format: uuid */
+                                download_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "upload";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                paths: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "frames";
+                            } | {
+                                /** @enum {string} */
+                                action: "frame";
+                                frame_id: string | null;
+                            } | {
+                                /** @enum {string} */
+                                action: "dialog";
+                                /**
+                                 * @default status
+                                 * @enum {string}
+                                 */
+                                response: "status" | "accept" | "dismiss";
+                                text?: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "appearance";
+                                /** @enum {string} */
+                                color_scheme: "light" | "dark" | "system";
+                                reduced_motion?: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "resize";
+                                width: number;
+                                height: number;
+                                /** @default 1 */
+                                device_scale_factor: number;
+                                /** @default false */
+                                mobile: boolean;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_start";
+                                /** @default 60 */
+                                max_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "recording_stop";
+                            } | {
+                                /** @enum {string} */
+                                action: "tabs";
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_select";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "tab_close";
+                                /** Format: uuid */
+                                tab_id: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "new_tab";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "navigate";
+                                url: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "back";
+                            } | {
+                                /** @enum {string} */
+                                action: "forward";
+                            } | {
+                                /** @enum {string} */
+                                action: "reload";
+                            } | {
+                                /** @enum {string} */
+                                action: "snapshot";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                max_chars?: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "screenshot";
+                            } | {
+                                /** @enum {string} */
+                                action: "click";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "hover";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "select";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                values: string[];
+                            } | {
+                                /** @enum {string} */
+                                action: "drag";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                target: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                action: "wait";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text?: string;
+                                url_includes?: string;
+                                /**
+                                 * @default visible
+                                 * @enum {string}
+                                 */
+                                state: "visible" | "hidden" | "attached" | "detached";
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "evaluate";
+                                expression: string;
+                                /** @default 5000 */
+                                timeout_ms: number;
+                            } | {
+                                /** @enum {string} */
+                                action: "type";
+                                selector: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                text: string;
+                            } | {
+                                /** @enum {string} */
+                                action: "press";
+                                modifiers?: ("Control" | "Alt" | "Meta" | "Shift")[];
+                                key: string | ("Enter" | "Tab" | "Escape" | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Backspace" | "Space" | "Delete" | "Home" | "End" | "PageUp" | "PageDown");
+                            } | {
+                                /** @enum {string} */
+                                action: "scroll";
+                                selector?: string | {
+                                    /** @enum {string} */
+                                    by: "role" | "text" | "label" | "placeholder" | "testid" | "css";
+                                    value: string;
+                                    name?: string;
+                                    exact?: boolean;
+                                };
+                                /** @default 0 */
+                                x: number;
+                                y: number;
+                            };
+                            /** Format: uuid */
+                            tab_id?: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop-preview/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview a bounded file inside a trusted session workspace */
+        get: {
+            parameters: {
+                query: {
+                    session_id: string;
+                    target: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Desktop preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            kind: "text" | "image";
+                            path: string;
+                            root: string;
+                            host: string | null;
+                            content: string;
+                            editable: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        /** Save workspace text with optimistic conflict protection */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        target: string;
+                        content: string;
+                        original: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description File saved */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description File changed on disk; original content is required */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3952,6 +6210,19 @@ export interface paths {
                                 model: string;
                                 options?: {
                                     /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
@@ -4022,6 +6293,19 @@ export interface paths {
                             model?: string;
                             options?: {
                                 /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
@@ -4086,6 +6370,19 @@ export interface paths {
                                 /** @default  */
                                 model: string;
                                 options?: {
+                                    /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
                                     /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
@@ -4377,6 +6674,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -4477,6 +6787,19 @@ export interface paths {
                             agentOptions?: {
                                 [key: string]: {
                                     /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
@@ -4566,6 +6889,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -8439,7 +10775,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -8585,7 +10921,7 @@ export interface paths {
                                         kind: "event";
                                         enabled: boolean;
                                         scope: {
-                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                             events: string[];
                                         };
                                         filter: {
@@ -8754,7 +11090,7 @@ export interface paths {
                                 kind: "event";
                                 enabled: boolean;
                                 scope: {
-                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                     events: string[];
                                 };
                                 filter: {
@@ -8873,7 +11209,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -9026,7 +11362,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -12065,7 +14401,7 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global" | "all";
-                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task";
+                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task" | "job" | "rule" | "terminal" | "auth";
                     session_id?: string;
                     since?: number | null;
                     limit?: number;
@@ -15124,6 +17460,404 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Queued and recently delivered messages for a live or idle session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message inbox */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            messages: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /** Queue a message for a live or idle session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        body: string;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued message and its target */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            };
+                            target: {
+                                session_id: string;
+                                backend: string;
+                                status: string;
+                                /** @enum {string} */
+                                delivery: "hook" | "resume" | "unsupported";
+                            };
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description A safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a message from an agent session; pass X-ORC-Session for sender identity */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        backend?: string;
+                        body: string;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Queued message and its target */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message: {
+                                id: string;
+                                project_id: string | null;
+                                target_session_id: string;
+                                target_native_id: string | null;
+                                target_backend: string;
+                                /** @enum {string} */
+                                sender_kind: "session" | "human" | "channel" | "system";
+                                sender_session_id: string | null;
+                                sender_native_id: string | null;
+                                sender_backend: string | null;
+                                sender_label: string;
+                                body: string;
+                                position: number;
+                                hop: number;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                /** @enum {string|null} */
+                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivery_error: string | null;
+                                request_id: string | null;
+                                created_at: number;
+                                updated_at: number;
+                                delivered_at: number | null;
+                            };
+                            target: {
+                                session_id: string;
+                                backend: string;
+                                status: string;
+                                /** @enum {string} */
+                                delivery: "hook" | "resume" | "unsupported";
+                            };
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description A safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a queued session message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder a queued session message */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        direction: "up" | "down";
+                    };
+                };
+            };
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -15645,6 +18379,10 @@ export interface paths {
                         live_session_id?: string;
                         /** @description Start an agent in a new git worktree of the cwd's repo */
                         worktree?: boolean;
+                        /** @description Project whose workspace environment and ports this terminal uses */
+                        project_id?: string;
+                        /** @description Run the project's dev script in a shell and publish the first printed URL as a preview */
+                        dev?: boolean;
                         setup?: {
                             name: string;
                             packages: string[];
@@ -15950,6 +18688,45 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List prepared workspaces with setup status, port block and preview URL */
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                    path?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Workspaces */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspacePage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -17501,6 +20278,18 @@ export interface components {
             obsidian_path: string | null;
             max_workers: number | null;
             upload_directory: string | null;
+            workspace: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -17547,6 +20336,18 @@ export interface components {
             obsidian_path?: string;
             max_workers?: number;
             upload_directory?: string | null;
+            workspace?: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
         };
         UpdateProject: {
             name?: string;
@@ -17586,6 +20387,18 @@ export interface components {
             obsidian_path?: string;
             max_workers?: number | null;
             upload_directory?: string | null;
+            workspace?: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
         };
         ProjectComment: {
             id: string;
@@ -18297,6 +21110,19 @@ export interface components {
                 backend: string;
                 options?: {
                     /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
+                    /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
                         /** @enum {string} */
@@ -18406,6 +21232,19 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
@@ -18520,6 +21359,19 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
@@ -18651,8 +21503,33 @@ export interface components {
             exit_code: number | null;
             pid: number | null;
             live_session_id: string | null;
+            project_id: string | null;
+            worktree_path: string | null;
+            dev: boolean;
+            preview_url: string | null;
             /** Format: date-time */
             created_at: string;
+        };
+        WorkspacePage: {
+            workspaces: components["schemas"]["Workspace"][];
+        };
+        Workspace: {
+            worktree_path: string;
+            project_id: string | null;
+            repo_root: string | null;
+            git_branch: string | null;
+            host: string | null;
+            /** @enum {string} */
+            setup_status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+            setup_output: string | null;
+            setup_started_at: number | null;
+            setup_ended_at: number | null;
+            port_base: number | null;
+            port_count: number | null;
+            preview_url: string | null;
+            dev_terminal_id: string | null;
+            created_at: number;
+            updated_at: number;
         };
         Worktree: {
             path: string;

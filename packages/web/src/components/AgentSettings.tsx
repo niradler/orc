@@ -1,5 +1,11 @@
 import { ChatAgentOptionsSchema, chatRuntime } from "@orc/core/chat-options";
-import { agentLabel, CODING_AGENTS, supportsManualCompaction } from "@orc/core/coding-agents";
+import {
+  agentLabel,
+  CODING_AGENTS,
+  chatRuntimeFor,
+  supportsManualCompaction,
+  supportsModelDiscovery,
+} from "@orc/core/coding-agents";
 import { ulid } from "@orc/core/ids";
 import {
   type ProviderProfile,
@@ -23,9 +29,10 @@ import { PROVIDER_SETTINGS_KEY, useProviders, WORKSPACE_PREFERENCES_KEY } from "
 
 function optionsText(profile: ProviderProfile): string {
   return JSON.stringify(
-    profile.options?.runtime === "claude-sdk"
+    profile.options?.runtime === "claude-sdk" || profile.options?.runtime === "pi"
       ? profile.options.options
-      : (profile.options?.args ?? (chatRuntime(profile.agent) === "claude-sdk" ? {} : [])),
+      : (profile.options?.args ??
+          (["claude-sdk", "pi"].includes(chatRuntime(profile.agent)) ? {} : [])),
     null,
     2,
   );
@@ -149,7 +156,9 @@ export function AgentSettings() {
       const raw = JSON.parse(value);
       const runtime = chatRuntime(profile.agent);
       const options = ChatAgentOptionsSchema.parse(
-        runtime === "claude-sdk" ? { runtime, options: raw } : { runtime, args: raw },
+        runtime === "claude-sdk" || runtime === "pi"
+          ? { runtime, options: raw }
+          : { runtime, args: raw },
       );
       patch({ options });
       setOptionErrors((current) => ({ ...current, [profile.id]: "" }));
@@ -196,6 +205,15 @@ export function AgentSettings() {
             Retry
           </Button>
         </div>
+      )}
+      {settings && !settings.providers.some((item) => item.enabled) && (
+        <p
+          role="status"
+          data-testid="provider-none-enabled"
+          className="text-sm text-muted-foreground"
+        >
+          No coding providers enabled. Install an agent, then enable it here.
+        </p>
       )}
       {settings && (
         <div className="grid items-center gap-2 sm:grid-cols-[140px_minmax(0,1fr)]">
@@ -289,12 +307,16 @@ export function AgentSettings() {
                   <AgentIcon agent={profile.agent} decorative size={16} />
                   {agentLabel(profile.agent)}
                   <span className="text-xs text-muted-foreground">
-                    {supportsManualCompaction(profile.agent) ? "native" : "acpx"}
+                    {supportsManualCompaction(profile.agent)
+                      ? "native"
+                      : chatRuntimeFor(profile.agent) === "opencode"
+                        ? "acp"
+                        : "acpx"}
                   </span>
                 </p>
               </div>
             </div>
-            {["claude", "codex"].includes(profile.agent) && (
+            {["claude", "codex", "opencode", "pi"].includes(profile.agent) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
@@ -342,7 +364,7 @@ export function AgentSettings() {
                 list="provider-model-choices"
                 disabled={busy}
                 onFocus={() => {
-                  if (!dirty && supportsManualCompaction(profile.agent)) void catalog.refetch();
+                  if (!dirty && supportsModelDiscovery(profile.agent)) void catalog.refetch();
                 }}
                 onChange={(event) => patch({ model: event.target.value })}
               />
@@ -353,6 +375,11 @@ export function AgentSettings() {
                   </option>
                 ))}
               </datalist>
+              {(catalog.data?.warning || catalog.isError) && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {catalog.data?.warning ?? "Models could not be loaded. Enter a custom model ID."}
+                </p>
+              )}
             </div>
             <details
               key={profile.id}
@@ -486,27 +513,44 @@ export function AgentSettings() {
               </div>
               <div className="space-y-2 border-t border-border pt-3">
                 <div className="flex items-center gap-1">
-                  <Label htmlFor="provider-options">Chat launch options (JSON)</Label>
-                  <HelpPopover label="Chat launch options" testId="provider-options-help">
-                    {chatRuntime(profile.agent) === "claude-sdk"
-                      ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
-                      : chatRuntime(profile.agent) === "codex"
-                        ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
-                        : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
+                  <Label htmlFor={profile.agent === "opencode" ? undefined : "provider-options"}>
+                    {profile.agent === "opencode"
+                      ? "OpenCode configuration"
+                      : "Chat launch options (JSON)"}
+                  </Label>
+                  <HelpPopover
+                    label={
+                      profile.agent === "opencode"
+                        ? "OpenCode configuration"
+                        : "Chat launch options"
+                    }
+                    testId="provider-options-help"
+                  >
+                    {profile.agent === "opencode"
+                      ? "Configure custom providers and model options in OpenCode on the execution host. Use Default model above for a provider/model override, or leave it blank for OpenCode's default. Environment overrides apply to ACP and model discovery. ACPX launch flags do not apply to OpenCode."
+                      : chatRuntime(profile.agent) === "claude-sdk"
+                        ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
+                        : chatRuntime(profile.agent) === "pi"
+                          ? 'Pi options, for example {"thinkingLevel":"high","autoCompaction":true}. Queue mode, auto-retry and auto-compaction changes are saved to Pi\'s own settings on the execution host; thinking level is session-only.'
+                          : chatRuntime(profile.agent) === "codex"
+                            ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
+                            : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
                     Session options override these defaults. These options apply to chat, not native
                     terminal launches.
                   </HelpPopover>
                 </div>
-                <Textarea
-                  id="provider-options"
-                  data-testid="provider-options"
-                  rows={4}
-                  maxLength={20000}
-                  className="font-mono text-xs"
-                  disabled={busy}
-                  value={optionDrafts[profile.id] ?? optionsText(profile)}
-                  onChange={(event) => changeOptions(event.target.value)}
-                />
+                {profile.agent !== "opencode" && (
+                  <Textarea
+                    id="provider-options"
+                    data-testid="provider-options"
+                    rows={4}
+                    maxLength={20000}
+                    className="font-mono text-xs"
+                    disabled={busy}
+                    value={optionDrafts[profile.id] ?? optionsText(profile)}
+                    onChange={(event) => changeOptions(event.target.value)}
+                  />
+                )}
                 {optionErrors[profile.id] && (
                   <p role="alert" className="text-xs text-error">
                     {optionErrors[profile.id]}
@@ -522,7 +566,7 @@ export function AgentSettings() {
                   : "Manual compaction is not available through this adapter."}
               </HelpPopover>
             </div>
-            {supportsManualCompaction(profile.agent) && (
+            {["claude", "codex"].includes(profile.agent) && (
               <details className="space-y-2 border-t border-border pt-3">
                 <summary className="min-h-11 cursor-pointer text-sm">Local account limits</summary>
                 <div className="flex items-center gap-1">
@@ -645,7 +689,11 @@ export function AgentSettings() {
                 {CODING_AGENTS.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}
-                    {supportsManualCompaction(item.id) ? "" : " (acpx)"}
+                    {supportsManualCompaction(item.id)
+                      ? ""
+                      : chatRuntimeFor(item.id) === "opencode"
+                        ? " (acp)"
+                        : " (acpx)"}
                   </option>
                 ))}
                 <option value="other">Other acpx agent</option>

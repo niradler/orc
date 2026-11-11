@@ -5,6 +5,7 @@ import { api, getApiUrl } from "@/api/client";
 import { AboutSettings } from "@/components/AboutSettings";
 import { AgentSettings } from "@/components/AgentSettings";
 import { AttentionSettings } from "@/components/AttentionSettings";
+import { BrowserSettings } from "@/components/BrowserSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
 import { IntegrationsSettings } from "@/components/IntegrationsSettings";
@@ -21,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ViewHeader } from "@/components/ViewHeader";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
+import { desktopBridge } from "@/lib/desktop-bridge";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
 import { setTheme, useTheme } from "@/lib/theme";
 import { useViewParam } from "@/lib/view-params";
@@ -35,6 +37,7 @@ const sections = [
   "channels",
   "agents",
   "chat",
+  "browser",
   "mcp",
   "integrations",
   "knowledge",
@@ -54,6 +57,7 @@ const sectionLabels: Record<Section, string> = {
   channels: "Channels",
   agents: "Providers",
   chat: "Chat",
+  browser: "Browser",
   mcp: "MCP",
   integrations: "Integrations",
   knowledge: "Knowledge",
@@ -64,8 +68,13 @@ const sectionLabels: Record<Section, string> = {
 };
 
 export default function Settings() {
+  const visibleSections = sections.filter((id) => id !== "browser" || !!desktopBridge()?.preview);
   const { theme } = useTheme();
-  const [section, setSection] = useViewParam<Section>("settingsSection", "connection", sections);
+  const [section, setSection] = useViewParam<Section>(
+    "settingsSection",
+    "connection",
+    visibleSections,
+  );
   const [apiUrl, setApiUrl] = useState(getApiUrl);
   const [terminalFont, setTerminalFont] = useState(
     () => localStorage.getItem(TERMINAL_FONT_KEY) ?? "",
@@ -151,7 +160,7 @@ export default function Settings() {
       <ViewHeader title="Settings" />
       <div className="grid gap-6 md:grid-cols-[160px_minmax(0,1fr)] md:gap-8">
         <nav aria-label="Settings sections" className="hidden space-y-1 md:block">
-          {sections.map((id) => (
+          {visibleSections.map((id) => (
             <Button
               key={id}
               data-testid={`settings-section-${id}`}
@@ -172,7 +181,7 @@ export default function Settings() {
             value={section}
             onChange={(event) => navigate(event.target.value as Section)}
           >
-            {sections.map((id) => (
+            {visibleSections.map((id) => (
               <option key={id} value={id}>
                 {sectionLabels[id]}
               </option>
@@ -180,6 +189,7 @@ export default function Settings() {
           </select>
         </label>
         <div className="min-w-0 max-w-4xl">
+          {section === "browser" && desktopBridge()?.preview && <BrowserSettings />}
           {section === "usage" && <UsageSettings />}
           <section hidden={section !== "connection"} aria-label="Connection settings">
             <h2 className="mb-6 text-base font-medium">Connection</h2>

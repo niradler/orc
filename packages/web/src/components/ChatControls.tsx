@@ -45,6 +45,7 @@ import { useSsh } from "@/hooks/useSsh";
 import { useStableOrder } from "@/hooks/useStableOrder";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
+import { useDesktopPreview } from "@/lib/desktop-preview-context";
 import { filterCounts, matchesFilter, parseFilter, type SessionFilter } from "@/lib/session-filter";
 import { markSeen } from "@/lib/session-seen";
 import { terminalPath } from "@/lib/terminal-links";
@@ -787,6 +788,7 @@ export function ChatConversationInfo({
 }) {
   const { config, changePermissions, thread, workspace } = useChat();
   const { data: ssh } = useSsh();
+  const preview = useDesktopPreview();
   const dialog = useRef<HTMLDivElement>(null);
   const usage = useQuery({
     queryKey: [
@@ -885,6 +887,30 @@ export function ChatConversationInfo({
           </dd>
         </div>
       </dl>
+      {preview && (
+        <div className="flex items-start justify-between gap-6 border-y border-border py-3">
+          <div>
+            <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
+              Allow agent browser control
+            </label>
+            <p id="chat-browser-control-description" className="mt-1 text-xs text-muted-foreground">
+              {preview.browserControl.globallyEnabled
+                ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
+                : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            id="chat-browser-agent-access"
+            data-testid="chat-browser-agent-access"
+            aria-describedby="chat-browser-control-description"
+            className="mt-1 h-4 w-4 shrink-0"
+            checked={preview.browserControl.enabled}
+            disabled={preview.browserControl.pending || !preview.browserControl.globallyEnabled}
+            onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
+          />
+        </div>
+      )}
       {capabilities && (
         <p data-testid="chat-capabilities" className="text-xs text-muted-foreground">
           {[

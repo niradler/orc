@@ -1,10 +1,12 @@
 // ORC service worker: offline app shell, immutable asset cache and Web Push.
 // API, MCP and WebSocket traffic is never intercepted — it always goes to the network.
-const SHELL_CACHE = "orc-shell-v1";
+// Bump SHELL_CACHE whenever the shell handling changes: activate() drops every cache
+// not listed here, which is what removes a stale shell from installed clients. Asset
+// entries are content-hashed, so orc-assets-v1 is kept to stay warm across updates.
+const SHELL_CACHE = "orc-shell-v2";
 const ASSET_CACHE = "orc-assets-v1";
 const CACHES = [SHELL_CACHE, ASSET_CACHE];
 const MAX_ASSETS = 200;
-const NAVIGATION_TIMEOUT_MS = 4000;
 const BYPASS_PREFIXES = ["/api/", "/mcp", "/docs", "/openapi.json"];
 
 self.addEventListener("install", (event) => {
@@ -42,22 +44,29 @@ async function trimAssets(cache) {
 }
 
 async function navigate(event) {
-  const network = (async () => {
-    const response = (await event.preloadResponse) ?? (await fetch(event.request));
-    if (cacheableShell(response)) {
-      const cache = await caches.open(SHELL_CACHE);
-      await cache.put("/", response.clone());
-    }
-    return response;
-  })();
-  const timeout = new Promise((resolve) => setTimeout(resolve, NAVIGATION_TIMEOUT_MS));
+  let response;
   try {
-    const response = await Promise.race([network, timeout]);
-    if (response) return response;
-  } catch {}
-  const cached = await caches.match("/", { cacheName: SHELL_CACHE });
-  // Slow network and nothing cached yet: keep waiting for the real response.
-  return cached ?? network;
+    response = (await event.preloadResponse) ?? (await fetch(event.request));
+  } catch (error) {
+    // Offline only. A cached shell is never fresher than the last deploy, and an
+    // old one asks for chunk names the new build already removed, so serving it
+    // while the network is merely slow turns a delay into a broken app.
+    const cached = await caches.match("/", { cacheName: SHELL_CACHE });
+    if (cached) return cached;
+    throw error;
+  }
+  // Storing the shell is best effort: a full or blocked cache must not turn this
+  // successful navigation into the stale shell.
+  if (cacheableShell(response)) {
+    const copy = response.clone();
+    event.waitUntil(
+      caches
+        .open(SHELL_CACHE)
+        .then((cache) => cache.put("/", copy))
+        .catch(() => {}),
+    );
+  }
+  return response;
 }
 
 async function asset(request) {

@@ -1,5 +1,6 @@
 import type { ChatSettings } from "@orc/core/chat";
 import { agentForSessionBackend, codingAgent } from "@orc/core/coding-agents";
+import { pathLabel } from "@orc/core/display-path";
 
 export type PermissionMode = NonNullable<ChatSettings["permissionMode"]>;
 export type ComposerWorktree = {
@@ -31,9 +32,7 @@ function comparable(path: string): string {
 }
 
 export function pathName(path: string): string {
-  const trimmed = trimSeparators(path);
-  const name = trimmed.split(/[\\/]/).pop() ?? "";
-  return name || trimmed;
+  return pathLabel(path.trim());
 }
 
 export function isWithin(path: string, parent: string): boolean {
@@ -87,7 +86,7 @@ export function effectivePermissionMode(config: ChatSettings): PermissionMode {
     sdkMode ??
     config.permissionMode ??
     (config.autoApprove
-      ? config.agent === "claude"
+      ? ["claude", "pi"].includes(config.agent)
         ? "bypassPermissions"
         : "acceptEdits"
       : "default")
@@ -125,6 +124,10 @@ export function agentEffort(config: ChatSettings): string | null {
   if (!options) return null;
   if (options.runtime === "claude-sdk")
     return options.options.effort ? EFFORT_LABELS[options.options.effort] : null;
+  if (options.runtime === "pi")
+    return options.options.thinkingLevel
+      ? (EFFORT_LABELS[options.options.thinkingLevel] ?? options.options.thinkingLevel)
+      : null;
   if (options.runtime !== "codex") return null;
   for (const arg of options.args) {
     const match = /^model_reasoning_effort\s*=\s*"?([a-z]+)"?$/i.exec(arg.trim());

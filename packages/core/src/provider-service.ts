@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { ChatSettingsSchema } from "./chat.js";
-import { agentLabel, CODING_AGENTS, enabledAgents } from "./coding-agents.js";
-import { loadConfig, type OrcConfig, updateGlobalConfig } from "./config.js";
+import {
+  agentLabel,
+  CODING_AGENTS,
+  DEFAULT_ENABLED_AGENTS,
+  enabledAgents,
+} from "./coding-agents.js";
+import { loadConfig, localAgentBinary, type OrcConfig, updateGlobalConfig } from "./config.js";
 import { ConflictError, ValidationError } from "./errors.js";
 import { userHome } from "./home.js";
 import { resolveJobEnvironment } from "./job-environment.js";
@@ -13,6 +18,32 @@ import {
   StoredProvidersSchema,
 } from "./providers.js";
 import { encryptSecret } from "./secrets.js";
+
+/** Persist discovery once; a later missing installation must not erase user intent. */
+export function initializeAgentPreferences(
+  findBinary: (name: string) => string | null = localAgentBinary,
+): void {
+  const config = loadConfig();
+  if (config.providers || config.preferences.agents !== undefined) return;
+  const agents = DEFAULT_ENABLED_AGENTS.filter((id) => {
+    const command = config.agent_loop.acp_commands?.[id]?.command;
+    if (command) return !!findBinary(command);
+    return CODING_AGENTS.find((agent) => agent.id === id)?.binaries.some(
+      (binary) => !!findBinary(binary),
+    );
+  });
+  updateGlobalConfig((raw) => {
+    const preferences = (raw.preferences ?? {}) as Record<string, unknown>;
+    const chat = ChatSettingsSchema.parse(config.preferences.chat ?? {});
+    raw.preferences = {
+      ...preferences,
+      agents,
+      ...(agents.length && !agents.some((id) => id === chat.agent)
+        ? { chat: { ...chat, agent: agents[0], providerId: undefined, model: "" } }
+        : {}),
+    };
+  });
+}
 
 function profiles(config: OrcConfig): { instances: StoredProviderProfile[]; default_id: string } {
   if (config.providers) return config.providers;
@@ -170,7 +201,11 @@ export function providerChatDefaults(
   const id = providerId ?? (agent ? undefined : saved.default_id);
   const selectedAgent =
     agent ?? saved.instances.find((profile) => profile.id === id)?.agent ?? base.agent;
-  const profile = providerForAgent(selectedAgent, id);
+  const profile = providerForAgent(
+    selectedAgent,
+    id,
+    !providerId && !agent && !saved.instances.some((item) => item.enabled),
+  );
   if (!profile) return { ...base, agent: selectedAgent };
   const agentOptions = config.providers ? {} : { ...base.agentOptions };
   delete agentOptions[profile.agent];
@@ -222,8 +257,7 @@ export function applyProviderPreferencePatch(
   }
   if (!saved.instances.some((profile) => profile.id === saved.default_id && profile.enabled)) {
     const first = saved.instances.find((profile) => profile.enabled);
-    if (!first) throw new ValidationError("Keep at least one enabled default provider.");
-    saved.default_id = first.id;
+    if (first) saved.default_id = first.id;
   }
   raw.providers = StoredProvidersSchema.parse(saved);
   const selected = saved.instances.find((profile) => profile.id === saved.default_id);

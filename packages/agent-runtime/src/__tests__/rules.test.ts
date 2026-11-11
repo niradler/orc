@@ -7,8 +7,13 @@ import { HumanRequestSchema } from "@orc/core/human-requests";
 import { RuleAskUserSchema } from "@orc/core/rule-types";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
+import { SessionMessageStore } from "@orc/db/session-messages";
 import { sessionRules } from "../rules.js";
-import { createRulesHook, sessionStartRuleContext } from "../rules-hook.js";
+import {
+  createRulesHook,
+  createSessionMessagesHook,
+  sessionStartRuleContext,
+} from "../rules-hook.js";
 
 const root = mkdtempSync(join(tmpdir(), "orc-guard-tests-"));
 const originalEnabled = process.env.ORC_RULES_ENABLED;
@@ -309,4 +314,80 @@ test("SDK maps failed tools and session context without granting native permissi
     hookSpecificOutput: { additionalContext: "Project context" },
   });
   expect(phases).toEqual(["pre_tool:false", "post_tool_failure:true", "session_start:false"]);
+});
+
+test("delivers a queued session message at the pre-tool safe point", async () => {
+  const sqlite = getSqlite();
+  sqlite.run(
+    "INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id) VALUES ('session-message-test', 'test', 'session-message-test')",
+  );
+  sqlite
+    .query(
+      "INSERT OR REPLACE INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, status) VALUES ('managed', 'session-message-test', 'claude', 'direct', 's', 'idle')",
+    )
+    .run();
+  const store = new SessionMessageStore(sqlite);
+  const message = store.create(
+    { session_id: "s", body: "Change the retry count to five." },
+    { kind: "human", label: "human relay (web)" },
+  );
+  const hook = createRulesHook(
+    {
+      context: "",
+      evaluate: () => ({ decision: "abstain", reasons: [], jobs: [], context: [] }),
+    },
+    root,
+    () => {},
+  );
+  const output = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      session_id: "s",
+      cwd: root,
+      transcript_path: "",
+      tool_name: "Read",
+      tool_input: {},
+      tool_use_id: "message-one",
+    },
+    "message-one",
+    { signal: new AbortController().signal },
+  );
+  expect(JSON.stringify(output)).toContain("Change the retry count to five.");
+  expect(JSON.stringify(output)).toContain("Delivery is not approval");
+  expect(store.get(message.id)).toMatchObject({
+    state: "delivered",
+    delivered_via: "hook",
+  });
+});
+
+test("delivers session messages without enabling the rules engine", async () => {
+  const sqlite = getSqlite();
+  sqlite
+    .query(
+      "INSERT OR REPLACE INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, status) VALUES ('managed-sdk', 'session-message-test', 'claude', 'direct', 'sdk-native', 'idle')",
+    )
+    .run();
+  const store = new SessionMessageStore(sqlite);
+  const message = store.create(
+    { session_id: "sdk-native", body: "Use the compact layout." },
+    { kind: "human", label: "human relay (web)" },
+  );
+  const output = await createSessionMessagesHook("sdk-native")(
+    {
+      hook_event_name: "PreToolUse",
+      session_id: "sdk-native",
+      cwd: root,
+      transcript_path: "",
+      tool_name: "Read",
+      tool_input: {},
+      tool_use_id: "message-two",
+    },
+    "message-two",
+    { signal: new AbortController().signal },
+  );
+  expect(output).toMatchObject({
+    hookSpecificOutput: { hookEventName: "PreToolUse" },
+  });
+  expect(JSON.stringify(output)).toContain("Use the compact layout.");
+  expect(store.get(message.id)).toMatchObject({ state: "delivered", delivered_via: "hook" });
 });

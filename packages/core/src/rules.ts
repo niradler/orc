@@ -102,7 +102,9 @@ export function evaluateRules(
     if (
       !rule.enabled ||
       (rule.scope.agents !== "all" &&
-        !rule.scope.agents.includes(event.backend as "claude" | "cursor" | "gemini" | "codex"))
+        !rule.scope.agents.includes(
+          event.backend as "claude" | "cursor" | "gemini" | "codex" | "pi",
+        ))
     )
       continue;
     if (

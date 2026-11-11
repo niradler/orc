@@ -1,8 +1,10 @@
 import { changes } from "@orc/core/changes";
 import { agentForSessionBackend } from "@orc/core/coding-agents";
+import { pathLabel } from "@orc/core/display-path";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { trackHostProcess } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
+import { extractPreviewUrl } from "@orc/core/workspace-environment";
 import type { Launch, LaunchKind } from "./launch.js";
 import { buildPtyEnv } from "./pty-env.js";
 import { TerminalQueryResponder } from "./queries.js";
@@ -25,6 +27,11 @@ export interface TerminalInfo {
   exit_code: number | null;
   pid: number | null;
   live_session_id: string | null;
+  project_id: string | null;
+  worktree_path: string | null;
+  /** A dev-server terminal whose output is watched for the preview URL. */
+  dev: boolean;
+  preview_url: string | null;
   created_at: string;
 }
 
@@ -38,10 +45,17 @@ export interface TerminalSink {
   close?(): void;
 }
 
+export interface TerminalMetadata {
+  projectId?: string | null | undefined;
+  worktreePath?: string | null | undefined;
+  dev?: boolean | undefined;
+}
+
 export interface CreateTerminalInput {
   launch: Launch;
   name?: string | undefined;
   liveSessionId?: string | null | undefined;
+  metadata?: TerminalMetadata | undefined;
 }
 
 export interface TerminalManagerOptions {
@@ -51,6 +65,8 @@ export interface TerminalManagerOptions {
   scrollbackBytes: number;
   /** Reply to DA1/DA2 on the terminal's behalf. Off where the PTY layer (ConPTY) already does. */
   answerDeviceAttributes?: boolean | undefined;
+  onPreviewUrl?: ((info: TerminalInfo, url: string) => void) | undefined;
+  onTerminalClosed?: ((info: TerminalInfo) => void) | undefined;
   now?: (() => number) | undefined;
 }
 
@@ -61,6 +77,8 @@ interface Entry {
   sinks: Set<TerminalSink>;
   scrollback: Uint8Array[];
   scrollbackSize: number;
+  previewBuffer: string;
+  decoder: TextDecoder;
 }
 
 interface Ticket {
@@ -161,6 +179,10 @@ export class TerminalManager {
         exit_code: null,
         pid: null,
         live_session_id: input.liveSessionId ?? null,
+        project_id: input.metadata?.projectId ?? null,
+        worktree_path: input.metadata?.worktreePath ?? null,
+        dev: input.metadata?.dev ?? false,
+        preview_url: null,
         created_at: new Date(this.now()).toISOString(),
       },
       pty: undefined as unknown as PtyHandle,
@@ -170,6 +192,8 @@ export class TerminalManager {
       sinks,
       scrollback: [],
       scrollbackSize: 0,
+      previewBuffer: "",
+      decoder: new TextDecoder(),
     };
     entry.pty = this.options.spawn(input.launch.spawnArgv ?? input.launch.argv, {
       cwd: input.launch.host ? undefined : input.launch.cwd,
@@ -216,6 +240,7 @@ export class TerminalManager {
   remove(id: string): void {
     const entry = this.entry(id);
     if (entry.info.status === "running") entry.pty.kill();
+    if (entry.info.preview_url) this.options.onTerminalClosed?.({ ...entry.info });
     this.closeSinks(entry);
     this.entries.delete(id);
     changes.publish("terminals");
@@ -269,6 +294,17 @@ export class TerminalManager {
     if (entry.info.status === "running") {
       for (const reply of entry.responder.feed(chunk)) entry.pty.write(reply);
     }
+    if (entry.info.dev && !entry.info.preview_url) {
+      entry.previewBuffer = (
+        entry.previewBuffer + entry.decoder.decode(chunk, { stream: true })
+      ).slice(-8192);
+      const url = extractPreviewUrl(entry.previewBuffer);
+      if (url) {
+        entry.info.preview_url = url;
+        this.options.onPreviewUrl?.({ ...entry.info }, url);
+        changes.publish("terminals");
+      }
+    }
   }
 
   private onExit(entry: Entry, code: number | null): void {
@@ -276,6 +312,7 @@ export class TerminalManager {
     entry.info.status = "exited";
     entry.info.exit_code = code;
     changes.publish("terminals");
+    if (entry.info.preview_url) this.options.onTerminalClosed?.({ ...entry.info });
     for (const sink of entry.sinks) sink.exit(code);
   }
 
@@ -296,7 +333,7 @@ export class TerminalManager {
 
 function defaultName(input: CreateTerminalInput): string {
   const { launch } = input;
-  const tail = launch.cwd?.split(/[\\/]/).filter(Boolean).pop();
+  const tail = pathLabel(launch.cwd);
   const label = launch.resume ? `${launch.kind} (resume)` : launch.kind;
   return tail ? `${label} · ${tail}` : label;
 }

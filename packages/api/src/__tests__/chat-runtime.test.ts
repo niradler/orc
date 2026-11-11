@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AgentBackend,
@@ -439,7 +439,7 @@ describe("native chat runtime", () => {
     try {
       const store = new RuleStore(getSqlite());
       const policy = {
-        workspace: process.cwd(),
+        workspace: homedir(),
         project_id: null,
         rules: [
           {
@@ -850,9 +850,10 @@ describe("native chat runtime", () => {
     expect((await request("/chat/threads", { sourceSessionId: "source-running" })).status).toBe(
       200,
     );
-    for (const [id, pid] of [
-      ["claude-owned", process.pid],
-      ["claude-stale", 2147483647],
+    for (const [id, pid, status] of [
+      ["claude-owned", process.pid, "running"],
+      ["claude-open-idle", process.pid, "idle"],
+      ["claude-stale", 2147483647, "idle"],
     ] as const) {
       getDb()
         .insert(gateway_sessions)
@@ -860,7 +861,7 @@ describe("native chat runtime", () => {
           id,
           backend: "claude",
           mode: "direct",
-          status: "idle",
+          status,
           pid,
           chat_id: LIVE_CHAT_ID,
           runtime_session_id: id,
@@ -868,12 +869,14 @@ describe("native chat runtime", () => {
         })
         .run();
     }
-    expect((await request("/chat/threads", { sourceSessionId: "claude-owned" })).status).toBe(409);
+    const ownedResponse = await request("/chat/threads", { sourceSessionId: "claude-owned" });
+    expect(ownedResponse.status).toBe(200);
+    const ownedThread = (await ownedResponse.json()) as ChatThread;
     const staleResponse = await request("/chat/threads", { sourceSessionId: "claude-stale" });
     expect(staleResponse.status).toBe(200);
     const staleThread = (await staleResponse.json()) as ChatThread;
     getSqlite()
-      .query("UPDATE gateway_sessions SET pid = ? WHERE id = ?")
+      .query("UPDATE gateway_sessions SET pid = ?, status = 'running' WHERE id = ?")
       .run(process.pid, "claude-stale");
     const apiKey = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY ||= "orc-test-placeholder";
@@ -887,7 +890,45 @@ describe("native chat runtime", () => {
     expect(nowOwned.events).toContainEqual({
       type: "error",
       message:
-        "This session is still open in its original agent. End it there before resuming in chat, or use Terminal.",
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
+    });
+    const idleOpen = (await (
+      await request("/chat/threads", { sourceSessionId: "claude-open-idle" })
+    ).json()) as ChatThread;
+    const originalClaude = createBackend("claude");
+    const resumed: string[] = [];
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => {
+        resumed.push(id);
+        return session({ id, opts });
+      },
+    }));
+    let idleTurn: Awaited<ReturnType<typeof turn>>, stillOwned: Awaited<ReturnType<typeof turn>>;
+    try {
+      idleTurn = await turn({
+        threadId: idleOpen.id,
+        messages: [{ role: "user", content: "Continue an idle open conversation" }],
+      });
+      stillOwned = await turn({
+        threadId: ownedThread.id,
+        messages: [{ role: "user", content: "Do not take over an open agent" }],
+      });
+    } finally {
+      registerBackend("claude", () => originalClaude);
+    }
+    expect(resumed).toEqual(["claude-open-idle"]);
+    expect(idleTurn.events).not.toContainEqual({
+      type: "error",
+      message:
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
+    });
+    expect(stillOwned.events).toContainEqual({
+      type: "error",
+      message:
+        "This session is running a turn in its original agent. Wait for it to finish, or use Terminal.",
     });
     expect((await request("/chat/threads", { sourceSessionId: "source-other" })).status).toBe(400);
     getDb()
@@ -1006,6 +1047,30 @@ describe("native chat runtime", () => {
     expect(stdout).toContain(
       "stopped Codex record rejects a held writer, resumes after release and blocks re-acquisition",
     );
+    // Waits on a Bun child process, which alone can take seconds on Windows.
+  }, 30_000);
+  test("starts a chat without a chosen folder in the home folder, not the server's working directory", async () => {
+    const original = process.cwd();
+    process.chdir("/");
+    const originalClaude = createBackend("claude");
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => session({ id, opts }),
+    }));
+    try {
+      const started = await turn({
+        agent: "claude",
+        messages: [{ role: "user", content: "Start without choosing a folder" }],
+      });
+      const opened = started.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing Claude thread");
+      expect(opened.thread.cwd).toBe(homedir());
+    } finally {
+      registerBackend("claude", () => originalClaude);
+      process.chdir(original);
+    }
   });
   test("requires auth, validates shapes and denies unknown conversations and permission requests", async () => {
     for (const [path, body] of [
@@ -1731,6 +1796,81 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
       raw.agent_loop = previous.agent_loop;
       raw.preferences = previous.preferences;
     });
+  }
+});
+
+test("opencode runs and resumes through the chat API on its builtin ACP backend", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  const source = join(home, "opencode.ts");
+  const script = process.platform === "win32" ? join(home, "opencode.exe") : source;
+  writeFileSync(
+    source,
+    `#!/usr/bin/env bun
+import {createInterface} from 'node:readline';
+const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
+const configOptions=[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'custom-provider/example-model',name:'Example model'}]}];
+let selected=false;
+for await(const line of createInterface({input:process.stdin})) { const m=JSON.parse(line);
+ if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
+ if(m.method==='session/new')emit({id:m.id,result:{sessionId:'api-opencode-session',configOptions}});
+ if(m.method==='session/load')emit({id:m.id,result:{configOptions}});
+ if(m.method==='session/set_config_option'){if(m.params.value!=='custom-provider/example-model')throw Error('Wrong model');selected=true;emit({id:m.id,result:{configOptions}});}
+ if(m.method==='session/prompt'){if(!selected)throw Error('Model not selected');emit({method:'session/update',params:{sessionId:'api-opencode-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OpenCode through API'}}}});emit({id:m.id,result:{stopReason:'end_turn'}});}
+}`,
+    { mode: 0o755 },
+  );
+  if (process.platform === "win32")
+    expect(
+      Bun.spawnSync([process.execPath, "build", source, "--compile", "--outfile", script], {
+        timeout: 30_000,
+      }).exitCode,
+    ).toBe(0);
+  const initial = readProviderSettings();
+  saveProviderSettings({
+    ...initial,
+    providers: [
+      ...initial.providers.filter((profile) => profile.agent !== "opencode"),
+      {
+        id: "opencode",
+        name: "OpenCode fixture",
+        agent: "opencode",
+        enabled: true,
+        executable: script,
+        model: "custom-provider/example-model",
+        environment: [],
+      },
+    ],
+  });
+  const prefs = loadConfig().preferences;
+  updateGlobalConfig((raw) => {
+    raw.preferences = { ...prefs, chat: { ...prefs.chat, model: "", mcp: "native" } };
+  });
+  try {
+    const result = await turn({
+      agent: "opencode",
+      messages: [{ role: "user", content: "Hello OpenCode" }],
+    });
+    expect(result.response.status).toBe(200);
+    expect(result.events).toContainEqual({ type: "text", text: "OpenCode through API" });
+    const thread = result.events.find((event) => event.type === "thread");
+    if (thread?.type !== "thread") throw new Error("No thread");
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${thread.thread.id}`)).json(),
+    );
+    expect(saved).toMatchObject({
+      backend: "opencode",
+      runtimeId: "api-opencode-session",
+      capabilities: { source: "negotiated", resume: true, images: true, mcp: true },
+    });
+    const continued = await turn({
+      threadId: saved.id,
+      messages: [{ role: "user", content: "Continue" }],
+    });
+    expect(continued.events).toContainEqual({ type: "text", text: "OpenCode through API" });
+    expect(continued.events.filter((event) => event.type === "error")).toEqual([]);
+  } finally {
+    writeFileSync(globalConfigPath(), previous);
+    resetConfig();
   }
 });
 

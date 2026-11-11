@@ -38,7 +38,7 @@ export const DEFAULT_MCP_PROMPTS: McpPrompt[] = [
     description: "Answer with live ORC components in web chat, Markdown elsewhere.",
     content: `Answer the request below.
 - Only when <orc-context> says source: webchat, add an orc-ui fence from the catalog for tasks, jobs, sessions or pads the user wants to watch, act on or open. Write everything else in Markdown, including anything the catalog has no component for (such as flow status); with any other or no source, reply in Markdown only.
-- Use real ids, never names or placeholders: task ids from task_list or task_get (find a task the request names with search and resources ["tasks"]), the project id from project_list, job ids from job_list, pad ids from pad_list or pad_create.
+- Use real ids, never names or placeholders: task ids from task_list or task_get (find a task the request names with search and resources ["tasks"]), the project id from project_list (or project_create when the request needs a project that does not exist yet), job ids from job_list, pad ids from pad_list or pad_create.
 - Use only the component types, props and actions in the catalog; anything else makes the block invalid.
 - Components let the user act: do not run jobs or change tasks yourself when the request is to show them. Job already has Run now, so it needs no extra button.
 - TaskList filters one status; for all open work, stack one list per active status (doing, review, changes_requested, blocked, queued, paused, todo), skipping ones the user does not need.

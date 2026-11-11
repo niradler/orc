@@ -27,6 +27,7 @@ export function SourceEditor({
   placeholder,
   hidePreview = false,
   defaultWrap = false,
+  line,
 }: CodeEditorProps) {
   const { theme } = useTheme();
   const parent = useRef<HTMLDivElement>(null);
@@ -160,6 +161,18 @@ export function SourceEditor({
       effects: colorTheme.current.reconfigure(theme === "dark" ? oneDark : []),
     });
   }, [theme]);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor || !line || !Number.isFinite(line)) return;
+    const anchor = editor.state.doc.line(
+      Math.max(1, Math.min(editor.state.doc.lines, Math.trunc(line))),
+    ).from;
+    editor.dispatch({
+      selection: { anchor },
+      effects: EditorView.scrollIntoView(anchor, { y: "center" }),
+    });
+    editor.focus();
+  }, [line]);
 
   useEffect(() => {
     view.current?.dispatch({

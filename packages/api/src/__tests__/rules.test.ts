@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import type { RuleRevision } from "@orc/core/rule-types";
@@ -185,9 +185,9 @@ test("should administer and evaluate policies without a token in open mode", asy
 test("protected chat refuses an unverified backend before launching it", async () => {
   const store = new RuleStore(getSqlite());
   const revision = store.activate(
-    { ...policy, workspace: process.cwd() },
+    { ...policy, workspace: homedir() },
     null,
-    "Protect chat process workspace",
+    "Protect the default chat workspace",
   );
   loadConfig({ rules: { enabled: true } });
   try {

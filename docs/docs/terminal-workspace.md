@@ -35,6 +35,20 @@ When GitHub access and a current-branch PR are available, choose **PR #** in Git
 
 Drafts are kept separately by file, line and side. While a comment is sending, editing and additional sends are disabled until its result arrives. Drafts remain in the current page when switching review views or after a failed send; they do not survive reloading the page. A changed PR head requires refreshing and explicitly selecting a line again before sending an inline draft; if the old line disappears, the draft remains available until you select a current line. After an uncertain network result, check GitHub before retrying. Closed PRs are read-only. Large/partial or binary changes link back to GitHub for complete inspection. Descriptions and comments display as plain text without loading embedded remote images.
 
+## Dev server and preview
+
+A project can save a **Dev script** with its [workspace environment](./configuration.md#project-workspace-environment).
+Open a project terminal's three-dot menu and choose **Start dev server**. The script
+runs in a new shell in the same folder and host; the first `http(s)` URL it prints
+becomes the preview link. **Preview** appears in the pane toolbar and in the
+terminal's menu. The link is cleared when that dev terminal exits.
+
+Terminals that belong to a project receive its port block and environment
+variables. A session's inspector shows the workspace ports, setup state and
+preview; a task's Git links show the same workspace status with its setup output
+when the setup script failed. Setup runs once per managed worktree, before the
+first agent starts there; a failure is reported but does not block the agent.
+
 ## Local and SSH hosts
 
 **New terminal** selects Local or an existing SSH-config host for that launch. The launcher offers a shell plus enabled named providers from **Settings → Providers** whose native CLI is installed on that host (or has a configured local executable). Provider launches receive their environment overrides and, for Claude/Codex, their default model. Chat JSON options apply to the chat adapter; package setups retain their own launch configuration. A plain shell does not receive a coding provider's environment. Selecting a host scopes launcher availability, folder browsing and worktrees to that host. The global SSH setting is unchanged. Searching a supported SSH host in the terminal palette offers **New terminal on that host**, which opens the launcher without executing anything automatically.

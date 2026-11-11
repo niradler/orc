@@ -4,6 +4,12 @@ The Sessions view uses the same working, waiting and ended states, task links, s
 
 Opening a linked task keeps you on that task even while a session search is updating.
 
+Sessions without a title use a readable folder name, including Windows extended
+paths, network shares, file URLs and POSIX paths. For example,
+`\\?\C:\Projects\orc` displays as `orc` rather than the full path in session and
+notification titles. Named sessions keep their titles; execution uses the original
+folder path. Codex uses the first prompt when its native title is only the folder.
+
 Activity and full-width session history share compact title/provider/state rows.
 An ORC terminal agent without observed session activity shows **Unknown**, rather
 than assuming it is idle. Terminals without recorded project ownership remain in
@@ -34,7 +40,11 @@ Codex uses its native writer locks and latest turn status. A held lock identifie
 
 Cursor IDE history, Cursor CLI (`agent` / `cursor-agent`) history and Gemini conversations are discovered separately. CLI and IDE Cursor histories are separate stores: only Cursor CLI records offer a CLI resume command. Gemini and Cursor CLI support Resume in a terminal, Copy resume command, and Copy terminal link alongside Claude and Codex.
 
-OpenCode sessions are read from its SQLite store (`~/.local/share/opencode/opencode.db`) on the local machine or the selected SSH host. Top-level sessions appear with their folder, title and token count; the conversation viewer shows messages, reasoning and tool calls with their output. OpenCode has no lifecycle hooks, so its sessions are listed as ended. Resume opens `opencode --session <id>` in a terminal.
+OpenCode sessions are read from its SQLite store (`~/.local/share/opencode/opencode.db`) on the local machine or the selected SSH host. Top-level sessions appear with their folder, title and token count; the conversation viewer shows messages, reasoning and tool calls with their output. OpenCode has no lifecycle hooks, so its sessions are listed as ended. Resume opens `opencode --session <id>` in a terminal, and ended OpenCode sessions also appear in the chat history list, where opening one imports its transcript and continues the same session in chat.
+
+Pi 1.5.2+ sessions are discovered from the native `~/.pi/agent/sessions` JSONL store on the selected execution host. Absolute `PI_CODING_AGENT_DIR` paths in Pi provider environment settings (and the local server environment) are also scanned under their `sessions` directory. The viewer follows the active branch and context edits and shows text, reasoning, tool calls/results and image placeholders. Native names and recorded token totals are retained. External Pi sessions appear as ended because Pi has no lifecycle hook registration. Close the native Pi conversation before resuming it in ORC to avoid concurrent writers.
+
+Resume in chat imports the visible history and continues the original Pi UUID in its original folder and execution host. It uses the enabled default Pi provider, the enabled built-in Pi provider, or the sole enabled Pi provider, in that order. If several named Pi providers are enabled, choose the intended one as the default first. Native history is not replayed as a new prompt. Terminal resume uses `pi --session <uuid>`. Custom `--session-dir` stores outside these directories, older session formats, cross-host handoff and embedding/archive ingestion are not supported for Pi.
 
 A Claude permission prompt, Claude question, or Gemini tool-permission prompt sets that session to **Waiting for you** within a few seconds of the hook firing. ORC sends one browser push on the attention topic for that transition. Answering the prompt, or the turn ending, clears the flag. A session that stays waiting does not send another push. Codex questions continue to come from its transcript. Cursor's installed hooks do not include a permission event, so Cursor waits are unchanged.
 
@@ -49,3 +59,37 @@ The installer preserves existing hook entries and other settings, makes dated ba
 Hooks need Bun on the installation machine. They run a bounded owner lookup, write private local registry/transcript files, and never grant tool permissions or inject prompts. Native agent transcripts remain read-only. Full prompt/tool content belongs to the local conversation history and is not sent to external services by these hooks.
 
 Other local agents can use `LiveRegistration`, `readRegistrations` and `writeRegistration` from `@orc/core/live-session` to participate in the same PID-backed lifecycle. Native discovery/resume commands still require a supported adapter; the dashboard automatically includes registered backend names in its filter.
+
+## Sending a message to a session
+
+Open a session and use **Send message** to queue a note for it. ORC delivers
+queued notes at the session's next safe point: before a tool call, at a prompt
+submit or stop hook, or when the agent reports session start. For an ended
+session, ORC resumes it with a bounded turn. Messages wait in a compact queue
+you can reorder or cancel until delivery starts. A delivered message records
+whether it arrived through a native hook (`hook`), an ORC chat turn (`chat`) or a
+resume (`resume`).
+
+Live sessions of agents without a context-capable hook (for example Cursor or
+OpenCode) cannot receive a message while they are running; queue it after the
+session ends. Claude, Codex and Gemini sessions accept messages through their
+installed hooks and the ORC-managed Claude SDK hook.
+
+Delivery is not approval. ORC tells the recipient the message came from another
+session or a human relay, that it cannot approve a tool, permission, plan or
+configuration change, and that configuration must be changed by a human. An
+agent-to-agent message chain ends after three hops, and one agent session may
+queue at most 20 messages per target in a rolling hour. Pass a stable
+`request_id` when retrying the same send. Messages still delivering when ORC
+restarts become `interrupted` and are never retried; queued messages remain
+queued.
+
+The same queue is available to agents through the `session_send` MCP tool
+(bind the connection with `?session=<session id>` or run stdio MCP inside the
+agent) and to chat channels with `/send <session id> <message>`.
+
+```text
+/send                  list live sessions
+/send <id>            choose a target
+/send <id> Fix the failing test
+```

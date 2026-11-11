@@ -55,7 +55,7 @@ export function useChatContinueInTerminal(inWorkspace = false) {
     }
   }
   return {
-    available: !!thread && ["codex", "claude"].includes(thread.config.agent),
+    available: !!thread && ["codex", "claude", "opencode"].includes(thread.config.agent),
     disabled: streaming || pending || !thread?.runtimeId,
     error,
     open,

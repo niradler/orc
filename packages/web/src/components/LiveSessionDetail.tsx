@@ -5,6 +5,7 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
+import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { StateBadge } from "@/components/StateBadge";
 import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
@@ -284,6 +285,9 @@ export function LiveSessionDetail({
         )}
         {!embedded && sessionId && (
           <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />
+        )}
+        {!embedded && session && (
+          <SessionMessageInbox key={session.id} session={session} live={live} />
         )}
         {embedded && (
           <div className="flex items-center gap-2 text-xs text-on-surface-variant">
