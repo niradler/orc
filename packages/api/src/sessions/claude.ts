@@ -115,32 +115,40 @@ function firstPromptFromText(content: string): string | null {
 
 export function claudeAdapter(
   dirs: {
-    registry?: string;
+    registry?: string | string[];
     desktop?: string | null;
-    projects?: string | null;
+    projects?: string | string[] | null;
   } = {},
   runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): SessionAdapter {
   const desktopCache = new Map<string, { mtime: number; record: SessionRecord | null }>();
 
+  const list = (value: string | string[] | null | undefined, fallback: string): string[] => {
+    if (value === null) return [];
+    if (Array.isArray(value)) return value;
+    return value ? [value] : [fallback];
+  };
   return {
     backend: "claude",
     minIntervalMs: 30_000,
     async list(known) {
       const home = await runtime.home();
-      const registryDir = dirs.registry ?? join(home, ".claude", "sessions");
+      const registryDirs = list(dirs.registry, join(home, ".claude", "sessions"));
       const desktopDir =
         dirs.desktop === undefined
           ? join(home, "Library", "Application Support", "Claude", "claude-code-sessions")
           : dirs.desktop;
-      const projectsDir =
-        dirs.projects === undefined ? join(home, ".claude", "projects") : dirs.projects;
-      const projectFiles = projectsDir ? await runtime.listFiles(projectsDir) : [];
-      const transcripts = new Map(
-        projectFiles
-          .filter((file) => file.path.endsWith(".jsonl"))
-          .map((file) => [basename(file.path, ".jsonl"), file] as const),
-      );
+      const projectsDirs = list(dirs.projects, join(home, ".claude", "projects"));
+      const transcripts = new Map<string, { path: string; mtimeMs: number }>();
+      for (const projectsDir of projectsDirs) {
+        for (const file of await runtime.listFiles(projectsDir)) {
+          if (!file.path.endsWith(".jsonl")) continue;
+          const id = basename(file.path, ".jsonl");
+          // Copied account directories can repeat a session id; the first home
+          // (default first) keeps it so metadata and transcript stay together.
+          if (!transcripts.has(id)) transcripts.set(id, { path: file.path, mtimeMs: file.mtimeMs });
+        }
+      }
       const records = new Map<string, SessionRecord>();
 
       if (desktopDir) {
@@ -175,38 +183,43 @@ export function claudeAdapter(
         }
       }
 
-      for (const file of await runtime.listFiles(registryDir, 10_000)) {
-        if (!file.path.endsWith(".json")) continue;
-        let entry: RegistryEntry;
-        try {
-          entry = RegistryEntry.parse(
-            JSON.parse(new TextDecoder().decode(await runtime.readFile(file.path, 1024 * 1024))),
-          );
-        } catch {
-          continue;
+      const registrySeen = new Set<string>();
+      for (const registryDir of registryDirs) {
+        for (const file of await runtime.listFiles(registryDir, 10_000)) {
+          if (!file.path.endsWith(".json")) continue;
+          let entry: RegistryEntry;
+          try {
+            entry = RegistryEntry.parse(
+              JSON.parse(new TextDecoder().decode(await runtime.readFile(file.path, 1024 * 1024))),
+            );
+          } catch {
+            continue;
+          }
+          if (registrySeen.has(entry.sessionId)) continue;
+          registrySeen.add(entry.sessionId);
+          const now = Date.now();
+          const live: SessionRecord = {
+            backend: "claude",
+            externalId: entry.sessionId,
+            title: entry.name || pathLabel(entry.cwd) || "Claude session",
+            cwd: entry.cwd,
+            pid: entry.pid,
+            status: !(await runtime.processAlive(entry.pid))
+              ? "stopped"
+              : entry.status === "busy"
+                ? "running"
+                : "idle",
+            createdAt: new Date(entry.startedAt ?? now),
+            lastActivityAt: new Date(entry.updatedAt ?? now),
+          };
+          const base = records.get(entry.sessionId);
+          records.set(entry.sessionId, {
+            ...base,
+            ...live,
+            title: base?.title ?? live.title,
+            createdAt: base?.createdAt ?? live.createdAt,
+          });
         }
-        const now = Date.now();
-        const live: SessionRecord = {
-          backend: "claude",
-          externalId: entry.sessionId,
-          title: entry.name || pathLabel(entry.cwd) || "Claude session",
-          cwd: entry.cwd,
-          pid: entry.pid,
-          status: !(await runtime.processAlive(entry.pid))
-            ? "stopped"
-            : entry.status === "busy"
-              ? "running"
-              : "idle",
-          createdAt: new Date(entry.startedAt ?? now),
-          lastActivityAt: new Date(entry.updatedAt ?? now),
-        };
-        const base = records.get(entry.sessionId);
-        records.set(entry.sessionId, {
-          ...base,
-          ...live,
-          title: base?.title ?? live.title,
-          createdAt: base?.createdAt ?? live.createdAt,
-        });
       }
 
       for (const [id, before] of known) {

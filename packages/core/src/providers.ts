@@ -49,6 +49,22 @@ export const ProviderEnvironmentSchema = z
         });
     }
   });
+const AgentHomeSchema = z
+  .string()
+  .trim()
+  .max(2048)
+  .refine(
+    (value) =>
+      Array.from(value).every(
+        (character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127,
+      ),
+    "Use a directory path without control characters",
+  )
+  .refine(
+    (value) => !value || /^(?:~[\\/]|[A-Za-z]:[\\/]|\\\\|\/)/.test(value),
+    "Use an absolute path or one that starts with ~/",
+  )
+  .optional();
 export const ProviderProfileSchema = z
   .object({
     id: ProviderIdSchema,
@@ -67,6 +83,7 @@ export const ProviderProfileSchema = z
         "Use an executable path without control characters",
       )
       .default(""),
+    home: AgentHomeSchema,
     model: ChatModelSchema.default(""),
     options: ChatAgentOptionsSchema.optional(),
     environment: ProviderEnvironmentSchema.default([]),
@@ -125,6 +142,23 @@ export const ProviderSettingsSchema = z
 export type ProviderProfile = z.infer<typeof ProviderProfileSchema>;
 export type ProviderSettings = z.infer<typeof ProviderSettingsSchema>;
 export type ProviderEnvironment = z.infer<typeof ProviderEnvironmentSchema>;
+
+export const ProviderAccountSchema = z.object({
+  provider_id: ProviderIdSchema,
+  name: z.string(),
+  agent: z.string(),
+  home: z.string(),
+  status: z.enum(["signed_in", "signed_out", "unknown"]),
+  label: z.string().nullable(),
+  organization: z.string().nullable(),
+  plan: z.string().nullable(),
+  duplicate_of: ProviderIdSchema.nullable(),
+  message: z.string().nullable(),
+  sign_in_command: z.string().nullable(),
+});
+export const ProviderAccountsSchema = z.object({ accounts: z.array(ProviderAccountSchema) });
+export type ProviderAccount = z.infer<typeof ProviderAccountSchema>;
+export type ProviderAccounts = z.infer<typeof ProviderAccountsSchema>;
 
 const StoredProfileSchema = ProviderProfileSchema.safeExtend({
   environment: z

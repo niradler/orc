@@ -6,7 +6,12 @@ import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth";
 import { usageRouter } from "../routes/usage";
 import { LIVE_CHAT_ID } from "../session-watcher";
-import { createQuotaReader, decodeClaudeQuota, decodeCodexQuota } from "../usage-quotas";
+import {
+  createQuotaReader,
+  createTargetQuotaReader,
+  decodeClaudeQuota,
+  decodeCodexQuota,
+} from "../usage-quotas";
 
 const app = new Hono();
 app.onError((error, c) =>
@@ -176,4 +181,43 @@ test("should handle absent logins without network calls and isolate failed provi
     },
   });
   expect((await failed()).map((a) => a.status)).toEqual(["unavailable", "available"]);
+});
+
+test("should read each configured provider from its own directory", async () => {
+  const paths: string[] = [];
+  const reader = createTargetQuotaReader(
+    {
+      home: "fixture",
+      read: async (path) => {
+        paths.push(path);
+        if (path.includes("signed-out")) throw new Error("private missing account");
+        return JSON.stringify({ claudeAiOauth: { accessToken: "private-token" } });
+      },
+      fetch: async () =>
+        Response.json({ five_hour: { utilization: 30 }, seven_day: { utilization: 60 } }),
+    },
+    () => [
+      {
+        provider: "claude",
+        providerId: "claude-a",
+        name: "Claude A",
+        home: "/accounts/a",
+      },
+      {
+        provider: "claude",
+        providerId: "claude-b",
+        name: "Claude B",
+        home: "/accounts/signed-out",
+      },
+    ],
+  );
+  const quotas = await reader();
+  expect(quotas.map((quota) => [quota.provider_id, quota.name, quota.status])).toEqual([
+    ["claude-a", "Claude A", "available"],
+    ["claude-b", "Claude B", "signed_out"],
+  ]);
+  expect(quotas[0]?.windows).toHaveLength(2);
+  expect(quotas[1]?.windows).toHaveLength(0);
+  expect(paths.some((path) => path.includes("signed-out"))).toBe(true);
+  expect(JSON.stringify(quotas)).not.toContain("private-token");
 });

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
+import { sep } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
@@ -46,10 +47,13 @@ import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/e
 import { createLogger } from "@orc/core/logger";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import {
+  agentDefaultHome,
   providerChatDefaults,
+  providerEffectiveHome,
   providerForAgent,
   providerRevision,
   readProviderSettings,
+  storedProviderProfiles,
 } from "@orc/core/provider-service";
 import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
@@ -294,9 +298,9 @@ app.openapi(
     const thread = threadId ? requireThread(threadId) : null;
     if (thread && thread.config.agent !== agent)
       throw new ValidationError("The agent does not match this conversation.");
-    if (thread && providerId && thread.config.providerId !== providerId)
-      throw new ValidationError("The provider does not match this conversation.");
-    const selectedProvider = thread?.config.providerId ?? providerId;
+    // A conversation may ask for another profile of the same adapter so the
+    // picker can preview models before switching accounts in place.
+    const selectedProvider = providerId ?? thread?.config.providerId;
     providerForAgent(agent, selectedProvider, true);
     if (thread && (requestedHost !== undefined || requestedCwd !== undefined))
       throw new ValidationError("A conversation owns its execution host and working directory.");
@@ -566,7 +570,12 @@ async function newThread(
           "Enable a Pi provider and make it the default when several Pi providers are configured before resuming this session.",
         );
       thread.config.providerId = selected.id;
-    } else thread.config.providerId = agent;
+    } else {
+      thread.config.providerId =
+        (source.execution_host
+          ? undefined
+          : providerForNativeHome(agent, source.transcript_path)) ?? agent;
+    }
     thread.config.agentOptions = {};
     thread.config.model = model ?? source.model ?? "";
     thread.backend = chatBackendFor(agent);
@@ -641,6 +650,68 @@ async function importTranscript(thread: ChatThread, source: NativeSource): Promi
   thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
   if (mark) thread.transcriptMark = mark;
   return true;
+}
+
+function providerHomeFor(agent: string, providerId: string | undefined): string | undefined {
+  try {
+    const profile = providerForAgent(agent, providerId, true);
+    return profile ? providerEffectiveHome(profile) : agentDefaultHome(agent);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A discovered session belongs to the account whose CLI home holds its transcript;
+ * resuming it through another profile would look for the native session in the
+ * wrong directory. The most specific home wins; local sessions only.
+ */
+function providerForNativeHome(agent: string, transcriptPath: string | null): string | undefined {
+  if (!transcriptPath) return undefined;
+  const normalize = (value: string) => (process.platform === "win32" ? value.toLowerCase() : value);
+  const target = normalize(transcriptPath);
+  let best: { id: string; length: number } | undefined;
+  for (const profile of storedProviderProfiles()) {
+    if (profile.agent !== agent) continue;
+    const home = providerEffectiveHome(profile);
+    if (!home) continue;
+    const prefix = normalize(`${home}${sep}`);
+    if (target.startsWith(prefix) && (!best || prefix.length > best.length))
+      best = { id: profile.id, length: prefix.length };
+  }
+  return best?.id;
+}
+
+const CONTINUATION_MAX_CHARS = 12_000;
+
+/**
+ * A new provider account has no native session for this chat, so the first
+ * turn after the switch carries a bounded transcript of the conversation.
+ */
+function continuationPrompt(messages: ChatMessage[]): string | undefined {
+  const lines: string[] = [];
+  let used = 0;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (!message) continue;
+    const text = message.content.trim();
+    if (!text) continue;
+    const available = CONTINUATION_MAX_CHARS - used;
+    if (available <= 40) break;
+    const role = message.role === "user" ? "User" : "Assistant";
+    const clipped = text.length > available ? `${text.slice(0, available - 1)}…` : text;
+    const line = `${role}: ${clipped}`;
+    lines.unshift(line);
+    used += line.length + 2;
+  }
+  if (!lines.length) return undefined;
+  return [
+    "[ORC account switch] This chat moved to another provider account, so the previous native session is unavailable. Continue the same work from the conversation below, then handle the new user message. Do not repeat this context unless the user asks.",
+    "",
+    ...lines,
+    "",
+    "--- End of prior conversation ---",
+  ].join("\n");
 }
 
 app.openapi(
@@ -1220,14 +1291,6 @@ async function streamChat(
   rememberTerminalFolder(thread.cwd, thread.host);
   if (body.threadId && body.agent && body.agent !== thread.config.agent)
     throw new ValidationError("Start a new chat to change agents.");
-  if (body.threadId && body.providerId && body.providerId !== thread.config.providerId)
-    throw new ValidationError("Start a new chat to change providers.");
-  if (body.threadId && thread.messages.length && !thread.runtimeId)
-    throw new ConflictError(
-      "The previous turn did not establish a resumable session. Start a new chat.",
-    );
-  if (body.model !== undefined) thread.config.model = body.model;
-  await checkChatWorkspaceRules(thread);
   const input = [...body.messages]
     .reverse()
     .find((message) => message.role === "user")
@@ -1235,15 +1298,57 @@ async function streamChat(
   if (!input) throw new ValidationError("A user message is required.");
   if (input === "/compact" && uploads.length)
     throw new ValidationError("Send attachments separately from context compaction.");
-  if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   if (body.permissionMode !== undefined) {
     if (createBackend(thread.backend).capabilities?.livePermissions === false)
       throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = body.permissionMode;
   }
+  await checkChatWorkspaceRules(thread);
+  // The switch mutates the shared thread, so every check that can reject the request
+  // runs first: from the busy check below to beginTurn's reservation there must be no
+  // await, or concurrent sends could move the conversation under each other.
+  let continuation: string | undefined;
+  if (body.threadId && body.providerId && body.providerId !== thread.config.providerId) {
+    const profile = providerForAgent(thread.config.agent, body.providerId);
+    if (!profile)
+      throw new ValidationError("This provider is no longer configured. Choose another provider.");
+    if (threadRun(thread.id))
+      throw new ConflictError("Wait for the current response before switching providers.");
+    const previous = thread.config.providerId;
+    // Only a different CLI home moves the native session; profiles that share a
+    // home keep resuming the same conversation with different credentials.
+    const movesSession =
+      providerHomeFor(thread.config.agent, previous) !== providerEffectiveHome(profile);
+    thread.config.providerId = profile.id;
+    if (body.model === undefined) thread.config.model = profile.model;
+    if (body.agentOptions === undefined) {
+      const options = { ...thread.config.agentOptions };
+      delete options[thread.config.agent];
+      if (profile.options) options[thread.config.agent] = profile.options;
+      thread.config.agentOptions = options;
+    }
+    if (movesSession) {
+      continuation = continuationPrompt(thread.messages);
+      thread.runtimeId = null;
+      thread.sourceId = null;
+      delete thread.transcriptMark;
+      thread.providerSwitch = { from: previous ?? thread.config.agent };
+    }
+  }
+  // Replay only while the new account has no native session: once a turn established
+  // one, the continuation was delivered and must not be injected into it again.
+  if (body.threadId && thread.providerSwitch && !thread.runtimeId)
+    continuation ??= continuationPrompt(thread.messages);
+  if (body.threadId && thread.messages.length && !thread.runtimeId && !thread.providerSwitch)
+    throw new ConflictError(
+      "The previous turn did not establish a resumable session. Start a new chat.",
+    );
+  if (body.model !== undefined) thread.config.model = body.model;
+  if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   const { run } = await beginTurn(thread, input, {
     context: body.context,
     messageId: body.clientMessageId,
+    continuation,
     prepare: async () => {
       if (!body.threadId && body.workspace?.worktree) {
         const host = selectedTerminalHost(loadConfig(), thread.host);
@@ -1274,6 +1379,7 @@ type TurnSetup = {
   context?: ChatTurnContext | undefined;
   reserved?: boolean;
   messageId?: string | undefined;
+  continuation?: string | undefined;
   prepare?: () => Promise<SessionFile[]>;
 };
 
@@ -1489,8 +1595,12 @@ async function beginTurn(
         if (stopped) return;
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
-        const sent =
+        const message =
           setup.context && input.trim() !== "/compact" ? withOrcContext(turn, setup.context) : turn;
+        const sent =
+          setup.continuation && input.trim() !== "/compact"
+            ? `${setup.continuation}\n\n${message}`
+            : message;
         const prompt =
           thread.backend === "acpx"
             ? [thread.config.system, sent].filter(Boolean).join("\n\n")
@@ -1599,6 +1709,8 @@ async function beginTurn(
       const nativeId = run.session?.getRuntimeSessionId?.();
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
+      // A switched account has a working session again; stop replaying history.
+      if (thread.providerSwitch && completed && thread.runtimeId) delete thread.providerSwitch;
       await run.session?.close().catch(() => {});
       thread.messages.push(assistant);
       if (synced) {
@@ -1694,4 +1806,4 @@ app.openapi(
   },
 );
 
-export { app as chatRouter };
+export { app as chatRouter, continuationPrompt };

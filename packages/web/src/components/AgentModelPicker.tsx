@@ -171,7 +171,10 @@ export function AgentModelPicker({
                     ? `${testIdPrefix}-agent-option-${entry.id}`
                     : `${testIdPrefix}-provider-option-${entry.id}`
                 }
-                disabled={!ready}
+                disabled={
+                  !ready ||
+                  (streaming && entry.agent === agent && entry.id !== (providerId ?? agent))
+                }
                 onClick={() => {
                   if (providers?.length && onProvider) {
                     reset();

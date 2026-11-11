@@ -14,7 +14,7 @@ import {
   providerSecretName,
 } from "@orc/core/providers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import { Copy, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { AgentIcon } from "@/components/AgentIcon";
@@ -37,6 +37,19 @@ function optionsText(profile: ProviderProfile): string {
     2,
   );
 }
+function accountSlug(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "account"
+  );
+}
+function homeFor(agent: string, value: string): string | null {
+  if (agent !== "claude" && agent !== "codex") return null;
+  return `~/.orc/agents/${agent}/${accountSlug(value)}`;
+}
 export function AgentSettings() {
   const client = useQueryClient();
   const query = useProviders();
@@ -49,6 +62,7 @@ export function AgentSettings() {
   const [name, setName] = useState("");
   const [agent, setAgent] = useState("claude");
   const [custom, setCustom] = useState("");
+  const [separate, setSeparate] = useState(false);
   const [newError, setNewError] = useState("");
   const settings = draft ?? query.data;
   const profile =
@@ -64,28 +78,70 @@ export function AgentSettings() {
     !!settings &&
     (JSON.stringify(settings) !== JSON.stringify(query.data) ||
       Object.values(optionErrors).some(Boolean));
+  const afterSave = async (saved: ProviderSettings) => {
+    client.setQueryData(PROVIDER_SETTINGS_KEY, saved);
+    setDraft(null);
+    setOptionDrafts({});
+    setOptionErrors({});
+    localStorage.removeItem(CHAT_PREFERENCES_KEY);
+    await Promise.all([
+      client.invalidateQueries({ queryKey: WORKSPACE_PREFERENCES_KEY }),
+      client.invalidateQueries({ queryKey: ["provider-accounts"] }),
+      client.invalidateQueries({ queryKey: ["terminal-launchers"] }),
+      client.invalidateQueries({ queryKey: ["terminals"] }),
+      client.invalidateQueries({ queryKey: ["chat-models"] }),
+      client.invalidateQueries({ queryKey: ["usage-quotas"] }),
+    ]);
+    window.dispatchEvent(new Event("orc-chat-settings-changed"));
+  };
   const save = useMutation({
     mutationFn: (value: ProviderSettings) => api.settings.providers.save(value),
-    onSuccess: async (saved) => {
-      client.setQueryData(PROVIDER_SETTINGS_KEY, saved);
-      setDraft(null);
-      setOptionDrafts({});
-      setOptionErrors({});
-      localStorage.removeItem(CHAT_PREFERENCES_KEY);
-      await client.invalidateQueries({ queryKey: WORKSPACE_PREFERENCES_KEY });
-      await client.invalidateQueries({ queryKey: ["terminal-launchers"] });
-      await client.invalidateQueries({ queryKey: ["terminals"] });
-      await client.invalidateQueries({ queryKey: ["chat-models"] });
-      window.dispatchEvent(new Event("orc-chat-settings-changed"));
-    },
+    onSuccess: afterSave,
   });
-  const busy = query.isFetching || query.isError || save.isPending;
+  const chooseDefault = useMutation({
+    mutationFn: (value: ProviderSettings) => api.settings.providers.save(value),
+    onSuccess: afterSave,
+  });
+  const busy = query.isFetching || query.isError || save.isPending || chooseDefault.isPending;
+  const accounts = useQuery({
+    queryKey: ["provider-accounts", query.data?.revision],
+    queryFn: api.settings.providers.accounts,
+    enabled: !!query.data,
+  });
+  const account = accounts.data?.accounts.find((item) => item.provider_id === profile?.id);
+  const duplicateAccounts =
+    accounts.data?.accounts.filter((item) => item.duplicate_of !== null) ?? [];
+  const duplicateName = account?.duplicate_of
+    ? accounts.data?.accounts.find((item) => item.provider_id === account.duplicate_of)?.name
+    : null;
   const quotas = useQuery({
     queryKey: ["usage-quotas"],
     queryFn: api.settings.usageQuotas,
     enabled: false,
   });
-  const quota = quotas.data?.accounts.find((account) => account.provider === profile?.agent);
+  const quota = quotas.data?.accounts.find(
+    (entry) =>
+      (entry.provider_id && entry.provider_id === profile?.id) ||
+      (!entry.provider_id && entry.provider === profile?.agent),
+  );
+  const accountFor = (id: string) =>
+    accounts.data?.accounts.find((entry) => entry.provider_id === id);
+  const homeVariable =
+    profile?.agent === "claude"
+      ? "CLAUDE_CONFIG_DIR"
+      : profile?.agent === "codex"
+        ? "CODEX_HOME"
+        : null;
+  const suggestedHome = profile ? homeFor(profile.agent, profile.name) : null;
+  const defaultHome = profile?.agent === "claude" ? "~/.claude" : "~/.codex";
+  const identity =
+    account?.status === "signed_in"
+      ? [account.label ?? "Signed in", account.plan, account.organization]
+          .filter(Boolean)
+          .join(" · ")
+      : account?.status === "signed_out"
+        ? "Not signed in in this directory"
+        : null;
   const catalog = useQuery({
     queryKey: ["provider-models", profile?.id, query.data?.revision],
     queryFn: () =>
@@ -139,6 +195,7 @@ export function AgentSettings() {
       agent: adapter,
       enabled: true,
       executable: "",
+      ...(separate ? { home: homeFor(adapter, name.trim()) ?? "" } : {}),
       model: "",
       environment: [],
     };
@@ -147,6 +204,7 @@ export function AgentSettings() {
     setNewOpen(false);
     setName("");
     setCustom("");
+    setSeparate(false);
     save.reset();
   }
   function changeOptions(value: string): void {
@@ -190,6 +248,7 @@ export function AgentSettings() {
           disabled={busy || (settings?.providers.length ?? 0) >= 64}
           onClick={() => {
             setNewError("");
+            setSeparate(false);
             setNewOpen(true);
           }}
         >
@@ -213,6 +272,20 @@ export function AgentSettings() {
           className="text-sm text-muted-foreground"
         >
           No coding providers enabled. Install an agent, then enable it here.
+        </p>
+      )}
+      {duplicateAccounts.length > 0 && (
+        <p role="alert" data-testid="provider-account-duplicate" className="text-sm text-error">
+          {duplicateAccounts
+            .map(
+              (item) =>
+                `${item.name} uses the same login as ${
+                  accounts.data?.accounts.find((entry) => entry.provider_id === item.duplicate_of)
+                    ?.name ?? "another provider"
+                }`,
+            )
+            .join(". ")}
+          .
         </p>
       )}
       {settings && (
@@ -262,7 +335,17 @@ export function AgentSettings() {
                   className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left"
                 >
                   <AgentIcon agent={item.agent} decorative size={16} />
-                  <span className="min-w-0 truncate text-sm">{item.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">{item.name}</span>
+                    {["claude", "codex"].includes(item.agent) && (
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {accountFor(item.id)?.label ??
+                          (accountFor(item.id)?.status === "signed_out"
+                            ? "Not signed in"
+                            : "Default account")}
+                      </span>
+                    )}
+                  </span>
                 </button>
                 <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center">
                   <input
@@ -316,6 +399,97 @@ export function AgentSettings() {
                 </p>
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="provider-use-for-new"
+                disabled={
+                  busy || dirty || !profile.enabled || settings.default_provider_id === profile.id
+                }
+                onClick={() => {
+                  if (query.data)
+                    chooseDefault.mutate({ ...query.data, default_provider_id: profile.id });
+                }}
+              >
+                {settings.default_provider_id === profile.id
+                  ? "Used for new sessions"
+                  : "Use for new sessions"}
+              </Button>
+              <HelpPopover label="Default for new sessions" testId="provider-default-help">
+                Save the current provider as the default for new chats and terminal launches. A
+                browser picker choice still applies until provider settings are saved.
+              </HelpPopover>
+              {chooseDefault.error && (
+                <p role="alert" className="text-xs text-error">
+                  {chooseDefault.error.message}
+                </p>
+              )}
+            </div>
+            {homeVariable && (
+              <div className="space-y-2 rounded-md border border-border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor="provider-home">Config directory</Label>
+                    <HelpPopover label="Config directory" testId="provider-home-help">
+                      The CLI's own configuration and session directory. Point each profile at a
+                      different directory to use a separate account; ORC reads the login from there
+                      and never stores or changes credentials. Leave blank for the host default.
+                    </HelpPopover>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-testid="provider-home-toggle"
+                    disabled={busy}
+                    onClick={() => patch({ home: profile.home ? "" : (suggestedHome ?? "") })}
+                  >
+                    {profile.home ? "Use default account" : "Use separate account"}
+                  </Button>
+                </div>
+                <Input
+                  id="provider-home"
+                  data-testid="provider-home"
+                  value={profile.home ?? ""}
+                  placeholder={defaultHome}
+                  maxLength={2048}
+                  disabled={busy}
+                  onChange={(event) => patch({ home: event.target.value })}
+                />
+                <p className="text-xs text-muted-foreground" data-testid="provider-account">
+                  {identity ?? (accounts.isFetching ? "Checking account…" : "Account unavailable")}
+                </p>
+                {duplicateName && (
+                  <p role="alert" className="text-xs text-error">
+                    Same login as {duplicateName}.
+                  </p>
+                )}
+                {account?.sign_in_command && (
+                  <div className="flex items-start gap-2">
+                    <code className="min-w-0 flex-1 break-all rounded bg-surface-highest px-2 py-1 font-mono text-[11px]">
+                      {account.sign_in_command}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Copy sign-in command"
+                      data-testid="provider-sign-in-copy"
+                      onClick={() =>
+                        void navigator.clipboard.writeText(account.sign_in_command ?? "")
+                      }
+                    >
+                      <Copy size={14} />
+                    </Button>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Sign in once with that command, then choose this provider for a session.
+                </p>
+              </div>
+            )}
             {["claude", "codex", "opencode", "pi"].includes(profile.agent) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -709,6 +883,24 @@ export function AgentSettings() {
                   placeholder="e.g. qoder"
                   onChange={(event) => setCustom(event.target.value)}
                 />
+              </div>
+            )}
+            {["claude", "codex"].includes(agent) && (
+              <div className="space-y-1">
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    data-testid="provider-new-separate"
+                    checked={separate}
+                    onChange={(event) => setSeparate(event.target.checked)}
+                  />
+                  Use a separate account
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {separate
+                    ? `Sessions and login live in ${homeFor(agent, name.trim() || "account")}. Sign in there before use.`
+                    : "Shares the host's default login. You can change this after creating the provider."}
+                </p>
               </div>
             )}
             {newError && <p role="alert">{newError}</p>}

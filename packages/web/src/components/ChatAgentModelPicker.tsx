@@ -53,9 +53,9 @@ export function ChatAgentModelPicker() {
   const note = fixedModel
     ? `${name} picks its own model here.${thread ? " Changing agent starts a new session." : ""}`
     : streaming
-      ? "Model changes are available after the current response. Changing agent starts a new session."
+      ? "Provider and model changes are available after the current response. Changing agent starts a new session."
       : thread
-        ? "Changing agent starts a new session; this one stays in history. Model changes apply to the next turn."
+        ? "Switching to another account of the same agent continues this chat with your prior context. Changing agent starts a new session. Model changes apply to the next turn."
         : effort
           ? `Effort is set in ${name} options.`
           : undefined;
@@ -68,6 +68,13 @@ export function ChatAgentModelPicker() {
       onProvider={(id) => {
         const profile = providers.find((item) => item.id === id);
         if (!profile || id === (config.providerId ?? config.agent)) return false;
+        if (streaming) return false;
+        if (thread && profile.agent === config.agent) {
+          // Same adapter: keep this conversation and let the server rebuild the
+          // native session on the next turn with the new account.
+          chat.selectProvider(profile);
+          return false;
+        }
         if (started) {
           chat.startAgentConversation(profile.agent, id, profile.model, profile.options);
           return true;

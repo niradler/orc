@@ -852,6 +852,8 @@ export const api = {
   settings: {
     providers: {
       get: () => req<import("@orc/core/providers").ProviderSettings>("GET", "/settings/providers"),
+      accounts: () =>
+        req<import("@orc/core/providers").ProviderAccounts>("GET", "/settings/providers/accounts"),
       save: (settings: import("@orc/core/providers").ProviderSettings) =>
         req<import("@orc/core/providers").ProviderSettings>("PUT", "/settings/providers", settings),
     },

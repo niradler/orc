@@ -14,9 +14,12 @@ providers and can override the model and launch options for that conversation.
 An explicit choice in this browser is remembered across reloads; saving provider
 settings clears that browser override so the saved defaults take effect. Unsent
 model and option edits are retained separately for each provider while switching.
-Changing providers starts a new conversation. Existing conversations retain their
-provider ID and model when the default changes. Disabling a provider hides it from
-new launches while allowing its existing conversations to resume.
+Switching to another provider of the **same** agent keeps the conversation: ORC
+rebuilds the native session for the new account on the next turn and replays a
+bounded transcript of the chat so you can continue where you left off. Switching
+to a different agent starts a new conversation. Existing conversations retain
+their provider ID and model when the default changes. Disabling a provider hides
+it from new launches while allowing its existing conversations to resume.
 Conversations saved before profiles existed remain pinned to their original native provider.
 
 ![Named coding providers with demo data](/screens/settings-providers-desktop.png)
@@ -35,7 +38,9 @@ ORC does not restart running processes.
 - **Environment overrides** apply to launches and native model discovery, including
   SSH. Values override the execution environment; an empty value clears an
   inherited value. Use variables such as `CODEX_HOME` or `CLAUDE_CONFIG_DIR` for a
-  separate CLI configuration. ORC does not create shadow accounts.
+  separate CLI configuration, or set **Config directory** as described below. An
+  explicit environment row wins over that directory. ORC does not create login
+  credentials or copy an existing login into a new directory.
 - Mark sensitive values **Secret**. Credential names such as `ANTHROPIC_AUTH_TOKEN`
   require this automatically. Secrets are encrypted on the API host and are
   write-only in the UI. An untouched saved placeholder preserves its value;
@@ -47,6 +52,39 @@ ORC does not restart running processes.
   Explicit session options take precedence over provider defaults. Native terminal
   launches use provider environment and, for Claude/Codex, model; chat JSON options
   are for the chat adapter. Package setups keep their own launch configuration.
+
+### Separate Claude and Codex accounts
+
+Create another provider with the same adapter to work with more than one Claude
+Code or Codex login. While creating the provider, enable **Use a separate
+account**, or open an existing provider and set **Config directory**:
+
+| Adapter | Variable | Default |
+| --- | --- | --- |
+| Claude Code | `CLAUDE_CONFIG_DIR` | `~/.claude` |
+| Codex | `CODEX_HOME` | `~/.codex` |
+
+Each directory holds that account's CLI login, session history and state. The
+provider passes it to native chat, model discovery and terminal launches for
+Claude/Codex profiles; other adapters ignore the field. `~/` expands on the API
+host, so use an absolute path for an SSH execution host. Leave it blank to use
+the host default. An explicit `CLAUDE_CONFIG_DIR` or `CODEX_HOME` environment
+row still wins.
+
+The provider card reads the account label, plan and organization from the CLI's
+own files on the API host and shows a copyable sign-in command. Run that command
+once in a terminal, sign in, then select the provider in the chat picker. ORC
+never stores, refreshes, relays or returns credentials. Two providers that point
+at the same login are flagged so a switch does not silently reuse one account.
+**Use for new sessions** saves that provider as the default without opening the
+full form.
+
+**Settings → Usage** shows a quota card per configured Claude/Codex provider, and
+session discovery, the live-session watcher and transcript search include every
+configured directory. Remote SSH accounts are not inspected: identity, quotas and
+session discovery for separate accounts currently read the local API host only.
+ORC does not rotate accounts automatically when a quota is exhausted; switch the
+provider in the picker and continue.
 
 Use **Save changes** to save the provider list, default and advanced settings
 together. Drafts survive switching providers and Settings sections. **Use default**
@@ -129,12 +167,19 @@ run on that host.
 
 Authenticated `GET/PUT /api/settings/providers` reads and replaces
 `{providers, default_provider_id, revision}`. Each provider has `id`, `name`,
-`agent`, `enabled`, `executable`, `model`, optional `options`, and
-`environment: [{name, value, secret}]`. Secret values are returned as `null`;
+`agent`, `enabled`, `executable`, optional `home`, `model`, optional `options`, and
+`environment: [{name, value, secret}]`. `home` is the CLI config directory used by
+Claude Code and Codex providers; blank or absent means the host default. Secret
+values are returned as `null`;
 send that placeholder unchanged to retain a saved secret with the same provider
 and variable name. New or renamed secrets require a value. Send the current
 revision when saving; stale writes return 409. An existing provider's adapter is
 immutable; create another provider to change adapters.
+
+Authenticated `GET /api/settings/providers/accounts` returns the account identity
+ORC can read from each provider's config directory: status, label, organization,
+plan, duplicate marker and a sign-in command. It never returns tokens or
+credential contents.
 
 Private configuration lives under `providers.instances` and
 `providers.default_id` in the server's JSON config. Encrypted values use ORC's
@@ -149,8 +194,9 @@ quota reader below; it does not report gateway/Bedrock billing or SSH quotas.
 There is no provider health polling. Native Claude quota rejections and Codex
 usage-window notices include reset times when supplied by the agent. Claude extra
 usage is distinguished from a blocked request. A failed turn holds queued messages;
-retry explicitly after access returns. ORC does not switch accounts or schedule
-automatic quota retries.
+retry explicitly after access returns. ORC does not switch accounts automatically
+or schedule quota retries; use the chat picker to move the open conversation to
+another account of the same agent.
 
 ## Project workspace environment
 
@@ -223,9 +269,10 @@ not rescan transcripts or include managed gateway sessions a second time.
 ![Usage in Settings with demo data](/screens/settings-usage.png)
 
 Account quotas show percentage used and reset times for local Codex and Claude
-accounts on the API host. ORC reads the existing CLI login from
-`CODEX_HOME/auth.json` (default `~/.codex/auth.json`) or
-`CLAUDE_CONFIG_DIR/.credentials.json` (default `~/.claude/.credentials.json`) and
+accounts on the API host, one card per configured provider. ORC reads the existing
+CLI login from each provider's config directory—`CODEX_HOME/auth.json` (default
+`~/.codex/auth.json`) or `CLAUDE_CONFIG_DIR/.credentials.json` (default
+`~/.claude/.credentials.json`)—and
 requests quota data from the provider over HTTPS. Credentials stay on the server
 and are never returned to the browser. Keychain-only, API-key and SSH-host logins
 are not supported. Missing logins, expired access and unsupported provider

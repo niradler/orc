@@ -104,3 +104,47 @@ test("usage handles errors, retry and empty history", async ({ page }) => {
     "No imported sessions started in this period",
   );
 });
+
+test("usage shows one quota card per configured provider", async ({ page }) => {
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
+  const checkedAt = new Date().toISOString();
+  await page.route("**/api/usage/history?*", (route) => route.fulfill({ json: history }));
+  await page.route("**/api/usage/quotas", (route) =>
+    route.fulfill({
+      json: {
+        accounts: [
+          {
+            provider: "claude",
+            provider_id: "claude-work",
+            name: "Claude Work",
+            status: "available",
+            message: null,
+            checked_at: checkedAt,
+            windows: [{ label: "5-hour window", used_percent: 42, resets_at: null }],
+          },
+          {
+            provider: "claude",
+            provider_id: "claude-personal",
+            name: "Claude Personal",
+            status: "signed_out",
+            message: "No readable local account login.",
+            checked_at: checkedAt,
+            windows: [],
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto("/settings");
+  await settingsSection(page, "usage");
+  const work = page.getByTestId("usage-quota-claude-work");
+  await expect(work).toContainText("Claude · Claude Work");
+  await expect(work).toContainText("42% used");
+  const personal = page.getByTestId("usage-quota-claude-personal");
+  await expect(personal).toContainText("Claude · Claude Personal");
+  await expect(personal).toContainText("No readable local account login.");
+});
