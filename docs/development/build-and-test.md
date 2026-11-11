@@ -89,6 +89,8 @@ bun run test:e2e:ui                 # headed, with the picker
 
 Specs live in `packages/web/tests/e2e/` and select elements by `data-testid` only.
 
+The runner isolates `HOME`, so each shard also fills in a stub for any agent binary it cannot resolve on `PATH` (`codex`, `claude`, `cursor-agent`, `gemini`, `opencode`). Provider detection is presence-only, and specs such as `agent-dropdowns` and `terminal-hosts` assert the controls for installed agents, so a lean CI image would otherwise hide them and the suite would pass only on a developer machine. Stubs are skipped where the real binary exists.
+
 ## Build
 
 ```bash
