@@ -215,15 +215,9 @@ export function sourcesLoaded(page: Page) {
   );
 }
 
-/** Reconnects the shared stream so its `ready` event refetches every notifier source. */
-export async function poll(page: Page) {
-  const loaded = sourcesLoaded(page);
-  await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  // The reconnect delay is a 0 ms timer, so the installed fake clock must advance for it.
-  await page.clock.fastForward(10);
-  await loaded;
-  // Let React commit the refreshed data before the feed's 1 s hold window is evaluated.
-  await page.evaluate(
+/** Yields a real macrotask; the fake clock does not own MessageChannel. */
+function realTurn(page: Page) {
+  return page.evaluate(
     () =>
       new Promise<void>((resolve) => {
         const channel = new MessageChannel();
@@ -231,6 +225,21 @@ export async function poll(page: Page) {
         channel.port2.postMessage(undefined);
       }),
   );
+}
+
+/** Reconnects the shared stream so its `ready` event refetches every notifier source. */
+export async function poll(page: Page) {
+  const loaded = sourcesLoaded(page);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  // Aborting the stream is async and schedules the 0 ms reconnect only after it settles,
+  // so give the page real turns while advancing the fake clock that owns that timer.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await realTurn(page);
+    await page.clock.fastForward(10);
+  }
+  await loaded;
+  // Let React commit the refreshed data before the feed's 1 s hold window is evaluated.
+  await realTurn(page);
   // NotificationFeed holds new items for 1 s and flushes on a 250 ms timer.
   await page.clock.fastForward(1_100);
 }

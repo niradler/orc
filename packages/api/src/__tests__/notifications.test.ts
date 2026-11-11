@@ -142,7 +142,14 @@ test("should backfill existing chat aliases before listing and remove superseded
       expires_at: now + 60000,
     });
   }
-  // The 60 s maintenance sweep, not the list read, backfills legacy rows.
+  // The list read is pure: legacy rows stay unbackfilled until the maintenance sweep.
+  const unbackfilled = await req(app, "GET", "/notifications");
+  expect(unbackfilled.status).toBe(200);
+  const before = (await unbackfilled.json<NotificationPage>()).notifications.filter((item) =>
+    ids.includes(item.source_id),
+  );
+  expect(before.map((item) => item.source_id).sort()).toEqual([...ids].sort());
+
   maintainNotifications();
   const response = await req(app, "GET", "/notifications");
   expect(response.status).toBe(200);

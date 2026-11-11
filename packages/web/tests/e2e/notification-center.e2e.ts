@@ -211,6 +211,23 @@ test("read state is shared across pages and survives reload", async ({ page, req
   }
 });
 
+test("a request created by another client appears in an open inbox without polling", async ({
+  page,
+  request,
+}) => {
+  await gotoView(page, "tasks");
+  await page.locator('[data-testid="notification-bell"]:visible').first().click();
+  const source = await apiPost<HumanRequest>(request, "/human-requests", {
+    kind: "question",
+    title: "Live inbox question",
+    prompt: "Does this arrive without a poll?",
+    origin: { backend: "test", session_id: tid("live-inbox"), request_id: "live-inbox" },
+  });
+  // The default expect timeout (10 s) is shorter than the 15 s poll this replaced.
+  await expect(page.locator(`[data-source-id="${source.id}"]`)).toBeVisible();
+  await apiPost(request, `/human-requests/${source.id}/cancel`, { version: source.version });
+});
+
 test("clicking a desktop OS notification marks it read and still navigates", async ({
   page,
   request,

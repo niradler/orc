@@ -73,17 +73,35 @@ describe("shared resource event stream", () => {
     const response = await req(app, "GET", "/events");
     if (!response.body) throw new Error("Missing SSE response body");
     const reader = response.body.getReader();
+    let received = "";
+    const pump = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        received += new TextDecoder().decode(value);
+      }
+    })();
+    const until = async (check: () => boolean, ms: number): Promise<boolean> => {
+      for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(10))
+        if (check()) return true;
+      return check();
+    };
     try {
-      await reader.read();
+      expect(await until(() => received.includes("event: ready"), 2000)).toBe(true);
+      // The create-time event must not be mistaken for the expiry this test is about.
+      await Bun.sleep(300);
+      expect(received).not.toContain('"human-requests"');
       maintainNotifications();
-      let text = "";
-      const end = Date.now() + 2000;
-      while (!/event: change\ndata: .*"human-requests"/.test(text) && Date.now() < end)
-        text += new TextDecoder().decode((await reader.read()).value);
-      expect(text).toContain('"human-requests"');
-      expect(new HumanRequestStore(getSqlite()).get(request.id).status).toBe("expired");
+      expect(await until(() => received.includes('"human-requests"'), 2000)).toBe(true);
+      // Raw SQL: HumanRequestStore.get() also expires, so it cannot witness the sweep.
+      expect(
+        getSqlite()
+          .query<{ status: string }, [string]>("SELECT status FROM human_requests WHERE id=?")
+          .get(request.id)?.status,
+      ).toBe("expired");
     } finally {
       await reader.cancel();
+      await pump;
     }
   });
 
