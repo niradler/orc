@@ -6,11 +6,13 @@ import { runHumanRuleActions } from "@orc/core/human-request-client";
 import { recordLiveSessionWait } from "@orc/core/live-session";
 import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
 import { copyRuleTemplate, RULE_CATALOG } from "@orc/core/rule-catalog";
-import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
+import { RULE_EVENT_ADAPTERS, ruleEventCapability } from "@orc/core/rule-events";
 import { normalizeRuleHook, type RuleHookBackend, ruleHookOutput } from "@orc/core/rule-hooks";
+import { sessionMessageContext } from "@orc/core/session-messages";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
+import { SessionMessageStore } from "@orc/db/session-messages";
 import { createOrcClient } from "@orc/sdk";
 import { Command } from "commander";
 
@@ -111,7 +113,31 @@ export function rulesCommand(): Command {
         );
         for (const error of result.action_errors ?? [])
           console.error(`${error.rule_id}: ${error.reason}`);
-        console.log(JSON.stringify(ruleHookOutput(backend as RuleHookBackend, normalized, result)));
+        const messages = new SessionMessageStore(getSqlite());
+        let pending: ReturnType<SessionMessageStore["claim"]> = [];
+        try {
+          if (
+            ruleEventCapability(backend, `native:${event}`)?.context &&
+            normalized.session_id &&
+            result.decision !== "deny"
+          ) {
+            pending = messages.claim(normalized.backend, normalized.session_id);
+            if (pending.length) result.context.push(sessionMessageContext(pending));
+          }
+          console.log(
+            JSON.stringify(ruleHookOutput(backend as RuleHookBackend, normalized, result)),
+          );
+          messages.deliver(
+            pending.map((message) => message.id),
+            "hook",
+          );
+        } catch (error) {
+          messages.interrupted(
+            pending.map((message) => message.id),
+            "The hook could not return the message to the agent",
+          );
+          throw error;
+        }
         if (result.decision === "deny" && normalized.phase !== "permission_request") {
           console.error(
             result.reasons.map((reason) => `${reason.rule_id}: ${reason.reason}`).join("; "),

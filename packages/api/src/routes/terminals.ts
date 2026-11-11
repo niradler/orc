@@ -18,6 +18,7 @@ import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
 import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
+import { recordAudit } from "../lib/audit-actor.js";
 import { preparePackageLaunch } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
@@ -373,6 +374,11 @@ app.openapi(createTerminalRoute, async (c) => {
       name: body.name ?? plan.setup.name,
     });
     rememberTerminalFolder(info.cwd, info.host);
+    recordAudit(c, {
+      action: "terminal.created",
+      subject_ids: [info.id],
+      snapshot: { kind: info.kind, host: info.host, cwd: info.cwd, source: "setup" },
+    });
     return c.json(info, 201);
   }
 
@@ -445,6 +451,17 @@ app.openapi(createTerminalRoute, async (c) => {
     });
     if (handoff) await getHandoffService().markResumed(row.id);
     rememberTerminalFolder(info.cwd, info.host);
+    recordAudit(c, {
+      action: "terminal.created",
+      subject_ids: [info.id],
+      snapshot: {
+        kind: info.kind,
+        host: info.host,
+        cwd: info.cwd,
+        source: "resume",
+        live_session_id: row.id,
+      },
+    });
     return c.json(info, 201);
   }
 
@@ -502,6 +519,17 @@ app.openapi(createTerminalRoute, async (c) => {
     },
   });
   rememberTerminalFolder(info.cwd, info.host);
+  recordAudit(c, {
+    action: "terminal.created",
+    subject_ids: [info.id],
+    snapshot: {
+      kind: info.kind,
+      host: info.host,
+      cwd: info.cwd,
+      worktree: Boolean(body.worktree),
+      source: "launch",
+    },
+  });
   return c.json(info, 201);
 });
 
@@ -541,7 +569,14 @@ app.openapi(getTerminalRoute, (c) => {
 
 app.openapi(deleteTerminalRoute, (c) => {
   requireTerminals(loadConfig());
-  getTerminalManager().remove(c.req.valid("param").id);
+  const { id } = c.req.valid("param");
+  const info = getTerminalManager().get(id);
+  getTerminalManager().remove(id);
+  recordAudit(c, {
+    action: "terminal.removed",
+    subject_ids: [id],
+    snapshot: { kind: info.kind, host: info.host, cwd: info.cwd, status: info.status },
+  });
   return c.body(null, 204);
 });
 

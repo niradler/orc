@@ -614,6 +614,21 @@ describe("GET /terminals and tickets", () => {
     await req(app, "DELETE", `/terminals/${created.id}`);
   });
 
+  test("audits terminal creation and removal without the launch command", async () => {
+    const created = await (
+      await req(app, "POST", "/terminals", { kind: "shell" }, { "X-Orc-Actor-Name": "audit-agent" })
+    ).json();
+    await req(app, "DELETE", `/terminals/${created.id}`);
+    const rows = getSqlite()
+      .query<{ action: string; actor: string; snapshot: string }, [string]>(
+        "SELECT a.action, a.actor, a.snapshot FROM audit_log a, json_each(a.subject_ids) s WHERE s.value=? ORDER BY a.rowid",
+      )
+      .all(created.id);
+    expect(rows.map((row) => row.action)).toEqual(["terminal.created", "terminal.removed"]);
+    expect(rows[0]?.actor).toBe("audit-agent");
+    expect(JSON.parse(rows[0]?.snapshot ?? "{}")).toMatchObject({ kind: "shell" });
+  });
+
   test("delete kills the process", async () => {
     const created = await (await req(app, "POST", "/terminals", { kind: "shell" })).json();
     const pty = ptys.at(-1);

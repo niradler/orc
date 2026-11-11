@@ -59,6 +59,11 @@ export type {
   SessionHandoffUpload,
 } from "@orc/core/session-handoff";
 export type {
+  SessionMessage,
+  SessionMessageCreate,
+  SessionMessageResult,
+} from "@orc/core/session-messages";
+export type {
   LocalSkill,
   LocalSkillAgentListing,
   LocalSkillImportItem,

@@ -38,6 +38,7 @@ import { scratchpadsRouter } from "./routes/scratchpads.js";
 import { searchRouter } from "./routes/search.js";
 import { sessionArchiveRouter } from "./routes/session-archive.js";
 import { sessionHandoffsRouter } from "./routes/session-handoffs.js";
+import { sessionMessagesRouter } from "./routes/session-messages.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { settingsRouter } from "./routes/settings.js";
 import { skillsRouter } from "./routes/skills.js";
@@ -159,6 +160,7 @@ export function createApp() {
   app.route("/api", sessionArchiveRouter);
   app.route("/api", sessionsRouter);
   app.route("/api", sessionHandoffsRouter);
+  app.route("/api", sessionMessagesRouter);
   app.route("/api", jobsRouter);
   app.route("/api", gatewayRouter);
   app.route("/api", tagsRouter);

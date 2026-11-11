@@ -199,7 +199,7 @@ Set these server-wide preferences in **Settings → Storage** or the JSON config
 
 All notifications expire, including unresolved requests' alerts. Audit history
 retains the notification title and message independently until the audit event
-expires. Expiry filters apply immediately; the API performs bounded cleanup at
+expires. The audit log is also capped at 200,000 rows, oldest removed first. Expiry filters apply immediately; the API performs bounded cleanup at
 startup and every minute. Freed SQLite pages are reusable but the file may not
 shrink. See [Notifications](./notifications.md).
 
