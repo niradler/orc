@@ -108,7 +108,7 @@ export async function ensureDaemon(opts: {
   const configPath = canonicalPath(opts.configPath ?? globalConfigPath());
   const expectedDb = dbPath === ":memory:" ? dbPath : canonicalPath(dbPath);
   const version = opts.version ?? ORC_VERSION;
-  const deadline = Date.now() + (opts.timeoutMs ?? 30_000);
+  const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
   const preferredUrl = `http://127.0.0.1:${opts.port}`;
 
   async function verify(record: DaemonRuntime): Promise<string | null> {
@@ -252,7 +252,7 @@ export async function ensureDaemon(opts: {
       }
       if (!retry)
         throw new Error(
-          `ORC daemon did not become ready within ${(opts.timeoutMs ?? 30_000) / 1000}s. Check ${opts.logFile ?? "the daemon log"}, then retry.`,
+          `ORC daemon did not become ready within ${(opts.timeoutMs ?? 120_000) / 1000}s. Check ${opts.logFile ?? "the daemon log"}, then retry.`,
         );
     } catch (error) {
       await stopChild();
