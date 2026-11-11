@@ -17,6 +17,7 @@ export function WorkspaceHeader({
   onShowChat,
   navButtonRef,
   chatButtonRef,
+  chatPage = false,
 }: {
   projectId: string;
   onOpenNav: () => void;
@@ -25,6 +26,7 @@ export function WorkspaceHeader({
   onShowChat: () => void;
   navButtonRef?: Ref<HTMLButtonElement>;
   chatButtonRef?: Ref<HTMLButtonElement>;
+  chatPage?: boolean;
 }) {
   const { pathname, search } = useLocation();
   const sectionNav = useRef<HTMLElement>(null);
@@ -87,17 +89,19 @@ export function WorkspaceHeader({
           duration={180}
           className={buttonVariants({ variant: "ghost", size: "icon" })}
         />
-        <Button
-          ref={chatButtonRef}
-          data-testid="chat-open-button"
-          variant="ghost"
-          size="sm"
-          onClick={onOpenChat}
-        >
-          <MessageSquare />
-          <span className="hidden sm:inline">Chat</span>
-          <span className="sr-only sm:hidden">Open chat</span>
-        </Button>
+        {!chatPage && (
+          <Button
+            ref={chatButtonRef}
+            data-testid="chat-open-button"
+            variant="ghost"
+            size="sm"
+            onClick={onOpenChat}
+          >
+            <MessageSquare />
+            <span className="hidden sm:inline">Chat</span>
+            <span className="sr-only sm:hidden">Open chat</span>
+          </Button>
+        )}
       </header>
       {section && section.pages.length > 1 && (
         <nav

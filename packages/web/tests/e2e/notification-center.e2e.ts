@@ -100,10 +100,6 @@ for (const theme of ["dark", "light"] as const)
       await gotoView(page, "tasks");
       await expect(page.getByTestId("nav-attention")).toHaveCount(0);
       await expect(page.getByTestId("notification-menu")).toHaveCount(0);
-      if (width === 390) {
-        await page.getByTestId("chat-open-button").click();
-        await expect(page.getByTestId("mobile-chat-sheet")).toBeVisible();
-      }
       const bell = page.locator('[data-testid="notification-bell"]:visible').last();
       await expect(bell).toHaveAccessibleName("Notifications: 3 unread");
       await bell.click();
@@ -134,7 +130,7 @@ for (const theme of ["dark", "light"] as const)
       await jobItem.getByTestId("notification-open").click();
       await expect(page).toHaveURL(new RegExp(`/jobs/${job.id}\\?run=.*project=all`));
       await expect(page.getByTestId("job-detail-sheet")).toBeVisible();
-      await expect(page.getByTestId("mobile-chat-sheet")).toHaveCount(0);
+      await expect(page.getByTestId("session-home")).toHaveCount(0);
       const history = await apiGet<NotificationPage>(request, "/notifications");
       expect(
         history.notifications.find((item) => item.source_id === question.id)?.requires_action,

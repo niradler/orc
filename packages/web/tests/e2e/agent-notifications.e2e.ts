@@ -141,7 +141,7 @@ test("Done: sessions finishing together collapse into one toast", async ({ page 
   await expect(page).toHaveURL(/\/sessions\?.*session=notify-live-1/);
 });
 
-test("phone bell keeps updates closed, retains Done updates, and works inside chat", async ({
+test("phone notifications stay closed during chat and open over the chat page", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -150,9 +150,9 @@ test("phone bell keeps updates closed, retains Done updates, and works inside ch
     requests: [],
   });
   const loaded = sourcesLoaded(page);
-  await page.goto("/tasks?project=all&chat=open");
+  await page.goto("/chat?project=all");
   await loaded;
-  const chat = page.getByTestId("mobile-chat-sheet");
+  const chat = page.getByTestId("session-home");
   await expect(chat).toBeVisible();
   scenario.state.sessions = [liveSession(0, "running", true), liveSession(1, "idle")];
   scenario.state.requests = [approvalRequest(0)];
@@ -160,11 +160,11 @@ test("phone bell keeps updates closed, retains Done updates, and works inside ch
   await page.clock.runFor(1500);
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
   await expect(page.getByTestId("agent-toasts")).not.toBeVisible();
-  await expect(chat.getByTestId("notification-bell")).toHaveAccessibleName(
+  await expect(page.getByTestId("notification-bell")).toHaveAccessibleName(
     "Notifications: 2 unread",
   );
   await page.clock.fastForward(8000);
-  await chat.getByTestId("notification-bell").click();
+  await page.keyboard.press("Alt+KeyN");
   const menu = page.getByTestId("notification-menu");
   await expect(menu).toBeVisible();
   await expect(menu.getByTestId("notification-item")).toHaveCount(2);
@@ -271,20 +271,22 @@ test("sound preferences persist after reload and disabling sound keeps alerts si
   expect(await scenario.chimeNotes()).toBe(0);
 });
 
-test("opening a Done update from phone chat reveals the finished session", async ({ page }) => {
+test("opening a Done update from full screen phone chat reveals the finished session", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const scenario = await notificationScenario(page, {
     sessions: [liveSession(1, "running")],
     requests: [],
   });
   const loaded = sourcesLoaded(page);
-  await page.goto("/tasks?project=all&chat=open");
+  await page.goto("/tasks?project=all&chat=full");
   await loaded;
   scenario.state.sessions = [liveSession(1, "idle")];
   await poll(page);
   await page.clock.runFor(1500);
-  await page.getByTestId("mobile-chat-sheet").getByTestId("notification-bell").click();
+  await page.getByTestId("notification-bell").click();
   await page.getByTestId("notification-menu").getByTestId("notification-open").click();
   await expect(page).toHaveURL(/\/sessions\?session=notify-live-1&project=all$/);
-  await expect(page.getByTestId("mobile-chat-sheet")).toHaveCount(0);
+  await expect(page.getByTestId("session-home")).toHaveCount(0);
 });

@@ -23,7 +23,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
-import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
@@ -493,9 +492,6 @@ export function ChatPanel({
               </button>
             </ActionHelp>
           )}
-          {/* The workspace header owns the bell while the side panel is docked;
-              only show it here when this panel replaces that header. */}
-          {(fullscreen || embedded) && <AgentNotificationBell />}
           <ActionHelp label="Close chat">
             <button
               type="button"
@@ -509,7 +505,7 @@ export function ChatPanel({
           </ActionHelp>
         </header>
         {fullscreen && phone && (
-          <div className="flex min-w-0 shrink-0 items-center gap-1 px-4 pb-1">
+          <div className="chat-page-subheader flex min-w-0 shrink-0 items-center gap-1 px-4 pb-1">
             <h2
               className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]"
               title={`${projectName} / ${title ?? "New session"}`}

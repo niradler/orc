@@ -1,7 +1,8 @@
 # Notifications
 
-The bell in workspace and chat headers opens your notification menu on desktop
-and phone. New arrivals show an unread indicator without opening the menu. Use
+The bell in the workspace header opens your notification menu on desktop
+and phone, including while the chat is open. New arrivals show an unread
+indicator without opening the menu. Use
 **Alt+N** or **Open notifications** in the command palette to open it.
 
 Notifications cover human questions, approvals and commands, agent questions and

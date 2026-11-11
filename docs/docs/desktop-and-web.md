@@ -8,7 +8,7 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 
 | Area | Contents |
 | --- | --- |
-| Sidebar | Activity, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
+| Sidebar | Activity, Chat, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
 | Project picker | Scopes most pages to one project, all projects, or unassigned items. A project with sessions waiting on you shows how many. |
 | Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; OpenCode uses direct ACP; other agents run through ACPX. |
 | Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
@@ -24,6 +24,7 @@ Pages are grouped in the sidebar:
 | Group | Pages |
 | --- | --- |
 | Activity | Activity, Sessions, Jobs, Webhooks, Audit |
+| Chat | Chat |
 | Tasks | Tasks |
 | Knowledge | Knowledge base, Memories |
 | Terminals | Terminals |
@@ -36,15 +37,23 @@ The sun and moon button in the header switches between the dark and light themes
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
 
-## Full-width sessions view
+## Chat page
 
-Open the chat panel and click **Full screen chat** to work with every agent session in one place. The same view opens from the full-screen button on **Sessions** (on the page or on a row) and in the **Terminals** session list.
+**Chat** in the sidebar, under Activity, opens the chat page at `/chat`. It is a
+regular page: the workspace header keeps your navigation and notifications, the
+sidebar keeps whatever width you chose, and **Chat** shows as the active page.
+The chat panel's full-screen button, and the full-screen button on **Sessions**
+(on the page or on a row) or in the **Terminals** session list, open the same
+page.
+
+Below 1280px wide, the chat has no side panel: starting a chat from any page
+opens the chat page instead.
 
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
 - **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
-- The sidebar shows as its collapsed rail while the view is open. **Exit full screen chat** returns to the page you came from.
+- The page keeps the workspace header and its single notification bell, and the sidebar at the width you chose. **Close chat** returns to the page you came from.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents
   show **Unknown** until agent activity supplies a state; they appear only in All projects
@@ -58,7 +67,7 @@ press Escape. Choosing an action also closes the menu; opening Session settings
 keeps the conversation and your draft in place. Agent, workspace and branch
 pickers also close when you tap outside them.
 Opening the list sets `sessionList=show` in the URL, so reload and Back restore it.
-Exit full screen also returns to the original page after navigating Back and Forward.
+Closing the page also returns to the original page after navigating Back and Forward.
 
 ![Session home with its inspector and demo data](/screens/session-home-desktop.png)
 
@@ -302,8 +311,8 @@ Desktop browsers show toasts. Needs-you toasts stay until dismissed or resolved;
 Sessions finishing together collapse into one notification. Use **Alt+N** or
 **Open notifications** in the command palette to reach notifications.
 
-On all screens, the bell in workspace and chat headers shows an unread count.
-New notifications never open the panel automatically. Tap the bell to read or
+On all screens, the bell in the workspace header shows an unread count, including
+while the chat is open. New notifications never open the panel automatically. Tap the bell to read or
 dismiss them. History remains until dismissed or expired (30 days by default).
 Configure notification and audit retention in Settings → Storage.
 See [Notifications](./notifications.md) and [Human requests](./human-requests.md).

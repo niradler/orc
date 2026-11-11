@@ -172,7 +172,12 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
             : undefined;
         const targetThread =
           target.searchParams.get("chatThread") ?? request?.input.origin.chat_thread_id;
-        if (params.get("chat") && targetThread && targetThread === threadId) return true;
+        if (
+          (params.get("chat") || state.location.pathname === "/chat") &&
+          targetThread &&
+          targetThread === threadId
+        )
+          return true;
         if (state.location.pathname !== "/sessions") return false;
         const sessionId = params.get("session");
         if (target.pathname === "/sessions" && target.searchParams.get("session") === sessionId)
@@ -216,10 +221,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const openFromKeyboard = () => {
-      const button =
-        document.querySelector<HTMLButtonElement>(
-          '[data-testid="mobile-chat-sheet"] [data-testid="notification-bell"]',
-        ) ?? document.querySelector<HTMLButtonElement>('[data-testid="notification-bell"]');
+      const button = document.querySelector<HTMLButtonElement>('[data-testid="notification-bell"]');
       button?.click();
     };
     const keydown = (event: KeyboardEvent) => {
@@ -282,10 +284,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     if (!notificationLink) return;
     setSelected(linkedRequest);
     const timer = window.setTimeout(() => {
-      const button =
-        document.querySelector<HTMLButtonElement>(
-          '[data-testid="mobile-chat-sheet"] [data-testid="notification-bell"]',
-        ) ?? document.querySelector<HTMLButtonElement>('[data-testid="notification-bell"]');
+      const button = document.querySelector<HTMLButtonElement>('[data-testid="notification-bell"]');
       if (button) {
         setAnchor(button);
         setExpanded(true);
@@ -301,10 +300,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     );
     if (item.type === "human.request") {
       setSelected(item.source_id);
-      const button =
-        document.querySelector<HTMLButtonElement>(
-          '[data-testid="mobile-chat-sheet"] [data-testid="notification-bell"]',
-        ) ?? document.querySelector<HTMLButtonElement>('[data-testid="notification-bell"]');
+      const button = document.querySelector<HTMLButtonElement>('[data-testid="notification-bell"]');
       if (button) show(button);
     } else {
       setExpanded(false);

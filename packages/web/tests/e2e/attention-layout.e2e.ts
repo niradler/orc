@@ -289,7 +289,8 @@ test("attention responds to its available pane width and keeps an unsent draft w
   await expect(page.getByTestId("chat-input")).toBeVisible();
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
   await page.setViewportSize({ width: 320, height: 700 });
-  await page.getByTestId("mobile-chat-sheet").getByTestId("notification-bell").click();
+  // The workspace header keeps the only bell, including on the chat page.
+  await page.locator('[data-testid="notification-bell"]:visible').click();
   await reviewAttentionRequest(card);
   await expect.poll(async () => (await view.boundingBox())?.width ?? 0).toBeLessThan(320);
   const narrow = await layout();

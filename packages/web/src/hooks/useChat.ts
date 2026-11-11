@@ -29,7 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
@@ -1305,9 +1305,11 @@ const ChatContext = createContext<ReturnType<typeof useChatController> | null>(n
 /** Keeps `?chatThread=` naming the open conversation while chat is shown, and opens linked ones. */
 function useChatLink(chat: ReturnType<typeof useChatController>) {
   const [params, setParams] = useSearchParams();
+  const { pathname } = useLocation();
   const param = params.get(CHAT_THREAD_PARAM);
   const linked = param && isChatThreadId(param) ? param : null;
-  const chatShown = !!params.get("chat");
+  // The thread is written to the URL for the side panel and for the chat page.
+  const chatShown = !!params.get("chat") || pathname === "/chat";
   // While a linked conversation loads the link leads; once it has opened (or failed to), the
   // shown conversation does.
   const loading = useRef<string | null>(null);

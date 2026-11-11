@@ -14,6 +14,8 @@ test("nested deep links select the specific page and keep primary groups stable"
   expect(workspacePage("/packages/agents/example")?.id).toBe("agents");
   expect(workspacePage("/packages/item/example")?.id).toBe("packages");
   expect(workspaceSection("/tasks/example")?.id).toBe("tasks");
+  expect(workspaceSection("/chat")?.id).toBe("chat");
+  expect(workspacePage("/chat")?.label).toBe("Chat");
   expect(workspaceSection("/sessions/example")?.id).toBe("activity");
   expect(workspaceSection("/webhooks")?.id).toBe("activity");
   expect(workspacePage("/webhooks")?.label).toBe("Webhooks");

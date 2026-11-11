@@ -29,7 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { api, apiFetch, getApiUrl } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -125,7 +125,8 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const chat = useChat();
   const preferences = usePreviewPreferences();
   const [params] = useSearchParams();
-  const chatShown = ["open", "full"].includes(params.get("chat") ?? "");
+  const { pathname } = useLocation();
+  const chatShown = pathname === "/chat" || ["open", "full"].includes(params.get("chat") ?? "");
   const rawSession =
     params.get(SESSION_LIVE_PARAM) ?? (chatShown ? (chat.thread?.id ?? null) : null);
   const key = chat.activeKey;

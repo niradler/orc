@@ -60,9 +60,8 @@ for (const theme of ["dark", "light"] as const) {
         });
         await page.goto("/knowledge/base?sentinel=keep");
         await page.getByTestId("chat-open-button").tap();
-        const sheet = page.getByTestId("mobile-chat-sheet");
+        const sheet = page.getByTestId("session-home");
         await expect(sheet).toBeVisible();
-        expect(await sheet.evaluate((node) => node.contains(document.activeElement))).toBe(true);
         await fitsViewport(page, sheet);
         const input = sheet.getByTestId("chat-input");
         await input.fill("A question from my phone");
@@ -76,10 +75,10 @@ for (const theme of ["dark", "light"] as const) {
           "Mobile streaming response ✓",
         );
         await sheet.getByRole("button", { name: "Close chat", exact: true }).tap();
-        await expect(sheet).toBeHidden();
+        await expect(page.getByTestId("session-home")).toHaveCount(0);
+        expect(new URL(page.url()).searchParams.get("sentinel")).toBe("keep");
         await page.getByTestId("chat-open-button").tap();
         await expect(sheet).toContainText("Mobile streaming response ✓");
-        expect(new URL(page.url()).searchParams.get("sentinel")).toBe("keep");
         await page.screenshot({ path: testInfo.outputPath("chat-touch.png") });
       });
 
@@ -299,8 +298,8 @@ test("chat composer follows the visual viewport when a software keyboard opens",
   await page.evaluate(() =>
     (window as unknown as { resizeKeyboardViewport: () => void }).resizeKeyboardViewport(),
   );
-  await expect(page.getByTestId("mobile-chat-sheet")).toHaveCSS("height", "410px");
-  await expect(page.getByTestId("mobile-chat-sheet")).toHaveCSS("top", "24px");
+  await expect(page.getByTestId("app-viewport")).toHaveCSS("height", "410px");
+  await expect(page.getByTestId("app-viewport")).toHaveCSS("margin-top", "24px");
   const send = await page.getByTestId("chat-send-button").boundingBox();
   if (!send) throw new Error("Expected the composer send button to be visible");
   expect(send.y + send.height).toBeLessThanOrEqual(434);
