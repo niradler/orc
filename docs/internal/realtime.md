@@ -22,6 +22,13 @@ connection, including reconnects; this protocol does not promise durable event r
 Refreshes account for events arriving while an older snapshot is still being fetched.
 Inactive queries are marked stale and fetch when opened.
 
+No dashboard query polls while the stream is connected. A change triggers one refresh of
+the affected query roots, and changes for the same roots arriving within a short trailing
+window (350 ms) share it, so a busy transcript does not re-read every mounted list for
+each write. If a proxy blocks event streams the client reports `disconnected`; only then
+does the affected data fall back to a 30-second refresh, and `ready` refreshes everything
+again when the stream returns.
+
 The server sends a comment keepalive every 25 seconds. These are bytes on the existing
 connection, not new requests or data refreshes. The browser reconnects after a lost
 connection, closes the stream while offline, and detects silent streams with a 60-second

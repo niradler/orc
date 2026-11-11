@@ -220,6 +220,11 @@ export const useChatState = () => use(ChatStateContext)!;           // ChatPanel
 
 ## W-6: `sessions` SSE events trigger 5,000-row list refetches and transcript re-downloads
 
+**Status:** partly addressed. `invalidateResources` now coalesces a burst of changes into
+one trailing refresh per query root (350 ms), and the always-mounted notification bell uses
+a 50-row summary query instead of the 5,000-row list. Targeted events, server-side
+pagination and the transcript split below remain open.
+
 **Evidence**
 - On the API side, `session-watcher.ts:250-276` publishes a `sessions` change after each transcript file change (100 ms debounce). During an active agent run, that is roughly every few hundred milliseconds to a few seconds.
 - In `lib/resource-events.ts`, `QUERY_ROOTS` maps both `tasks` and `sessions` to the `["sessions", "session", "project-summary"]` roots.
@@ -270,6 +275,10 @@ export const useChatState = () => use(ChatStateContext)!;           // ChatPanel
   ```
 
 ## W-8: double refetch per mutation, and `refetchOnMount: "always"` is redundant with SSE
+
+**Status:** the polling half is addressed. Dashboard queries no longer set a fixed
+`refetchInterval`; a 30-second fallback runs only while the event stream reports
+`disconnected`. Switching `refetchOnMount` to `true` remains a separate change.
 
 **Evidence**
 - `main.tsx` QueryClient defaults:

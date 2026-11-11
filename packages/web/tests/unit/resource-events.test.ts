@@ -3,6 +3,7 @@ import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import {
   consumeResourceEvents,
   EventFrames,
+  flushResourceChanges,
   invalidateResources,
   parseResources,
 } from "../../src/lib/resource-events";
@@ -89,6 +90,75 @@ describe("resource events", () => {
     try {
       await invalidateResources(client, ["tasks"]);
       expect(client.getQueryData(["tasks"])).toBe("after");
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
+  test("should coalesce a burst per root inside the window and refresh once the window passes", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    const reads = { list: 0, detail: 0, tasks: 0, jobs: 0, terminals: 0 };
+    const query = (key: string[], hit: keyof typeof reads) =>
+      new QueryObserver(client, {
+        queryKey: key,
+        queryFn: async () => {
+          reads[hit]++;
+          return { hit };
+        },
+      });
+    const observers = [
+      query(["sessions", "live", true], "list"),
+      query(["session", "one"], "detail"),
+      query(["tasks"], "tasks"),
+      query(["jobs"], "jobs"),
+      query(["terminals"], "terminals"),
+    ];
+    const unsubscribe = observers.map((observer) => observer.subscribe(() => {}));
+    try {
+      await Promise.all(observers.map((observer) => observer.refetch()));
+      await Promise.all([
+        invalidateResources(client, ["sessions"]),
+        invalidateResources(client, ["sessions"]),
+        invalidateResources(client, ["session-messages"]),
+      ]);
+      expect(reads).toEqual({ list: 2, detail: 2, tasks: 1, jobs: 1, terminals: 1 });
+
+      // A second change inside the next window joins the first refresh instead of adding one.
+      const first = invalidateResources(client, ["sessions"]);
+      await Bun.sleep(200);
+      const joined = invalidateResources(client, ["sessions"]);
+      await Promise.all([first, joined]);
+      expect(reads.list).toBe(3);
+
+      // After the window closes, the next change refreshes again.
+      await Bun.sleep(400);
+      await invalidateResources(client, ["tasks", "jobs"]);
+      expect(reads).toMatchObject({ tasks: 2, jobs: 2, terminals: 1 });
+    } finally {
+      for (const stop of unsubscribe) stop();
+      client.clear();
+    }
+  });
+
+  test("should flush queued changes on demand and cancel the pending window", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    let reads = 0;
+    const observer = new QueryObserver(client, {
+      queryKey: ["sessions", "live", true],
+      queryFn: async () => ({ read: ++reads }),
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await observer.refetch();
+      const pending = invalidateResources(client, ["sessions"]);
+      await Promise.all([pending, flushResourceChanges(client)]);
+      expect(reads).toBe(2);
+      await Bun.sleep(400);
+      expect(reads).toBe(2);
     } finally {
       unsubscribe();
       client.clear();

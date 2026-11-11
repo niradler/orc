@@ -97,12 +97,55 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   workspaces: ["workspaces", "terminals", "project-summary"],
 };
 
+// A running session publishes `sessions` changes about every 100 ms; one trailing refresh
+// per window keeps that from re-reading every mounted list for each transcript write.
+const COALESCE_MS = 350;
+
+interface PendingRefresh {
+  roots: Set<string>;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+const pendingRefreshes = new WeakMap<QueryClient, PendingRefresh>();
+
+function flushPending(client: QueryClient, pending: PendingRefresh): void {
+  clearTimeout(pending.timer);
+  pendingRefreshes.delete(client);
+  refreshQueries(client, (root) => pending.roots.has(root)).then(pending.resolve, pending.reject);
+}
+
 export function invalidateResources(
   client: QueryClient,
   resources: ChangeResource[],
 ): Promise<void> {
-  const roots = new Set(resources.flatMap((resource) => QUERY_ROOTS[resource]));
-  return refreshQueries(client, (root) => roots.has(root));
+  const roots = resources.flatMap((resource) => QUERY_ROOTS[resource]);
+  if (roots.length === 0) return Promise.resolve();
+  let pending = pendingRefreshes.get(client);
+  if (!pending) {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    const created: PendingRefresh = { roots: new Set(), promise, resolve, reject };
+    created.timer = setTimeout(() => flushPending(client, created), COALESCE_MS);
+    pendingRefreshes.set(client, created);
+    pending = created;
+  }
+  for (const root of roots) pending.roots.add(root);
+  return pending.promise;
+}
+
+/** Runs queued invalidations now instead of waiting for the coalescing window. */
+export function flushResourceChanges(client: QueryClient): Promise<void> {
+  const pending = pendingRefreshes.get(client);
+  if (!pending) return Promise.resolve();
+  flushPending(client, pending);
+  return pending.promise;
 }
 
 export async function refreshQueries(
