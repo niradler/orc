@@ -44,11 +44,11 @@ export function ChatActivityList({
       data-testid="chat-turn-fold"
       data-live={live || undefined}
       data-failed={fold.failed > 0 || undefined}
-      className="group/fold mb-3 text-xs text-on-surface-variant"
+      className="group/fold mb-1 text-xs text-on-surface-variant"
     >
       <summary
         data-testid="chat-turn-fold-summary"
-        className="flex min-h-8 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11 [&::-webkit-details-marker]:hidden"
+        className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-10 [&::-webkit-details-marker]:hidden"
       >
         <span data-testid="chat-turn-fold-label" className="min-w-0 truncate">
           {label}

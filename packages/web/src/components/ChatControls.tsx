@@ -1,6 +1,6 @@
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { History, PanelLeftClose, PanelLeftOpen, Plus, SquareTerminal, X } from "lucide-react";
+import { History, PanelLeftClose, PanelLeftOpen, SquarePen, SquareTerminal, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
@@ -218,7 +218,7 @@ export function ChatSessionPicker({
               home?.go({ terminalId: null });
             }}
           >
-            <Plus size={16} />
+            <SquarePen size={16} />
           </Button>
         </ActionHelp>
         <div className="mt-2 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
@@ -442,7 +442,7 @@ function SessionHistoryFrame({
       }}
     >
       <span data-testid={docked ? "chat-clear-button" : undefined} className="inline-flex">
-        <Plus size={16} />
+        <SquarePen size={16} />
       </span>
     </Button>
   );
@@ -514,7 +514,7 @@ function SessionHistoryFrame({
             onNew();
           }}
         >
-          <Plus size={16} />
+          <SquarePen size={16} />
         </Button>
       </div>
       <DialogContent
