@@ -584,7 +584,7 @@ export function ChatPanel({
                       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
                       data-testid="chat-message"
                       data-role={message.role}
-                      className="mx-auto mb-6 w-full max-w-3xl min-w-0 text-base leading-[1.65]"
+                      className="mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
                     >
                       <div
                         className={
@@ -598,7 +598,7 @@ export function ChatPanel({
                           className={
                             message.role === "user"
                               ? "sr-only"
-                              : "mb-2 text-xs font-medium text-on-surface-variant"
+                              : "mb-1 text-xs font-medium text-on-surface-variant"
                           }
                         >
                           {message.role === "user"

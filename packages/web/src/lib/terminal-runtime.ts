@@ -15,7 +15,12 @@ import {
   wheelReport,
   wheelTarget,
 } from "@/lib/terminal-mouse";
-import { writeTerminalOutput } from "@/lib/terminal-output";
+import {
+  clearOutputBuffer,
+  flushOutputBuffer,
+  queueOutputChunk,
+  writeTerminalOutput,
+} from "@/lib/terminal-output";
 import { createTerminalTextLayer, type TerminalTextLayer } from "@/lib/terminal-text-layer";
 import { attachTerminalTouchScroll } from "@/lib/terminal-touch";
 
@@ -49,6 +54,10 @@ export interface TerminalRuntime {
   retryTimer: ReturnType<typeof setTimeout> | null;
   resizeTimer: ReturnType<typeof setTimeout> | null;
   canvasObserver: ResizeObserver | null;
+  pendingOutput: Uint8Array[];
+  pendingBytes: number;
+  outputFrame: number | null;
+  onVisibilityChange: (() => void) | null;
   onFontSizeChange?: (size: number) => void;
   textInput?: TerminalTextInput | null;
 }
@@ -157,6 +166,25 @@ function scheduleResize(runtime: TerminalRuntime): void {
   runtime.resizeTimer = setTimeout(() => sendResize(runtime), RESIZE_SETTLE_MS);
 }
 
+/** ghostty answers queries inside write(), so replies to replayed history are muted. */
+function writeOutput(runtime: TerminalRuntime, data: Uint8Array): void {
+  runtime.muteReplies = runtime.replaying;
+  try {
+    writeTerminalOutput(runtime.term, data);
+  } finally {
+    runtime.muteReplies = false;
+  }
+  runtime.textLayer.schedule();
+}
+
+export function flushTerminalOutput(runtime: TerminalRuntime): void {
+  flushOutputBuffer(runtime, (data) => writeOutput(runtime, data));
+}
+
+function queueOutput(runtime: TerminalRuntime, chunk: Uint8Array): void {
+  queueOutputChunk(runtime, chunk, (data) => writeOutput(runtime, data));
+}
+
 export function createRuntime(
   id: string,
   onFontSizeChange?: (size: number) => void,
@@ -206,8 +234,17 @@ export function createRuntime(
     retryTimer: null,
     resizeTimer: null,
     canvasObserver: null,
+    pendingOutput: [],
+    pendingBytes: 0,
+    outputFrame: null,
+    onVisibilityChange: null,
     ...(onFontSizeChange ? { onFontSizeChange } : {}),
   };
+  // Frames stop in a hidden tab; a pending burst may hold a query the agent is waiting on.
+  runtime.onVisibilityChange = () => {
+    if (document.hidden) flushTerminalOutput(runtime);
+  };
+  document.addEventListener("visibilitychange", runtime.onVisibilityChange);
 
   // Keystrokes go out as binary frames; text frames are reserved for control messages.
   const encoder = new TextEncoder();
@@ -566,6 +603,8 @@ export async function connectRuntime(
 
   socket.onopen = () => {
     runtime.attempts = 0;
+    // Leftover chunks would duplicate the scrollback the server replays on connect.
+    clearOutputBuffer(runtime);
     runtime.replaying = true;
     if (runtime.everConnected) runtime.term.reset();
     runtime.everConnected = true;
@@ -576,22 +615,16 @@ export async function connectRuntime(
   socket.onmessage = (event: MessageEvent<string | ArrayBuffer>) => {
     if (runtime.disposed) return;
     if (typeof event.data !== "string") {
-      // ghostty answers queries in the data (cursor position, device attributes) synchronously
-      // inside write(). Replayed history was already answered when it was first produced, so
-      // those answers would reach the shell as stray keystrokes.
-      runtime.muteReplies = runtime.replaying;
-      try {
-        writeTerminalOutput(runtime.term, new Uint8Array(event.data));
-      } finally {
-        runtime.muteReplies = false;
-      }
-      runtime.textLayer.schedule();
+      queueOutput(runtime, new Uint8Array(event.data));
       return;
     }
     const control = parseControlFrame(event.data);
     if (control?.type === "replay-end") {
+      // The last replayed chunk must land before replies stop being muted.
+      flushTerminalOutput(runtime);
       runtime.replaying = false;
     } else if (control?.type === "exit") {
+      flushTerminalOutput(runtime);
       runtime.exitSeen = true;
       callbacks.onState(runtime.id, "exited");
       callbacks.onExit(runtime.id);
@@ -620,6 +653,11 @@ export function disposeRuntime(runtime: TerminalRuntime): void {
   runtime.retryTimer = null;
   if (runtime.resizeTimer) clearTimeout(runtime.resizeTimer);
   runtime.resizeTimer = null;
+  clearOutputBuffer(runtime);
+  if (runtime.onVisibilityChange) {
+    document.removeEventListener("visibilitychange", runtime.onVisibilityChange);
+    runtime.onVisibilityChange = null;
+  }
   const socket = runtime.socket;
   runtime.socket = null;
   if (socket) {
