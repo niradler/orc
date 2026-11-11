@@ -229,6 +229,16 @@ Start a live agent session from Telegram:
 
 This spawns a Claude Code session you can chat with directly from Telegram. Useful for quick investigations or ad-hoc tasks.
 
+Send a note to another live session without leaving the chat:
+
+```
+/send
+/send <session id> Check the failing build
+```
+
+ORC delivers the note at that session's next safe point and confirms the queue
+position. Use the Sessions view to review, reorder or cancel queued notes.
+
 ## Configuration tips
 
 ### Minimal config

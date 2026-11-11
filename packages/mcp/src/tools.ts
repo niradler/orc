@@ -43,6 +43,7 @@ import {
 } from "@orc/core/scratchpad";
 import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-archive";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
+import { SessionMessageCreateSchema, SessionMessageResultSchema } from "@orc/core/session-messages";
 import { type SkillDownload, SkillDownloadSchema } from "@orc/core/skill-download";
 import {
   createSkill as createSkillFs,
@@ -130,7 +131,22 @@ const channelEditParams = ChannelUpdateSchema.extend({
   project: projectParam,
 });
 const auditParams = scopeParams.extend({
-  entity_type: z.enum(["memory", "skill", "kb"]).optional(),
+  entity_type: z
+    .enum([
+      "memory",
+      "skill",
+      "kb",
+      "notification",
+      "human_request",
+      "job_run",
+      "task",
+      "job",
+      "rule",
+      "settings",
+      "terminal",
+      "auth",
+    ])
+    .optional(),
   session_id: z.string().min(1).max(200).optional(),
   since: z.number().int().min(0).optional(),
   limit: z.number().int().min(1).max(100).default(50),
@@ -283,7 +299,7 @@ export const toolDefinitions = [
   {
     name: "audit_list",
     description:
-      "Review central knowledge audit entries, optionally by session_id. Removed memories survive in snapshot; result_ids identify replacements. Use with the delivery section of orc-sdlc references/review-and-delivery.md.",
+      "Review central audit entries (knowledge, task, job, rule, settings, terminal, auth events), optionally by entity_type or session_id. Removed memories survive in snapshot; result_ids identify replacements. Use with the delivery section of orc-sdlc references/review-and-delivery.md.",
     inputSchema: auditParams,
   },
   {
@@ -291,6 +307,12 @@ export const toolDefinitions = [
     description:
       "Move a Claude Code or Codex session to ORC. FIRST commit and push the intended changes within the user's Git authorization. Report the pushed repository, branch and exact commit SHA, project name, source cwd and native session ID. Returns a single-use upload URL for native session files. Upload through HTTP; then use Sessions → Open in terminal. See orc-platform references/execution.md.",
     inputSchema: SessionHandoffInputSchema,
+  },
+  {
+    name: "session_send",
+    description:
+      "Send a short note to another live or idle ORC session. Target with the ORC live session id, or the agent's native session id plus backend. Delivery happens at the recipient's next safe point; it cannot approve tools or change configuration. Use the Sessions view or the user's session id for the target. Pass a stable request_id when retrying the same note.",
+    inputSchema: SessionMessageCreateSchema,
   },
   {
     name: "session_search",
@@ -1081,8 +1103,8 @@ export type ToolOptions = {
     ifRevision?: number,
   ) => ScratchpadContentUrl;
   /**
-   * Native session id of the calling agent. Stdio MCP runs inside the agent's process tree and
-   * reads it from the environment; HTTP MCP cannot see it, so it stays unset there.
+   * Native session id of the calling agent. Stdio MCP reads it from the agent's environment;
+   * HTTP MCP receives it from the `session` query parameter on the MCP URL.
    */
   agentSessionId?: string | null;
 };
@@ -1427,6 +1449,21 @@ export async function executeTool(
       input,
       resolveProjectId(project)?.id ?? null,
       options.projectScopes?.map((p) => p.id),
+    );
+  }
+  if (name === "session_send") {
+    const input = SessionMessageCreateSchema.parse(args);
+    if (!options.agentSessionId)
+      throw new ValidationError(
+        "session_send needs the calling session identity; reconnect MCP with ?session=<session id> or run inside an agent session",
+      );
+    return JSON.stringify(
+      SessionMessageResultSchema.parse(
+        await orcApi("POST", "/session-messages", {
+          body: input,
+          headers: { "X-ORC-Session": options.agentSessionId },
+        }),
+      ),
     );
   }
   if (name === "session_handoff") {

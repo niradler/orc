@@ -86,7 +86,8 @@ describe("worktree registry and cleanup", () => {
     expect(existsSync(clean)).toBe(false);
     expect(existsSync(unmerged)).toBe(true);
     expect(await git("branch", "--list", "orc/clean")).toBe("");
-  });
+    // Spawns several Git processes; the 5s default is tight on Windows under suite load.
+  }, 30_000);
   test("should detect gone upstream without treating an unmerged branch as safely merged", async () => {
     await git("remote", "add", "origin", join(folder, "remote.git"));
     await git("config", "branch.orc/wip.remote", "origin");

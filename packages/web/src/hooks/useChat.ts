@@ -874,7 +874,7 @@ function useChatController() {
             providerId: config.providerId,
             model: config.model,
             agentOptions: config.agentOptions,
-            ...(config.permissionMode && ["claude", "codex"].includes(config.agent)
+            ...(config.permissionMode && ["claude", "codex", "pi"].includes(config.agent)
               ? { permissionMode: config.permissionMode }
               : {}),
             ...(thread ? { threadId: thread.id } : { workspace }),

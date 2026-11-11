@@ -506,6 +506,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -741,6 +754,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -918,6 +944,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -1147,6 +1186,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -1297,6 +1349,19 @@ export interface paths {
                         agentOptions: {
                             [key: string]: {
                                 /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
@@ -1372,6 +1437,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -1687,6 +1765,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -1899,6 +1990,19 @@ export interface paths {
                         permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
                         agentOptions?: {
                             [key: string]: {
+                                /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
                                 /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
@@ -6106,6 +6210,19 @@ export interface paths {
                                 model: string;
                                 options?: {
                                     /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
@@ -6176,6 +6293,19 @@ export interface paths {
                             model?: string;
                             options?: {
                                 /** @enum {string} */
+                                runtime: "pi";
+                                options: {
+                                    /** @enum {string} */
+                                    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    steeringMode?: "all" | "one-at-a-time";
+                                    /** @enum {string} */
+                                    followUpMode?: "all" | "one-at-a-time";
+                                    autoCompaction?: boolean;
+                                    autoRetry?: boolean;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
@@ -6240,6 +6370,19 @@ export interface paths {
                                 /** @default  */
                                 model: string;
                                 options?: {
+                                    /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
                                     /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
@@ -6531,6 +6674,19 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
@@ -6631,6 +6787,19 @@ export interface paths {
                             agentOptions?: {
                                 [key: string]: {
                                     /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
@@ -6720,6 +6889,19 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "claude-sdk";
                                         options: {
@@ -14219,7 +14401,7 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global" | "all";
-                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task";
+                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task" | "job" | "rule" | "terminal" | "auth";
                     session_id?: string;
                     since?: number | null;
                     limit?: number;
@@ -17799,6 +17981,10 @@ export interface paths {
                         live_session_id?: string;
                         /** @description Start an agent in a new git worktree of the cwd's repo */
                         worktree?: boolean;
+                        /** @description Project whose workspace environment and ports this terminal uses */
+                        project_id?: string;
+                        /** @description Run the project's dev script in a shell and publish the first printed URL as a preview */
+                        dev?: boolean;
                         setup?: {
                             name: string;
                             packages: string[];
@@ -18104,6 +18290,45 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List prepared workspaces with setup status, port block and preview URL */
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                    path?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Workspaces */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspacePage"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -19655,6 +19880,18 @@ export interface components {
             obsidian_path: string | null;
             max_workers: number | null;
             upload_directory: string | null;
+            workspace: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -19701,6 +19938,18 @@ export interface components {
             obsidian_path?: string;
             max_workers?: number;
             upload_directory?: string | null;
+            workspace?: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
         };
         UpdateProject: {
             name?: string;
@@ -19740,6 +19989,18 @@ export interface components {
             obsidian_path?: string;
             max_workers?: number | null;
             upload_directory?: string | null;
+            workspace?: {
+                setup_script: string | null;
+                dev_script: string | null;
+                setup_timeout_secs: number;
+                port_base: number | null;
+                port_count: number;
+                env: {
+                    name: string;
+                    value: string | null;
+                    secret: boolean;
+                }[];
+            };
         };
         ProjectComment: {
             id: string;
@@ -20451,6 +20712,19 @@ export interface components {
                 backend: string;
                 options?: {
                     /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
+                    /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
                         /** @enum {string} */
@@ -20560,6 +20834,19 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
@@ -20674,6 +20961,19 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "pi";
+                    options: {
+                        /** @enum {string} */
+                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                        /** @enum {string} */
+                        steeringMode?: "all" | "one-at-a-time";
+                        /** @enum {string} */
+                        followUpMode?: "all" | "one-at-a-time";
+                        autoCompaction?: boolean;
+                        autoRetry?: boolean;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "claude-sdk";
                     options: {
@@ -20805,8 +21105,33 @@ export interface components {
             exit_code: number | null;
             pid: number | null;
             live_session_id: string | null;
+            project_id: string | null;
+            worktree_path: string | null;
+            dev: boolean;
+            preview_url: string | null;
             /** Format: date-time */
             created_at: string;
+        };
+        WorkspacePage: {
+            workspaces: components["schemas"]["Workspace"][];
+        };
+        Workspace: {
+            worktree_path: string;
+            project_id: string | null;
+            repo_root: string | null;
+            git_branch: string | null;
+            host: string | null;
+            /** @enum {string} */
+            setup_status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+            setup_output: string | null;
+            setup_started_at: number | null;
+            setup_ended_at: number | null;
+            port_base: number | null;
+            port_count: number | null;
+            preview_url: string | null;
+            dev_terminal_id: string | null;
+            created_at: number;
+            updated_at: number;
         };
         Worktree: {
             path: string;

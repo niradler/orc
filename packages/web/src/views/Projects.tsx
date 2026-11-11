@@ -1,4 +1,10 @@
 import { DEFAULT_GITHUB_STATUS_LABELS } from "@orc/core/github-sync";
+import {
+  defaultWorkspaceEnvironment,
+  parseWorkspaceEnvironment,
+  type WorkspaceEnvironment,
+  WorkspaceEnvironmentSchema,
+} from "@orc/core/workspace-settings";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -38,6 +44,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { FormStepActions, FormStepPanel, FormSteps, useFormSteps } from "@/components/useFormSteps";
 import { ViewHeader } from "@/components/ViewHeader";
+import { WorkspaceEnvironmentFields } from "@/components/WorkspaceEnvironmentFields";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useListSelection } from "@/hooks/useListSelection";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -525,6 +532,7 @@ function EditProjectDialog({
     [
       { id: "details", label: "Details" },
       { id: "configuration", label: "Configuration" },
+      { id: "workspace", label: "Workspace" },
     ],
     open,
   );
@@ -541,6 +549,11 @@ function EditProjectDialog({
   const [maxWorkers, setMaxWorkers] = useState(
     project.max_workers != null ? String(project.max_workers) : "",
   );
+  const [workspace, setWorkspace] = useState<WorkspaceEnvironment>(() =>
+    project.workspace
+      ? parseWorkspaceEnvironment(project.workspace)
+      : defaultWorkspaceEnvironment(),
+  );
   const updateProject = useUpdateProject();
   const { data: summary } = useProjectSummary(project.id);
   const dirty =
@@ -554,6 +567,7 @@ function EditProjectDialog({
       githubSync,
       maxWorkers,
       uploadDirectory,
+      workspace,
     ]) !==
     JSON.stringify([
       project.name,
@@ -565,11 +579,19 @@ function EditProjectDialog({
       project.github_sync ?? { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
       project.max_workers != null ? String(project.max_workers) : "",
       project.upload_directory ?? "",
+      project.workspace
+        ? parseWorkspaceEnvironment(project.workspace)
+        : defaultWorkspaceEnvironment(),
     ]);
 
   const handleSubmit = (e: React.FormEvent, closeAfterSave: () => void) => {
     e.preventDefault();
     if (!name.trim()) return;
+    const parsedWorkspace = WorkspaceEnvironmentSchema.safeParse(workspace);
+    if (!parsedWorkspace.success) {
+      steps.invalid("workspace", parsedWorkspace.error.issues[0].message);
+      return;
+    }
     const input: UpdateProjectInput & { id: string } = {
       id: project.id,
       name: name.trim(),
@@ -586,6 +608,7 @@ function EditProjectDialog({
       github_sync: githubSync,
       max_workers: maxWorkers ? Number(maxWorkers) : null,
       upload_directory: uploadDirectory.trim() || null,
+      workspace: parsedWorkspace.data,
     };
     updateProject.mutate(input, {
       onSuccess: closeAfterSave,
@@ -754,6 +777,9 @@ function EditProjectDialog({
                       className="bg-background border-control-border text-on-surface font-body text-sm"
                     />
                   </div>
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="workspace">
+                  <WorkspaceEnvironmentFields value={workspace} onChange={setWorkspace} />
                 </FormStepPanel>
                 {updateProject.error && (
                   <p role="alert" className="text-sm text-error md:col-span-2">

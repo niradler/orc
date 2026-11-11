@@ -27,6 +27,7 @@ const question = {
 
 test("should expire unavailable and undelivered requests after 72 hours while retaining their audit", () => {
   const { db, store, advance } = fixture();
+  loadConfig({ preferences: { attention_retention_hours: 72 } });
   try {
     const request = store.create(question);
     store.respond(request.id, 1, { kind: "question", answer: "Blue" });
@@ -40,6 +41,7 @@ test("should expire unavailable and undelivered requests after 72 hours while re
     expect(store.get(request.id).delivered_at).toBeNull();
     expect(() => store.respond(request.id, 3, { kind: "question", answer: "late" })).toThrow();
   } finally {
+    resetConfig();
     db.close();
   }
 });

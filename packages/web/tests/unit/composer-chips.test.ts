@@ -158,3 +158,19 @@ describe("long paste", () => {
     expect(pastedTextName(["Pasted-Text-1.txt", "pasted-text-2.txt"])).toBe("pasted-text-3.txt");
   });
 });
+
+test("Pi legacy automatic approval displays full access consistently with the native adapter", () => {
+  expect(effectivePermissionMode({ ...defaults, agent: "pi", autoApprove: true })).toBe(
+    "bypassPermissions",
+  );
+});
+
+test("Pi thinking level is visible in the selected model label", () => {
+  expect(
+    agentEffort({
+      ...defaults,
+      agent: "pi",
+      agentOptions: { pi: { runtime: "pi", options: { thinkingLevel: "high" } } },
+    }),
+  ).toBe("High");
+});

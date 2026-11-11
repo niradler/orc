@@ -698,7 +698,7 @@ export function ChatPanel({
                     >
                       Allow once
                     </button>
-                    {["claude", "codex"].includes(config.agent) && (
+                    {["claude", "codex", "pi"].includes(config.agent) && (
                       <button
                         type="button"
                         data-testid="chat-permission-allow-all"

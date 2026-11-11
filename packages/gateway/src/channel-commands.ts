@@ -4,8 +4,10 @@ import { ChannelBuiltinCommands, channelCommand, channelCommands } from "@orc/co
 import { enabledAgents } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { sessionMessageBackend } from "@orc/core/session-messages";
 import type { GatewayMode } from "@orc/core/types";
 import { getSqlite } from "@orc/db/client";
+import { SessionMessageStore } from "@orc/db/session-messages";
 import {
   createGatewaySession,
   getActiveGatewaySession,
@@ -232,6 +234,63 @@ export async function channelDirectCommand(
       text: `Model: ${model ?? "provider default"}. It takes effect on the next message.`,
       buttons: channelControls(),
     };
+  }
+  if (command.name === "send") {
+    const allowed = input.allowedProjects;
+    const sessions = getSqlite()
+      .query<
+        {
+          id: string;
+          backend: string;
+          title: string | null;
+          runtime_session_id: string;
+          status: string;
+        },
+        string[]
+      >(
+        `SELECT id, backend, title, runtime_session_id, status FROM gateway_sessions
+         WHERE status <> 'stopped' AND runtime_session_id IS NOT NULL
+         ${allowed.length ? `AND project_id IN (${allowed.map(() => "?").join(",")})` : ""}
+         ORDER BY COALESCE(last_activity_at, 0) DESC LIMIT 40`,
+      )
+      .all(...allowed);
+    const [targetArg = "", ...rest] = command.args.split(/\s+/).filter(Boolean);
+    if (!targetArg || !rest.length)
+      return {
+        text: targetArg
+          ? "Send the note as /send <session id> <message>."
+          : "Choose a live session, then send /send <session id> <message>.",
+        buttons: [
+          ...sessions.slice(page * 8, page * 8 + 8).map((session) => [
+            {
+              label: `${sessionMessageBackend(session.backend)} · ${session.title?.slice(0, 24) ?? session.id.slice(-6)}`,
+              value: `/send ${session.id}`,
+            },
+          ]),
+          [{ label: "Chat controls", value: "/status" }],
+        ],
+      };
+    const target =
+      sessions.find((session) => session.id === targetArg) ??
+      (/^\d+$/.test(targetArg)
+        ? sessions[Number(targetArg) - 1]
+        : sessions.find((session) => session.id.endsWith(targetArg)));
+    if (!target) return { text: "Session is unavailable. Use /send to list live sessions." };
+    try {
+      const queued = new SessionMessageStore(getSqlite()).create(
+        { session_id: target.id, body: rest.join(" ") },
+        { kind: "channel", label: "human relay (channel chat)" },
+      );
+      return {
+        text: `Queued message ${queued.id} for ${sessionMessageBackend(target.backend)} session ${target.id}. ORC delivers it at that session's next safe point.`,
+        buttons: channelControls(),
+      };
+    } catch (error) {
+      return {
+        text: error instanceof Error ? error.message : "Could not queue that message.",
+        buttons: channelControls(),
+      };
+    }
   }
   if (command.name === "session" || command.name === "sessions") {
     const [operation = "list", argument = ""] =

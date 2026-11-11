@@ -229,7 +229,7 @@ Separate from connecting your own agent: ORC can start agents for tasks, jobs an
 orc doctor
 ```
 
-Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `opencode`, `acpx`, `acp`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
+Registered backends: `claude` (Anthropic SDK, default), `claude-cli`, `codex-cli`, `cursor`, `opencode`, `pi`, `acpx`, `acp`, `agentapi`, `a2a`. Set the default with `agent_loop.default_backend`. See [Configuration](./configuration.md).
 
 
 ## Capabilities and direct ACP
@@ -322,3 +322,11 @@ rejects new approval callbacks while cancellation completes, including when auto
 approvals were enabled. ACP requests while idle are also cancelled. Steering saves
 its intent before native delivery and reuses a request ID on retry; a delivery warning
 means to inspect the current response before sending another message.
+
+### Pi native RPC
+
+Select **Pi** as a named coding provider to use the native `pi --mode rpc` backend.
+Pi 1.5.2 or newer must be installed and authenticated on the execution host.
+This path uses Pi's own RPC protocol and an ORC session extension for permissions
+and scoped MCP; it does not require ACPX or `pi-acp`.
+See [Pi configuration and capabilities](./configuration.md#pi).
