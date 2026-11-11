@@ -132,16 +132,18 @@ function publish(
   });
 }
 
-// One session with mixed outcomes collapses into a grouped summary row.
+// One session with a question and its outcome collapses into a grouped summary
+// row. agent.finished supersedes older finished rows and no production flow
+// publishes agent.failed, so the group pairs a resolved question with finished.
 publish(
-  "agent.failed",
+  "agent.question",
   "demo-live-3",
   "Booking sheet jumps",
-  "Provider exited with code 1.",
+  "Which layout should the booking sheet use?",
   "needs-you",
   "/sessions?session=demo-live-3",
   2,
-  true,
+  false,
   console_.id,
 );
 publish(
