@@ -158,11 +158,12 @@ test("should test both sides of a cross-package rename and preserve unusual path
   }
 });
 
-test("should keep automatic runner execution disabled until public-PR isolation is implemented", () => {
+test("should keep fork pull requests off the homelab runner until isolation is implemented", () => {
   const sdkRequire = createRequire(join(root, "packages/sdk/package.json"));
   const openapiRequire = createRequire(sdkRequire.resolve("openapi-typescript"));
   const redoclyRequire = createRequire(openapiRequire.resolve("@redocly/openapi-core"));
   const yaml = redoclyRequire("js-yaml") as { load: (source: string) => unknown };
+  const sameRepoGuard = "github.event.pull_request.head.repo.full_name == github.repository";
   for (const name of ["ci.yml", "e2e.yml"]) {
     const source = readFileSync(join(root, ".github/workflows", name), "utf8");
     const workflow = yaml.load(source) as {
@@ -170,13 +171,17 @@ test("should keep automatic runner execution disabled until public-PR isolation 
       permissions: Record<string, string>;
       jobs: Record<string, { if?: string }>;
     };
-    expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
+    expect(Object.keys(workflow.on)).toEqual(
+      name === "ci.yml" ? ["pull_request", "workflow_dispatch"] : ["workflow_dispatch"],
+    );
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(source).not.toContain("secrets.");
+    expect(source).not.toContain("pull_request_target");
     for (const job of Object.values(workflow.jobs)) {
       expect(job.if).toContain("github.actor == 'niradler'");
       expect(job.if).toContain("github.triggering_actor == 'niradler'");
       expect(job.if).toContain("github.repository == 'niradler/orc'");
+      if (Object.keys(workflow.on).includes("pull_request")) expect(job.if).toContain(sameRepoGuard);
     }
   }
   const source = readFileSync(join(root, ".github/homelab-runner/compose.yml"), "utf8");
@@ -188,26 +193,32 @@ test("should keep automatic runner execution disabled until public-PR isolation 
   expect(source).not.toContain("ACCESS_TOKEN");
 });
 
-test("should restrict every workflow job and rerun to Nir without automatic PR triggers", () => {
+test("should restrict every workflow job and rerun to Nir", () => {
   const sdkRequire = createRequire(join(root, "packages/sdk/package.json"));
   const openapiRequire = createRequire(sdkRequire.resolve("openapi-typescript"));
   const redoclyRequire = createRequire(openapiRequire.resolve("@redocly/openapi-core"));
   const yaml = redoclyRequire("js-yaml") as { load: (source: string) => unknown };
+  const allowedTriggers: Record<string, string[]> = {
+    "ci.yml": ["pull_request", "workflow_dispatch"],
+    "release-desktop.yml": ["push"],
+  };
   for (const name of readdirSync(join(root, ".github/workflows"))) {
     if (!name.endsWith(".yml") && !name.endsWith(".yaml")) continue;
-    const workflow = yaml.load(readFileSync(join(root, ".github/workflows", name), "utf8")) as {
+    const source = readFileSync(join(root, ".github/workflows", name), "utf8");
+    const workflow = yaml.load(source) as {
       on: Record<string, unknown>;
       jobs: Record<string, { if?: string }>;
     };
-    expect(Object.keys(workflow.on)).toEqual(
-      name === "release-desktop.yml" ? ["push"] : ["workflow_dispatch"],
-    );
+    expect(Object.keys(workflow.on)).toEqual(allowedTriggers[name] ?? ["workflow_dispatch"]);
+    expect(source).not.toContain("pull_request_target");
     for (const job of Object.values(workflow.jobs)) {
       const conditions = job.if?.split(/\s*&&\s*/);
-      expect(job.if).not.toContain("||");
       expect(conditions).toContain("github.actor == 'niradler'");
       expect(conditions).toContain("github.triggering_actor == 'niradler'");
       expect(conditions).toContain("github.repository == 'niradler/orc'");
+      // Only the pull request gate may branch on the event name, and only
+      // together with the same-repository head guard asserted above.
+      if (!Object.keys(workflow.on).includes("pull_request")) expect(job.if).not.toContain("||");
     }
   }
 });

@@ -1,4 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { globalConfigPath, resetConfig } from "@orc/core/config";
+import { initializeAgentPreferences } from "@orc/core/provider-service";
 import type { createApp } from "../server.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -55,6 +60,45 @@ describe("/chat/stream contract", () => {
       body: JSON.stringify({ agent: "claude" }),
     });
     expect(res.status).toBe(400);
+  });
+
+  test("runs a mocked turn even when the agent provider is disabled", async () => {
+    // The browser suites chat through ORC_E2E_CHAT_MOCK with no agent CLI
+    // installed, so an installed-but-disabled profile must not block the turn.
+    const home = mkdtempSync(join(tmpdir(), "orc-chat-mock-"));
+    const previousHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    mkdirSync(join(home, ".orc"), { recursive: true });
+    writeFileSync(globalConfigPath(), "{}");
+    resetConfig();
+    initializeAgentPreferences(() => null);
+    resetConfig();
+    process.env.ORC_E2E_CHAT_MOCK = "1";
+    try {
+      const res = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Reply with exactly: MOCK-OK." }],
+          agent: "codex",
+          model: "",
+          agentOptions: {},
+          workspace: { host: null, cwd: "", worktree: false },
+          context: { source: "webchat", route: "/activity?project=all" },
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("MOCK-OK");
+    } finally {
+      process.env.ORC_E2E_CHAT_MOCK = "1";
+      for (const [key, value] of Object.entries(previousHome)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      resetConfig();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 

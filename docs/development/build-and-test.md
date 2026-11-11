@@ -49,11 +49,11 @@ Windows browser fixtures explicitly launch real PowerShell with `-NoLogo -NoProf
 
 ## Homelab runner
 
-Automatic PR and master workflows are deliberately disabled. The owner can explicitly dispatch trusted code to the existing `homelab` runner; local `ci:pr` and `ci:full` are the normal gates. The checked-in `.github/homelab-runner` scaffold is inactive by default, has no network access and receives no registration credential. It is not an installation recipe for an untrusted-PR runner.
+Pull requests from a branch in `niradler/orc` opened by the owner run the **CI** workflow on the `homelab` runner; the owner can also dispatch it manually. The job requires the owner as actor and triggering actor and a same-repository head branch, so fork pull requests and pushes to `master` start no job. Local `ci:pr` and `ci:full` remain the normal gates. The checked-in `.github/homelab-runner` scaffold is inactive by default, has no network access and receives no registration credential. It is not an installation recipe for an untrusted-PR runner.
 
-The manual **CI** workflow retains the unit-only gates validated by the homelab setup: lint, format, typecheck, domain/security checks, sequential package tests and web unit tests. Browser tests are a separate manual **E2E** workflow; `ci:full` combines both locally and remains required before merge. Changing the runner's label does not by itself verify browser-system dependencies or full-suite timing on that image.
+The **CI** workflow runs `ci:pr` on the homelab runner: lint, format, typecheck, domain/security checks, affected package tests and browser sanity. It starts a pull request for a same-repository branch, and the owner can dispatch it on any trusted branch. Browser tests beyond sanity are a separate manual **E2E** workflow; `ci:full` combines both locally and remains required before merge. Playwright browsers are baked into the runner image at the pinned `@playwright/test` version and `PLAYWRIGHT_BROWSERS_PATH` is read-only, so both workflows check the baked browser instead of downloading one: a Playwright upgrade needs a runner image rebuild. Changing the runner's label does not by itself verify browser-system dependencies or full-suite timing on that image.
 
-Before enabling automatic runs, implement and verify all of these requirements:
+Before enabling fork pull request runs, implement and verify all of these requirements:
 
 - Repository Settings → Actions → General → Fork pull request workflows: require approval for all outside collaborators.
 - PR workflows use `pull_request`, never `pull_request_target`, with `permissions: contents: read`, no secrets and checkout credentials disabled after checkout.
@@ -61,11 +61,11 @@ Before enabling automatic runs, implement and verify all of these requirements:
 - Registration uses a short-lived credential outside the job's environment. Confirm the workflow's requested labels match the actual runner labels.
 - Add a successful full-suite gate on the candidate merge revision before merge, rather than relying on a run after a push to master. Keep `ci:full` as the local equivalent and the release gate.
 
-Only after those checks pass, and Nir explicitly authorizes automatic execution, should an isolated stack be installed under `/opt/homelab/stacks/gha-runner` and automatic workflow triggers restored. No repository variable can enable PR execution in the current workflow. This PR does not alter the live runner, repository approval settings, firewall or homelab services.
+Only after those checks pass, and Nir explicitly authorizes automatic execution, should fork pull request runs be enabled on an isolated stack installed under `/opt/homelab/stacks/gha-runner`.
 
 ### Manual homelab CI
 
-The Actions `CI` workflow runs `ci:pr` on the `homelab` runner when dispatched manually by `niradler` in `niradler/orc`. Select the trusted feature branch in the dispatch UI: a full-history checkout compares it with `origin/master`, tests affected packages and dependents, and always runs browser sanity. Dispatching master itself runs global checks and sanity, since it has no package diff. Shared infrastructure changes still run all package units. It uses Bun 1.4.4, grants read-only repository access and does not persist checkout credentials. Jobs stop after 60 minutes. Automatic PR runs stay disabled; this workflow does not establish isolation for untrusted PR code. The manual E2E workflow runs the complete browser suite.
+The Actions `CI` workflow runs `ci:pr` on the `homelab` runner for a same-repository pull request and when dispatched manually by `niradler` in `niradler/orc`. A full-history checkout compares the merge revision with `origin/master`, tests affected packages and dependents, and always runs browser sanity. Dispatching master itself runs global checks and sanity, since it has no package diff. Shared infrastructure changes still run all package units. It uses Bun 1.4.4, grants read-only repository access and does not persist checkout credentials. Jobs stop after 60 minutes. Fork PR runs stay disabled; this workflow does not establish isolation for untrusted PR code. The manual E2E workflow runs the complete browser suite.
 
 Every checked-in workflow job, including Desktop, Docs and tag-release builds, requires both `github.actor` and `github.triggering_actor` to be `niradler`, in `niradler/orc`. A different user rerunning an owner's run cannot start jobs. Release desktop gaps keeps its existing `v*` tag trigger, subject to the same owner checks. These conditions gate jobs; GitHub may still show a skipped workflow run requested by another collaborator. Action dependencies are pinned to full commit SHAs verified in their upstream repositories. Checkout credentials are not persisted. Tokens default to contents-read: only the Docs deploy job receives Pages-write and OIDC permissions, while its build job receives Pages-read. Concurrency groups include the triggering actor so a skipped unauthorized dispatch cannot cancel an owner's running gate. These practices follow [GitHub's secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use). Local hooks are developer checks and can be bypassed with Git's `--no-verify`; they are not a server-side merge protection rule.
 
@@ -88,6 +88,8 @@ bun run test:e2e:ui                 # headed, with the picker
 ```
 
 Specs live in `packages/web/tests/e2e/` and select elements by `data-testid` only.
+
+The runner isolates `HOME`, so each shard also fills in a stub for any agent binary it cannot resolve on `PATH` (`codex`, `claude`, `cursor-agent`, `gemini`, `opencode`). Provider detection is presence-only, and specs such as `agent-dropdowns` and `terminal-hosts` assert the controls for installed agents, so a lean CI image would otherwise hide them and the suite would pass only on a developer machine. Stubs are skipped where the real binary exists.
 
 ## Build
 

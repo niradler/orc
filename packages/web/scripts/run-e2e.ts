@@ -1,6 +1,6 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { reserveLoopbackPort, withRunningApis } from "./api-fixture.js";
 import { stopOwnedProcess } from "./stop-process";
 import { resolveTestDatabasePath } from "./test-database.js";
@@ -75,6 +75,30 @@ type Shard = {
   api: Bun.Subprocess | undefined;
 };
 
+// Provider detection is PATH presence only (Bun.which), and the suite asserts the
+// controls for installed agents. Stub each agent binary this machine lacks so a
+// lean CI image exercises the same UI as a developer machine, without a login.
+const AGENT_BINARIES = ["codex", "claude", "cursor-agent", "gemini", "opencode"];
+
+function agentPath(home: string): string {
+  const inherited = process.env.PATH ?? process.env.Path ?? "";
+  const stubDir = join(home, ".agent-stubs");
+  const extension = process.platform === "win32" ? ".cmd" : "";
+  const source = process.platform === "win32" ? "@echo 0.0.0\r\n" : "#!/bin/sh\necho 0.0.0\n";
+  let stubbed = false;
+  for (const binary of AGENT_BINARIES) {
+    if (Bun.which(binary, { PATH: inherited })) continue;
+    mkdirSync(stubDir, { recursive: true });
+    writeFileSync(join(stubDir, `${binary}${extension}`), source, { mode: 0o755 });
+    stubbed = true;
+  }
+  return stubbed ? `${stubDir}${delimiter}${inherited}` : inherited;
+}
+
+function pathKey(): string {
+  return Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
+}
+
 async function createShard(index: number): Promise<Shard> {
   const reservation = await reserveLoopbackPort(Number(process.env.PW_API_PORT ?? 0));
   const port = String(reservation.port);
@@ -101,6 +125,7 @@ async function createShard(index: number): Promise<Shard> {
     api: undefined,
     env: {
       ...process.env,
+      [pathKey()]: agentPath(home),
       HOME: home,
       USERPROFILE: home,
       APPDATA: join(home, "AppData", "Roaming"),
