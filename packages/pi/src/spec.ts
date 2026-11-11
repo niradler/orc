@@ -10,6 +10,8 @@ export type SpecConfig = Pick<
   "apiBase" | "mode" | "secret" | "secretSource" | "command"
 >;
 
+export const SPEC_SECRET_ENV = "PORC_SPEC_SECRET";
+
 function quote(value: string): string {
   return /[\s"]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
 }
@@ -23,8 +25,8 @@ function envArgs(
   const env: Array<[string, string]> = [["ORC_API_BASE", config.apiBase]];
   if (project) env.push(["ORC_ACTIVE_PROJECT", project]);
   if (sessionId) env.push(["ORC_SESSION_ID", sessionId]);
-  // An ORC-config secret is already readable by the child; avoid putting it in argv again.
-  if (config.secret && config.secretSource !== "orc") env.push(["ORC_API_SECRET", config.secret]);
+  if (config.secret && config.secretSource !== "orc")
+    env.push(["ORC_API_SECRET", `env:${SPEC_SECRET_ENV}`]);
   return env.flatMap(([key, value]) => ["--env", `${key}=${value}`]);
 }
 
@@ -103,6 +105,7 @@ export async function runSpec(
   input: SpecAction,
   options: { project?: string; sessionId?: string; cwd?: string } = {},
 ): Promise<{ ok: boolean; output: string }> {
+  if (config.secret) process.env[SPEC_SECRET_ENV] = config.secret;
   const result = await exec(
     "spec",
     buildSpecArgs(config, options.project, input, options.sessionId),

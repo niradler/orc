@@ -37,7 +37,7 @@ describe("buildSpecArgs", () => {
         "--env",
         "ORC_SESSION_ID=ses_1",
         "--env",
-        "ORC_API_SECRET=s3cret",
+        "ORC_API_SECRET=env:PORC_SPEC_SECRET",
       ]),
     );
   });
@@ -67,7 +67,12 @@ describe("buildSpecArgs", () => {
 
   test("omits the secret when ORC already reads it from its own config", () => {
     const args = buildSpecArgs({ ...config, secretSource: "orc" }, "orc", { action: "list" });
-    expect(args).not.toContain("ORC_API_SECRET=s3cret");
+    expect(args.join(" ")).not.toContain("ORC_API_SECRET");
+  });
+
+  test("never puts the literal secret in argv", () => {
+    const args = buildSpecArgs(config, "orc", { action: "list" });
+    expect(args.join(" ")).not.toContain("s3cret");
   });
 
   test("quotes commands that contain spaces", () => {
@@ -91,7 +96,7 @@ test("buildSpecRegistration registers the ORC source for every agent", () => {
     "--env",
     "ORC_SESSION_ID=ses_1",
     "--env",
-    "ORC_API_SECRET=s3cret",
+    "ORC_API_SECRET=env:PORC_SPEC_SECRET",
     "--description",
     "ORC project context, memories, skills and tasks",
   ]);

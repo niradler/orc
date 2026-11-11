@@ -63,6 +63,7 @@ export class OrcApiClient {
     private readonly base: string,
     private readonly secret: string | undefined,
     private readonly timeoutMs: number,
+    private readonly secretSource?: string,
   ) {}
 
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
@@ -71,7 +72,7 @@ export class OrcApiClient {
     headers.set("Accept", "application/json");
     let response: Response;
     try {
-      response = await fetch(`${this.base}${path}`, {
+      response = await fetch(`${this.base}/api${path}`, {
         ...init,
         headers,
         signal: AbortSignal.timeout(this.timeoutMs),
@@ -91,8 +92,12 @@ export class OrcApiClient {
       } catch {
         // Plain-text errors are already handled.
       }
+      const hint =
+        response.status === 401
+          ? ` (${this.secret ? `secret from ${this.secretSource ?? "config"} was rejected; set PORC_API_SECRET to the secret of ${this.base}` : `no secret configured; set PORC_API_SECRET or api.secret in ~/.orc/config.json`})`
+          : "";
       throw new OrcApiError(
-        `${path} failed (${response.status})${message ? `: ${message.slice(0, 500)}` : ""}`,
+        `/api${path} failed (${response.status})${message ? `: ${message.slice(0, 500)}` : ""}${hint}`,
         response.status,
       );
     }

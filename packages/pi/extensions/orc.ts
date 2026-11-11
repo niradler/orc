@@ -278,7 +278,12 @@ async function initialize(
     return;
   }
 
-  session.api = new OrcApiClient(config.apiBase, config.secret, config.timeoutMs);
+  session.api = new OrcApiClient(
+    config.apiBase,
+    config.secret,
+    config.timeoutMs,
+    config.secretSource,
+  );
   session.client = new OrcMcpClient(config, session.sessionId, ctx.cwd);
   session.health = (await session.api.health()) ? "up" : "down";
 

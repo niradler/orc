@@ -13,6 +13,33 @@ function serve(handler: (request: Request) => Response) {
   return `http://127.0.0.1:${server.port}`;
 }
 
+describe("OrcApiClient paths", () => {
+  test("every request goes under /api", async () => {
+    const paths: string[] = [];
+    const base = serve((request) => {
+      const url = new URL(request.url);
+      paths.push(url.pathname + url.search);
+      return new Response(JSON.stringify({ skills: [], projects: [] }), { status: 200 });
+    });
+    const api = new OrcApiClient(base, undefined, 1000);
+    await api.listSkills();
+    await api.projectRoots();
+    expect(paths).toEqual(["/api/skills?scope=all&limit=500", "/api/skills/project-folders"]);
+  });
+});
+
+describe("OrcApiClient auth errors", () => {
+  test("a 401 names the secret source and the fix without leaking the secret", async () => {
+    const base = serve(() => new Response("Unauthorized", { status: 401 }));
+    const error = await new OrcApiClient(base, "topsecret", 1000, "env")
+      .listSkills()
+      .catch((e) => e);
+    expect(error.message).toContain("/api/skills");
+    expect(error.message).toContain("secret from env was rejected");
+    expect(error.message).not.toContain("topsecret");
+  });
+});
+
 describe("OrcApiClient.health", () => {
   test("checks /api/health with the bearer secret", async () => {
     const seen: Array<{ path: string; auth: string | null }> = [];
