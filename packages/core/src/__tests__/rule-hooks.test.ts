@@ -47,3 +47,42 @@ test("normalizes native events without claiming a post-tool event can block exec
   ).toThrow("stable");
   expect(() => normalizeRuleHook("claude", "unknown", {})).toThrow("Unsupported");
 });
+
+test("normalizes Pi extension events and returns a blocking decision for tool calls", () => {
+  const event = normalizeRuleHook("pi", "tool_call", {
+    session_id: "s",
+    tool_call_id: "call-1",
+    cwd: process.cwd(),
+    tool_name: "bash",
+    tool_input: { command: "ssh prod" },
+  });
+  expect(event.phase).toBe("pre_tool");
+  expect(event.input.command).toBe("ssh prod");
+  const output = ruleHookOutput("pi", event, {
+    decision: "deny",
+    reasons: [{ rule_id: "no-ssh", reason: "No SSH from agents" }],
+    context: [],
+    jobs: [],
+  });
+  expect(output).toEqual({
+    hookSpecificOutput: {
+      hookEventName: "tool_call",
+      permissionDecision: "deny",
+      permissionDecisionReason: "no-ssh: No SSH from agents",
+    },
+  });
+  const prompt = normalizeRuleHook("pi", "input", {
+    session_id: "s",
+    cwd: process.cwd(),
+    prompt: "hello",
+  });
+  expect(prompt.phase).toBe("prompt_submit");
+  expect(
+    ruleHookOutput("pi", prompt, {
+      decision: "deny",
+      reasons: [{ rule_id: "r", reason: "No" }],
+      context: [],
+      jobs: [],
+    }),
+  ).toEqual({ decision: "block", reason: "r: No" });
+});

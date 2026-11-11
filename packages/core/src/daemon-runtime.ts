@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { z } from "zod";
-import { userHome } from "./home.js";
+import { orcHome } from "./home.js";
 
 const DaemonRuntimeSchema = z.object({
   pid: z.number().int().positive(),
@@ -25,7 +25,7 @@ const DaemonRuntimeSchema = z.object({
 export type DaemonRuntime = z.infer<typeof DaemonRuntimeSchema>;
 
 export function daemonHome(): string {
-  return process.env.ORC_HOME ?? join(userHome(), ".orc");
+  return orcHome();
 }
 
 export function canonicalPath(path: string): string {

@@ -30,6 +30,7 @@ const agentNames: Record<RuleHookBackend, string> = {
   cursor: "Cursor",
   gemini: "Gemini CLI",
   codex: "Codex",
+  pi: "Pi",
 };
 
 export function EventRuleEditor({

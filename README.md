@@ -48,9 +48,10 @@ curl -L https://github.com/niradler/orc/releases/latest/download/orc-mac-arm64 -
 # npm (needs Bun >= 1.4.4)
 npm install -g orc-ai
 
-# Docker
+# Docker (orc-data holds the database, config, secret and knowledge; add
+# -v orc-home:/home/bun for agent CLI logins and ~/.orc flows/agents/packages)
 docker run -d --name orc -p 127.0.0.1:7700:7700 \
-  -v orc-data:/data -v orc-home:/home/bun \
+  -v orc-data:/data \
   -e ORC_API_SECRET=$(openssl rand -hex 32) niradler/orc:latest
 ```
 

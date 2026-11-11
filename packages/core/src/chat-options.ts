@@ -160,6 +160,22 @@ export const ClaudeChatOptionsSchema = z
 export type ClaudeChatOptions = z.infer<typeof ClaudeChatOptionsSchema>;
 
 export const ChatAgentOptionsSchema = z.discriminatedUnion("runtime", [
+  z
+    .object({
+      runtime: z.literal("pi"),
+      options: z
+        .object({
+          thinkingLevel: z
+            .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+            .optional(),
+          steeringMode: z.enum(["all", "one-at-a-time"]).optional(),
+          followUpMode: z.enum(["all", "one-at-a-time"]).optional(),
+          autoCompaction: z.boolean().optional(),
+          autoRetry: z.boolean().optional(),
+        })
+        .strict(),
+    })
+    .strict(),
   z.object({ runtime: z.literal("claude-sdk"), options: ClaudeChatOptionsSchema }).strict(),
   z
     .object({
@@ -178,6 +194,7 @@ export type ChatAgentOptions = z.infer<typeof ChatAgentOptionsSchema>;
 export function chatRuntime(agent: string): ChatAgentOptions["runtime"] {
   if (agent === "claude") return "claude-sdk";
   if (agent === "codex") return "codex";
+  if (agent === "pi") return "pi";
   return "acpx";
 }
 export const ChatAgentOptionsMapSchema = z

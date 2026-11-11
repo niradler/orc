@@ -38,7 +38,6 @@ import { registerBackend } from "./registry.js";
 import {
   createRulesHook,
   createSessionMessagesHook,
-  sessionMessagesContext,
   sessionStartRuleContext,
 } from "./rules-hook.js";
 import {
@@ -262,7 +261,7 @@ class ClaudeSDKSession implements AgentSession {
             ulid(),
             this.runtimeSessionId ? "resume" : "startup",
           )
-        : await sessionMessagesContext(this.runtimeSessionId);
+        : "";
 
       const launch =
         this.host.kind === "ssh"
@@ -498,7 +497,7 @@ class ClaudeSDKSession implements AgentSession {
               });
             }
           }
-          streamedText = false;
+          if (!msg.parent_tool_use_id) streamedText = false;
           continue;
         }
 

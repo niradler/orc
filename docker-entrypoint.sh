@@ -23,4 +23,34 @@ if [ -n "${ORC_SSH_SOURCE:-}" ] && [ -d "$ORC_SSH_SOURCE" ]; then
   find "$ssh_dir" -type f -name '*.pub' -exec chmod 644 {} \;
 fi
 
+# Older images kept the database, config and secret key in $HOME/.orc and used
+# ORC_HOME only for daemon files. Adopt that state into the data root once; a
+# failed move stops startup instead of opening an empty database.
+adopt_legacy() {
+  legacy=$1
+  if [ -z "${ORC_HOME:-}" ] || [ "$ORC_HOME" = "$legacy" ] || [ ! -d "$legacy" ]; then
+    return 0
+  fi
+  install -d "$ORC_HOME"
+  if [ -e "$legacy/orc.db" ] && [ ! -e "$ORC_HOME/orc.db" ]; then
+    for name in orc.db orc.db-wal orc.db-shm; do
+      [ -e "$legacy/$name" ] || continue
+      mv "$legacy/$name" "$ORC_HOME/$name" || {
+        printf 'orc: could not move %s/%s to %s; refusing to start\n' "$legacy" "$name" "$ORC_HOME" >&2
+        exit 1
+      }
+    done
+  fi
+  for name in config.json secret.key knowledge; do
+    if [ -e "$legacy/$name" ] && [ ! -e "$ORC_HOME/$name" ]; then
+      mv "$legacy/$name" "$ORC_HOME/$name" || {
+        printf 'orc: could not move %s/%s to %s; refusing to start\n' "$legacy" "$name" "$ORC_HOME" >&2
+        exit 1
+      }
+    fi
+  done
+}
+adopt_legacy "${HOME:-/home/bun}/.orc"
+adopt_legacy /home/bun/.orc
+
 exec tini -- "$@"

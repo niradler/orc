@@ -1,18 +1,19 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { userHome } from "./home.js";
+import { orcHome } from "./home.js";
 
 /**
  * Encryption at rest for secrets ORC stores in its own files (API keys in config, later the
- * settings table). AES-256-GCM with a per-machine key in ~/.orc/secret.key. Back that file up with
- * the config: without it, stored secrets cannot be read and must be entered again.
+ * settings table). AES-256-GCM with a per-machine key in ORC_HOME/secret.key (~/.orc/secret.key).
+ * Back that file up with the config: without it, stored secrets cannot be read and must be
+ * entered again.
  */
 
 const PREFIX = "enc:v1:";
 const KEY_BYTES = 32;
 
-export const secretKeyPath = () => join(userHome(), ".orc", "secret.key");
+export const secretKeyPath = () => join(orcHome(), "secret.key");
 
 let cached: { path: string; key: Buffer } | null = null;
 

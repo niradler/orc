@@ -37,6 +37,7 @@ import "./claude-sdk.js";
 import "./claude.js";
 import "./acpx.js";
 import "./acp.js";
+import "./pi.js";
 import "./codex.js";
 import "./a2a.js";
 import "./agentapi.js";

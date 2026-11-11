@@ -5,7 +5,7 @@
 Open **Settings → Providers**. Choose **New provider**, name it (for example,
 **Claude LiteLLM**), select a coding-agent adapter, and configure its connection.
 You can create several providers using the same adapter. Claude Code and Codex
-use native integrations; other coding agents use acpx.
+use native integrations; Pi uses its native RPC interface, OpenCode uses direct ACP, and other coding agents use acpx.
 Field guidance and examples live behind info icons: hover, focus or tap to read them.
 
 Choose an enabled **Default provider** for new chats. Each provider has a default
@@ -24,7 +24,7 @@ Conversations saved before profiles existed remain pinned to their original nati
 [Phone layout](/screens/settings-providers-phone.png) ·
 [Compact context action](/screens/provider-compaction-phone.png)
 
-For Claude, Codex and OpenCode, **Executable path** overrides the local binary for native
+For Claude, Codex, OpenCode and Pi, **Executable path** overrides the local binary for native
 chat, model discovery and provider terminal launches. Enter a path without
 arguments, or leave it blank for the default installation. Paths with spaces and
 `~/` work. SSH uses the remote installation. Changes apply at the next launch;
@@ -53,6 +53,58 @@ together. Drafts survive switching providers and Settings sections. **Use defaul
 clears an executable override; **Discard changes** restores saved values. Failed
 saves retain the draft. Concurrent edits are rejected rather than overwriting
 another device's settings; **Discard draft and reload** loads the saved version.
+
+### Pi
+
+Install [Pi](https://pi.dev/) 1.5.2 or newer on the execution host, with Node.js
+22.19 or newer, and configure its model credentials in Pi. Create a provider in
+**Settings → Providers** and choose **Pi**. Pi is optional and is not enabled by
+default. ORC uses `pi --mode rpc`, preserving Pi's own credentials, extensions,
+skills and session files. An executable override selects the local Pi installation;
+SSH uses the remote installation.
+
+The model picker discovers configured models without an inference turn. Use
+`provider/model` to distinguish identical model IDs from different providers.
+**Chat launch options (JSON)** accepts an object such as:
+
+```json
+{
+  "thinkingLevel": "high",
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "one-at-a-time",
+  "autoCompaction": true,
+  "autoRetry": true
+}
+```
+
+Thinking levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`;
+Pi applies the selected model's limits. Queue modes are `all` or `one-at-a-time`.
+These controls also work as native Pi options for agent jobs using backend `pi`.
+Queue mode, auto-retry and auto-compaction changes are saved to Pi's own settings
+on the execution host, so external Pi sessions use them too. Thinking level is
+scoped to the ORC session. ORC owns transport, session identity, working folder
+and its permission bridge; arbitrary Pi command-line arguments are not accepted.
+
+Pi supports streamed text/thinking and tool results, images on compatible models,
+native session resume, **Send now** steering, cooperative Stop, extension questions,
+permission prompts, live permission changes and `/compact`. Default permissions ask
+before each tool; **Accept edits** allows Pi's edit/write tools, and bypass permits
+all tools. An approval for the session applies to that tool name. This gates Pi's
+tool calls; it is not an operating-system sandbox or a restriction on extension code.
+Plan permissions and ORC tool whitelists are rejected rather than silently ignored.
+
+With ORC tools enabled, ORC registers an authenticated, scoped MCP connection through
+a temporary session extension. It waits for tools to connect and refuses to start
+if the bridge fails. It does not edit `~/.pi/agent/mcp.json` or `.pi/mcp.json`.
+Resume uses Pi's exact native session UUID; missing sessions produce an error
+instead of creating another conversation. Keep the execution host and its
+Pi session directory available for saved conversations.
+
+Pi's terminal-only custom components and editor replacement are not reproduced in
+ORC. Native Pi sessions are discovered and can resume in chat or a terminal; see
+[Live agent sessions](./live-sessions.md) for session directories and provider selection.
+Fork/rollback and native account quota controls are not exposed. Active ORC
+rules that require unavailable interception prevent the session from starting.
 
 ### Bedrock and LiteLLM examples
 
@@ -86,7 +138,7 @@ immutable; create another provider to change adapters.
 
 Private configuration lives under `providers.instances` and
 `providers.default_id` in the server's JSON config. Encrypted values use ORC's
-machine key at `~/.orc/secret.key`; back up that key with the config. Provider
+machine key at `ORC_HOME/secret.key`; back up that key with the config. Provider
 secrets are excluded from readable workspace preferences. Existing
 `preferences.agents`, `preferences.provider_paths` and chat defaults are migrated
 when saving Providers and remain compatible with `GET/PATCH /api/settings`.
@@ -141,9 +193,10 @@ per-node worktrees are not created yet.
 
 ## Manual context compaction
 
-For an existing idle Claude or Codex chat, choose **Compact context** from session
+For an existing idle Claude, Codex or Pi chat, choose **Compact context** from session
 actions (an icon in the expanded desktop header), or send `/compact`. This uses the
-same native session: Claude's SDK command or Codex's `thread/compact/start` RPC.
+same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, or
+Pi's `compact` RPC.
 Progress, failures and completion use the normal conversation stream and history.
 Running turns, attachments and integrations without native support cannot be
 compacted this way. Keep automatic compaction under the agent's own control;
@@ -207,19 +260,19 @@ shrink. See [Notifications](./notifications.md).
 
 | Path | Holds |
 | --- | --- |
-| `~/.orc/config.json` | Global config. The CLI (`orc project use`), the dashboard and the desktop app write here. |
+| `ORC_HOME/config.json` | Global config. The CLI (`orc project use`), the dashboard and the desktop app write here. |
 | `./.orc/config.json` | Optional config read from the directory the process starts in |
-| `~/.orc/orc.db` | SQLite database (`db.path`) |
-| `~/.orc/knowledge/` | Knowledge base files and index (beside the database) |
-| `~/.orc/secret.key` | Key that encrypts stored secrets. Back it up with the database. |
-| `~/.orc/logs/orc.log` | Structured log |
-| `~/.orc/daemon.log` | Daemon stdout/stderr when run as a launchd or systemd service |
-| `~/.orc/daemon.pid` | PID of the running daemon |
-| `~/.orc/daemon.json` | Private runtime identity and current port of the running daemon; contains no credentials |
-| `~/.orc/desktop-daemon.log` | Daemon output when the desktop app started it |
+| `ORC_HOME/orc.db` | SQLite database (`db.path`) |
+| `ORC_HOME/knowledge/` | Knowledge base files and index (beside the database) |
+| `ORC_HOME/secret.key` | Key that encrypts stored secrets. Back it up with the database. |
+| `ORC_HOME/logs/orc.log` | Structured log |
+| `ORC_HOME/daemon.log` | Daemon stdout/stderr when run as a launchd or systemd service |
+| `ORC_HOME/daemon.pid` | PID of the running daemon |
+| `ORC_HOME/daemon.json` | Private runtime identity and current port of the running daemon; contains no credentials |
+| `ORC_HOME/desktop-daemon.log` | Daemon output when the desktop app started it |
 | `~/.orc/bin/` | CLI installed by the desktop app |
 
-`~` is `HOME` (`USERPROFILE` on Windows). Show the resolved paths and daemon state:
+`ORC_HOME` defaults to `~/.orc`, where `~` is `HOME` (`USERPROFILE` on Windows). Show the resolved paths and daemon state:
 
 ```bash
 orc home
@@ -264,7 +317,7 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
 
 | Key | Default | Env | Purpose |
 | --- | --- | --- | --- |
-| `db.path` | `~/.orc/orc.db` | `ORC_DB_PATH` | SQLite file |
+| `db.path` | `ORC_HOME/orc.db` | `ORC_DB_PATH` | SQLite file |
 | `activeProject` | none | `ORC_ACTIVE_PROJECT` | Default project for CLI and MCP calls |
 
 ### `agent_loop`
@@ -368,11 +421,11 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ORC_HOME` | `~/.orc` | Location of `daemon.pid`, `daemon.json`, `daemon.log` and `desktop-daemon.log`. Config and database stay under `~/.orc`. |
+| `ORC_HOME` | `~/.orc` | Data root: location of the database, `config.json`, `secret.key`, logs and the daemon files (`daemon.pid`, `daemon.json`, `daemon.log`, `desktop-daemon.log`). |
 | `ORC_API_BASE` | from `api.host`/`api.port` | ORC origin for the CLI, stdio MCP and hooks |
 | `ORC_SESSION_ID` | none | Session attribution for MCP and CLI writes |
 | `ORC_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `ORC_LOG_DIR` | `~/.orc` | Parent of the `logs/` directory |
+| `ORC_LOG_DIR` | `ORC_HOME` | Parent of the `logs/` directory |
 | `ORC_LOG_FILE` | on | `0` disables the log file |
 | `ORC_WEB_DIST` | bundled | Serve a different dashboard build |
 | `ORC_SQLITE_VEC_PATH` | bundled | sqlite-vec library for vector search |

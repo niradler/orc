@@ -1,19 +1,32 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
+import { DEFAULT_ENABLED_AGENTS } from "@orc/core/coding-agents";
 import { expect, test } from "@playwright/test";
 import { chooseChatAgent } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
+let previousSettings: { agents?: string[]; chat?: unknown };
+
 test.beforeEach(async ({ request }) => {
-  await request.patch("/api/settings", {
+  const current = await request.get("/api/settings", {
     headers: { Authorization: `Bearer ${API_SECRET}` },
-    data: { chat: ChatSettingsSchema.parse({}) },
   });
+  expect(current.ok()).toBe(true);
+  previousSettings = await current.json();
+  const response = await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { agents: ["claude", "codex"], chat: ChatSettingsSchema.parse({}) },
+  });
+  expect(response.ok()).toBe(true);
 });
 test.afterEach(async ({ request }) => {
-  await request.patch("/api/settings", {
+  const response = await request.patch("/api/settings", {
     headers: { Authorization: `Bearer ${API_SECRET}` },
-    data: { chat: ChatSettingsSchema.parse({}) },
+    data: {
+      agents: previousSettings.agents ?? [...DEFAULT_ENABLED_AGENTS],
+      chat: ChatSettingsSchema.parse(previousSettings.chat ?? {}),
+    },
   });
+  expect(response.ok()).toBe(true);
 });
 
 async function saveClaudeDefault(page: import("@playwright/test").Page) {
@@ -93,7 +106,9 @@ test("stopping a chunked response preserves partial text and a new send finishes
   await page.getByTestId("chat-send-button").click();
   await expect(page.getByTestId("chat-message-content").last()).toContainText("Partial response ✓");
   await page.getByTestId("chat-agent-model-button").click();
-  await expect(page.getByTestId("chat-model-option-default")).toBeDisabled();
+  await expect(
+    page.getByTestId("chat-model-option-default").filter({ hasText: /^Agent default$/ }),
+  ).toBeDisabled();
   await expect(page.getByTestId("chat-model-option-custom")).toBeDisabled();
   await page.getByTestId("chat-agent-model-help").click();
   await expect(page.getByTestId("chat-agent-model-note")).toContainText(
