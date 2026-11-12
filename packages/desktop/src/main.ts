@@ -411,7 +411,7 @@ app.enableSandbox();
 if (process.platform === "win32") app.setAppUserModelId("dev.orc.desktop");
 app.setAboutPanelOptions({
   applicationName: "orc",
-  applicationVersion: app.getVersion(),
+  applicationVersion: [app.getVersion(), process.env.ORC_BUILD_TAG].filter(Boolean).join("-"),
 });
 
 if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {

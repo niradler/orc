@@ -16,7 +16,12 @@ const { version } = JSON.parse(readFileSync(join(DESKTOP, "package.json"), "utf8
 const installer = join(DESKTOP, "release", installerName(version, target.id));
 
 if (!process.argv.includes("--skip-build")) {
-  run("bun", ["run", "bundle"], { cwd: DESKTOP, timeout: BUILD_TIMEOUT });
+  const commit = run("git", ["rev-parse", "--short", "HEAD"], { capture: true }).trim();
+  run("bun", ["run", "bundle"], {
+    cwd: DESKTOP,
+    timeout: BUILD_TIMEOUT,
+    env: { ORC_BUILD_TAG: `rc.${commit}` },
+  });
   run("bun", ["run", "bin", "--only", target.id], { cwd: DESKTOP, timeout: BUILD_TIMEOUT });
   run("bunx", ["electron-builder", `--${target.os}`, `--${target.arch}`, "--publish", "never"], {
     cwd: DESKTOP,
