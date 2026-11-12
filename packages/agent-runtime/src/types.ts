@@ -90,6 +90,8 @@ export type AgentEvent =
       type: "result";
       data: {
         runtimeSessionId?: string | undefined;
+        /** The folder the backend actually resumed in, when it differs from the request. */
+        cwd?: string | undefined;
         usage?: unknown;
         durationMs?: number | undefined;
         outcome?: "completed" | "stopped" | "failed" | undefined;

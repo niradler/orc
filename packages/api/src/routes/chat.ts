@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { sep } from "node:path";
+import { isAbsolute, sep } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
@@ -1687,6 +1687,10 @@ async function beginTurn(
                 "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
               );
             thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
+            // A backend may have resumed the session in a folder it moved to (an
+            // OpenCode worktree); follow it so the next turn loads from there.
+            if (event.data.cwd && isAbsolute(event.data.cwd) && !event.data.cwd.includes("\0"))
+              thread.cwd = event.data.cwd;
             if (thread.sourceId) await getHandoffService().markResumed(thread.sourceId);
             receivedResult = true;
             break;
