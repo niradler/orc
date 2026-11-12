@@ -407,7 +407,7 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 
 | Section | Controls |
 | --- | --- |
-| Connection | API URL for this browser |
+| Connection | In a browser, the API URL for this browser. In the desktop app, the local or remote server, optional access token and proxy headers. |
 | Security | Sign-in status and sign-out, default sign-in lifetime, allowed web origins, access tokens (minted by entering the secret) |
 | Appearance | Theme |
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
@@ -422,6 +422,12 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 | Terminals | Terminal font for new terminals |
 | Storage | Where settings are stored |
 | About | Server, desktop and Electron versions, platform, runtime, data folder, uptime, project links, and desktop update channel |
+
+The desktop app stores its selected server, token and headers in `connection.json` in the app's data folder. This is a client-side target, separate from the server's `~/.orc/config.json`; switching servers does not repoint the CLI or stdio MCP. The integrated preview browser, local file picker, update controls and native notifications are available only in the local dashboard, so a remote window does not show them.
+
+![Desktop Connection settings with a remote server and proxy headers](/screens/desktop-connection.png)
+
+<img src="/screens/desktop-connection-phone.png" alt="Desktop Connection settings on a phone" width="260">
 
 ![Coding agents settings](/screens/settings-agents.png)
 

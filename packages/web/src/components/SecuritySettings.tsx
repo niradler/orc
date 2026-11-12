@@ -75,13 +75,15 @@ export function SecuritySettings({ active }: { active: boolean }) {
                 ? `This browser is signed in until ${formatDate(session.data.expires_at)}.`
                 : "This browser is signed in with a stored credential."}
             </p>
-            <Button
-              variant="outline"
-              data-testid="security-sign-out"
-              onClick={() => void signOut(getApiUrl())}
-            >
-              Sign out
-            </Button>
+            {session.data.expires_at !== null && (
+              <Button
+                variant="outline"
+                data-testid="security-sign-out"
+                onClick={() => void signOut(getApiUrl())}
+              >
+                Sign out
+              </Button>
+            )}
           </div>
         )}
       </div>

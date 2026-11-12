@@ -172,7 +172,7 @@ ORC opens a multiplexed SSH connection with a reverse port forward, so agents on
 
 ## Connect a laptop to both
 
-No client stores multiple server profiles. Each CLI process, MCP connection and browser tab targets one ORC. Pick the target per process.
+Each CLI process, MCP connection and browser tab targets one ORC at a time. The desktop app can remember one remote server in addition to its local daemon. Pick the target per process; switching does not copy data between installations.
 
 ### CLI
 
@@ -226,7 +226,15 @@ Session lifecycle hooks and the live-session registry (`~/.orc/live-sessions/`) 
 
 ### Dashboard and desktop app
 
-Open each ORC's dashboard in its own browser tab: `http://127.0.0.1:7700` and `https://orc.example.com`. The server prompts for the secret and keeps a session cookie. The desktop app manages only the local daemon on `127.0.0.1`.
+Open each ORC's dashboard in its own browser tab: `http://127.0.0.1:7700` and `https://orc.example.com`. The server prompts for the secret and keeps a session cookie.
+
+The desktop app keeps its local daemon and can also load a remote server:
+
+1. Open **File → Connection…** (or the tray's **Connection…**). This opens the local dashboard's **Settings → Connection**.
+2. Choose **Remote server**, enter `https://orc.example.com`, and optionally an access token and reverse-proxy headers.
+3. Choose **Test connection**, then **Save and reconnect**.
+
+The local daemon keeps running, so **Local (this machine)** switches back without a restart. The selected server, token and headers are stored in the desktop app's data folder (`connection.json`), not in the server's `~/.orc/config.json`. Use a revocable access token from the server's **Settings → Security**; leave the token blank to sign in with the server's normal prompt. The CLI and stdio MCP still target the local installation unless you set `ORC_API_BASE`. The integrated preview browser, local file picker, desktop update controls and native notifications are available only in the local dashboard, so a remote window does not show them. Links and pop-ups in a remote window open in your default browser.
 
 ## Move work to the server
 

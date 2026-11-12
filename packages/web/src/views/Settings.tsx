@@ -8,6 +8,7 @@ import { AttentionSettings } from "@/components/AttentionSettings";
 import { BrowserSettings } from "@/components/BrowserSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
+import { DesktopConnectionSettings } from "@/components/DesktopConnectionSettings";
 import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { McpSettingsForm } from "@/components/McpSettingsForm";
@@ -193,25 +194,31 @@ export default function Settings() {
           {section === "usage" && <UsageSettings />}
           <section hidden={section !== "connection"} aria-label="Connection settings">
             <h2 className="mb-6 text-base font-medium">Connection</h2>
-            <div className="grid gap-4 border-b border-border pb-6 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
-              <div>
-                <Label htmlFor="settings-api-url">API connection</Label>
-                <p className="mt-1 text-xs text-muted-foreground">Saved in this browser.</p>
-              </div>
-              <div className="space-y-2">
-                <Input
-                  id="settings-api-url"
-                  data-testid="settings-api-url"
-                  value={apiUrl}
-                  onChange={(event) => setApiUrl(event.target.value)}
-                  placeholder="/api or http://localhost:7700"
-                />
-                <p className="text-xs text-muted-foreground">
-                  <code>/api</code> uses the current server or development proxy.
-                </p>
-              </div>
-            </div>
-            {saveActions("connection")}
+            {desktopBridge()?.connection ? (
+              <DesktopConnectionSettings />
+            ) : (
+              <>
+                <div className="grid gap-4 border-b border-border pb-6 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
+                  <div>
+                    <Label htmlFor="settings-api-url">API connection</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">Saved in this browser.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      id="settings-api-url"
+                      data-testid="settings-api-url"
+                      value={apiUrl}
+                      onChange={(event) => setApiUrl(event.target.value)}
+                      placeholder="/api or http://localhost:7700"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      <code>/api</code> uses the current server or development proxy.
+                    </p>
+                  </div>
+                </div>
+                {saveActions("connection")}
+              </>
+            )}
           </section>
           <section hidden={section !== "appearance"} aria-label="Appearance settings">
             <h2 className="mb-2 text-base font-medium">Appearance</h2>
@@ -290,7 +297,8 @@ export default function Settings() {
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
               Workspace preferences and SSH selection are saved in the server's{" "}
               <code>~/.orc/config.json</code>. The API address is stored in this browser; sign-in
-              uses an HttpOnly cookie, never the API secret.
+              uses an HttpOnly cookie, never the API secret. The desktop app keeps its selected
+              server, token and headers in the app's data folder.
             </p>
             <RetentionSettings />
           </section>

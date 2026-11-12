@@ -270,7 +270,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       )
         playNeedsYouSound(prefs.volume);
       for (const item of incoming)
-        desktopBridge()?.notify({
+        desktopBridge()?.notify?.({
           title: item.title,
           body: item.body || labels[item.type] || "Update",
           level: item.level,

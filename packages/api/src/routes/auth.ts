@@ -3,6 +3,7 @@ import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { UnauthorizedError, ValidationError } from "@orc/core/errors";
 import type { Context } from "hono";
 import {
+  accessTokenExpiry,
   browserSessionExpiry,
   endBrowserSession,
   issueAccessToken,
@@ -79,12 +80,25 @@ app.openapi(
   }),
   async (c) => {
     const required = configuredApiSecret(loadConfig().api.secret);
-    const expires_at = required ? await browserSessionExpiry(c, required) : null;
+    const cookieExpiry = required ? await browserSessionExpiry(c, required) : null;
+    // The desktop shell can inject a Bearer credential instead of signing in with a cookie.
+    const auth = c.req.header("Authorization");
+    const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : "";
+    let bearerValid = false;
+    let bearerExpiry: number | null = null;
+    if (required && !cookieExpiry && bearer) {
+      if (secretMatches(bearer, required)) bearerValid = true;
+      else {
+        bearerExpiry = await accessTokenExpiry(bearer, required);
+        bearerValid = bearerExpiry !== null;
+      }
+    }
+    const signedIn = !required || cookieExpiry !== null || bearerValid;
     return c.json(
       {
         required: Boolean(required),
-        signed_in: !required || expires_at !== null,
-        expires_at,
+        signed_in: signedIn,
+        expires_at: cookieExpiry ?? bearerExpiry,
         default_expires_at: tokenExpiry(),
       },
       200,

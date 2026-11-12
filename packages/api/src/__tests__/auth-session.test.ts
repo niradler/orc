@@ -83,6 +83,42 @@ describe("browser sessions", () => {
     });
   });
 
+  test("a Bearer credential reports the session the desktop shell already has", async () => {
+    const expiresAt = now() + 3600;
+    const token = z
+      .object({ token: z.string() })
+      .parse(
+        await (
+          await app.request(
+            "/api/auth/token",
+            json({ secret: "test-secret", expires_at: expiresAt }),
+          )
+        ).json(),
+      ).token;
+    expect(
+      await (
+        await app.request("/api/auth/session", { headers: { Authorization: `Bearer ${token}` } })
+      ).json(),
+    ).toEqual({
+      required: true,
+      signed_in: true,
+      expires_at: expiresAt,
+      default_expires_at: expect.any(Number),
+    });
+    expect(
+      await (
+        await app.request("/api/auth/session", {
+          headers: { Authorization: "Bearer test-secret" },
+        })
+      ).json(),
+    ).toMatchObject({ required: true, signed_in: true, expires_at: null });
+    expect(
+      await (
+        await app.request("/api/auth/session", { headers: { Authorization: "Bearer wrong" } })
+      ).json(),
+    ).toMatchObject({ required: true, signed_in: false, expires_at: null });
+  });
+
   test("the consumer picks the expiry, within a year", async () => {
     const expiresAt = now() + 3 * 86_400;
     const res = await app.request(

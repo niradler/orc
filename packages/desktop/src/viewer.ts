@@ -13,6 +13,7 @@ import {
 } from "@orc/core/desktop-preview";
 import { app, type BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import { z } from "zod";
+import { webOrigin } from "./connection-settings.js";
 import { PreviewBrowser } from "./preview-browser.js";
 import { PreviewLocalFiles } from "./preview-files.js";
 import { PreviewImport } from "./preview-import.js";
@@ -155,9 +156,12 @@ const commandSchema = z.discriminatedUnion("action", [
     })
     .strict(),
 ]);
-let active: {
+type PreviewHost = {
   window: BrowserWindow;
   origin: string;
+  /** The integrated browser and file bridge belong to the local dashboard only. */
+  localOrigin: () => string | null;
+  local: boolean;
   browser: PreviewBrowser;
   files: PreviewLocalFiles;
   preferences: PreviewPreferencesStore;
@@ -168,80 +172,88 @@ let active: {
   imports: Promise<void>;
   removingProfiles: Set<string>;
   dirty: boolean;
-} | null = null;
+};
+
+let active: PreviewHost | null = null;
 let installed = false;
 
-export function attachDesktopPreview(window: BrowserWindow, origin: string): void {
-  const profiles = new PreviewProfiles(
-    join(app.getPath("userData"), "browser-profiles.json"),
-    origin,
-  );
-  const browser = new PreviewBrowser(
-    window,
-    (state) => {
-      if (!window.isDestroyed()) window.webContents.send(PREVIEW_EVENT, state);
-    },
-    (id) => {
-      const profileId = profiles.selected(id);
-      return { id: profileId, partition: profileId ? profiles.partition(profileId) : null };
-    },
-    {
-      read: (id) => profiles.workspace(id),
-      save: (id, value) => profiles.saveWorkspace(id, value),
-    },
-  );
-  const files = new PreviewLocalFiles(window);
-  const preferences = new PreviewPreferencesStore(
-    join(app.getPath("userData"), "browser-preferences.json"),
-  );
-  const chatPreferences = new PreviewChatPreferencesStore(
-    join(app.getPath("userData"), "browser-chat-permissions.json"),
-  );
-  active = {
+export function attachDesktopPreview(
+  window: BrowserWindow,
+  origin: string,
+  localOrigin: () => string | null,
+): void {
+  const host: PreviewHost = {
     window,
     origin,
-    browser,
-    files,
-    preferences,
-    chatPreferences,
-    profiles,
+    localOrigin,
+    local: origin === localOrigin(),
+    browser: undefined as unknown as PreviewBrowser,
+    files: new PreviewLocalFiles(window),
+    preferences: new PreviewPreferencesStore(
+      join(app.getPath("userData"), "browser-preferences.json"),
+    ),
+    chatPreferences: new PreviewChatPreferencesStore(
+      join(app.getPath("userData"), "browser-chat-permissions.json"),
+    ),
+    profiles: new PreviewProfiles(join(app.getPath("userData"), "browser-profiles.json"), origin),
     importer: new PreviewImport(origin),
     storeImporter: new PreviewStoreImport(),
     imports: Promise.resolve(),
     removingProfiles: new Set(),
     dirty: false,
   };
+  host.browser = new PreviewBrowser(
+    window,
+    (state) => {
+      if (!window.isDestroyed()) window.webContents.send(PREVIEW_EVENT, state);
+    },
+    (id) => {
+      const profileId = host.profiles.selected(id);
+      return {
+        id: profileId,
+        partition: profileId ? host.profiles.partition(profileId) : null,
+      };
+    },
+    {
+      read: (id) => host.profiles.workspace(id),
+      save: (id, value) => host.profiles.saveWorkspace(id, value),
+    },
+  );
+  active = host;
   // A damaged preference file must not enable control silently.
   try {
-    browser.setAgentAccess(preferences.get().agentBrowserControl);
+    host.browser.setAgentAccess(host.preferences.get().agentBrowserControl);
   } catch {
-    browser.setAgentAccess(false);
+    host.browser.setAgentAccess(false);
   }
   window.webContents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => {
     if (mainFrame && !inPlace) {
       active?.importer.cancel();
       active?.storeImporter.cancel();
-      browser.dispose();
-      files.clear();
+      host.browser.dispose();
+      host.files.clear();
       if (active?.window === window) active.dirty = false;
     }
   });
   window.on("closed", () => {
     active?.importer.cancel();
     active?.storeImporter.cancel();
-    browser.dispose();
+    host.browser.dispose();
     if (active?.window === window) active = null;
   });
   if (installed) return;
   installed = true;
   ipcMain.handle(PREVIEW_COMMAND, async (event, payload: unknown) => {
     const host = active;
+    const senderOrigin = event.senderFrame ? webOrigin(event.senderFrame.url) : null;
     if (
       !host ||
       host.window.isDestroyed() ||
       event.sender !== host.window.webContents ||
       event.senderFrame !== host.window.webContents.mainFrame ||
-      new URL(event.senderFrame.url).origin !== host.origin
+      senderOrigin !== host.origin ||
+      senderOrigin === null ||
+      senderOrigin !== localOrigin()
     )
       throw new Error("Desktop preview access denied");
     const input = commandSchema.parse(payload);
@@ -410,12 +422,25 @@ export function attachDesktopPreview(window: BrowserWindow, origin: string): voi
   });
 }
 
+/** Keep preview storage and IPC bound to the ORC server the window currently shows. */
+export function setDesktopPreviewOrigin(origin: string): void {
+  if (!active || active.origin === origin) return;
+  active.origin = origin;
+  active.local = origin === active.localOrigin();
+  active.profiles = new PreviewProfiles(
+    join(app.getPath("userData"), "browser-profiles.json"),
+    origin,
+  );
+  active.importer = new PreviewImport(origin);
+}
+
 /** Menu and unhandled external links reveal the integrated panel, not a new window. */
 export function openDesktopViewer(target?: string): void {
   const host = active;
   if (
     !host ||
     host.window.isDestroyed() ||
+    !host.local ||
     (target && host.preferences.snapshot().openLinksIn === "system")
   ) {
     const url = target && previewWebUrl(target);

@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { app, type BrowserWindow, ipcMain, Notification } from "electron";
+import { app, type BrowserWindow, type IpcMainInvokeEvent, ipcMain, Notification } from "electron";
 import electronUpdater from "electron-updater";
 import type { AppUpdaterEvents } from "electron-updater/out/AppUpdater.js";
 import { MacUpdater } from "./mac-updater.js";
@@ -29,6 +29,8 @@ import {
 
 type UpdateHost = {
   getWindow: () => BrowserWindow | null;
+  /** Only the local dashboard may read or change desktop updates. */
+  isLocalUrl: (url: string | undefined) => boolean;
   stopOwnedDaemon: () => Promise<void>;
   restoreOwnedDaemon: () => Promise<void>;
   showWindow: () => void;
@@ -119,6 +121,12 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
       throw new Error("Update request rejected");
   }
 
+  function localWindow(event: IpcMainInvokeEvent): void {
+    ownedWindow(event.sender.id);
+    if (event.senderFrame !== event.sender.mainFrame || !host.isLocalUrl(event.senderFrame?.url))
+      throw new Error("Updates are managed by the local ORC dashboard.");
+  }
+
   if (app.isPackaged) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = false;
@@ -165,11 +173,11 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
   }
 
   ipcMain.handle(UPDATE_STATE_CHANNEL, (event) => {
-    ownedWindow(event.sender.id);
+    localWindow(event);
     return snapshot;
   });
   ipcMain.handle(UPDATE_SET_CHANNEL, (event, payload: unknown) => {
-    ownedWindow(event.sender.id);
+    localWindow(event);
     if (installing) throw new Error("Wait for update installation to finish");
     const preferences = preferencesFromUser(payload);
     publish(applyEvent(snapshot, { type: "preferences", ...preferences }), true);
@@ -178,11 +186,11 @@ export function startDesktopUpdates(host: UpdateHost, platform = process.platfor
     return snapshot;
   });
   ipcMain.handle(UPDATE_CHECK_CHANNEL, (event) => {
-    ownedWindow(event.sender.id);
+    localWindow(event);
     return check();
   });
   ipcMain.handle(UPDATE_INSTALL_CHANNEL, async (event) => {
-    ownedWindow(event.sender.id);
+    localWindow(event);
     if (installing) throw new Error("An update installation is already in progress");
     try {
       installing = snapshot.phase === "downloaded";

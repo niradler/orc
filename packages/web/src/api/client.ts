@@ -247,7 +247,12 @@ import type {
 
 export type SecuritySettings = { session_days: number; cors_origins: string[] };
 
-export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
+export const getApiUrl = (): string => {
+  // The desktop shell targets the selected server origin, so a stale browser override
+  // cannot point it at a different installation.
+  const desktop = (window as Window & { orcDesktop?: unknown }).orcDesktop;
+  return desktop ? "/api" : (localStorage.getItem("orc_api_url") ?? "/api");
+};
 
 export type TerminalKind = string;
 export type AgentSetup = {
