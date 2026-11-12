@@ -56,6 +56,16 @@ export class ChatStore {
       .all(runtimeId, backend, host ?? "")
       .flatMap((row) => this.get(row.id) ?? []);
   }
+  byMessage(messageId: string): ChatThread | null {
+    const row = this.db
+      .query<{ id: string }, [string]>(
+        `SELECT id FROM chat_threads WHERE json_valid(data) AND EXISTS (SELECT 1 FROM
+          json_each(data,'$.messages') WHERE json_extract(value,'$.id')=? AND
+          json_extract(value,'$.role')='user') ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(messageId);
+    return row ? this.get(row.id) : null;
+  }
   save(thread: ChatThread): void {
     this.db
       .query(

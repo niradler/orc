@@ -441,6 +441,7 @@ function useChatController() {
       key: string,
       open: (signal: AbortSignal) => Promise<Response>,
       onOpen?: () => void,
+      recover?: { messageId: string },
     ): Promise<boolean | "busy"> => {
       streams.current.get(key)?.controller.abort();
       const stream = { controller: new AbortController(), cancel: false, closed: false };
@@ -492,7 +493,9 @@ function useChatController() {
                   ? body.error
                   : `Chat request failed (HTTP ${response.status}).`,
                 response.status,
-                null,
+                body && typeof body === "object" && "code" in body && typeof body.code === "string"
+                  ? body.code
+                  : null,
               );
             }
             if (!response.body) throw new Error("The agent returned no response stream.");
@@ -529,7 +532,58 @@ function useChatController() {
           } catch (cause) {
             if (!current() || stream.controller.signal.aborted) return true;
             const threadId = find(key)?.thread?.id;
-            if (!threadId || (cause instanceof ApiError && cause.status < 500)) throw cause;
+            if (!threadId) {
+              const existingMessage =
+                cause instanceof ApiError && cause.code === "CHAT_MESSAGE_EXISTS";
+              if (!recover || (cause instanceof ApiError && cause.status < 500 && !existingMessage))
+                throw cause;
+              const slowFailure =
+                existingMessage ||
+                (cause instanceof ApiError && cause.status >= 500) ||
+                (cause instanceof Error && cause.name === "AbortError");
+              const deadline = Date.now() + (slowFailure ? 60_000 : 15_000);
+              const recovery = new AbortController();
+              const recoverySignal = AbortSignal.any([stream.controller.signal, recovery.signal]);
+              const recoveryTimer = setTimeout(() => recovery.abort(), deadline - Date.now());
+              let found: ChatThread | null = null;
+              let attempts = 0;
+              update(key, () => ({ reconnecting: true }));
+              try {
+                while (!found && current() && !recoverySignal.aborted && Date.now() < deadline) {
+                  await waitToReconnect(
+                    reconnectDelay(++attempts),
+                    recoverySignal,
+                    wakeOnConnectivity,
+                  );
+                  if (!current() || stream.controller.signal.aborted) return true;
+                  if (recoverySignal.aborted || Date.now() >= deadline) break;
+                  found = await api.chat
+                    .byMessage(recover.messageId, recoverySignal)
+                    .catch(() => null);
+                }
+              } finally {
+                clearTimeout(recoveryTimer);
+              }
+              if (!current() || stream.controller.signal.aborted) return true;
+              if (!found) throw cause;
+              const adopted = found;
+              update(key, () => ({
+                thread: adopted,
+                messages: adopted.messages,
+                config: adopted.config,
+                historyBefore: adopted.historyBefore ?? null,
+                error: null,
+              }));
+              onOpen?.();
+              retried = true;
+              connect = (signal) =>
+                fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(adopted.id)}/live`, {
+                  credentials: "include",
+                  signal,
+                });
+              continue;
+            }
+            if (cause instanceof ApiError && cause.status < 500) throw cause;
             retried = true;
             failures++;
             update(key, () => ({ reconnecting: true }));
@@ -559,7 +613,12 @@ function useChatController() {
         }
         if (current() && !stream.controller.signal.aborted)
           update(key, () => ({
-            error: `${message(cause, "The chat connection failed.")} Use Refresh to reconnect.`,
+            // Refresh needs a thread; a failed first send returns to the queue instead.
+            error: find(key)?.thread
+              ? `${message(cause, "The chat connection failed.")} Use Refresh to reconnect.`
+              : cause instanceof ApiError
+                ? message(cause, "The chat connection failed.")
+                : "Your message didn't reach the agent.",
           }));
         return true;
       } finally {
@@ -902,6 +961,7 @@ function useChatController() {
         () => {
           accepted = true;
         },
+        thread ? undefined : { messageId: userMessage.id },
       );
       if (followed === "busy") {
         update(key, (tab) => ({
@@ -921,13 +981,15 @@ function useChatController() {
         return;
       }
       const after = find(key);
-      // false = the server had no turn; its fresh messages show whether this send was stored.
+      // false = the server had no turn; its fresh messages show whether this send was
+      // stored. A new chat has no thread to inspect, so an error means the send was lost.
       const lost =
         !accepted &&
-        !!thread &&
         !!after &&
-        (followed === false
-          ? !after.messages.some((entry) => entry.id === userMessage.id)
+        (after.thread
+          ? followed === false
+            ? !after.messages.some((entry) => entry.id === userMessage.id)
+            : !!after.error
           : !!after.error);
       if (lost) {
         update(key, (tab) => ({
@@ -936,9 +998,14 @@ function useChatController() {
             ? tab.queued
             : [userMessage, ...tab.queued],
           queuePaused: true,
-          error:
-            tab.error ??
-            "Your message didn't reach the agent. It's back in the queue; send it again when ready.",
+          // A new chat keeps the server's rejection reason but never points at
+          // Refresh, which is a no-op without a thread.
+          error: after.thread
+            ? (tab.error ??
+              "Your message didn't reach the agent. It's back in the queue; send it again when ready.")
+            : tab.error
+              ? `${tab.error} It's back in the queue; send it again when ready.`
+              : "Your message didn't reach the agent. It's back in the queue; send it again when ready.",
         }));
         return;
       }

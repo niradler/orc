@@ -820,6 +820,14 @@ export const api = {
     cancel: (runId: string) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),
+    byMessage: (messageId: string, signal?: AbortSignal) =>
+      req<ChatThread | null>(
+        "GET",
+        `/chat/threads/by-message/${encodeURIComponent(messageId)}`,
+        undefined,
+        undefined,
+        { nullOn404: true, signal },
+      ),
     session: (id: string) =>
       req<{ changed: boolean; running: boolean; queued: { id: string; title: string }[] }>(
         "GET",

@@ -203,6 +203,8 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("question_request"), data: ChatQuestionSchema }),
   z.object({ type: z.literal("request_resolved"), requestId: z.string() }),
+  // Slim: thread metadata plus the turn's user message only; the full transcript
+  // is read from GET /chat/threads/{id}.
   z.object({ type: z.literal("thread"), thread: ChatThreadSchema, runId: z.string().uuid() }),
   z.object({ type: z.literal("session"), runtimeId: z.string().nullable() }),
   z.object({

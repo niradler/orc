@@ -763,6 +763,23 @@ app.openapi(
 app.openapi(
   createRoute({
     method: "get",
+    path: "/chat/threads/by-message/{id}",
+    tags: ["Chat"],
+    description:
+      "Find the conversation holding a user message id, so a client can recover a first send whose response was lost.",
+    request: { params },
+    responses: response,
+  }),
+  (c) => {
+    const messageId = c.req.valid("param").id;
+    const thread = store().byMessage(messageId);
+    if (!thread) throw new NotFoundError("Chat message", messageId);
+    return c.json(thread);
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
     path: "/chat/threads/{id}/session",
     tags: ["Chat"],
     description:
@@ -1266,7 +1283,29 @@ app.openapi(
   },
 );
 
+const startingMessages = new Set<string>();
+
 async function streamChat(
+  c: Context,
+  body: z.infer<typeof requestSchema>,
+  uploads: UploadFile[] = [],
+) {
+  const messageId = !body.threadId ? body.clientMessageId : undefined;
+  if (messageId && (startingMessages.has(messageId) || store().byMessage(messageId)))
+    throw new OrcError(
+      "This message is already being prepared or was sent.",
+      "CHAT_MESSAGE_EXISTS",
+      409,
+    );
+  if (messageId) startingMessages.add(messageId);
+  try {
+    return await startChat(c, body, uploads);
+  } finally {
+    if (messageId) startingMessages.delete(messageId);
+  }
+}
+
+async function startChat(
   c: Context,
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],
@@ -1517,7 +1556,14 @@ async function beginTurn(
       publish(run, event);
     };
     try {
-      await emit({ type: "thread", thread, runId });
+      // Slim event: metadata plus the just-pushed user message only. The full
+      // transcript stays on GET /chat/threads/{id}; /live replays this on every
+      // attach, so shipping the whole history there would resend up to 5MB.
+      await emit({
+        type: "thread",
+        thread: { ...thread, messages: thread.messages.slice(-1) },
+        runId,
+      });
       await emit({ type: "turn", turn: { startedAt } });
       if (mock) {
         await Promise.race([

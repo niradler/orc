@@ -242,7 +242,8 @@ test("a rejected turn pauses the rest of the queue without retrying POST", async
   release();
   await expect(panel.getByTestId("chat-error")).toContainText("Rejected turn");
   await expect(panel).toHaveAttribute("data-streaming", "false");
-  await expect(panel.getByTestId("chat-queued-content")).toHaveText("KEEP PENDING");
+  // The rejected first send returns to the queue head ahead of the pending one.
+  await expect(panel.getByTestId("chat-queued-content")).toHaveText(["FIRST", "KEEP PENDING"]);
   expect(sent).toHaveLength(1);
 });
 
@@ -415,6 +416,10 @@ test("a busy session keeps later messages queued and sends them in order", async
   const panel = page.getByTestId("chat-panel");
   await send(panel, "Reply with exactly: READY.");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("READY");
+  let attaches = 0;
+  page.on("request", (request) => {
+    if (/\/api\/chat\/threads\/[^/]+\/live$/.test(request.url())) attaches++;
+  });
   let rejected = false;
   let sessionRunning = false;
   await page.route("**/api/chat/stream", async (route) => {
@@ -443,6 +448,7 @@ test("a busy session keeps later messages queued and sends them in order", async
   await expect(panel.getByTestId("chat-error")).toHaveCount(0);
   await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
   await page.waitForTimeout(1500);
+  expect(attaches).toBeLessThanOrEqual(1);
   expect(sent.filter((item) => item.includes("SECOND") || item.includes("THIRD"))).toEqual([
     "Reply with exactly: SECOND.",
   ]);

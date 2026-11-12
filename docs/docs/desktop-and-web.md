@@ -454,6 +454,11 @@ the turn ends, without an error. Open the pending list to edit a message, move i
 up or down, remove it, or send it ahead of the current reply.
 An expanded pending list stays open across busy-worker retries. After it drains,
 the next list starts collapsed.
+If a first send loses its connection, chat looks for the original message and
+reconnects to its thread. Recovery stops after 15 seconds, or 60 seconds when the
+server may still be preparing the turn. If recovery cannot find it, the message
+returns to a paused queue with its attachments. Retrying keeps the message's ID
+so the server can recover the original turn without starting another one.
 Every icon has an accessible name and opens its picker with the full details;
 phone touch targets are at least 44px. Send stays visible at the right.
 
