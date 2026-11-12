@@ -1,10 +1,19 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, test as bunTest, expect } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiSession } from "../pi";
 import type { AgentEvent, SessionOpts } from "../types";
+
+const piCli = join(
+  dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
+  "bundle",
+  "cli.js",
+);
+const test = bunTest.skipIf(
+  !Bun.which("node") || Bun.spawnSync(["node", piCli, "--version"]).exitCode !== 0,
+);
 
 const owned: { cwd: string; session: PiSession }[] = [];
 afterEach(async () => {
@@ -36,11 +45,7 @@ function fixture(opts: Partial<SessionOpts> = {}) {
   const session = new PiSession({
     cwd,
     orcMcp: false,
-    providerExecutable: join(
-      dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
-      "bundle",
-      "cli.js",
-    ),
+    providerExecutable: piCli,
     env: { PI_CODING_AGENT_DIR: join(cwd, "agent") },
     ...opts,
   });
@@ -194,11 +199,7 @@ test("real Pi streams a model turn, gates writes, reports usage and resumes the 
       orcMcp: false,
       model: "orc-fixture/fixture",
       runtimeSessionId,
-      providerExecutable: join(
-        dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
-        "bundle",
-        "cli.js",
-      ),
+      providerExecutable: piCli,
       env: { PI_CODING_AGENT_DIR: join(cwd, "agent") },
     });
     owned.push({ cwd, session: resumed });
@@ -438,11 +439,7 @@ test("real Pi cooperatively stops an active request and rejects an unrelated res
       cwd,
       orcMcp: false,
       runtimeSessionId: join(cwd, "nonexistent.jsonl"),
-      providerExecutable: join(
-        dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
-        "bundle",
-        "cli.js",
-      ),
+      providerExecutable: piCli,
       env: { PI_CODING_AGENT_DIR: join(cwd, "agent") },
     });
     owned.push({ cwd, session: invalid });
