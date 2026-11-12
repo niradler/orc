@@ -12,9 +12,9 @@ That is the local pull-request gate. The pre-commit hook checks lint and formatt
 
 | Command | What it runs |
 | --- | --- |
-| `bun run ci:changed` | Lint, format, typecheck, domain ownership, dependency security, and unit tests for packages changed since `master` plus packages that depend on them |
+| `bun run ci:changed` | Lint, format, typecheck, domain ownership, dependency security, knip dependency hygiene, and unit tests for packages changed since `master` plus packages that depend on them |
 | `bun run ci:pr` | The changed-package run, plus `@sanity` browser flows, including for web changes |
-| `bun run ci` | Lint, format, typecheck, domain ownership, dependency security, and every package's unit tests |
+| `bun run ci` | Lint, format, typecheck, domain ownership, dependency security, knip dependency hygiene, and every package's unit tests |
 | `bun run ci:full` | `bun run ci` plus the full browser suite |
 
 `bun run check` fixes lint and format in place. Pass `--changed <ref>` to compare with a branch other than `origin/master` (or `master` when the remote ref is missing). The command prints which packages it selected and why. Add `--plan` to print the commands without running them, for example `bun run ci:pr --plan`. Selection includes tracked working-tree and staged changes as well as branch commits; push from the checkout you validated. For a new branch, comparison still uses `origin/master`, so it includes all PR changes. Fetch the base before starting work to keep that comparison current.
@@ -47,11 +47,17 @@ The full browser suite starts four isolated shards by default (`PW_SHARDS`). Eac
 
 Windows browser fixtures explicitly launch real PowerShell with `-NoLogo -NoProfile` through their owned temporary configuration. Windows resolves Documents profiles independently of `HOME` and `USERPROFILE`, so changing those environment variables alone does not isolate personal shell integrations. Normal product shell defaults still load profiles. Large project fixtures bound cleanup to ten concurrent requests, await every batch and report all failures without retries.
 
+## Dependency hygiene (knip)
+
+[Knip](https://github.com/webpro-nl/knip) checks for unused and unlisted dependencies. `bun run knip:deps` is the CI gate: unused dependencies and devDependencies, unlisted dependencies and binaries, and unresolved imports. `bun run knip` runs the full audit, which also reports unused files, exports and types; those findings are cleanup backlog, not a gate.
+
+Configuration lives in `knip.jsonc`. Entries cover files knip cannot discover from `package.json` alone: spawned scripts and test fixtures, agent hooks, VitePress config, and the CLI/Electron bundler entries. Ignored dependencies are documented inline; the CLI's `@anthropic-ai/claude-agent-sdk`, `sqlite-vec` and `zod` are intentionally external to the bundle and enforced by `packages/cli/scripts/validate-package.ts` — do not remove them. When knip flags a dependency, verify it against the code before removing it: bundled, spawned and peer-provided dependencies can look unused.
+
 ## Homelab runner
 
 Pull requests from a branch in `niradler/orc` opened by the owner run the **CI** workflow on the `homelab` runner; the owner can also dispatch it manually. The job requires the owner as actor and triggering actor and a same-repository head branch, so fork pull requests and pushes to `master` start no job. Local `ci:pr` and `ci:full` remain the normal gates. The checked-in `.github/homelab-runner` scaffold is inactive by default, has no network access and receives no registration credential. It is not an installation recipe for an untrusted-PR runner.
 
-The **CI** workflow runs `ci:pr` on the homelab runner: lint, format, typecheck, domain/security checks, affected package tests and browser sanity. It starts a pull request for a same-repository branch, and the owner can dispatch it on any trusted branch. Browser tests beyond sanity are a separate manual **E2E** workflow; `ci:full` combines both locally and remains required before merge. Playwright browsers are baked into the runner image at the pinned `@playwright/test` version and `PLAYWRIGHT_BROWSERS_PATH` is read-only, so both workflows check the baked browser instead of downloading one: a Playwright upgrade needs a runner image rebuild. Changing the runner's label does not by itself verify browser-system dependencies or full-suite timing on that image.
+The **CI** workflow runs `ci:pr` on the homelab runner: lint, format, typecheck, domain/security checks, knip dependency hygiene, affected package tests and browser sanity. It starts a pull request for a same-repository branch, and the owner can dispatch it on any trusted branch. Browser tests beyond sanity are a separate manual **E2E** workflow; `ci:full` combines both locally and remains required before merge. Playwright browsers are baked into the runner image at the pinned `@playwright/test` version and `PLAYWRIGHT_BROWSERS_PATH` is read-only, so both workflows check the baked browser instead of downloading one: a Playwright upgrade needs a runner image rebuild. Changing the runner's label does not by itself verify browser-system dependencies or full-suite timing on that image.
 
 Before enabling fork pull request runs, implement and verify all of these requirements:
 

@@ -37,6 +37,7 @@ const steps: Step[] = [
   ["Domain ownership", ["bun", "test", "scripts/ci-domains.test.ts"]],
   ["Push hook tests", ["bun", "test", "scripts/pre-push.test.ts"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],
+  ["Knip dependency hygiene", ["bun", "run", "knip:deps"]],
 ];
 
 const repoRoot = resolve(import.meta.dir, "..");
