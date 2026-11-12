@@ -198,11 +198,19 @@ export async function verifyInstalledDesktop(version: string): Promise<void> {
   if (existsSync(config))
     port =
       (JSON.parse(readFileSync(config, "utf8")) as { api?: { port?: number } }).api?.port ?? port;
-  const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
-    signal: AbortSignal.timeout(10_000),
-  });
-  const health = (await response.json()) as { version?: string };
-  if (!response.ok || health.version !== version)
+  const deadline = Date.now() + 60_000;
+  let health: { version?: string } = {};
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(10_000),
+      });
+      health = response.ok ? ((await response.json()) as { version?: string }) : {};
+      if (health.version === version) break;
+    } catch {}
+    await Bun.sleep(1000);
+  }
+  if (health.version !== version)
     throw new Error(
       `Desktop installed but daemon health version is ${health.version ?? "unknown"}; expected ${version}. A separately managed daemon may need restarting.`,
     );
