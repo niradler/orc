@@ -49,6 +49,17 @@ export const SessionCacheUsageSchema = z.object({
     may_be_cold_after: z.string().datetime().nullable(),
   }).nullable(),
   totals: CacheTokenUsageSchema.nullable(),
+  output_tokens: z.number().nonnegative().nullable(),
+  requests: z.number().int().nonnegative().nullable(),
+  compactions: z
+    .array(
+      z.object({
+        recorded_at: z.string().datetime().nullable(),
+        pre_tokens: z.number().nonnegative().nullable(),
+        post_tokens: z.number().nonnegative().nullable(),
+      }),
+    )
+    .nullable(),
 });
 
 export type CacheTokenUsage = z.infer<typeof CacheTokenUsageSchema>;

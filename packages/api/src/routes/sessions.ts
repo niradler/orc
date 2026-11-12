@@ -8,7 +8,7 @@ import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/sch
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
-import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
+import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
@@ -448,7 +448,7 @@ app.openapi(
     if (!row) throw new NotFoundError("Session", id);
     c.header("Cache-Control", "no-store");
     if (!row.transcript_path || (row.backend !== "claude" && row.backend !== "codex"))
-      return c.json({ latest: null, totals: null }, 200);
+      return c.json(emptySessionCacheUsage(), 200);
     const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
     return c.json(await loadSessionCacheUsage(runtime, row.backend, row.transcript_path), 200);
   },

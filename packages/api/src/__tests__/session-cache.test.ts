@@ -39,6 +39,9 @@ test("should deduplicate Claude input, include cache writes in the denominator, 
     may_be_cold_after: "2026-11-06T12:05:00.000Z",
   });
   expect(result.totals?.input_tokens).toBe(100);
+  expect(result.output_tokens).toBe(999);
+  expect(result.requests).toBe(1);
+  expect(result.compactions).toEqual([]);
   expect(
     readSessionCacheUsage("claude", bytes([claude("no-ttl", 70, 20)])).latest?.may_be_cold_after,
   ).toBeNull();
@@ -47,6 +50,30 @@ test("should deduplicate Claude input, include cache writes in the denominator, 
     cached_input_tokens: 0,
     may_be_cold_after: null,
   });
+});
+
+test("should count Claude compactions with their before and after context size", () => {
+  const compact = (timestamp: string, compactMetadata: unknown) => ({
+    type: "system",
+    subtype: "compact_boundary",
+    timestamp,
+    compactMetadata,
+  });
+  const result = readSessionCacheUsage(
+    "claude",
+    bytes([
+      claude("before", 70, 20),
+      compact("2026-11-06T12:10:00Z", { trigger: "auto", preTokens: 448563, postTokens: 41112 }),
+      claude("after", 40, 5),
+      compact("2026-11-06T12:20:00Z", { preTokens: "bad" }),
+    ]),
+  );
+  expect(result.compactions).toEqual([
+    { recorded_at: "2026-11-06T12:10:00.000Z", pre_tokens: 448563, post_tokens: 41112 },
+    { recorded_at: "2026-11-06T12:20:00.000Z", pre_tokens: null, post_tokens: null },
+  ]);
+  expect(result.requests).toBe(2);
+  expect(result.output_tokens).toBe(1998);
 });
 
 test("should use Codex reported cumulative counters without adding duplicate snapshots or counting cached input twice", () => {
@@ -65,6 +92,7 @@ test("should use Codex reported cumulative counters without adding duplicate sna
           input_tokens: 1000,
           cached_input_tokens: 700,
           cache_write_input_tokens: 100,
+          output_tokens: 300,
         },
       },
     },
@@ -80,6 +108,8 @@ test("should use Codex reported cumulative counters without adding duplicate sna
     cached_input_tokens: 700,
     cache_write_tokens: 100,
   });
+  expect(result.output_tokens).toBe(300);
+  expect(result.compactions).toBeNull();
   const invalid = {
     ...row,
     payload: {
@@ -95,6 +125,9 @@ test("should hide unsupported, malformed or unreported cache evidence rather tha
     expect(readSessionCacheUsage(provider, bytes([claude("one", 80, 10)]))).toEqual({
       latest: null,
       totals: null,
+      output_tokens: null,
+      requests: null,
+      compactions: null,
     });
   expect(
     readSessionCacheUsage("claude", new TextEncoder().encode("invalid-json\n{}")).latest,
@@ -172,5 +205,8 @@ test("should serve authenticated numeric cache data for the stored session path 
   expect(missing).toEqual({
     latest: null,
     totals: null,
+    output_tokens: null,
+    requests: null,
+    compactions: null,
   });
 });

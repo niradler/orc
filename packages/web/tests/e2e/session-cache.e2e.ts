@@ -63,6 +63,15 @@ for (const width of [1440, 390])
               may_be_cold_after: new Date(now + 60_000).toISOString(),
             },
             totals: { input_tokens: 10000, cached_input_tokens: 8500, cache_write_tokens: 1200 },
+            output_tokens: 700,
+            requests: 12,
+            compactions: [
+              {
+                recorded_at: new Date(now - 60_000).toISOString(),
+                pre_tokens: 448563,
+                post_tokens: 41112,
+              },
+            ],
           },
         }),
       );
@@ -70,12 +79,15 @@ for (const width of [1440, 390])
       const detail = page.getByTestId("live-session-detail");
       const cache = page.getByTestId("session-cache");
       const indicator = page.getByTestId("session-cache-indicator");
-      await expect(indicator).toHaveText("80% cached input");
+      await expect(indicator).toHaveText("1k context · 1 compact · 80% cached input");
       await expect(cache).not.toHaveAttribute("open");
       await indicator.press("Enter");
       await expect(cache).toContainText("800 tokens");
       await expect(cache).toContainText("Uncached input");
-      await expect(cache).toContainText("8,500 / 10,000");
+      await expect(cache).toContainText("8,500 tokens");
+      await expect(cache).toContainText("300 tokens");
+      await expect(cache).toContainText("700 tokens");
+      await expect(cache).toContainText("448,563 → 41,112");
       await expect(cache).not.toContainText("unavailable");
       await page.clock.fastForward(60_001);
       await expect(indicator).toContainText("Cache may need rebuilding");
@@ -112,6 +124,9 @@ test("session cache omits missing timing and unsupported evidence", async ({ pag
             }
           : null,
         totals: null,
+        output_tokens: null,
+        requests: null,
+        compactions: null,
       },
     }),
   );
@@ -119,7 +134,9 @@ test("session cache omits missing timing and unsupported evidence", async ({ pag
   const cache = page.getByTestId("session-cache");
   await expect(cache).toContainText("80% cached input");
   await cache.locator("summary").click();
-  await expect(cache).not.toContainText(/expiry|unavailable|rebuilding|Recorded|Written to cache/);
+  await expect(cache).not.toContainText(
+    /expiry|unavailable|rebuilding|Recorded|Written to cache|Session total|Compacted/,
+  );
   hasUsage = false;
   await page.reload();
   await expect(page.getByTestId("live-session-detail")).toBeVisible();

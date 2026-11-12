@@ -7,6 +7,7 @@ import { MAX_TRANSCRIPT_BYTES } from "./transcript.js";
 const Count = z.number().int().nonnegative();
 const ClaudeUsage = z.object({
   input_tokens: Count,
+  output_tokens: Count.optional(),
   cache_read_input_tokens: Count,
   cache_creation_input_tokens: Count,
   cache_creation: z
@@ -21,6 +22,7 @@ const CodexUsage = z
     input_tokens: Count,
     cached_input_tokens: Count,
     cache_write_input_tokens: Count.optional(),
+    output_tokens: Count.optional(),
   })
   .refine(
     (value) =>
@@ -53,16 +55,22 @@ export async function loadSessionCacheUsage(
   path: string,
 ): Promise<SessionCacheUsage> {
   try {
-    if (!(await runtime.isFile(path))) return { latest: null, totals: null };
+    if (!(await runtime.isFile(path))) return emptySessionCacheUsage();
     return readSessionCacheUsage(backend, await runtime.readFile(path, MAX_TRANSCRIPT_BYTES));
   } catch {
     throw new OrcError("Session cache usage could not be read", "CACHE_UNAVAILABLE", 503);
   }
 }
 
+export function emptySessionCacheUsage(): SessionCacheUsage {
+  return { latest: null, totals: null, output_tokens: null, requests: null, compactions: null };
+}
+
 export function readSessionCacheUsage(backend: string, bytes: Uint8Array): SessionCacheUsage {
-  const result: SessionCacheUsage = { latest: null, totals: null };
+  const result = emptySessionCacheUsage();
   if (backend !== "claude" && backend !== "codex") return result;
+  const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
+  if (backend === "claude") result.compactions = compactions;
   const seen = new Set<string>();
   for (const line of new TextDecoder().decode(bytes).split("\n")) {
     let row: Record<string, unknown>;
@@ -73,6 +81,19 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
     }
     const recordedAt = timestamp(row.timestamp);
     if (backend === "claude") {
+      if (row.type === "system" && row.subtype === "compact_boundary") {
+        const meta = object(row.compactMetadata);
+        const tokens = (value: unknown) => {
+          const parsed = Count.safeParse(value);
+          return parsed.success ? parsed.data : null;
+        };
+        compactions.push({
+          recorded_at: recordedAt,
+          pre_tokens: tokens(meta.preTokens),
+          post_tokens: tokens(meta.postTokens),
+        });
+        continue;
+      }
       if (row.type !== "assistant") continue;
       const message = object(row.message);
       if (message.model === "<synthetic>") continue;
@@ -112,6 +133,8 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
           ? totals.cache_write_tokens + tokens.cache_write_tokens
           : null;
       result.totals = totals;
+      result.output_tokens = (result.output_tokens ?? 0) + (value.output_tokens ?? 0);
+      result.requests = (result.requests ?? 0) + 1;
     } else {
       const payload = object(row.payload);
       if (row.type !== "event_msg" || payload.type !== "token_count") continue;
@@ -131,6 +154,7 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
           may_be_cold_after: null,
         };
         result.totals = totals.success ? codexTokens(totals.data) : null;
+        result.output_tokens = totals.success ? (totals.data.output_tokens ?? null) : null;
       }
     }
   }
