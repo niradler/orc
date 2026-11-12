@@ -4,6 +4,7 @@ import {
   type CreateElicitationRequest,
   type CreateElicitationResponse,
   client,
+  type ListSessionsResponse,
   type LoadSessionResponse,
   type NewSessionRequest,
   type NewSessionResponse,
@@ -16,7 +17,7 @@ import {
   type SessionConfigOption,
 } from "@agentclientprotocol/sdk";
 import { loadConfig } from "@orc/core/config";
-import { type HostProcess, hostBinary, hostSpawn } from "@orc/core/exec-host";
+import { type HostProcess, hostBinary, hostIsDirectory, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import type { AgentCapabilities } from "@orc/core/types";
 import { createAcpxParser } from "./acpx.js";
@@ -57,6 +58,11 @@ export class AcpSession implements AgentSession {
   private connection: ClientConnection | undefined;
   private child: HostProcess | undefined;
   private runtimeId: string | undefined;
+  /** The folder the session actually runs in; a resume can move it into a worktree. */
+  private effectiveCwd: string;
+  private movedFrom: string | undefined;
+  private moveNoted = false;
+  private sessionList = false;
   private closed = false;
   private done = true;
   private busy = false;
@@ -86,6 +92,7 @@ export class AcpSession implements AgentSession {
   ) {
     this.capabilities = { ...initial };
     this.runtimeId = opts.runtimeSessionId;
+    this.effectiveCwd = opts.cwd;
   }
 
   private push(event: AgentEvent): void {
@@ -136,13 +143,28 @@ export class AcpSession implements AgentSession {
           timer = setTimeout(() => reject(new Error(`ACP ${method} timed out.`)), 30000);
         }),
       ]);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message.trim() : "";
+      // An agent-reported failure already explains itself; the generic hint only
+      // helps when the agent never answered.
+      if (message && message !== `ACP ${method} timed out.`)
+        throw new Error(`ACP ${method} failed: ${message}`);
       throw new Error(
         `ACP ${method} failed. Check the agent's login, protocol support and configuration.`,
       );
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** Ask a capable agent where it keeps a saved session; sessions can move into worktrees. */
+  private async savedDirectory(sessionId: string): Promise<string | undefined> {
+    if (!this.sessionList || !this.connection) return undefined;
+    const listed = await this.request(
+      this.connection.agent.request<ListSessionsResponse>("session/list", { cwd: null }),
+      "session/list",
+    );
+    return listed.sessions.find((session) => session.sessionId === sessionId)?.cwd;
   }
 
   private permission(
@@ -182,7 +204,7 @@ export class AcpSession implements AgentSession {
           tool: params.toolCall.kind ?? "tool",
           command: params.toolCall.title ?? "Agent action",
           input: { toolCall: params.toolCall },
-          cwd: this.opts.cwd,
+          cwd: this.effectiveCwd,
         },
       });
     });
@@ -311,6 +333,7 @@ export class AcpSession implements AgentSession {
       if (initialized.protocolVersion !== PROTOCOL_VERSION)
         throw new Error("Unsupported ACP protocol version.");
       const native = initialized.agentCapabilities;
+      this.sessionList = native?.sessionCapabilities?.list != null;
       this.capabilities = {
         ...this.capabilities,
         source: "negotiated",
@@ -346,7 +369,7 @@ export class AcpSession implements AgentSession {
             },
           ]
         : [];
-      const common = { cwd: this.opts.cwd, mcpServers };
+      const common = { cwd: this.effectiveCwd, mcpServers };
       let configOptions: SessionConfigOption[] = [];
       this.replaying = true;
       try {
@@ -355,13 +378,30 @@ export class AcpSession implements AgentSession {
             throw new Error(
               "This ACP agent cannot resume saved sessions; the original identity was preserved.",
             );
-          const loaded = await this.request(
+          const sessionId = this.runtimeId;
+          const load = (cwd: string) =>
             agent.request<LoadSessionResponse>("session/load", {
               ...common,
-              sessionId: this.runtimeId,
-            }),
-            "session/load",
-          );
+              cwd,
+              sessionId,
+            });
+          let loaded: LoadSessionResponse;
+          try {
+            loaded = await this.request(load(this.effectiveCwd), "session/load");
+          } catch (error) {
+            // OpenCode can move a session into a worktree it created, so the folder
+            // recorded by ORC no longer owns the session. Ask the agent where it
+            // lives and load it there instead of losing the conversation.
+            const saved = await this.savedDirectory(sessionId).catch(() => undefined);
+            if (!saved || saved === this.effectiveCwd) throw error;
+            if (!(await hostIsDirectory(sessionExecHost(this.opts), saved)))
+              throw new Error(
+                `ACP session/load failed: the session moved to ${saved}, which is no longer available on the execution host.`,
+              );
+            loaded = await this.request(load(saved), "session/load");
+            this.movedFrom = this.effectiveCwd;
+            this.effectiveCwd = saved;
+          }
           configOptions = loaded?.configOptions ?? [];
         } else {
           const created = await this.request(
@@ -413,6 +453,13 @@ export class AcpSession implements AgentSession {
     this.outputBytes = 0;
     this.parse = createAcpxParser();
     this.push({ type: "capabilities", data: this.capabilities });
+    if (this.movedFrom && !this.moveNoted) {
+      this.moveNoted = true;
+      this.push({
+        type: "system_status",
+        data: `This session moved to ${this.effectiveCwd}; continuing there.`,
+      });
+    }
     const text = [this.opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n");
     void this.connection.agent
       .request<PromptResponse, PromptRequest>("session/prompt", {
@@ -438,7 +485,11 @@ export class AcpSession implements AgentSession {
           this.push({ type: "error", data: `ACP turn ended: ${result.stopReason}` });
         this.push({
           type: "result",
-          data: { runtimeSessionId: this.runtimeId, usage: result.usage },
+          data: {
+            runtimeSessionId: this.runtimeId,
+            usage: result.usage,
+            ...(this.movedFrom ? { cwd: this.effectiveCwd } : {}),
+          },
         });
       })
       .catch(() =>

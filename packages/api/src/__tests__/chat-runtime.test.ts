@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -1810,6 +1817,82 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
   } finally {
     writeFileSync(globalConfigPath(), previous);
     resetConfig();
+  }
+});
+
+test("opencode resumes a session it moved into a worktree and follows its folder", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  const root = mkdtempSync(join(home, "opencode-moved-"));
+  const moved = join(root, "worktree");
+  mkdirSync(moved, { recursive: true });
+  const script = join(home, "opencode-moved");
+  writeFileSync(
+    script,
+    `#!/usr/bin/env bun
+import {createInterface} from 'node:readline';
+const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
+let session='api-opencode-moved';
+for await(const line of createInterface({input:process.stdin})) { const m=JSON.parse(line);
+ if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,sessionCapabilities:{list:{}}}}});
+ if(m.method==='session/new')emit({id:m.id,result:{sessionId:session}});
+ if(m.method==='session/list')emit({id:m.id,result:{sessions:[{sessionId:session,cwd:${JSON.stringify(moved)},title:'Moved worktree'}]}});
+ if(m.method==='session/load'){ if(m.params.cwd!==${JSON.stringify(moved)}){emit({id:m.id,error:{code:-32602,message:'Invalid params: session '+m.params.sessionId+' does not belong to cwd: '+m.params.cwd,data:{sessionId:m.params.sessionId,cwd:m.params.cwd}}});continue;} session=m.params.sessionId;emit({id:m.id,result:{}}); }
+ if(m.method==='session/prompt'){emit({method:'session/update',params:{sessionId:session,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'Resumed in moved worktree'}}}});emit({id:m.id,result:{stopReason:'end_turn'}});}
+}`,
+    { mode: 0o755 },
+  );
+  const initial = readProviderSettings();
+  saveProviderSettings({
+    ...initial,
+    providers: [
+      ...initial.providers.filter((profile) => profile.agent !== "opencode"),
+      {
+        id: "opencode",
+        name: "OpenCode moved fixture",
+        agent: "opencode",
+        enabled: true,
+        executable: script,
+        model: "",
+        environment: [],
+      },
+    ],
+  });
+  const prefs = loadConfig().preferences;
+  updateGlobalConfig((raw) => {
+    raw.preferences = { ...prefs, chat: { ...prefs.chat, model: "", mcp: "native" } };
+  });
+  try {
+    const result = await turn({
+      agent: "opencode",
+      model: "",
+      workspace: { cwd: root },
+      messages: [{ role: "user", content: "Start in the repository" }],
+    });
+    expect(result.response.status).toBe(200);
+    const thread = result.events.find((event) => event.type === "thread");
+    if (thread?.type !== "thread") throw new Error("No thread");
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${thread.thread.id}`)).json(),
+    );
+    expect(saved.cwd).toBe(root);
+    const continued = await turn({
+      threadId: saved.id,
+      messages: [{ role: "user", content: "Continue" }],
+    });
+    expect(continued.events).toContainEqual({ type: "text", text: "Resumed in moved worktree" });
+    expect(continued.events).toContainEqual({
+      type: "system_status",
+      text: `This session moved to ${moved}; continuing there.`,
+    });
+    expect(continued.events.filter((event) => event.type === "error")).toEqual([]);
+    const reloaded = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${thread.thread.id}`)).json(),
+    );
+    expect(reloaded.cwd).toBe(moved);
+  } finally {
+    writeFileSync(globalConfigPath(), previous);
+    resetConfig();
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
 

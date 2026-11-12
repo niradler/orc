@@ -820,6 +820,14 @@ export const api = {
     cancel: (runId: string) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),
+    byMessage: (messageId: string, signal?: AbortSignal) =>
+      req<ChatThread | null>(
+        "GET",
+        `/chat/threads/by-message/${encodeURIComponent(messageId)}`,
+        undefined,
+        undefined,
+        { nullOn404: true, signal },
+      ),
     session: (id: string) =>
       req<{ changed: boolean; running: boolean; queued: { id: string; title: string }[] }>(
         "GET",
@@ -1213,6 +1221,15 @@ export const api = {
   },
 
   sessions: {
+    files: (id: string, path: string) =>
+      req<{
+        root: string;
+        path: string;
+        entries: { name: string; path: string; directory: boolean }[] | null;
+        content: string | null;
+        binary: boolean;
+        truncated: boolean;
+      }>("GET", `/sessions/${encodeURIComponent(id)}/files`, undefined, { path }),
     cacheUsage: (id: string) =>
       req<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
     archive: (params: {

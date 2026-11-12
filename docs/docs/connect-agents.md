@@ -265,7 +265,9 @@ per-request approvals, questions and interruption. A missing install reports
 installation guidance instead of falling back to ACPX. The OpenCode provider
 profile's **Executable path** selects a specific installation, model choices load
 from `opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides
-the built-in command entirely.
+the built-in command entirely. If OpenCode moves a saved session into a worktree it
+created, ORC follows it on resume, continues in that folder and updates the
+conversation's working folder.
 
 Direct ACP advertises form elicitation and turns form questions into the same
 chat question card used by Codex and Claude, including single-choice,

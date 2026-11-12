@@ -166,6 +166,18 @@ describe("desktop preview API", () => {
     teardownTestApp();
     await rm(directory, { recursive: true, force: true });
   });
+  test("should list all files of the session's open folder, not its git root", async () => {
+    expect((await app.request(`/api/sessions/${session}/files`)).status).toBe(401);
+    const response = await req(app, "GET", `/sessions/${session}/files`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      root: directory,
+      path: "workspace",
+      entries: [{ name: "readme.md", path: "workspace/readme.md", directory: false }],
+    });
+    expect((await req(app, "GET", `/sessions/${session}/files?path=../..`)).status).toBe(400);
+    expect((await req(app, "GET", "/sessions/missing/files")).status).toBe(404);
+  });
   test("should authenticate recording uploads, validate WebM and save only inside the resolved session workspace", async () => {
     const path = `/api/desktop-preview/recording?session_id=${session}`;
     const bytes = new Uint8Array(64);

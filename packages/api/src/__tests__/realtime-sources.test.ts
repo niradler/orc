@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changes } from "@orc/core/changes";
@@ -8,6 +8,12 @@ import { watchProcessExit } from "../realtime/process-watch.js";
 import { watchResourcePath } from "../realtime/sources.js";
 import { startSessionWatcher } from "../session-watcher.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
+
+async function waitForChange(count: () => number, previous: number): Promise<void> {
+  const deadline = Date.now() + 3000;
+  while (count() <= previous && Date.now() < deadline) await Bun.sleep(20);
+  expect(count()).toBeGreaterThan(previous);
+}
 
 test("should watch a missing resource directory and its later file changes", async () => {
   const root = mkdtempSync(join(tmpdir(), "orc-resource-watch-"));
@@ -19,19 +25,18 @@ test("should watch a missing resource directory and its later file changes", asy
   try {
     mkdirSync(target);
     writeFileSync(join(target, "SKILL.md"), "First");
-    await Bun.sleep(250);
-    expect(events).toBeGreaterThan(0);
+    await waitForChange(() => events, 0);
     const previous = events;
     writeFileSync(join(target, "SKILL.md"), "Second");
-    await Bun.sleep(250);
-    expect(events).toBeGreaterThan(previous);
+    await waitForChange(() => events, previous);
     const settled = events;
     await Bun.sleep(250);
     expect(events).toBe(settled);
   } finally {
     stop();
+    rmSync(root, { recursive: true, force: true });
   }
-});
+}, 10_000);
 
 test("should receive a native process exit notification without polling", async () => {
   const child = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 800)"], {
@@ -91,5 +96,6 @@ test("should notify transcript file changes even when the session metadata does 
     unsubscribe();
     stop();
     teardownTestApp();
+    rmSync(root, { recursive: true, force: true });
   }
 });

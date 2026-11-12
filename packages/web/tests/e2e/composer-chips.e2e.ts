@@ -160,7 +160,7 @@ for (const width of [320, 390, 820, 1440]) {
           await page.screenshot({ path: test.info().outputPath("agent-model-picker.png") });
           await page.keyboard.press("Escape");
         }
-        await page.getByTestId("chat-fullscreen-button").click();
+        await page.getByTestId("chat-close-button").click();
         await expect(agent.getByTestId("chat-model-current")).toBeHidden();
       }
     }

@@ -1,4 +1,6 @@
 import type { Database } from "bun:sqlite";
+import { realpath } from "node:fs/promises";
+import { posix, relative } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
@@ -6,9 +8,12 @@ import { SessionCacheUsageSchema } from "@orc/core/usage";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { previewSession } from "../desktop-preview/session.js";
+import { checkoutFiles } from "../git/files.js";
+import { gitStatus } from "../git/panel.js";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
-import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
+import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
@@ -448,7 +453,7 @@ app.openapi(
     if (!row) throw new NotFoundError("Session", id);
     c.header("Cache-Control", "no-store");
     if (!row.transcript_path || (row.backend !== "claude" && row.backend !== "codex"))
-      return c.json({ latest: null, totals: null }, 200);
+      return c.json(emptySessionCacheUsage(), 200);
     const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
     return c.json(await loadSessionCacheUsage(runtime, row.backend, row.transcript_path), 200);
   },
@@ -579,5 +584,47 @@ app.openapi(getRoute, async (c) => {
     })),
   });
 });
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/sessions/{id}/files",
+    tags: ["Sessions"],
+    summary: "Browse files inside a session workspace",
+    request: {
+      params: z.object({ id: z.string().min(1).max(200) }),
+      query: z.object({ path: z.string().max(4096).default("") }),
+    },
+    responses: {
+      200: {
+        description: "Workspace files",
+        content: {
+          "application/json": {
+            schema: z.object({
+              root: z.string(),
+              path: z.string(),
+              entries: z
+                .array(z.object({ name: z.string(), path: z.string(), directory: z.boolean() }))
+                .nullable(),
+              content: z.string().nullable(),
+              binary: z.boolean(),
+              truncated: z.boolean(),
+            }),
+          },
+        },
+      },
+      404: { description: "Session not found" },
+    },
+  }),
+  async (c) => {
+    const session = await previewSession(c.req.valid("param").id);
+    const cwd = session.host.kind === "local" ? await realpath(session.cwd) : session.cwd;
+    const root = (await gitStatus(session.host, cwd)).root ?? cwd;
+    const path =
+      c.req.valid("query").path ||
+      (session.host.kind === "ssh" ? posix.relative : relative)(root, cwd);
+    return c.json(await checkoutFiles(session.host, session.cwd, path), 200);
+  },
+);
 
 export { app as sessionsRouter };

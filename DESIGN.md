@@ -341,6 +341,13 @@ the relevant non-text contrast requirement. Never dim essential session text or
 use placeholder color for saved content. Validate actual rendered combinations,
 including hover, selection, links, disabled states and editor syntax colors.
 
+Charts use Recharts, never hand-drawn SVG or another chart library. Series
+colors come from the `--color-series-1`…`--color-series-4` tokens in `index.css`, which are
+validated for color-blind separation in both themes. Every chart ships a tooltip
+and a legend or direct labels with the values, so identity is never color alone.
+Pick the form by the job: change over time is a line or area, part-to-whole with
+one dominant share is a labeled list, not a pie.
+
 ## Typography
 
 Use one UI family and one code family. Prefer regular 400 and medium 500; reserve

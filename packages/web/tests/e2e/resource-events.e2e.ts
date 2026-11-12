@@ -22,6 +22,7 @@ test("one shared stream keeps two tabs fresh, stays idle, and resynchronizes aft
     project_id: project.id,
   });
   const second = await context.newPage();
+  for (const tab of [page, second]) await tab.clock.install();
   /** Records every /api request and whether the tab has been idle for a while. */
   const track = (tab: Page) => {
     const paths: string[] = [];
@@ -57,8 +58,8 @@ test("one shared stream keeps two tabs fresh, stays idle, and resynchronizes aft
   expect(first.pathsNamed("/api/events")).toHaveLength(1);
   expect(other.pathsNamed("/api/events")).toHaveLength(1);
   const baseline = [first.paths.length, other.paths.length];
-  // Longer than the 15 s poll this used to return, so a reintroduced interval fails here.
-  await page.waitForTimeout(17_000);
+  await Promise.all([page.clock.fastForward(17_000), second.clock.fastForward(17_000)]);
+  await expect.poll(() => first.idle(500) && other.idle(500)).toBe(true);
   expect(first.paths.slice(baseline[0])).toEqual([]);
   expect(other.paths.slice(baseline[1])).toEqual([]);
 

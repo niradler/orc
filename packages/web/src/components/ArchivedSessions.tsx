@@ -55,7 +55,6 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
         limit: 20,
       }),
     enabled: visible,
-    refetchInterval: 10000,
   });
   const transcript = useQuery({
     queryKey: ["sessions", "archive-transcript", selected?.id, selected?.revision, turnOffset],

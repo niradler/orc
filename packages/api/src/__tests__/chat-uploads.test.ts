@@ -109,7 +109,55 @@ test("should save multiple binary files, pass host paths to the agent and persis
   const saved = await app.request(`/api/chat/threads/${thread.id}`, { headers: auth });
   expect(((await saved.json()) as ChatThread).messages[0]?.attachments).toEqual(files);
   const next = await upload(form(thread.id));
-  expect(next.thread.messages.filter((message) => message.attachments?.length)).toHaveLength(2);
+  // The thread event is slim (current user message only); follow-up history is read from the thread.
+  const savedNext = await app.request(`/api/chat/threads/${next.thread.id}`, { headers: auth });
+  expect(
+    ((await savedNext.json()) as ChatThread).messages.filter(
+      (message) => message.attachments?.length,
+    ),
+  ).toHaveLength(2);
+});
+
+test("should reserve a first upload message before preparation and reject stream retries", async () => {
+  const backend = createBackend("codex-cli");
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const clientMessageId = crypto.randomUUID();
+  let attempts = 0;
+  registerBackend("codex-cli", () => ({
+    ...backend,
+    preflight: async () => {
+      if (++attempts === 1) {
+        entered.resolve();
+        await release.promise;
+      }
+      return { ok: true };
+    },
+  }));
+  const data = form();
+  data.set(
+    "payload",
+    JSON.stringify({ ...JSON.parse(String(data.get("payload"))), clientMessageId }),
+  );
+  const first = app.request("/api/chat/uploads", { method: "POST", headers: auth, body: data });
+  try {
+    await entered.promise;
+    const retry = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Read these files" }],
+        clientMessageId,
+      }),
+    });
+    if (retry.ok) await retry.text();
+    expect(retry.status).toBe(409);
+    expect(await retry.json()).toMatchObject({ code: "CHAT_MESSAGE_EXISTS" });
+  } finally {
+    release.resolve();
+    await (await first).text();
+    registerBackend("codex-cli", () => backend);
+  }
 });
 test("should honor a saved project upload directory", async () => {
   getSqlite()

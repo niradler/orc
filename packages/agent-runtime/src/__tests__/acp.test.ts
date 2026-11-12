@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AcpSession } from "../acp.js";
@@ -14,23 +14,27 @@ afterEach(async () => {
 });
 function fixture(opts: Partial<SessionOpts> = {}, mode = "normal") {
   const cwd = mkdtempSync(join(tmpdir(), "orc-direct-acp-"));
+  if (mode === "moved-session") mkdirSync(join(cwd, "moved"), { recursive: true });
   const script = join(cwd, "peer.ts");
   writeFileSync(
     script,
     `import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
+import { join } from 'node:path';
 const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
 const update=(sessionId,update)=>emit({method:'session/update',params:{sessionId,update}});
 let promptId; let session='native-acp'; const mode=${JSON.stringify(mode)};
+const moved=join(process.cwd(),'moved');
 const ask=id=>emit({id,method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'late',title:'Late action',kind:'execute'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'deny',name:'Deny',kind:'reject_once'}]}});
 for await (const line of createInterface({input:process.stdin})) {
  const m=JSON.parse(line);appendFileSync('wire.ndjson',line+'\\n');
  if(m.id==='client-access') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.error)}});emit({id:promptId,result:{stopReason:'end_turn'}});continue;}
  if(m.id==='late-cancel') {emit({id:promptId,result:{stopReason:'cancelled'}});continue;}
- if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,agentCapabilities:{loadSession:mode!=='no-resume',promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
+ if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
  else if(m.method==='session/new') {emit({id:m.id,result:{sessionId:session,...(mode==='model'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'test-model',name:'Test model'}]}]}:{})}});if(mode==='idle-permission')setTimeout(()=>ask('late-idle'),20);}
  else if(m.method==='session/set_config_option') emit({id:m.id,result:{configOptions:[]}});
- else if(m.method==='session/load') { session=m.params.sessionId;update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OLD HISTORY'}});emit({id:m.id,result:{}}); }
+ else if(m.method==='session/list') emit({id:m.id,result:{sessions:[{sessionId:session,cwd:moved,title:'Moved'}]}});
+ else if(m.method==='session/load') { if(mode==='missing-session') {emit({id:m.id,error:{code:-32602,message:'Invalid params: session not found: '+m.params.sessionId,data:{sessionId:m.params.sessionId}}});continue;} if(mode==='moved-session'&&m.params.cwd!==moved) {session=m.params.sessionId;emit({id:m.id,error:{code:-32602,message:'Invalid params: session '+m.params.sessionId+' does not belong to cwd: '+m.params.cwd,data:{sessionId:m.params.sessionId,cwd:m.params.cwd}}});continue;} session=m.params.sessionId;update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OLD HISTORY'}});emit({id:m.id,result:{}}); }
  else if(m.method==='session/prompt') {
   promptId=m.id;
   if(mode==='exit') { process.exit(2); }
@@ -114,6 +118,35 @@ test("ACP resumes the saved identity without replaying old messages into a new r
     false,
   );
   expect(session.getRuntimeSessionId()).toBe("saved-session");
+});
+
+test("ACP follows a saved session the agent moved into another folder", async () => {
+  const { session, cwd } = fixture({ runtimeSessionId: "saved-session" }, "moved-session");
+  await session.initialize();
+  await session.send("Continue");
+  const events = await run(session);
+  expect(events).toContainEqual({
+    type: "system_status",
+    data: `This session moved to ${join(cwd, "moved")}; continuing there.`,
+  });
+  expect(events.find((event) => event.type === "result")?.data).toMatchObject({
+    runtimeSessionId: "saved-session",
+    cwd: join(cwd, "moved"),
+  });
+  const loads = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === "session/load");
+  expect(loads.map((message) => message.params.cwd)).toEqual([cwd, join(cwd, "moved")]);
+});
+
+test("ACP reports the agent's own session/load failure instead of a generic hint", async () => {
+  const { session } = fixture({ runtimeSessionId: "saved-session" }, "missing-session");
+  await expect(session.initialize()).rejects.toThrow(
+    "ACP session/load failed: Invalid params: session not found: saved-session",
+  );
+  expect(session.alive()).toBe(false);
 });
 
 test("ACP refuses unsupported resume and protocol versions without creating another session", async () => {

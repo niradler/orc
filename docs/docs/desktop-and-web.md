@@ -114,13 +114,14 @@ Chat links and file attachments open in this panel. Enter an HTTP/HTTPS address
 and use Back, Forward and Reload. The external-link icon opens the page in your
 system browser; Ctrl/Cmd-clicking a web link does the same.
 
-Each conversation keeps its own browser and file tabs. Drag the header grip to
-float the panel, use **Dock preview** to return it, or drag the divider to resize.
-The divider also supports arrow keys. Closing the panel keeps tabs and drafts in
+Each conversation keeps its own browser and file tabs. The panel stays docked
+beside the conversation and opens only when you ask for it or follow a link; drag
+the divider (or use arrow keys on it) to resize. The **Files** tab browses every
+file in the session's folder and opens a file in an editor tab. Closing the panel keeps tabs and drafts in
 memory; closing a modified file asks before discarding it. Reloading or quitting
 discards these previews after the unsaved-change warning.
 
-**Open file** uses the native picker for local files. Chat and MCP file paths
+The folder icon (**Open file**) uses the native picker for local files. Chat and MCP file paths
 resolve inside the selected session's folder on its execution host; paths outside
 that folder and symlinks escaping it are denied. Remote file previews require
 Python 3 on the SSH host. Files must be UTF-8 text up to 1 MiB. Markdown has Read,
@@ -138,11 +139,11 @@ browser's image decoder. PDF and Office previews are not included.
 The browser uses a separate session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
 are blocked. Browser downloads are staged privately (16 MB each, four across the
-app); **Browser display & recording** lists their status and saves completed files
+app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
 as saved. Each chat starts with a temporary cookie/storage profile.
 **Settings → Browser → Saved browser profiles** creates named profiles; select one
-in the browser panel to remember site logins. Selecting the same profile in another
+under **Browser profile, display & recording** in the browser panel to remember site logins. Selecting the same profile in another
 chat explicitly shares that profile's site storage. Temporary chats stay isolated.
 Profile choices and saved cookies survive app restart; session-only cookies follow
 the site's expiry rules. Switching profiles closes that chat's browser tabs after
@@ -454,6 +455,11 @@ the turn ends, without an error. Open the pending list to edit a message, move i
 up or down, remove it, or send it ahead of the current reply.
 An expanded pending list stays open across busy-worker retries. After it drains,
 the next list starts collapsed.
+If a first send loses its connection, chat looks for the original message and
+reconnects to its thread. Recovery stops after 15 seconds, or 60 seconds when the
+server may still be preparing the turn. If recovery cannot find it, the message
+returns to a paused queue with its attachments. Retrying keeps the message's ID
+so the server can recover the original turn without starting another one.
 Every icon has an accessible name and opens its picker with the full details;
 phone touch targets are at least 44px. Send stays visible at the right.
 

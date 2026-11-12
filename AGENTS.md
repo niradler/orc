@@ -30,6 +30,8 @@ extra agents, production changes, publication, or imply hook enforcement.
   [docs/development/build-and-test.md](docs/development/build-and-test.md):
   lint/format for the pre-commit hook, `ci:pr` for the pre-push hook and a pull request, and
   `ci:full` before merging to master or releasing.
+- PRs that change UI include screenshots of the changed states (desktop and phone) linked in
+  the PR; use `bun run ci:changed` for a fast CI pass while iterating — `ci:pr` stays the gate.
 - Create worktrees under `.orc/worktrees/<name>`, `.claude/worktrees/<name>`,
   or the agent's native `~/.codex/worktrees/`. Do not create them beside the
   repo, under `.worktrees/`, or under `.claude/checkouts/`. The

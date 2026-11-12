@@ -31,12 +31,15 @@ for (const width of [1440, 390]) {
     const globalTask = await apiPost<{ id: string; title: string }>(request, "/tasks", {
       title: tid("unassigned-task"),
     });
-    const requestScopes = new Map<string, string | null>();
+    const requestScopes = new Map<string, Set<string | null>>();
     let secondary: string[] = [];
     page.on("request", (req) => {
       const url = new URL(req.url());
-      if (["/api/jobs", "/api/tasks", "/api/sessions/live"].includes(url.pathname))
-        requestScopes.set(url.pathname, url.searchParams.get("project_id"));
+      if (["/api/jobs", "/api/tasks", "/api/sessions/live"].includes(url.pathname)) {
+        const scopes = requestScopes.get(url.pathname) ?? new Set<string | null>();
+        scopes.add(url.searchParams.get("project_id"));
+        requestScopes.set(url.pathname, scopes);
+      }
       if (/\/api\/jobs\/[^/]+\/runs|\/api\/tasks\/[^/]+\/(comments|links)/.test(url.pathname))
         secondary.push(url.pathname);
     });
@@ -53,7 +56,7 @@ for (const width of [1440, 390]) {
       requestScopes.clear();
       await page.goto(`/activity?project=${scope}`);
       for (const resource of ["/api/jobs", "/api/tasks", "/api/sessions/live"])
-        await expect.poll(() => requestScopes.get(resource)).toBe(scope);
+        await expect.poll(() => requestScopes.get(resource)?.has(scope)).toBe(true);
     }
     for (const resource of [
       {

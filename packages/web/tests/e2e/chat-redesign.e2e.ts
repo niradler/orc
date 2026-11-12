@@ -223,8 +223,10 @@ for (const theme of ["dark", "light"] as const) {
       await page.route("**/api/chat/stream", async (route) => {
         count++;
         if (count === 3) {
+          // The real API answers an unavailable agent with 400; a 5xx would
+          // enter the new-chat recovery window instead of failing the send.
           await route.fulfill({
-            status: 503,
+            status: 400,
             contentType: "application/json",
             body: JSON.stringify({
               error: "Selected agent is unavailable. Check its connection and try again.",

@@ -10,7 +10,6 @@ import {
   History,
   LoaderCircle,
   Maximize2,
-  Minimize2,
   MoreHorizontal,
   Paperclip,
   Pencil,
@@ -151,9 +150,13 @@ export function ChatPanel({
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
   const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  const followedSession = useRef<string | null>(null);
   useEffect(() => {
-    if (turnElsewhere) void refresh();
-  }, [turnElsewhere, refresh]);
+    if (!session.data?.running) followedSession.current = null;
+    if (!turnElsewhere || !thread || followedSession.current === thread.id) return;
+    followedSession.current = thread.id;
+    void refresh().finally(() => session.refetch());
+  }, [turnElsewhere, refresh, thread, session.data?.running, session.refetch]);
   const reload = async () => {
     await refresh(sessionChanged);
     void session.refetch();
@@ -529,15 +532,15 @@ export function ChatPanel({
           )}
           {fullscreen && !phone && <SessionHomeToggles home={home} />}
           {onToggleFullscreen && (
-            <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
+            <ActionHelp label="Full screen chat">
               <button
                 type="button"
                 data-testid="chat-fullscreen-button"
                 onClick={onToggleFullscreen}
                 className={cn(iconButton, "hidden xl:inline-flex")}
-                aria-label={fullscreen ? "Exit full screen chat" : "Full screen chat"}
+                aria-label="Full screen chat"
               >
-                {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                <Maximize2 size={17} />
               </button>
             </ActionHelp>
           )}
