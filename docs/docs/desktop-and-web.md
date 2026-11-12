@@ -114,9 +114,10 @@ Chat links and file attachments open in this panel. Enter an HTTP/HTTPS address
 and use Back, Forward and Reload. The external-link icon opens the page in your
 system browser; Ctrl/Cmd-clicking a web link does the same.
 
-Each conversation keeps its own browser and file tabs. Drag the header grip to
-float the panel, use **Dock preview** to return it, or drag the divider to resize.
-The divider also supports arrow keys. Closing the panel keeps tabs and drafts in
+Each conversation keeps its own browser and file tabs. The panel stays docked
+beside the conversation and opens only when you ask for it or follow a link; drag
+the divider (or use arrow keys on it) to resize. The **Files** tab browses every
+file in the session's folder and opens a file in an editor tab. Closing the panel keeps tabs and drafts in
 memory; closing a modified file asks before discarding it. Reloading or quitting
 discards these previews after the unsaved-change warning.
 

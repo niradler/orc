@@ -6,16 +6,18 @@ import {
   type PreviewRequest,
   previewLink,
 } from "@orc/core/desktop-preview";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronRight,
   ExternalLink,
+  File,
+  Files,
+  Folder,
   FolderOpen,
   Globe,
-  GripVertical,
   LoaderCircle,
-  PanelRightClose,
-  PanelRightOpen,
   RefreshCw,
   Save,
   X,
@@ -112,6 +114,76 @@ async function saveRecording(
     );
   }
   return response.json();
+}
+
+function FileTreeLevel({
+  session,
+  path,
+  depth,
+  expanded,
+  toggle,
+  open,
+}: {
+  session: string;
+  path: string;
+  depth: number;
+  expanded: Set<string>;
+  toggle: (path: string) => void;
+  open: (path: string) => void;
+}): ReactNode {
+  const files = useQuery({
+    queryKey: ["session-files", session, path],
+    queryFn: () => api.sessions.files(session, path),
+  });
+  if (files.isPending) return <li className="px-3 py-1 text-on-surface-variant">Loading files…</li>;
+  if (files.error)
+    return (
+      <li role="alert" className="px-3 py-1 text-error">
+        {files.error.message}
+      </li>
+    );
+  if (!files.data.entries?.length)
+    return <li className="px-3 py-1 text-on-surface-variant">Empty folder</li>;
+  const root = files.data.root;
+  return files.data.entries.map((entry) => (
+    <li key={entry.path}>
+      <button
+        type="button"
+        title={entry.path}
+        className="flex h-7 w-full min-w-0 items-center gap-1 px-2 text-left hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus"
+        style={{ paddingLeft: 8 + depth * 12 }}
+        aria-expanded={entry.directory ? expanded.has(entry.path) : undefined}
+        onClick={() => (entry.directory ? toggle(entry.path) : open(`${root}/${entry.path}`))}
+      >
+        {entry.directory ? (
+          <ChevronRight
+            size={12}
+            className={`shrink-0 transition-transform ${expanded.has(entry.path) ? "rotate-90" : ""}`}
+          />
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        {entry.directory ? (
+          <Folder size={13} className="shrink-0" />
+        ) : (
+          <File size={13} className="shrink-0" />
+        )}
+        <span className="truncate">{entry.name}</span>
+      </button>
+      {entry.directory && expanded.has(entry.path) && (
+        <ul>
+          <FileTreeLevel
+            session={session}
+            path={entry.path}
+            depth={depth + 1}
+            expanded={expanded}
+            toggle={toggle}
+            open={open}
+          />
+        </ul>
+      )}
+    </li>
+  ));
 }
 
 export function DesktopPreviewWorkspace({ children }: { children: ReactNode }) {
@@ -214,9 +286,12 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     max: Math.max(320, Math.min(1000, viewport.width - 300)),
     edge: "left",
   });
-  const [floating, setFloating] = useState<{ x: number; y: number } | null>(null);
-  const [moving, setMoving] = useState(false);
   const [address, setAddress] = useState("");
+  const [tree, setTree] = useState<{ session: string | null; paths: Set<string> }>({
+    session: null,
+    paths: new Set(),
+  });
+  const narrow = viewport.width < 768;
   const [dialogText, setDialogText] = useState("");
   useEffect(
     () => setDialogText(model.browser?.dialog?.default_prompt ?? ""),
@@ -288,7 +363,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     void bridge
       ?.restore(session)
       .then((browser) => {
-        if (active && browser) edit(key, (old) => ({ ...old, browser, visible: true }));
+        if (active && browser) edit(key, (old) => ({ ...old, browser }));
       })
       .catch((cause) => {
         if (active) edit(key, (old) => ({ ...old, error: error(cause) }));
@@ -382,16 +457,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
-  useEffect(() => {
-    setFloating((old) =>
-      old
-        ? {
-            x: Math.max(0, Math.min(old.x, viewport.width - width.width)),
-            y: Math.max(0, Math.min(old.y, viewport.height - 200)),
-          }
-        : null,
-    );
-  }, [viewport.width, viewport.height, width.width]);
   useEffect(() => {
     setAddress(model.browser?.url ?? "");
   }, [model.browser?.url]);
@@ -556,8 +621,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     };
   }, [bridge, nativeId, model.agentAccess, edit, key]);
 
-  const browserVisible =
-    model.visible && model.active === "browser" && !moving && !model.browser?.dialog;
+  const browserVisible = model.visible && model.active === "browser" && !model.browser?.dialog;
   useLayoutEffect(() => {
     if (!bridge) return;
     if (!browserVisible) {
@@ -751,30 +815,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       files: old.files.filter((file) => file.id !== tab.id),
     }));
   }
-  function startMove(event: React.PointerEvent<HTMLButtonElement>): void {
-    event.preventDefault();
-    const rect = panel.current?.getBoundingClientRect();
-    if (!rect) return;
-    const handle = event.currentTarget;
-    handle.setPointerCapture(event.pointerId);
-    setMoving(true);
-    const start = { x: event.clientX, y: event.clientY };
-    setFloating({ x: rect.x, y: rect.y });
-    const move = (pointer: PointerEvent) =>
-      setFloating({
-        x: Math.max(0, Math.min(rect.x + pointer.clientX - start.x, viewport.width - width.width)),
-        y: Math.max(0, Math.min(rect.y + pointer.clientY - start.y, viewport.height - 200)),
-      });
-    const end = () => {
-      setMoving(false);
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", end);
-      handle.removeEventListener("pointercancel", end);
-    };
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
-  }
   async function reloadFile(tab: FileTab): Promise<void> {
     if (
       tab.saving ||
@@ -824,50 +864,31 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   return (
     <DesktopPreviewContext.Provider value={context}>
       <div className="flex min-w-0 h-dvh w-full overflow-hidden">
-        <div className="flex-1 min-w-0">{children}</div>
+        <div className={model.visible && narrow ? "hidden" : "flex-1 min-w-0"}>{children}</div>
         {model.visible && (
           <aside
             ref={panel}
             data-testid="desktop-preview-panel"
             aria-label="Preview"
-            style={{
-              width: width.width,
-              ...(floating
-                ? {
-                    position: "fixed",
-                    left: floating.x,
-                    top: floating.y,
-                    height: Math.min(740, viewport.height - floating.y - 12),
-                    zIndex: 40,
-                  }
-                : {}),
-            }}
-            className="relative flex min-w-0 min-h-0 shrink-0 flex-col border-l border-border bg-background shadow-xl"
+            style={{ width: narrow ? "100%" : width.width }}
+            className="relative flex min-w-0 min-h-0 shrink-0 flex-col border-l border-border bg-background"
           >
-            {/* biome-ignore lint/a11y/useSemanticElements: pointer-driven adjustable splitter has no native element */}
-            <div
-              role="separator"
-              aria-label="Resize preview"
-              aria-orientation="vertical"
-              aria-valuenow={width.width}
-              aria-valuemin={320}
-              aria-valuemax={Math.max(320, Math.min(1000, viewport.width - 300))}
-              tabIndex={0}
-              data-testid="desktop-preview-resize"
-              className="absolute left-0 inset-y-0 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
-              {...width.handleProps}
-            />
+            {!narrow && (
+              // biome-ignore lint/a11y/useSemanticElements: pointer-driven adjustable splitter has no native element
+              <div
+                role="separator"
+                aria-label="Resize preview"
+                aria-orientation="vertical"
+                aria-valuenow={width.width}
+                aria-valuemin={320}
+                aria-valuemax={Math.max(320, Math.min(1000, viewport.width - 300))}
+                tabIndex={0}
+                data-testid="desktop-preview-resize"
+                className="absolute left-0 inset-y-0 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
+                {...width.handleProps}
+              />
+            )}
             <header className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
-              <button
-                type="button"
-                data-testid="desktop-preview-drag"
-                aria-label="Drag preview panel"
-                title="Drag to float preview"
-                className={`${button} cursor-grab touch-none`}
-                onPointerDown={startMove}
-              >
-                <GripVertical size={15} />
-              </button>
               {model.active === "browser" ? (
                 <div className="flex min-w-0 flex-1">
                   <select
@@ -901,18 +922,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 className={button}
-                aria-label={floating ? "Dock preview" : "Float preview"}
-                onClick={() =>
-                  setFloating(
-                    floating ? null : { x: Math.max(0, viewport.width - width.width - 24), y: 64 },
-                  )
-                }
-              >
-                {floating ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
-              </button>
-              <button
-                type="button"
-                className={button}
                 aria-label="Close preview"
                 onClick={() => edit(key, (old) => ({ ...old, visible: false }))}
               >
@@ -923,6 +932,16 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
               aria-label="Preview tabs"
               className="flex shrink-0 overflow-x-auto border-b border-border px-2"
             >
+              <button
+                type="button"
+                data-testid="preview-files-tab"
+                className={button + (model.active === "files" ? " bg-surface-highest" : "")}
+                aria-pressed={model.active === "files"}
+                onClick={() => edit(key, (old) => ({ ...old, active: "files" }))}
+              >
+                <Files size={14} />
+                Files
+              </button>
               <button
                 type="button"
                 className={button + (model.active === "browser" ? " bg-surface-highest" : "")}
@@ -989,7 +1008,33 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                 Opening file…
               </p>
             )}
-            {model.active === "browser" ? (
+            {model.active === "files" ? (
+              session ? (
+                <ul
+                  data-testid="preview-file-tree"
+                  className="min-h-0 flex-1 overflow-auto py-1 text-xs"
+                >
+                  <FileTreeLevel
+                    session={session}
+                    path=""
+                    depth={0}
+                    expanded={tree.session === session ? tree.paths : new Set()}
+                    toggle={(path) =>
+                      setTree((old) => {
+                        const paths = new Set(old.session === session ? old.paths : []);
+                        if (!paths.delete(path)) paths.add(path);
+                        return { session, paths };
+                      })
+                    }
+                    open={(path) => void openFile(path).catch(() => {})}
+                  />
+                </ul>
+              ) : (
+                <p className="p-3 text-xs text-on-surface-variant">
+                  Start or select a saved session to browse its workspace
+                </p>
+              )
+            ) : model.active === "browser" ? (
               <>
                 {model.browser?.dialog && (
                   <div
@@ -1290,11 +1335,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                   data-testid="desktop-preview-browser-surface"
                   className="flex min-h-0 flex-1 items-center justify-center text-sm text-on-surface-variant"
                 >
-                  {!model.browser
-                    ? "Open a chat link or enter a URL"
-                    : moving
-                      ? "Moving preview…"
-                      : null}
+                  {model.browser ? null : "Open a chat link or enter a URL"}
                 </div>
               </>
             ) : selected ? (
