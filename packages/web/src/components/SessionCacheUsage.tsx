@@ -110,32 +110,6 @@ export function SessionCacheUsage({ sessionId, live }: { sessionId: string; live
               </ul>
             </div>
           )}
-          <p className="text-muted-foreground">
-            <span className="text-on-surface">Last request</span>{" "}
-            {count.format(latest.input_tokens)} tokens · {count.format(latest.cached_input_tokens)}{" "}
-            cached
-            {latest.cache_write_tokens !== null &&
-              ` · ${count.format(latest.cache_write_tokens)} written · ${count.format(
-                latest.input_tokens - latest.cached_input_tokens - latest.cache_write_tokens,
-              )} uncached`}
-            {latest.recorded_at && ` · ${new Date(latest.recorded_at).toLocaleString()}`}
-          </p>
-          {compactions.length > 0 && (
-            <ul className="text-muted-foreground">
-              {compactions.map((compaction) => (
-                <li
-                  key={`${compaction.recorded_at}-${compaction.pre_tokens}-${compaction.post_tokens}`}
-                >
-                  <span className="text-on-surface">Compacted</span>
-                  {compaction.recorded_at &&
-                    ` ${new Date(compaction.recorded_at).toLocaleString()}`}
-                  {compaction.pre_tokens !== null &&
-                    compaction.post_tokens !== null &&
-                    ` · ${count.format(compaction.pre_tokens)} → ${count.format(compaction.post_tokens)}`}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       </div>
       {indicator.cold && (

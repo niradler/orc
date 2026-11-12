@@ -89,17 +89,17 @@ for (const width of [1440, 390])
       await expect(indicator).toHaveText("1k context · 1 compact · 80% cached input");
       await expect(cache).not.toHaveAttribute("open");
       await indicator.press("Enter");
-      await expect(cache).toContainText("1,000 tokens · 800 cached · 100 written · 100 uncached");
       await expect(cache).toContainText("Session total 11k over 12 requests");
       await expect(cache).toContainText("Uncached input");
       const chart = page.getByTestId("session-context-chart");
-      await expect(chart).toContainText("Context per request · dashed line = compacted");
+      await expect(chart.locator("figcaption")).toHaveText("ContextCompacted");
       await expect(chart.locator(".recharts-area-curve")).toBeVisible();
       await expect(chart.locator(".recharts-reference-line")).toHaveCount(1);
       await expect(cache.getByRole("listitem").first()).toHaveText(
         /Read from cache\s*8,500\s*79\.4%/,
       );
-      await expect(cache).toContainText("448,563 → 41,112");
+      await expect(chart).toContainText("449k → 41k");
+      await expect(cache).not.toContainText(/Last request|448,563/);
       await expect(cache).not.toContainText("unavailable");
       await page.clock.fastForward(60_001);
       await expect(indicator).toContainText("Cache may need rebuilding");
@@ -149,7 +149,6 @@ test("session cache omits missing timing and unsupported evidence", async ({ pag
   const cache = page.getByTestId("session-cache");
   await expect(cache).toContainText("80% cached input");
   await cache.locator("summary").click();
-  await expect(cache).toContainText("1,000 tokens · 800 cached");
   await expect(cache).not.toContainText(
     /expiry|unavailable|rebuilding|written|Session total|Compacted/,
   );
