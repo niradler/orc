@@ -25,11 +25,12 @@ import { api } from "@/api/client";
 import { RequestCard, type RequestDraft } from "@/components/RequestCard";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { activeLiveSessionsQuery } from "@/hooks/useActiveLiveSessions";
+import { useActiveLiveSessionsSummary } from "@/hooks/useActiveLiveSessions";
 import { CHAT_THREAD_PARAM, useChat } from "@/hooks/useChat";
 import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
+import { useResourceFallback } from "@/hooks/useResourceFallback";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import {
   mergeNotificationToasts,
@@ -120,7 +121,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const phone = !useBreakpoint("md");
   const { tabs, activeKey } = useChat();
   const requests = useHumanRequests();
-  const sessions = useQuery(activeLiveSessionsQuery);
+  const sessions = useActiveLiveSessionsSummary();
   const [expanded, setExpanded] = useState(false);
   const [showRead, setShowRead] = useState(false);
   const [needsYou, setNeedsYou] = useState(false);
@@ -151,7 +152,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     queryFn: ({ pageParam }) =>
       api.notifications.list({ limit: PAGE_SIZE, offset: pageParam, unread: !showRead }),
     getNextPageParam: (last, _pages, offset) => (last.has_more ? offset + PAGE_SIZE : undefined),
-    refetchInterval: 15_000,
+    refetchInterval: useResourceFallback(),
   });
   const items = useMemo(
     () => [
@@ -977,7 +978,7 @@ function RequestDetails({
   const request = useQuery({
     queryKey: ["human-requests", id],
     queryFn: () => api.humanRequests.view(id),
-    refetchInterval: 15000,
+    refetchInterval: useResourceFallback(),
     enabled: expanded,
   });
   const value =

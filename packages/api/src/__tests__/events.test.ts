@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { changes } from "@orc/core/changes";
 import { getSqlite } from "@orc/db/client";
+import { HumanRequestStore } from "@orc/db/human-requests";
+import { maintainNotifications } from "../notifications.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 describe("shared resource event stream", () => {
@@ -53,6 +55,53 @@ describe("shared resource event stream", () => {
     } finally {
       await Promise.all(readers.map((reader) => reader.cancel()));
       await Promise.all(pumps);
+    }
+  });
+
+  test("should publish expired human requests from maintenance without a client read", async () => {
+    // Created ten seconds ago with a five-second lifetime: still pending when written, already
+    // expired for the sweep that uses the real clock.
+    const clock = Date.now() - 10_000;
+    const request = new HumanRequestStore(getSqlite(), () => clock).create({
+      origin: { session_id: "expiry-session", backend: "codex", request_id: "expiry-question" },
+      kind: "question",
+      prompt: "Did this expire?",
+      expires_in_seconds: 5,
+    });
+    // Let the create-time change reach subscribers before this test subscribes.
+    await Bun.sleep(150);
+    const response = await req(app, "GET", "/events");
+    if (!response.body) throw new Error("Missing SSE response body");
+    const reader = response.body.getReader();
+    let received = "";
+    const pump = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        received += new TextDecoder().decode(value);
+      }
+    })();
+    const until = async (check: () => boolean, ms: number): Promise<boolean> => {
+      for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(10))
+        if (check()) return true;
+      return check();
+    };
+    try {
+      expect(await until(() => received.includes("event: ready"), 2000)).toBe(true);
+      // The create-time event must not be mistaken for the expiry this test is about.
+      await Bun.sleep(300);
+      expect(received).not.toContain('"human-requests"');
+      maintainNotifications();
+      expect(await until(() => received.includes('"human-requests"'), 2000)).toBe(true);
+      // Raw SQL: HumanRequestStore.get() also expires, so it cannot witness the sweep.
+      expect(
+        getSqlite()
+          .query<{ status: string }, [string]>("SELECT status FROM human_requests WHERE id=?")
+          .get(request.id)?.status,
+      ).toBe("expired");
+    } finally {
+      await reader.cancel();
+      await pump;
     }
   });
 
