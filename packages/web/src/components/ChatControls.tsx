@@ -1,6 +1,17 @@
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { History, PanelLeftClose, PanelLeftOpen, SquarePen, SquareTerminal, X } from "lucide-react";
+import {
+  ChevronRight,
+  Folder,
+  History,
+  Inbox,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  SquarePen,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
@@ -8,6 +19,7 @@ import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { HelpPopover } from "@/components/HelpPopover";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -27,8 +39,10 @@ import { Input } from "@/components/ui/input";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { useProjects } from "@/hooks/useProjects";
 import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionSeen } from "@/hooks/useSessionSeen";
+import { useSsh } from "@/hooks/useSsh";
 import { useStableOrder } from "@/hooks/useStableOrder";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
@@ -40,12 +54,24 @@ import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
 const FILTER_KEY = "orc_chat_history_filter";
+const SECTION_KEY = "orc_chat_history_section";
+const UNASSIGNED_SECTION = "__unassigned__";
+
+type SessionSection = "projects" | "recents";
 
 function storedFilter(): SessionFilter {
   try {
     return parseFilter(localStorage.getItem(FILTER_KEY));
   } catch {
     return "all";
+  }
+}
+
+function storedSection(): SessionSection {
+  try {
+    return localStorage.getItem(SECTION_KEY) === "projects" ? "projects" : "recents";
+  } catch {
+    return "recents";
   }
 }
 
@@ -75,6 +101,16 @@ export function ChatSessionPicker({
   const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const { data: projects } = useProjects({ status: "active" });
+  const { data: ssh } = useSsh();
+  const [section, setSection] = useState<SessionSection>(storedSection);
+  const [expandedProject, setExpandedProject] = useState<string | null>(null);
+  const chooseSection = (next: SessionSection) => {
+    setSection(next);
+    try {
+      localStorage.setItem(SECTION_KEY, next);
+    } catch {}
+  };
 
   const [selectedArchive, setSelectedArchive] = useState<ArchiveSession | null>(null);
   const [repository, setRepository] = useState("");
@@ -130,6 +166,8 @@ export function ChatSessionPicker({
     search,
     projectScope,
     terminals,
+    !!home,
+    projects ?? [],
   );
   const isSelected = (entry: ChatHistoryEntry) =>
     home?.terminalId
@@ -150,6 +188,23 @@ export function ChatSessionPicker({
     loading,
   });
   const shown = stable.items.slice(0, visibleCount);
+  // Projects float up by their newest session; empty projects stay alphabetical at the end.
+  const projectGroups = (projects ?? [])
+    .map((project) => {
+      const rows = stable.items.filter((entry) => entry.projectId === project.id);
+      return {
+        project,
+        rows,
+        latest: rows.reduce((latest, entry) => Math.max(latest, entry.updatedAt), 0),
+      };
+    })
+    .sort((a, b) => b.latest - a.latest || a.project.name.localeCompare(b.project.name));
+  const unassignedRows = stable.items.filter((entry) => !entry.projectId);
+  const expandedRows =
+    expandedProject === UNASSIGNED_SECTION
+      ? unassignedRows
+      : (projectGroups.find((group) => group.project.id === expandedProject)?.rows ?? []);
+  const visibleEntries = section === "projects" ? expandedRows : stable.items;
   const active = entries.find(
     (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
   );
@@ -189,6 +244,17 @@ export function ChatSessionPicker({
       setSubdirectory(session.metadata.subdirectory ?? "");
       setError("");
     }
+  };
+  const newProjectSession = (project: { id: string; scope?: string | null }) => {
+    chat.newTab({
+      projectId: project.id,
+      fresh: true,
+      ...(project.scope?.trim()
+        ? { workspace: { cwd: project.scope, host: ssh?.host ?? null, worktree: false } }
+        : {}),
+    });
+    home?.go({ terminalId: null });
+    setOpen(false);
   };
   if (rail)
     return (
@@ -319,6 +385,32 @@ export function ChatSessionPicker({
         </section>
       ) : (
         <>
+          <div className="flex items-center gap-1">
+            <div
+              role="tablist"
+              aria-label="Session navigation"
+              className="flex min-w-0 flex-1 gap-1"
+            >
+              {(["projects", "recents"] as const).map((value) => (
+                <Button
+                  key={value}
+                  role="tab"
+                  variant="ghost"
+                  aria-selected={section === value}
+                  data-testid={`session-navigation-${value}`}
+                  onClick={() => chooseSection(value)}
+                  className={cn("flex-1", section === value && "bg-surface-highest")}
+                >
+                  {value === "projects" ? "Projects" : "Recents"}
+                </Button>
+              ))}
+            </div>
+            <HelpPopover label="session order" testId="session-order-help">
+              Sessions are listed by last activity, newest first. Opening a session keeps its place;
+              sending a message moves it to the top. State filters still move rows as their status
+              changes.
+            </HelpPopover>
+          </div>
           <Input
             data-testid="chat-session-search"
             aria-label="Search sessions"
@@ -343,7 +435,85 @@ export function ChatSessionPicker({
             >
               <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             </SessionStateFilters>
-            <div data-testid="chat-session-list" className="min-w-0 space-y-1">
+            {section === "projects" && (
+              <section
+                aria-label="Projects"
+                data-testid="session-project-list"
+                className="space-y-1"
+              >
+                {projectGroups.map(({ project, rows }) => (
+                  <ProjectGroup
+                    key={project.id}
+                    testId={`session-project-${project.id}`}
+                    name={project.name}
+                    icon={<Folder size={14} className="shrink-0" aria-hidden />}
+                    count={rows.length}
+                    expanded={expandedProject === project.id}
+                    onToggle={() => {
+                      setVisibleCount(50);
+                      setExpandedProject(expandedProject === project.id ? null : project.id);
+                    }}
+                    onNew={() => newProjectSession(project)}
+                  >
+                    {rows.slice(0, visibleCount).map((entry) => (
+                      <HistoryRow
+                        key={entry.id}
+                        entry={entry}
+                        state={states.get(entry.id) ?? "idle"}
+                        pending={pending}
+                        selected={isSelected(entry)}
+                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        onSelect={() => selectEntry(entry)}
+                      />
+                    ))}
+                    {!rows.length && !loading && (
+                      <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                        {search || filter !== "all"
+                          ? "No sessions match this project."
+                          : "No sessions in this project yet."}
+                      </p>
+                    )}
+                  </ProjectGroup>
+                ))}
+                {unassignedRows.length > 0 && (
+                  <ProjectGroup
+                    testId="session-project-unassigned"
+                    name="Unassigned"
+                    icon={<Inbox size={14} className="shrink-0" aria-hidden />}
+                    count={unassignedRows.length}
+                    expanded={expandedProject === UNASSIGNED_SECTION}
+                    onToggle={() => {
+                      setVisibleCount(50);
+                      setExpandedProject(
+                        expandedProject === UNASSIGNED_SECTION ? null : UNASSIGNED_SECTION,
+                      );
+                    }}
+                  >
+                    {unassignedRows.slice(0, visibleCount).map((entry) => (
+                      <HistoryRow
+                        key={entry.id}
+                        entry={entry}
+                        state={states.get(entry.id) ?? "idle"}
+                        pending={pending}
+                        selected={isSelected(entry)}
+                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        onSelect={() => selectEntry(entry)}
+                      />
+                    ))}
+                  </ProjectGroup>
+                )}
+                {!loading && !projectGroups.length && !unassignedRows.length && (
+                  <p className="px-2 text-sm text-muted-foreground">
+                    No projects yet. Create a project to group its sessions here.
+                  </p>
+                )}
+              </section>
+            )}
+            <div
+              data-testid="chat-session-list"
+              hidden={section !== "recents"}
+              className="min-w-0 space-y-1"
+            >
               {shown.map((entry) => (
                 <HistoryRow
                   key={entry.id}
@@ -362,12 +532,12 @@ export function ChatSessionPicker({
               Loading sessions…
             </p>
           )}
-          {!loading && !shown.length && (
+          {!loading && section === "recents" && !shown.length && (
             <p className="px-2 text-sm text-muted-foreground">
               {search || filter !== "all" ? "No sessions match." : "No sessions yet."}
             </p>
           )}
-          {stable.items.length > visibleCount && (
+          {visibleEntries.length > visibleCount && (
             <Button
               variant="ghost"
               data-testid="chat-history-more"
@@ -564,6 +734,64 @@ function ProviderMark({ agent }: { agent: string }) {
       data-provider={agent || "unknown"}
       className="size-5 text-muted-foreground"
     />
+  );
+}
+
+function ProjectGroup({
+  name,
+  icon,
+  count,
+  expanded,
+  onToggle,
+  onNew,
+  testId,
+  children,
+}: {
+  name: string;
+  icon: ReactNode;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+  onNew?: () => void;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="group" data-testid={testId}>
+      <div className="flex min-w-0 items-center gap-1">
+        <Button
+          variant="ghost"
+          className="min-w-0 flex-1 justify-start gap-1.5 px-2"
+          aria-expanded={expanded}
+          data-testid="session-project-toggle"
+          onClick={onToggle}
+        >
+          <ChevronRight
+            size={13}
+            aria-hidden
+            className={cn("shrink-0 motion-safe:transition-transform", expanded && "rotate-90")}
+          />
+          {icon}
+          <span className="min-w-0 truncate">{name}</span>
+          <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+            {count}
+          </span>
+        </Button>
+        {onNew && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`New session in ${name}`}
+            data-testid="session-project-new"
+            className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100"
+            onClick={onNew}
+          >
+            <Plus size={15} />
+          </Button>
+        )}
+      </div>
+      {expanded && <div className="space-y-1 pl-2">{children}</div>}
+    </div>
   );
 }
 

@@ -600,6 +600,9 @@ async function newThread(
     thread.cwd = source.cwd;
     thread.host = source.execution_host ?? null;
     thread.title = source.title ?? "Resumed session";
+    // Opening a conversation must not rewrite its date: recency belongs to the
+    // session's last native activity, and only a sent message may bump it.
+    thread.updatedAt = (source.last_activity_at ?? source.created_at).getTime();
     await importTranscript(thread, source);
   }
   return thread;
@@ -1020,7 +1023,37 @@ app.openapi(
       )
         throw new ValidationError("Package installation cannot bypass protected workspace rules");
       thread.cwd = await installPackageForChat(setup, host);
-    } else thread = await newThread(undefined, undefined, body.sourceSessionId);
+    } else {
+      const resumed = await newThread(undefined, undefined, body.sourceSessionId);
+      // Reopening a conversation reuses its thread instead of forking a duplicate
+      // whose fresh timestamp would push the session up the recents list.
+      const candidates = resumed.runtimeId
+        ? store()
+            .byRuntime(resumed.backend, resumed.host, resumed.runtimeId)
+            .filter((item) => item.config.agent === resumed.config.agent)
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+        : [];
+      const existing =
+        candidates.find((item) => item.sourceId === body.sourceSessionId) ?? candidates[0];
+      if (existing) {
+        if (
+          threadRun(existing.id) ||
+          (existing.runtimeId &&
+            active.has(turnKey(existing.host, existing.backend, existing.runtimeId)))
+        )
+          throw new ConflictError("Wait for the agent to finish before resuming.");
+        thread = existing;
+        if (resumed.transcriptMark && resumed.transcriptMark !== existing.transcriptMark) {
+          thread.messages = resumed.messages;
+          thread.importedMessages = resumed.importedMessages;
+          thread.historyBefore = resumed.historyBefore;
+          thread.transcriptMark = resumed.transcriptMark;
+        }
+        thread.sourceId = body.sourceSessionId;
+        // Sync to real native activity without stamping the open time.
+        thread.updatedAt = Math.max(thread.updatedAt, resumed.updatedAt);
+      } else thread = resumed;
+    }
     store().save(thread);
     return c.json(thread);
   },

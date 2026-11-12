@@ -171,3 +171,72 @@ test("an agent running in an ORC terminal joins the list once and shell terminal
   expect(chatHistoryList([], [], [], [], "claude", "all", [terminal])).toHaveLength(1);
   expect(chatHistoryList([], [], [], [], "nomatch", "all", [terminal])).toHaveLength(0);
 });
+
+test("folder scopes place native aliases and shells under their project before filtering", () => {
+  const projects = [{ id: "orc", scope: "C:/Projects/orc" }];
+  const native = { ...live, project_id: null, cwd: "C:\\projects\\ORC\\packages\\web" };
+  const shell = { ...terminal, kind: "shell", cwd: "c:/Projects/orc" };
+  const rows = chatHistoryList([], [saved], [native], [], "", "orc", [shell], true, projects);
+  expect(rows).toHaveLength(2);
+  expect(rows.map((row) => row.projectId)).toEqual(["orc", "orc"]);
+  expect(rows.some((row) => row.id === `chat:${saved.id}`)).toBe(true);
+  expect(
+    chatHistoryList(
+      [],
+      [],
+      [{ ...native, project_id: "assigned" }],
+      [],
+      "",
+      "orc",
+      [],
+      true,
+      projects,
+    ),
+  ).toHaveLength(0);
+  expect(
+    chatHistoryList(
+      [],
+      [],
+      [],
+      [],
+      "",
+      "orc",
+      [{ ...shell, cwd: "C:/Projects/orchestra" }],
+      true,
+      projects,
+    ),
+  ).toHaveLength(0);
+});
+
+test("recency follows the conversation date: opening keeps its place, a new message moves it up", () => {
+  const older = {
+    ...live,
+    id: "live-older",
+    session_id: "runtime-older",
+    project_id: null,
+    created_at: "2026-10-29T00:00:00Z",
+    last_activity_at: "2026-10-30T00:00:00Z",
+  };
+  const newer = {
+    ...live,
+    id: "live-newer",
+    session_id: "runtime-newer",
+    project_id: null,
+    created_at: "2026-10-29T00:00:00Z",
+    last_activity_at: "2026-10-30T01:00:00Z",
+  };
+  // A resumed thread carries the native session's activity date, not the open time.
+  const resumed = {
+    ...saved,
+    id: "90000000-0000-4000-8000-000000000002",
+    sourceId: "live-older",
+    runtimeId: "runtime-older",
+    updatedAt: Date.parse(older.last_activity_at),
+  };
+  const opened = chatHistoryList([], [resumed], [older, newer], []);
+  expect(opened.map((entry) => entry.id)).toEqual(["native:live-newer", `chat:${resumed.id}`]);
+  // Sending a message bumps the conversation date and moves it to the top.
+  const sent = { ...resumed, updatedAt: Date.parse("2026-10-30T02:00:00Z") };
+  const afterSend = chatHistoryList([], [sent], [older, newer], []);
+  expect(afterSend.map((entry) => entry.id)).toEqual([`chat:${resumed.id}`, "native:live-newer"]);
+});

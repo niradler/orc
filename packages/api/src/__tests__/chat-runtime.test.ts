@@ -2114,3 +2114,59 @@ test("named provider defaults reach launches and remain pinned across a default 
     resetConfig();
   }
 });
+
+test("opening a native session keeps its recency; only a sent message moves it up", async () => {
+  getDb()
+    .insert(bridge_chats)
+    .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+    .onConflictDoNothing()
+    .run();
+  const transcript = join(home, "recency-native.jsonl");
+  const line = (role: "user" | "assistant", text: string) =>
+    `${JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role,
+        content: [{ type: role === "user" ? "input_text" : "output_text", text }],
+      },
+    })}\n`;
+  writeFileSync(transcript, line("user", "old question") + line("assistant", "old answer"));
+  // Gateway timestamps store whole seconds.
+  const activity = new Date(Math.floor((Date.now() - 3_600_000) / 1000) * 1000);
+  getDb()
+    .insert(gateway_sessions)
+    .values({
+      id: "source-recency",
+      backend: "codex",
+      mode: "direct",
+      status: "stopped",
+      chat_id: LIVE_CHAT_ID,
+      runtime_session_id: "recency-native",
+      cwd: home,
+      transcript_path: transcript,
+      last_activity_at: activity,
+      title: "Recency fixture",
+    })
+    .run();
+  const before = Date.now();
+  const opened = (await (
+    await request("/chat/threads", { sourceSessionId: "source-recency" })
+  ).json()) as ChatThread;
+  // Opening stamps the conversation with its native activity, not the open time.
+  expect(opened.updatedAt).toBe(activity.getTime());
+  expect(opened.updatedAt).toBeLessThan(before);
+  // Reopening reuses the same conversation instead of forking a duplicate.
+  const reopened = (await (
+    await request("/chat/threads", { sourceSessionId: "source-recency" })
+  ).json()) as ChatThread;
+  expect(reopened.id).toBe(opened.id);
+  expect(reopened.updatedAt).toBe(activity.getTime());
+  const sent = await turn({
+    threadId: opened.id,
+    messages: [{ role: "user", content: "Move this conversation up" }],
+  });
+  expect(sent.response.status).toBe(200);
+  const after = (await (await request(`/chat/threads/${opened.id}`)).json()) as ChatThread;
+  expect(after.updatedAt).toBeGreaterThanOrEqual(before);
+});
