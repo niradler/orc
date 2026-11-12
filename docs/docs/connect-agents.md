@@ -265,7 +265,9 @@ per-request approvals and interruption. A missing install reports installation
 guidance instead of falling back to ACPX. The OpenCode provider profile's
 **Executable path** selects a specific installation, model choices load from
 `opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides the
-built-in command entirely.
+built-in command entirely. If OpenCode moves a saved session into a worktree it
+created, ORC follows it on resume, continues in that folder and updates the
+conversation's working folder.
 
 Configure and authenticate providers in OpenCode on the execution host. In ORC, leave
 **Default model** blank to use OpenCode's selection, or enter the exact
