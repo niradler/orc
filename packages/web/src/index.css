@@ -39,6 +39,10 @@
   --color-tertiary-dim: rgb(var(--warning));
 
   --color-warning: rgb(var(--warning));
+  --color-series-1: light-dark(#2a78d6, #3987e5);
+  --color-series-2: light-dark(#eb6834, #d95926);
+  --color-series-3: light-dark(#1baf7a, #199e70);
+  --color-series-4: light-dark(#eda100, #c98500);
   --color-on-surface: rgb(var(--foreground));
   --color-on-surface-variant: rgb(var(--muted-foreground));
   --color-outline-variant: rgb(var(--border));

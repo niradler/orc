@@ -17191,6 +17191,22 @@ export interface paths {
                                 cached_input_tokens: number;
                                 cache_write_tokens: number | null;
                             } | null;
+                            output_tokens: number | null;
+                            requests: number | null;
+                            compactions: {
+                                /** Format: date-time */
+                                recorded_at: string | null;
+                                pre_tokens: number | null;
+                                post_tokens: number | null;
+                            }[] | null;
+                            timeline: {
+                                request: number;
+                                /** Format: date-time */
+                                recorded_at: string | null;
+                                context_tokens: number;
+                                cached_input_tokens: number;
+                                output_tokens: number | null;
+                            }[] | null;
                         };
                     };
                 };
