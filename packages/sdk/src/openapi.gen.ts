@@ -17199,6 +17199,14 @@ export interface paths {
                                 pre_tokens: number | null;
                                 post_tokens: number | null;
                             }[] | null;
+                            timeline: {
+                                request: number;
+                                /** Format: date-time */
+                                recorded_at: string | null;
+                                context_tokens: number;
+                                cached_input_tokens: number;
+                                output_tokens: number | null;
+                            }[] | null;
                         };
                     };
                 };
