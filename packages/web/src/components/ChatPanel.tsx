@@ -10,7 +10,6 @@ import {
   History,
   LoaderCircle,
   Maximize2,
-  Minimize2,
   MoreHorizontal,
   Paperclip,
   Pencil,
@@ -533,15 +532,15 @@ export function ChatPanel({
           )}
           {fullscreen && !phone && <SessionHomeToggles home={home} />}
           {onToggleFullscreen && (
-            <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
+            <ActionHelp label="Full screen chat">
               <button
                 type="button"
                 data-testid="chat-fullscreen-button"
                 onClick={onToggleFullscreen}
                 className={cn(iconButton, "hidden xl:inline-flex")}
-                aria-label={fullscreen ? "Exit full screen chat" : "Full screen chat"}
+                aria-label="Full screen chat"
               >
-                {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                <Maximize2 size={17} />
               </button>
             </ActionHelp>
           )}

@@ -301,7 +301,7 @@ test("should keep the composer draft when switching to fullscreen and back", asy
   await panel.getByTestId("chat-input").fill("Unsent desktop draft");
   await panel.getByTestId("chat-fullscreen-button").click();
   await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent desktop draft");
-  await panel.getByTestId("chat-fullscreen-button").click();
+  await panel.getByTestId("chat-close-button").click();
   await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent desktop draft");
 });
 
