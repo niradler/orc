@@ -168,10 +168,7 @@ for (const width of [1440, 390])
       await row(list, `chat:${HOME.chatA}`).locator("button").first().click();
       await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
 
-      await page
-        .getByTestId(narrow ? "chat-close-button" : "chat-fullscreen-button")
-        .filter({ visible: true })
-        .click();
+      await page.getByTestId("chat-close-button").filter({ visible: true }).click();
       await expect(page).toHaveURL(/\/sessions\?project=all$/);
       await expect(page.getByTestId("live-sessions")).toBeVisible();
     });
@@ -210,7 +207,7 @@ test.describe("session home on desktop", () => {
       new RegExp(`/chat\\?project=all&sessionTerminal=${HOME.terminal}`),
     );
     await expect(page.getByTestId("session-terminal")).toBeVisible();
-    await page.getByTestId("chat-fullscreen-button").click();
+    await page.getByTestId("chat-close-button").click();
     await expect(page).toHaveURL(new RegExp(`/terminals/${HOME.terminal}\\?project=all$`));
   });
 });
@@ -323,7 +320,7 @@ test("Exit full screen returns to its source after Back and Forward", async ({ p
   await expect(page).toHaveURL(/\/sessions\?project=all$/);
   await page.goForward();
   await expect(page.getByTestId("session-home")).toBeVisible();
-  await page.getByTestId("chat-fullscreen-button").filter({ visible: true }).click();
+  await page.getByTestId("chat-close-button").filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/sessions\?project=all$/);
 });
 

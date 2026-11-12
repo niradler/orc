@@ -273,7 +273,7 @@ test("desktop full-screen chat keeps its messages when returning to the panel", 
   await page.getByTestId("chat-fullscreen-button").click();
   await expect(page.getByTestId("session-home")).toBeVisible();
   await expect(page.getByTestId("session-home")).toContainText("FULLSCREEN-CONTINUITY");
-  await page.getByTestId("chat-fullscreen-button").click();
+  await page.getByTestId("chat-close-button").click();
   await expect(page.getByTestId("session-home")).toBeHidden();
   await expect(page.getByTestId("chat-panel")).toContainText("FULLSCREEN-CONTINUITY");
 });

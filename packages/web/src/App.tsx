@@ -276,7 +276,6 @@ export default function App() {
                         fullscreen
                         onToggle={minimizeChat}
                         onClose={minimizeChat}
-                        onToggleFullscreen={minimizeChat}
                       />
                     </div>
                   ) : (
