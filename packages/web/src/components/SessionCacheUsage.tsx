@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { formatTokenCount } from "@/lib/live-sessions";
 import { sessionCacheIndicator } from "@/lib/session-cache";
 
 const count = new Intl.NumberFormat();
+const SessionContextChart = lazy(() => import("@/components/SessionContextChart"));
 
 export function SessionCacheUsage({ sessionId, live }: { sessionId: string; live: boolean }) {
   const { data, isError, refetch } = useQuery({
@@ -46,6 +47,26 @@ export function SessionCacheUsage({ sessionId, live }: { sessionId: string; live
       : []),
     indicator.label,
   ].join(" · ");
+  const slices = totals
+    ? [
+        { label: "Read from cache", value: totals.cached_input_tokens },
+        ...(totals.cache_write_tokens !== null
+          ? [
+              {
+                label: "Written to cache",
+                value: totals.cache_write_tokens,
+              },
+            ]
+          : []),
+        ...(data.output_tokens !== null ? [{ label: "Output", value: data.output_tokens }] : []),
+        {
+          label: "Uncached input",
+          value:
+            totals.input_tokens - totals.cached_input_tokens - (totals.cache_write_tokens ?? 0),
+        },
+      ]
+    : [];
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
   return (
     <details data-testid="session-cache" className="group mt-2 text-xs">
       <summary
@@ -56,80 +77,67 @@ export function SessionCacheUsage({ sessionId, live }: { sessionId: string; live
         <ChevronDown size={12} aria-hidden="true" className="group-open:rotate-180" />
         {summary}
       </summary>
-      <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 pb-2 tabular-nums">
-        <dt className="text-muted-foreground">Last reported input</dt>
-        <dd>{count.format(latest.input_tokens)} tokens</dd>
-        <dt className="text-muted-foreground">Read from cache</dt>
-        <dd>{count.format(latest.cached_input_tokens)} tokens</dd>
-        {latest.cache_write_tokens !== null && (
-          <>
-            <dt className="text-muted-foreground">Uncached input</dt>
-            <dd>
-              {count.format(
+      {data.timeline && data.timeline.length > 1 && (
+        <Suspense fallback={<div className="h-36" />}>
+          <SessionContextChart timeline={data.timeline} compactions={compactions} />
+        </Suspense>
+      )}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 pb-2 pt-2 tabular-nums">
+        <div className="min-w-0 max-w-xl flex-1 space-y-2">
+          {totals && (
+            <div>
+              <p className="font-medium text-on-surface">
+                Session total {formatTokenCount(total, false)}
+                {data.requests !== null && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    over {count.format(data.requests)} requests
+                  </span>
+                )}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {slices.map((slice) => (
+                  <li key={slice.label} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      {slice.label}
+                    </span>
+                    <span>{count.format(slice.value)}</span>
+                    <span className="w-11 text-right text-muted-foreground">
+                      {share(slice.value, total)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-muted-foreground">
+            <span className="text-on-surface">Last request</span>{" "}
+            {count.format(latest.input_tokens)} tokens · {count.format(latest.cached_input_tokens)}{" "}
+            cached
+            {latest.cache_write_tokens !== null &&
+              ` · ${count.format(latest.cache_write_tokens)} written · ${count.format(
                 latest.input_tokens - latest.cached_input_tokens - latest.cache_write_tokens,
-              )}{" "}
-              tokens
-            </dd>
-            <dt className="text-muted-foreground">Written to cache</dt>
-            <dd>{count.format(latest.cache_write_tokens)} tokens</dd>
-          </>
-        )}
-        {latest.recorded_at && (
-          <>
-            <dt className="text-muted-foreground">Recorded</dt>
-            <dd>{new Date(latest.recorded_at).toLocaleString()}</dd>
-          </>
-        )}
-        {totals && (
-          <>
-            <dt className="col-span-2 pt-2 font-medium text-on-surface">
-              Session total, all requests
-            </dt>
-            {data.requests !== null && (
-              <>
-                <dt className="text-muted-foreground">Requests</dt>
-                <dd>{count.format(data.requests)}</dd>
-              </>
-            )}
-            <dt className="text-muted-foreground">Read from cache</dt>
-            <dd>{count.format(totals.cached_input_tokens)} tokens</dd>
-            {totals.cache_write_tokens !== null && (
-              <>
-                <dt className="text-muted-foreground">Written to cache</dt>
-                <dd>{count.format(totals.cache_write_tokens)} tokens</dd>
-                <dt className="text-muted-foreground">Uncached input</dt>
-                <dd>
-                  {count.format(
-                    totals.input_tokens - totals.cached_input_tokens - totals.cache_write_tokens,
-                  )}{" "}
-                  tokens
-                </dd>
-              </>
-            )}
-            {data.output_tokens !== null && (
-              <>
-                <dt className="text-muted-foreground">Output</dt>
-                <dd>{count.format(data.output_tokens)} tokens</dd>
-              </>
-            )}
-          </>
-        )}
-        {compactions.map((compaction) => (
-          <Fragment
-            key={`${compaction.recorded_at}-${compaction.pre_tokens}-${compaction.post_tokens}`}
-          >
-            <dt className="text-muted-foreground">
-              Compacted
-              {compaction.recorded_at && ` ${new Date(compaction.recorded_at).toLocaleString()}`}
-            </dt>
-            <dd>
-              {compaction.pre_tokens !== null && compaction.post_tokens !== null
-                ? `${count.format(compaction.pre_tokens)} → ${count.format(compaction.post_tokens)}`
-                : "yes"}
-            </dd>
-          </Fragment>
-        ))}
-      </dl>
+              )} uncached`}
+            {latest.recorded_at && ` · ${new Date(latest.recorded_at).toLocaleString()}`}
+          </p>
+          {compactions.length > 0 && (
+            <ul className="text-muted-foreground">
+              {compactions.map((compaction) => (
+                <li
+                  key={`${compaction.recorded_at}-${compaction.pre_tokens}-${compaction.post_tokens}`}
+                >
+                  <span className="text-on-surface">Compacted</span>
+                  {compaction.recorded_at &&
+                    ` ${new Date(compaction.recorded_at).toLocaleString()}`}
+                  {compaction.pre_tokens !== null &&
+                    compaction.post_tokens !== null &&
+                    ` · ${count.format(compaction.pre_tokens)} → ${count.format(compaction.post_tokens)}`}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
       {indicator.cold && (
         <p className="mb-2 max-w-prose text-muted-foreground">
           The recorded cache lifetime has elapsed since this activity. The next request may rebuild
@@ -138,4 +146,12 @@ export function SessionCacheUsage({ sessionId, live }: { sessionId: string; live
       )}
     </details>
   );
+}
+
+const percent = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+
+function share(value: number, total: number): string {
+  if (!total) return "0%";
+  const ratio = (value / total) * 100;
+  return value > 0 && ratio < 0.1 ? "<0.1%" : `${percent.format(ratio)}%`;
 }

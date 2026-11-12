@@ -60,6 +60,17 @@ export const SessionCacheUsageSchema = z.object({
       }),
     )
     .nullable(),
+  timeline: z
+    .array(
+      z.object({
+        request: z.number().int().positive(),
+        recorded_at: z.string().datetime().nullable(),
+        context_tokens: z.number().nonnegative(),
+        cached_input_tokens: z.number().nonnegative(),
+        output_tokens: z.number().nonnegative().nullable(),
+      }),
+    )
+    .nullable(),
 });
 
 export type CacheTokenUsage = z.infer<typeof CacheTokenUsageSchema>;

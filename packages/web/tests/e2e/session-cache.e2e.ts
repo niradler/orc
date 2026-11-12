@@ -65,6 +65,13 @@ for (const width of [1440, 390])
             totals: { input_tokens: 10000, cached_input_tokens: 8500, cache_write_tokens: 1200 },
             output_tokens: 700,
             requests: 12,
+            timeline: Array.from({ length: 12 }, (_, index) => ({
+              request: index + 1,
+              recorded_at: new Date(now - (12 - index) * 10_000).toISOString(),
+              context_tokens: index === 6 ? 200 : 300 + index * 60,
+              cached_input_tokens: 250 + index * 50,
+              output_tokens: 60,
+            })),
             compactions: [
               {
                 recorded_at: new Date(now - 60_000).toISOString(),
@@ -82,17 +89,24 @@ for (const width of [1440, 390])
       await expect(indicator).toHaveText("1k context · 1 compact · 80% cached input");
       await expect(cache).not.toHaveAttribute("open");
       await indicator.press("Enter");
-      await expect(cache).toContainText("800 tokens");
+      await expect(cache).toContainText("1,000 tokens · 800 cached · 100 written · 100 uncached");
+      await expect(cache).toContainText("Session total 11k over 12 requests");
       await expect(cache).toContainText("Uncached input");
-      await expect(cache).toContainText("8,500 tokens");
-      await expect(cache).toContainText("300 tokens");
-      await expect(cache).toContainText("700 tokens");
+      const chart = page.getByTestId("session-context-chart");
+      await expect(chart).toContainText("Context per request · dashed line = compacted");
+      await expect(chart.locator(".recharts-area-curve")).toBeVisible();
+      await expect(chart.locator(".recharts-reference-line")).toHaveCount(1);
+      await expect(cache.getByRole("listitem").first()).toHaveText(
+        /Read from cache\s*8,500\s*79\.4%/,
+      );
       await expect(cache).toContainText("448,563 → 41,112");
       await expect(cache).not.toContainText("unavailable");
       await page.clock.fastForward(60_001);
       await expect(indicator).toContainText("Cache may need rebuilding");
       await expect(cache).toContainText("80% last reported");
       expect(await detail.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      for (const label of await cache.getByRole("listitem").locator(".truncate").all())
+        expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await indicator.blur();
       await cache.screenshot({ path: testInfo.outputPath(`session-cache-${width}-${theme}.png`) });
     });
@@ -127,6 +141,7 @@ test("session cache omits missing timing and unsupported evidence", async ({ pag
         output_tokens: null,
         requests: null,
         compactions: null,
+        timeline: null,
       },
     }),
   );
@@ -134,9 +149,11 @@ test("session cache omits missing timing and unsupported evidence", async ({ pag
   const cache = page.getByTestId("session-cache");
   await expect(cache).toContainText("80% cached input");
   await cache.locator("summary").click();
+  await expect(cache).toContainText("1,000 tokens · 800 cached");
   await expect(cache).not.toContainText(
-    /expiry|unavailable|rebuilding|Recorded|Written to cache|Session total|Compacted/,
+    /expiry|unavailable|rebuilding|written|Session total|Compacted/,
   );
+  await expect(page.getByTestId("session-context-chart")).toHaveCount(0);
   hasUsage = false;
   await page.reload();
   await expect(page.getByTestId("live-session-detail")).toBeVisible();

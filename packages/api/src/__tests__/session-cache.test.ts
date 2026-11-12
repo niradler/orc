@@ -74,6 +74,16 @@ test("should count Claude compactions with their before and after context size",
   ]);
   expect(result.requests).toBe(2);
   expect(result.output_tokens).toBe(1998);
+  expect(result.timeline?.map((point) => point.context_tokens)).toEqual([100, 55]);
+});
+
+test("should downsample a long timeline to its per-bucket context peaks", () => {
+  const rows = Array.from({ length: 1000 }, (_, index) => claude(`r${index}`, index, 0));
+  const timeline = readSessionCacheUsage("claude", bytes(rows)).timeline ?? [];
+  expect(timeline).toHaveLength(200);
+  expect(timeline[0]?.context_tokens).toBe(14);
+  expect(timeline.at(-1)?.context_tokens).toBe(1009);
+  expect(timeline.at(-1)?.request).toBe(1000);
 });
 
 test("should use Codex reported cumulative counters without adding duplicate snapshots or counting cached input twice", () => {
@@ -110,6 +120,7 @@ test("should use Codex reported cumulative counters without adding duplicate sna
   });
   expect(result.output_tokens).toBe(300);
   expect(result.compactions).toBeNull();
+  expect(result.timeline).toHaveLength(1);
   const invalid = {
     ...row,
     payload: {
@@ -128,6 +139,7 @@ test("should hide unsupported, malformed or unreported cache evidence rather tha
       output_tokens: null,
       requests: null,
       compactions: null,
+      timeline: null,
     });
   expect(
     readSessionCacheUsage("claude", new TextEncoder().encode("invalid-json\n{}")).latest,
@@ -208,5 +220,6 @@ test("should serve authenticated numeric cache data for the stored session path 
     output_tokens: null,
     requests: null,
     compactions: null,
+    timeline: null,
   });
 });

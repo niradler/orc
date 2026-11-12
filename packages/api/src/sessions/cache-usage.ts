@@ -63,13 +63,34 @@ export async function loadSessionCacheUsage(
 }
 
 export function emptySessionCacheUsage(): SessionCacheUsage {
-  return { latest: null, totals: null, output_tokens: null, requests: null, compactions: null };
+  return {
+    latest: null,
+    totals: null,
+    output_tokens: null,
+    requests: null,
+    compactions: null,
+    timeline: null,
+  };
+}
+
+const TIMELINE_POINTS = 200;
+
+function downsample<T extends { context_tokens: number }>(points: T[]): T[] {
+  if (points.length <= TIMELINE_POINTS) return points;
+  const size = points.length / TIMELINE_POINTS;
+  return Array.from({ length: TIMELINE_POINTS }, (_, bucket) =>
+    points
+      .slice(Math.floor(bucket * size), Math.floor((bucket + 1) * size))
+      .reduce((peak, point) => (point.context_tokens > peak.context_tokens ? point : peak)),
+  );
 }
 
 export function readSessionCacheUsage(backend: string, bytes: Uint8Array): SessionCacheUsage {
   const result = emptySessionCacheUsage();
   if (backend !== "claude" && backend !== "codex") return result;
   const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
+  const timeline: NonNullable<SessionCacheUsage["timeline"]> = [];
+  let codexTotal: number | null = null;
   if (backend === "claude") result.compactions = compactions;
   const seen = new Set<string>();
   for (const line of new TextDecoder().decode(bytes).split("\n")) {
@@ -135,6 +156,13 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       result.totals = totals;
       result.output_tokens = (result.output_tokens ?? 0) + (value.output_tokens ?? 0);
       result.requests = (result.requests ?? 0) + 1;
+      timeline.push({
+        request: timeline.length + 1,
+        recorded_at: recordedAt,
+        context_tokens: tokens.input_tokens,
+        cached_input_tokens: tokens.cached_input_tokens,
+        output_tokens: value.output_tokens ?? null,
+      });
     } else {
       const payload = object(row.payload);
       if (row.type !== "event_msg" || payload.type !== "token_count") continue;
@@ -142,6 +170,16 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       const latest = CodexUsage.safeParse(info.last_token_usage);
       if (!latest.success) continue;
       const totals = CodexUsage.safeParse(info.total_token_usage);
+      const total = totals.success ? totals.data.input_tokens : null;
+      if (total === null || total !== codexTotal)
+        timeline.push({
+          request: timeline.length + 1,
+          recorded_at: recordedAt,
+          context_tokens: latest.data.input_tokens,
+          cached_input_tokens: latest.data.cached_input_tokens,
+          output_tokens: latest.data.output_tokens ?? null,
+        });
+      codexTotal = total;
       if (
         !result.latest ||
         !recordedAt ||
@@ -158,5 +196,6 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       }
     }
   }
+  if (timeline.length) result.timeline = downsample(timeline);
   return result;
 }
