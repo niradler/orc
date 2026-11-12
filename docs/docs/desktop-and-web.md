@@ -121,7 +121,7 @@ file in the session's folder and opens a file in an editor tab. Closing the pane
 memory; closing a modified file asks before discarding it. Reloading or quitting
 discards these previews after the unsaved-change warning.
 
-**Open file** uses the native picker for local files. Chat and MCP file paths
+The folder icon (**Open file**) uses the native picker for local files. Chat and MCP file paths
 resolve inside the selected session's folder on its execution host; paths outside
 that folder and symlinks escaping it are denied. Remote file previews require
 Python 3 on the SSH host. Files must be UTF-8 text up to 1 MiB. Markdown has Read,
@@ -139,11 +139,11 @@ browser's image decoder. PDF and Office previews are not included.
 The browser uses a separate session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
 are blocked. Browser downloads are staged privately (16 MB each, four across the
-app); **Browser display & recording** lists their status and saves completed files
+app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
 as saved. Each chat starts with a temporary cookie/storage profile.
 **Settings → Browser → Saved browser profiles** creates named profiles; select one
-in the browser panel to remember site logins. Selecting the same profile in another
+under **Browser profile, display & recording** in the browser panel to remember site logins. Selecting the same profile in another
 chat explicitly shares that profile's site storage. Temporary chats stay isolated.
 Profile choices and saved cookies survive app restart; session-only cookies follow
 the site's expiry rules. Switching profiles closes that chat's browser tabs after

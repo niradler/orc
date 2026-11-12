@@ -888,93 +888,71 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                 {...width.handleProps}
               />
             )}
-            <header className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
-              {model.active === "browser" ? (
-                <div className="flex min-w-0 flex-1">
-                  <select
-                    aria-label="Browser profile"
-                    data-testid="preview-browser-profile"
-                    className="form-control h-8 min-w-0 max-w-48 text-xs"
-                    disabled={selectedProfile?.session !== nativeId}
-                    value={selectedProfile?.session === nativeId ? (selectedProfile.id ?? "") : ""}
-                    onChange={(event) => void changeProfile(event.target.value || null)}
-                  >
-                    <option value="">Temporary · this chat</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <span className="flex-1 text-sm font-medium">Preview</span>
-              )}
+            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
+              <nav aria-label="Preview tabs" className="flex min-w-0 flex-1 overflow-x-auto">
+                <button
+                  type="button"
+                  data-testid="preview-files-tab"
+                  className={button + (model.active === "files" ? " bg-surface-highest" : "")}
+                  aria-pressed={model.active === "files"}
+                  onClick={() => edit(key, (old) => ({ ...old, active: "files" }))}
+                >
+                  <Files size={14} />
+                  Files
+                </button>
+                <button
+                  type="button"
+                  className={button + (model.active === "browser" ? " bg-surface-highest" : "")}
+                  aria-pressed={model.active === "browser"}
+                  onClick={() => edit(key, (old) => ({ ...old, active: "browser" }))}
+                >
+                  <Globe size={14} />
+                  Browser
+                </button>
+                {model.files.map((tab) => (
+                  <div key={tab.id} className="flex shrink-0 items-center">
+                    <button
+                      type="button"
+                      className={button + (model.active === tab.id ? " bg-surface-highest" : "")}
+                      title={tab.file.path}
+                      aria-pressed={model.active === tab.id}
+                      onClick={() => edit(key, (old) => ({ ...old, active: tab.id }))}
+                    >
+                      {tab.file.path.split(/[\\/]/).pop()}
+                      {tab.text !== tab.original ? " ●" : ""}
+                    </button>
+                    <button
+                      type="button"
+                      className={button}
+                      aria-label={`Close ${tab.file.path}`}
+                      disabled={tab.saving}
+                      onClick={() => closeFile(tab)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </nav>
               <button
                 type="button"
                 className={button}
                 data-testid="desktop-preview-pick"
+                aria-label="Open file"
+                title="Open file"
                 onClick={() => void pick()}
               >
                 <FolderOpen size={14} />
-                Open file
               </button>
               <button
                 type="button"
                 className={button}
                 aria-label="Close preview"
+                title="Close preview"
                 onClick={() => edit(key, (old) => ({ ...old, visible: false }))}
               >
                 <X size={16} />
               </button>
-            </header>
-            <nav
-              aria-label="Preview tabs"
-              className="flex shrink-0 overflow-x-auto border-b border-border px-2"
-            >
-              <button
-                type="button"
-                data-testid="preview-files-tab"
-                className={button + (model.active === "files" ? " bg-surface-highest" : "")}
-                aria-pressed={model.active === "files"}
-                onClick={() => edit(key, (old) => ({ ...old, active: "files" }))}
-              >
-                <Files size={14} />
-                Files
-              </button>
-              <button
-                type="button"
-                className={button + (model.active === "browser" ? " bg-surface-highest" : "")}
-                aria-pressed={model.active === "browser"}
-                onClick={() => edit(key, (old) => ({ ...old, active: "browser" }))}
-              >
-                <Globe size={14} />
-                Browser
-              </button>
-              {model.files.map((tab) => (
-                <div key={tab.id} className="flex shrink-0 items-center">
-                  <button
-                    type="button"
-                    className={button + (model.active === tab.id ? " bg-surface-highest" : "")}
-                    title={tab.file.path}
-                    aria-pressed={model.active === tab.id}
-                    onClick={() => edit(key, (old) => ({ ...old, active: tab.id }))}
-                  >
-                    {tab.file.path.split(/[\\/]/).pop()}
-                    {tab.text !== tab.original ? " ●" : ""}
-                  </button>
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label={`Close ${tab.file.path}`}
-                    disabled={tab.saving}
-                    onClick={() => closeFile(tab)}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-            </nav>
+            </div>
             {model.error && (
               <div
                 role="alert"
@@ -1220,8 +1198,25 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                   className="shrink-0 border-b border-border px-3 py-1 text-xs"
                   data-testid="preview-display-settings"
                 >
-                  <summary className="cursor-pointer">Browser display & recording</summary>
+                  <summary className="cursor-pointer">Browser profile, display & recording</summary>
                   <div className="flex flex-wrap items-center gap-2 py-2">
+                    <select
+                      aria-label="Browser profile"
+                      data-testid="preview-browser-profile"
+                      className="form-control h-8 min-w-0 max-w-48 text-xs"
+                      disabled={selectedProfile?.session !== nativeId}
+                      value={
+                        selectedProfile?.session === nativeId ? (selectedProfile.id ?? "") : ""
+                      }
+                      onChange={(event) => void changeProfile(event.target.value || null)}
+                    >
+                      <option value="">Temporary · this chat</option>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </option>
+                      ))}
+                    </select>
                     <select
                       aria-label="Browser color scheme"
                       className="form-control h-8 text-xs"
