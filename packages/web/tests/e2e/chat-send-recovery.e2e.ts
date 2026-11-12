@@ -16,6 +16,93 @@ async function send(panel: Locator, text: string) {
   await panel.getByTestId("chat-send-button").click();
 }
 
+for (const status of [0, 503]) {
+  test(`should restore a first send when its recovery lookup stalls after ${status || "network failure"}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: status ? 390 : 1440, height: 900 });
+    await page.clock.install();
+    await page.reload();
+    const panel = page.getByTestId("chat-panel");
+    let lookups = 0;
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/chat/threads/by-message/**", async (route) => {
+      lookups++;
+      await held;
+      await route.abort().catch(() => {});
+    });
+    await page.route("**/api/chat/stream", (route) =>
+      status
+        ? route.fulfill({ status, json: { error: "Preparing the agent" } })
+        : route.abort("internetdisconnected"),
+    );
+    try {
+      await send(panel, "Reply with exactly: STALLED.");
+      await expect(panel.getByTestId("chat-reconnecting")).toBeVisible();
+      await page.clock.fastForward(1_000);
+      await expect.poll(() => lookups).toBe(1);
+      await page.clock.fastForward((status ? 60_000 : 15_000) - 1_000);
+      await expect(panel.getByTestId("chat-error")).toContainText("back in the queue");
+      await expect(panel).toHaveAttribute("data-streaming", "false");
+      await expect(panel.getByTestId("chat-reconnecting")).toHaveCount(0);
+      await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
+      await expect(panel.getByTestId("chat-message-content")).toHaveCount(0);
+      await page.clock.fastForward(60_000);
+      expect(lookups).toBe(1);
+    } finally {
+      release();
+    }
+  });
+}
+
+test("should recover the original first send when a queued retry finds its message already stored", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.clock.install();
+  await page.reload();
+  const panel = page.getByTestId("chat-panel");
+  let hidden = true;
+  let lookups = 0;
+  let sends = 0;
+  let retryStatus = 0;
+  await page.route("**/api/chat/threads/by-message/**", (route) => {
+    lookups++;
+    return hidden ? route.fulfill({ status: 404, json: { error: "Not found" } }) : route.fallback();
+  });
+  await page.route("**/api/chat/stream", async (route) => {
+    sends++;
+    const response = await route.fetch();
+    if (sends === 1) return route.abort("internetdisconnected");
+    retryStatus = response.status();
+    return route.fulfill({ response });
+  });
+  await send(panel, "Reply with exactly: ONLY ONCE.");
+  await expect(panel.getByTestId("chat-reconnecting")).toBeVisible();
+  for (const [index, delay] of [1_000, 2_000, 4_000].entries()) {
+    await page.clock.fastForward(delay);
+    await expect.poll(() => lookups).toBeGreaterThanOrEqual(index + 1);
+  }
+  await page.clock.fastForward(8_000);
+  await expect(panel.getByTestId("chat-error")).toContainText("back in the queue");
+  hidden = false;
+  if ((await panel.getByTestId("chat-message-queue").getAttribute("open")) === null)
+    await panel.getByTestId("chat-queue-toggle").click();
+  await panel.getByTestId("chat-queued-force").click();
+  await expect.poll(() => retryStatus).toBe(409);
+  await page.clock.fastForward(1_000);
+  await expect(page).toHaveURL(/chatThread=/);
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  await expect(panel.getByTestId("chat-message-content")).toHaveCount(2);
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("ONLY ONCE");
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
+  await expect(panel.getByTestId("chat-error")).toHaveCount(0);
+  expect(sends).toBe(2);
+});
+
 test("a send that never reaches the server returns to the queue instead of vanishing", async ({
   page,
 }) => {

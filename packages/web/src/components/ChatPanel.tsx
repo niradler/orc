@@ -151,9 +151,13 @@ export function ChatPanel({
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
   const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  const followedSession = useRef<string | null>(null);
   useEffect(() => {
-    if (turnElsewhere) void refresh();
-  }, [turnElsewhere, refresh]);
+    if (!session.data?.running) followedSession.current = null;
+    if (!turnElsewhere || !thread || followedSession.current === thread.id) return;
+    followedSession.current = thread.id;
+    void refresh().finally(() => session.refetch());
+  }, [turnElsewhere, refresh, thread, session.data?.running, session.refetch]);
   const reload = async () => {
     await refresh(sessionChanged);
     void session.refetch();

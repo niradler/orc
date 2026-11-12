@@ -416,6 +416,10 @@ test("a busy session keeps later messages queued and sends them in order", async
   const panel = page.getByTestId("chat-panel");
   await send(panel, "Reply with exactly: READY.");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("READY");
+  let attaches = 0;
+  page.on("request", (request) => {
+    if (/\/api\/chat\/threads\/[^/]+\/live$/.test(request.url())) attaches++;
+  });
   let rejected = false;
   let sessionRunning = false;
   await page.route("**/api/chat/stream", async (route) => {
@@ -444,6 +448,7 @@ test("a busy session keeps later messages queued and sends them in order", async
   await expect(panel.getByTestId("chat-error")).toHaveCount(0);
   await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
   await page.waitForTimeout(1500);
+  expect(attaches).toBeLessThanOrEqual(1);
   expect(sent.filter((item) => item.includes("SECOND") || item.includes("THIRD"))).toEqual([
     "Reply with exactly: SECOND.",
   ]);

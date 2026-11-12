@@ -150,6 +150,42 @@ async function threadOf(res: Response): Promise<string> {
 }
 
 describe("/chat/stream client message id", () => {
+  test("should reject a stored first-send id across newly created threads", async () => {
+    const clientMessageId = crypto.randomUUID();
+    const body = {
+      messages: [{ role: "user", content: "Reply with exactly: ONCE." }],
+      clientMessageId,
+    };
+    await (await streamTurn(body)).text();
+    const repeat = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: AUTH,
+      body: JSON.stringify(body),
+    });
+    if (repeat.ok) await repeat.text();
+    expect(repeat.status).toBe(409);
+    expect(await repeat.json()).toMatchObject({ code: "CHAT_MESSAGE_EXISTS" });
+  });
+
+  test("should release a first-send reservation after rejected preparation", async () => {
+    const clientMessageId = crypto.randomUUID();
+    const rejected = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: AUTH,
+      body: JSON.stringify({
+        messages: [{ role: "assistant", content: "No user input" }],
+        clientMessageId,
+      }),
+    });
+    expect(rejected.status).toBe(400);
+    await (
+      await streamTurn({
+        messages: [{ role: "user", content: "Reply with exactly: RETRIED." }],
+        clientMessageId,
+      })
+    ).text();
+  });
+
   test("stores the client id on the user message and rejects a repeated send", async () => {
     const clientMessageId = crypto.randomUUID();
     const first = await app.request("/api/chat/stream", {

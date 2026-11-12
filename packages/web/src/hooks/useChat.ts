@@ -493,7 +493,9 @@ function useChatController() {
                   ? body.error
                   : `Chat request failed (HTTP ${response.status}).`,
                 response.status,
-                null,
+                body && typeof body === "object" && "code" in body && typeof body.code === "string"
+                  ? body.code
+                  : null,
               );
             }
             if (!response.body) throw new Error("The agent returned no response stream.");
@@ -531,34 +533,36 @@ function useChatController() {
             if (!current() || stream.controller.signal.aborted) return true;
             const threadId = find(key)?.thread?.id;
             if (!threadId) {
-              // A 4xx means the server rejected the send before storing anything.
-              // Any other failure may still land a turn: the server creates the
-              // thread up front, so look it up by the client message id instead
-              // of orphaning the send. The window is longer when the server may
-              // still be preparing (idle header timeout or 5xx).
-              if (!recover || (cause instanceof ApiError && cause.status < 500)) throw cause;
+              const existingMessage =
+                cause instanceof ApiError && cause.code === "CHAT_MESSAGE_EXISTS";
+              if (!recover || (cause instanceof ApiError && cause.status < 500 && !existingMessage))
+                throw cause;
               const slowFailure =
+                existingMessage ||
                 (cause instanceof ApiError && cause.status >= 500) ||
                 (cause instanceof Error && cause.name === "AbortError");
               const deadline = Date.now() + (slowFailure ? 60_000 : 15_000);
+              const recovery = new AbortController();
+              const recoverySignal = AbortSignal.any([stream.controller.signal, recovery.signal]);
+              const recoveryTimer = setTimeout(() => recovery.abort(), deadline - Date.now());
               let found: ChatThread | null = null;
               let attempts = 0;
               update(key, () => ({ reconnecting: true }));
-              while (
-                !found &&
-                current() &&
-                !stream.controller.signal.aborted &&
-                Date.now() < deadline
-              ) {
-                await waitToReconnect(
-                  reconnectDelay(++attempts),
-                  stream.controller.signal,
-                  wakeOnConnectivity,
-                );
-                if (!current() || stream.controller.signal.aborted) return true;
-                found = await api.chat
-                  .byMessage(recover.messageId, stream.controller.signal)
-                  .catch(() => null);
+              try {
+                while (!found && current() && !recoverySignal.aborted && Date.now() < deadline) {
+                  await waitToReconnect(
+                    reconnectDelay(++attempts),
+                    recoverySignal,
+                    wakeOnConnectivity,
+                  );
+                  if (!current() || stream.controller.signal.aborted) return true;
+                  if (recoverySignal.aborted || Date.now() >= deadline) break;
+                  found = await api.chat
+                    .byMessage(recover.messageId, recoverySignal)
+                    .catch(() => null);
+                }
+              } finally {
+                clearTimeout(recoveryTimer);
               }
               if (!current() || stream.controller.signal.aborted) return true;
               if (!found) throw cause;

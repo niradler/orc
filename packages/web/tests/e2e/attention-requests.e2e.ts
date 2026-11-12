@@ -58,8 +58,12 @@ test("should review compact requests, preserve masked drafts and return redacted
     await expect(card).toBeVisible();
     await expect(card.getByTestId("attention-review")).toHaveAttribute("aria-expanded", "false");
     for (const entry of entries) {
-      const bounds = await page.getByTestId(`attention-request-${entry.id}`).boundingBox();
-      expect(bounds?.height).toBeLessThanOrEqual(72);
+      await expect
+        .poll(async () => {
+          const bounds = await page.getByTestId(`attention-request-${entry.id}`).boundingBox();
+          return bounds?.height ?? Number.POSITIVE_INFINITY;
+        })
+        .toBeLessThanOrEqual(72);
     }
     await page.screenshot({
       path: `../../output/playwright/attention-compact-${width}.png`,

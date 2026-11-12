@@ -1283,7 +1283,29 @@ app.openapi(
   },
 );
 
+const startingMessages = new Set<string>();
+
 async function streamChat(
+  c: Context,
+  body: z.infer<typeof requestSchema>,
+  uploads: UploadFile[] = [],
+) {
+  const messageId = !body.threadId ? body.clientMessageId : undefined;
+  if (messageId && (startingMessages.has(messageId) || store().byMessage(messageId)))
+    throw new OrcError(
+      "This message is already being prepared or was sent.",
+      "CHAT_MESSAGE_EXISTS",
+      409,
+    );
+  if (messageId) startingMessages.add(messageId);
+  try {
+    return await startChat(c, body, uploads);
+  } finally {
+    if (messageId) startingMessages.delete(messageId);
+  }
+}
+
+async function startChat(
   c: Context,
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],

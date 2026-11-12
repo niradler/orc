@@ -56,7 +56,6 @@ export class ChatStore {
       .all(runtimeId, backend, host ?? "")
       .flatMap((row) => this.get(row.id) ?? []);
   }
-  /** Recovery lookup for an interrupted first send: rare, so a scan beats a new index. */
   byMessage(messageId: string): ChatThread | null {
     const row = this.db
       .query<{ id: string }, [string]>(

@@ -117,6 +117,48 @@ test("should save multiple binary files, pass host paths to the agent and persis
     ),
   ).toHaveLength(2);
 });
+
+test("should reserve a first upload message before preparation and reject stream retries", async () => {
+  const backend = createBackend("codex-cli");
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const clientMessageId = crypto.randomUUID();
+  let attempts = 0;
+  registerBackend("codex-cli", () => ({
+    ...backend,
+    preflight: async () => {
+      if (++attempts === 1) {
+        entered.resolve();
+        await release.promise;
+      }
+      return { ok: true };
+    },
+  }));
+  const data = form();
+  data.set(
+    "payload",
+    JSON.stringify({ ...JSON.parse(String(data.get("payload"))), clientMessageId }),
+  );
+  const first = app.request("/api/chat/uploads", { method: "POST", headers: auth, body: data });
+  try {
+    await entered.promise;
+    const retry = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Read these files" }],
+        clientMessageId,
+      }),
+    });
+    if (retry.ok) await retry.text();
+    expect(retry.status).toBe(409);
+    expect(await retry.json()).toMatchObject({ code: "CHAT_MESSAGE_EXISTS" });
+  } finally {
+    release.resolve();
+    await (await first).text();
+    registerBackend("codex-cli", () => backend);
+  }
+});
 test("should honor a saved project upload directory", async () => {
   getSqlite()
     .query(

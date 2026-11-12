@@ -314,6 +314,13 @@ lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the
 server stores the message, then the full thread — and attach to
 `/chat/threads/{id}/live` instead of sending the message again.
 
+First sends reserve `clientMessageId` before agent and workspace preparation.
+Repeating that ID without a thread returns `409` with code `CHAT_MESSAGE_EXISTS`,
+including while preparation is pending. Recover the original thread by message ID;
+retrying the same queued message does not start another turn. The web client bounds
+recovery requests and backoff to 15 seconds, or 60 seconds after a server error,
+header timeout or `CHAT_MESSAGE_EXISTS`, then pauses the message in its queue.
+
 `POST /terminals` accepts `project_id` to use that project's workspace environment
 and ports, and `dev: true` to run its dev script in a shell terminal. A dev
 terminal rejects an agent `kind` or `providerId`, and fails when the project has no
