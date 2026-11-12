@@ -261,11 +261,18 @@ guidance when you try to run it. Copilot remains supported; enable it in Setting
 OpenCode speaks ACP directly: ORC launches `opencode acp`
 on the execution host (an installation with ACP support) and negotiates capabilities per
 session, including native resume, model selection, image input, HTTP MCP,
-per-request approvals and interruption. A missing install reports installation
-guidance instead of falling back to ACPX. The OpenCode provider profile's
-**Executable path** selects a specific installation, model choices load from
-`opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides the
-built-in command entirely.
+per-request approvals, questions and interruption. A missing install reports
+installation guidance instead of falling back to ACPX. The OpenCode provider
+profile's **Executable path** selects a specific installation, model choices load
+from `opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides
+the built-in command entirely.
+
+Direct ACP advertises form elicitation and turns form questions into the same
+chat question card used by Codex and Claude, including single-choice,
+multi-choice, free-text and custom answers. URL elicitation or an unsupported
+form schema is not guessed: ORC reports that the agent needs input in its native
+client and declines the form. ACP agents that do not use elicitation keep working
+unchanged.
 
 Configure and authenticate providers in OpenCode on the execution host. In ORC, leave
 **Default model** blank to use OpenCode's selection, or enter the exact

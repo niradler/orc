@@ -97,7 +97,10 @@ for (const decision of ["approved", "denied", "session"] as const) {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    expect(wire.find((m) => m.method === "initialize").params.clientCapabilities).toEqual({});
+    expect(wire.find((m) => m.method === "initialize").params.clientCapabilities).toEqual({
+      elicitation: { form: {} },
+    });
+    expect(session.capabilities.questions).toBe(true);
     expect(session.getRuntimeSessionId()).toBe("native-acp");
   });
 }

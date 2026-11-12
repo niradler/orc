@@ -20,45 +20,73 @@ export function ChatQuestionForm({
         void onAnswer(answers);
       }}
     >
-      {request.questions.map((question) => (
-        <fieldset key={question.id} className="space-y-2" disabled={busy}>
-          <legend className="font-medium">{question.question}</legend>
-          {question.options?.map((option) => (
-            <label key={option.label} className="flex min-h-11 items-start gap-2 py-2">
-              <input
-                type="radio"
-                name={question.id}
-                value={option.label}
-                className="mt-1"
-                checked={answers[question.id]?.[0] === option.label}
-                onChange={() =>
-                  setAnswers((current) => ({ ...current, [question.id]: [option.label] }))
-                }
-              />
-              <span>
-                {option.label}
-                <span className="block text-xs text-muted-foreground">{option.description}</span>
-              </span>
-            </label>
-          ))}
-          <input
-            data-testid="chat-question-answer"
-            aria-label={`${question.header || "Your answer"}: ${question.question}`}
-            type={question.isSecret ? "password" : "text"}
-            autoComplete="off"
-            placeholder={question.options?.length ? "Or enter your answer" : "Your answer"}
-            value={
-              question.options?.some((option) => option.label === answers[question.id]?.[0])
-                ? ""
-                : (answers[question.id]?.[0] ?? "")
-            }
-            onChange={(event) =>
-              setAnswers((current) => ({ ...current, [question.id]: [event.target.value] }))
-            }
-            className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-base sm:text-sm"
-          />
-        </fieldset>
-      ))}
+      {request.questions.map((question) => {
+        const selected = answers[question.id] ?? [];
+        const optionLabels = new Set(question.options?.map((option) => option.label) ?? []);
+        const custom = selected.find((answer) => !optionLabels.has(answer)) ?? "";
+        return (
+          <fieldset key={question.id} className="space-y-2" disabled={busy}>
+            <legend className="font-medium">{question.question}</legend>
+            {question.options?.map((option) => (
+              <label key={option.label} className="flex min-h-11 items-start gap-2 py-2">
+                <input
+                  type={question.multiSelect ? "checkbox" : "radio"}
+                  name={question.id}
+                  value={option.label}
+                  className="mt-1"
+                  checked={selected.includes(option.label)}
+                  onChange={() =>
+                    setAnswers((current) => {
+                      const values = current[question.id] ?? [];
+                      if (!question.multiSelect)
+                        return { ...current, [question.id]: [option.label] };
+                      return {
+                        ...current,
+                        [question.id]: values.includes(option.label)
+                          ? values.filter((value) => value !== option.label)
+                          : [...values, option.label],
+                      };
+                    })
+                  }
+                />
+                <span>
+                  {option.label}
+                  <span className="block text-xs text-muted-foreground">{option.description}</span>
+                </span>
+              </label>
+            ))}
+            <input
+              data-testid="chat-question-answer"
+              aria-label={`${question.header || "Your answer"}: ${question.question}`}
+              type={question.isSecret ? "password" : "text"}
+              autoComplete="off"
+              placeholder={question.options?.length ? "Or enter your answer" : "Your answer"}
+              value={
+                question.multiSelect
+                  ? custom
+                  : optionLabels.has(selected[0] ?? "")
+                    ? ""
+                    : (selected[0] ?? "")
+              }
+              onChange={(event) =>
+                setAnswers((current) => {
+                  const values = current[question.id] ?? [];
+                  if (!question.multiSelect)
+                    return { ...current, [question.id]: [event.target.value] };
+                  const choices = values.filter((value) => optionLabels.has(value));
+                  return {
+                    ...current,
+                    [question.id]: event.target.value.trim()
+                      ? [...choices, event.target.value]
+                      : choices,
+                  };
+                })
+              }
+              className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-base sm:text-sm"
+            />
+          </fieldset>
+        );
+      })}
       <button
         type="submit"
         data-testid="chat-question-submit"
