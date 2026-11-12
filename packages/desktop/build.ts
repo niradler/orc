@@ -15,6 +15,7 @@ for (const [entry, target, format, name] of [
     target,
     format,
     external: ["electron", "electron-updater"],
+    define: { "process.env.ORC_BUILD_TAG": JSON.stringify(process.env.ORC_BUILD_TAG ?? "") },
   });
   if (!result.success) throw new AggregateError(result.logs, `Could not bundle ${entry}`);
 }
