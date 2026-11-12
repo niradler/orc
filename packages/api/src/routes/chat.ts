@@ -141,6 +141,22 @@ interface ChatRun {
 }
 const runs = new Map<string, ChatRun>();
 
+/**
+ * A turn is stopped after `idleMs` without any agent event, re-checking every
+ * `recheckMs` while it waits for a human answer or an in-flight tool call, and
+ * never runs past `hardMs`. Tests shorten these through setChatTurnLimits.
+ */
+const turnLimits = {
+  idleMs: 15 * 60000,
+  recheckMs: 60_000,
+  hardMs: 4 * 60 * 60000,
+};
+export function setChatTurnLimits(limits: Partial<typeof turnLimits>): () => void {
+  const previous = { ...turnLimits };
+  Object.assign(turnLimits, limits);
+  return () => Object.assign(turnLimits, previous);
+}
+
 const waitingKey = (id: string) => createHash("sha256").update(id).digest("hex");
 
 app.openapi(
@@ -1536,7 +1552,25 @@ async function beginTurn(
   let agentDurationMs: number | undefined;
   let agentOutcome: "completed" | "stopped" | "failed" | undefined;
   const execute = async () => {
-    const timer = setTimeout(run.stop, 15 * 60000);
+    // Activity watchdog: a quiet turn is stopped, but a turn waiting for a
+    // human answer or a running tool call is re-checked instead of killed.
+    let timedOut = false;
+    let toolsPending = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expire = () => {
+      const waiting = run.questions.size > 0 || run.permissions.size > 0 || toolsPending > 0;
+      if (waiting && Date.now() - startedAt < turnLimits.hardMs) {
+        timer = setTimeout(expire, turnLimits.recheckMs);
+        return;
+      }
+      timedOut = true;
+      run.stop();
+    };
+    const touch = () => {
+      clearTimeout(timer);
+      timer = setTimeout(expire, turnLimits.idleMs);
+    };
+    touch();
     const emit = async (event: ChatEvent) => {
       if (event.type === "tool_use" && assistant.content) {
         const narration = assistant.content;
@@ -1659,6 +1693,9 @@ async function beginTurn(
         let outputBytes = 0;
         for await (const event of run.session.events()) {
           if (stopped) break;
+          touch();
+          if (event.type === "tool_use") toolsPending++;
+          else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
           outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
           if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
           if (event.type === "capabilities") {
@@ -1743,13 +1780,34 @@ async function beginTurn(
       if (!stopped) await emit({ type: "error", message }).catch(() => {});
     } finally {
       clearTimeout(timer);
+      if (timedOut) {
+        // The stop path is otherwise silent; without this the chat shows a
+        // stopped turn with no explanation of why the agent went quiet. The
+        // activity entry keeps the reason visible after a reload.
+        const hard = Date.now() - startedAt >= turnLimits.hardMs;
+        const minutes = Math.max(
+          1,
+          Math.round((hard ? turnLimits.hardMs : turnLimits.idleMs) / 60000),
+        );
+        const span = `${minutes} minute${minutes === 1 ? "" : "s"}`;
+        const message = hard
+          ? `The response was stopped after running for ${span}.`
+          : `The response was stopped after ${span} without agent activity.`;
+        failure ??= message;
+        assistant.activity = appendChatActivity(assistant.activity ?? [], {
+          type: "system_status",
+          text: message,
+        });
+        publish(run, { type: "error", message });
+      }
       const finishedAt = Date.now();
       assistant.turn = {
         startedAt,
         finishedAt,
         durationMs: agentDurationMs ?? Math.max(0, finishedAt - startedAt),
-        outcome:
-          stopped || agentOutcome === "stopped"
+        outcome: timedOut
+          ? "failed"
+          : stopped || agentOutcome === "stopped"
             ? "stopped"
             : failure || agentOutcome === "failed"
               ? "failed"
@@ -1772,6 +1830,9 @@ async function beginTurn(
         resolveChatNotification(thread.id, `${runId}:${requestId}`);
       if (!stopped && (completed || failure))
         recordChatNotification(thread, runId, failure ? "failed" : "finished");
+      // A watchdog stop is not a user stop: report it so an away user learns
+      // the turn died instead of finding a silently frozen conversation.
+      if (timedOut) recordChatNotification(thread, runId, "failed");
       try {
         store().save(thread);
         if (!stopped) publish(run, { type: "session", runtimeId: thread.runtimeId });
