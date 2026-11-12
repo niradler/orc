@@ -445,6 +445,12 @@ time, including waits for input. Older turns without timing show counts only.
 Stopped turns retain partial work; unfinished tool calls read **Incomplete**.
 Individual tool durations are not shown.
 
+A turn that goes quiet does not run forever: after 15 minutes without any agent
+activity ORC stops it, and the conversation and a notification say it was stopped
+for inactivity. A turn waiting for your answer or approval, or with a command
+still running, is not idle and is not stopped; a 4-hour absolute limit still
+applies so a stuck agent cannot hold a chat worker indefinitely.
+
 ## Composer controls
 
 The composer groups folder, branch, agent/model and permissions into compact

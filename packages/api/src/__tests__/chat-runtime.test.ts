@@ -28,6 +28,7 @@ import { readProviderSettings, saveProviderSettings } from "@orc/core/provider-s
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
+import { setChatTurnLimits } from "../routes/chat";
 import type { createApp } from "../server";
 import { LIVE_CHAT_ID } from "../session-watcher";
 import { activeTurns, runChatTurn, turnKey } from "../sessions/turns";
@@ -44,6 +45,7 @@ const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let failResume = false;
 let waitPermission = false;
 let waitQuestion = false;
+let hangTurn: "silent" | "tool" | undefined;
 let secretQuestion = false;
 let manyOptions = false;
 const nativeSteers: string[] = [];
@@ -98,6 +100,18 @@ function session(call: (typeof calls)[number]): AgentSession {
       resolve?.();
     },
     async *events(): AsyncIterable<AgentEvent> {
+      if (hangTurn === "silent") {
+        await permission;
+        return;
+      }
+      if (hangTurn === "tool") {
+        yield {
+          type: "tool_use",
+          data: { id: "tool-hang", name: "shell", input: '{"command":"ci"}' },
+        };
+        await permission;
+        return;
+      }
       if (failedTurn) {
         yield { type: "error", data: "usage limit reached" };
         yield { type: "result", data: { runtimeSessionId: call.id ?? "native-fixture" } };
@@ -1132,6 +1146,101 @@ describe("native chat runtime", () => {
     } finally {
       waitQuestion = false;
       reader.releaseLock();
+    }
+  });
+
+  test("should stop a silent turn after the idle limit and report why", async () => {
+    const restore = setChatTurnLimits({ idleMs: 250, recheckMs: 50, hardMs: 60_000 });
+    hangTurn = "silent";
+    try {
+      const started = Date.now();
+      const result = await turn({ messages: [{ role: "user", content: "go quiet" }] });
+      expect(result.response.status).toBe(200);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(200);
+      expect(
+        result.events.some(
+          (event) => event.type === "error" && event.message.includes("without agent activity"),
+        ),
+      ).toBe(true);
+      const opened = result.events.find((event) => event.type === "thread") as Extract<
+        ChatEvent,
+        { type: "thread" }
+      >;
+      const saved = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      const last = saved.messages.at(-1);
+      expect(last?.turn?.outcome).toBe("failed");
+      // The reason survives a reload inside the turn's folded activity.
+      expect(JSON.stringify(last?.activity ?? null)).toContain("without agent activity");
+    } finally {
+      hangTurn = undefined;
+      restore();
+    }
+  });
+
+  test("should keep a turn with a running tool call until the hard limit", async () => {
+    const restore = setChatTurnLimits({ idleMs: 200, recheckMs: 50, hardMs: 900 });
+    hangTurn = "tool";
+    try {
+      const started = Date.now();
+      const result = await turn({ messages: [{ role: "user", content: "run a long build" }] });
+      // The idle limit must not kill an in-flight tool call; the hard limit does.
+      expect(Date.now() - started).toBeGreaterThanOrEqual(850);
+      expect(
+        result.events.some(
+          (event) => event.type === "error" && event.message.includes("stopped after running"),
+        ),
+      ).toBe(true);
+    } finally {
+      hangTurn = undefined;
+      restore();
+    }
+  });
+
+  test("should not stop a turn that waits for an answer past the idle limit", async () => {
+    const restore = setChatTurnLimits({ idleMs: 200, recheckMs: 50, hardMs: 60_000 });
+    waitQuestion = true;
+    const response = await request("/chat/stream", {
+      messages: [{ role: "user", content: "wait for me" }],
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    try {
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"question_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended before question");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      // Stay well past the idle limit while the question is pending.
+      await Bun.sleep(600);
+      expect(
+        (
+          await request(`/chat/runs/${opened.runId}/answer`, {
+            requestId: "question-1",
+            answers: { choice: ["Blue"] },
+          })
+        ).status,
+      ).toBe(200);
+      let part = await reader.read();
+      while (!part.done) {
+        text += decoder.decode(part.value);
+        part = await reader.read();
+      }
+      text += decoder.decode();
+      expect(text).toContain("Hello from the native session");
+      expect(text).not.toContain("without agent activity");
+    } finally {
+      waitQuestion = false;
+      reader.releaseLock();
+      restore();
     }
   });
 
