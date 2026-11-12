@@ -146,6 +146,7 @@ export function FileDiffCard({
   toggle,
   sideBySide = false,
   openFile,
+  sendToComposer,
 }: {
   terminalId: string;
   file: GitStatus["files"][number];
@@ -155,6 +156,7 @@ export function FileDiffCard({
   toggle: () => void;
   sideBySide?: boolean;
   openFile?: ((path: string) => void) | undefined;
+  sendToComposer?: ((path: string) => void) | undefined;
 }) {
   const { staged, working, conflict, label } = fileChangeState(file);
   return (
@@ -163,7 +165,7 @@ export function FileDiffCard({
       data-path={file.path}
       className="border-t border-outline-variant overflow-hidden"
     >
-      <div data-testid="git-status-file" className="flex items-center px-2">
+      <div data-testid="git-status-file" className="flex flex-wrap items-center px-2">
         <input
           type="checkbox"
           aria-label={`Select ${file.path}`}
@@ -202,16 +204,31 @@ export function FileDiffCard({
                 : "Unstaged"}
           </span>
         </button>
-        {openFile && (
-          <button
-            type="button"
-            data-testid="git-open-file"
-            onClick={() => openFile(file.path)}
-            className="shrink-0 min-h-11 px-2 text-xs text-primary hover:bg-surface"
-            title={`Open ${file.path} in Files`}
-          >
-            Open file
-          </button>
+        {(openFile || sendToComposer) && (
+          <div className="git-file-actions ml-auto flex shrink-0 items-center">
+            {openFile && (
+              <button
+                type="button"
+                data-testid="git-open-file"
+                onClick={() => openFile(file.path)}
+                className="shrink-0 min-h-11 px-2 text-xs text-primary hover:bg-surface"
+                title={`Open ${file.path}`}
+              >
+                Open file
+              </button>
+            )}
+            {sendToComposer && (
+              <button
+                type="button"
+                data-testid="git-send-to-composer"
+                onClick={() => sendToComposer(file.path)}
+                className="shrink-0 min-h-11 px-2 text-xs text-primary hover:bg-surface"
+                title={`Send ${file.path} to the chat composer`}
+              >
+                Send to composer
+              </button>
+            )}
+          </div>
         )}
       </div>
       {open && (

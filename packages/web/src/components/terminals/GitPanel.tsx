@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { fileChangeState } from "@/lib/git-status";
@@ -31,7 +31,22 @@ function sameCheckout(left: string, right: string | null) {
     : normalize(left) === normalize(right ?? "");
 }
 
-export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId: string }) {
+export function GitPanelBody({
+  terminal,
+  paneId,
+  localOnly = false,
+  help,
+  onOpenFile,
+  onSendToComposer,
+}: {
+  terminal: Terminal;
+  paneId: string;
+  /** Working-tree view only: hides PR review mode (the desktop preview panel's Changes tab). */
+  localOnly?: boolean;
+  help?: ReactNode;
+  onOpenFile?: (path: string) => void;
+  onSendToComposer?: (path: string) => void;
+}) {
   const { create } = useTerminals();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -130,7 +145,7 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
       /^https:\/\/github[.]com\//.test(item.url),
   );
   const mode =
-    pull && params.get("pr") === String(pull.number) && params.get("pane") === paneId
+    !localOnly && pull && params.get("pr") === String(pull.number) && params.get("pane") === paneId
       ? "pr"
       : "changes";
   const setMode = (nextMode: string) =>
@@ -144,7 +159,7 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
       } else next.delete("pr");
       return next;
     });
-  const reviewAvailable = !!pull && !!github.data && github.data.auth !== "none";
+  const reviewAvailable = !localOnly && !!pull && !!github.data && github.data.auth !== "none";
   const stagedCount = data?.files.filter((file) => fileChangeState(file).staged).length ?? 0;
   const groups = [
     { name: "Conflicts", files: visibleFiles.filter((file) => fileChangeState(file).conflict) },
@@ -218,7 +233,7 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
               PR #{pull.number}
             </button>
           )}
-          {pull && (
+          {!localOnly && pull && (
             <a
               data-testid="git-pr-browser"
               href={pull.url}
@@ -243,6 +258,7 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
             {filesHidden ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
           </button>
           {data?.root && <TerminalTaskLink terminal={terminal} />}
+          {help}
           <button
             type="button"
             data-testid="git-refresh"
@@ -604,7 +620,8 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
                     openFile={
                       fileChangeState(file).label === "Deleted"
                         ? undefined
-                        : (path) =>
+                        : (onOpenFile ??
+                          ((path) =>
                             setParams((current) => {
                               const next = new URLSearchParams(current);
                               next.set("view", "files");
@@ -612,8 +629,9 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
                               next.set("paneTerminal", terminal.id);
                               next.set("file", path);
                               return next;
-                            })
+                            })))
                     }
+                    sendToComposer={onSendToComposer}
                     open={!collapsed.includes(file.path)}
                     checked={paths.includes(file.path)}
                     select={(checked) => togglePath(file.path, file.original, checked)}

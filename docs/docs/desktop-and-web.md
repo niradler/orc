@@ -121,6 +121,15 @@ file in the session's folder and opens a file in an editor tab. Closing the pane
 memory; closing a modified file asks before discarding it. Reloading or quitting
 discards these previews after the unsaved-change warning.
 
+The **Changes** tab shows the working-tree changes of the terminal running in the
+session's folder, reusing the terminal workspace's Git panel: the changed-file
+list, unified or side-by-side diffs, staging and commit. **Open file** opens a
+changed file in an editor tab; **Send to composer** adds it to the chat draft and
+reveals the conversation. Wide panels split the file list and the diff; narrow
+panels and phones combine them behind the files toggle. When no terminal is
+running in the folder, the tab says so quietly and offers **Open terminal**.
+Pull-request review stays in the terminal workspace and the session inspector.
+
 The folder icon (**Open file**) uses the native picker for local files. Chat and MCP file paths
 resolve inside the selected session's folder on its execution host; paths outside
 that folder and symlinks escaping it are denied. Remote file previews require
@@ -223,6 +232,10 @@ Files and explicit MCP preview requests continue to open in the panel.
 This flow is desktop-only; the web and phone UI are unchanged.
 
 ![Browser beside a demo conversation](/screens/desktop-preview-browser.png)
+
+![Working-tree changes beside a demo conversation](/screens/desktop-preview-changes-wide.png)
+
+<img src="/screens/desktop-preview-changes-phone.png" alt="Changes tab in the preview panel on a phone" width="260">
 
 ![Markdown editing beside a demo conversation](/screens/desktop-preview-markdown.png)
 

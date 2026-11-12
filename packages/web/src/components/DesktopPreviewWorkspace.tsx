@@ -16,10 +16,12 @@ import {
   Files,
   Folder,
   FolderOpen,
+  GitBranch,
   Globe,
   LoaderCircle,
   RefreshCw,
   Save,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import {
@@ -31,9 +33,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, apiFetch, getApiUrl } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { HelpPopover } from "@/components/HelpPopover";
+import { GitPanelBody } from "@/components/terminals/GitPanel";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -46,6 +51,8 @@ import {
 } from "@/lib/desktop-preview-context";
 import type { PreviewCompletion } from "@/lib/preview-delivery";
 import { SESSION_LIVE_PARAM } from "@/lib/session-home";
+import { runningTerminalForFolder } from "@/lib/terminal-links";
+import { useTerminals } from "@/lib/terminals";
 
 type FileTab = {
   id: string;
@@ -73,7 +80,7 @@ const initialModel = (): Model => ({
   loading: false,
 });
 const button =
-  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 rounded px-2 text-xs hover:bg-surface-highest disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-focus";
+  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 rounded px-2 text-xs hover:bg-surface-highest disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11";
 function error(cause: unknown): string {
   return cause instanceof Error ? cause.message : "Preview could not be opened";
 }
@@ -186,6 +193,16 @@ function FileTreeLevel({
   ));
 }
 
+function ChangesHelp(): ReactNode {
+  return (
+    <HelpPopover label="Changes" testId="preview-changes-help">
+      Shows the working-tree changes of the terminal running in this session's folder. Open a
+      changed file in an editor tab, or send it to the chat composer. Select files to stage and
+      commit them here. No terminal in the folder yet? Open one from this tab.
+    </HelpPopover>
+  );
+}
+
 export function DesktopPreviewWorkspace({ children }: { children: ReactNode }) {
   const bridge = desktopBridge()?.preview;
   if (!bridge) return children;
@@ -202,8 +219,25 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const rawSession =
     params.get(SESSION_LIVE_PARAM) ?? (chatShown ? (chat.thread?.id ?? null) : null);
   const key = chat.activeKey;
-  const [resolved, setResolved] = useState<{ input: string; id: string } | null>(null);
+  const [resolved, setResolved] = useState<{
+    input: string;
+    id: string;
+    cwd: string;
+    host: string | null;
+  } | null>(null);
   const session = resolved?.input === rawSession ? resolved.id : rawSession;
+  const { terminals, isLoading: terminalsLoading, create: createTerminal } = useTerminals();
+  const navigate = useNavigate();
+  const folder = resolved?.input === rawSession ? resolved : null;
+  const gitTerminal = folder
+    ? runningTerminalForFolder(terminals, folder.cwd, folder.host)
+    : undefined;
+  const gitStatus = useQuery({
+    queryKey: ["git", gitTerminal?.id, "status"],
+    queryFn: () => api.git.status(gitTerminal?.id ?? ""),
+    enabled: !!gitTerminal,
+  });
+  const changeCount = gitStatus.data?.files.length ?? 0;
   const [models, setModels] = useState<Record<string, Model>>({});
   const [displayBusy, setDisplayBusy] = useState(false);
   const [recorded, setRecorded] = useState<{
@@ -443,7 +477,8 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     void api.preview
       .session(rawSession)
       .then((value) => {
-        if (active) setResolved({ input: rawSession, id: value.id });
+        if (active)
+          setResolved({ input: rawSession, id: value.id, cwd: value.cwd, host: value.host });
       })
       .catch((cause) => {
         if (active) edit(key, (old) => ({ ...old, error: error(cause) }));
@@ -855,6 +890,30 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       edit(key, (old) => ({ ...old, error: error(cause) }));
     }
   }
+  const [openingTerminal, setOpeningTerminal] = useState(false);
+  const [terminalError, setTerminalError] = useState("");
+  async function openChangesTerminal(): Promise<void> {
+    if (!folder || openingTerminal) return;
+    setOpeningTerminal(true);
+    setTerminalError("");
+    try {
+      await createTerminal({ kind: "shell", cwd: folder.cwd, host: folder.host });
+    } catch (cause) {
+      setTerminalError(error(cause));
+    } finally {
+      setOpeningTerminal(false);
+    }
+  }
+  function sendToComposer(path: string): void {
+    const text = `Review the changes in \`${path}\``;
+    chat.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()}\n${text}` : text);
+    if (narrow) edit(key, (old) => ({ ...old, visible: false }));
+    if (!chatShown) {
+      const next = new URLSearchParams(params);
+      next.set("chat", "open");
+      navigate({ pathname: "/chat", search: next.toString() });
+    }
+  }
   const canExternal =
     selected &&
     (!!selected.file.local_token ||
@@ -888,7 +947,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                 {...width.handleProps}
               />
             )}
-            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
+            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2 max-sm:h-12">
               <nav aria-label="Preview tabs" className="flex min-w-0 flex-1 overflow-x-auto">
                 <button
                   type="button"
@@ -902,12 +961,26 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                 </button>
                 <button
                   type="button"
+                  data-testid="preview-browser-tab"
                   className={button + (model.active === "browser" ? " bg-surface-highest" : "")}
                   aria-pressed={model.active === "browser"}
                   onClick={() => edit(key, (old) => ({ ...old, active: "browser" }))}
                 >
                   <Globe size={14} />
                   Browser
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-changes-tab"
+                  className={button + (model.active === "changes" ? " bg-surface-highest" : "")}
+                  aria-pressed={model.active === "changes"}
+                  onClick={() => edit(key, (old) => ({ ...old, active: "changes" }))}
+                >
+                  <GitBranch size={14} />
+                  Changes
+                  {changeCount > 0 && (
+                    <span className="text-on-surface-variant">{changeCount}</span>
+                  )}
                 </button>
                 {model.files.map((tab) => (
                   <div key={tab.id} className="flex shrink-0 items-center">
@@ -985,6 +1058,60 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                 <LoaderCircle className="animate-spin" size={13} />
                 Opening file…
               </p>
+            )}
+            {model.active === "changes" && !gitTerminal && (
+              <div
+                data-testid="preview-changes-empty"
+                className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground"
+              >
+                {!session ? (
+                  <p>Start or select a saved session to see its working changes</p>
+                ) : !folder ? (
+                  <p>This session's workspace folder is unavailable.</p>
+                ) : terminalsLoading ? (
+                  <p>Loading terminals…</p>
+                ) : (
+                  <>
+                    <p>No terminal is running in this session's folder.</p>
+                    <p className="text-xs">Open one to review its working-tree changes here.</p>
+                    <Button
+                      variant="outline"
+                      data-testid="preview-changes-open-terminal"
+                      disabled={openingTerminal}
+                      onClick={() => void openChangesTerminal()}
+                    >
+                      <SquareTerminal size={16} />
+                      Open terminal
+                    </Button>
+                    {terminalError && (
+                      <p role="alert" className="text-error">
+                        {terminalError}
+                      </p>
+                    )}
+                  </>
+                )}
+                <ChangesHelp />
+              </div>
+            )}
+            {gitTerminal && (
+              <div
+                key={gitTerminal.id}
+                data-testid="preview-changes"
+                className={
+                  model.active === "changes"
+                    ? "preview-changes-host flex min-h-0 flex-1 flex-col"
+                    : "hidden"
+                }
+              >
+                <GitPanelBody
+                  terminal={gitTerminal}
+                  paneId="preview-changes"
+                  localOnly
+                  help={<ChangesHelp />}
+                  onOpenFile={(path) => void openFile(path).catch(() => {})}
+                  onSendToComposer={sendToComposer}
+                />
+              </div>
             )}
             {model.active === "files" ? (
               session ? (
