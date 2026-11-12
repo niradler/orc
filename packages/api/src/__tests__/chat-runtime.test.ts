@@ -1825,9 +1825,10 @@ test("opencode resumes a session it moved into a worktree and follows its folder
   const root = mkdtempSync(join(home, "opencode-moved-"));
   const moved = join(root, "worktree");
   mkdirSync(moved, { recursive: true });
-  const script = join(home, "opencode-moved");
+  const source = join(home, "opencode-moved.ts");
+  const script = process.platform === "win32" ? join(home, "opencode-moved.exe") : source;
   writeFileSync(
-    script,
+    source,
     `#!/usr/bin/env bun
 import {createInterface} from 'node:readline';
 const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
@@ -1841,6 +1842,12 @@ for await(const line of createInterface({input:process.stdin})) { const m=JSON.p
 }`,
     { mode: 0o755 },
   );
+  if (process.platform === "win32")
+    expect(
+      Bun.spawnSync([process.execPath, "build", source, "--compile", "--outfile", script], {
+        timeout: 30_000,
+      }).exitCode,
+    ).toBe(0);
   const initial = readProviderSettings();
   saveProviderSettings({
     ...initial,

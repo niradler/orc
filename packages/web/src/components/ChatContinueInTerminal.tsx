@@ -21,13 +21,24 @@ export function useChatContinueInTerminal() {
     setPending(true);
     setError("");
     try {
-      const { sessions } = await api.sessions.live({ active: false, limit: 5000 });
-      const session = sessions.find(
-        (session) =>
-          session.session_id === thread.runtimeId &&
-          session.agent === thread.config.agent &&
-          session.host === thread.host,
-      );
+      const matches = () =>
+        api.sessions
+          .live({ active: false, limit: 5000 })
+          .then(({ sessions }) =>
+            sessions.find(
+              (session) =>
+                session.session_id === thread.runtimeId &&
+                session.agent === thread.config.agent &&
+                session.host === thread.host,
+            ),
+          );
+      let session = await matches();
+      if (!session) {
+        // Discovery polls agent storage, so a fresh session (notably OpenCode)
+        // may not be listed yet. Sync once and retry before giving up.
+        await api.sessions.sync().catch(() => {});
+        session = await matches();
+      }
       if (!session)
         throw new Error(
           "This session is not available in Sessions yet. Try again after session discovery refreshes.",
@@ -80,16 +91,28 @@ export function ChatContinueInTerminal({
     </button>
   );
   return (
-    <div className="relative">
+    <div className={labelled ? undefined : "relative"}>
       {labelled ? button : <ActionHelp label="Continue in terminal">{button}</ActionHelp>}
-      {control.error && (
-        <p
-          role="alert"
-          className="absolute right-0 top-full z-50 w-64 rounded-md border border-border bg-background p-3 text-sm text-error"
-        >
-          {control.error}
-        </p>
-      )}
+      {control.error &&
+        (labelled ? (
+          // Inside the actions menu: an absolute popup wider than the menu is
+          // clipped by its scroll area, so keep the message in flow.
+          <p
+            role="alert"
+            data-testid="chat-continue-terminal-error"
+            className="px-2 pb-1 text-xs text-error wrap-break-word"
+          >
+            {control.error}
+          </p>
+        ) : (
+          <p
+            role="alert"
+            data-testid="chat-continue-terminal-error"
+            className="absolute right-0 top-full z-50 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-background p-3 text-sm text-error wrap-break-word"
+          >
+            {control.error}
+          </p>
+        ))}
     </div>
   );
 }

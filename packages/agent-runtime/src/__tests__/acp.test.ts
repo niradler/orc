@@ -20,10 +20,11 @@ function fixture(opts: Partial<SessionOpts> = {}, mode = "normal") {
     script,
     `import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
+import { join } from 'node:path';
 const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
 const update=(sessionId,update)=>emit({method:'session/update',params:{sessionId,update}});
 let promptId; let session='native-acp'; const mode=${JSON.stringify(mode)};
-const moved=process.cwd()+'/moved';
+const moved=join(process.cwd(),'moved');
 const ask=id=>emit({id,method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'late',title:'Late action',kind:'execute'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'deny',name:'Deny',kind:'reject_once'}]}});
 for await (const line of createInterface({input:process.stdin})) {
  const m=JSON.parse(line);appendFileSync('wire.ndjson',line+'\\n');
@@ -100,7 +101,10 @@ for (const decision of ["approved", "denied", "session"] as const) {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    expect(wire.find((m) => m.method === "initialize").params.clientCapabilities).toEqual({});
+    expect(wire.find((m) => m.method === "initialize").params.clientCapabilities).toEqual({
+      elicitation: { form: {} },
+    });
+    expect(session.capabilities.questions).toBe(true);
     expect(session.getRuntimeSessionId()).toBe("native-acp");
   });
 }

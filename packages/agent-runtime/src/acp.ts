@@ -1,5 +1,8 @@
 import {
+  type ClientCapabilities,
   type ClientConnection,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
   client,
   type ListSessionsResponse,
   type LoadSessionResponse,
@@ -19,6 +22,7 @@ import { ulid } from "@orc/core/ids";
 import type { AgentCapabilities } from "@orc/core/types";
 import { createAcpxParser } from "./acpx.js";
 import { ACP_CAPABILITIES, OPENCODE_CAPABILITIES } from "./capabilities.js";
+import { acpElicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
@@ -73,6 +77,13 @@ export class AcpSession implements AgentSession {
     string,
     { params: RequestPermissionRequest; resolve: (value: RequestPermissionResponse) => void }
   >();
+  private readonly questions = new Map<
+    string,
+    {
+      form: ReturnType<typeof acpElicitationForm>;
+      resolve: (value: CreateElicitationResponse) => void;
+    }
+  >();
 
   constructor(
     private readonly opts: SessionOpts,
@@ -101,7 +112,7 @@ export class AcpSession implements AgentSession {
     this.failure = message;
     this.queue.push({ type: "error", data: message });
     this.done = true;
-    this.cancelPermissions();
+    this.cancelPending();
     this.wake?.();
     this.connection?.close();
     this.child?.kill();
@@ -111,6 +122,16 @@ export class AcpSession implements AgentSession {
     for (const pending of [...this.pending.values()])
       pending.resolve({ outcome: { outcome: "cancelled" } });
     this.pending.clear();
+  }
+
+  private cancelQuestions(): void {
+    for (const question of [...this.questions.values()]) question.resolve({ action: "cancel" });
+    this.questions.clear();
+  }
+
+  private cancelPending(): void {
+    this.cancelPermissions();
+    this.cancelQuestions();
   }
 
   private async request<T>(operation: Promise<T>, method: string): Promise<T> {
@@ -189,6 +210,60 @@ export class AcpSession implements AgentSession {
     });
   }
 
+  private elicitation(
+    params: CreateElicitationRequest,
+    signal: AbortSignal,
+  ): Promise<CreateElicitationResponse> {
+    if (
+      this.replaying ||
+      this.closed ||
+      this.failure ||
+      !this.busy ||
+      this.done ||
+      this.cancelling ||
+      signal.aborted ||
+      ("sessionId" in params && params.sessionId !== this.runtimeId)
+    )
+      return Promise.resolve({ action: "cancel" });
+    if (params.mode !== "form") {
+      this.push({
+        type: "system_status",
+        data:
+          params.mode === "url"
+            ? "This agent needs input in its native client: it requested URL elicitation."
+            : `This agent needs input in its native client: unsupported elicitation mode "${params.mode}".`,
+      });
+      return Promise.resolve({ action: "decline" });
+    }
+    const id = ulid();
+    let form: ReturnType<typeof acpElicitationForm>;
+    try {
+      form = acpElicitationForm(id, params);
+    } catch (error) {
+      this.push({
+        type: "system_status",
+        data: `${error instanceof Error ? error.message : "The agent requested an unsupported form."} Continue in the agent's native client.`,
+      });
+      return Promise.resolve({ action: "decline" });
+    }
+    return new Promise<CreateElicitationResponse>((resolve) => {
+      const finish = (value: CreateElicitationResponse) => {
+        signal.removeEventListener("abort", abort);
+        if (this.questions.delete(id))
+          this.push({ type: "request_resolved", data: { requestId: id } });
+        resolve(value);
+      };
+      const abort = () => finish({ action: "cancel" });
+      this.questions.set(id, { form, resolve: finish });
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      this.push({ type: "question_request", data: form.question });
+    });
+  }
+
   async initialize(): Promise<void> {
     if (this.closed) throw new Error("ACP connection is closed.");
     try {
@@ -213,6 +288,7 @@ export class AcpSession implements AgentSession {
         .onRequest("session/request_permission", ({ params, signal }) =>
           this.permission(params, signal),
         )
+        .onRequest("elicitation/create", ({ params, signal }) => this.elicitation(params, signal))
         .onNotification("session/update", ({ params }) => {
           if (this.replaying || this.closed || params.sessionId !== this.runtimeId || this.done)
             return;
@@ -245,11 +321,12 @@ export class AcpSession implements AgentSession {
           this.fail("ACP agent exited. Resume this conversation after checking the agent.");
       });
       const agent = this.connection.agent;
+      const clientCapabilities: ClientCapabilities = { elicitation: { form: {} } };
       const initialized = await this.request(
         agent.request("initialize", {
           protocolVersion: PROTOCOL_VERSION,
           clientInfo: { name: "orc", version: "1" },
-          clientCapabilities: {},
+          clientCapabilities,
         }),
         "initialize",
       );
@@ -263,6 +340,8 @@ export class AcpSession implements AgentSession {
         resume: native?.loadSession === true,
         images: native?.promptCapabilities?.image === true,
         mcp: native?.mcpCapabilities?.http === true,
+        // Form elicitation is a client capability. The agent may use it after this handshake.
+        questions: clientCapabilities.elicitation?.form !== undefined,
       };
       const server = this.opts.orcMcp
         ? buildOrcMcpServer(
@@ -394,7 +473,11 @@ export class AcpSession implements AgentSession {
           })),
         ],
       })
-      .then((result) => {
+      .then(async (result) => {
+        if (this.closed || this.failure) return;
+        // The protocol connection dispatches notifications and responses concurrently.
+        // Let final session/update frames flush before this turn stops accepting them.
+        await Promise.resolve();
         if (this.closed || this.failure) return;
         if (result.stopReason === "cancelled")
           this.push({ type: "system_status", data: "ACP turn stopped." });
@@ -415,9 +498,18 @@ export class AcpSession implements AgentSession {
       .finally(() => {
         this.done = true;
         this.busy = false;
-        this.cancelPermissions();
+        this.cancelPending();
         this.wake?.();
       });
+  }
+
+  respondQuestion(id: string, answers: Record<string, string[]>): void {
+    const pending = this.questions.get(id);
+    if (!pending) throw new Error("This question is no longer pending.");
+    const content = pending.form.content(answers);
+    this.questions.delete(id);
+    pending.resolve({ action: "accept", content });
+    this.push({ type: "request_resolved", data: { requestId: id } });
   }
 
   respondPermission(id: string, result: PermissionResult): void {
@@ -432,7 +524,7 @@ export class AcpSession implements AgentSession {
     });
   }
   waitingForHuman(): boolean {
-    return this.pending.size > 0;
+    return this.pending.size > 0 || this.questions.size > 0;
   }
   getRuntimeSessionId(): string | undefined {
     return this.runtimeId;
@@ -443,7 +535,7 @@ export class AcpSession implements AgentSession {
   async interrupt(): Promise<void> {
     if (!this.busy || !this.connection || !this.runtimeId) return;
     this.cancelling = true;
-    this.cancelPermissions();
+    this.cancelPending();
     await this.connection.agent.notify("session/cancel", { sessionId: this.runtimeId });
   }
   async *events(): AsyncIterable<AgentEvent> {
@@ -460,7 +552,7 @@ export class AcpSession implements AgentSession {
     if (this.closed) return;
     await this.interrupt().catch(() => {});
     this.closed = true;
-    this.cancelPermissions();
+    this.cancelPending();
     this.connection?.close();
     if (this.child) {
       const child = this.child;
