@@ -170,8 +170,16 @@ for (const width of [320, 390])
       await gotoView(page, "notifications");
       const card = page.getByTestId(`attention-request-${entry.id}`);
       await card.getByTestId("attention-review").tap();
+      await expect(page.locator(`[data-source-id="${entry.id}"]`)).toHaveCount(0);
       await card.getByTestId("attention-argument-ACCOUNT").fill("private-touch-account");
+      await expect(card.getByTestId("attention-argument-ACCOUNT")).toHaveValue(
+        "private-touch-account",
+      );
       await card.getByTestId("attention-argument-KEY").fill("private-touch-key");
+      await expect(card.getByTestId("attention-argument-ACCOUNT")).toHaveValue(
+        "private-touch-account",
+      );
+      await expect(card.getByTestId("attention-argument-KEY")).toHaveValue("private-touch-key");
       for (const name of ["ACCOUNT", "KEY"]) {
         await expect(card.getByTestId(`attention-argument-name-${name}`)).toHaveText(
           `ORC_INPUT_${name}`,
