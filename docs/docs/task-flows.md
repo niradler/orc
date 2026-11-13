@@ -198,6 +198,11 @@ With `"isolation": "worktree"`, agent nodes work in git worktrees instead of the
 - A node that starts while that tree is busy, such as a parallel branch, gets its own `<repo>/.orc/worktrees/<task>-<node>` on branch `orc/task/<task>-<node>`.
 - A task with an explicit `git_worktree`, a resumed node session, or a project folder that is not a git repository keeps the existing behavior.
 - The task's flow panel shows each node's branch and folder.
+
+![Two parallel lanes, each in its own worktree](/screens/flow-worktrees-desktop.png)
+
+[Phone layout](/screens/flow-worktrees-phone.png)
+
 - When the task becomes `done` or `cancelled`, ORC runs `git worktree remove` on the flow's worktrees and keeps the branches. A tree with uncommitted or untracked changes is kept, and a task comment names it.
 
 ## Termination
