@@ -34,6 +34,13 @@ const CodexCredentials = z.object({
   }),
 });
 const ClaudeCredentials = z.object({ claudeAiOauth: z.object({ accessToken: z.string().min(1) }) });
+const AlibabaResponse = z.object({
+  per1MonthPercentage: z.number().finite().nonnegative().optional(),
+  per1MonthResetTime: z.number().finite().nonnegative().nullish(),
+  hasQuotaData: z.boolean().optional(),
+});
+
+type QuotaProcess = { exitCode: number; stdout: string; stderr: string };
 
 type QuotaDependencies = {
   read: (path: string) => Promise<string>;
@@ -41,11 +48,17 @@ type QuotaDependencies = {
   home: string;
   codexHome?: string | undefined;
   claudeHome?: string | undefined;
+  run?: (command: string, args: string[]) => Promise<QuotaProcess>;
 };
 
 function resetTime(seconds: number | null | undefined): string | null {
   if (seconds == null) return null;
-  const date = new Date(seconds * 1000);
+  return isoTime(seconds * 1000);
+}
+
+function isoTime(milliseconds: number | null | undefined): string | null {
+  if (milliseconds == null) return null;
+  const date = new Date(milliseconds);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
@@ -84,6 +97,56 @@ export function decodeClaudeQuota(body: unknown): UsageQuota["windows"] {
   });
 }
 
+export function decodeAlibabaQuota(body: unknown): UsageQuota["windows"] {
+  const quota = AlibabaResponse.parse(body);
+  if (quota.hasQuotaData === false || quota.per1MonthPercentage === undefined) return [];
+  const used = Math.min(100, Math.max(0, quota.per1MonthPercentage * 100));
+  return [
+    {
+      label: "Monthly token plan",
+      used_percent: Math.round(used * 100) / 100,
+      resets_at: isoTime(quota.per1MonthResetTime),
+    },
+  ];
+}
+
+function jsonObjectEnd(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) return index;
+  }
+  return -1;
+}
+
+/**
+ * Bailian CLI output can mix pretty-printed JSON with update notices, so read the
+ * first complete object that carries quota fields instead of parsing all of stdout.
+ */
+export function parseAlibabaOutput(stdout: string): unknown {
+  for (let start = stdout.indexOf("{"); start !== -1; start = stdout.indexOf("{", start + 1)) {
+    const end = jsonObjectEnd(stdout, start);
+    if (end === -1) continue;
+    try {
+      const value: unknown = JSON.parse(stdout.slice(start, end + 1));
+      if (value && typeof value === "object" && "hasQuotaData" in value) return value;
+    } catch {
+      // Keep scanning past notices that are not JSON objects.
+    }
+  }
+  return null;
+}
+
 export type QuotaTarget = {
   provider: UsageQuota["provider"];
   providerId?: string | undefined;
@@ -91,11 +154,8 @@ export type QuotaTarget = {
   home?: string | undefined;
 };
 
-async function readQuota(
-  dependencies: QuotaDependencies,
-  target: QuotaTarget,
-): Promise<UsageQuota> {
-  const result: UsageQuota = {
+function quotaResult(target: QuotaTarget): UsageQuota {
+  return {
     provider: target.provider,
     ...(target.providerId ? { provider_id: target.providerId } : {}),
     ...(target.name ? { name: target.name } : {}),
@@ -104,6 +164,46 @@ async function readQuota(
     checked_at: new Date().toISOString(),
     windows: [],
   };
+}
+
+async function readAlibabaQuota(
+  dependencies: QuotaDependencies,
+  result: UsageQuota,
+): Promise<UsageQuota> {
+  try {
+    const run = dependencies.run;
+    if (!run) return { ...result, message: "Alibaba Cloud quota reader is not configured." };
+    const { exitCode, stdout, stderr } = await run("bl", [
+      "usage",
+      "token-plan",
+      "--output",
+      "json",
+    ]);
+    if (exitCode !== 0) {
+      const signedOut = /\b(auth|login|credential|token|unauthori[sz]ed)\b/i.test(stderr);
+      return {
+        ...result,
+        ...(signedOut ? { status: "signed_out" as const } : {}),
+        message:
+          "Alibaba Cloud quota could not be read with the Bailian CLI (bl). Sign in with `bl auth login` on the API host.",
+      };
+    }
+    const body = parseAlibabaOutput(stdout);
+    const windows = body ? decodeAlibabaQuota(body) : [];
+    if (!windows.length)
+      return { ...result, message: "This account does not report an Alibaba Cloud token plan." };
+    return { ...result, status: "available", windows };
+  } catch {
+    return { ...result, message: "Alibaba Cloud quota data could not be read. Try again later." };
+  }
+}
+
+async function readQuota(
+  dependencies: QuotaDependencies,
+  target: QuotaTarget,
+): Promise<UsageQuota> {
+  const result = quotaResult(target);
+  if (target.provider === "alibaba") return readAlibabaQuota(dependencies, result);
   let headers: Record<string, string>;
   try {
     if (target.provider === "codex") {
@@ -198,7 +298,7 @@ export function createQuotaReader(dependencies: QuotaDependencies): () => Promis
 }
 
 function configuredTargets(): QuotaTarget[] {
-  return storedProviderProfiles()
+  const targets: QuotaTarget[] = storedProviderProfiles()
     .filter((profile) => profile.agent === "claude" || profile.agent === "codex")
     .map((profile) => ({
       provider: profile.agent as QuotaTarget["provider"],
@@ -206,6 +306,23 @@ function configuredTargets(): QuotaTarget[] {
       name: profile.name,
       home: providerEffectiveHome(profile),
     }));
+  if (Bun.which("bl", { PATH: process.env.PATH ?? "" })) targets.push({ provider: "alibaba" });
+  return targets;
+}
+
+async function runQuotaCommand(command: string, args: string[]): Promise<QuotaProcess> {
+  const child = Bun.spawn([command, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+    signal: AbortSignal.timeout(8000),
+    windowsHide: true,
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
 }
 
 export const readUsageQuotas = createTargetQuotaReader(
@@ -215,6 +332,7 @@ export const readUsageQuotas = createTargetQuotaReader(
     home: homedir(),
     codexHome: process.env.CODEX_HOME,
     claudeHome: process.env.CLAUDE_CONFIG_DIR,
+    run: runQuotaCommand,
   },
   configuredTargets,
 );

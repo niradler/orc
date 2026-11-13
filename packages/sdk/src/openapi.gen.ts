@@ -7296,7 +7296,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read local Codex and Claude account quota windows (cached for 60 seconds) */
+        /** Read local Codex, Claude and Alibaba Cloud account quota windows (cached for 60 seconds) */
         get: {
             parameters: {
                 query?: never;
@@ -7315,7 +7315,7 @@ export interface paths {
                         "application/json": {
                             accounts: {
                                 /** @enum {string} */
-                                provider: "codex" | "claude";
+                                provider: "codex" | "claude" | "alibaba";
                                 provider_id?: string;
                                 name?: string;
                                 /** @enum {string} */
@@ -17484,6 +17484,64 @@ export interface paths {
                     };
                 };
                 /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse files inside a session workspace */
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Workspace files */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            root: string;
+                            path: string;
+                            entries: {
+                                name: string;
+                                path: string;
+                                directory: boolean;
+                            }[] | null;
+                            content: string | null;
+                            binary: boolean;
+                            truncated: boolean;
+                        };
+                    };
+                };
+                /** @description Session not found */
                 404: {
                     headers: {
                         [name: string]: unknown;

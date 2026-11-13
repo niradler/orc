@@ -5,7 +5,12 @@ import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 
 const count = new Intl.NumberFormat();
-const names: Record<string, string> = { codex: "Codex", claude: "Claude", cursor: "Cursor" };
+const names: Record<string, string> = {
+  codex: "Codex",
+  claude: "Claude",
+  alibaba: "Alibaba Cloud",
+  cursor: "Cursor",
+};
 
 export function UsageSettings() {
   const [days, setDays] = useState("30");
@@ -45,7 +50,7 @@ export function UsageSettings() {
           Account quotas
         </h3>
         <p className="mt-1 mb-3 text-xs text-muted-foreground">
-          Local accounts on the API host. SSH accounts are excluded. Refreshes at most once a
+          Local CLI accounts on the API host. SSH accounts are excluded. Refreshes at most once a
           minute.
         </p>
         {quotas.isPending && (
