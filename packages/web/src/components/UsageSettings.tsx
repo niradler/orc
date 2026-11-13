@@ -420,6 +420,10 @@ export function UsageSettings() {
               separately and are not included in the distribution.
             </p>
             <p className="mt-2">
+              Raw requests are kept for 95 days. Older usage is rolled up per session, day and
+              model, so All time keeps totals and shares without storing every request.
+            </p>
+            <p className="mt-2">
               No billed cost is shown: ORC has no reliable price source for every provider and plan.
               Token counts are exact where the CLI records them.
             </p>

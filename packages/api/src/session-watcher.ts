@@ -26,7 +26,7 @@ import { lifecycleRecords, withLifecycle } from "./sessions/lifecycle.js";
 import { opencodeAdapter } from "./sessions/opencode.js";
 import { piAdapter, piSessionRoots } from "./sessions/pi.js";
 import type { KnownSession, SessionAdapter, SessionRecord } from "./sessions/types.js";
-import { writeSessionUsage } from "./sessions/usage-events.js";
+import { maintainUsageRetention, writeSessionUsage } from "./sessions/usage-events.js";
 import type { ParsedUsage } from "./sessions/usage-parsers.js";
 
 export { LIVE_CHAT_ID };
@@ -78,6 +78,7 @@ const lastRun = new Map<string, number>();
 let chain: Promise<unknown> = Promise.resolve();
 let tokenChain: Promise<unknown> = Promise.resolve();
 let usageChain: Promise<unknown> = Promise.resolve();
+let nextUsageMaintenance = 0;
 let synchronized: (() => Promise<void>) | undefined;
 let refreshWatchers: (() => void) | undefined;
 const pendingHuman = new Map<string, Set<string>>();
@@ -357,6 +358,15 @@ export function runSync(
     }
     await synchronized?.();
     indexSessionsWhenEnabled();
+    // Housekeeping on the same event-driven sync path, not a separate timer.
+    if (Date.now() >= nextUsageMaintenance) {
+      nextUsageMaintenance = Date.now() + 6 * 60 * 60 * 1000;
+      try {
+        maintainUsageRetention();
+      } catch (error) {
+        logger.error("Usage retention failed", error);
+      }
+    }
     return results;
   });
 }

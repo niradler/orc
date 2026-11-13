@@ -5,6 +5,13 @@ export const CLAUDE_TOKENS_VERSION = 1;
 /** Bumped when a transcript parser gains a new request field; forces one re-index. */
 export const USAGE_EVENT_VERSION = 1;
 
+/**
+ * Raw request rows are kept for 95 days, just past the largest normal report window
+ * (90 days). Older usage rolls up per session, UTC day and model so all-time totals
+ * and distributions survive without unbounded per-request storage.
+ */
+export const USAGE_RAW_RETENTION_DAYS = 95;
+
 const UsageCountSchema = z.object({
   sessions: z.number().int().nonnegative(),
   tokens: z.number().nonnegative(),

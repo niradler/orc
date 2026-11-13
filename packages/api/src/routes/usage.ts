@@ -29,9 +29,9 @@ type UsageNumberRow = {
 };
 
 const NUMBER_COLUMNS = `
-  count(*) AS requests,
+  coalesce(sum(requests), 0) AS requests,
   count(DISTINCT session_id) AS sessions,
-  coalesce(sum(estimated), 0) AS estimated_requests,
+  coalesce(sum(estimated_requests), 0) AS estimated_requests,
   coalesce(sum(input_tokens), 0) AS input_tokens,
   coalesce(sum(output_tokens), 0) AS output_tokens,
   coalesce(sum(cache_read_tokens), 0) AS cache_read_tokens,

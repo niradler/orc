@@ -276,6 +276,13 @@ lifetime totals from the distribution, rather than mixing the two accounting
 models. No billed cost is shown: ORC has no reliable price source for every
 provider and plan.
 
+Raw requests are kept for 95 days, just past the 90-day window, so every normal
+period stays exact. Older usage rolls up per session, UTC day and model: totals,
+model/agent shares, request counts and session counts survive for **All time**
+without keeping every request. A single session that exceeds 5,000 rows inside the
+window also compacts its oldest rows by model. Retention runs on the normal
+session-sync path, not on a timer or a page poll.
+
 ![Usage in Settings with demo data](/screens/settings-usage.png)
 
 Account quotas show percentage used and reset times for local Codex and Claude

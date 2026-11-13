@@ -82,7 +82,11 @@ coverage for sessions that are not indexed yet. Query parameters are `days`
 or `hour`), and optional `agent` and `model` filters. Pass `model=__unknown__` to
 select requests without a model. Each aggregate includes input, output,
 cache-read, cache-write, reasoning and unsplit (`other`) tokens plus request,
-session and estimated-request counts. The route returns `Cache-Control: no-store`
+session and estimated-request counts. Request and estimate counts are sums over
+represented requests, so a daily rollup counts every request it stands for. Raw
+requests are kept for 95 days; older usage is rolled up per session, UTC day and
+model, so `days=0` still returns complete totals and distributions without
+per-request rows. The route returns `Cache-Control: no-store`
 and uses normal API authentication. The SDK exposes `orc.usage.report({ days:
 "30" })`.
 

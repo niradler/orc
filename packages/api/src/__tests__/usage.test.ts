@@ -1,14 +1,19 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { changes } from "@orc/core/changes";
 import { OrcError } from "@orc/core/errors";
-import { USAGE_EVENT_VERSION, UsageHistorySchema, UsageReportSchema } from "@orc/core/usage";
+import {
+  USAGE_EVENT_VERSION,
+  USAGE_RAW_RETENTION_DAYS,
+  UsageHistorySchema,
+  UsageReportSchema,
+} from "@orc/core/usage";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth";
 import { usageRouter } from "../routes/usage";
 import { LIVE_CHAT_ID, runSync } from "../session-watcher";
 import type { SessionAdapter } from "../sessions/types";
-import { writeSessionUsage } from "../sessions/usage-events";
+import { maintainUsageRetention, writeSessionUsage } from "../sessions/usage-events";
 import {
   createQuotaReader,
   createTargetQuotaReader,
@@ -117,10 +122,10 @@ test("should report request totals, model facets and time buckets with filters",
   const insertEvent = sqlite.query(
     `INSERT INTO usage_events
        (id, session_id, event_key, agent, model, ts, input_tokens, output_tokens,
-        cache_read_tokens, other_tokens, total_tokens, estimated)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        cache_read_tokens, other_tokens, total_tokens, estimated_requests, estimated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  insertEvent.run("event1", "report1", "one", "codex", "model-a", now, 100, 50, 25, 0, 175, 0);
+  insertEvent.run("event1", "report1", "one", "codex", "model-a", now, 100, 50, 25, 0, 175, 0, 0);
   insertEvent.run(
     "event2",
     "report1",
@@ -134,8 +139,9 @@ test("should report request totals, model facets and time buckets with filters",
     5,
     15,
     0,
+    0,
   );
-  insertEvent.run("event3", "report3", "one", "gemini", null, now, 0, 0, 0, 30, 30, 1);
+  insertEvent.run("event3", "report3", "one", "gemini", null, now, 0, 0, 0, 30, 30, 1, 1);
 
   const response = await app.request(
     "/api/usage/report?days=7&granularity=hour&agent=codex&model=model-a",
@@ -240,6 +246,128 @@ test("should replace a session ledger idempotently and record its latest model",
       .query<{ model: string }, []>("SELECT model FROM gateway_sessions WHERE id = 'ledger1'")
       .get()?.model,
   ).toBe("deepseek-v5");
+});
+
+test("should keep 95 days of raw requests and roll older usage up by day and model", async () => {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  const day = 86_400_000;
+  sqlite.run(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, created_at) VALUES ('retention1', ?, 'codex', 'direct', ?)",
+    [LIVE_CHAT_ID, Math.floor(now / 1000)],
+  );
+  const request = (input: number, ts: number) => ({
+    key: `request-${ts}`,
+    ts,
+    model: "gpt-6",
+    inputTokens: input,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    reasoningTokens: 0,
+    otherTokens: 0,
+    estimated: false,
+  });
+  const oldTs = now - (USAGE_RAW_RETENTION_DAYS + 5) * day;
+  const usage = { tokens: 30, model: "gpt-6", events: [request(10, oldTs), request(20, now)] };
+  expect(writeSessionUsage("retention1", "codex", usage, USAGE_EVENT_VERSION, now)).toBe(2);
+
+  const rows = sqlite
+    .query<{ ts: number; requests: number; resolution: string }, []>(
+      "SELECT ts, requests, resolution FROM usage_events WHERE session_id = 'retention1' ORDER BY ts",
+    )
+    .all();
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.resolution).toBe("rollup");
+  expect(rows[0]?.requests).toBe(1);
+  expect(rows[0]?.ts).toBe(Date.parse(`${new Date(oldTs).toISOString().slice(0, 10)}T00:00:00Z`));
+  expect(rows[1]?.resolution).toBe("request");
+
+  // Re-indexing the same transcript replaces the rollup instead of duplicating it.
+  writeSessionUsage("retention1", "codex", usage, USAGE_EVENT_VERSION, now);
+  expect(
+    sqlite
+      .query<{ rows: number; requests: number }, []>(
+        "SELECT count(*) AS rows, sum(requests) AS requests FROM usage_events WHERE session_id = 'retention1'",
+      )
+      .get(),
+  ).toEqual({ rows: 2, requests: 2 });
+
+  const report = UsageReportSchema.parse(
+    await (await app.request("/api/usage/report?days=0&model=gpt-6", { headers })).json(),
+  );
+  expect(report.totals).toMatchObject({ requests: 2, sessions: 1, total_tokens: 30 });
+  expect(report.buckets).toHaveLength(2);
+});
+
+test("should roll aged raw rows up without changing totals", () => {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  const oldTs = now - (USAGE_RAW_RETENTION_DAYS + 10) * 86_400_000;
+  sqlite.run(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, created_at) VALUES ('retention2', ?, 'pi', 'direct', ?)",
+    [LIVE_CHAT_ID, Math.floor(now / 1000)],
+  );
+  sqlite.run(
+    `INSERT INTO usage_events
+       (id, session_id, event_key, agent, model, ts, input_tokens, total_tokens, requests)
+     VALUES ('aged1', 'retention2', 'aged', 'pi', 'deepseek-v4', ?, 7, 7, 1)`,
+    [oldTs],
+  );
+
+  expect(maintainUsageRetention(now)).toBe(1);
+  expect(
+    sqlite
+      .query<{ ts: number; requests: number; total: number; resolution: string }, []>(
+        "SELECT ts, requests, total_tokens AS total, resolution FROM usage_events WHERE session_id = 'retention2'",
+      )
+      .get(),
+  ).toEqual({
+    ts: Date.parse(`${new Date(oldTs).toISOString().slice(0, 10)}T00:00:00Z`),
+    requests: 1,
+    total: 7,
+    resolution: "rollup",
+  });
+  expect(maintainUsageRetention(now)).toBe(0);
+});
+
+test("should cap a chatty session while keeping represented requests and totals", () => {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  sqlite.run(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, created_at) VALUES ('compact1', ?, 'codex', 'direct', ?)",
+    [LIVE_CHAT_ID, Math.floor(now / 1000)],
+  );
+  const events = Array.from({ length: 5_010 }, (_, index) => ({
+    key: `request-${index}`,
+    ts: now - (5_010 - index) * 15 * 60_000,
+    model: "gpt-6",
+    inputTokens: 1,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    reasoningTokens: 0,
+    otherTokens: 0,
+    estimated: false,
+  }));
+  expect(
+    writeSessionUsage(
+      "compact1",
+      "codex",
+      { events, tokens: 5_010, model: "gpt-6" },
+      USAGE_EVENT_VERSION,
+      now,
+    ),
+  ).toBeLessThanOrEqual(5_000);
+  expect(
+    sqlite
+      .query<{ requests: number; total: number; rollups: number }, []>(
+        `SELECT sum(requests) AS requests, sum(total_tokens) AS total,
+                sum(CASE WHEN resolution = 'rollup' THEN 1 ELSE 0 END) AS rollups
+         FROM usage_events WHERE session_id = 'compact1'`,
+      )
+      .get(),
+  ).toEqual({ requests: 5_010, total: 5_010, rollups: 1 });
 });
 
 test("should decode quota windows including zero and exhausted usage and reject malformed data", () => {

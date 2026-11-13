@@ -365,6 +365,11 @@ export const usage_events = sqliteTable(
     reasoning_tokens: integer("reasoning_tokens").notNull().default(0),
     other_tokens: integer("other_tokens").notNull().default(0),
     total_tokens: integer("total_tokens").notNull().default(0),
+    requests: integer("requests").notNull().default(1),
+    estimated_requests: integer("estimated_requests").notNull().default(0),
+    resolution: text("resolution", { enum: ["request", "rollup"] })
+      .notNull()
+      .default("request"),
     estimated: integer("estimated", { mode: "boolean" }).notNull().default(false),
     created_at: integer("created_at").notNull().default(sql`(unixepoch())`),
   },

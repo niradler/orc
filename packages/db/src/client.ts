@@ -197,6 +197,9 @@ function setupDb(sqlite: Database): void {
       reasoning_tokens INTEGER NOT NULL DEFAULT 0,
       other_tokens INTEGER NOT NULL DEFAULT 0,
       total_tokens INTEGER NOT NULL DEFAULT 0,
+      requests INTEGER NOT NULL DEFAULT 1,
+      estimated_requests INTEGER NOT NULL DEFAULT 0,
+      resolution TEXT NOT NULL DEFAULT 'request',
       estimated INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       UNIQUE (session_id, event_key)
@@ -206,6 +209,8 @@ function setupDb(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS usage_events_agent_ts_idx ON usage_events(agent, ts DESC);
     CREATE INDEX IF NOT EXISTS usage_events_model_ts_idx ON usage_events(model, ts DESC);
     CREATE INDEX IF NOT EXISTS usage_events_session_idx ON usage_events(session_id);
+    CREATE INDEX IF NOT EXISTS usage_events_raw_ts_idx ON usage_events(ts)
+      WHERE resolution = 'request';
 
     CREATE TABLE IF NOT EXISTS bridge_messages (
       id TEXT PRIMARY KEY,
@@ -453,6 +458,12 @@ function setupDb(sqlite: Database): void {
     // Legacy rows predate signed receivers and have no usable secret. Keep them
     // disabled until an operator rotates the secret explicitly.
     "UPDATE webhooks SET enabled=0 WHERE secret=''",
+    "ALTER TABLE usage_events ADD COLUMN requests INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE usage_events ADD COLUMN estimated_requests INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE usage_events ADD COLUMN resolution TEXT NOT NULL DEFAULT 'request'",
+    "UPDATE usage_events SET estimated_requests=1 WHERE estimated=1 AND estimated_requests=0",
+    "UPDATE usage_events SET resolution='rollup' WHERE resolution IN ('day','model')",
+    "CREATE INDEX IF NOT EXISTS usage_events_raw_ts_idx ON usage_events(ts) WHERE resolution='request'",
   ];
   for (const statement of migrations) {
     try {
