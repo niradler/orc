@@ -1535,6 +1535,7 @@ async function driveNodeSession(opts: {
       {
         cwd: opts.cwd,
         executionHost: opts.executionHost,
+        orcPreviewSessionId: opts.sessionId,
         autoApprove: loadConfig().agent_loop.worker_auto_approve,
         ...(opts.env && Object.keys(opts.env).length ? { env: opts.env } : {}),
         ...(opts.model ? { model: opts.model } : {}),

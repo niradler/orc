@@ -1318,6 +1318,11 @@ export const api = {
       ),
     linkTask: (id: string, task_id: string | null) =>
       req<LiveSession>("PATCH", `/sessions/live/${id}`, { task_id }),
+    lineage: (id: string) =>
+      req<import("@orc/core/session-messages").SessionLineage>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/lineage`,
+      ),
     messages: (id: string) =>
       req<{ messages: SessionMessage[] }>(
         "GET",

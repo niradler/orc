@@ -78,6 +78,7 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       await Bun.sleep(20);
       const url = new URL(queries[0]?.options.mcpServers?.orc?.url ?? "");
       expect(url.searchParams.get("preview_session")).toBe("trusted-chat");
+      expect(url.searchParams.get("session")).toBe("trusted-chat");
       expect(url.searchParams.get("mode")).toBe("meta");
     } finally {
       await session.close();
@@ -135,6 +136,7 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     if (!server) throw new Error("ORC MCP server missing");
     const url = new URL(server.url);
     expect(url.searchParams.get("preview_session")).toBe("chat-preview-123");
+    expect(url.searchParams.get("session")).toBe("chat-preview-123");
     expect(url.searchParams.get("project")).toBe("Channel Project");
     expect(url.searchParams.get("mode")).toBe("meta");
     expect(url.searchParams.has("auth")).toBe(false);

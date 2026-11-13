@@ -449,6 +449,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE webhooks ADD COLUMN name TEXT NOT NULL DEFAULT 'Webhook'",
     "ALTER TABLE webhooks ADD COLUMN provider TEXT NOT NULL DEFAULT 'generic'",
     "ALTER TABLE webhooks ADD COLUMN secret TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE tasks ADD COLUMN origin_session_id TEXT",
+    "CREATE INDEX IF NOT EXISTS tasks_origin_session_idx ON tasks(origin_session_id)",
     "ALTER TABLE webhooks ADD COLUMN events TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE webhooks ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'",
     // SQLite only permits constant defaults when adding a column to an existing

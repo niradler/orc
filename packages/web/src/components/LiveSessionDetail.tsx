@@ -5,6 +5,7 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
+import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { StateBadge } from "@/components/StateBadge";
@@ -257,6 +258,7 @@ export function LiveSessionDetail({
             </div>
           )}
           {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
+          {session && <SessionLineage sessionId={session.id} />}
           {session && <SessionMessageInbox key={session.id} session={session} live={live} />}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-[150px] flex-1">

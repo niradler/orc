@@ -114,6 +114,15 @@ export function useTaskSessions(taskId: string | null) {
   });
 }
 
+export function useSessionLineage(sessionId: string | null) {
+  return useQuery({
+    queryKey: ["sessions", "lineage", sessionId],
+    queryFn: () => api.sessions.lineage(sessionId as string),
+    enabled: Boolean(sessionId),
+    retry: false,
+  });
+}
+
 export function useSessionMessages(sessionId: string | null, live: boolean) {
   return useQuery({
     queryKey: ["sessions", "messages", sessionId],
