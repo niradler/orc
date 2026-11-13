@@ -26,6 +26,51 @@ async function relaxList(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
+/** Shared route stubs: dev secret, no saved chats, and the live/archive/project payloads. */
+async function stubSessionRoutes(
+  page: Page,
+  sessions: unknown[],
+  projects: { id: string; name: string; scope?: string | null; status?: string }[],
+): Promise<void> {
+  await page.addInitScript((secret) => {
+    localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+  }, API_SECRET);
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
+  await page.route("**/api/chat/threads", (route) => route.fulfill({ json: { threads: [] } }));
+  await page.route("**/api/sessions/live?**", (route) =>
+    route.fulfill({ json: { sessions, has_more: false } }),
+  );
+  await page.route("**/api/sessions/archive?**", (route) =>
+    route.fulfill({ json: { sessions: [], has_more: false } }),
+  );
+  await page.route(/\/api\/projects(\?.*)?$/, (route) =>
+    route.fulfill({ json: { projects, total: projects.length } }),
+  );
+}
+
+const liveFixture = (
+  now: number,
+  index: number,
+  name: string,
+  projectId: string | null,
+  agoMinutes: number,
+) => ({
+  id: `live-${index}`,
+  session_id: `runtime-${index}`,
+  name,
+  agent: "codex",
+  status: "stopped",
+  cwd: "/fixture/group",
+  host: null,
+  project_id: projectId,
+  task_id: null,
+  task: null,
+  created_at: new Date(now - 60 * 60_000).toISOString(),
+  last_activity_at: new Date(now - agoMinutes * 60_000).toISOString(),
+});
+
 for (const width of [1440, 390]) {
   test(`opening a session keeps its recency place; sending a message moves it up at ${width}px`, async ({
     page,
@@ -192,8 +237,8 @@ test("Projects groups sessions by project and Recents stays a single descending 
     route.fulfill({
       json: {
         projects: [
-          { id: "proj-shop", name: "Shop", scope: "/fixture/shop" },
-          { id: "proj-billing", name: "Billing", scope: "/fixture/billing" },
+          { id: "proj-shop", name: "Shop", scope: "/fixture/shop", status: "active" },
+          { id: "proj-billing", name: "Billing", scope: "/fixture/billing", status: "active" },
         ],
         total: 2,
       },
@@ -307,8 +352,13 @@ for (const width of [1440, 390]) {
       route.fulfill({
         json: {
           projects: [
-            { id: "proj-shop", name: "Acme Shop", scope: "/fixture/shop" },
-            { id: "proj-billing", name: "Billing API", scope: "/fixture/billing" },
+            { id: "proj-shop", name: "Acme Shop", scope: "/fixture/shop", status: "active" },
+            {
+              id: "proj-billing",
+              name: "Billing API",
+              scope: "/fixture/billing",
+              status: "active",
+            },
           ],
           total: 2,
         },
@@ -320,7 +370,9 @@ for (const width of [1440, 390]) {
     await openChatHistory(page);
     await expect(page.getByTestId("chat-session-list").locator("[data-history-id]")).toHaveCount(6);
     const suffix = width === 1440 ? "desktop" : "phone";
-    await page.screenshot({ path: screen(`session-recents-${suffix}.png`) });
+    const capture = process.env.ORC_CAPTURE_SESSION_SCREENS === "1";
+    const shot = (name: string) => (capture ? screen(name) : testInfo.outputPath(name));
+    await page.screenshot({ path: shot(`session-recents-${suffix}.png`) });
     await page.getByTestId("session-navigation-projects").click();
     const projectList = page.getByTestId("session-project-list");
     await projectList
@@ -330,10 +382,97 @@ for (const width of [1440, 390]) {
     await expect(
       projectList.getByTestId("session-project-proj-shop").locator("[data-history-id]"),
     ).toHaveCount(3);
-    await page.screenshot({ path: screen(`session-projects-${suffix}.png`) });
+    await page.screenshot({ path: shot(`session-projects-${suffix}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: testInfo.outputPath(`session-projects-${suffix}.png`) });
   });
 }
+
+test("sessions in archived projects stay reachable in the Projects view", async ({ page }) => {
+  const now = Date.now();
+  const sessions = [
+    liveFixture(now, 0, "Active shop work", "proj-shop", 1),
+    liveFixture(now, 1, "Old archived work", "proj-old", 2),
+  ];
+  await stubSessionRoutes(page, sessions, [
+    { id: "proj-shop", name: "Shop", scope: "/fixture/shop", status: "active" },
+    { id: "proj-old", name: "Old Project", scope: "/fixture/old", status: "archived" },
+  ]);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks?chat=full");
+  await openChatHistory(page);
+  await relaxList(page);
+  await page.getByTestId("session-navigation-projects").click();
+  const projectList = page.getByTestId("session-project-list");
+  await expect(projectList.getByTestId("session-project-proj-shop")).toContainText("Shop");
+  await expect(projectList.getByTestId("session-project-proj-old")).toContainText("Old Project");
+  await projectList
+    .getByTestId("session-project-proj-old")
+    .getByTestId("session-project-toggle")
+    .click();
+  await expect(projectList.getByTestId("session-project-proj-old")).toContainText(
+    "Old archived work",
+  );
+});
+
+test("the Projects view follows the selected project scope", async ({ page }) => {
+  const now = Date.now();
+  const sessions = [
+    liveFixture(now, 0, "Shop work", "proj-shop", 1),
+    liveFixture(now, 1, "Billing work", "proj-billing", 2),
+  ];
+  await stubSessionRoutes(page, sessions, [
+    { id: "proj-shop", name: "Shop", scope: "/fixture/shop", status: "active" },
+    { id: "proj-billing", name: "Billing", scope: "/fixture/billing", status: "active" },
+  ]);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks?chat=full&project=proj-shop");
+  await openChatHistory(page);
+  await relaxList(page);
+  await page.getByTestId("session-navigation-projects").click();
+  const projectList = page.getByTestId("session-project-list");
+  await expect(projectList.getByTestId("session-project-proj-shop")).toContainText("Shop");
+  await expect(projectList.getByTestId("session-project-proj-billing")).toHaveCount(0);
+  await expect(projectList.getByTestId("session-project-unassigned")).toHaveCount(0);
+});
+
+test("the chosen session section persists across reloads", async ({ page }) => {
+  const now = Date.now();
+  await page.addInitScript(() => {
+    localStorage.setItem("orc_chat_history_section", "projects");
+  });
+  await stubSessionRoutes(
+    page,
+    [liveFixture(now, 0, "Shop work", "proj-shop", 1)],
+    [{ id: "proj-shop", name: "Shop", scope: "/fixture/shop", status: "active" }],
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks?chat=full");
+  await openChatHistory(page);
+  await expect(page.getByTestId("session-navigation-projects")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByTestId("session-project-list")).toBeVisible();
+});
+
+test("the per-project new-session button starts a chat in that project", async ({ page }) => {
+  const now = Date.now();
+  await stubSessionRoutes(
+    page,
+    [liveFixture(now, 0, "Shop work", "proj-shop", 1)],
+    [{ id: "proj-shop", name: "Shop", scope: "/fixture/shop", status: "active" }],
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks?chat=full");
+  await openChatHistory(page);
+  await relaxList(page);
+  await page.getByTestId("session-navigation-projects").click();
+  const group = page.getByTestId("session-project-list").getByTestId("session-project-proj-shop");
+  await group.hover();
+  await group.getByTestId("session-project-new").click();
+  await expect(page.getByTestId("session-project-breadcrumb").filter({ visible: true })).toHaveText(
+    "Shop",
+  );
+});

@@ -223,10 +223,14 @@ the actual application with realistic data and preserve its working behavior.
   every step before saving; reveal and focus an invalid field's step. Short forms
   stay on one page. Phone footers reach the dialog bottom without stretching
   gaps between fields.
-- **Chat:** show one selected conversation. Session history is **one flat list,
-  newest activity first**. Open, selected, working and needs-input states use icons
-  and selection styling; they never create sections or override date order. Do not
-  add Open/Earlier, source or date groups without explicit new direction. This is
+- **Chat:** show one selected conversation. Session history has two sections:
+  **Recents**, one flat list newest activity first, and **Projects**, which groups
+  sessions under their project with an Unassigned group — the directed exception
+  from the session-view work (#237). Within a section, order is newest activity
+  first; opening a session keeps its place and only new activity moves it up. Open,
+  selected, working and needs-input states use icons and selection styling; they
+  never create sections or override activity order. Do not add Open/Earlier, source
+  or date groups beyond these without explicit new direction. This is
   an intentional exception to the general secondary-list disclosure guidance. Use a
   collapsible sidebar in desktop fullscreen and a named phone drawer. Keep agent
   and model controls in the composer and infrequent conversation actions in one
@@ -239,7 +243,8 @@ the actual application with realistic data and preserve its working behavior.
   A newest-activity list must not move a row under the pointer. While the list is
   hovered or has keyboard focus, update state in place and defer re-ordering behind
   a quiet "N updated" control; re-sort when the pointer leaves or on request.
-  Filters (All, Needs you, Working, Done) narrow the flat list without sections.
+  Filters (All, Needs you, Working, Done) narrow the current section without adding
+  sections.
 - **Settings:** named sections have clear save ownership. Appearance saves
   immediately; browser connection and server terminal font each have their own
   actions. Embedded server/host/chat/notification/knowledge forms own their saves.

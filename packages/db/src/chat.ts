@@ -6,6 +6,8 @@ type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   runtimeId: string | null;
   sourceId: string | null;
   host: string | null;
+  projectId: string | null;
+  cwd: string | null;
 };
 
 export function installChat(sqlite: Database): void {
@@ -41,7 +43,15 @@ export class ChatStore {
           CASE WHEN json_valid(data) THEN
             CASE WHEN json_type(data, '$.host') = 'text'
               THEN json_extract(data, '$.host') END
-          END AS host
+          END AS host,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.projectId') = 'text'
+              THEN json_extract(data, '$.projectId') END
+          END AS projectId,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.cwd') = 'text'
+              THEN json_extract(data, '$.cwd') END
+          END AS cwd
         FROM chat_threads ORDER BY updated_at DESC LIMIT 100`,
       )
       .all();

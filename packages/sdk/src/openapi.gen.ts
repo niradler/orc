@@ -677,6 +677,8 @@ export interface paths {
                                 runtimeId?: string | null;
                                 sourceId?: string | null;
                                 host?: string | null;
+                                projectId?: string | null;
+                                cwd?: string | null;
                             }[];
                         };
                     };

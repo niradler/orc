@@ -754,6 +754,8 @@ app.openapi(
                   runtimeId: z.string().nullable().optional(),
                   sourceId: z.string().nullable().optional(),
                   host: z.string().nullable().optional(),
+                  projectId: z.string().nullable().optional(),
+                  cwd: z.string().nullable().optional(),
                 }),
               ),
             }),

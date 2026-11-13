@@ -45,6 +45,8 @@ test("chat summaries retain identity without exposing content and tolerate legac
         runtimeId: "native-session",
         sourceId: "source-session",
         host: "remote-a",
+        projectId: null,
+        cwd: "/private",
       },
       {
         id: "legacy",
@@ -54,6 +56,8 @@ test("chat summaries retain identity without exposing content and tolerate legac
         runtimeId: null,
         sourceId: null,
         host: null,
+        projectId: null,
+        cwd: null,
       },
       {
         id: "corrupt",
@@ -63,6 +67,8 @@ test("chat summaries retain identity without exposing content and tolerate legac
         runtimeId: null,
         sourceId: null,
         host: null,
+        projectId: null,
+        cwd: null,
       },
       {
         id: "wrong-types",
@@ -72,6 +78,8 @@ test("chat summaries retain identity without exposing content and tolerate legac
         runtimeId: null,
         sourceId: null,
         host: null,
+        projectId: null,
+        cwd: null,
       },
     ]);
     expect(JSON.stringify(summaries)).not.toContain("Private");
@@ -99,7 +107,9 @@ test("chat summaries keep the newest100 limit when stored data is malformed", ()
           summary.agent === null &&
           summary.runtimeId === null &&
           summary.sourceId === null &&
-          summary.host === null,
+          summary.host === null &&
+          summary.projectId === null &&
+          summary.cwd === null,
       ),
     ).toBe(true);
   } finally {
@@ -136,6 +146,8 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         runtimeId: "same-native-id",
         sourceId: null,
         host: "host-b",
+        projectId: null,
+        cwd: null,
       },
       {
         id: "chat-host-a",
@@ -145,8 +157,65 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         runtimeId: "same-native-id",
         sourceId: null,
         host: "host-a",
+        projectId: null,
+        cwd: null,
       },
     ]);
+  } finally {
+    db.close();
+  }
+});
+
+test("chat summaries expose project and folder so saved chats keep their grouping", () => {
+  const db = new Database(":memory:");
+  installChat(db);
+  try {
+    const insert = db.query(
+      "INSERT INTO chat_threads (id, title, updated_at, data) VALUES (?, ?, ?, ?)",
+    );
+    insert.run(
+      "assigned",
+      "Assigned chat",
+      2,
+      JSON.stringify({
+        config: { agent: "codex" },
+        projectId: "proj-shop",
+        cwd: "/srv/shop",
+        messages: [{ content: "Private message" }],
+      }),
+    );
+    insert.run(
+      "unassigned",
+      "Unassigned chat",
+      1,
+      JSON.stringify({ config: { agent: "codex" }, cwd: "/srv/scratch" }),
+    );
+    const summaries = new ChatStore(db).list();
+    expect(summaries).toEqual([
+      {
+        id: "assigned",
+        title: "Assigned chat",
+        updatedAt: 2,
+        agent: "codex",
+        runtimeId: null,
+        sourceId: null,
+        host: null,
+        projectId: "proj-shop",
+        cwd: "/srv/shop",
+      },
+      {
+        id: "unassigned",
+        title: "Unassigned chat",
+        updatedAt: 1,
+        agent: "codex",
+        runtimeId: null,
+        sourceId: null,
+        host: null,
+        projectId: null,
+        cwd: "/srv/scratch",
+      },
+    ]);
+    expect(JSON.stringify(summaries)).not.toContain("Private");
   } finally {
     db.close();
   }

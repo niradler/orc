@@ -101,7 +101,8 @@ export function ChatSessionPicker({
   const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const { data: projects } = useProjects({ status: "active" });
+  // All statuses: sessions can belong to archived/paused projects and must stay reachable.
+  const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
   const { data: ssh } = useSsh();
   const [section, setSection] = useState<SessionSection>(storedSection);
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
@@ -158,6 +159,8 @@ export function ChatSessionPicker({
   }
   const seen = useSessionSeen();
   const [filter, setFilter] = useState<SessionFilter>(storedFilter);
+  // Folder matching stays limited to active projects; grouping resolves names for all statuses.
+  const activeProjects = (projects ?? []).filter((project) => project.status === "active");
   const entries = chatHistoryList(
     chat.tabs,
     threads.data?.threads ?? [],
@@ -167,7 +170,7 @@ export function ChatSessionPicker({
     projectScope,
     terminals,
     !!home,
-    projects ?? [],
+    activeProjects,
   );
   const isSelected = (entry: ChatHistoryEntry) =>
     home?.terminalId
@@ -178,7 +181,7 @@ export function ChatSessionPicker({
   );
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const counts = filterCounts(states.values());
-  const loading = threads.isLoading || live.isLoading || archive.isLoading;
+  const loading = threads.isLoading || live.isLoading || archive.isLoading || projectsLoading;
   const stable = useStableOrder({
     items: entries.filter((entry) => matchesFilter(states.get(entry.id) ?? "idle", filter)),
     id: (entry) => entry.id,
@@ -189,16 +192,47 @@ export function ChatSessionPicker({
   });
   const shown = stable.items.slice(0, visibleCount);
   // Projects float up by their newest session; empty projects stay alphabetical at the end.
-  const projectGroups = (projects ?? [])
-    .map((project) => {
-      const rows = stable.items.filter((entry) => entry.projectId === project.id);
-      return {
-        project,
-        rows,
-        latest: rows.reduce((latest, entry) => Math.max(latest, entry.updatedAt), 0),
+  // Groups follow the active project scope and cover every assigned row — including sessions
+  // whose project is archived/paused or no longer listed — so none silently disappear.
+  const projectById = new Map((projects ?? []).map((project) => [project.id, project]));
+  const groups = new Map<
+    string,
+    {
+      project: { id: string; name: string; scope?: string | null };
+      rows: ChatHistoryEntry[];
+      latest: number;
+    }
+  >();
+  const groupFor = (projectId: string) => {
+    let group = groups.get(projectId);
+    if (!group) {
+      group = {
+        project: projectById.get(projectId) ?? {
+          id: projectId,
+          name: "Unknown project",
+          scope: null,
+        },
+        rows: [],
+        latest: 0,
       };
-    })
-    .sort((a, b) => b.latest - a.latest || a.project.name.localeCompare(b.project.name));
+      groups.set(projectId, group);
+    }
+    return group;
+  };
+  for (const project of projects ?? []) {
+    if (project.status !== "active") continue;
+    if (projectScope !== "all" && project.id !== projectScope) continue;
+    groupFor(project.id);
+  }
+  for (const entry of stable.items) {
+    if (!entry.projectId) continue;
+    const group = groupFor(entry.projectId);
+    group.rows.push(entry);
+    group.latest = Math.max(group.latest, entry.updatedAt);
+  }
+  const projectGroups = [...groups.values()].sort(
+    (a, b) => b.latest - a.latest || a.project.name.localeCompare(b.project.name),
+  );
   const unassignedRows = stable.items.filter((entry) => !entry.projectId);
   const expandedRows =
     expandedProject === UNASSIGNED_SECTION
@@ -395,6 +429,8 @@ export function ChatSessionPicker({
                 <Button
                   key={value}
                   role="tab"
+                  id={`session-tab-${value}`}
+                  aria-controls={`session-panel-${value}`}
                   variant="ghost"
                   aria-selected={section === value}
                   data-testid={`session-navigation-${value}`}
@@ -437,6 +473,9 @@ export function ChatSessionPicker({
             </SessionStateFilters>
             {section === "projects" && (
               <section
+                role="tabpanel"
+                id="session-panel-projects"
+                aria-labelledby="session-tab-projects"
                 aria-label="Projects"
                 data-testid="session-project-list"
                 className="space-y-1"
@@ -510,6 +549,9 @@ export function ChatSessionPicker({
               </section>
             )}
             <div
+              role="tabpanel"
+              id="session-panel-recents"
+              aria-labelledby="session-tab-recents"
               data-testid="chat-session-list"
               hidden={section !== "recents"}
               className="min-w-0 space-y-1"
@@ -548,9 +590,13 @@ export function ChatSessionPicker({
           )}
         </>
       )}
-      {(error || threads.error || live.error || archive.error) && (
+      {(error || threads.error || live.error || archive.error || projectsError) && (
         <p role="alert" className="text-sm text-error wrap-break-word">
-          {error || threads.error?.message || live.error?.message || archive.error?.message}
+          {error ||
+            threads.error?.message ||
+            live.error?.message ||
+            archive.error?.message ||
+            projectsError?.message}
         </p>
       )}
     </SessionHistoryFrame>
