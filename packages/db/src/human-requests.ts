@@ -13,21 +13,34 @@ import {
 import { ulid } from "@orc/core/ids";
 import { AuditLog, installAudit } from "./audit.js";
 import { publishNotification } from "./notification-producers.js";
-import { NotificationStore } from "./notifications.js";
+import { NotificationStore, tableExists } from "./notifications.js";
 import { RuleStore } from "./rules.js";
 
-/** The folder a request came from, for a label when no project owns it. */
+/**
+ * The folder a request came from, for a label when no project owns it. Only
+ * server-known folders count: agent-supplied paths must never become titles.
+ */
 export function humanRequestFolder(db: Database, input: HumanRequestInput): string | null {
-  if (input.action?.cwd) return input.action.cwd;
   const threadId = input.origin.chat_thread_id;
-  if (!threadId) return null;
-  return (
-    db
+  if (threadId && tableExists(db, "chat_threads")) {
+    const cwd = db
       .query<{ cwd: string | null }, [string]>(
         "SELECT CASE WHEN json_valid(data) THEN json_extract(data,'$.cwd') END AS cwd FROM chat_threads WHERE id=?",
       )
-      .get(threadId)?.cwd ?? null
-  );
+      .get(threadId)?.cwd;
+    if (cwd) return cwd;
+  }
+  if (!tableExists(db, "gateway_sessions")) return null;
+  for (const id of [input.origin.session_id, input.origin.native_session_id]) {
+    if (!id) continue;
+    const cwd = db
+      .query<{ cwd: string | null }, [string, string]>(
+        "SELECT cwd FROM gateway_sessions WHERE cwd IS NOT NULL AND (id=? OR runtime_session_id=?) LIMIT 1",
+      )
+      .get(id, id)?.cwd;
+    if (cwd) return cwd;
+  }
+  return null;
 }
 
 export class HumanRequestStore {

@@ -9,15 +9,20 @@ import {
   NotificationSchema,
   type NotificationUpdate,
   NotificationUpdateSchema,
+  notificationLabel,
+  notificationTitle,
   type OrcNotification,
 } from "@orc/core/notifications";
 import { z } from "zod";
 import { AuditLog, installAudit, recordNotificationAudit } from "./audit.js";
 
-type Row = Omit<OrcNotification, "requires_action"> & { requires_action: number };
+type Row = Omit<OrcNotification, "requires_action"> & {
+  requires_action: number;
+  project_label: string | null;
+};
 const ID_ATTEMPTS = 8;
 const COLUMNS =
-  "id,type,source_id,title,body,level,project_id,path,requires_action,created_at,expires_at,read_at,dismissed_at";
+  "id,type,source_id,title,body,level,project_id,project_label,path,requires_action,created_at,expires_at,read_at,dismissed_at";
 const RELATED_SOURCES = `SELECT related.source_id FROM notification_session_sources related
   JOIN notification_session_sources current ON current.session_key=related.session_key
   WHERE current.source_id=?`;
@@ -30,9 +35,35 @@ const LATEST_FINISHED = `type<>'agent.finished' OR id=(SELECT latest.id FROM not
 const notification = (row: Row, maximumAge: number): OrcNotification =>
   NotificationSchema.parse({
     ...row,
+    title: notificationTitle(row.title, row.project_label),
     expires_at: Math.min(row.expires_at, row.created_at + maximumAge),
     requires_action: !!row.requires_action,
   });
+
+export function tableExists(db: Database, name: string): boolean {
+  return !!db
+    .query<{ name: string }, [string]>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+    )
+    .get(name);
+}
+
+/** The current project name, or null when the project is gone or unknown. */
+export function projectLabel(db: Database, projectId: string | null | undefined): string | null {
+  if (!projectId || !tableExists(db, "projects")) return null;
+  return notificationLabel(
+    db
+      .query<{ name: string | null }, [string]>("SELECT name FROM projects WHERE id=?")
+      .get(projectId)?.name,
+  );
+}
+
+/** The folder name a path ends in, for sources no project owns. */
+export function folderLabel(cwd: string | null | undefined): string | null {
+  const folder = cwd?.trim().replace(/[\\/]+$/, "");
+  const base = folder?.slice(Math.max(folder.lastIndexOf("/"), folder.lastIndexOf("\\")) + 1);
+  return base && base !== "." && base !== ".." ? notificationLabel(base) : null;
+}
 
 /** A producer owns source_key; reading and delivery never manufacture another event. */
 export class NotificationStore {
@@ -47,7 +78,7 @@ export class NotificationStore {
     db.exec(`CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY, source_key TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
       source_id TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
-      level TEXT NOT NULL, project_id TEXT, path TEXT NOT NULL,
+      level TEXT NOT NULL, project_id TEXT, project_label TEXT, path TEXT NOT NULL,
       requires_action INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
       read_at INTEGER, dismissed_at INTEGER
@@ -59,6 +90,15 @@ export class NotificationStore {
       WHERE type='agent.finished';
     CREATE TABLE IF NOT EXISTS notification_session_sources (source_id TEXT PRIMARY KEY,session_key TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS notification_session_key ON notification_session_sources(session_key,source_id);`);
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(notifications)").all();
+    if (!columns.some((column) => column.name === "project_label")) {
+      db.exec("ALTER TABLE notifications ADD COLUMN project_label TEXT");
+      // Rows recorded before labels existed can still name their project.
+      if (tableExists(db, "projects"))
+        db.exec(`UPDATE notifications
+          SET project_label=(SELECT projects.name FROM projects WHERE projects.id=notifications.project_id)
+          WHERE project_id IS NOT NULL AND project_label IS NULL`);
+    }
   }
 
   associateSession(sourceId: string, sessionKey: string): void {
@@ -72,12 +112,28 @@ export class NotificationStore {
   }
 
   /** A source's folder can be assigned to a project after its notifications were recorded. */
-  assignProject(sourceId: string, projectId: string | null): number {
+  assignProject(sourceId: string, projectId: string | null, cwd?: string | null): number {
     z.string().min(1).max(256).parse(sourceId);
     if (projectId !== null) z.string().min(1).max(256).parse(projectId);
+    const label = projectLabel(this.db, projectId) ?? folderLabel(cwd);
     return this.db
-      .query("UPDATE notifications SET project_id=? WHERE source_id=? AND project_id IS NOT ?")
-      .run(projectId, sourceId, projectId).changes;
+      .query(
+        `UPDATE notifications SET project_id=?, project_label=?
+         WHERE source_id=? AND (project_id IS NOT ? OR project_label IS NOT ?)`,
+      )
+      .run(projectId, label, sourceId, projectId, label).changes;
+  }
+
+  /** Project names are labels, so renaming one must not leave old names in the inbox. */
+  relabelProject(projectId: string, name: string): number {
+    z.string().min(1).max(256).parse(projectId);
+    z.string().min(1).max(200).parse(name);
+    const label = notificationLabel(name);
+    return this.db
+      .query(
+        "UPDATE notifications SET project_label=? WHERE project_id=? AND project_label IS NOT ?",
+      )
+      .run(label, projectId, label).changes;
   }
 
   publish(raw: NotificationInput): OrcNotification | null {
@@ -106,8 +162,8 @@ export class NotificationStore {
           if (latest && latest.created_at >= input.created_at) return null;
         }
         const insert = this.db.query(`INSERT INTO notifications
-      (id,source_key,type,source_id,title,body,level,project_id,path,requires_action,created_at,expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_key) DO NOTHING`);
+      (id,source_key,type,source_id,title,body,level,project_id,project_label,path,requires_action,created_at,expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_key) DO NOTHING`);
         for (let attempt = 0; attempt < ID_ATTEMPTS; attempt++) {
           const id = this.generateId();
           let inserted: number;
@@ -121,6 +177,7 @@ export class NotificationStore {
               input.body,
               input.level,
               input.project_id,
+              notificationLabel(input.project_label),
               input.path,
               Number(input.requires_action),
               input.created_at,

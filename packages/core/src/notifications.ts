@@ -17,6 +17,24 @@ export const NotificationPathSchema = z
     "Notification links must stay inside ORC",
   );
 
+/** A cosmetic source label, never user content; composed into the title on read. */
+export const NotificationLabelSchema = z.string().trim().min(1).max(80).nullable().default(null);
+
+export function notificationLabel(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const label = raw
+    .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return label ? label.slice(0, 80) : null;
+}
+
+/** Titles are stored without their label so a project rename stays accurate. */
+export function notificationTitle(title: string, label?: string | null): string {
+  const name = notificationLabel(label);
+  return (name ? `${name} · ${title}` : title).trim().slice(0, 200) || "Notification";
+}
+
 export const NotificationInputSchema = z
   .object({
     type: NotificationTypeSchema,
@@ -26,6 +44,7 @@ export const NotificationInputSchema = z
     body: z.string().max(500).default(""),
     level: z.enum(["needs-you", "done"]),
     project_id: z.string().min(1).max(256).nullable().default(null),
+    project_label: NotificationLabelSchema,
     path: NotificationPathSchema,
     requires_action: z.boolean().default(false),
     created_at: z.number().int().nonnegative(),

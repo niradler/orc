@@ -46,6 +46,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
+import { notificationTitle } from "@orc/core/notifications";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import {
   agentDefaultHome,
@@ -278,10 +279,7 @@ function requireThread(id: string): ChatThread {
 function chatPush(thread: ChatThread, status: string, body: string): PushMessage {
   const project = notificationProjectLabel(getSqlite(), thread.projectId, thread.cwd);
   return {
-    title: truncate(
-      [project, status, truncate(thread.title, 120)].filter(Boolean).join(" · "),
-      200,
-    ),
+    title: notificationTitle(`${status} · ${truncate(thread.title, 120)}`, project),
     body,
     url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
     tag: `chat:${thread.id}`,

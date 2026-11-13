@@ -11,7 +11,8 @@ outcomes, and job outcomes. Open an item to review the request or visit its sour
 Every alert names where it came from: the owning project, or the session's folder
 when no project owns it. The label appears in inbox rows, toasts, desktop
 notifications and browser push, while **By project** grouping and per-project
-muting keep working as before.
+muting keep working as before. Labels follow the source: assigning a session to a
+project or renaming that project updates the notifications still in the inbox.
 Request forms stay collapsed until opened; drafts survive closing and reopening
 the menu. Read and dismissed state is stored on the server and shared by clients.
 Dismissal does not approve, answer, cancel or delete a source request.
@@ -121,7 +122,8 @@ unknown types** is selected; they have no known outcome and cannot match an outc
 filter. **Preview filters** evaluates the draft without sending a message.
 
 Forwarding sends fixed, escaped summaries and source links, prefixed with the
-project label when the source belongs to a project. It excludes titles,
+project name when the source belongs to a project. A folder name is never
+forwarded, so an unassigned source keeps the plain summary. It excludes titles,
 question text, command arguments, tool payloads, logs and credentials. Job events
 honor `notify_on`; human requests also retain their producer's `notify` provider
 selection. Selecting forwarding replaces the recipient's legacy **Interactive

@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { loadConfig } from "@orc/core/config";
 import type { NotificationInput, OrcNotification } from "@orc/core/notifications";
-import { NotificationStore } from "./notifications.js";
+import { folderLabel, NotificationStore, projectLabel } from "./notifications.js";
 
 /**
  * A notification names where it came from: the owning project, or the source
@@ -12,26 +12,10 @@ export function notificationProjectLabel(
   projectId: string | null | undefined,
   cwd?: string | null,
 ): string | null {
-  if (projectId) {
-    // Some embedders open only the request and notification tables.
-    const hasProjects = db
-      .query<{ name: string }, []>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='projects'",
-      )
-      .get();
-    if (hasProjects) {
-      const name = db
-        .query<{ name: string }, [string]>("SELECT name FROM projects WHERE id=?")
-        .get(projectId)?.name;
-      if (name?.trim()) return name.trim().slice(0, 80);
-    }
-  }
-  const folder = cwd?.trim().replace(/[\\/]+$/, "");
-  const base = folder?.slice(Math.max(folder.lastIndexOf("/"), folder.lastIndexOf("\\")) + 1);
-  return base && base !== "." && base !== ".." ? base.slice(0, 80) : null;
+  return projectLabel(db, projectId) ?? folderLabel(cwd);
 }
 
-type NotificationEvent = Omit<NotificationInput, "created_at" | "expires_at"> & {
+type NotificationEvent = Omit<NotificationInput, "created_at" | "expires_at" | "project_label"> & {
   created_at?: number;
   expires_at?: number;
   /** The source folder, used for the label when no project owns it. */
@@ -44,11 +28,10 @@ export function publishNotification(
 ): OrcNotification | null {
   const { cwd, ...input } = event;
   const createdAt = input.created_at ?? Date.now();
-  const label = notificationProjectLabel(db, input.project_id, cwd);
   return new NotificationStore(db).publish({
     ...input,
-    title:
-      (label ? `${label} · ${input.title}` : input.title).trim().slice(0, 200) || "Notification",
+    project_label: notificationProjectLabel(db, input.project_id, cwd),
+    title: input.title.trim().slice(0, 200) || "Notification",
     body: input.body?.slice(0, 500),
     created_at: createdAt,
     expires_at:

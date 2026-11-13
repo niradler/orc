@@ -189,6 +189,27 @@ test("should label forwarded summaries with the project name and never copy the 
   expect(JSON.stringify(f.payloads)).toContain("Alpha: An agent finished its reply in ORC.");
   expect(JSON.stringify(f.payloads)).not.toContain("PRIVATE");
 });
+test("should never forward a folder label for an unassigned notification", async () => {
+  const f = fixture();
+  f.advance();
+  new NotificationStore(f.db, () => f.now()).publish({
+    type: "agent.finished",
+    source_key: "folder-label",
+    source_id: "folder-label",
+    title: "PRIVATE title token=secret",
+    body: "PRIVATE command/question/tool payload",
+    level: "done",
+    project_id: null,
+    project_label: "secret-folder",
+    path: "/activity",
+    created_at: f.now(),
+    expires_at: f.now() + 1000000,
+  });
+  await f.tick();
+  expect(f.payloads).toHaveLength(1);
+  expect(JSON.stringify(f.payloads)).not.toContain("secret-folder");
+  expect(JSON.stringify(f.payloads)).toContain("An agent finished its reply in ORC.");
+});
 test("should skip pre-opt-in history and notifications produced during a global pause", async () => {
   const f = fixture();
   f.store.savePolicy({ enabled: false });

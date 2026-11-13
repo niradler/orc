@@ -139,14 +139,14 @@ export async function notifyPendingAttention(
   for (const entry of humanRequests.list()) {
     const request = currentHumanRequest(humanRequests, entry.id);
     if (request.status !== "pending") continue;
+    const project = notificationProjectLabel(
+      humanRequests.db,
+      request.input.project_id,
+      humanRequestFolder(humanRequests.db, request.input),
+    );
     for (const target of targets) {
       if (!humanRequests.reserveNotification(request, ATTENTION_CHANNEL, target.id, false))
         continue;
-      const project = notificationProjectLabel(
-        humanRequests.db,
-        request.input.project_id,
-        humanRequestFolder(humanRequests.db, request.input),
-      );
       const result = await sendPush(null, attentionMessage(request, project), target.id, deps);
       // Expired devices are gone, so mark them done too; transient failures retry after the lease.
       if (result.sent || result.expired)

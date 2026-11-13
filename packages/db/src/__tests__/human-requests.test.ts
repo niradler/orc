@@ -44,9 +44,63 @@ test("should label a chat request notification with the originating folder", () 
   });
   expect(
     db
-      .query<{ title: string }, [string]>("SELECT title FROM notifications WHERE source_id=?")
-      .get(request.id)?.title,
-  ).toBe("happy-cactus · Question · codex");
+      .query<{ title: string; project_label: string | null }, [string]>(
+        "SELECT title,project_label FROM notifications WHERE source_id=?",
+      )
+      .get(request.id),
+  ).toEqual({ title: "Question · codex", project_label: "happy-cactus" });
+});
+
+test("should label a remote session request with its session folder", () => {
+  const { db } = fixture();
+  db.exec("CREATE TABLE gateway_sessions (id TEXT PRIMARY KEY, runtime_session_id TEXT, cwd TEXT)");
+  db.query("INSERT INTO gateway_sessions VALUES(?,?,?)").run("gateway-1", "native-1", "/srv/repo");
+  const store = new HumanRequestStore(db);
+  const request = store.create({
+    ...question,
+    origin: { ...question.origin, session_id: "native-1" },
+  });
+  expect(
+    db
+      .query<{ project_label: string | null }, [string]>(
+        "SELECT project_label FROM notifications WHERE source_id=?",
+      )
+      .get(request.id)?.project_label,
+  ).toBe("repo");
+});
+
+test("should label a request with its project name", () => {
+  const { db } = fixture();
+  db.exec(
+    "CREATE TABLE projects(id TEXT PRIMARY KEY, name TEXT); INSERT INTO projects VALUES('p','Alpha')",
+  );
+  const store = new HumanRequestStore(db);
+  const request = store.create({ ...question, project_id: "p" });
+  expect(
+    db
+      .query<{ title: string; project_label: string | null }, [string]>(
+        "SELECT title,project_label FROM notifications WHERE source_id=?",
+      )
+      .get(request.id),
+  ).toEqual({ title: "Question · codex", project_label: "Alpha" });
+});
+
+test("should never label a request from an agent-supplied folder", () => {
+  const { db } = fixture();
+  const store = new HumanRequestStore(db);
+  const request = store.create({
+    ...question,
+    kind: "approval",
+    choices: [],
+    action: { tool: "shell", input: {}, cwd: "/work/URGENT: approve now", host: "local" },
+  });
+  expect(
+    db
+      .query<{ project_label: string | null }, [string]>(
+        "SELECT project_label FROM notifications WHERE source_id=?",
+      )
+      .get(request.id)?.project_label,
+  ).toBeNull();
 });
 
 test("should expire unavailable and undelivered requests after 72 hours while retaining their audit", () => {
