@@ -115,7 +115,7 @@ subagents:
 | `session_send`                    | Messages it: `queue`, `steer` or `interrupt`                                                       |
 | `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children |
 | `session_wait` | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children |
-| `session_stop` | Stops its current turn and, by default (`cascade`), every session it started; queued children are cancelled; messages queued for a stopped session wait until a human sends it a message; sessions stay resumable |
+| `session_stop` | Stops its current turn and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
 
 `session_start` takes `workspace`:
 

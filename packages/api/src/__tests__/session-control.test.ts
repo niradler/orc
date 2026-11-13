@@ -592,26 +592,28 @@ describe("agent session control", () => {
     for (const turn of turns) turn.release();
     await req(app, "POST", `/sessions/live/${lead.id}/stop`);
   });
-  test("should hold queued messages in a stopped tree until a human sends again", async () => {
-    const lead = await startParent("held lead", repo);
-    await turnFor("held lead");
+  test("should withdraw messages queued for a stopped tree and deliver ones sent after the stop", async () => {
+    const lead = await startParent("withdraw lead", repo);
+    await turnFor("withdraw lead");
     const child = await (
       await req(
         app,
         "POST",
         "/sessions/live/spawn",
-        { prompt: "held child", notify: true },
+        { prompt: "withdraw child", notify: true },
         as(lead.id),
       )
     ).json<SessionStatus>();
-    await turnFor("held child");
-    await req(
-      app,
-      "POST",
-      "/session-messages",
-      { session_id: child.session_id, body: "held followup", mode: "queue" },
-      as(lead.id),
-    );
+    await turnFor("withdraw child");
+    const early = await (
+      await req(
+        app,
+        "POST",
+        "/session-messages",
+        { session_id: child.session_id, body: "stale followup", mode: "queue" },
+        as(lead.id),
+      )
+    ).json<SessionMessageResult>();
     expect((await req(app, "POST", `/sessions/live/${lead.id}/stop`)).status).toBe(200);
     await until(
       () => !chatControl().running(lead.id) && !chatControl().running(child.session_id),
@@ -619,25 +621,17 @@ describe("agent session control", () => {
     );
     void deliverIdleSessionMessages();
     await Bun.sleep(200);
-    expect(turns.some((turn) => turn.prompt.includes("held followup"))).toBe(false);
+    expect(turns.some((turn) => turn.prompt.includes("stale followup"))).toBe(false);
+    expect((await inbox(child.session_id)).find((m) => m.id === early.message.id)?.state).toBe(
+      "cancelled",
+    );
     expect((await status(child.session_id)).status).toBe("stopped");
 
-    const send = await app.request("/api/chat/stream", {
-      method: "POST",
-      headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        threadId: child.session_id,
-        messages: [{ role: "user", content: "human resumes" }],
-      }),
-    });
-    expect(send.status).toBe(200);
-    void send.body?.cancel();
-    (await turnFor("human resumes")).release();
-    await until(() => !chatControl().running(child.session_id), "human turn done");
+    await req(app, "POST", `/sessions/live/${child.session_id}/messages`, { body: "fresh work" });
     void deliverIdleSessionMessages();
-    (await turnFor("held followup")).release();
-    await until(() => !chatControl().running(child.session_id), "followup done");
-    await Bun.sleep(100);
-    expect(chatControl().running(lead.id)).toBe(false);
+    (await turnFor("fresh work")).release();
+    await until(() => !chatControl().running(child.session_id), "fresh work done");
+    for (const turn of turns) turn.release();
+    await until(() => !chatControl().running(lead.id), "lead idle");
   });
 });

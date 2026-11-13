@@ -1840,7 +1840,6 @@ async function openChat(
     );
   if (body.model !== undefined) thread.config.model = body.model;
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
-  delete thread.held;
   const { run } = await beginTurn(thread, input, {
     context: body.context,
     messageId: body.clientMessageId,
@@ -2641,7 +2640,7 @@ function startPendingChildren(): void {
       if (!saved?.spawnedBy) return;
       delete saved.spawnedBy.prompt;
       store().save(saved);
-      if (!saved.held) notifySpawner(saved, "start", "failed");
+      if (!saved.spawnedBy.cancelled) notifySpawner(saved, "start", "failed");
     });
   }
 }
@@ -2663,24 +2662,25 @@ const quietStops = new Set<string>();
 
 export function stopChat(id: string, cascade: boolean, by: string | null): string[] {
   const stopped: string[] = [];
+  const messages = new SessionMessageStore(getSqlite());
   for (const target of cascade ? [id, ...descendants(id)] : [id]) {
     const thread = store().get(target);
     if (!thread) continue;
     const run = threadRun(target)?.[1];
     const quiet = target !== id || by === thread.spawnedBy?.sessionId;
-    thread.held = true;
-    if (run) run.thread.held = true;
-    if (thread.spawnedBy?.prompt) {
+    const queued = thread.spawnedBy?.prompt;
+    if (thread.spawnedBy && queued) {
       delete thread.spawnedBy.prompt;
       thread.spawnedBy.cancelled = true;
+      store().save(thread);
       if (!run && !quiet) notifySpawner(thread, "cancel", "stopped");
     }
-    store().save(thread);
+    for (const message of messages.queued(target)) messages.cancel(message.id);
     if (run) {
       if (quiet) quietStops.add(target);
       run.stop();
     }
-    if (run || thread.spawnedBy?.cancelled) stopped.push(target);
+    if (run || queued) stopped.push(target);
   }
   if (stopped.length) changes.publish("sessions");
   return stopped;
@@ -2705,7 +2705,7 @@ export function chatStatus(id: string): SessionStatus {
         : "running"
       : thread.spawnedBy?.prompt
         ? "queued"
-        : queue.length && !thread.held
+        : queue.length
           ? "running"
           : outcome === "failed"
             ? "failed"
@@ -2739,14 +2739,7 @@ registerChatControl({
         : store()
             .byRuntime(target.backend, target.host, target.runtimeId)
             .sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    if (
-      !thread ||
-      thread.held ||
-      thread.spawnedBy?.prompt ||
-      threadRun(thread.id) ||
-      runs.size >= 4
-    )
-      return null;
+    if (!thread || thread.spawnedBy?.prompt || threadRun(thread.id) || runs.size >= 4) return null;
     return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
   },
   canSteer: (target) => {
