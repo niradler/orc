@@ -313,6 +313,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
 | `GET` | `/terminals/{id}/git/status` | Git status of a terminal checkout |
 | `GET` | `/git/worktrees` | Checkouts of a repo |
+| `GET` | `/git/branches` | Local, remote and default branches of a repo |
 
 Chat streams include `turn` events with `startedAt` (Unix milliseconds), followed
 at completion by `finishedAt`, `durationMs` and `outcome` (`completed`, `stopped`,
@@ -329,6 +330,11 @@ the user message id, rejecting a repeat with `409`. If a first send's response i
 lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the
 server stores the message, then the full thread — and attach to
 `/chat/threads/{id}/live` instead of sending the message again.
+
+A first send may include `workspace` with `host`, `cwd`, `worktree` and `base`.
+When `worktree` is true, the server creates an isolated `orc/<id>` worktree from
+`base` (a local or remote-tracking branch already present in the checkout);
+omitting `base` uses the checkout's current `HEAD`.
 
 First sends reserve `clientMessageId` before agent and workspace preparation.
 Repeating that ID without a thread returns `409` with code `CHAT_MESSAGE_EXISTS`,

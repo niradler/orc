@@ -33,6 +33,18 @@ test.beforeEach(async ({ page, request }) => {
       },
     });
   });
+  await page.route("**/api/git/branches?**", (route) => {
+    const cwd = new URL(route.request().url()).searchParams.get("cwd") ?? "";
+    return route.fulfill({
+      json: {
+        root: cwd,
+        current: "feature/chips",
+        default_branch: "origin/main",
+        local: ["feature/chips", "main"],
+        remote: ["origin/main", "origin/release"],
+      },
+    });
+  });
   await page.addInitScript(
     ({ secret, recent }) => {
       localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
@@ -232,7 +244,83 @@ test("composer chips are fully keyboard operable", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(branch).toHaveAttribute("data-worktree", "true");
   await expect(branch).toHaveText("New worktree from feature/chips");
+
+  await branch.press("Enter");
+  await expect(page.getByTestId("chat-workspace-worktree")).toBeFocused();
+  await expect(page.getByTestId("chat-workspace-default-worktree")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("chat-workspace-default-worktree")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("chat-workspace-base")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("chat-workspace-base-back")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("chat-workspace-base-option").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("chat-workspace-branch-picker")).toBeHidden();
+  await expect(branch).toBeFocused();
 });
+
+for (const width of [1440, 390]) {
+  test(`run-in starts a worktree from the default branch or any chosen branch at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width < 640 ? 844 : 900 });
+    await openChat(page);
+    await page.getByTestId("chat-input").fill("Start from a clean base");
+    const branch = page.getByTestId("chat-workspace-branch");
+    const picker = page.getByTestId("chat-workspace-branch-picker");
+    await branch.click();
+    await expect(page.getByTestId("chat-workspace-checkout")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await page.getByTestId("chat-workspace-default-worktree").click();
+    await expect(branch).toHaveText("New worktree from origin/main");
+    await expect(branch).toHaveAttribute("data-worktree", "true");
+
+    await branch.click();
+    await expect(page.getByTestId("chat-workspace-default-worktree")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await page.getByTestId("chat-workspace-base").click();
+    await expect(page.getByTestId("chat-workspace-base-back")).toBeVisible();
+    await page.getByTestId("chat-workspace-base-filter").fill("release");
+    await expect(page.getByTestId("chat-workspace-base-option")).toHaveCount(1);
+    await page.getByTestId("chat-workspace-base-option").click();
+    await expect(branch).toHaveText("New worktree from origin/release");
+    await expect(picker).toBeHidden();
+
+    await branch.click();
+    await expect(page.getByTestId("chat-workspace-base")).toHaveAttribute("aria-checked", "true");
+    await page.screenshot({ path: test.info().outputPath(`run-in-${width}.png`) });
+    await page.keyboard.press("Escape");
+
+    await page.getByTestId("chat-workspace-folder").click();
+    await page.getByTestId("chat-workspace-recent-option").filter({ hasText: OLDER }).click();
+    await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
+    await expect(branch).toHaveText("New worktree from feature/chips");
+    await expect(branch).toHaveAttribute("data-worktree", "true");
+    await branch.click();
+    await page.getByTestId("chat-workspace-base").click();
+    await page.getByTestId("chat-workspace-base-filter").fill("release");
+    await page.getByTestId("chat-workspace-base-option").click();
+    await expect(branch).toHaveText("New worktree from origin/release");
+
+    let launch: unknown;
+    await page.route("**/api/chat/stream", (route) => {
+      launch = route.request().postDataJSON();
+      return route.fulfill({ status: 400, json: { error: "Captured base-branch launch" } });
+    });
+    await page.getByTestId("chat-send-button").click();
+    await expect
+      .poll(() => launch)
+      .toMatchObject({
+        workspace: { worktree: true, base: "origin/release" },
+      });
+  });
+}
 
 test("long pastes become a text attachment unless pasted as plain text", async ({ page }) => {
   await openChat(page);

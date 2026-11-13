@@ -2652,6 +2652,7 @@ export interface paths {
                             cwd?: string;
                             /** @default false */
                             worktree?: boolean;
+                            base?: string;
                         };
                         system?: string;
                         autoApprove?: boolean;
@@ -20130,6 +20131,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/git/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List local, remote and default branches for a repo */
+        get: {
+            parameters: {
+                query: {
+                    cwd: string;
+                    host?: "" | string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Branches; root is null when the folder is not in a git repo */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GitBranches"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/git/worktrees/remove": {
         parameters: {
             query?: never;
@@ -22899,6 +22939,13 @@ export interface components {
             upstream_gone?: boolean;
             stale?: boolean;
             active_terminal?: string | null;
+        };
+        GitBranches: {
+            root: string | null;
+            current: string | null;
+            default_branch: string | null;
+            local: string[];
+            remote: string[];
         };
         PullReview: {
             repo: string;
