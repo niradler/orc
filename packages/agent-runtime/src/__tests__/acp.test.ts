@@ -39,7 +39,7 @@ for await (const line of createInterface({input:process.stdin})) {
   promptId=m.id;
   if(mode==='exit') { process.exit(2); }
   else if(mode==='oversize') process.stdout.write('x'.repeat(2100000));
-  else if(mode==='cancel'||mode==='cancel-late') {}
+  else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold') {}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
   else {
@@ -52,7 +52,7 @@ for await (const line of createInterface({input:process.stdin})) {
   update(session,{sessionUpdate:'tool_call_update',toolCallId:'read-1',status:'completed',rawOutput:'file contents'});
   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.result)}});
   emit({id:promptId,result:{stopReason:'end_turn'}});
- } else if(m.method==='session/cancel') {if(mode==='cancel-late')ask('late-cancel');else emit({id:promptId,result:{stopReason:'cancelled'}});}
+ } else if(m.method==='session/cancel') {if(mode==='cancel-late')ask('late-cancel');else if(mode!=='cancel-hold')emit({id:promptId,result:{stopReason:'cancelled'}});}
 }`,
   );
   const session = new AcpSession({ cwd, orcMcp: false, ...opts }, [process.execPath, script]);
@@ -179,6 +179,22 @@ test("ACP cancellation completes without losing native identity", async () => {
   await session.interrupt();
   const events = await run(session);
   expect(events.some((e) => e.type === "system_status" && e.data.includes("stopped"))).toBe(true);
+  expect(session.getRuntimeSessionId()).toBe("native-acp");
+});
+
+test("ACP closing after an explicit Stop does not send a second session/cancel", async () => {
+  // cancel-hold acknowledges nothing, so the turn stays busy; a close that
+  // re-cancels would put a second session/cancel on the wire.
+  const { session, cwd } = fixture({}, "cancel-hold");
+  await session.initialize();
+  await session.send("Wait");
+  await session.interrupt();
+  await session.close();
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/cancel")).toHaveLength(1);
   expect(session.getRuntimeSessionId()).toBe("native-acp");
 });
 

@@ -10,6 +10,7 @@ import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   hostBinary,
   hostExec,
+  hostIsFile,
   remoteTempPath,
   removeHostFile,
   writeHostFile,
@@ -92,6 +93,11 @@ export class PiSession implements AgentSession {
   readonly capabilities = { ...PI_CAPABILITIES };
   private rpc?: PiRpc;
   private runtimeId?: string;
+  private sessionFile: string | undefined;
+  // Pi writes the session file lazily, only once the transcript holds a user or
+  // assistant message. Until then the native id is not resumable, so we must not
+  // hand it to the chat runtime to pin for the next send.
+  private resumable = false;
   private readonly queue: AgentEvent[] = [];
   private wake: (() => void) | undefined;
   private finished = false;
@@ -207,6 +213,10 @@ export class PiSession implements AgentSession {
         (await this.rpc.request({ type: "get_state" })).data,
       ) satisfies Pick<RpcSessionState, "sessionId">;
       this.runtimeId = state.sessionId;
+      this.sessionFile = state.sessionFile;
+      // A resumed session was loaded from disk, so it is already persisted; a brand
+      // new one stays non-resumable until a turn appends its first message.
+      this.resumable = !!this.opts.runtimeSessionId;
       if (this.opts.runtimeSessionId && this.opts.runtimeSessionId !== state.sessionId)
         throw new Error(
           "Pi did not resume the exact requested session; its original identity was preserved.",
@@ -265,7 +275,16 @@ export class PiSession implements AgentSession {
       throw new Error(
         "Pi replaced the native session. The original ORC session identity was preserved.",
       );
+    this.sessionFile = state.sessionFile;
     return state;
+  }
+  private async refreshResumable(): Promise<void> {
+    // A persisted session stays persisted; never downgrade on a transient check
+    // failure, and skip the host round-trip once we know it is resumable.
+    if (this.resumable) return;
+    this.resumable = this.sessionFile
+      ? await hostIsFile(sessionExecHost(this.opts), this.sessionFile).catch(() => false)
+      : false;
   }
   private async completeTurn(
     outcome: "completed" | "failed" | "stopped",
@@ -279,7 +298,10 @@ export class PiSession implements AgentSession {
         await this.applyOptions();
         this.reloadPending = false;
       }
-      if (turn === this.turn && !this.finished) this.finish(outcome);
+      if (turn === this.turn && !this.finished) {
+        await this.refreshResumable();
+        this.finish(outcome);
+      }
     } catch (error) {
       if (turn !== this.turn || this.finished) return;
       this.push({ type: "error", data: error instanceof Error ? error.message : String(error) });
@@ -301,7 +323,13 @@ export class PiSession implements AgentSession {
       this.push({ type: "error", data: this.modelError });
     this.push({
       type: "result",
-      data: { runtimeSessionId: this.runtimeId, usage: this.usage, outcome },
+      data: {
+        // An unpersisted session cannot be resumed; say so explicitly instead of
+        // handing out an id the next send would fail to resume.
+        ...(this.resumable ? { runtimeSessionId: this.runtimeId } : { resumable: false }),
+        usage: this.usage,
+        outcome,
+      },
     });
   }
   private receive(record: unknown): void {
@@ -608,6 +636,7 @@ export class PiSession implements AgentSession {
     for (const id of [...this.dialogs.keys()]) this.resolveDialog(id, { cancelled: true });
     await this.rpc.request({ type: "clear_queue" });
     await this.rpc.request({ type: "abort" });
+    await this.refreshResumable();
     this.finish("stopped");
     const operation = this.operation;
     if (operation) {

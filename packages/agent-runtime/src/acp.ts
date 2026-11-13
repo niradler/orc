@@ -550,7 +550,8 @@ export class AcpSession implements AgentSession {
   }
   async close(): Promise<void> {
     if (this.closed) return;
-    await this.interrupt().catch(() => {});
+    // An explicit Stop already cancelled the turn; do not cancel a second time.
+    if (!this.cancelling) await this.interrupt().catch(() => {});
     this.closed = true;
     this.cancelPending();
     this.connection?.close();

@@ -243,8 +243,9 @@ adapter, not proof that every installed agent version supports every native feat
 Codex chat uses `codex app-server` over stdio. It supports native resume, approvals,
 questions, live permission changes, steering and interruption. While Codex is
 responding, **Send now** sends a text message into that active turn; ordinary **Send**
-queues it for later. Stop requests native interruption before closing the process.
-Fork and conversation rollback are not exposed. Non-interactive `codex-cli` callers
+queues it for later. Stop interrupts the active turn and keeps the native session, so
+the next message continues the same conversation. Fork and conversation rollback are
+not exposed. Non-interactive `codex-cli` callers
 continue to use execution mode, without chat's interactive controls.
 
 ACPX remains the compatibility path for other coding agents. It streams text,
@@ -326,6 +327,11 @@ remain agent-owned. ACPX-specific launch flags do not apply to direct ACP. Faile
 resume preserves the original identity instead of silently starting fresh.
 
 
+Stop ends the current turn. On backends with a native interrupt — Pi, Codex and
+OpenCode/direct ACP — Stop sends that interrupt and keeps the session, so the next
+send resumes the same native conversation instead of starting a new one. Claude and
+ACPX have no native interrupt yet, so Stop closes the agent process as before.
+
 Stopping a native Codex or direct ACP turn revokes pending interactive requests and
 rejects new approval callbacks while cancellation completes, including when automatic
 approvals were enabled. ACP requests while idle are also cancelled. Steering saves
@@ -339,3 +345,10 @@ Pi 1.5.2 or newer must be installed and authenticated on the execution host.
 This path uses Pi's own RPC protocol and an ORC session extension for permissions
 and scoped MCP; it does not require ACPX or `pi-acp`.
 See [Pi configuration and capabilities](./configuration.md#pi).
+
+Pi persists a native session only once its transcript holds a message. A turn made
+entirely of slash/extension commands (which send no model message) creates no
+resumable native session, so ORC starts the next message in a fresh Pi session. The
+ORC conversation continues normally — such commands leave no native transcript, so
+there is no history to lose. This also holds when such a turn is stopped: ORC does not
+pin a session id that cannot be resumed, so the next send works instead of failing.

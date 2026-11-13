@@ -144,12 +144,15 @@ const runs = new Map<string, ChatRun>();
 /**
  * A turn is stopped after `idleMs` without any agent event, re-checking every
  * `recheckMs` while it waits for a human answer or an in-flight tool call, and
- * never runs past `hardMs`. Tests shorten these through setChatTurnLimits.
+ * never runs past `hardMs`. After a cooperative Stop, `stopGraceMs` bounds how long
+ * we wait for the agent to end the turn before forcing the transport closed. Tests
+ * shorten these through setChatTurnLimits.
  */
 const turnLimits = {
   idleMs: 15 * 60000,
   recheckMs: 60_000,
   hardMs: 4 * 60 * 60000,
+  stopGraceMs: 10_000,
 };
 export function setChatTurnLimits(limits: Partial<typeof turnLimits>): () => void {
   const previous = { ...turnLimits };
@@ -1428,7 +1431,23 @@ async function startChat(
   // one, the continuation was delivered and must not be injected into it again.
   if (body.threadId && thread.providerSwitch && !thread.runtimeId)
     continuation ??= continuationPrompt(thread.messages);
-  if (body.threadId && thread.messages.length && !thread.runtimeId && !thread.providerSwitch)
+  // A turn that ended cleanly without establishing a native session — a Pi
+  // extension-command turn, which Pi only persists once the transcript holds a
+  // message — is safe to continue: the next send starts a fresh native session and
+  // there is no prior native context to lose. A turn that failed holding no session
+  // is still treated as unsafe to resume.
+  const lastAssistant = [...thread.messages]
+    .reverse()
+    .find((message) => message.role === "assistant");
+  const cleanSessionlessTurn =
+    lastAssistant?.turn?.outcome === "completed" || lastAssistant?.turn?.outcome === "stopped";
+  if (
+    body.threadId &&
+    thread.messages.length &&
+    !thread.runtimeId &&
+    !thread.providerSwitch &&
+    !cleanSessionlessTurn
+  )
     throw new ConflictError(
       "The previous turn did not establish a resumable session. Start a new chat.",
     );
@@ -1507,6 +1526,7 @@ async function beginTurn(
   const runId = crypto.randomUUID();
   let stopped = false;
   let halt = () => {};
+  let stopFallback: ReturnType<typeof setTimeout> | undefined;
   const halted = new Promise<void>((resolve) => {
     halt = resolve;
   });
@@ -1528,7 +1548,19 @@ async function beginTurn(
     stop: () => {
       stopped = true;
       halt();
-      void run.session?.close().catch(() => {});
+      const session = run.session;
+      // Interrupt-capable backends end the turn cooperatively and keep the native
+      // session resumable for the next send; the per-turn transport still closes when
+      // the turn ends. Backends without a native interrupt (Claude/ACPX) are killed.
+      if (session?.interrupt && session.capabilities?.interrupt === true) {
+        void session.interrupt().catch(() => session.close().catch(() => {}));
+        // An agent that acknowledges the interrupt but never ends the turn must not
+        // hold the worker forever; force the transport closed after a grace period.
+        // Idempotent per-run: repeated Stops do not stack timers.
+        stopFallback ??= setTimeout(() => {
+          void session.close().catch(() => {});
+        }, turnLimits.stopGraceMs);
+      } else void session?.close().catch(() => {});
     },
   };
   runs.set(runId, run);
@@ -1583,6 +1615,7 @@ async function beginTurn(
   let failure: string | null = null;
   let completed = false;
   let responded = false;
+  let noResumableSession = false;
   let agentDurationMs: number | undefined;
   let agentOutcome: "completed" | "stopped" | "failed" | undefined;
   const execute = async () => {
@@ -1726,22 +1759,14 @@ async function beginTurn(
         let receivedResult = false;
         let outputBytes = 0;
         for await (const event of run.session.events()) {
-          if (stopped) break;
-          touch();
-          if (event.type === "tool_use") toolsPending++;
-          else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
-          outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
-          if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
-          if (event.type === "capabilities") {
-            thread.capabilities = event.data;
-            await emit({ type: "capabilities", capabilities: event.data });
-            continue;
-          }
+          // Always consume the terminal result — even after a Stop — so the turn's
+          // outcome, native identity and resumability are recorded, not discarded.
           if (event.type === "result") {
             const duration = event.data.durationMs;
             if (typeof duration === "number" && Number.isFinite(duration) && duration >= 0)
               agentDurationMs = duration;
             agentOutcome = event.data.outcome;
+            noResumableSession = event.data.resumable === false;
             if (agentOutcome === "stopped") stopped = true;
             if (agentOutcome === "failed") failure ??= "The agent could not complete the response.";
             if (
@@ -1765,6 +1790,19 @@ async function beginTurn(
             if (thread.sourceId) await getHandoffService().markResumed(thread.sourceId);
             receivedResult = true;
             break;
+          }
+          // After a Stop, drain remaining events without emitting them; the loop ends
+          // at the result above or when the session closes (bounded by stopFallback).
+          if (stopped) continue;
+          touch();
+          if (event.type === "tool_use") toolsPending++;
+          else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
+          outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
+          if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
+          if (event.type === "capabilities") {
+            thread.capabilities = event.data;
+            await emit({ type: "capabilities", capabilities: event.data });
+            continue;
           }
           if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
             await emit({ type: event.type, text: event.data });
@@ -1798,8 +1836,11 @@ async function beginTurn(
             message:
               "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
           });
-        completed = receivedResult && !!thread.runtimeId && !stopped;
-        if (receivedResult && !thread.runtimeId)
+        // A backend may explicitly finish with no resumable native session (Pi only
+        // persists a session once its transcript has a message). That is a valid
+        // completion: there is no native history to lose, so the next send starts fresh.
+        completed = receivedResult && (!!thread.runtimeId || noResumableSession) && !stopped;
+        if (receivedResult && !thread.runtimeId && !noResumableSession)
           await emit({
             type: "error",
             message:
@@ -1814,6 +1855,7 @@ async function beginTurn(
       if (!stopped) await emit({ type: "error", message }).catch(() => {});
     } finally {
       clearTimeout(timer);
+      clearTimeout(stopFallback);
       if (timedOut) {
         // The stop path is otherwise silent; without this the chat shows a
         // stopped turn with no explanation of why the agent went quiet. The
@@ -1848,7 +1890,9 @@ async function beginTurn(
               : "completed",
       };
       assistant.timestamp = finishedAt;
-      const nativeId = run.session?.getRuntimeSessionId?.();
+      // Do not pin a native id the backend explicitly reported as non-resumable;
+      // there is no persisted session behind it, so the next send starts fresh.
+      const nativeId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
       // A switched account has a working session again; stop replaying history.

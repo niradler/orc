@@ -143,6 +143,23 @@ test("steers and interrupts the same native turn without replacing its thread", 
   });
 });
 
+test("closing after an explicit Stop does not interrupt the turn a second time", async () => {
+  // The peer acknowledges turn/interrupt but never completes the turn, so a close
+  // that re-interrupts would put a second turn/interrupt on the wire.
+  const { session, cwd } =
+    fixture(`if(m.method==='turn/start') emit({id:m.id,result:{turn:{id:'current'}}});
+ if(m.method==='turn/interrupt') emit({id:m.id,result:{}});`);
+  await session.send("hello");
+  await session.interrupt();
+  await session.close();
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "turn/interrupt")).toHaveLength(1);
+  expect(session.getRuntimeSessionId()).toBe("native");
+});
+
 test("surfaces stdout closing mid-turn instead of leaving the event consumer waiting", async () => {
   const { session } = fixture(
     `if(m.method==='turn/start') {emit({id:m.id,result:{turn:{id:'current'}}});setTimeout(()=>notify('fixture/close',{}),20);}`,
