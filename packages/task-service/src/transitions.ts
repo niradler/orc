@@ -274,6 +274,10 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
       }
     }
   }
+  if (["done", "cancelled"].includes(opts.status))
+    import("@orc/runner/flow-runner")
+      .then((m) => m.retireFlowWorktrees(opts.taskId))
+      .catch((err) => logger.warn("flow worktree cleanup failed", { err }));
   if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
     import("@orc/runner/task-loop")
       .then((m) => m.triggerTaskCheck())

@@ -319,6 +319,9 @@ export const gateway_sessions = sqliteTable(
     acpx_agent: text("acpx_agent"),
     a2a_url: text("a2a_url"),
     title: text("title"),
+    // A human's name wins over the title the agent store reports, which a re-sync rewrites.
+    display_title: text("display_title"),
+    hidden_at: integer("hidden_at", { mode: "timestamp" }),
     model: text("model"),
     status: text("status", { enum: ["idle", "running", "stopped", "error"] })
       .default("idle")

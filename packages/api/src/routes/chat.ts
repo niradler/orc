@@ -46,6 +46,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
+import { notificationTitle } from "@orc/core/notifications";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import {
   agentDefaultHome,
@@ -58,6 +59,7 @@ import {
 } from "@orc/core/provider-service";
 import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
+import { prepareSessionDirectory } from "@orc/core/session-dir";
 import {
   type SessionFile,
   UPLOAD_MAX_BYTES,
@@ -76,6 +78,7 @@ import { AgentCapabilitiesSchema } from "@orc/core/types";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
+import { notificationProjectLabel } from "@orc/db/notification-producers";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { SessionMessageStore } from "@orc/db/session-messages";
@@ -105,7 +108,6 @@ import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-
 import { activeTurns, type ChatTarget, registerChatControl, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
-import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import { workspaceLaunch } from "../workspaces/service.js";
 
 const logger = createLogger("api:chat");
@@ -275,8 +277,9 @@ function requireThread(id: string): ChatThread {
 }
 
 function chatPush(thread: ChatThread, status: string, body: string): PushMessage {
+  const project = notificationProjectLabel(getSqlite(), thread.projectId, thread.cwd);
   return {
-    title: `${status} · ${truncate(thread.title, 120)}`,
+    title: notificationTitle(`${status} · ${truncate(thread.title, 120)}`, project),
     body,
     url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
     tag: `chat:${thread.id}`,

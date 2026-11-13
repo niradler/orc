@@ -30,11 +30,16 @@ export function useSession(id: string) {
   });
 }
 
-export function useLiveSessions(active: boolean, projectId?: string) {
+export function useLiveSessions(active: boolean, projectId?: string, includeHidden = false) {
   return useQuery({
-    queryKey: ["sessions", "live", active, projectId],
+    queryKey: ["sessions", "live", active, projectId, includeHidden],
     queryFn: () =>
-      api.sessions.live({ active, limit: 5000, ...(projectId ? { project_id: projectId } : {}) }),
+      api.sessions.live({
+        active,
+        limit: 5000,
+        ...(includeHidden ? { include_hidden: true } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      }),
     select: (data) => data.sessions,
   });
 }
@@ -56,14 +61,35 @@ export function useLinkSessionTask() {
   });
 }
 
-export function useSessionSearch(q: string, agent: string, projectId?: string) {
+export function useUpdateLiveSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...patch
+    }: {
+      id: string;
+      display_title?: string | null;
+      hidden?: boolean;
+    }) => api.sessions.update(id, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}
+
+export function useSessionSearch(
+  q: string,
+  agent: string,
+  projectId?: string,
+  includeHidden = false,
+) {
   return useQuery({
-    queryKey: ["sessions", "search", q, agent, projectId],
+    queryKey: ["sessions", "search", q, agent, projectId, includeHidden],
     queryFn: () =>
       api.sessions.search({
         q,
         ...(agent ? { agent } : {}),
         ...(projectId ? { project_id: projectId } : {}),
+        ...(includeHidden ? { include_hidden: true } : {}),
         limit: 200,
       }),
     enabled: q.trim().length >= 2,

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerBackend, type SessionOpts } from "@orc/agent-runtime";
@@ -146,8 +146,8 @@ describe("task worktree launch", () => {
     });
   });
 
-  test("should retain project scope when the task has no worktree", async () => {
-    await runTask(null);
-    expect(starts.at(-1)?.cwd).toBe(repo);
+  test("should run the built-in flow in its own worktree of the project when the task has none", async () => {
+    const id = await runTask(null);
+    expect(starts.at(-1)?.cwd).toBe(join(realpathSync(repo), ".orc", "worktrees", `${id}-build`));
   });
 });

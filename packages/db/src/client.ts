@@ -431,6 +431,9 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN execution_host TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN usage_version INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE gateway_sessions ADD COLUMN usage_synced_at INTEGER",
+    // Housekeeping a re-sync must not overwrite: a human rename and a hidden row.
+    "ALTER TABLE gateway_sessions ADD COLUMN display_title TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN hidden_at INTEGER",
     // Drift fix: schema.ts has declared bridge_chats.project_id for a while, but
     // it was only ever added to existing DBs out-of-band — fresh installs never
     // got it, so any drizzle insert into bridge_chats failed. Skipped as a

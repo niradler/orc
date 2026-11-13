@@ -522,6 +522,17 @@ function Ledger({
                   session {nodeRun.gateway_session_id.slice(-8)}
                 </Link>
               )}
+              {nodeRun.worktree_branch && (
+                <div
+                  className="mt-1 flex min-w-0 flex-wrap gap-x-2 font-mono text-xs text-on-surface-variant"
+                  data-testid="flow-ledger-worktree"
+                >
+                  <span className="shrink-0">{nodeRun.worktree_branch}</span>
+                  <span className="min-w-0 truncate" title={nodeRun.cwd ?? undefined}>
+                    {nodeRun.cwd}
+                  </span>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -71,7 +71,8 @@ const developmentLimits = {
 export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   "orc-default": {
     name: "orc-default",
-    version: 3,
+    version: 4,
+    isolation: "worktree",
     description:
       "Development: understand, plan as needed, implement and verify, then independent review. Relevant memory and knowledge base guidance at start, rework and delivery.",
     entry: "build",
@@ -92,7 +93,8 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   },
   "orc-human-review": {
     name: "orc-human-review",
-    version: 3,
+    version: 4,
+    isolation: "worktree",
     description:
       "Development with human sign-off: implement, verify and independently review, then wait for human approval. Feedback returns to implementation within the review budget.",
     entry: "build",
@@ -124,7 +126,8 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   },
   "orc-review-only": {
     name: "orc-review-only",
-    version: 3,
+    version: 4,
+    isolation: "worktree",
     description:
       "Review existing work: inspect the artifact, verify acceptance criteria and reconcile relevant knowledge. Approve, request changes or pause when evidence is missing.",
     entry: "review",

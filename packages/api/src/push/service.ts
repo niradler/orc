@@ -2,7 +2,8 @@ import type { HumanRequest } from "@orc/core/human-requests";
 import { createLogger } from "@orc/core/logger";
 import type { PushMessage, PushTopic } from "@orc/core/push";
 import { getSqlite } from "@orc/db/client";
-import { currentHumanRequest, HumanRequestStore } from "@orc/db/human-requests";
+import { currentHumanRequest, HumanRequestStore, humanRequestFolder } from "@orc/db/human-requests";
+import { notificationProjectLabel } from "@orc/db/notification-producers";
 import { PushStore, type PushTarget } from "@orc/db/push";
 import webpush from "web-push";
 
@@ -98,16 +99,20 @@ export function truncate(text: string, max: number): string {
   return single.length <= max ? single : `${single.slice(0, max - 1)}…`;
 }
 
-export function sessionWaitingMessage(event: { id: string; backend: string }): PushMessage {
+export function sessionWaitingMessage(event: {
+  id: string;
+  backend: string;
+  project?: string | null;
+}): PushMessage {
   return {
-    title: "Waiting for you",
+    title: event.project ? `${event.project} · Waiting for you` : "Waiting for you",
     body: `${event.backend} is waiting for you.`,
     url: `/sessions?session=${encodeURIComponent(event.id)}&project=all`,
     tag: `waiting:${event.id}`,
   };
 }
 
-export function attentionMessage(request: HumanRequest): PushMessage {
+export function attentionMessage(request: HumanRequest, project?: string | null): PushMessage {
   const verb =
     request.input.kind === "command"
       ? "Command requested"
@@ -115,7 +120,9 @@ export function attentionMessage(request: HumanRequest): PushMessage {
         ? "Approval needed"
         : "Question";
   return {
-    title: `${verb} · ${request.input.origin.backend}`,
+    title: project
+      ? `${project} · ${verb} · ${request.input.origin.backend}`
+      : `${verb} · ${request.input.origin.backend}`,
     body: truncate(request.input.prompt, 180),
     url: `/activity?notifications=open&request=${encodeURIComponent(request.id)}`,
     tag: `attention:${request.id}`,
@@ -132,10 +139,15 @@ export async function notifyPendingAttention(
   for (const entry of humanRequests.list()) {
     const request = currentHumanRequest(humanRequests, entry.id);
     if (request.status !== "pending") continue;
+    const project = notificationProjectLabel(
+      humanRequests.db,
+      request.input.project_id,
+      humanRequestFolder(humanRequests.db, request.input),
+    );
     for (const target of targets) {
       if (!humanRequests.reserveNotification(request, ATTENTION_CHANNEL, target.id, false))
         continue;
-      const result = await sendPush(null, attentionMessage(request), target.id, deps);
+      const result = await sendPush(null, attentionMessage(request, project), target.id, deps);
       // Expired devices are gone, so mark them done too; transient failures retry after the lease.
       if (result.sent || result.expired)
         humanRequests.notificationSent(request.id, ATTENTION_CHANNEL, target.id);

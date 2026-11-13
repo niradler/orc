@@ -38,7 +38,7 @@ const LINK_CLASS =
 function SessionLinks({ liveSessionId }: { liveSessionId: string }) {
   const [params] = useSearchParams();
   const project = params.get("project") ?? "all";
-  const { data: sessions } = useLiveSessions(false);
+  const { data: sessions } = useLiveSessions(false, undefined, true);
   const task = sessions?.find((s) => s.id === liveSessionId)?.task;
   return (
     <div className="shrink-0 flex items-center gap-3">

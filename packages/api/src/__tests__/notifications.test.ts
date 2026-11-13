@@ -4,7 +4,7 @@ import type { HumanRequest } from "@orc/core/human-requests";
 import type { NotificationPage, OrcNotification } from "@orc/core/notifications";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
-import { publishJobNotification } from "@orc/db/notification-producers";
+import { publishJobNotification, publishNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
 import { executeJob } from "@orc/runner/executor";
 import {
@@ -419,6 +419,117 @@ test("should let a person inspect an answer without claiming the agent received 
     (await req(app, "POST", `/human-requests/${created.id}/cancel`, { version: answered.version }))
       .status,
   ).toBe(200);
+});
+
+test("should label notifications with the project name or the source folder", async () => {
+  const sqlite = getSqlite();
+  sqlite.query("INSERT INTO projects(id,name) VALUES(?,?)").run("label-project", "Label Project");
+  const notifications = new NotificationStore(sqlite);
+  const title = (sourceKey: string) =>
+    notifications.list(50).notifications.find((item) => item.source_id === sourceKey)?.title;
+  const now = Date.now();
+  const thread = ChatThreadSchema.parse({
+    id: crypto.randomUUID(),
+    title: "Labelled session",
+    config: ChatSettingsSchema.parse({}),
+    cwd: "/work/label-folder",
+    host: null,
+    runtimeId: null,
+    backend: "codex",
+    sourceId: null,
+    messages: [],
+    updatedAt: now,
+    projectId: "label-project",
+  });
+  new ChatStore(sqlite).save(thread);
+  recordChatNotification(thread, "labelled", "question");
+  expect(
+    sqlite
+      .query<{ title: string; project_label: string | null }, [string]>(
+        "SELECT title,project_label FROM notifications WHERE source_key=?",
+      )
+      .get(`chat:${thread.id}:labelled`),
+  ).toEqual({ title: "Labelled session", project_label: "Label Project" });
+  expect(title(thread.id)).toBe("Label Project · Labelled session");
+
+  sqlite.query("UPDATE projects SET name=? WHERE id=?").run("Renamed Project", "label-project");
+  new NotificationStore(sqlite).relabelProject("label-project", "Renamed Project");
+  expect(title(thread.id)).toBe("Renamed Project · Labelled session");
+
+  const observedId = `label-${crypto.randomUUID()}`;
+  recordObservedNotification(
+    {
+      id: observedId,
+      backend: "codex",
+      host: null,
+      nativeId: `native-${observedId}`,
+      title: "Observed session",
+      projectId: null,
+      cwd: "/work/\u0007folder-label",
+      previous: "running",
+      status: "idle",
+      waiting: false,
+      wasWaiting: false,
+      activity: now,
+    },
+    () => true,
+  );
+  await Bun.sleep(1100);
+  expect(title(observedId)).toBe("folder-label · Observed session");
+
+  const bare = publishNotification(sqlite, {
+    type: "future.label",
+    source_key: "label:bare",
+    source_id: "label-bare",
+    title: "Bare title",
+    level: "done",
+    path: "/activity",
+    created_at: now,
+    expires_at: now + 60000,
+    cwd: "/work/folder-label",
+  });
+  expect(bare?.title).toBe("folder-label · Bare title");
+
+  new NotificationStore(sqlite).assignProject("label-bare", "label-project");
+  expect(title("label-bare")).toBe("Renamed Project · Bare title");
+  new NotificationStore(sqlite).assignProject("label-bare", null, "/work/folder-label");
+  expect(title("label-bare")).toBe("folder-label · Bare title");
+});
+
+test("should label job notifications with their project or working folder", async () => {
+  const sqlite = getSqlite();
+  sqlite.query("INSERT INTO projects(id,name) VALUES(?,?)").run("job-label-project", "Job Project");
+  const job = await (
+    await req(app, "POST", "/jobs", {
+      name: "Labelled job",
+      trigger_type: "manual",
+      command: "label fixture",
+      notify_on: "always",
+      project_id: "job-label-project",
+      working_dir: "/work/job-folder",
+    })
+  ).json<{ id: string }>();
+  const runId = await executeJob({
+    jobId: job.id,
+    execution: {
+      argv: [process.execPath, "-e", "process.exit(0)"],
+      stdin: "",
+      timeout_ms: 10000,
+      cwd: process.cwd(),
+    },
+  });
+  publishJobNotification(sqlite, runId);
+  expect(
+    sqlite
+      .query<{ title: string; project_label: string | null }, [string]>(
+        "SELECT title,project_label FROM notifications WHERE source_id=?",
+      )
+      .get(runId),
+  ).toEqual({ title: "Labelled job finished", project_label: "Job Project" });
+  expect(
+    new NotificationStore(sqlite).list(100).notifications.find((item) => item.source_id === runId)
+      ?.title,
+  ).toBe("Job Project · Labelled job finished");
 });
 
 test("should publish real job outcomes according to notify_on and deduplicate repeats", async () => {

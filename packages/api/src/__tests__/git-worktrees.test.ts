@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOCAL_HOST } from "@orc/core/exec-host";
+import { excludeOrcWorktrees, prepareSessionDirectory, runGit } from "@orc/core/session-dir";
 import { gitBranches } from "../git/panel.js";
 import {
   isInside,
@@ -12,7 +13,6 @@ import {
   samePath,
   WorktreeDirtyError,
 } from "../git/worktrees.js";
-import { excludeOrcWorktrees, prepareSessionDirectory, runGit } from "../terminals/session-dir.js";
 
 describe("parseWorktreeList", () => {
   test("reads main, linked, detached and prunable entries", () => {

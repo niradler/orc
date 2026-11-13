@@ -1,7 +1,7 @@
 import { appendFile, lstat, mkdir } from "node:fs/promises";
 import { dirname, posix, win32 } from "node:path";
-import { ConflictError, ValidationError } from "@orc/core/errors";
-import { type ExecHost, type ExecResult, hostExec, LOCAL_HOST } from "@orc/core/exec-host";
+import { ConflictError, ValidationError } from "./errors.js";
+import { type ExecHost, type ExecResult, hostExec, LOCAL_HOST } from "./exec-host.js";
 
 export type GitResult = ExecResult;
 
@@ -28,7 +28,7 @@ export interface SessionDirRequest {
 export function gitRunner(host: ExecHost): GitRunner {
   return (argv) =>
     hostExec(host, argv, {
-      env: { GIT_TERMINAL_PROMPT: "0" },
+      env: { GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" },
       timeoutMs: 30_000,
     });
 }

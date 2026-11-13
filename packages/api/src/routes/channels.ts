@@ -19,6 +19,7 @@ import {
   notificationSummary,
 } from "@orc/core/notifications";
 import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
+import { notificationProjectLabel } from "@orc/db/notification-producers";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
 
@@ -113,7 +114,10 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
       return c.json(
         {
           matches: notificationMatches(input.event, input.filter, input.project_ids),
-          summary: notificationSummary(input.event),
+          summary: notificationSummary(
+            input.event,
+            notificationProjectLabel(forwarding().db, input.event.project_id),
+          ),
         },
         200,
       );

@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { realpath } from "node:fs/promises";
 import { posix, relative } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
-import { NotFoundError } from "@orc/core/errors";
+import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { SessionCacheUsageSchema } from "@orc/core/usage";
 import { getDb } from "@orc/db/client";
@@ -61,6 +61,8 @@ const LiveSessionSchema = z
     pid: z.number().nullable(),
     status: z.enum(["idle", "running", "stopped", "error"]),
     waiting_for_human: z.boolean().default(false),
+    hidden: z.boolean().default(false),
+    renamed: z.boolean().default(false),
     project_id: z.string().nullable(),
     task: z.object({ id: z.string(), title: z.string(), status: z.string() }).nullable(),
     handoff: z
@@ -94,6 +96,12 @@ const liveListRoute = createRoute({
         .optional()
         .default("true")
         .transform((v) => v === "true"),
+      include_hidden: z
+        .enum(["true", "false"])
+        .optional()
+        .default("false")
+        .transform((v) => v === "true")
+        .openapi({ description: "Include sessions a human hid from the list" }),
       limit: z.coerce.number().int().min(1).max(5000).optional().default(100),
     }),
   },
@@ -119,6 +127,12 @@ const liveSearchRoute = createRoute({
       q: z.string().min(2),
       agent: z.string().optional(),
       project_id: z.string().min(1).max(200).optional(),
+      include_hidden: z
+        .enum(["true", "false"])
+        .optional()
+        .default("false")
+        .transform((v) => v === "true")
+        .openapi({ description: "Include sessions a human hid from the list" }),
       limit: z.coerce.number().int().min(1).max(500).optional().default(100),
     }),
   },
@@ -225,17 +239,23 @@ const liveSyncRoute = createRoute({
   },
 });
 
-const liveLinkRoute = createRoute({
+const liveUpdateRoute = createRoute({
   method: "patch",
   path: "/sessions/live/{id}",
   tags: ["Sessions"],
-  summary: "Link a live session to a task, or unlink it with task_id null",
+  summary: "Rename, hide or link a live session",
+  description:
+    "Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.",
   request: {
     params: z.object({ id: z.string() }),
     body: {
       content: {
         "application/json": {
-          schema: z.object({ task_id: z.string().nullable() }),
+          schema: z.object({
+            task_id: z.string().nullable().optional(),
+            display_title: z.string().trim().min(1).max(200).nullable().optional(),
+            hidden: z.boolean().optional(),
+          }),
         },
       },
     },
@@ -337,7 +357,7 @@ async function toLiveDtos(rows: GatewayRow[]) {
       id: r.id,
       agent: r.backend,
       session_id: r.runtime_session_id ?? null,
-      name: r.title ?? null,
+      name: r.display_title ?? r.title ?? null,
       summary: r.summary ?? null,
       tokens_used: r.tokens_used ?? null,
       tokens_estimated: r.backend === "cursor" && r.tokens_used != null,
@@ -350,6 +370,8 @@ async function toLiveDtos(rows: GatewayRow[]) {
         r.execution_host ?? null,
         r.runtime_session_id ?? null,
       ),
+      hidden: r.hidden_at != null,
+      renamed: r.display_title != null,
       project_id: r.project_id ?? null,
       handoff:
         handoff && (handoff.status === "ready" || handoff.status === "resumed")
@@ -368,11 +390,12 @@ async function toLiveDtos(rows: GatewayRow[]) {
 }
 
 app.openapi(liveListRoute, async (c) => {
-  const { agent, task_id, active, limit, project_id } = c.req.valid("query");
+  const { agent, task_id, active, include_hidden, limit, project_id } = c.req.valid("query");
   const bodyIds = task_id ? await sessionIdsOfTask(task_id) : [];
   const rows = await getDb().query.gateway_sessions.findMany({
     where: and(
       eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+      include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
       project_id === "unassigned"
         ? isNull(gateway_sessions.project_id)
         : project_id
@@ -404,12 +427,13 @@ app.openapi(liveListRoute, async (c) => {
 });
 
 app.openapi(liveSearchRoute, async (c) => {
-  const { q, agent, limit, project_id } = c.req.valid("query");
+  const { q, agent, limit, project_id, include_hidden } = c.req.valid("query");
   const result = await searchSessions({
     q,
     agent,
     limit,
     projectId: project_id,
+    includeHidden: include_hidden,
     runtime: hostRuntime(resolveExecHost()),
   });
   const dtos = await toLiveDtos(result.hits.map((h) => h.row));
@@ -492,10 +516,12 @@ app.openapi(liveTranscriptRoute, async (c) => {
 
 app.openapi(liveSyncRoute, async (c) => c.json({ results: await syncNow() }, 200));
 
-app.openapi(liveLinkRoute, async (c) => {
+app.openapi(liveUpdateRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const { task_id } = c.req.valid("json");
+  const { task_id, display_title, hidden } = c.req.valid("json");
+  if (task_id === undefined && display_title === undefined && hidden === undefined)
+    throw new ValidationError("Send task_id, display_title or hidden");
   const row = await db.query.gateway_sessions.findFirst({
     where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
   });
@@ -503,11 +529,22 @@ app.openapi(liveLinkRoute, async (c) => {
   if (task_id && !(await db.query.tasks.findFirst({ where: eq(tasks.id, task_id) }))) {
     throw new NotFoundError("Task", task_id);
   }
+  const patch: Partial<typeof gateway_sessions.$inferInsert> = {};
+  if (task_id !== undefined) patch.task_id = task_id;
+  if (display_title !== undefined) patch.display_title = display_title;
+  if (hidden !== undefined) patch.hidden_at = hidden ? (row.hidden_at ?? new Date()) : null;
   await db
     .update(gateway_sessions)
-    .set({ task_id, updated_at: new Date() })
+    .set({ ...patch, updated_at: new Date() })
     .where(eq(gateway_sessions.id, id));
-  const [dto] = await toLiveDtos([{ ...row, task_id }]);
+  const [dto] = await toLiveDtos([
+    {
+      ...row,
+      ...(task_id !== undefined ? { task_id } : {}),
+      ...(display_title !== undefined ? { display_title } : {}),
+      ...(hidden !== undefined ? { hidden_at: patch.hidden_at ?? null } : {}),
+    },
+  ]);
   return c.json(dto as NonNullable<typeof dto>, 200);
 });
 

@@ -3,6 +3,7 @@ import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import type { ExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
+import { prepareSessionDirectory } from "@orc/core/session-dir";
 import { checkoutFiles, saveCheckoutFile } from "../git/files.js";
 import { checkoutGithubFeed, GithubCiSchema } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
@@ -23,7 +24,6 @@ import {
   sessionDirDeps,
   terminalHost,
 } from "../terminals/service.js";
-import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import { WorktreeSchema } from "./git.js";
 
 const app = createRouter();

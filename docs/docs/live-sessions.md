@@ -10,6 +10,25 @@ paths, network shares, file URLs and POSIX paths. For example,
 notification titles. Named sessions keep their titles; execution uses the original
 folder path. Codex uses the first prompt when its native title is only the folder.
 
+## Rename, hide and fork
+
+A session's own menu, **Rename**, stores your name on the ORC row. The agent's
+title still updates underneath, and **Use agent title** in the rename dialog drops
+the override, so a re-sync never resurrects a name you removed. **Hide** keeps the
+session and its transcript and only removes it from the default list; **Show
+hidden** in the filters brings hidden rows back with a **Hidden** label, and
+**Show** in the same menu restores one. Both survive a restart and a session
+re-sync. Hiding does not mute notifications, tasks or terminals that already point
+at the session.
+
+**Fork in terminal** starts a new native session from the session's history when
+the agent CLI supports it: Claude runs `claude --resume <id> --fork-session` and Pi
+runs `pi --fork <id>`. The fork is a new terminal and a new session row, and the
+original conversation is not touched. Codex, Cursor, Gemini, OpenCode and agents
+without a CLI fork do not offer the action; fork those conversations from an
+assistant response in chat instead, which uses the agent's native session fork or a
+bounded context replay.
+
 Activity and full-width session history share compact title/provider/state rows.
 An ORC terminal agent without observed session activity shows **Unknown**, rather
 than assuming it is idle. A session's working folder decides its project: the most
