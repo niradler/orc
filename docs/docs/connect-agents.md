@@ -276,13 +276,24 @@ guidance when you try to run it. Copilot remains supported; enable it in Setting
 OpenCode speaks ACP directly: ORC launches `opencode acp`
 on the execution host (an installation with ACP support) and negotiates capabilities per
 session, including native resume, model selection, image input, HTTP MCP,
-per-request approvals, questions and interruption. A missing install reports
+per-request approvals, questions, interruption and mid-turn steering. A missing install reports
 installation guidance instead of falling back to ACPX. The OpenCode provider
 profile's **Executable path** selects a specific installation, model choices load
 from `opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides
-the built-in command entirely. If OpenCode moves a saved session into a worktree it
+the built-in command entirely. That override runs through the generic ACP
+backend, which keeps steering disabled. If OpenCode moves a saved session into a worktree it
 created, ORC follows it on resume, continues in that folder and updates the
 conversation's working folder.
+
+While OpenCode is responding, **Send now** sends a second `session/prompt` into
+the running turn. OpenCode's ACP server treats that prompt as steering, so the
+text reaches the model before its next step instead of waiting for the turn to
+end. This was verified against OpenCode 1.19.5 over `opencode acp`, including
+steering during a running tool call. The ACP handshake has no steering field, so
+ORC declares it for the OpenCode backend and keeps it on the negotiated session;
+if an OpenCode build rejects a mid-turn prompt, ORC turns the flag off for that
+session and reports that the message should be queued instead. Other direct ACP
+agents, and ACPX, keep steering disabled rather than assuming concurrency.
 
 Direct ACP advertises form elicitation and turns form questions into the same
 chat question card used by Codex and Claude, including single-choice,
@@ -329,11 +340,16 @@ advertised. Model selection uses an advertised model config option; unsupported
 explicit model choices fail instead of being ignored. Image input is negotiated
 for runtime callers. ORC's chat uploads retain their existing file-reference flow.
 
-**Allow for session** never writes the agent's persistent `allow_always` policy:
-ORC selects `allow_once`, or cancels when no safe matching option exists. Direct
-ACP does not advertise ORC filesystem, terminal, browser-login or native-rule-hook
-handlers. The agent runs its own tools under its own sandbox. ACP approval prompts
-are not a sandbox, and ORC's live permission-mode selector is unavailable for ACP.
+**Allow for session** selects the agent's `allow_always` option when it offers
+one, which delegates to that agent's own always-allow policy; when an agent
+offers only `allow_once`, ORC falls back to that one-shot grant.
+**Approve** stays one-shot: ORC never escalates an ordinary approval to a
+persistent agent policy. Direct ACP does not advertise ORC filesystem, terminal,
+browser-login or native-rule-hook handlers. The agent runs its own tools under
+its own sandbox. ACP approval prompts are not a sandbox, and ORC's live
+permission-mode selector is unavailable for ACP: the protocol has no approval-mode
+handshake, and OpenCode's `session/set_mode` selects its build/plan agent rather
+than ORC's `default`/`acceptEdits`/`bypassPermissions` modes.
 
 If the agent does not advertise HTTP MCP, select **Native configuration** for its
 MCP connection before starting chat. Existing agent login and native MCP settings

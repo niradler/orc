@@ -156,7 +156,11 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
       // Only reflect the mapping after the session row holds it, so notifications
       // never point at a project the session does not.
       if (fields.project_id)
-        new NotificationStore(getSqlite()).assignProject(existing.id, fields.project_id);
+        new NotificationStore(getSqlite()).assignProject(
+          existing.id,
+          fields.project_id,
+          r.cwd ?? existing.cwd,
+        );
     }
     recordObservedNotification(
       {
@@ -166,6 +170,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
         nativeId: r.externalId,
         title: r.title,
         projectId: fields.project_id ?? existing.project_id,
+        cwd: r.cwd ?? existing.cwd,
         previous: existing.status,
         status: r.status,
         waiting: r.pendingHuman === true && r.status !== "stopped",
@@ -204,6 +209,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
       nativeId: r.externalId,
       title: r.title,
       projectId,
+      cwd: r.cwd ?? null,
       previous: null,
       status: r.status,
       waiting: r.pendingHuman === true && r.status !== "stopped",
@@ -437,7 +443,7 @@ export function reconcileSessionProjects(): Promise<number> {
           .update(gateway_sessions)
           .set({ project_id: null, updated_at: new Date() })
           .where(eq(gateway_sessions.id, row.id));
-        notificationsChanged += notifications.assignProject(row.id, null);
+        notificationsChanged += notifications.assignProject(row.id, null, row.cwd);
         changed++;
         continue;
       }
@@ -448,7 +454,7 @@ export function reconcileSessionProjects(): Promise<number> {
           .where(eq(gateway_sessions.id, row.id));
         changed++;
       }
-      notificationsChanged += notifications.assignProject(row.id, projectId);
+      notificationsChanged += notifications.assignProject(row.id, projectId, row.cwd);
     }
     if (changed) changes.publish("sessions");
     if (notificationsChanged) changes.publish("notifications");

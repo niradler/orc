@@ -153,11 +153,31 @@ export const ChatWorkspaceSchema = z
       .optional(),
     cwd: z.string().trim().max(4096).optional(),
     worktree: z.boolean().default(false),
+    /** Ref the new worktree branches from. Omitted means the checkout's current HEAD. */
+    base: z
+      .string()
+      .trim()
+      .min(1)
+      .max(255)
+      .refine(
+        (value) =>
+          !value.startsWith("-") &&
+          [...value].every((char) => {
+            const code = char.codePointAt(0) ?? 0;
+            return code > 0x1f && code !== 0x7f && !/\s/.test(char);
+          }),
+        "Choose a Git branch name",
+      )
+      .optional(),
   })
   .strict()
   .refine(
     (value) => !value.worktree || !!value.cwd?.trim(),
     "Choose a folder before creating a worktree",
+  )
+  .refine(
+    (value) => !value.base || value.worktree,
+    "Choose to create a worktree before selecting a base branch",
   );
 export type ChatWorkspace = z.infer<typeof ChatWorkspaceSchema>;
 

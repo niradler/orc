@@ -184,7 +184,7 @@ export class AcpSession implements AgentSession {
       signal.aborted
     )
       return Promise.resolve({ outcome: { outcome: "cancelled" } });
-    // Never turn an ORC session grant into the agent's persistent "allow_always" policy.
+    // Never turn an ordinary ORC approval into the agent's persistent policy.
     const once = params.options.find((option) => option.kind === "allow_once");
     if (this.opts.autoApprove && once)
       return Promise.resolve({ outcome: { outcome: "selected", optionId: once.optionId } });
@@ -346,6 +346,8 @@ export class AcpSession implements AgentSession {
         fork: native?.sessionCapabilities?.fork != null,
         // Form elicitation is a client capability. The agent may use it after this handshake.
         questions: clientCapabilities.elicitation?.form !== undefined,
+        // ACP has no steering field. The backend's declaration survives the
+        // handshake; steer() downgrades it if the agent rejects a mid-turn prompt.
       };
       const server = this.opts.orcMcp
         ? buildOrcMcpServer(
@@ -523,6 +525,44 @@ export class AcpSession implements AgentSession {
       });
   }
 
+  /**
+   * ACP has no steer request. OpenCode treats a second `session/prompt` during a
+   * running turn as steering (verified against opencode 1.19.5): the text joins
+   * the active turn and that request resolves when the turn ends. Agents without
+   * the declared capability keep steering=false and never reach this method.
+   */
+  async steer(prompt: string): Promise<void> {
+    if (this.closed || this.failure || !this.connection || !this.runtimeId)
+      throw new Error("ACP connection is unavailable.");
+    if (this.capabilities.steering !== true)
+      throw new Error("This ACP agent does not accept steering.");
+    if (!this.busy || this.done || this.cancelling)
+      throw new Error("ACP has no active turn to steer.");
+    const started = Date.now();
+    // OpenCode answers an accepted steer only when the turn ends, so do not wait
+    // for it. A refusal is immediate; a later failure belongs to the turn itself
+    // and must not relabel this session's steering support.
+    void this.connection.agent
+      .request<PromptResponse, PromptRequest>("session/prompt", {
+        sessionId: this.runtimeId,
+        prompt: [{ type: "text", text: prompt }],
+      })
+      .catch(() => {
+        if (Date.now() - started > 2000) return;
+        // A dead, closed or cancelling turn is not a steering refusal; its own
+        // failure path already reports what happened.
+        if (this.closed || this.failure || this.cancelling) return;
+        this.capabilities = { ...this.capabilities, steering: false };
+        // Tell the client now so its send control stops offering steering for
+        // this turn instead of failing on the next attempt.
+        this.push({ type: "capabilities", data: this.capabilities });
+        this.push({
+          type: "system_status",
+          data: "This agent rejected steering; the running turn continues. Queue the message instead.",
+        });
+      });
+  }
+
   respondQuestion(id: string, answers: Record<string, string[]>): void {
     const pending = this.questions.get(id);
     if (!pending) throw new Error("This question is no longer pending.");
@@ -535,8 +575,14 @@ export class AcpSession implements AgentSession {
   respondPermission(id: string, result: PermissionResult): void {
     const pending = this.pending.get(id);
     if (!pending) throw new Error("This approval is no longer pending.");
-    const kind = result === "denied" ? "reject_once" : "allow_once";
-    const option = pending.params.options.find((option) => option.kind === kind);
+    const kind =
+      result === "denied" ? "reject_once" : result === "session" ? "allow_always" : "allow_once";
+    const option =
+      pending.params.options.find((entry) => entry.kind === kind) ??
+      // Older or narrower agents may offer only the one-shot grant.
+      (result === "session"
+        ? pending.params.options.find((entry) => entry.kind === "allow_once")
+        : undefined);
     pending.resolve({
       outcome: option
         ? { outcome: "selected", optionId: option.optionId }

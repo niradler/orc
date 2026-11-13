@@ -48,6 +48,34 @@ test("should persist deduplicated extensible notifications and shared read/dismi
   expect(store.list().notifications).toHaveLength(0);
 });
 
+test("should add labels to an existing inbox without rewriting stored titles", () => {
+  const db = new Database(":memory:");
+  databases.push(db);
+  db.exec(`CREATE TABLE notifications (
+      id TEXT PRIMARY KEY, source_key TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
+      source_id TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
+      level TEXT NOT NULL, project_id TEXT, path TEXT NOT NULL,
+      requires_action INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+      read_at INTEGER, dismissed_at INTEGER);
+    CREATE TABLE projects(id TEXT PRIMARY KEY,name TEXT);
+    INSERT INTO projects VALUES('p','Alpha');
+    INSERT INTO notifications VALUES('n','legacy:1','agent.finished','s','Done','','done','p','/activity',0,1000,900000,NULL,NULL);`);
+  const store = new NotificationStore(db, () => 1500);
+  expect(store.list().notifications[0]?.title).toBe("Alpha · Done");
+  expect(db.query<{ title: string }, []>("SELECT title FROM notifications").get()).toEqual({
+    title: "Done",
+  });
+});
+
+test("should reassign labels without a projects table", () => {
+  const { store, input } = fixture();
+  store.publish({ ...input, project_label: "folder" });
+  expect(store.list().notifications[0]?.title).toBe("folder · An update");
+  expect(store.assignProject("1", null, "/work/next")).toBe(1);
+  expect(store.list().notifications[0]?.title).toBe("next · An update");
+});
+
 test("should expire and physically clean alerts without recreating old events", () => {
   const { db, store, input, advance } = fixture();
   store.publish({ ...input, requires_action: true });
@@ -151,7 +179,7 @@ test("should hide legacy duplicates immediately and physically drain them within
   const latest = store.publish({ ...input, type: "agent.finished", created_at: 1200 });
   if (!latest) throw new Error("Missing latest finish");
   const insert = db.query(`INSERT INTO notifications
-    SELECT ?,?,type,source_id,title,body,level,project_id,path,requires_action,1000,expires_at,NULL,NULL
+    SELECT ?,?,type,source_id,title,body,level,project_id,project_label,path,requires_action,1000,expires_at,NULL,NULL
     FROM notifications WHERE id=?`);
   db.transaction(() => {
     for (let index = 0; index < 1005; index++)

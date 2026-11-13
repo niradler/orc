@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOCAL_HOST } from "@orc/core/exec-host";
 import { excludeOrcWorktrees, prepareSessionDirectory, runGit } from "@orc/core/session-dir";
+import { gitBranches } from "../git/panel.js";
 import {
   isInside,
   listWorktrees,
@@ -81,9 +82,9 @@ describe("worktrees with git", () => {
     return result.stdout;
   }
 
-  async function addWorktree(id: string): Promise<string> {
+  async function addWorktree(id: string, base?: string): Promise<string> {
     return prepareSessionDirectory(
-      { cwd: repo, worktree: true },
+      { cwd: repo, worktree: true, base },
       {
         isDirectory: () => true,
         home: root,
@@ -126,6 +127,64 @@ describe("worktrees with git", () => {
     expect(byBranch["orc/clean1"]).toMatchObject({ main: false, dirty: false });
     expect(byBranch["orc/dirty1"]).toMatchObject({ main: false, dirty: true });
     expect(samePath(byBranch["orc/clean1"]?.path ?? "", clean, process.platform)).toBe(true);
+  });
+
+  test("lists local and remote branches with the repository default", async () => {
+    await git(["update-ref", "refs/remotes/origin/main", "HEAD"], repo);
+    await git(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], repo);
+    const listing = await gitBranches(LOCAL_HOST, repo);
+    expect(listing.root && samePath(listing.root, repo, process.platform)).toBe(true);
+    expect(listing.current).toBe("main");
+    expect(listing.default_branch).toBe("origin/main");
+    expect(listing.local).toContain("main");
+    expect(listing.remote).toEqual(["origin/main"]);
+  });
+
+  test("a worktree branches from the requested base", async () => {
+    await git(["switch", "-c", "feature/base"], repo);
+    writeFileSync(join(repo, "base.txt"), "base\n");
+    await git(["add", "base.txt"], repo);
+    await git(["commit", "-m", "base"], repo);
+    const feature = (await git(["rev-parse", "HEAD"], repo)).trim();
+    await git(["switch", "main"], repo);
+    const path = await addWorktree("based", "feature/base");
+    expect((await git(["rev-parse", "HEAD"], path)).trim()).toBe(feature);
+    expect((await git(["branch", "--show-current"], path)).trim()).toBe("orc/based");
+    await expect(addWorktree("unknown", "missing-branch")).rejects.toThrow(/Unknown base branch/);
+    expect(existsSync(join(repo, ".orc", "worktrees", "unknown"))).toBe(false);
+  });
+
+  test("a remote base does not set an upstream", async () => {
+    const main = (await git(["rev-parse", "main"], repo)).trim();
+    const path = await addWorktree("remote", "origin/main");
+    expect((await git(["rev-parse", "HEAD"], path)).trim()).toBe(main);
+    const upstream = await runGit([
+      "git",
+      "-C",
+      path,
+      "config",
+      "--get",
+      "branch.orc/remote.remote",
+    ]);
+    expect(upstream.code).not.toBe(0);
+    await expect(addWorktree("option", "--force")).rejects.toThrow(/Invalid base branch/);
+  });
+
+  test("accepts issue-numbered branch names", async () => {
+    await git(["switch", "-c", "issue/#42"], repo);
+    writeFileSync(join(repo, "issue.txt"), "issue\n");
+    await git(["add", "issue.txt"], repo);
+    await git(["commit", "-m", "issue branch"], repo);
+    const issue = (await git(["rev-parse", "HEAD"], repo)).trim();
+    await git(["switch", "main"], repo);
+    const path = await addWorktree("issue", "issue/#42");
+    expect((await git(["rev-parse", "HEAD"], path)).trim()).toBe(issue);
+  });
+
+  test("a remote branch named feature/HEAD stays selectable", async () => {
+    await git(["update-ref", "refs/remotes/origin/feature/HEAD", "HEAD"], repo);
+    const listing = await gitBranches(LOCAL_HOST, repo);
+    expect(listing.remote).toContain("origin/feature/HEAD");
   });
 
   test("the main checkout cannot be removed", async () => {

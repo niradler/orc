@@ -1362,7 +1362,8 @@ async function flowWorktree(
       return null;
     }
     const paths = root.startsWith("/") ? posix : win32;
-    const sub = paths.relative(root, scope).startsWith("..") ? "" : paths.relative(root, scope);
+    const prefix = await run(["git", "-C", scope, "rev-parse", "--show-prefix"]);
+    const sub = prefix.code === 0 ? prefix.stdout.trim().replace(/[\\/]+$/, "") : "";
     const inLane = (lane: string) => (sub ? paths.join(lane, sub) : lane);
     const isLane = async (lane: string) => {
       const top = await run(["git", "-C", lane, "rev-parse", "--show-toplevel"]);

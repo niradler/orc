@@ -34,6 +34,7 @@ const turns: Turn[] = [];
 const home = mkdtempSync(join(tmpdir(), "orc-session-control-"));
 const repo = realpathSync(mkdtempSync(join(tmpdir(), "orc-session-control-repo-")));
 const oldHome = process.env.HOME;
+const oldProfile = process.env.USERPROFILE;
 const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 
 function fakeSession(cwd: string, runtimeId: string): AgentSession {
@@ -133,6 +134,7 @@ async function inbox(id: string): Promise<SessionMessage[]> {
 
 beforeAll(() => {
   process.env.HOME = home;
+  process.env.USERPROFILE = home;
   delete process.env.ORC_E2E_CHAT_MOCK;
   app = setupTestApp();
   updateGlobalConfig((raw) => {
@@ -164,6 +166,8 @@ afterAll(() => {
   teardownTestApp();
   if (oldHome === undefined) delete process.env.HOME;
   else process.env.HOME = oldHome;
+  if (oldProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = oldProfile;
   if (oldMock !== undefined) process.env.ORC_E2E_CHAT_MOCK = oldMock;
   resetConfig();
   rmSync(home, { recursive: true, force: true });
@@ -361,7 +365,9 @@ describe("agent session control", () => {
       )
     ).json<SessionStatus>();
     expect(child.cwd.startsWith(join(repo, ".orc", "worktrees"))).toBe(true);
-    expect(execFileSync("git", ["-C", repo, "worktree", "list"]).toString()).toContain(child.cwd);
+    // git prints forward slashes even on Windows.
+    const listed = execFileSync("git", ["-C", repo, "worktree", "list"]).toString();
+    expect(listed.replaceAll("\\", "/")).toContain(child.cwd.replaceAll("\\", "/"));
     (await turnFor("child: isolated change")).release();
 
     const other = mkdtempSync(join(tmpdir(), "orc-session-control-other-"));

@@ -46,6 +46,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
+import { notificationTitle } from "@orc/core/notifications";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import {
   agentDefaultHome,
@@ -77,6 +78,7 @@ import { AgentCapabilitiesSchema } from "@orc/core/types";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
+import { notificationProjectLabel } from "@orc/db/notification-producers";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { SessionMessageStore } from "@orc/db/session-messages";
@@ -275,8 +277,9 @@ function requireThread(id: string): ChatThread {
 }
 
 function chatPush(thread: ChatThread, status: string, body: string): PushMessage {
+  const project = notificationProjectLabel(getSqlite(), thread.projectId, thread.cwd);
   return {
-    title: `${status} · ${truncate(thread.title, 120)}`,
+    title: notificationTitle(`${status} · ${truncate(thread.title, 120)}`, project),
     body,
     url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
     tag: `chat:${thread.id}`,
@@ -1848,7 +1851,7 @@ async function openChat(
       if (!body.threadId && body.workspace?.worktree) {
         const host = selectedTerminalHost(loadConfig(), thread.host);
         const cwd = await prepareSessionDirectory(
-          { cwd: thread.cwd, worktree: true },
+          { cwd: thread.cwd, worktree: true, base: body.workspace.base },
           {
             ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
             validateDirectory: (path) => checkChatWorkspaceRules(thread, path),

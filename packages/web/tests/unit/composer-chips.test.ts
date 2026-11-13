@@ -69,6 +69,9 @@ describe("branch labels", () => {
   test("branchChipLabel shows the worktree base", () => {
     expect(branchChipLabel({ branch: "master", worktree: false })).toBe("master");
     expect(branchChipLabel({ branch: "master", worktree: true })).toBe("New worktree from master");
+    expect(branchChipLabel({ branch: "master", base: "origin/main", worktree: true })).toBe(
+      "New worktree from origin/main",
+    );
     expect(branchChipLabel({ branch: null, worktree: true })).toBe("New worktree");
     expect(branchChipLabel({ branch: null, worktree: false })).toBe("Branch");
   });

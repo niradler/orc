@@ -313,6 +313,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
 | `GET` | `/terminals/{id}/git/status` | Git status of a terminal checkout |
 | `GET` | `/git/worktrees` | Checkouts of a repo |
+| `GET` | `/git/branches` | Local, remote and default branches of a repo |
 
 Chat streams include `turn` events with `startedAt` (Unix milliseconds), followed
 at completion by `finishedAt`, `durationMs` and `outcome` (`completed`, `stopped`,
@@ -329,6 +330,11 @@ the user message id, rejecting a repeat with `409`. If a first send's response i
 lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the
 server stores the message, then the full thread — and attach to
 `/chat/threads/{id}/live` instead of sending the message again.
+
+A first send may include `workspace` with `host`, `cwd`, `worktree` and `base`.
+When `worktree` is true, the server creates an isolated `orc/<id>` worktree from
+`base` (a local or remote-tracking branch already present in the checkout);
+omitting `base` uses the checkout's current `HEAD`.
 
 First sends reserve `clientMessageId` before agent and workspace preparation.
 Repeating that ID without a thread returns `409` with code `CHAT_MESSAGE_EXISTS`,
@@ -439,8 +445,12 @@ the next send continues the same conversation; on Claude and ACPX it closes the 
 process. Pending approvals and questions are cancelled either way.
 
 `POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
-returns the updated conversation after the active native turn accepts it. It
-requires a live steering-capable session; stale and unsupported runs return `409`.
+returns the updated conversation once the message is dispatched into the active
+native turn. Codex and Pi confirm native acceptance before returning; OpenCode
+over direct ACP has no steer acknowledgment, so a later refusal is reported as a
+status message and steering is turned off for that turn. It
+requires a live steering-capable session (Codex, Pi and OpenCode over direct ACP);
+stale and unsupported runs return `409`.
 It keeps the original native thread and turn. Empty input is invalid. These routes
 use the same authentication as the rest of the API. The SDK exposes
 `client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.

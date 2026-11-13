@@ -17,7 +17,9 @@ import { createChannelsRouter } from "../routes/channels.js";
 const original = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
 const privateHome = mkdtempSync(join(tmpdir(), "orc-channel-api-"));
 const db = new Database(":memory:");
-db.exec("CREATE TABLE projects (id TEXT PRIMARY KEY); INSERT INTO projects VALUES ('p1'),('p2')");
+db.exec(
+  "CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT); INSERT INTO projects VALUES ('p1','Alpha'),('p2','Beta')",
+);
 const sent: Record<string, unknown>[] = [];
 const transport: ChannelTransport = {
   identity: async () => ({ id: "bot", name: "testbot" }),
@@ -70,7 +72,7 @@ test("should persist global notification policy, validate inputs and preview fil
   };
   expect(await (await request("/channels/notification-preview", "POST", input)).json()).toEqual({
     matches: true,
-    summary: "An ORC job failed. Open ORC for details.",
+    summary: "Alpha: An ORC job failed. Open ORC for details.",
   });
   expect(
     await (

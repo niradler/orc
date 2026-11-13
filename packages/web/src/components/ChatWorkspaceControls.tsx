@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Folder,
   FolderOpen,
@@ -49,6 +51,8 @@ export function ChatWorkspaceControls() {
   const { data: ssh } = useSsh();
   const [folderOpen, setFolderOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  const [branchScreen, setBranchScreen] = useState<"run" | "base">("run");
+  const [branchFilter, setBranchFilter] = useState("");
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [pathDraft, setPathDraft] = useState<string | null>(null);
@@ -72,6 +76,13 @@ export function ChatWorkspaceControls() {
     staleTime: 30_000,
     retry: false,
   });
+  const branches = useQuery({
+    queryKey: ["chat-workspace-branches", host, gitPath],
+    queryFn: () => api.git.branches(gitPath, host),
+    enabled: !!ssh && !!gitPath && !thread && branchOpen,
+    staleTime: 30_000,
+    retry: false,
+  });
   const copied = copiedPath === displayPath;
   const worktree = workspace?.worktree ?? false;
   const disabled = streaming || !ssh || picking;
@@ -80,6 +91,9 @@ export function ChatWorkspaceControls() {
   const folderTrigger = useRef<HTMLButtonElement>(null);
   const folderList = useRef<HTMLDivElement>(null);
   const branchList = useRef<HTMLDivElement>(null);
+  const baseBack = useRef<HTMLButtonElement>(null);
+  const baseOptions = useRef<HTMLDivElement>(null);
+  const previousBranchScreen = useRef<"run" | "base">("run");
   const previousConversation = useRef(activeKey);
   current.current = { host, thread, streaming, activeKey };
   useEffect(() => {
@@ -87,10 +101,23 @@ export function ChatWorkspaceControls() {
     previousConversation.current = activeKey;
     setFolderOpen(false);
     setBranchOpen(false);
+    setBranchScreen("run");
+    setBranchFilter("");
     setBrowse(false);
     setPathDraft(null);
     setError("");
   }, [activeKey, setBrowse]);
+  useEffect(() => {
+    if (!branchOpen) {
+      previousBranchScreen.current = "run";
+      return;
+    }
+    if (previousBranchScreen.current === branchScreen) return;
+    previousBranchScreen.current = branchScreen;
+    if (branchList.current?.contains(document.activeElement)) return;
+    if (branchScreen === "base") baseBack.current?.focus();
+    else focusChipOption(branchList.current);
+  }, [branchOpen, branchScreen]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -110,6 +137,37 @@ export function ChatWorkspaceControls() {
   const location = `${host ?? "Local"}: ${displayPath}`;
   const branch = branchName(currentWorktree(listing, gitPath));
   const showBranch = worktree || !!listing?.root || git.isError;
+  const base = worktree ? (workspace?.base ?? null) : null;
+  const currentBranch = branch ?? branches.data?.current ?? null;
+  const defaultBase = branches.data?.default_branch ?? null;
+  const customBase = base && base !== currentBranch && base !== defaultBase ? base : null;
+  const runFrom = (next: { worktree: boolean; base?: string | null }) => {
+    setWorkspace({
+      host,
+      cwd,
+      worktree: next.worktree,
+      ...(next.worktree && next.base ? { base: next.base } : {}),
+    });
+    setBranchOpen(false);
+    setBranchScreen("run");
+    setBranchFilter("");
+  };
+  const closeBranch = (open: boolean) => {
+    setBranchOpen(open);
+    if (open) return;
+    setBranchScreen("run");
+    setBranchFilter("");
+  };
+  const filterText = branchFilter.trim().toLowerCase();
+  const branchGroups = [
+    { label: "Local", refs: branches.data?.local ?? [] },
+    { label: "Remote", refs: branches.data?.remote ?? [] },
+  ].map((group) => ({
+    ...group,
+    refs: filterText
+      ? group.refs.filter((ref) => ref.toLowerCase().includes(filterText))
+      : group.refs,
+  }));
 
   const choose = (path: string) => {
     setWorkspace({ host, cwd: path, worktree: worktree && !!path.trim() });
@@ -363,14 +421,14 @@ export function ChatWorkspaceControls() {
         </PopoverContent>
       </Popover>
       {showBranch && (
-        <Popover open={branchOpen} onOpenChange={setBranchOpen}>
+        <Popover open={branchOpen} onOpenChange={closeBranch}>
           <PopoverTrigger asChild>
             <button
               type="button"
               data-testid="chat-workspace-branch"
               data-worktree={worktree ? "true" : "false"}
-              aria-label={`Branch: ${branchChipLabel({ branch, worktree })}`}
-              title={branchChipLabel({ branch, worktree })}
+              aria-label={`Branch: ${branchChipLabel({ branch, base, worktree })}`}
+              title={branchChipLabel({ branch, base, worktree })}
               disabled={disabled}
               className={cn(composerChip, "max-w-56")}
             >
@@ -380,7 +438,7 @@ export function ChatWorkspaceControls() {
                 <GitBranch size={14} aria-hidden="true" className="shrink-0" />
               )}
               <span data-chip-label className="min-w-0 truncate">
-                {branchChipLabel({ branch, worktree })}
+                {branchChipLabel({ branch, base, worktree })}
               </span>
               <ChevronDown
                 data-chip-label
@@ -395,56 +453,194 @@ export function ChatWorkspaceControls() {
             aria-label="Branch"
             side="top"
             align="start"
-            className="w-72 p-1.5"
+            className="w-80 max-w-[calc(100vw-2rem)] p-1.5"
             onOpenAutoFocus={(event) => {
               event.preventDefault();
               focusChipOption(branchList.current);
             }}
           >
-            <div
-              ref={branchList}
-              role="menu"
-              aria-label="Where the session runs"
-              onKeyDown={onChipListKeyDown}
-            >
-              <p className={chipHeading}>Run in</p>
-              {[false, true].map((next) => (
-                <button
-                  type="button"
-                  key={String(next)}
-                  role="menuitemradio"
-                  data-chip-option
-                  data-testid={next ? "chat-workspace-worktree" : "chat-workspace-checkout"}
-                  aria-checked={worktree === next}
-                  disabled={disabled || (next && !cwd.trim())}
-                  className={chipOption}
-                  onClick={() => {
-                    setWorkspace({ host, cwd, worktree: next });
-                    setBranchOpen(false);
-                  }}
-                >
-                  {next ? (
-                    <GitBranchPlus size={14} aria-hidden="true" />
-                  ) : (
+            <div ref={branchList}>
+              {branchScreen === "run" ? (
+                <div role="menu" aria-label="Where the session runs" onKeyDown={onChipListKeyDown}>
+                  <p className={chipHeading}>Run in</p>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    data-chip-option
+                    data-testid="chat-workspace-checkout"
+                    aria-checked={!worktree}
+                    disabled={disabled}
+                    className={chipOption}
+                    onClick={() => runFrom({ worktree: false })}
+                  >
                     <GitBranch size={14} aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">
+                        Current checkout{branch ? ` · ${branch}` : ""}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        Work in the folder as it is
+                      </span>
+                    </span>
+                    {!worktree && <Check size={14} aria-hidden="true" />}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    data-chip-option
+                    data-testid="chat-workspace-worktree"
+                    aria-checked={worktree && (!base || base === currentBranch)}
+                    disabled={disabled || !cwd.trim()}
+                    className={chipOption}
+                    onClick={() => runFrom({ worktree: true })}
+                  >
+                    <GitBranchPlus size={14} aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">
+                        {currentBranch
+                          ? `New worktree from ${currentBranch}`
+                          : "New worktree from the current branch"}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        Isolated from the current branch
+                      </span>
+                    </span>
+                    {worktree && (!base || base === currentBranch) && (
+                      <Check size={14} aria-hidden="true" />
+                    )}
+                  </button>
+                  {defaultBase && defaultBase !== currentBranch && (
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      data-chip-option
+                      data-testid="chat-workspace-default-worktree"
+                      aria-checked={worktree && base === defaultBase}
+                      disabled={disabled || !cwd.trim()}
+                      className={chipOption}
+                      onClick={() => runFrom({ worktree: true, base: defaultBase })}
+                    >
+                      <GitBranchPlus size={14} aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">New worktree from {defaultBase}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Isolated from the default branch
+                        </span>
+                      </span>
+                      {worktree && base === defaultBase && <Check size={14} aria-hidden="true" />}
+                    </button>
                   )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">
-                      {next
-                        ? branchChipLabel({ branch, worktree: true })
-                        : `Current checkout${branch ? ` · ${branch}` : ""}`}
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    data-chip-option
+                    data-testid="chat-workspace-base"
+                    aria-checked={!!customBase}
+                    disabled={disabled || !cwd.trim()}
+                    className={chipOption}
+                    onClick={() => {
+                      setBranchScreen("base");
+                      setBranchFilter("");
+                    }}
+                  >
+                    <GitBranch size={14} aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">
+                        {customBase
+                          ? `New worktree from ${customBase}`
+                          : "New worktree from another branch"}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {customBase ? "Selected base branch" : "Pick a local or remote branch"}
+                      </span>
                     </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {next ? "Isolated checkout for this session" : "Work in the folder as it is"}
-                    </span>
-                  </span>
-                  {worktree === next && <Check size={14} aria-hidden="true" />}
-                </button>
-              ))}
-              {git.isError && (
-                <p className="px-2 pt-1 text-xs text-muted-foreground">
-                  Git details are unavailable for this folder.
-                </p>
+                    {customBase ? (
+                      <Check size={14} aria-hidden="true" />
+                    ) : (
+                      <ChevronRight size={14} aria-hidden="true" className="opacity-60" />
+                    )}
+                  </button>
+                  {git.isError && (
+                    <p className="px-2 pt-1 text-xs text-muted-foreground">
+                      Git details are unavailable for this folder.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <fieldset aria-label="Base branch" className="m-0 min-w-0 border-0 p-0">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <button
+                      type="button"
+                      ref={baseBack}
+                      data-testid="chat-workspace-base-back"
+                      aria-label="Back to run options"
+                      onClick={() => {
+                        setBranchScreen("run");
+                        setBranchFilter("");
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                        event.preventDefault();
+                        focusChipOption(baseOptions.current, false);
+                      }}
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11"
+                    >
+                      <ChevronLeft size={14} aria-hidden="true" />
+                    </button>
+                    <p className={`${chipHeading} flex-1 py-0`}>Base branch</p>
+                  </div>
+                  <Input
+                    data-testid="chat-workspace-base-filter"
+                    aria-label="Filter branches"
+                    placeholder="Filter branches"
+                    maxLength={255}
+                    value={branchFilter}
+                    disabled={disabled}
+                    onChange={(event) => setBranchFilter(event.target.value)}
+                    className="mb-1 min-w-0 text-xs"
+                  />
+                  <div
+                    ref={baseOptions}
+                    role="menu"
+                    aria-label="Branches"
+                    onKeyDown={onChipListKeyDown}
+                    className="max-h-[min(16rem,45vh)] space-y-0.5 overflow-y-auto"
+                  >
+                    {branchGroups.map((group) =>
+                      group.refs.length ? (
+                        <div key={group.label}>
+                          <p className={chipHeading}>{group.label}</p>
+                          {group.refs.map((ref) => (
+                            <button
+                              type="button"
+                              key={`${group.label}-${ref}`}
+                              role="menuitemradio"
+                              data-chip-option
+                              data-testid="chat-workspace-base-option"
+                              aria-checked={worktree && base === ref}
+                              disabled={disabled}
+                              className={chipOption}
+                              onClick={() => runFrom({ worktree: true, base: ref })}
+                            >
+                              <GitBranch size={14} aria-hidden="true" className="shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{ref}</span>
+                              {worktree && base === ref && <Check size={14} aria-hidden="true" />}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null,
+                    )}
+                    {!branchGroups.some((group) => group.refs.length) && (
+                      <p className="px-2 py-2 text-sm text-muted-foreground">
+                        {branches.isPending
+                          ? "Loading branches…"
+                          : branches.isError
+                            ? "Branches are unavailable for this folder."
+                            : "No branches match."}
+                      </p>
+                    )}
+                  </div>
+                </fieldset>
               )}
             </div>
           </PopoverContent>
