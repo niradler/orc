@@ -2485,6 +2485,8 @@ const startingSpawns = new Set<string>();
 export async function spawnChat(callerId: string, input: SessionSpawn): Promise<ChatThread> {
   const parent = spawnParent(callerId);
   const parentId = store().get(callerId) ? callerId : parent.sessionId;
+  if (treeStops.has(parentId) && !threadRun(parentId))
+    throw new ConflictError("This session is stopped; only a running session can start others");
   const children = store().children([parentId]);
   if (input.request_id) {
     const existing = children.find((child) => child.spawnedBy?.requestId === input.request_id);

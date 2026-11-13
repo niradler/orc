@@ -664,5 +664,13 @@ describe("agent session control", () => {
     expect((await status(child.session_id)).status).toBe("stopped");
     expect((await inbox(lead.id)).filter((message) => message.state === "queued")).toEqual([]);
     expect(chatControl().running(lead.id)).toBe(false);
+    const late = await req(
+      app,
+      "POST",
+      "/sessions/live/spawn",
+      { prompt: "late child", notify: true },
+      as(lead.id),
+    );
+    expect(late.status).toBe(409);
   });
 });
