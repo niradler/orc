@@ -416,7 +416,7 @@ export function ScratchpadFormDialog({
   const [tagDraft, setTagDraft] = useState("");
   const initialFields = useRef(JSON.stringify([kind, title, projectId, sessionId, tags]));
   const { data: projects } = useProjects({ status: "active" });
-  const { data: sessions } = useLiveSessions(false);
+  const { data: sessions } = useLiveSessions(false, undefined, true);
   const sessionOptions = sessionChoices(sessions, projectId, sessionId);
   const create = useCreateScratchpad();
   const update = useUpdateScratchpad();

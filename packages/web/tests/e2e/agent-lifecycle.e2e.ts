@@ -120,3 +120,67 @@ test("registered agents share idle visibility, transcripts, task links and termi
   await expect(page).toHaveURL(/ended=0/);
   await expect(page.getByTestId("live-session-row")).toHaveCount(0);
 });
+
+test("renames and hides a session and keeps both across a re-sync and reload", async ({
+  page,
+  request,
+}) => {
+  const id = `housekeeping-${process.pid}`;
+  const createdAt = Date.now() - 60_000;
+  mkdirSync(LIVE_REGISTRY_DIR, { recursive: true });
+  const transcriptPath = join(LIVE_REGISTRY_DIR, `${id}.jsonl`);
+  writeFileSync(
+    transcriptPath,
+    `${JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "hello" }] } })}\n`,
+  );
+  writeRegistration({
+    backend: "claude",
+    externalId: id,
+    pid: process.pid,
+    title: "native housekeeping title",
+    status: "idle",
+    createdAt,
+    updatedAt: createdAt,
+    transcriptPath,
+  });
+  await apiPost(request, "/sessions/live/sync", {});
+  await gotoView(page, "sessions");
+  const showEnded = page.getByTestId("show-ended");
+  if (await showEnded.isChecked()) await showEnded.click();
+  await page.getByTestId("agent-filter").selectOption("claude");
+  const row = page.locator(`[data-testid="live-session-row"][data-session-id="${id}"]`);
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("native housekeeping title");
+
+  await row.getByTestId("resume-actions-menu").click();
+  await page.getByTestId("rename-session").click();
+  await page.getByTestId("session-rename-input").fill("Readable session name");
+  await page.getByTestId("session-rename-save").click();
+  await expect(row).toContainText("Readable session name");
+
+  // A re-sync rewrites the agent title, so the rename must live on its own column.
+  await page.getByTestId("sync-sessions").click();
+  await expect(row).toContainText("Readable session name");
+
+  await row.getByTestId("resume-actions-menu").click();
+  await page.getByTestId("hide-session").click();
+  await expect(row).toHaveCount(0);
+
+  const showHidden = page.getByTestId("show-hidden");
+  await showHidden.click();
+  await expect(showHidden).toBeChecked();
+  await expect(row).toBeVisible();
+  await expect(row.getByTestId("session-hidden-badge")).toBeVisible();
+
+  // Both survive a reload, which re-reads the database instead of the list state.
+  await page.reload();
+  await page.getByTestId("agent-filter").selectOption("claude");
+  const reloaded = page.locator(`[data-testid="live-session-row"][data-session-id="${id}"]`);
+  await expect(reloaded).toBeVisible();
+  await expect(reloaded).toContainText("Readable session name");
+  await expect(reloaded.getByTestId("session-hidden-badge")).toBeVisible();
+
+  await reloaded.getByTestId("resume-actions-menu").click();
+  await page.getByTestId("unhide-session").click();
+  await expect(reloaded.getByTestId("session-hidden-badge")).toHaveCount(0);
+});

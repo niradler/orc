@@ -146,8 +146,32 @@ for (const width of [1440, 390]) {
         ? route.fulfill({ json: { threads: [] } })
         : route.fulfill({ json: resumed }),
     );
+    // A finished turn re-reads the stored thread, so the fixture has to persist the
+    // sent turn; otherwise the read reverts the new message and the bumped recency.
+    let sent = false;
+    const persisted = (): ChatThread => ({
+      ...resumed,
+      updatedAt: sent ? Date.now() : resumed.updatedAt,
+      messages: sent
+        ? [
+            ...resumed.messages,
+            {
+              id: "gamma-sent-q",
+              role: "user",
+              content: "Move this session up",
+              timestamp: Date.now(),
+            },
+            {
+              id: "gamma-sent-a",
+              role: "assistant",
+              content: "Moved up.",
+              timestamp: Date.now(),
+            },
+          ]
+        : resumed.messages,
+    });
     await page.route(`**/api/chat/threads/${resumedId}`, (route) =>
-      route.fulfill({ json: resumed }),
+      route.fulfill({ json: persisted() }),
     );
     await page.route(`**/api/chat/threads/${resumedId}/live`, (route) =>
       route.fulfill({ status: 204 }),
@@ -184,6 +208,7 @@ for (const width of [1440, 390]) {
     await closeChatHistory(page);
     await page.getByTestId("chat-input").click();
     await page.getByTestId("chat-input").fill("Move this session up");
+    sent = true;
     await expect(page.getByTestId("chat-send-button")).toBeEnabled();
     await page.getByTestId("chat-send-button").click();
     await relaxList(page);

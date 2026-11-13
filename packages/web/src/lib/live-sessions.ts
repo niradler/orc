@@ -1,8 +1,13 @@
 import { agentForSessionBackend } from "@orc/core/coding-agents";
 import type { LiveSession } from "@/api/client";
 
-export function resumeCommand(s: LiveSession): string | null {
-  if (!s.session_id || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(s.session_id)) return null;
+const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
+
+function sessionCommand(
+  s: LiveSession,
+  args: ((sessionId: string) => string[]) | undefined,
+): string | null {
+  if (!s.session_id || !SESSION_ID_PATTERN.test(s.session_id) || !args) return null;
   const cwd = s.cwd?.replace(/^\\\\\?\\(?=[A-Za-z]:\\)/, "");
   const windows = /^[A-Za-z]:[\\/]|^\\\\/.test(cwd ?? "");
   const cd = cwd
@@ -12,8 +17,17 @@ export function resumeCommand(s: LiveSession): string | null {
     : "";
   const agent = agentForSessionBackend(s.agent);
   const binary = agent?.binaries[agent.binaries.length - 1];
-  if (!agent?.resumeArgs || !binary) return null;
-  return `${cd}${[binary, ...agent.resumeArgs(s.session_id)].join(" ")}`;
+  if (!agent || !binary) return null;
+  return `${cd}${[binary, ...args(s.session_id)].join(" ")}`;
+}
+
+export function resumeCommand(s: LiveSession): string | null {
+  return sessionCommand(s, agentForSessionBackend(s.agent)?.resumeArgs);
+}
+
+/** A native CLI fork copies the source history into a new session and leaves the source alone. */
+export function forkCommand(s: LiveSession): string | null {
+  return sessionCommand(s, agentForSessionBackend(s.agent)?.forkArgs);
 }
 
 export function resumeUnavailableReason(session: LiveSession): string | null {

@@ -330,6 +330,7 @@ export type CreateTerminalInput = {
   cwd?: string;
   name?: string;
   live_session_id?: string;
+  fork?: boolean;
   worktree?: boolean;
   project_id?: string;
   dev?: boolean;
@@ -1296,7 +1297,13 @@ export const api = {
       ),
     get: (id: string) => req<SessionDetail>("GET", `/sessions/${id}`),
     sync: () => req<{ results: SessionSyncResult[] }>("POST", "/sessions/live/sync"),
-    search: (params: { q: string; agent?: string; project_id?: string; limit?: number }) =>
+    search: (params: {
+      q: string;
+      agent?: string;
+      project_id?: string;
+      include_hidden?: boolean;
+      limit?: number;
+    }) =>
       req<SessionSearchResult>(
         "GET",
         "/sessions/live/search",
@@ -1315,6 +1322,7 @@ export const api = {
       task_id?: string;
       project_id?: string;
       active?: boolean;
+      include_hidden?: boolean;
       limit?: number;
     }) =>
       req<{ sessions: LiveSession[] }>(
@@ -1323,6 +1331,10 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    update: (
+      id: string,
+      input: { task_id?: string | null; display_title?: string | null; hidden?: boolean },
+    ) => req<LiveSession>("PATCH", `/sessions/live/${id}`, input),
     linkTask: (id: string, task_id: string | null) =>
       req<LiveSession>("PATCH", `/sessions/live/${id}`, { task_id }),
     lineage: (id: string) =>

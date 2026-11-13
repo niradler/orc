@@ -53,6 +53,8 @@ export interface LaunchRequest {
   kind?: LaunchKind | undefined;
   cwd?: string | null | undefined;
   live?: LiveSessionRef;
+  /** Fork the live session's history into a new native session instead of resuming it. */
+  fork?: boolean | undefined;
 }
 
 export interface Launch {
@@ -166,8 +168,21 @@ export async function resumeLaunch(live: LiveSessionRef, deps: LaunchDeps): Prom
   return { kind: agent.id, argv, cwd: await checkedCwd(live.cwd, deps), resume: true };
 }
 
+/** A fork copies the source history into a new native session; the source is left untouched. */
+export async function forkLaunch(live: LiveSessionRef, deps: LaunchDeps): Promise<Launch> {
+  const agent = agentForSessionBackend(live.agent);
+  if (!agent?.forkArgs)
+    throw new ValidationError(
+      `Fork is not supported for ${live.agent} sessions; fork the conversation in chat instead`,
+    );
+  if (!live.session_id) throw new ValidationError("Session has no agent session id to fork");
+  if (!isValidSessionId(live.session_id)) throw new ValidationError("Malformed session id");
+  const argv = [resolveBinary(agent, deps), ...agent.forkArgs(live.session_id)];
+  return { kind: agent.id, argv, cwd: await checkedCwd(live.cwd, deps), resume: true };
+}
+
 export async function buildLaunch(req: LaunchRequest, deps: LaunchDeps): Promise<Launch> {
-  if (req.live) return resumeLaunch(req.live, deps);
+  if (req.live) return req.fork ? forkLaunch(req.live, deps) : resumeLaunch(req.live, deps);
   const kind = req.kind ?? "shell";
   if (!LAUNCH_KINDS.includes(kind)) throw new ValidationError(`Unknown terminal kind: ${kind}`);
   const cwd = (await checkedCwd(req.cwd, deps)) ?? deps.home;

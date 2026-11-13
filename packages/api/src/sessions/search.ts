@@ -122,6 +122,7 @@ export async function searchSessions(opts: {
   agent?: string | undefined;
   limit?: number;
   projectId?: string | undefined;
+  includeHidden?: boolean;
   runtime?: HostRuntime;
 }): Promise<SearchResult> {
   const started = Date.now();
@@ -132,6 +133,7 @@ export async function searchSessions(opts: {
     db.query.gateway_sessions.findMany({
       where: and(
         eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+        opts.includeHidden ? undefined : isNull(gateway_sessions.hidden_at),
         opts.projectId === "unassigned"
           ? isNull(gateway_sessions.project_id)
           : opts.projectId
@@ -159,7 +161,7 @@ export async function searchSessions(opts: {
 
   for (const row of dbRows) {
     const fields: [string, string | null, number][] = [
-      ["title", row.title, 5],
+      ["title", row.display_title ?? row.title, 5],
       ["summary", row.summary, 3],
       ["directory", row.cwd, 1],
     ];
