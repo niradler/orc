@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { OrcError } from "@orc/core/errors";
-import { UsageHistorySchema } from "@orc/core/usage";
+import { USAGE_EVENT_VERSION, UsageHistorySchema, UsageReportSchema } from "@orc/core/usage";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth";
 import { usageRouter } from "../routes/usage";
 import { LIVE_CHAT_ID } from "../session-watcher";
+import { writeSessionUsage } from "../sessions/usage-events";
 import {
   createQuotaReader,
   createTargetQuotaReader,
@@ -28,9 +29,9 @@ afterAll(() => {
 });
 
 test("should protect both usage endpoints and reject invalid periods", async () => {
-  for (const route of ["history", "quotas"])
+  for (const route of ["history", "quotas", "report"])
     expect((await app.request(`/api/usage/${route}`)).status).toBe(401);
-  for (const days of ["-1", "1", "365", "7 OR 1=1"])
+  for (const days of ["-1", "365", "7 OR 1=1"])
     expect(
       (await app.request(`/api/usage/history?days=${encodeURIComponent(days)}`, { headers }))
         .status,
@@ -96,6 +97,147 @@ test("should exclude old Claude counts until they have been refreshed with cache
   );
   expect(refreshed.totals.tokens).toBe(baseline.totals.tokens + 1500);
   expect(refreshed.totals.unknown_sessions).toBe(baseline.totals.unknown_sessions);
+});
+
+test("should report request totals, model facets and time buckets with filters", async () => {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  sqlite.run(
+    "INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id) VALUES (?, 'telegram', ?)",
+    [LIVE_CHAT_ID, "Imported"],
+  );
+  const insertSession = sqlite.query(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, tokens_used, created_at) VALUES (?, ?, ?, 'direct', ?, ?)",
+  );
+  insertSession.run("report1", LIVE_CHAT_ID, "codex", 190, Math.floor(now / 1000));
+  insertSession.run("report2", LIVE_CHAT_ID, "codex", null, Math.floor(now / 1000));
+  insertSession.run("report3", LIVE_CHAT_ID, "gemini", 30, Math.floor(now / 1000));
+  const insertEvent = sqlite.query(
+    `INSERT INTO usage_events
+       (id, session_id, event_key, agent, model, ts, input_tokens, output_tokens,
+        cache_read_tokens, other_tokens, total_tokens, estimated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  insertEvent.run("event1", "report1", "one", "codex", "model-a", now, 100, 50, 25, 0, 175, 0);
+  insertEvent.run(
+    "event2",
+    "report1",
+    "two",
+    "codex",
+    "model-b",
+    now - 3_600_000,
+    10,
+    0,
+    0,
+    5,
+    15,
+    0,
+  );
+  insertEvent.run("event3", "report3", "one", "gemini", null, now, 0, 0, 0, 30, 30, 1);
+
+  const response = await app.request(
+    "/api/usage/report?days=7&granularity=hour&agent=codex&model=model-a",
+    { headers },
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  const data = UsageReportSchema.parse(await response.json());
+  expect(data.filters).toEqual({ agent: "codex", model: "model-a" });
+  expect(data.totals).toEqual({
+    input_tokens: 100,
+    output_tokens: 50,
+    cache_read_tokens: 25,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+    other_tokens: 0,
+    total_tokens: 175,
+    requests: 1,
+    sessions: 1,
+    estimated_requests: 0,
+  });
+  expect(data.buckets).toHaveLength(1);
+  expect(data.buckets[0]?.bucket.endsWith(":00Z")).toBe(true);
+  expect(data.agents.map((row) => row.agent)).toEqual(["codex"]);
+  expect(data.models.map((row) => row.model).sort()).toEqual(["model-a", "model-b"]);
+  expect(data.coverage.unindexed_sessions).toBeGreaterThanOrEqual(1);
+  expect(data.coverage.unknown_sessions).toBeGreaterThanOrEqual(1);
+
+  const unknown = UsageReportSchema.parse(
+    await (
+      await app.request("/api/usage/report?days=7&agent=gemini&model=__unknown__", { headers })
+    ).json(),
+  );
+  expect(unknown.totals.total_tokens).toBe(30);
+  expect(unknown.totals.estimated_requests).toBe(1);
+  expect(unknown.models[0]?.model).toBeNull();
+
+  const all = UsageReportSchema.parse(
+    await (await app.request("/api/usage/report?days=0", { headers })).json(),
+  );
+  expect(all.since).toBeNull();
+  expect(all.totals.total_tokens).toBe(220);
+  expect((await app.request("/api/usage/report?days=2", { headers })).status).toBe(400);
+});
+
+test("should replace a session ledger idempotently and record its latest model", () => {
+  const sqlite = getSqlite();
+  sqlite.run(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, created_at) VALUES ('ledger1', ?, 'pi', 'direct', ?)",
+    [LIVE_CHAT_ID, Math.floor(Date.now() / 1000)],
+  );
+  const event = (key: string, inputTokens: number) => ({
+    key,
+    ts: Date.now(),
+    model: "deepseek-v4",
+    inputTokens,
+    outputTokens: 1,
+    cacheReadTokens: 2,
+    cacheWriteTokens: 3,
+    reasoningTokens: 4,
+    otherTokens: 0,
+    estimated: false,
+  });
+  expect(
+    writeSessionUsage(
+      "ledger1",
+      "pi",
+      { events: [event("one", 10), event("two", 20)], tokens: 80, model: "deepseek-v4" },
+      USAGE_EVENT_VERSION,
+    ),
+  ).toBe(2);
+  expect(
+    sqlite
+      .query<{ requests: number; total: number }, []>(
+        "SELECT count(*) AS requests, sum(total_tokens) AS total FROM usage_events WHERE session_id = 'ledger1'",
+      )
+      .get(),
+  ).toEqual({ requests: 2, total: 50 });
+  const row = sqlite
+    .query<{ model: string; usage_version: number }, []>(
+      "SELECT model, usage_version FROM gateway_sessions WHERE id = 'ledger1'",
+    )
+    .get();
+  expect(row?.model).toBe("deepseek-v4");
+  expect(row?.usage_version).toBe(USAGE_EVENT_VERSION);
+
+  writeSessionUsage(
+    "ledger1",
+    "pi",
+    { events: [event("one", 50)], tokens: 60, model: "deepseek-v5" },
+    USAGE_EVENT_VERSION,
+  );
+  expect(
+    sqlite
+      .query<{ requests: number; total: number }, []>(
+        "SELECT count(*) AS requests, sum(total_tokens) AS total FROM usage_events WHERE session_id = 'ledger1'",
+      )
+      .get(),
+  ).toEqual({ requests: 1, total: 60 });
+  expect(
+    sqlite
+      .query<{ model: string }, []>("SELECT model FROM gateway_sessions WHERE id = 'ledger1'")
+      .get()?.model,
+  ).toBe("deepseek-v5");
 });
 
 test("should decode quota windows including zero and exhausted usage and reject malformed data", () => {

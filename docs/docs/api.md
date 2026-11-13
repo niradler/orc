@@ -75,17 +75,28 @@ evidence is `null`. No prompt text, credentials or transcript paths are returned
 The route uses normal API authentication and the session's stored execution host;
 clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
 
-`GET /api/usage/history?days=30` returns imported session lifetime token totals,
-grouped by agent and UTC session start date. `days` accepts `7`, `30` (default),
-`90`, or `0` for all time. Totals include session count, recorded tokens, unknown
-counts and estimated counts; these are session cohorts, not daily billed usage.
+`GET /api/usage/report` returns request-level usage for the selected period:
+totals, per-agent and per-model distributions, UTC day or hour buckets, and
+coverage for sessions that are not indexed yet. Query parameters are `days`
+(`1`, `7`, `30` default, `90`, or `0` for all time), `granularity` (`day` default
+or `hour`), and optional `agent` and `model` filters. Pass `model=__unknown__` to
+select requests without a model. Each aggregate includes input, output,
+cache-read, cache-write, reasoning and unsplit (`other`) tokens plus request,
+session and estimated-request counts. The route returns `Cache-Control: no-store`
+and uses normal API authentication. The SDK exposes `orc.usage.report({ days:
+"30" })`.
+
+`GET /api/usage/history?days=30` remains available for clients that need imported
+session lifetime totals grouped by agent and UTC session start date. `days`
+accepts `7`, `30` (default), `90`, or `0`. These are session cohorts, not tokens
+consumed during the period.
 
 `GET /api/usage/quotas` returns local Codex and Claude quota windows with percentage
 used, reset timestamps, availability and check time. Requests share a 60-second
-cache. Neither route returns credentials. Both use normal API authentication.
-See [Usage in Settings](./configuration.md#usage-in-settings) for account support
-and history limits. The SDK exposes `orc.usage.history("30")` and
-`orc.usage.quotas()`.
+cache. None of these routes returns credentials. See
+[Usage in Settings](./configuration.md#usage-in-settings) for indexing, estimate
+and coverage limits. The SDK exposes `orc.usage.history("30")`,
+`orc.usage.report({ days: "30" })` and `orc.usage.quotas()`.
 
 ## Pagination
 

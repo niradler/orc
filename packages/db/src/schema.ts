@@ -328,6 +328,8 @@ export const gateway_sessions = sqliteTable(
     transcript_path: text("transcript_path"),
     tokens_used: integer("tokens_used"),
     tokens_version: integer("tokens_version").notNull().default(0),
+    usage_version: integer("usage_version").notNull().default(0),
+    usage_synced_at: integer("usage_synced_at"),
     task_id: text("task_id").references(() => tasks.id, {
       onDelete: "set null",
     }),
@@ -343,6 +345,35 @@ export const gateway_sessions = sqliteTable(
     updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (t) => [index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at)],
+);
+
+export const usage_events = sqliteTable(
+  "usage_events",
+  {
+    id: text("id").primaryKey(),
+    session_id: text("session_id")
+      .notNull()
+      .references(() => gateway_sessions.id, { onDelete: "cascade" }),
+    event_key: text("event_key").notNull(),
+    agent: text("agent").notNull(),
+    model: text("model"),
+    ts: integer("ts").notNull(),
+    input_tokens: integer("input_tokens").notNull().default(0),
+    output_tokens: integer("output_tokens").notNull().default(0),
+    cache_read_tokens: integer("cache_read_tokens").notNull().default(0),
+    cache_write_tokens: integer("cache_write_tokens").notNull().default(0),
+    reasoning_tokens: integer("reasoning_tokens").notNull().default(0),
+    other_tokens: integer("other_tokens").notNull().default(0),
+    total_tokens: integer("total_tokens").notNull().default(0),
+    estimated: integer("estimated", { mode: "boolean" }).notNull().default(false),
+    created_at: integer("created_at").notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [
+    index("usage_events_ts_idx").on(t.ts),
+    index("usage_events_agent_ts_idx").on(t.agent, t.ts),
+    index("usage_events_model_ts_idx").on(t.model, t.ts),
+    index("usage_events_session_idx").on(t.session_id),
+  ],
 );
 
 export const session_handoffs = sqliteTable("session_handoffs", {

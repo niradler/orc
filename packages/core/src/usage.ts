@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export const CLAUDE_TOKENS_VERSION = 1;
 
+/** Bumped when a transcript parser gains a new request field; forces one re-index. */
+export const USAGE_EVENT_VERSION = 1;
+
 const UsageCountSchema = z.object({
   sessions: z.number().int().nonnegative(),
   tokens: z.number().nonnegative(),
@@ -34,8 +37,65 @@ export const UsageQuotaSchema = z.object({
 });
 
 export const UsageQuotasSchema = z.object({ accounts: z.array(UsageQuotaSchema) });
+
+const UsageTokenCount = z.number().finite().nonnegative();
+
+/** One request's consumption. `other_tokens` is unsplit usage some CLIs only expose as a total. */
+export const UsageTokenTotalsSchema = z.object({
+  input_tokens: UsageTokenCount,
+  output_tokens: UsageTokenCount,
+  cache_read_tokens: UsageTokenCount,
+  cache_write_tokens: UsageTokenCount,
+  reasoning_tokens: UsageTokenCount,
+  other_tokens: UsageTokenCount,
+  total_tokens: UsageTokenCount,
+  requests: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  estimated_requests: z.number().int().nonnegative(),
+});
+
+export const UsageAgentBreakdownSchema = UsageTokenTotalsSchema.extend({
+  agent: z.string(),
+});
+
+export const UsageModelBreakdownSchema = UsageTokenTotalsSchema.extend({
+  agent: z.string(),
+  model: z.string().nullable(),
+});
+
+export const UsageBucketSchema = UsageTokenTotalsSchema.extend({ bucket: z.string() });
+
+export const UsageCoverageSchema = z.object({
+  indexed_sessions: z.number().int().nonnegative(),
+  unindexed_sessions: z.number().int().nonnegative(),
+  unindexed_tokens: UsageTokenCount,
+  unknown_sessions: z.number().int().nonnegative(),
+  estimated_sessions: z.number().int().nonnegative(),
+});
+
+export const UsageReportSchema = z.object({
+  days: z.number().int(),
+  since: z.string().datetime().nullable(),
+  granularity: z.enum(["day", "hour"]),
+  filters: z.object({
+    agent: z.string().nullable(),
+    model: z.string().nullable(),
+  }),
+  totals: UsageTokenTotalsSchema,
+  agents: z.array(UsageAgentBreakdownSchema),
+  models: z.array(UsageModelBreakdownSchema),
+  buckets: z.array(UsageBucketSchema),
+  coverage: UsageCoverageSchema,
+});
+
 export type UsageHistory = z.infer<typeof UsageHistorySchema>;
 export type UsageQuota = z.infer<typeof UsageQuotaSchema>;
+export type UsageTokenTotals = z.infer<typeof UsageTokenTotalsSchema>;
+export type UsageAgentBreakdown = z.infer<typeof UsageAgentBreakdownSchema>;
+export type UsageModelBreakdown = z.infer<typeof UsageModelBreakdownSchema>;
+export type UsageBucket = z.infer<typeof UsageBucketSchema>;
+export type UsageCoverage = z.infer<typeof UsageCoverageSchema>;
+export type UsageReport = z.infer<typeof UsageReportSchema>;
 
 export const CacheTokenUsageSchema = z.object({
   input_tokens: z.number().nonnegative(),

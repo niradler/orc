@@ -133,6 +133,8 @@ test("should list OpenCode sessions from both storage generations, newest first"
       lastActivityAt: new Date(9000),
       transcriptPath: dbPath,
       tokensUsed: 6,
+      usageVersion: 1,
+      usage: expect.any(Function),
     },
     {
       backend: "opencode",
@@ -144,6 +146,8 @@ test("should list OpenCode sessions from both storage generations, newest first"
       lastActivityAt: new Date(5000),
       transcriptPath: dbPath,
       tokensUsed: 35,
+      usageVersion: 1,
+      usage: expect.any(Function),
     },
   ]);
 });
@@ -161,6 +165,8 @@ test("should list legacy-only OpenCode databases without v2 tables", async () =>
       lastActivityAt: new Date(2000),
       transcriptPath: legacyDbPath,
       tokensUsed: 15,
+      usageVersion: 1,
+      usage: expect.any(Function),
     },
   ]);
 });

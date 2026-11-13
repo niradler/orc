@@ -81,7 +81,7 @@ import type {
   SkillSyncInput,
   SkillSyncResult,
 } from "@orc/core/skill-import-types";
-import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
+import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@orc/core/usage";
 import type {
   AgentBackendInfo,
   AgentFull,
@@ -863,6 +863,14 @@ export function createOrcClient(options?: OrcClientOptions) {
     usage: {
       history: (days: "7" | "30" | "90" | "0" = "30") =>
         c<UsageHistory>("GET", "/usage/history", undefined, { days }),
+      report: (
+        params: {
+          days?: "1" | "7" | "30" | "90" | "0";
+          granularity?: "day" | "hour";
+          agent?: string;
+          model?: string;
+        } = {},
+      ) => c<UsageReport>("GET", "/usage/report", undefined, params),
       quotas: () => c<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     },
     sessions: {

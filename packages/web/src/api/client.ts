@@ -56,7 +56,7 @@ import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
-import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
+import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
@@ -872,6 +872,12 @@ export const api = {
         req<import("@orc/core/providers").ProviderSettings>("PUT", "/settings/providers", settings),
     },
     usageHistory: (days: string) => req<UsageHistory>("GET", "/usage/history", undefined, { days }),
+    usageReport: (params: {
+      days: string;
+      granularity: "day" | "hour";
+      agent?: string;
+      model?: string;
+    }) => req<UsageReport>("GET", "/usage/report", undefined, params),
     usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {
       get: () => req<McpServerSettings>("GET", "/settings/mcp"),
