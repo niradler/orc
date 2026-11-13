@@ -328,7 +328,7 @@ describe("/chat/stream account switching", () => {
   }
 
   test("replays bounded prior context after the native session is replaced", () => {
-    const messages = Array.from({ length: 40 }, (_, index) => ({
+    const messages = Array.from({ length: 240 }, (_, index) => ({
       id: `m-${index}`,
       role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
       content: `message ${index} ${"x".repeat(600)}`,
@@ -338,10 +338,63 @@ describe("/chat/stream account switching", () => {
     if (!prompt) throw new Error("Continuation prompt was not built");
     expect(prompt).toContain("[ORC account switch]");
     expect(prompt).toContain("--- End of prior conversation ---");
-    expect(prompt).toContain("message 39");
+    expect(prompt).toContain("message 239");
     expect(prompt).not.toContain("message 0 ");
+    expect(prompt).toContain("[Earlier conversation omitted]");
+    // An account switch keeps its historical 12k bound so a smaller-context
+    // provider is not handed a larger prompt than it used to receive.
     expect(prompt.length).toBeLessThan(14_000);
+    // A fork gets the long budget and keeps both the newest work and the
+    // request that started it.
+    const fork = continuationPrompt(messages, "fork");
+    if (!fork) throw new Error("Fork continuation prompt was not built");
+    expect(fork).toContain("[ORC fork]");
+    expect(fork).toContain("User (original request): message 0");
+    expect(fork.length).toBeGreaterThan(prompt.length * 4);
+    expect(fork.length).toBeLessThan(103_000);
     expect(continuationPrompt([])).toBeUndefined();
+  });
+
+  test("keeps the newest turn when it alone exceeds the replay budget", () => {
+    const tool = (index: number) => ({
+      type: "tool" as const,
+      id: `tool-${index}`,
+      name: "shell",
+      input: "x".repeat(600),
+      result: "y".repeat(1_200),
+    });
+    // One assistant turn with enough tool work to exceed the 12k switch budget
+    // on its own: the newest turn must be clipped into the replay, not dropped.
+    const oversized = [
+      { id: "u-0", role: "user" as const, content: "Start the task", timestamp: 0 },
+      {
+        id: "a-0",
+        role: "assistant" as const,
+        content: "final answer",
+        timestamp: 1,
+        activity: Array.from({ length: 10 }, (_, index) => tool(index)),
+      },
+    ];
+    const prompt = continuationPrompt(oversized);
+    if (!prompt) throw new Error("Oversized newest turn dropped the whole replay");
+    expect(prompt).toContain("final answer");
+    expect(prompt).toContain("[Earlier conversation omitted]");
+    expect(prompt.length).toBeLessThan(14_000);
+
+    const huge = [
+      { id: "u-0", role: "user" as const, content: "Start the task", timestamp: 0 },
+      {
+        id: "a-0",
+        role: "assistant" as const,
+        content: "final answer",
+        timestamp: 1,
+        activity: Array.from({ length: 60 }, (_, index) => tool(index)),
+      },
+    ];
+    const fork = continuationPrompt(huge, "fork");
+    if (!fork) throw new Error("Oversized newest turn dropped the fork replay");
+    expect(fork).toContain("User (original request): Start the task");
+    expect(fork.length).toBeLessThan(103_000);
   });
 
   test("switches a live conversation to another account of the same agent", async () => {

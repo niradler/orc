@@ -4,6 +4,8 @@ import {
   type CreateElicitationRequest,
   type CreateElicitationResponse,
   client,
+  type ForkSessionRequest,
+  type ForkSessionResponse,
   type ListSessionsResponse,
   type LoadSessionResponse,
   type NewSessionRequest,
@@ -340,6 +342,8 @@ export class AcpSession implements AgentSession {
         resume: native?.loadSession === true,
         images: native?.promptCapabilities?.image === true,
         mcp: native?.mcpCapabilities?.http === true,
+        // `session/fork` is unstable in ACP, so only trust the negotiated handshake.
+        fork: native?.sessionCapabilities?.fork != null,
         // Form elicitation is a client capability. The agent may use it after this handshake.
         questions: clientCapabilities.elicitation?.form !== undefined,
       };
@@ -403,6 +407,22 @@ export class AcpSession implements AgentSession {
             this.effectiveCwd = saved;
           }
           configOptions = loaded?.configOptions ?? [];
+        } else if (this.opts.forkSourceRuntimeId) {
+          if (!this.capabilities.fork)
+            throw new Error(
+              "This ACP agent cannot fork sessions; its handshake advertises no session/fork.",
+            );
+          const forked = await this.request(
+            agent.request<ForkSessionResponse, ForkSessionRequest>("session/fork", {
+              ...common,
+              sessionId: this.opts.forkSourceRuntimeId,
+            }),
+            "session/fork",
+          );
+          if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(forked.sessionId))
+            throw new Error("ACP returned an invalid forked session identity.");
+          this.runtimeId = forked.sessionId;
+          configOptions = forked.configOptions ?? [];
         } else {
           const created = await this.request(
             agent.request<NewSessionResponse, NewSessionRequest>("session/new", common),
@@ -645,6 +665,7 @@ function createAcpBackend(builtin?: BuiltinAcpAgent): AgentBackend {
           },
     startSession: open,
     resumeSession: (id, opts) => open({ ...opts, runtimeSessionId: id }),
+    forkSession: (id, opts) => open({ ...opts, forkSourceRuntimeId: id }),
     stop: async () => {},
   };
 }

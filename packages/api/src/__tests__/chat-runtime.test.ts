@@ -1808,7 +1808,7 @@ test("capability discovery requires auth and preserves provider/session isolatio
       source: "adapter",
       steering: true,
       approvals: true,
-      fork: false,
+      fork: true,
       rollback: false,
     },
   });
