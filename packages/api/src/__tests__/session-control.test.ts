@@ -29,6 +29,7 @@ import { req, setupTestApp, teardownTestApp } from "./helpers";
 type Turn = { prompt: string; steers: string[]; release: () => void; cwd: string };
 
 let slow: Promise<void> = Promise.resolve();
+let failPreflight = false;
 let app: ReturnType<typeof createApp>;
 let original: AgentBackend;
 const turns: Turn[] = [];
@@ -157,7 +158,7 @@ beforeAll(() => {
     ...original,
     preflight: async () => {
       await slow;
-      return { ok: true };
+      return failPreflight ? { ok: false, error: "agent unavailable" } : { ok: true };
     },
     startSession: async (opts) => fakeSession(opts.cwd, `native-${++count}`),
     resumeSession: async (id, opts) => fakeSession(opts.cwd, id),
@@ -672,5 +673,44 @@ describe("agent session control", () => {
       as(lead.id),
     );
     expect(late.status).toBe(409);
+  });
+  test("should report a queued child that fails to start as failed, and tell the parent about a human stop during its start", async () => {
+    const lead = await startParent("gaps lead", repo);
+    await turnFor("gaps lead");
+    const spawn = async (prompt: string) =>
+      (
+        await req(app, "POST", "/sessions/live/spawn", { prompt, notify: true }, as(lead.id))
+      ).json<SessionStatus>();
+    const running = [await spawn("gaps one"), await spawn("gaps two"), await spawn("gaps three")];
+    expect(running.map((child) => child.status)).toEqual(["running", "running", "running"]);
+    const broken = await spawn("gaps broken");
+    const stoppedByHuman = await spawn("gaps stopped");
+    expect([broken.status, stoppedByHuman.status]).toEqual(["queued", "queued"]);
+
+    failPreflight = true;
+    (await turnFor("gaps one")).release();
+    await until(async () => (await status(broken.session_id)).status === "failed", "broken failed");
+    failPreflight = false;
+
+    let open = () => {};
+    slow = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    (await turnFor("gaps two")).release();
+    await until(() => chatControl().running(stoppedByHuman.session_id), "stopped child dequeued");
+    expect(
+      (await req(app, "POST", `/sessions/live/${stoppedByHuman.session_id}/stop`)).status,
+    ).toBe(200);
+    failPreflight = true;
+    open();
+    slow = Promise.resolve();
+    await until(() => !chatControl().running(stoppedByHuman.session_id), "start failed");
+    failPreflight = false;
+    expect((await status(stoppedByHuman.session_id)).status).toBe("stopped");
+    const notes = (await inbox(lead.id)).map((message) => message.body.split("\n")[0]);
+    expect(notes).toContain(`[orc child-session id=${broken.session_id} outcome=failed]`);
+    expect(notes).toContain(`[orc child-session id=${stoppedByHuman.session_id} outcome=stopped]`);
+    for (const turn of turns) turn.release();
+    await req(app, "POST", `/sessions/live/${lead.id}/stop`);
   });
 });

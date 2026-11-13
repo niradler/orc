@@ -229,6 +229,7 @@ export const ChatSpawnSchema = z.object({
   notify: z.boolean(),
   prompt: z.string().max(100000).optional(),
   cancelled: z.boolean().optional(),
+  startError: z.string().max(2000).optional(),
 });
 export type ChatSpawn = z.infer<typeof ChatSpawnSchema>;
 
