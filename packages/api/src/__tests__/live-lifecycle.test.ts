@@ -293,6 +293,61 @@ test("remote Codex sessions use writer ownership rather than stale in-progress h
   expect(legacy.every((row) => row.status === "stopped")).toBe(true);
 });
 
+test("oversized Codex rollouts keep an estimated lifetime total instead of failing the index", async () => {
+  let reads = 0;
+  const runtime: HostRuntime = {
+    ...hostRuntime(),
+    isFile: async () => true,
+    isDirectory: async () => false,
+    stat: async () => ({
+      path: "/rollout.jsonl",
+      size: 64 * 1024 * 1024,
+      mtimeMs: 5000,
+      birthtimeMs: 1000,
+    }),
+    readFile: async () => {
+      reads += 1;
+      throw new Error("File is too large to read");
+    },
+    sqliteQuery: async <T extends object>(): Promise<T[]> =>
+      [
+        {
+          id: "big",
+          title: "Big",
+          name: null,
+          cwd: "/work",
+          preview: "",
+          first_user_message: "",
+          tokens_used: 1234,
+          rollout_path: "/rollout.jsonl",
+          created_at_ms: 1000,
+          created_at: 1,
+          updated_at_ms: 5000,
+          updated_at: 5,
+        },
+      ] as T[],
+  };
+  const [record] = await codexAdapter(undefined, { runtime }).list(new Map());
+  expect(record?.usageVersion).toBe(1);
+  const usage = await record?.usage?.();
+  expect(reads).toBe(0);
+  expect(usage?.tokens).toBe(1234);
+  expect(usage?.events).toEqual([
+    {
+      key: "session",
+      ts: 5000,
+      model: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      otherTokens: 1234,
+      estimated: true,
+    },
+  ]);
+});
+
 test("remote writer inspection fails closed on invalid input or incomplete results", async () => {
   const runtime = {
     ...hostRuntime(),

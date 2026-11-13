@@ -15,6 +15,7 @@ export const CHANGE_RESOURCES = [
   "rules",
   "human-requests",
   "session-messages",
+  "usage",
   "settings",
   "ssh",
   "terminals",

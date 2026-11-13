@@ -7,6 +7,7 @@ import { ulid } from "@orc/core/ids";
 import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
 import { agentHomes } from "@orc/core/provider-service";
+import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { getDb, getSqlite } from "@orc/db/client";
 import { NotificationStore } from "@orc/db/notifications";
 import { gateway_sessions } from "@orc/db/schema";
@@ -32,6 +33,8 @@ import { lifecycleRecords, withLifecycle } from "./sessions/lifecycle.js";
 import { opencodeAdapter } from "./sessions/opencode.js";
 import { piAdapter, piSessionRoots } from "./sessions/pi.js";
 import type { KnownSession, SessionAdapter, SessionRecord } from "./sessions/types.js";
+import { maintainUsageRetention, writeSessionUsage } from "./sessions/usage-events.js";
+import type { ParsedUsage } from "./sessions/usage-parsers.js";
 
 export { LIVE_CHAT_ID };
 
@@ -84,6 +87,8 @@ let liveRegistryDir: string | null = null;
 const lastRun = new Map<string, number>();
 let chain: Promise<unknown> = Promise.resolve();
 let tokenChain: Promise<unknown> = Promise.resolve();
+let usageChain: Promise<unknown> = Promise.resolve();
+let nextUsageMaintenance = 0;
 let synchronized: (() => Promise<void>) | undefined;
 let refreshWatchers: (() => void) | undefined;
 const pendingHuman = new Map<string, Set<string>>();
@@ -132,6 +137,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     ...(r.transcriptPath !== undefined && {
       transcript_path: r.transcriptPath,
     }),
+    ...(r.model !== undefined && { model: r.model }),
     ...(r.tokensUsed !== undefined && { tokens_used: r.tokensUsed }),
     ...(existing && mappedProject != null && mappedProject !== existing.project_id
       ? { project_id: mappedProject }
@@ -188,6 +194,8 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     created_at: r.createdAt,
     ...fields,
   });
+  // A new session with no requests yet still changes the report's coverage counts.
+  changes.publish("usage");
   recordObservedNotification(
     {
       id,
@@ -227,6 +235,7 @@ async function loadKnown(
           lastActivityMs: r.last_activity_at?.getTime() ?? 0,
           tokensUsed: r.tokens_used ?? null,
           tokensVersion: r.tokens_version,
+          usageVersion: r.usage_version,
           session: {
             backend: r.backend,
             externalId: r.runtime_session_id as string,
@@ -256,6 +265,22 @@ function queueTokens(id: string, compute: () => Promise<number | null>, version 
     .catch((err) => logger.error("token count failed", err));
 }
 
+const USAGE_QUEUE_LIMIT = 40;
+
+function queueUsage(
+  id: string,
+  agent: string,
+  compute: () => Promise<ParsedUsage>,
+  version = USAGE_EVENT_VERSION,
+): void {
+  usageChain = usageChain
+    .then(async () => {
+      const usage = await compute();
+      writeSessionUsage(id, agent, usage, version);
+    })
+    .catch((err) => logger.error("usage index failed", err));
+}
+
 async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
   const started = Date.now();
   const executionHost = selectedHostAlias();
@@ -263,9 +288,22 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
     const records = await adapter.list(await loadKnown(adapter.backend, executionHost));
     const pending = new Set(pendingHuman.get(pendingKey(adapter.backend, executionHost)));
     let pendingChanged = false;
+    const usageJobs: {
+      id: string;
+      activity: number;
+      usage: () => Promise<ParsedUsage>;
+      version?: number | undefined;
+    }[] = [];
     for (const r of records) {
       const id = await upsertRecord(r, executionHost);
       if (r.tokens) queueTokens(id, r.tokens, r.tokensVersion);
+      if (r.usage)
+        usageJobs.push({
+          id,
+          activity: r.lastActivityAt.getTime(),
+          usage: r.usage,
+          version: r.usageVersion,
+        });
       if (r.pendingHuman === true && r.status !== "stopped" && !pending.has(r.externalId)) {
         pending.add(r.externalId);
         pendingChanged = true;
@@ -275,6 +313,14 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
       ) {
         pendingChanged = true;
       }
+    }
+    usageJobs.sort((a, b) => b.activity - a.activity);
+    for (const job of usageJobs.slice(0, USAGE_QUEUE_LIMIT))
+      queueUsage(job.id, adapter.backend, job.usage, job.version);
+    if (usageJobs.length) {
+      // One event after the queued ledger writes drain, not one per request.
+      const indexPending = usageChain;
+      void indexPending.then(() => changes.publish("usage"));
     }
     const seen = records.map((r) => r.externalId);
     for (const id of pending)
@@ -334,6 +380,15 @@ export function runSync(
     }
     await synchronized?.();
     indexSessionsWhenEnabled();
+    // Housekeeping on the same event-driven sync path, not a separate timer.
+    if (Date.now() >= nextUsageMaintenance) {
+      nextUsageMaintenance = Date.now() + 6 * 60 * 60 * 1000;
+      try {
+        maintainUsageRetention();
+      } catch (error) {
+        logger.error("Usage retention failed", error);
+      }
+    }
     return results;
   });
 }

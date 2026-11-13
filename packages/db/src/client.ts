@@ -183,6 +183,35 @@ function setupDb(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS gateway_sessions_chat_idx ON gateway_sessions(chat_id, updated_at);
 
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES gateway_sessions(id) ON DELETE CASCADE,
+      event_key TEXT NOT NULL,
+      agent TEXT NOT NULL,
+      model TEXT,
+      ts INTEGER NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+      reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+      other_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      requests INTEGER NOT NULL DEFAULT 1,
+      estimated_requests INTEGER NOT NULL DEFAULT 0,
+      resolution TEXT NOT NULL DEFAULT 'request',
+      estimated INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE (session_id, event_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS usage_events_ts_idx ON usage_events(ts DESC);
+    CREATE INDEX IF NOT EXISTS usage_events_agent_ts_idx ON usage_events(agent, ts DESC);
+    CREATE INDEX IF NOT EXISTS usage_events_model_ts_idx ON usage_events(model, ts DESC);
+    CREATE INDEX IF NOT EXISTS usage_events_session_idx ON usage_events(session_id);
+    CREATE INDEX IF NOT EXISTS usage_events_raw_ts_idx ON usage_events(ts)
+      WHERE resolution = 'request';
+
     CREATE TABLE IF NOT EXISTS bridge_messages (
       id TEXT PRIMARY KEY,
       chat_id TEXT REFERENCES bridge_chats(id),
@@ -400,6 +429,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN transcript_path TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN tokens_used INTEGER",
     "ALTER TABLE gateway_sessions ADD COLUMN execution_host TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN usage_version INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE gateway_sessions ADD COLUMN usage_synced_at INTEGER",
     // Drift fix: schema.ts has declared bridge_chats.project_id for a while, but
     // it was only ever added to existing DBs out-of-band — fresh installs never
     // got it, so any drizzle insert into bridge_chats failed. Skipped as a
@@ -427,6 +458,12 @@ function setupDb(sqlite: Database): void {
     // Legacy rows predate signed receivers and have no usable secret. Keep them
     // disabled until an operator rotates the secret explicitly.
     "UPDATE webhooks SET enabled=0 WHERE secret=''",
+    "ALTER TABLE usage_events ADD COLUMN requests INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE usage_events ADD COLUMN estimated_requests INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE usage_events ADD COLUMN resolution TEXT NOT NULL DEFAULT 'request'",
+    "UPDATE usage_events SET estimated_requests=1 WHERE estimated=1 AND estimated_requests=0",
+    "UPDATE usage_events SET resolution='rollup' WHERE resolution IN ('day','model')",
+    "CREATE INDEX IF NOT EXISTS usage_events_raw_ts_idx ON usage_events(ts) WHERE resolution='request'",
   ];
   for (const statement of migrations) {
     try {

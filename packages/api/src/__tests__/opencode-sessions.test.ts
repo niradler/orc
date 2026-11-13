@@ -94,6 +94,12 @@ v2Message("msg_v2_3", "assistant", 3, 8000, {
     { type: "text", text: "The index is stale." },
   ],
 });
+v2Message("msg_v2_4", "compaction", 4, 8600, {
+  time: { created: 8600 },
+  model: { providerID: "bailian-cli", id: "deepseek-v4.1-flash" },
+  tokens: { input: 100, output: 20, reasoning: 0, cache: { read: 300, write: 0 } },
+  summary: "compacted context",
+});
 db.close();
 
 // A database from an OpenCode version that predates the v2 tables.
@@ -133,6 +139,8 @@ test("should list OpenCode sessions from both storage generations, newest first"
       lastActivityAt: new Date(9000),
       transcriptPath: dbPath,
       tokensUsed: 6,
+      usageVersion: 1,
+      usage: expect.any(Function),
     },
     {
       backend: "opencode",
@@ -144,6 +152,8 @@ test("should list OpenCode sessions from both storage generations, newest first"
       lastActivityAt: new Date(5000),
       transcriptPath: dbPath,
       tokensUsed: 35,
+      usageVersion: 1,
+      usage: expect.any(Function),
     },
   ]);
 });
@@ -161,12 +171,36 @@ test("should list legacy-only OpenCode databases without v2 tables", async () =>
       lastActivityAt: new Date(2000),
       transcriptPath: legacyDbPath,
       tokensUsed: 15,
+      usageVersion: 1,
+      usage: expect.any(Function),
     },
   ]);
 });
 
 test("should return no sessions when OpenCode is not installed", async () => {
   expect(await opencodeAdapter(join(dir, "missing.db"), runtime).list(new Map())).toEqual([]);
+});
+
+test("should index OpenCode compaction requests instead of dropping their tokens", async () => {
+  const records = await opencodeAdapter(dbPath, runtime).list(new Map());
+  const v2 = records.find((record) => record.externalId === "ses_v2");
+  const usage = await v2?.usage?.();
+  expect(usage?.tokens).toBe(420);
+  expect(usage?.model).toBe("bailian-cli/deepseek-v4.1-flash");
+  expect(usage?.events).toEqual([
+    {
+      key: "msg_v2_4",
+      ts: 8600,
+      model: "bailian-cli/deepseek-v4.1-flash",
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 300,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      otherTokens: 0,
+      estimated: false,
+    },
+  ]);
 });
 
 test("should render an OpenCode transcript with thinking, paired tool output and no synthetic text", async () => {
