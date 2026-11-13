@@ -706,6 +706,7 @@ describe("agent session control", () => {
     slow = Promise.resolve();
     await until(() => !chatControl().running(stoppedByHuman.session_id), "start failed");
     failPreflight = false;
+    expect((await status(stoppedByHuman.session_id)).status).toBe("stopped");
     const notes = (await inbox(lead.id)).map((message) => message.body.split("\n")[0]);
     expect(notes).toContain(`[orc child-session id=${broken.session_id} outcome=failed]`);
     expect(notes).toContain(`[orc child-session id=${stoppedByHuman.session_id} outcome=stopped]`);

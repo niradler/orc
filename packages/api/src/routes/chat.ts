@@ -2647,10 +2647,11 @@ function startPendingChildren(): void {
       const saved = store().get(thread.id);
       if (!saved?.spawnedBy) return;
       delete saved.spawnedBy.prompt;
-      saved.spawnedBy.startError = (error instanceof Error ? error.message : String(error)).slice(
-        0,
-        2000,
-      );
+      if (!saved.spawnedBy.cancelled)
+        saved.spawnedBy.startError = (error instanceof Error ? error.message : String(error)).slice(
+          0,
+          2000,
+        );
       store().save(saved);
       if (!saved.spawnedBy.cancelled) notifySpawner(saved, "start", "failed");
     });
@@ -2729,7 +2730,7 @@ export function chatStatus(id: string): SessionStatus {
               ? "stopped"
               : "idle",
     waiting_for: waitingFor,
-    last_message: last?.content || thread.spawnedBy?.startError || null,
+    last_message: last ? last.content || null : (thread.spawnedBy?.startError ?? null),
     queue,
     parent_session_id: thread.spawnedBy?.sessionId ?? null,
     children: store()
