@@ -194,8 +194,9 @@ Fan-out costs roughly N× the tokens. Use it where one reviewer demonstrably mis
 
 With `"isolation": "worktree"`, agent nodes work in git worktrees instead of the project checkout, so parallel nodes, or two tasks in one project, never edit the same files. The built-in `orc-default` and `orc-human-review` flows use it.
 
-- A node that needs a tree takes the most recently finished node's worktree when no running node holds it, so `build` → `review` → `build` stays in one tree.
-- A node that starts while that tree is busy, such as a parallel branch, gets its own `<repo>/.orc/worktrees/<task>-<node>` on branch `orc/task/<task>-<node>`.
+- A node that needs a tree takes the tree of the most recently succeeded node when no running node holds it, so `build` → `review` → `build` stays in one tree.
+- A node that starts while that tree is busy, such as a parallel branch, gets its own `<repo>/.orc/worktrees/<task>-<node>` on branch `orc/task/<task>-<node>`. It is cut from the last succeeded lane's commit, or from the checkout's HEAD when no lane has finished yet. Characters other than letters, digits, `-` and `_` in a node id become `_` in the folder and branch name.
+- Each agent is told its worktree and must commit its changes there. Uncommitted work is not carried to other lanes. Parallel lanes are not merged: the next node continues in the last lane to finish, and the other lanes' work stays on their branches.
 - A task with an explicit `git_worktree`, a resumed node session, or a project folder that is not a git repository keeps the existing behavior.
 - The task's flow panel shows each node's branch and folder.
 
@@ -203,7 +204,8 @@ With `"isolation": "worktree"`, agent nodes work in git worktrees instead of the
 
 [Phone layout](/screens/flow-worktrees-phone.png)
 
-- When the task becomes `done` or `cancelled`, ORC runs `git worktree remove` on the flow's worktrees and keeps the branches. A tree with uncommitted or untracked changes is kept, and a task comment names it.
+- When the task becomes `done` or `cancelled`, or the run ends, ORC runs `git worktree remove` (never `--force`) on the flow's worktrees and keeps the branches. It skips trees a node or an open terminal or chat session is using. A tree with uncommitted or untracked changes is kept, and a task comment names it.
+- Merging or opening a pull request from an `orc/task/*` branch is up to you; ORC does not push them.
 
 ## Termination
 

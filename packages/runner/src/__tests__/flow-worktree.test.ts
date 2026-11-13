@@ -181,4 +181,82 @@ describe("flow worktree isolation", () => {
     expect(git("branch", "--list", "orc/task/*")).toContain(`orc/task/${taskId}-a`);
     expect(git("log", "--format=%s", `orc/task/${taskId}-a`)).toContain("a");
   });
+
+  test("should start a fan-out lane from the last finished lane's commit, not the checkout HEAD", async () => {
+    const fanOut = {
+      name: "test-fan-out",
+      isolation: "worktree",
+      entry: "build",
+      nodes: {
+        build: {
+          kind: "agent",
+          skill: "orc-coder",
+          backend: "flow-worktree-test",
+          outcomes: ["ok"],
+          routing: "all",
+        },
+        "review one": {
+          kind: "agent",
+          skill: "orc-coder",
+          backend: "flow-worktree-test",
+          outcomes: ["ok"],
+        },
+        review_two: {
+          kind: "agent",
+          skill: "orc-coder",
+          backend: "flow-worktree-test",
+          outcomes: ["ok"],
+        },
+        join: { kind: "gate", join: { mode: "all", from: ["review one", "review_two"] } },
+        done: { kind: "terminal", task_status: "done" },
+      },
+      edges: [
+        { from: "build", to: "review one", when: { always: true } },
+        { from: "build", to: "review_two", when: { always: true } },
+        { from: "review one", to: "join", when: { always: true } },
+        { from: "review_two", to: "join", when: { always: true } },
+        { from: "join", to: "done", when: { always: true } },
+      ],
+    };
+    const taskId = ulid();
+    await getDb().insert(tasks).values({
+      id: taskId,
+      title: "Fan-out reviewers",
+      project_id: projectId,
+      skill_name: "orc-coder",
+      required_review: false,
+      flow_override: fanOut,
+    });
+    expect((await startFlowForTask(taskId)).ok).toBe(true);
+    await drainPendingNodes();
+    const build = await until(() => nodeCwd(taskId, "build"), "build cwd");
+    writeFileSync(join(build, "built.txt"), "built");
+    execFileSync("git", ["-C", build, "add", "built.txt"]);
+    execFileSync("git", [
+      "-C",
+      build,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "-qm",
+      "built",
+    ]);
+    await finish(taskId, "build");
+    await drainPendingNodes();
+
+    const one = await until(() => nodeCwd(taskId, "review one"), "review one cwd");
+    const two = await until(() => nodeCwd(taskId, "review_two"), "review_two cwd");
+    expect(new Set([one, two]).size).toBe(2);
+    expect([one, two]).toContain(build);
+    const fresh = one === build ? two : one;
+    expect(fresh.startsWith(join(repo, ".orc", "worktrees", taskId))).toBe(true);
+    expect(fresh).not.toContain(" ");
+    expect(existsSync(join(fresh, "built.txt"))).toBe(true);
+
+    await finish(taskId, "review one");
+    await finish(taskId, "review_two");
+    await until(() => !git("worktree", "list").includes(".orc/worktrees"), "fan-out trees removed");
+  });
 });
