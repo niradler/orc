@@ -1344,29 +1344,59 @@ async function flowWorktree(
     await run(["git", "-C", root, "worktree", "prune"]);
     const base = finished[0]?.cwd
       ? (await run(["git", "-C", finished[0].cwd, "rev-parse", "HEAD"])).stdout.trim()
-      : "";
-    const branch = `orc/task/${name}`;
-    const created = await run([
-      "git",
-      "-C",
-      root,
-      "worktree",
-      "add",
-      "-b",
-      branch,
-      path,
-      ...(base ? [base] : []),
-    ]);
-    if (created.code === 0) return path;
-    const attached = await run(["git", "-C", root, "worktree", "add", path, branch]);
-    if (attached.code === 0) return path;
-    throw new Error(
-      `Could not create the flow worktree ${path} on ${branch}: ${(attached.stderr || created.stderr).trim()}`,
-    );
+      : await defaultBase(run, root);
+    if (!base) throw new Error(`Could not resolve a base commit for the flow worktree in ${root}`);
+    let failure = "";
+    for (let attempt = 1; attempt <= 9; attempt++) {
+      const branch = attempt === 1 ? `orc/task/${name}` : `orc/task/${name}-${attempt}`;
+      const created = await run(["git", "-C", root, "worktree", "add", "-b", branch, path, base]);
+      if (created.code !== 0) {
+        failure = created.stderr.trim();
+        const exists = await run([
+          "git",
+          "-C",
+          root,
+          "rev-parse",
+          "--verify",
+          `refs/heads/${branch}`,
+        ]);
+        if (exists.code !== 0) break;
+        const current = await run(["git", "-C", root, "merge-base", "--is-ancestor", base, branch]);
+        if (current.code !== 0) continue;
+        const attached = await run(["git", "-C", root, "worktree", "add", path, branch]);
+        if (attached.code !== 0) {
+          failure = attached.stderr.trim();
+          break;
+        }
+      }
+      await run(["git", "-C", root, "config", `branch.${branch}.orc-base`, base]);
+      return path;
+    }
+    throw new Error(`Could not create the flow worktree ${path}: ${failure}`);
   } catch (error) {
     claimedWorktrees.delete(path);
     throw error;
   }
+}
+
+async function defaultBase(run: ReturnType<typeof gitRunner>, root: string): Promise<string> {
+  const remote = await run([
+    "git",
+    "-C",
+    root,
+    "symbolic-ref",
+    "--short",
+    "refs/remotes/origin/HEAD",
+  ]);
+  const remoteBranch = remote.code === 0 ? remote.stdout.trim() : "";
+  const candidates = remoteBranch
+    ? [remoteBranch.replace(/^origin\//, ""), remoteBranch, "HEAD"]
+    : ["HEAD"];
+  for (const ref of candidates) {
+    const resolved = await run(["git", "-C", root, "rev-parse", "--verify", `${ref}^{commit}`]);
+    if (resolved.code === 0) return resolved.stdout.trim();
+  }
+  return "";
 }
 
 export async function retireFlowWorktrees(taskId: string): Promise<void> {
@@ -1389,7 +1419,16 @@ export async function retireFlowWorktrees(taskId: string): Promise<void> {
   for (const row of rows) {
     if (claimedWorktrees.has(row.cwd)) continue;
     const host = execHostFor(row.execution_host);
-    const removed = await gitRunner(host)(["git", "-C", row.cwd, "worktree", "remove", row.cwd]);
+    const removed = await gitRunner(host)([
+      "git",
+      "-c",
+      "status.showUntrackedFiles=normal",
+      "-C",
+      row.cwd,
+      "worktree",
+      "remove",
+      row.cwd,
+    ]);
     if (
       removed.code === 0 ||
       /is not a working tree|No such file|cannot change to/i.test(removed.stderr)

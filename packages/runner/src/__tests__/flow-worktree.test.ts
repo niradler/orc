@@ -146,6 +146,9 @@ describe("flow worktree isolation", () => {
       getLatestFlowRunForTask(taskId)?.nodes.find((node) => node.node_id === "a")?.worktree_branch,
     ).toBe(`orc/task/${taskId}-a`);
 
+    expect(git("config", `branch.orc/task/${taskId}-a.orc-base`).trim()).toBe(
+      git("rev-parse", "main").trim(),
+    );
     writeFileSync(join(a, "a.txt"), "from a");
     expect(existsSync(join(b, "a.txt"))).toBe(false);
     execFileSync("git", ["-C", a, "add", "a.txt"]);
