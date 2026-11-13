@@ -158,13 +158,33 @@ export async function selectProject(page: Page, id: string): Promise<void> {
 }
 
 export async function apiDelete(request: APIRequestContext, path: string): Promise<void> {
-  await request.delete(`${API_BASE}${path}`, { headers: AUTH_HEADERS });
+  await connectRetry(() => request.delete(`${API_BASE}${path}`, { headers: AUTH_HEADERS }));
+}
+
+/**
+ * The e2e API briefly stops accepting connections while a heavy request holds its
+ * event loop; Playwright reports that as `connect ETIMEDOUT`/`ECONNREFUSED`. A
+ * connect-level failure means the request never reached the server, so a bounded
+ * retry cannot duplicate it. Other errors are rethrown immediately.
+ */
+async function connectRetry<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= 4 || !/connect (ETIMEDOUT|ECONNREFUSED)/i.test(message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
+  }
 }
 
 export async function apiGet<T>(request: APIRequestContext, path: string): Promise<T> {
-  const res = await request.get(`${API_BASE}${path}`, {
-    headers: AUTH_HEADERS,
-  });
+  const res = await connectRetry(() =>
+    request.get(`${API_BASE}${path}`, {
+      headers: AUTH_HEADERS,
+    }),
+  );
   if (!res.ok()) throw new Error(`GET ${path} failed: ${res.status()}`);
   return (await res.json()) as T;
 }
@@ -174,10 +194,12 @@ export async function apiPost<T>(
   path: string,
   body: unknown,
 ): Promise<T> {
-  const res = await request.post(`${API_BASE}${path}`, {
-    headers: AUTH_HEADERS,
-    data: body,
-  });
+  const res = await connectRetry(() =>
+    request.post(`${API_BASE}${path}`, {
+      headers: AUTH_HEADERS,
+      data: body,
+    }),
+  );
   if (!res.ok()) throw new Error(`POST ${path} failed: ${res.status()} ${await res.text()}`);
   return (await res.json()) as T;
 }
@@ -187,10 +209,12 @@ export async function apiPatch<T>(
   path: string,
   body: unknown,
 ): Promise<T> {
-  const res = await request.patch(`${API_BASE}${path}`, {
-    headers: AUTH_HEADERS,
-    data: body,
-  });
+  const res = await connectRetry(() =>
+    request.patch(`${API_BASE}${path}`, {
+      headers: AUTH_HEADERS,
+      data: body,
+    }),
+  );
   if (!res.ok()) throw new Error(`PATCH ${path} failed: ${res.status()} ${await res.text()}`);
   return (await res.json()) as T;
 }
