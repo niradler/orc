@@ -352,6 +352,13 @@ export type Worktree = {
 };
 
 export type WorktreeListing = { root: string | null; worktrees: Worktree[] };
+export type GitBranchListing = {
+  root: string | null;
+  current: string | null;
+  default_branch: string | null;
+  local: string[];
+  remote: string[];
+};
 export type BranchPull = {
   number: number;
   title: string;
@@ -1781,6 +1788,11 @@ export const api = {
       }>("POST", "/git/worktrees/cleanup", { items }),
     worktrees: (cwd: string, host?: string | null) =>
       req<WorktreeListing>("GET", "/git/worktrees", undefined, {
+        cwd,
+        host: host === null ? "" : host,
+      }),
+    branches: (cwd: string, host?: string | null) =>
+      req<GitBranchListing>("GET", "/git/branches", undefined, {
         cwd,
         host: host === null ? "" : host,
       }),

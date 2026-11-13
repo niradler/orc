@@ -3,6 +3,7 @@ import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { mergedByPull, worktreePulls } from "../git/github.js";
+import { gitBranches } from "../git/panel.js";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
 import { listWorktrees, removeWorktree, samePath, trackedWorktrees } from "../git/worktrees.js";
 import { createRouter } from "../lib/router.js";
@@ -54,6 +55,30 @@ const listRoute = createRoute({
   },
 });
 
+const BranchListSchema = z
+  .object({
+    root: z.string().nullable(),
+    current: z.string().nullable(),
+    default_branch: z.string().nullable(),
+    local: z.array(z.string()),
+    remote: z.array(z.string()),
+  })
+  .openapi("GitBranches");
+
+const branchesRoute = createRoute({
+  method: "get",
+  path: "/git/branches",
+  tags: ["Git"],
+  summary: "List local, remote and default branches for a repo",
+  request: { query: z.object({ cwd: z.string().min(1), host: TerminalHostQuerySchema }) },
+  responses: {
+    200: {
+      description: "Branches; root is null when the folder is not in a git repo",
+      content: { "application/json": { schema: BranchListSchema } },
+    },
+  },
+});
+
 const removeRoute = createRoute({
   method: "post",
   path: "/git/worktrees/remove",
@@ -93,6 +118,15 @@ app.openapi(listRoute, async (c) => {
   const cwd = await checkedFolder(query.cwd, host);
   observeCheckout(host, cwd);
   return c.json(await listWorktrees(cwd, worktreeDeps(host)), 200);
+});
+
+app.openapi(branchesRoute, async (c) => {
+  const config = loadConfig();
+  requireTerminals(config);
+  const query = c.req.valid("query");
+  const host = selectedTerminalHost(config, query.host === "" ? null : query.host);
+  const cwd = await checkedFolder(query.cwd, host);
+  return c.json(await gitBranches(host, cwd), 200);
 });
 
 app.openapi(removeRoute, async (c) => {

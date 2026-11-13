@@ -1848,7 +1848,7 @@ async function openChat(
       if (!body.threadId && body.workspace?.worktree) {
         const host = selectedTerminalHost(loadConfig(), thread.host);
         const cwd = await prepareSessionDirectory(
-          { cwd: thread.cwd, worktree: true },
+          { cwd: thread.cwd, worktree: true, base: body.workspace.base },
           {
             ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
             validateDirectory: (path) => checkChatWorkspaceRules(thread, path),

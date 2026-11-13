@@ -21,6 +21,8 @@ export interface SessionDirDeps {
 export interface SessionDirRequest {
   cwd?: string | null | undefined;
   worktree?: boolean | undefined;
+  /** Base ref for the new worktree; the current HEAD when omitted. */
+  base?: string | null | undefined;
 }
 
 export function gitRunner(host: ExecHost): GitRunner {
@@ -128,10 +130,34 @@ export async function prepareSessionDirectory(
 
   const id = deps.newId();
   const path = worktreePath(root, id);
+  const base = req.base?.trim();
+  let startPoint: string | undefined;
+  if (base) {
+    // Namespace the lookup: branch names may contain "#", unicode or dots, and
+    // revision expressions must not reach worktree add.
+    if (base.startsWith("-")) throw new ValidationError(`Invalid base branch: ${base}`);
+    const refs = [`refs/heads/${base}`, `refs/remotes/${base}`];
+    const found = await Promise.all(
+      refs.map((ref) => deps.runGit(["git", "-C", root, "show-ref", "--verify", "--quiet", ref])),
+    );
+    startPoint = found[0]?.code === 0 ? refs[0] : found[1]?.code === 0 ? refs[1] : undefined;
+    if (!startPoint) throw new ValidationError(`Unknown base branch: ${base}`);
+  }
   await deps.validateDirectory?.(path);
   await deps.excludeWorktrees(root);
   await deps.makeDirectory(dirname(path));
-  const added = await deps.runGit(["git", "-C", root, "worktree", "add", "-b", `orc/${id}`, path]);
+  const added = await deps.runGit([
+    "git",
+    "-C",
+    root,
+    "worktree",
+    "add",
+    "--no-track",
+    "-b",
+    `orc/${id}`,
+    path,
+    ...(startPoint ? [startPoint] : []),
+  ]);
   if (added.code !== 0) throw gitError(added, "git worktree add failed");
   return path;
 }

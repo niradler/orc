@@ -23,6 +23,18 @@ test("desktop composer keeps the full workspace controls in both themes", async 
       json: { root: cwd, worktrees: [{ path: cwd, branch: "refs/heads/main", main: true }] },
     });
   });
+  await page.route("**/api/git/branches?**", (route) => {
+    const cwd = new URL(route.request().url()).searchParams.get("cwd") ?? "";
+    return route.fulfill({
+      json: {
+        root: cwd,
+        current: "main",
+        default_branch: "origin/main",
+        local: ["main"],
+        remote: ["origin/main"],
+      },
+    });
+  });
   for (const theme of ["dark", "light"] as const) {
     const response = await request.patch("/api/settings", {
       headers: { Authorization: `Bearer ${API_SECRET}` },
