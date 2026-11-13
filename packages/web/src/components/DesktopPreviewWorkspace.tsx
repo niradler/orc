@@ -33,7 +33,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { api, apiFetch, getApiUrl } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import { HelpPopover } from "@/components/HelpPopover";
@@ -197,7 +197,7 @@ function ChangesHelp(): ReactNode {
   return (
     <HelpPopover label="Changes" testId="preview-changes-help">
       Shows the working-tree changes of the terminal running in this session's folder. Open a
-      changed file in an editor tab, or send it to the chat composer. Select files to stage and
+      changed file in an editor tab, or copy its path with the copy icon. Select files to stage and
       commit them here. No terminal in the folder yet? Open one from this tab.
     </HelpPopover>
   );
@@ -227,7 +227,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   } | null>(null);
   const session = resolved?.input === rawSession ? resolved.id : rawSession;
   const { terminals, isLoading: terminalsLoading, create: createTerminal } = useTerminals();
-  const navigate = useNavigate();
   const folder = resolved?.input === rawSession ? resolved : null;
   const gitTerminal = folder
     ? runningTerminalForFolder(terminals, folder.cwd, folder.host)
@@ -904,16 +903,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       setOpeningTerminal(false);
     }
   }
-  function sendToComposer(path: string): void {
-    const text = `Review the changes in \`${path}\``;
-    chat.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()}\n${text}` : text);
-    if (narrow) edit(key, (old) => ({ ...old, visible: false }));
-    if (!chatShown) {
-      const next = new URLSearchParams(params);
-      next.set("chat", "open");
-      navigate({ pathname: "/chat", search: next.toString() });
-    }
-  }
   const canExternal =
     selected &&
     (!!selected.file.local_token ||
@@ -1109,7 +1098,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                   localOnly
                   help={<ChangesHelp />}
                   onOpenFile={(path) => void openFile(path).catch(() => {})}
-                  onSendToComposer={sendToComposer}
+                  copyPath
                 />
               </div>
             )}

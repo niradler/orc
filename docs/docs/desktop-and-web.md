@@ -124,8 +124,8 @@ discards these previews after the unsaved-change warning.
 The **Changes** tab shows the working-tree changes of the terminal running in the
 session's folder, reusing the terminal workspace's Git panel: the changed-file
 list, unified or side-by-side diffs, staging and commit. **Open file** opens a
-changed file in an editor tab; **Send to composer** adds it to the chat draft and
-reveals the conversation. Wide panels split the file list and the diff; narrow
+changed file in an editor tab; the copy icon copies the changed file's path to
+the clipboard. Wide panels split the file list and the diff; narrow
 panels and phones combine them behind the files toggle. When no terminal is
 running in the folder, the tab says so quietly and offers **Open terminal**.
 Pull-request review stays in the terminal workspace and the session inspector.

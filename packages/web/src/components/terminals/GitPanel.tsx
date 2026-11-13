@@ -37,7 +37,7 @@ export function GitPanelBody({
   localOnly = false,
   help,
   onOpenFile,
-  onSendToComposer,
+  copyPath = false,
 }: {
   terminal: Terminal;
   paneId: string;
@@ -45,7 +45,8 @@ export function GitPanelBody({
   localOnly?: boolean;
   help?: ReactNode;
   onOpenFile?: (path: string) => void;
-  onSendToComposer?: (path: string) => void;
+  /** Show the copy-path icon on each changed file (the preview panel's Changes tab). */
+  copyPath?: boolean;
 }) {
   const { create } = useTerminals();
   const navigate = useNavigate();
@@ -631,7 +632,7 @@ export function GitPanelBody({
                               return next;
                             })))
                     }
-                    sendToComposer={onSendToComposer}
+                    copyPath={copyPath}
                     open={!collapsed.includes(file.path)}
                     checked={paths.includes(file.path)}
                     select={(checked) => togglePath(file.path, file.original, checked)}

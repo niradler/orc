@@ -87,11 +87,12 @@ async function openChanges(page: Page) {
 
 for (const width of [1440, 390])
   test.describe(`preview changes at ${width}px`, () => {
-    test.use({ viewport: { width, height: 900 } });
+    test.use({
+      viewport: { width, height: 900 },
+      permissions: ["clipboard-read", "clipboard-write"],
+    });
 
-    test("shows the session's working diff, opens a file and sends it to the composer", async ({
-      page,
-    }) => {
+    test("shows the session's working diff, opens a file and copies its path", async ({ page }) => {
       await mockSessionHome(page);
       await mockPreviewBridge(page);
       await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
@@ -122,13 +123,15 @@ for (const width of [1440, 390])
       await expect(panel.getByTestId("preview-file-editor")).toBeVisible();
       await expect(panel.getByTestId("preview-editor-input")).toContainText("Math.round");
 
-      // Sending to the composer keeps the draft and reveals the conversation.
+      // The copy icon puts the changed file's path on the clipboard and confirms it.
       await page.getByTestId("preview-changes-tab").click();
-      await panel.getByTestId("git-send-to-composer").click();
-      await expect(page.getByTestId("chat-input")).toHaveValue(
-        /Review the changes in `src\/cart\/total\.ts`/,
+      await panel.getByTestId("git-copy-path").first().click();
+      await expect(panel.getByTestId("git-copy-path").first()).toHaveAttribute(
+        "aria-label",
+        "Copied src/cart/total.ts",
       );
-      if (width < 768) await expect(page.getByTestId("desktop-preview-panel")).toHaveCount(0);
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("src/cart/total.ts");
+      await expect(panel).toBeVisible();
     });
 
     test("quiet empty state with an open-terminal hint when no terminal matches", async ({
