@@ -184,7 +184,7 @@ export function LiveSessionDetail({
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [cursor, setCursor] = useState(0);
-  const { data: all } = useLiveSessions(false);
+  const { data: all } = useLiveSessions(false, undefined, true);
   const session: LiveSession | undefined = all?.find((s) => s.id === sessionId);
   const live = session !== undefined && session.status !== "stopped";
   const search = query.trim().length >= 2 ? query.trim() : "";
@@ -253,6 +253,11 @@ export function LiveSessionDetail({
               </span>
               <SessionTaskLink session={session} linkTestId="detail-open-task" />
               <ResumeActions session={session} />
+              {session.hidden && (
+                <span data-testid="detail-session-hidden" className="text-outline">
+                  Hidden from list
+                </span>
+              )}
               <SessionScratchpads session={session} />
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>

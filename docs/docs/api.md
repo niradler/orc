@@ -295,8 +295,8 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher |
-| `PATCH` | `/sessions/live/{id}` | Link a live session to a task |
+| `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones |
+| `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
 | `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
@@ -367,6 +367,20 @@ terminal rejects an agent `kind` or `providerId`, and fails when the project has
 dev script. Terminal responses include `project_id`, `worktree_path`, `dev` and
 `preview_url`. For a dev terminal, the first printed `http(s)` URL becomes
 `preview_url` and stays until that terminal exits.
+
+`POST /terminals` with `live_session_id` resumes that session's native CLI
+conversation. Adding `fork: true` starts a new session from the same history
+instead: Claude runs `--resume <id> --fork-session` and Pi runs `--fork <id>`. The
+fork is a separate terminal with no live-session link, so the source row, its task
+link and any resume terminal stay untouched. Backends without a native CLI fork
+answer `400`; fork their conversation in chat instead.
+
+`PATCH /sessions/live/{id}` takes any of `task_id` (null unlinks),
+`display_title` (a trimmed name of 1–200 characters, or null to fall back to the
+agent's title) and `hidden` (true or false). `display_title` and `hidden_at` are
+stored on the session row, so a re-sync that rewrites the agent title or notices
+new activity keeps both. `GET /sessions/live` and `/sessions/live/search` omit
+hidden rows unless asked with `include_hidden=true`.
 
 ### Human requests, rules and scratchpads
 

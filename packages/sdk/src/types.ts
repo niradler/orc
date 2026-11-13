@@ -251,6 +251,8 @@ export type LiveSession = {
   pid: number | null;
   status: LiveSessionStatus;
   waiting_for_human?: boolean;
+  hidden?: boolean;
+  renamed?: boolean;
   project_id: string | null;
   task: { id: string; title: string; status: string } | null;
   last_activity_at: string | null;

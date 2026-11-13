@@ -13,6 +13,7 @@ const BIN: Record<string, string> = {
   "cursor-agent": "/bin/cursor-agent",
   gemini: "/bin/gemini",
   opencode: "/bin/opencode",
+  pi: "/bin/pi",
   pwsh: "C:\\pwsh.exe",
   powershell: "C:\\powershell.exe",
 };
@@ -103,6 +104,33 @@ describe("resume launch", () => {
 
   test("null cwd spawns with no cwd override", async () => {
     expect((await buildLaunch({ live: live({ cwd: null }) }, deps())).cwd).toBeUndefined();
+  });
+
+  test("claude forks with --resume and --fork-session", async () => {
+    const launch = await buildLaunch({ live: live(), fork: true }, deps());
+    expect(launch).toEqual({
+      kind: "claude",
+      argv: ["/bin/claude", "--resume", "abc-123", "--fork-session"],
+      cwd: "/work/app",
+      resume: true,
+    });
+  });
+
+  test("pi forks with --fork and the source id", async () => {
+    const launch = await buildLaunch({ live: live({ agent: "pi" }), fork: true }, deps());
+    expect(launch.argv).toEqual(["/bin/pi", "--fork", "abc-123"]);
+  });
+
+  test("a backend without a native CLI fork is rejected instead of resuming the source", async () => {
+    await expect(
+      buildLaunch({ live: live({ agent: "codex" }), fork: true }, deps()),
+    ).rejects.toThrow(/Fork is not supported/);
+  });
+
+  test("a fork never reaches spawn with a malformed session id", async () => {
+    await expect(
+      buildLaunch({ live: live({ session_id: "x; rm -rf /" }), fork: true }, deps()),
+    ).rejects.toThrow(/Malformed/);
   });
 
   test("agents without a resume command are rejected", async () => {

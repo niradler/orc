@@ -38,6 +38,8 @@ export type CodingAgent = {
   chatRuntime: ChatRuntime;
   sessionBackends: readonly string[];
   resumeArgs?: (sessionId: string) => string[];
+  /** Native CLI fork: a new session that starts from this session's history. */
+  forkArgs?: (sessionId: string) => string[];
 };
 
 export const CODING_AGENTS: readonly CodingAgent[] = [
@@ -48,6 +50,8 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     chatRuntime: "pi",
     sessionBackends: ["pi"],
     resumeArgs: (id) => ["--session", id],
+    // Copies the source conversation into a new native identity.
+    forkArgs: (id) => ["--fork", id],
   },
   {
     id: "claude",
@@ -56,6 +60,8 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     chatRuntime: "claude",
     sessionBackends: ["claude"],
     resumeArgs: (id) => ["--resume", id],
+    // --fork-session gives the resumed history a new session id; the source is not written.
+    forkArgs: (id) => ["--resume", id, "--fork-session"],
   },
   {
     id: "codex",
