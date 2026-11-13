@@ -353,13 +353,11 @@ export function UsageSettings() {
         ...(model ? { model } : {}),
       }),
     staleTime: 30_000,
-    refetchInterval: 60_000,
   });
   const quotas = useQuery({
     queryKey: ["usage-quotas"],
     queryFn: api.settings.usageQuotas,
     staleTime: 60_000,
-    refetchInterval: 60_000,
   });
   const busy = report.isFetching || quotas.isFetching;
   const data = report.data;
@@ -785,7 +783,7 @@ export function UsageSettings() {
               ? "Loading…"
               : quotas.isError
                 ? "Unavailable"
-                : `${count.format(quotas.data?.accounts.length ?? 0)} accounts · refreshes every minute`}
+                : `${count.format(quotas.data?.accounts.length ?? 0)} accounts · refresh to update`}
           </span>
         </summary>
         <p className="mt-1 text-xs text-muted-foreground">

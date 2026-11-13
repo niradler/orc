@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { changes } from "@orc/core/changes";
 import { OrcError } from "@orc/core/errors";
 import { USAGE_EVENT_VERSION, UsageHistorySchema, UsageReportSchema } from "@orc/core/usage";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth";
 import { usageRouter } from "../routes/usage";
-import { LIVE_CHAT_ID } from "../session-watcher";
+import { LIVE_CHAT_ID, runSync } from "../session-watcher";
+import type { SessionAdapter } from "../sessions/types";
 import { writeSessionUsage } from "../sessions/usage-events";
 import {
   createQuotaReader,
@@ -362,4 +364,66 @@ test("should read each configured provider from its own directory", async () => 
   expect(quotas[1]?.windows).toHaveLength(0);
   expect(paths.some((path) => path.includes("signed-out"))).toBe(true);
   expect(JSON.stringify(quotas)).not.toContain("private-token");
+});
+
+test("should publish usage changes for new sessions and completed ledger writes", async () => {
+  let events = 0;
+  let wake: (() => void) | undefined;
+  const indexed = new Promise<void>((resolve) => {
+    wake = resolve;
+  });
+  const unsubscribe = changes.subscribe(({ resources }) => {
+    if (!resources.includes("usage")) return;
+    events += 1;
+    if (events >= 2) wake?.();
+  });
+  try {
+    const adapter: SessionAdapter = {
+      backend: "pi",
+      minIntervalMs: 1,
+      list: async () => [
+        {
+          backend: "pi",
+          externalId: "watcher-usage",
+          title: "watcher usage",
+          status: "stopped",
+          createdAt: new Date(),
+          lastActivityAt: new Date(),
+          usageVersion: USAGE_EVENT_VERSION,
+          usage: async () => ({
+            tokens: 7,
+            model: "model-watcher",
+            events: [
+              {
+                key: "request",
+                ts: Date.now(),
+                model: "model-watcher",
+                inputTokens: 7,
+                outputTokens: 0,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                reasoningTokens: 0,
+                otherTokens: 0,
+                estimated: false,
+              },
+            ],
+          }),
+        },
+      ],
+    };
+    await runSync([adapter], { force: true });
+    await Promise.race([indexed, Bun.sleep(3000)]);
+    expect(events).toBeGreaterThanOrEqual(2);
+    expect(
+      getSqlite()
+        .query<{ requests: number }, []>(
+          `SELECT count(*) AS requests FROM usage_events e
+           JOIN gateway_sessions s ON s.id = e.session_id
+           WHERE s.runtime_session_id = 'watcher-usage'`,
+        )
+        .get()?.requests,
+    ).toBe(1);
+  } finally {
+    unsubscribe();
+  }
 });

@@ -171,6 +171,8 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     created_at: r.createdAt,
     ...fields,
   });
+  // A new session with no requests yet still changes the report's coverage counts.
+  changes.publish("usage");
   recordObservedNotification(
     {
       id,
@@ -292,6 +294,11 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
     usageJobs.sort((a, b) => b.activity - a.activity);
     for (const job of usageJobs.slice(0, USAGE_QUEUE_LIMIT))
       queueUsage(job.id, adapter.backend, job.usage, job.version);
+    if (usageJobs.length) {
+      // One event after the queued ledger writes drain, not one per request.
+      const indexPending = usageChain;
+      void indexPending.then(() => changes.publish("usage"));
+    }
     const seen = records.map((r) => r.externalId);
     for (const id of pending)
       if (!seen.includes(id)) {

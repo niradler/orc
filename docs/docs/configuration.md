@@ -295,9 +295,10 @@ accepts `days=1|7|30|90|0`, `granularity=day|hour`, and optional `agent` and
 `model` filters; model `__unknown__` selects requests without a model. History
 remains available for clients that need lifetime totals by session start date.
 Quota requests share a 60-second server cache and an 8-second provider timeout.
-The Usage panel refreshes the report and quotas once a minute while open; Refresh
-retries both views while respecting that cache. Provider quota interfaces can
-change; unavailable quota data does not prevent usage from loading.
+The Usage panel refreshes itself from the shared SSE change stream when newly
+indexed requests arrive; it does not poll. Refresh re-reads both views on demand
+and respects the quota cache. Provider quota interfaces can change; unavailable
+quota data does not prevent usage from loading.
 
 Where ORC keeps its config and data, every config key and environment variable you are likely to set, logs, running as a background service, and authentication.
 

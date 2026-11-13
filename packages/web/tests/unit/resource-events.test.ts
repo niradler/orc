@@ -72,6 +72,39 @@ describe("resource events", () => {
     expect(client.getQueryState(["skill", "example"])?.isInvalidated).toBe(false);
     client.clear();
   });
+  test("should refresh the usage report on usage changes without polling quotas", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    let reportReads = 0;
+    let quotaReads = 0;
+    const report = new QueryObserver(client, {
+      queryKey: ["usage-report", "30", "day", "", ""],
+      queryFn: async () => {
+        reportReads++;
+        return { totals: {} };
+      },
+    });
+    const quotas = new QueryObserver(client, {
+      queryKey: ["usage-quotas"],
+      queryFn: async () => {
+        quotaReads++;
+        return { accounts: [] };
+      },
+    });
+    const cleanup = [report.subscribe(() => {}), quotas.subscribe(() => {})];
+    try {
+      await Promise.all([report.refetch(), quotas.refetch()]);
+      const reportBaseline = reportReads;
+      const quotaBaseline = quotaReads;
+      await invalidateResources(client, ["usage"]);
+      expect(reportReads).toBe(reportBaseline + 1);
+      expect(quotaReads).toBe(quotaBaseline);
+    } finally {
+      for (const unsubscribe of cleanup) unsubscribe();
+      client.clear();
+    }
+  });
   test("should retain a change that arrives while an older snapshot is in flight", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
