@@ -96,7 +96,7 @@ function outcomeText(outcome: ChildOutcome): string {
 export function notifySpawner(thread: ChatThread, eventId: string, outcome: ChildOutcome): void {
   const spawn = thread.spawnedBy;
   if (!spawn?.notify) return;
-  const head = `Child session "${thread.title}" (${thread.id}) ${outcomeText(outcome)}.`;
+  const head = `[orc child-session id=${thread.id} outcome=${outcome}]\nChild session "${thread.title}" ${outcomeText(outcome)}.`;
   const tail = `Read more with session_status {"session_id":"${thread.id}"}; reply with session_send.`;
   const room = SESSION_MESSAGE_MAX_BODY - head.length - tail.length - 40;
   const reply = outcome === "question" || outcome === "approval" ? "" : lastReply(thread);

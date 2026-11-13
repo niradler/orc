@@ -31,7 +31,7 @@ type DeliveryDeps = {
 
 function chatTarget(threadId: string): PushTarget | null {
   const thread = new ChatStore(getSqlite()).get(threadId);
-  if (!thread) return null;
+  if (!thread || thread.spawnedBy?.prompt) return null;
   return {
     sourceId: thread.id,
     agent: thread.config.agent,
@@ -129,6 +129,7 @@ export function startSessionMessageDelivery(): () => void {
   let check: ReturnType<typeof setTimeout> | undefined;
   let sweep: ReturnType<typeof setInterval> | undefined;
   const run = () => {
+    chatControl().startPending();
     deliverIdleSessionMessages(deps, busy).catch((err) =>
       logger.error("Session message delivery failed", err),
     );

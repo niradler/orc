@@ -149,7 +149,7 @@ export const SessionStatusSchema = z.object({
   session_id: identity,
   title: z.string(),
   agent: z.string(),
-  status: z.enum(["running", "waiting", "idle", "failed", "stopped"]),
+  status: z.enum(["queued", "running", "waiting", "idle", "failed", "stopped"]),
   waiting_for: z.enum(["question", "approval"]).nullable(),
   last_message: z.string().nullable(),
   queue: z.array(
@@ -169,6 +169,11 @@ export const SessionWaitSchema = z
     timeout_s: z.number().int().min(1).max(600).default(300),
   })
   .strict();
+
+export const SessionWaitManySchema = SessionWaitSchema.extend({
+  session_ids: z.array(identity).min(1).max(20),
+  mode: z.enum(["all", "any"]).default("all"),
+}).strict();
 
 const LineageNodeSchema = z.object({
   id: identity,

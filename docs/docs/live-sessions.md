@@ -132,9 +132,9 @@ subagents:
 | --------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                  |
 | `session_send`                    | Messages it: `queue`, `steer` or `interrupt`                                                       |
-| `session_status` / `session_list` | Status (`running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children |
-| `session_wait`                    | Blocks until it stops running, waits for a human, or replies (`until: message`)                    |
-| `session_stop`                    | Stops its current turn; the session stays resumable                                                |
+| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children |
+| `session_wait` | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children |
+| `session_stop` | Stops its current turn and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
 
 `session_start` takes `workspace`:
 
@@ -146,11 +146,14 @@ subagents:
 
 Another project must be inside the caller's MCP project scope.
 
+When all four chat workers are busy, `session_start` still returns at once: the child is `queued` and starts when a worker frees, even across an ORC restart.
+
 With `notify` (default on), ORC tells the parent when the child finishes, fails,
 is stopped or waits for a human. If the parent is mid-turn on an agent with
 native steering (Claude through the Agent SDK, Pi, Codex) the note is steered
 into that turn; otherwise it is queued for the parent's next safe point, or
-starts the parent's next chat turn when it is idle. The same delivery path
+starts the parent's next chat turn when it is idle. Each note starts with a header line,
+`[orc child-session id=<id> outcome=<outcome>]`, so the parent can tell it from human text. The same delivery path
 carries human messages and channel relays.
 
 Guardrails:
