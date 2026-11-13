@@ -23,7 +23,10 @@ Desktop and phone share one inbox logic. Updates from the same session or
 request collapse into a quiet summary row with a count and the most urgent
 state; expand it to see each update. **Latest** lists groups newest first;
 **By project** adds a section per project with sticky headers and counts, and
-the choice persists across reloads. **Needs you** narrows the inbox to items
+the choice persists across reloads. When the workspace header has a specific
+project selected, the inbox and its unread count follow that project, including
+items recorded before the session's folder was assigned. Choose **All projects**
+to see every project again. **Needs you** narrows the inbox to items
 that require an action. Human requests keep their review card in the row, so
 questions, approvals and commands are answered inline without leaving the
 inbox; drafts survive closing and reopening. Phone rows keep mark-read and

@@ -53,6 +53,7 @@ export class NotificationStore {
       read_at INTEGER, dismissed_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS notifications_created ON notifications(created_at DESC,id DESC);
+    CREATE INDEX IF NOT EXISTS notifications_project_created ON notifications(project_id,created_at DESC,id DESC);
     CREATE INDEX IF NOT EXISTS notifications_expiry ON notifications(expires_at);
     CREATE INDEX IF NOT EXISTS notifications_finished_source ON notifications(source_id,created_at DESC,id DESC)
       WHERE type='agent.finished';
@@ -68,6 +69,15 @@ export class NotificationStore {
       ON CONFLICT(source_id) DO UPDATE SET session_key=excluded.session_key
       WHERE session_key<>excluded.session_key`)
       .run(sourceId, sessionKey);
+  }
+
+  /** A source's folder can be assigned to a project after its notifications were recorded. */
+  assignProject(sourceId: string, projectId: string | null): number {
+    z.string().min(1).max(256).parse(sourceId);
+    if (projectId !== null) z.string().min(1).max(256).parse(projectId);
+    return this.db
+      .query("UPDATE notifications SET project_id=? WHERE source_id=? AND project_id IS NOT ?")
+      .run(projectId, sourceId, projectId).changes;
   }
 
   publish(raw: NotificationInput): OrcNotification | null {
@@ -164,25 +174,33 @@ export class NotificationStore {
     this.resolveWhere("type=? AND source_id=?", [type, sourceId]);
   }
 
-  list(limit = 50, offset = 0, unreadOnly = false): NotificationPage {
+  list(limit = 50, offset = 0, unreadOnly = false, projectId?: string | null): NotificationPage {
     z.number().int().min(1).max(100).parse(limit);
     z.number().int().min(0).max(1000000).parse(offset);
     z.boolean().parse(unreadOnly);
+    if (projectId !== undefined && projectId !== null) z.string().min(1).max(256).parse(projectId);
     this.cleanup();
     const maximumAge = this.maximumAge();
     const cutoff = this.now() - maximumAge;
-    const filter = `expires_at>? AND created_at>? AND dismissed_at IS NULL AND (${LATEST_FINISHED})${unreadOnly ? " AND read_at IS NULL" : ""}`;
+    const project =
+      projectId === undefined
+        ? ""
+        : projectId === null
+          ? " AND project_id IS NULL"
+          : " AND project_id=?";
+    const projectBindings = projectId === undefined || projectId === null ? [] : [projectId];
+    const filter = `expires_at>? AND created_at>? AND dismissed_at IS NULL${project} AND (${LATEST_FINISHED})${unreadOnly ? " AND read_at IS NULL" : ""}`;
     const rows = this.db
-      .query<Row, [number, number, number, number]>(
+      .query<Row, (number | string)[]>(
         `SELECT ${COLUMNS} FROM notifications WHERE ${filter} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,
       )
-      .all(this.now(), cutoff, limit + 1, offset);
+      .all(this.now(), cutoff, ...projectBindings, limit + 1, offset);
     const unread =
       this.db
-        .query<{ count: number }, [number, number]>(
-          `SELECT count(*) AS count FROM notifications WHERE expires_at>? AND created_at>? AND dismissed_at IS NULL AND read_at IS NULL AND (${LATEST_FINISHED})`,
+        .query<{ count: number }, (number | string)[]>(
+          `SELECT count(*) AS count FROM notifications WHERE expires_at>? AND created_at>? AND dismissed_at IS NULL${project} AND read_at IS NULL AND (${LATEST_FINISHED})`,
         )
-        .get(this.now(), cutoff)?.count ?? 0;
+        .get(this.now(), cutoff, ...projectBindings)?.count ?? 0;
     return {
       notifications: rows.slice(0, limit).map((row) => notification(row, maximumAge)),
       unread,

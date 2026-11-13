@@ -8,6 +8,7 @@ import {
   githubRepository,
 } from "@orc/core/github-sync";
 import { ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
 import { UploadDirectorySchema } from "@orc/core/session-file-types";
 import {
   defaultWorkspaceEnvironment,
@@ -20,13 +21,34 @@ import {
 import { getDb } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
-import { bridge_chats, comments, jobs, projects, sessions, tasks } from "@orc/db/schema";
+import {
+  bridge_chats,
+  comments,
+  gateway_sessions,
+  jobs,
+  projects,
+  sessions,
+  tasks,
+} from "@orc/db/schema";
 import { withTx } from "@orc/db/tx";
 import { deleteProjectWorkspaceEnvironments } from "@orc/db/workspaces";
 import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
+import { reconcileSessionProjects } from "../session-watcher.js";
+import { invalidateProjectFolderCache } from "../sessions/common.js";
 
 const app = createRouter();
+const logger = createLogger("api:projects");
+
+/** A project's folder is its session identity; re-map known sessions after it changes. */
+async function reassignSessions(): Promise<void> {
+  invalidateProjectFolderCache();
+  try {
+    await reconcileSessionProjects();
+  } catch (error) {
+    logger.error("Session project reassignment failed", error);
+  }
+}
 
 const WorkspaceSchema = WorkspaceEnvironmentSchema;
 
@@ -400,6 +422,7 @@ app.openapi(createRoute_, async (c) => {
     where: eq(projects.id, id),
   });
   if (!project) throw new Error("Expected project to exist after write");
+  await reassignSessions();
   return c.json(toDto(project), 201);
 });
 
@@ -451,6 +474,7 @@ app.openapi(updateRoute, async (c) => {
     where: eq(projects.id, id),
   });
   if (!updated) throw new Error("Expected updated to exist after write");
+  await reassignSessions();
   return c.json(toDto(updated));
 });
 
@@ -483,6 +507,11 @@ app.openapi(deleteRoute, async (c) => {
     // Scratchpads go with it too, through their ON DELETE CASCADE foreign key.
     tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id)).run();
     tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id)).run();
+    tx.update(gateway_sessions)
+      .set({ project_id: null })
+      .where(eq(gateway_sessions.project_id, id))
+      .run();
+    sqlite.query("UPDATE notifications SET project_id=NULL WHERE project_id=?").run(id);
     tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id)).run();
     detachLegacyKnowledgeCollections(sqlite, id);
     deleteProjectWorkspaceEnvironments(sqlite, id);
@@ -491,6 +520,7 @@ app.openapi(deleteRoute, async (c) => {
       .run();
     tx.delete(projects).where(eq(projects.id, id)).run();
   }, db);
+  await reassignSessions();
   return new Response(null, { status: 204 });
 });
 

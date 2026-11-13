@@ -592,7 +592,7 @@ function TestResult({
     >
       <CircleAlert className={`mt-0.5 size-4 shrink-0 ${auth ? "text-warning" : ""}`} aria-hidden />
       <div className="min-w-0">
-        <p>{auth ? "Reachable — the server needs a sign-in." : "Couldn't connect."}</p>
+        <p>{auth ? "Reachable. The server needs a sign-in." : "Couldn't connect."}</p>
         {result.message && (
           <p className="wrap-break-word text-xs text-muted-foreground">{result.message}</p>
         )}

@@ -32,13 +32,26 @@ app.openapi(
         limit: z.coerce.number().int().min(1).max(100).default(50),
         offset: z.coerce.number().int().min(0).max(1000000).default(0),
         unread: z.enum(["true", "false"]).default("false"),
+        project_id: z.string().min(1).max(256).optional(),
       }),
     },
     responses: { 200: json(ApiNotificationPageSchema) },
   }),
   (c) => {
     const query = c.req.valid("query");
-    return c.json(store().list(query.limit, query.offset, query.unread === "true"), 200);
+    return c.json(
+      store().list(
+        query.limit,
+        query.offset,
+        query.unread === "true",
+        query.project_id === undefined
+          ? undefined
+          : query.project_id === "unassigned"
+            ? null
+            : query.project_id,
+      ),
+      200,
+    );
   },
 );
 

@@ -18,6 +18,7 @@ import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { sessionHomeExitSteps, useSessionHomeEntry } from "@/hooks/useSessionHome";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
+import { SelectedProjectProvider } from "@/lib/selected-project";
 import { clearSessionHome } from "@/lib/session-home";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
@@ -231,182 +232,193 @@ export default function App() {
   }, [searchParams, selectableProjects, savedProjectId, navigate]);
 
   return (
-    <TerminalsProvider>
-      <ChatProvider>
-        <AgentNotifications>
-          <DesktopPreviewWorkspace>
-            <div
-              data-testid="app-viewport"
-              className="app-viewport bg-background flex flex-col overflow-hidden"
-            >
-              <div className="flex-1 min-h-0 flex">
-                {/* Sidebar: visible on md+. On mobile we instead render a Dialog drawer below. */}
-                <div className="hidden md:flex">
-                  <Sidebar
-                    projectId={projectId}
-                    onProjectChange={setProjectId}
-                    collapsed={sidebarCollapsed}
-                    onToggle={() => setSidebarCollapsed((v) => !v)}
-                  />
-                </div>
-
-                {/* Main content - the only element that owns vertical scroll for page content. */}
-                <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-                  {/* The phone notifications page owns its top bar; keep the global header on desktop. */}
-                  <div className={cn(pathname === "/notifications" && "max-md:hidden")}>
-                    <WorkspaceHeader
-                      onShowChat={openChatPage}
-                      onProjectChange={setProjectId}
-                      navButtonRef={navButtonRef}
-                      chatButtonRef={chatButtonRef}
-                      projectId={projectId}
-                      onOpenNav={() => setMobileNavOpen(true)}
-                      onOpenChat={openChat}
-                      chatPage={homeOpen}
-                    />
-                  </div>
-                  {homeOpen ? (
-                    <div
-                      data-testid="session-home"
-                      className="chat-page flex min-h-0 min-w-0 flex-1"
-                    >
-                      <ChatPanel
-                        open
-                        embedded
-                        fullscreen
-                        onToggle={minimizeChat}
-                        onClose={minimizeChat}
-                      />
-                    </div>
-                  ) : (
-                    <main
-                      className={cn(
-                        "relative flex-1 min-w-0 min-h-0",
-                        fullBleed ? "overflow-hidden" : "overflow-y-auto",
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          fullBleed
-                            ? "absolute inset-0 flex"
-                            : "p-4 md:p-6 lg:p-8 min-h-full flex flex-col",
-                        )}
-                      >
-                        <Suspense
-                          fallback={
-                            <div role="status" className="p-6 text-sm text-outline">
-                              Loading workspace…
-                            </div>
-                          }
-                        >
-                          <Routes>
-                            <Route path="/" element={<DefaultWorkspaceRedirect />} />
-                            <Route path="/activity" element={<Dashboard projectId={projectId} />} />
-                            <Route path="/notifications" element={<Notifications />} />
-                            <Route path="/tasks" element={<Tasks projectId={projectId} />} />
-                            <Route
-                              path="/tasks/:taskId"
-                              element={<Tasks projectId={projectId} />}
-                            />
-                            <Route path="/terminals" element={<Terminals />} />
-                            <Route path="/terminals/:terminalId" element={<Terminals />} />
-                            <Route path="/jobs" element={<Jobs projectId={projectId} />} />
-                            <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
-                            <Route path="/webhooks" element={<Webhooks projectId={projectId} />} />
-                            <Route path="/sessions" element={<Sessions projectId={projectId} />} />
-                            <Route path="/audit" element={<Audit projectId={projectId} />} />
-                            <Route
-                              path="/audit/:sessionId"
-                              element={<Audit projectId={projectId} />}
-                            />
-                            <Route path="/projects" element={<Projects />} />
-                            <Route path="/projects/:projectId" element={<Projects />} />
-                            <Route path="/knowledge" element={<KnowledgeRedirect />} />
-                            <Route
-                              path="/knowledge/base"
-                              element={<Knowledge projectId={projectId} />}
-                            />
-                            <Route
-                              path="/knowledge/memories"
-                              element={<Knowledge projectId={projectId} />}
-                            />
-                            <Route
-                              path="/knowledge/memories/:memoryProject/:memoryName"
-                              element={<Knowledge projectId={projectId} />}
-                            />
-                            <Route path="/skills" element={<Skills projectId={projectId} />} />
-                            <Route
-                              path="/skills/:skillName"
-                              element={<Skills projectId={projectId} />}
-                            />
-                            <Route path="/packages" element={<Packages />} />
-                            <Route path="/packages/item" element={<Packages />} />
-                            <Route path="/packages/item/:packageName" element={<Packages />} />
-                            <Route path="/packages/agents" element={<Agents />} />
-                            <Route path="/packages/agents/:agentId" element={<Agents />} />
-                            <Route path="/settings" element={<Settings />} />
-                            <Route
-                              path="/integrations/oauth/:name/callback"
-                              element={<IntegrationCallback />}
-                            />
-                            <Route path="/rules" element={<Rules />} />
-                            <Route
-                              path="/scratchpad"
-                              element={<Scratchpads projectId={projectId} />}
-                            />
-                            <Route
-                              path="/scratchpad/:scratchpadId"
-                              element={<Scratchpads projectId={projectId} />}
-                            />
-                            <Route path="*" element={<Navigate to="/activity" replace />} />
-                          </Routes>
-                        </Suspense>
-                      </div>
-                    </main>
-                  )}
-                </div>
-
-                <div className={cn("hidden xl:flex", !chatOpen && "xl:hidden")}>
-                  <ChatPanel
-                    open={chatOpen}
-                    onToggle={() => setChatVisible(false)}
-                    onToggleFullscreen={openChatPage}
-                  />
-                </div>
-              </div>
-
-              {/* Mobile nav drawer (Radix Dialog, slides in from the left). */}
-              <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                <Dialog.Portal>
-                  <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-                  <Dialog.Content
-                    data-testid="mobile-nav-drawer"
-                    onCloseAutoFocus={(event) => {
-                      event.preventDefault();
-                      if (window.innerWidth < BREAKPOINTS.md) navButtonRef.current?.focus();
-                      else chatButtonRef.current?.focus();
-                    }}
-                    className="viewport-sheet md:hidden fixed left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
-                  >
-                    <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-                    <Dialog.Description className="sr-only">
-                      Main navigation and project selector
-                    </Dialog.Description>
+    <SelectedProjectProvider projectId={projectId} setProjectId={setProjectId}>
+      <TerminalsProvider>
+        <ChatProvider>
+          <AgentNotifications>
+            <DesktopPreviewWorkspace>
+              <div
+                data-testid="app-viewport"
+                className="app-viewport bg-background flex flex-col overflow-hidden"
+              >
+                <div className="flex-1 min-h-0 flex">
+                  {/* Sidebar: visible on md+. On mobile we instead render a Dialog drawer below. */}
+                  <div className="hidden md:flex">
                     <Sidebar
                       projectId={projectId}
                       onProjectChange={setProjectId}
-                      collapsed={false}
-                      onToggle={() => {}}
-                      embedded
-                      onNavigate={() => setMobileNavOpen(false)}
+                      collapsed={sidebarCollapsed}
+                      onToggle={() => setSidebarCollapsed((v) => !v)}
                     />
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-            </div>
-          </DesktopPreviewWorkspace>
-        </AgentNotifications>
-      </ChatProvider>
-    </TerminalsProvider>
+                  </div>
+
+                  {/* Main content - the only element that owns vertical scroll for page content. */}
+                  <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                    {/* The phone notifications page owns its top bar; keep the global header on desktop. */}
+                    <div className={cn(pathname === "/notifications" && "max-md:hidden")}>
+                      <WorkspaceHeader
+                        onShowChat={openChatPage}
+                        onProjectChange={setProjectId}
+                        navButtonRef={navButtonRef}
+                        chatButtonRef={chatButtonRef}
+                        projectId={projectId}
+                        onOpenNav={() => setMobileNavOpen(true)}
+                        onOpenChat={openChat}
+                        chatPage={homeOpen}
+                      />
+                    </div>
+                    {homeOpen ? (
+                      <div
+                        data-testid="session-home"
+                        className="chat-page flex min-h-0 min-w-0 flex-1"
+                      >
+                        <ChatPanel
+                          open
+                          embedded
+                          fullscreen
+                          onToggle={minimizeChat}
+                          onClose={minimizeChat}
+                        />
+                      </div>
+                    ) : (
+                      <main
+                        className={cn(
+                          "relative flex-1 min-w-0 min-h-0",
+                          fullBleed ? "overflow-hidden" : "overflow-y-auto",
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            fullBleed
+                              ? "absolute inset-0 flex"
+                              : "p-4 md:p-6 lg:p-8 min-h-full flex flex-col",
+                          )}
+                        >
+                          <Suspense
+                            fallback={
+                              <div role="status" className="p-6 text-sm text-outline">
+                                Loading workspace…
+                              </div>
+                            }
+                          >
+                            <Routes>
+                              <Route path="/" element={<DefaultWorkspaceRedirect />} />
+                              <Route
+                                path="/activity"
+                                element={<Dashboard projectId={projectId} />}
+                              />
+                              <Route path="/notifications" element={<Notifications />} />
+                              <Route path="/tasks" element={<Tasks projectId={projectId} />} />
+                              <Route
+                                path="/tasks/:taskId"
+                                element={<Tasks projectId={projectId} />}
+                              />
+                              <Route path="/terminals" element={<Terminals />} />
+                              <Route path="/terminals/:terminalId" element={<Terminals />} />
+                              <Route path="/jobs" element={<Jobs projectId={projectId} />} />
+                              <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
+                              <Route
+                                path="/webhooks"
+                                element={<Webhooks projectId={projectId} />}
+                              />
+                              <Route
+                                path="/sessions"
+                                element={<Sessions projectId={projectId} />}
+                              />
+                              <Route path="/audit" element={<Audit projectId={projectId} />} />
+                              <Route
+                                path="/audit/:sessionId"
+                                element={<Audit projectId={projectId} />}
+                              />
+                              <Route path="/projects" element={<Projects />} />
+                              <Route path="/projects/:projectId" element={<Projects />} />
+                              <Route path="/knowledge" element={<KnowledgeRedirect />} />
+                              <Route
+                                path="/knowledge/base"
+                                element={<Knowledge projectId={projectId} />}
+                              />
+                              <Route
+                                path="/knowledge/memories"
+                                element={<Knowledge projectId={projectId} />}
+                              />
+                              <Route
+                                path="/knowledge/memories/:memoryProject/:memoryName"
+                                element={<Knowledge projectId={projectId} />}
+                              />
+                              <Route path="/skills" element={<Skills projectId={projectId} />} />
+                              <Route
+                                path="/skills/:skillName"
+                                element={<Skills projectId={projectId} />}
+                              />
+                              <Route path="/packages" element={<Packages />} />
+                              <Route path="/packages/item" element={<Packages />} />
+                              <Route path="/packages/item/:packageName" element={<Packages />} />
+                              <Route path="/packages/agents" element={<Agents />} />
+                              <Route path="/packages/agents/:agentId" element={<Agents />} />
+                              <Route path="/settings" element={<Settings />} />
+                              <Route
+                                path="/integrations/oauth/:name/callback"
+                                element={<IntegrationCallback />}
+                              />
+                              <Route path="/rules" element={<Rules />} />
+                              <Route
+                                path="/scratchpad"
+                                element={<Scratchpads projectId={projectId} />}
+                              />
+                              <Route
+                                path="/scratchpad/:scratchpadId"
+                                element={<Scratchpads projectId={projectId} />}
+                              />
+                              <Route path="*" element={<Navigate to="/activity" replace />} />
+                            </Routes>
+                          </Suspense>
+                        </div>
+                      </main>
+                    )}
+                  </div>
+
+                  <div className={cn("hidden xl:flex", !chatOpen && "xl:hidden")}>
+                    <ChatPanel
+                      open={chatOpen}
+                      onToggle={() => setChatVisible(false)}
+                      onToggleFullscreen={openChatPage}
+                    />
+                  </div>
+                </div>
+
+                {/* Mobile nav drawer (Radix Dialog, slides in from the left). */}
+                <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                  <Dialog.Portal>
+                    <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+                    <Dialog.Content
+                      data-testid="mobile-nav-drawer"
+                      onCloseAutoFocus={(event) => {
+                        event.preventDefault();
+                        if (window.innerWidth < BREAKPOINTS.md) navButtonRef.current?.focus();
+                        else chatButtonRef.current?.focus();
+                      }}
+                      className="viewport-sheet md:hidden fixed left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+                    >
+                      <Dialog.Title className="sr-only">Navigation</Dialog.Title>
+                      <Dialog.Description className="sr-only">
+                        Main navigation and project selector
+                      </Dialog.Description>
+                      <Sidebar
+                        projectId={projectId}
+                        onProjectChange={setProjectId}
+                        collapsed={false}
+                        onToggle={() => {}}
+                        embedded
+                        onNavigate={() => setMobileNavOpen(false)}
+                      />
+                    </Dialog.Content>
+                  </Dialog.Portal>
+                </Dialog.Root>
+              </div>
+            </DesktopPreviewWorkspace>
+          </AgentNotifications>
+        </ChatProvider>
+      </TerminalsProvider>
+    </SelectedProjectProvider>
   );
 }

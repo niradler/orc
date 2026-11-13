@@ -17,7 +17,7 @@ export function runningTerminalForSession(
   return terminals.find((t) => t.live_session_id === liveSessionId && t.status === "running");
 }
 
-/** A running terminal in the session's folder on the same host — the inspector's git terminal. */
+/** A running terminal in the session's folder on the same host: the inspector's git terminal. */
 export function terminalInFolder(item: Terminal, cwd: string | null, host: string | null): boolean {
   return item.status === "running" && !!cwd && item.cwd === cwd && (item.host ?? null) === host;
 }

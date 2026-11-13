@@ -274,8 +274,9 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
     },
     notifications: {
-      list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
-        c<NotificationPage>("GET", "/notifications", undefined, query),
+      list: (
+        query: { limit?: number; offset?: number; unread?: boolean; project_id?: string } = {},
+      ) => c<NotificationPage>("GET", "/notifications", undefined, query),
       update: (id: string, update: NotificationUpdate) =>
         c<OrcNotification>("PATCH", `/notifications/${e(id)}`, update),
       markAllRead: () => c<{ ok: true }>("POST", "/notifications/read"),

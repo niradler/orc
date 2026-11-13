@@ -8,18 +8,18 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  RefreshCw,
   SquarePen,
   SquareTerminal,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
-import { HelpPopover } from "@/components/HelpPopover";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -47,6 +47,7 @@ import { useStableOrder } from "@/hooks/useStableOrder";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
+import { useSelectedProject } from "@/lib/selected-project";
 import { filterCounts, matchesFilter, parseFilter, type SessionFilter } from "@/lib/session-filter";
 import { markSeen } from "@/lib/session-seen";
 import { terminalPath } from "@/lib/terminal-links";
@@ -94,6 +95,7 @@ export function ChatSessionPicker({
   const navigate = useNavigate();
   const { terminals } = useTerminals();
   const projectScope = chat.projectScope;
+  const selectedProject = useSelectedProject();
   const navigation = useSessionHome();
   const setOpen = (next: boolean) => navigation.go({ listOpen: next });
   const open = enabled && (docked || rail || navigation.listOpen);
@@ -102,7 +104,8 @@ export function ChatSessionPicker({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   // All statuses: sessions can belong to archived/paused projects and must stay reachable.
-  const { data: projects, isLoading: projectsLoading, error: projectsError } = useProjects();
+  const projectsQuery = useProjects();
+  const { data: projects, isLoading: projectsLoading, error: projectsError } = projectsQuery;
   const { data: ssh } = useSsh();
   const [section, setSection] = useState<SessionSection>(storedSection);
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
@@ -145,6 +148,23 @@ export function ChatSessionPicker({
       }),
     enabled: open,
   });
+  const [refreshingSessions, setRefreshingSessions] = useState(false);
+  const refreshSessions = async () => {
+    setRefreshingSessions(true);
+    try {
+      // Ask the server to re-import native sessions first; watching covers most
+      // agents, but a forced sync also catches external stores immediately.
+      await api.sessions.sync().catch(() => undefined);
+      await Promise.all([
+        threads.refetch(),
+        live.refetch(),
+        archive.refetch(),
+        projectsQuery.refetch(),
+      ]);
+    } finally {
+      setRefreshingSessions(false);
+    }
+  };
   async function select(load: () => ReturnType<typeof api.chat.get>, projectId?: string | null) {
     setPending(true);
     setError("");
@@ -192,8 +212,8 @@ export function ChatSessionPicker({
   });
   const shown = stable.items.slice(0, visibleCount);
   // Projects float up by their newest session; empty projects stay alphabetical at the end.
-  // Groups follow the active project scope and cover every assigned row — including sessions
-  // whose project is archived/paused or no longer listed — so none silently disappear.
+  // Groups follow the active project scope and cover every assigned row, including sessions
+  // whose project is archived/paused or no longer listed, so none silently disappear.
   const projectById = new Map((projects ?? []).map((project) => [project.id, project]));
   const groups = new Map<
     string,
@@ -244,6 +264,23 @@ export function ChatSessionPicker({
   );
   const activeKeys = active?.seenKeys.join("\n") ?? "";
   const activeUpdated = active?.updatedAt ?? 0;
+  const adoptProject = useCallback(
+    (projectId?: string | null) => {
+      if (!projectId) return;
+      if (selectedProject.projectId === "all" || selectedProject.projectId === "unassigned")
+        selectedProject.setProjectId(projectId);
+    },
+    [selectedProject],
+  );
+  // Opening or switching to a folder-scoped session adopts its project unless the
+  // header already has an explicit project selected.
+  const adoptedSignature = useRef("");
+  useEffect(() => {
+    const signature = `${chat.activeKey}:${chat.projectId ?? ""}:${active?.projectId ?? ""}`;
+    if (adoptedSignature.current === signature) return;
+    adoptedSignature.current = signature;
+    adoptProject(chat.projectId ?? active?.projectId);
+  }, [chat.activeKey, chat.projectId, active?.projectId, adoptProject]);
   useEffect(() => {
     if (!activeKeys) return;
     const keys = activeKeys.split("\n");
@@ -252,6 +289,7 @@ export function ChatSessionPicker({
   }, [activeKeys, activeUpdated]);
   const selectEntry = (entry: ChatHistoryEntry) => {
     markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
+    adoptProject(entry.projectId);
     const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
     if (terminalId) {
       setOpen(false);
@@ -280,6 +318,7 @@ export function ChatSessionPicker({
     }
   };
   const newProjectSession = (project: { id: string; scope?: string | null }) => {
+    adoptProject(project.id);
     chat.newTab({
       projectId: project.id,
       fresh: true,
@@ -441,11 +480,18 @@ export function ChatSessionPicker({
                 </Button>
               ))}
             </div>
-            <HelpPopover label="session order" testId="session-order-help">
-              Sessions are listed by last activity, newest first. Opening a session keeps its place;
-              sending a message moves it to the top. State filters still move rows as their status
-              changes.
-            </HelpPopover>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              data-testid="session-list-refresh"
+              aria-label="Refresh sessions"
+              title="Refresh sessions"
+              disabled={refreshingSessions}
+              onClick={() => void refreshSessions()}
+            >
+              <RefreshCw className={refreshingSessions ? "animate-spin" : undefined} />
+            </Button>
           </div>
           <Input
             data-testid="chat-session-search"

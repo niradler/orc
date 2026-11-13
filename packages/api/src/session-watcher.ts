@@ -8,6 +8,7 @@ import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
 import { agentHomes } from "@orc/core/provider-service";
 import { getDb, getSqlite } from "@orc/db/client";
+import { NotificationStore } from "@orc/db/notifications";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
 import { recordObservedNotification } from "./notifications.js";
@@ -17,7 +18,7 @@ import { watchResourcePath } from "./realtime/sources.js";
 import { indexSessionsWhenEnabled } from "./sessions/archive-local.js";
 import { CLAUDE_REGISTRY_DIR, claudeAdapter } from "./sessions/claude.js";
 import { codexAdapter } from "./sessions/codex.js";
-import { LIVE_CHAT_ID, projectIdFor } from "./sessions/common.js";
+import { invalidateProjectFolderCache, LIVE_CHAT_ID, projectIdFor } from "./sessions/common.js";
 import { cursorAdapter, cursorStateDbPath } from "./sessions/cursor.js";
 import { cursorAgentAdapter } from "./sessions/cursor-agent.js";
 import { geminiAdapter } from "./sessions/gemini.js";
@@ -107,6 +108,10 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
       hostCondition(executionHost),
     ),
   });
+  const mappedProject =
+    r.cwd !== undefined
+      ? await projectIdFor(r.cwd, hostRuntime(execHostFor(executionHost)))
+      : undefined;
   const fields = {
     title: r.title,
     status: r.status,
@@ -119,8 +124,13 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
       transcript_path: r.transcriptPath,
     }),
     ...(r.tokensUsed !== undefined && { tokens_used: r.tokensUsed }),
+    ...(existing && mappedProject != null && mappedProject !== existing.project_id
+      ? { project_id: mappedProject }
+      : {}),
   };
   if (existing) {
+    if (fields.project_id)
+      new NotificationStore(getSqlite()).assignProject(existing.id, mappedProject ?? null);
     const changed = Object.entries(fields).some(([key, value]) => {
       if (key === "updated_at") return false;
       const previous = existing[key as keyof typeof existing];
@@ -137,7 +147,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
         host: executionHost,
         nativeId: r.externalId,
         title: r.title,
-        projectId: existing.project_id,
+        projectId: fields.project_id ?? existing.project_id,
         previous: existing.status,
         status: r.status,
         waiting: r.pendingHuman === true && r.status !== "stopped",
@@ -154,7 +164,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     return existing.id;
   }
   const id = ulid();
-  const projectId = await projectIdFor(r.cwd, hostRuntime(resolveExecHost()));
+  const projectId = mappedProject ?? null;
   await db.insert(gateway_sessions).values({
     id,
     chat_id: LIVE_CHAT_ID,
@@ -317,6 +327,43 @@ export function runSync(
 }
 
 export const syncNow = () => runSync(currentAdapters, { force: true });
+
+/**
+ * Re-run folder mapping for every known session. Project folders can be added or
+ * changed after a session was first seen, and worktrees resolve to a checkout root
+ * that no earlier sync may have known.
+ */
+export function reconcileSessionProjects(): Promise<number> {
+  return serialized(async () => {
+    invalidateProjectFolderCache();
+    const db = getDb();
+    const rows = await db.query.gateway_sessions.findMany({
+      where: eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+    });
+    const notifications = new NotificationStore(getSqlite());
+    let changed = 0;
+    let notificationsChanged = 0;
+    for (const row of rows) {
+      if (!row.cwd) continue;
+      const projectId = await projectIdFor(
+        row.cwd,
+        hostRuntime(execHostFor(row.execution_host ?? null)),
+      );
+      if (projectId === null) continue;
+      if (projectId !== row.project_id) {
+        await db
+          .update(gateway_sessions)
+          .set({ project_id: projectId, updated_at: new Date() })
+          .where(eq(gateway_sessions.id, row.id));
+        changed++;
+      }
+      notificationsChanged += notifications.assignProject(row.id, projectId);
+    }
+    if (changed) changes.publish("sessions");
+    if (notificationsChanged) changes.publish("notifications");
+    return changed;
+  });
+}
 
 export function discoverJobSession(
   backend: string,
@@ -490,6 +537,9 @@ export function startSessionWatcher(
         ".cursor/projects",
         ".cursor/chats",
         ".gemini/tmp",
+        ".local/share/opencode/opencode.db",
+        ".local/share/opencode/opencode.db-wal",
+        ".local/share/opencode/opencode.db-shm",
       ];
       if (host.kind === "ssh")
         fileWatchers.push(

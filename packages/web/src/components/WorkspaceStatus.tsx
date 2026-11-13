@@ -50,7 +50,7 @@ export function WorkspaceStatus({
       {ports && <p data-testid="workspace-ports">Ports: {ports}</p>}
       <p data-testid="workspace-setup-status">
         Setup: {workspaceSetupLabel(workspace)}
-        {workspace.setup_status === "failed" && workspace.setup_output ? " — see output" : ""}
+        {workspace.setup_status === "failed" && workspace.setup_output ? ". See output" : ""}
       </p>
       {workspace.preview_url && (
         <p>

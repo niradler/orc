@@ -89,6 +89,7 @@ import {
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
+import { projectIdFor } from "../sessions/common.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
@@ -551,6 +552,8 @@ async function newThread(
     messages: [],
     updatedAt: Date.now(),
   };
+  const mappedProject = await projectIdFor(cwd, hostRuntime(host));
+  if (mappedProject) thread.projectId = mappedProject;
   if (sourceId) {
     const source = await getDb().query.gateway_sessions.findFirst({
       where: and(eq(gateway_sessions.id, sourceId), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),

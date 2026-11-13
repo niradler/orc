@@ -812,7 +812,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                         {repositoryByName.get(skill.name)}
                       </a>
                     ) : (
-                      "—"
+                      "-"
                     )}
                   </TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>

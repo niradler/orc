@@ -18,7 +18,7 @@ import { startNotificationMaintenance } from "./notifications.js";
 import { startAttentionPush, startJobPush } from "./push/service.js";
 import { createApp } from "./server.js";
 import { startSessionMessageDelivery } from "./session-message-delivery.js";
-import { startSessionWatcher } from "./session-watcher.js";
+import { reconcileSessionProjects, startSessionWatcher } from "./session-watcher.js";
 import { closeSessionArchive } from "./sessions/archive.js";
 import { shutdownTerminals } from "./terminals/service.js";
 import {
@@ -64,6 +64,9 @@ process.env.ORC_API_PORT = String(server.port);
 initializeAgentPreferences();
 
 const stopSessionWatcher = startSessionWatcher();
+void reconcileSessionProjects().catch((error) =>
+  logger.error("Initial session project mapping failed", error),
+);
 const stopAttentionPush = startAttentionPush();
 const stopJobPush = startJobPush();
 const stopHumanRequestDelivery = startHumanRequestDelivery();

@@ -420,7 +420,7 @@ test("shows GitHub repositories and sorts groups without losing skill selection"
     "alpha/skills",
     "alpha/skills",
     "zulu/skills",
-    "—",
+    "-",
   ]);
   expect(
     await rows.evaluateAll((elements) =>
@@ -434,7 +434,7 @@ test("shows GitHub repositories and sorts groups without losing skill selection"
     "zulu/skills",
     "alpha/skills",
     "alpha/skills",
-    "—",
+    "-",
   ]);
   await page.reload();
   await expect(header).toHaveAttribute("aria-sort", "descending");
@@ -442,7 +442,7 @@ test("shows GitHub repositories and sorts groups without losing skill selection"
     "zulu/skills",
     "alpha/skills",
     "alpha/skills",
-    "—",
+    "-",
   ]);
   await page.screenshot({
     path: "../../output/playwright/skills-repository-sort.png",

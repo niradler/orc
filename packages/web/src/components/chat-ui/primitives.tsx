@@ -155,9 +155,9 @@ export function ProgressBar({ value, label }: { value: number; label?: string })
 }
 
 export function when(value: string | number | null | undefined): string {
-  if (value == null) return "—";
+  if (value == null) return "-";
   const date = new Date(typeof value === "number" ? value * 1000 : value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString(undefined, {
     month: "short",
     day: "numeric",
