@@ -712,8 +712,9 @@
   .git-local-label-short {
     display: inline;
   }
-  /* Keep the changed-file path readable: row actions drop to their own line. */
-  .git-file-actions {
+  /* Preview panel only: keep the changed-file path readable by dropping row
+     actions to their own line. Terminal-workspace panes keep the inline layout. */
+  .preview-changes-host .git-file-actions {
     flex-basis: 100%;
     justify-content: flex-end;
   }

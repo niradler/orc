@@ -226,7 +226,15 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     host: string | null;
   } | null>(null);
   const session = resolved?.input === rawSession ? resolved.id : rawSession;
-  const { terminals, isLoading: terminalsLoading, create: createTerminal } = useTerminals();
+  const {
+    terminals,
+    isLoading: terminalsLoading,
+    error: terminalsError,
+    refetch: refetchTerminals,
+    create: createTerminal,
+  } = useTerminals();
+  const [sessionFailed, setSessionFailed] = useState(false);
+  const sessionPending = !!rawSession && !sessionFailed && resolved?.input !== rawSession;
   const folder = resolved?.input === rawSession ? resolved : null;
   const gitTerminal = folder
     ? runningTerminalForFolder(terminals, folder.cwd, folder.host)
@@ -470,9 +478,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!rawSession) {
       setResolved(null);
+      setSessionFailed(false);
       return;
     }
     let active = true;
+    setSessionFailed(false);
     void api.preview
       .session(rawSession)
       .then((value) => {
@@ -480,7 +490,10 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
           setResolved({ input: rawSession, id: value.id, cwd: value.cwd, host: value.host });
       })
       .catch((cause) => {
-        if (active) edit(key, (old) => ({ ...old, error: error(cause) }));
+        if (active) {
+          setSessionFailed(true);
+          edit(key, (old) => ({ ...old, error: error(cause) }));
+        }
       });
     return () => {
       active = false;
@@ -898,7 +911,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     try {
       await createTerminal({ kind: "shell", cwd: folder.cwd, host: folder.host });
     } catch (cause) {
-      setTerminalError(error(cause));
+      setTerminalError(cause instanceof Error ? cause.message : "Could not open a terminal");
     } finally {
       setOpeningTerminal(false);
     }
@@ -1055,10 +1068,25 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
               >
                 {!session ? (
                   <p>Start or select a saved session to see its working changes</p>
+                ) : sessionPending ? (
+                  <p role="status">Loading session…</p>
                 ) : !folder ? (
                   <p>This session's workspace folder is unavailable.</p>
                 ) : terminalsLoading ? (
                   <p>Loading terminals…</p>
+                ) : terminalsError ? (
+                  <>
+                    <p role="alert" className="text-error">
+                      Could not load terminals: {terminalsError.message}
+                    </p>
+                    <Button
+                      variant="outline"
+                      data-testid="preview-changes-retry-terminals"
+                      onClick={refetchTerminals}
+                    >
+                      Retry
+                    </Button>
+                  </>
                 ) : (
                   <>
                     <p>No terminal is running in this session's folder.</p>
@@ -1070,7 +1098,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                       onClick={() => void openChangesTerminal()}
                     >
                       <SquareTerminal size={16} />
-                      Open terminal
+                      {openingTerminal ? "Opening…" : "Open terminal"}
                     </Button>
                     {terminalError && (
                       <p role="alert" className="text-error">
@@ -1099,6 +1127,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                   help={<ChangesHelp />}
                   onOpenFile={(path) => void openFile(path).catch(() => {})}
                   copyPath
+                  persistDraft
                 />
               </div>
             )}
@@ -1203,7 +1232,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
                           className={button}
                           title={tab.url}
                           aria-pressed={tab.tab_id === model.browser?.tab_id}
-                          data-testid="preview-browser-tab"
+                          data-testid="preview-browser-page-tab"
                           onClick={() => void changeTab("tab_select", tab.tab_id)}
                         >
                           {index + 1} ·{" "}

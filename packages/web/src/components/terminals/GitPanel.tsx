@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { fileChangeState } from "@/lib/git-status";
@@ -31,6 +31,20 @@ function sameCheckout(left: string, right: string | null) {
     : normalize(left) === normalize(right ?? "");
 }
 
+/** Commit draft and view state kept per terminal so hiding the panel or switching
+ *  chats never loses work. Only the preview panel's Changes tab opts in. */
+type GitDraft = {
+  message: string;
+  paths: string[];
+  filter: string;
+  changeFilter: string;
+  collapsed: string[];
+  selectedPath: string | null;
+  sideBySide: boolean;
+  filesHidden: boolean;
+};
+const drafts = new Map<string, GitDraft>();
+
 export function GitPanelBody({
   terminal,
   paneId,
@@ -38,6 +52,7 @@ export function GitPanelBody({
   help,
   onOpenFile,
   copyPath = false,
+  persistDraft = false,
 }: {
   terminal: Terminal;
   paneId: string;
@@ -47,22 +62,54 @@ export function GitPanelBody({
   onOpenFile?: (path: string) => void;
   /** Show the copy-path icon on each changed file (the preview panel's Changes tab). */
   copyPath?: boolean;
+  /** Keep the commit draft, filters and selection across unmounts, keyed per terminal. */
+  persistDraft?: boolean;
 }) {
   const { create } = useTerminals();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const client = useQueryClient();
+  const draftKey = persistDraft ? `${paneId}:${terminal.id}` : null;
+  const saved = draftKey ? drafts.get(draftKey) : undefined;
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [filesHidden, setFilesHidden] = useState(false);
+  const [filesHidden, setFilesHidden] = useState(saved?.filesHidden ?? false);
   const [mobileFilesOpen, setMobileFilesOpen] = useState(false);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(saved?.selectedPath ?? null);
   const diffRefs = useRef(new Map<string, HTMLDivElement>());
-  const [paths, setPaths] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
-  const [collapsed, setCollapsed] = useState<string[]>([]);
-  const [filter, setFilter] = useState("");
-  const [changeFilter, setChangeFilter] = useState("all");
-  const [sideBySide, setSideBySide] = useState(false);
+  const [paths, setPaths] = useState<string[]>(saved?.paths ?? []);
+  const [message, setMessage] = useState(saved?.message ?? "");
+  const [collapsed, setCollapsed] = useState<string[]>(saved?.collapsed ?? []);
+  const [filter, setFilter] = useState(saved?.filter ?? "");
+  const [changeFilter, setChangeFilter] = useState(saved?.changeFilter ?? "all");
+  const [sideBySide, setSideBySide] = useState(saved?.sideBySide ?? false);
+  useEffect(() => {
+    if (!draftKey) return;
+    drafts.set(draftKey, {
+      message,
+      paths,
+      filter,
+      changeFilter,
+      collapsed,
+      selectedPath,
+      sideBySide,
+      filesHidden,
+    });
+    // Drafts are small, but keep the cache bounded across long-lived sessions.
+    if (drafts.size > 32) {
+      const oldest = drafts.keys().next().value;
+      if (oldest !== undefined) drafts.delete(oldest);
+    }
+  }, [
+    draftKey,
+    message,
+    paths,
+    filter,
+    changeFilter,
+    collapsed,
+    selectedPath,
+    sideBySide,
+    filesHidden,
+  ]);
   const status = useQuery({
     queryKey: ["git", terminal.id, "status"],
     queryFn: () => api.git.status(terminal.id),

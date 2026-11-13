@@ -208,3 +208,92 @@ test("default-width preview panel combines the file list behind the files toggle
   await expect(panel.getByTestId("git-changed-files")).toBeHidden();
   await expect(panel.getByTestId("git-diff-working-section")).toContainText("Math.round");
 });
+
+test("commit draft survives closing the panel and switching chats", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockSessionHome(page);
+  await mockPreviewBridge(page);
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await openChanges(page);
+  const panel = page.getByTestId("desktop-preview-panel");
+  await panel.getByTestId("git-commit-message").fill("demo: keep this draft");
+  await panel.getByTestId("git-file-filter").fill("total");
+
+  // Closing the panel unmounts the Changes host; the draft must survive it.
+  await page.getByTestId("chat-preview-toggle").click();
+  await expect(page.getByTestId("desktop-preview-panel")).toHaveCount(0);
+  await page.getByTestId("chat-preview-toggle").click();
+  await page.getByTestId("preview-changes-tab").click();
+  await expect(panel.getByTestId("git-commit-message")).toHaveValue("demo: keep this draft");
+  await expect(panel.getByTestId("git-file-filter")).toHaveValue("total");
+
+  // Another chat in the same folder resolves the same terminal: the draft is
+  // kept per terminal, not per chat tab.
+  await page.getByTestId("chat-preview-toggle").click();
+  await expect(page.getByTestId("desktop-preview-panel")).toHaveCount(0);
+  const list = page.getByTestId("chat-session-sidebar").getByTestId("chat-session-list");
+  await list.locator(`[data-history-id="chat:${HOME.chatB}"]`).locator("button").first().click();
+  await expect(page.getByText("Three billing bugs are open.").first()).toBeVisible();
+  await page.getByTestId("chat-preview-toggle").click();
+  await page.getByTestId("preview-changes-tab").click();
+  await expect(panel.getByTestId("git-commit-message")).toHaveValue("demo: keep this draft");
+  await expect(panel.getByTestId("git-file-filter")).toHaveValue("total");
+});
+
+test("quiet no-session state when no chat session is selected", async ({ page }) => {
+  await mockSessionHome(page);
+  await mockPreviewBridge(page);
+  await page.route("**/api/chat/threads", (r) => r.fulfill({ json: { threads: [] } }));
+  await page.goto("/chat?project=all");
+  await page.getByTestId("chat-preview-toggle").click();
+  await expect(page.getByTestId("desktop-preview-panel")).toBeVisible();
+  await page.getByTestId("preview-changes-tab").click();
+  const empty = page.getByTestId("preview-changes-empty");
+  await expect(empty).toContainText("Start or select a saved session");
+  await expect(empty.getByRole("alert")).toHaveCount(0);
+});
+
+test("deleted files offer copy-path but not open-file", async ({ page }) => {
+  await mockSessionHome(page);
+  await mockPreviewBridge(page);
+  await page.route(`**/api/terminals/${HOME.terminal}/git/status`, (r) =>
+    r.fulfill({
+      json: {
+        root: FOLDER,
+        branch: "fix/cart-rounding",
+        files: [
+          { path: "src/cart/total.ts", index: " ", working: "M", original: null },
+          { path: "src/legacy/old.ts", index: "D", working: " ", original: null },
+        ],
+        branches: ["main", "fix/cart-rounding"],
+      },
+    }),
+  );
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await openChanges(page);
+  const panel = page.getByTestId("desktop-preview-panel");
+  const deleted = panel.locator('[data-testid="git-diff-file"][data-path="src/legacy/old.ts"]');
+  await expect(deleted).toBeVisible();
+  await expect(deleted.getByTestId("git-open-file")).toHaveCount(0);
+  await expect(deleted.getByTestId("git-copy-path")).toBeVisible();
+  const modified = panel.locator('[data-testid="git-diff-file"][data-path="src/cart/total.ts"]');
+  await expect(modified.getByTestId("git-open-file")).toBeVisible();
+});
+
+test("a failed terminals load shows an error with retry, not the quiet empty state", async ({
+  page,
+}) => {
+  await mockSessionHome(page);
+  await mockPreviewBridge(page);
+  await page.route(/\/api\/terminals(\?.*)?$/, (r) =>
+    r.request().method() === "GET"
+      ? r.fulfill({ status: 500, json: { error: "terminal list unavailable" } })
+      : r.fallback(),
+  );
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await openChanges(page);
+  const empty = page.getByTestId("preview-changes-empty");
+  await expect(empty.getByRole("alert")).toContainText("Could not load terminals");
+  await expect(empty.getByTestId("preview-changes-open-terminal")).toHaveCount(0);
+  await expect(empty.getByTestId("preview-changes-retry-terminals")).toBeVisible();
+});

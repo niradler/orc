@@ -125,9 +125,11 @@ The **Changes** tab shows the working-tree changes of the terminal running in th
 session's folder, reusing the terminal workspace's Git panel: the changed-file
 list, unified or side-by-side diffs, staging and commit. **Open file** opens a
 changed file in an editor tab; the copy icon copies the changed file's path to
-the clipboard. Wide panels split the file list and the diff; narrow
-panels and phones combine them behind the files toggle. When no terminal is
-running in the folder, the tab says so quietly and offers **Open terminal**.
+the clipboard. The commit draft, filters and selection are kept per terminal, so
+closing the panel or switching chats does not lose them. Wide panels split the
+file list and the diff; narrow panels and phones combine them behind the files
+toggle. When no terminal is running in the folder, the tab says so quietly and
+offers **Open terminal**; a failed terminal list shows an error with **Retry**.
 Pull-request review stays in the terminal workspace and the session inspector.
 
 The folder icon (**Open file**) uses the native picker for local files. Chat and MCP file paths
