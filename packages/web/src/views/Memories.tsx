@@ -535,13 +535,13 @@ function MemoryDetailSheet({
                   <MemoryPriority priority={memory.priority} />
                 </DetailField>
                 <DetailField label="Reads">
-                  {listItem ? <span title={readsTitle(listItem)}>{listItem.read_count}</span> : "—"}
+                  {listItem ? <span title={readsTitle(listItem)}>{listItem.read_count}</span> : "-"}
                 </DetailField>
                 <DetailField label="Author">
                   <span data-testid="memory-detail-author">{memory.author}</span>
                 </DetailField>
                 <DetailField label="Session">
-                  <code className="font-mono text-xs break-all">{memory.session_id ?? "—"}</code>
+                  <code className="font-mono text-xs break-all">{memory.session_id ?? "-"}</code>
                 </DetailField>
                 <DetailField label="Updated">{formatTime(memory.updated_at)}</DetailField>
               </div>

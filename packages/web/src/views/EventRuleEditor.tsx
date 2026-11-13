@@ -721,8 +721,8 @@ export function EventRuleEditor({
               value={mode}
               onChange={(event) => setMode(event.target.value as "sync" | "background")}
             >
-              <option value="sync">Synchronous — return a decision or context</option>
-              <option value="background">Background — run through the job queue</option>
+              <option value="sync">Synchronous: return a decision or context</option>
+              <option value="background">Background: run through the job queue</option>
             </select>
             <Label htmlFor="rule-script-argv">Executable and arguments (JSON array)</Label>
             <textarea

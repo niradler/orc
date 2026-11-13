@@ -16,6 +16,7 @@ import {
   type ChatWorkspace,
 } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
+import { projectForFolder } from "@orc/core/project-path";
 import type { ProviderProfile } from "@orc/core/providers";
 import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES } from "@orc/core/session-file-types";
 import {
@@ -32,6 +33,7 @@ import {
 import { useLocation, useSearchParams } from "react-router-dom";
 import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
+import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
@@ -206,6 +208,17 @@ function waitingConflict(cause: unknown): boolean {
 function useChatController() {
   const [params] = useSearchParams();
   const selectedProject = params.get("project") ?? readStorage("orc_selected_project");
+  const projects = useProjects();
+  const projectFolders = useMemo(
+    () => (projects.data ?? []).filter((project) => project.status !== "archived" && project.scope),
+    [projects.data],
+  );
+  const foldersRef = useRef(projectFolders);
+  foldersRef.current = projectFolders;
+  const projectForCwd = useCallback(
+    (cwd: string | null | undefined) => projectForFolder(cwd, foldersRef.current)?.id ?? null,
+    [],
+  );
   const creationProject = useRef<string | null | undefined>(undefined);
   creationProject.current =
     selectedProject === "unassigned"
@@ -694,8 +707,16 @@ function useChatController() {
       options: { activate?: boolean; follow?: boolean; projectId?: string | null } = {},
     ) => {
       const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
+      // A stored project wins, including an explicit `null`; a folder that matches
+      // nothing stays unknown rather than claiming to be unassigned.
+      const inferred = next.projectId === undefined ? projectForCwd(next.cwd) : next.projectId;
       const loaded = {
-        projectId: options.projectId !== undefined ? options.projectId : existing?.projectId,
+        projectId:
+          options.projectId !== undefined
+            ? options.projectId
+            : existing && existing.projectId !== undefined
+              ? existing.projectId
+              : (inferred ?? undefined),
         thread: next,
         messages: next.messages,
         config: next.config,
@@ -724,7 +745,7 @@ function useChatController() {
       if (existing?.streaming) return;
       if (options.follow !== false) void attach(key, next.id);
     },
-    [activate, attach, mutate, update, find],
+    [activate, attach, mutate, update, find, projectForCwd],
   );
   const showThread = useCallback(
     async (id: string) => {
@@ -737,7 +758,10 @@ function useChatController() {
   const newTab = useCallback(
     (options: { projectId?: string | null; fresh?: boolean; workspace?: ChatWorkspace } = {}) => {
       const projectId =
-        options.projectId === undefined ? creationProject.current : options.projectId;
+        options.projectId !== undefined
+          ? options.projectId
+          : ((options.workspace?.cwd ? projectForCwd(options.workspace.cwd) : null) ??
+            creationProject.current);
       const blank = !options.fresh && tabsRef.current.find(isBlank);
       if (blank) {
         update(blank.key, () => ({
@@ -753,7 +777,7 @@ function useChatController() {
       mutate((current) => [...current, tab]);
       activate(tab.key);
     },
-    [activate, mutate, update],
+    [activate, mutate, update, projectForCwd],
   );
   const startAgentConversation = useCallback(
     (agent: string, providerId?: string, model = "", options?: ChatAgentOptions) => {

@@ -6276,13 +6276,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List nonexpired notifications and the shared unread count */
+        /** List nonexpired notifications and the unread count for the same scope */
         get: {
             parameters: {
                 query?: {
                     limit?: number;
                     offset?: number | null;
                     unread?: "true" | "false";
+                    project_id?: string;
                 };
                 header?: never;
                 path?: never;
@@ -6363,10 +6364,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark all current notifications read across clients */
+        /** Mark current notifications read across clients */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    project_id?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -17484,6 +17487,64 @@ export interface paths {
                     };
                 };
                 /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse files inside a session workspace */
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Workspace files */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            root: string;
+                            path: string;
+                            entries: {
+                                name: string;
+                                path: string;
+                                directory: boolean;
+                            }[] | null;
+                            content: string | null;
+                            binary: boolean;
+                            truncated: boolean;
+                        };
+                    };
+                };
+                /** @description Session not found */
                 404: {
                     headers: {
                         [name: string]: unknown;

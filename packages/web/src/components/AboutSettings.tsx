@@ -40,7 +40,7 @@ function Row({ id, label, value }: { id: string; label: string; value: string | 
     <div className="grid gap-1 border-b border-border py-2.5 text-sm sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4">
       <dt className="text-muted-foreground">{label}</dt>
       <dd data-testid={`about-${id}`} className="min-w-0 break-words font-mono text-[13px]">
-        {value ?? "—"}
+        {value ?? "-"}
       </dd>
     </div>
   );

@@ -26,7 +26,7 @@ export function StateBadge({
         data-state={state}
         role="img"
         aria-label={name}
-        title={`${name} — ${help}`}
+        title={`${name}: ${help}`}
         className={cn("inline-flex size-5 shrink-0 items-center justify-center", className)}
       >
         {icon}

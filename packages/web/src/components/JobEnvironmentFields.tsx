@@ -54,7 +54,7 @@ export function JobEnvironmentFields({
             aria-label={`Variable ${index + 1} value`}
             type={entry.secret ? "password" : "text"}
             autoComplete="off"
-            placeholder={entry.value === null ? "Saved secret — leave blank to keep" : "Value"}
+            placeholder={entry.value === null ? "Saved secret; leave blank to keep" : "Value"}
             value={entry.value ?? ""}
             onChange={(event) =>
               onChange(

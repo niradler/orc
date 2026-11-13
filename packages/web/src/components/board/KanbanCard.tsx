@@ -103,7 +103,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
               className="shrink-0 text-xs font-label text-outline"
               title={task.author || "Unassigned author"}
             >
-              <span aria-hidden>{task.author?.[0] ?? "—"}</span>
+              <span aria-hidden>{task.author?.[0] ?? "?"}</span>
               <span className="sr-only">
                 {task.author ? `Author: ${task.author}` : "Unassigned author"}
               </span>

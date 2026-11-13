@@ -160,7 +160,7 @@ function flowHint(
   if (!flow) {
     return value === USE_DEFAULT_FLOW
       ? "Runs the configured default flow."
-      : `"${value}" is not in the flow list — the task will not start until it exists.`;
+      : `"${value}" is not in the flow list; the task will not start until it exists.`;
   }
   const shadow = flow.shadows ? ` (shadows the ${flow.shadows} flow of the same name)` : "";
   return `${flow.description || flow.name}${shadow}`;

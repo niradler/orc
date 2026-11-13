@@ -1498,11 +1498,13 @@ export const api = {
     ) => req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
   },
   notifications: {
-    list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
-      req<NotificationPage>("GET", "/notifications", undefined, query),
+    list: (
+      query: { limit?: number; offset?: number; unread?: boolean; project_id?: string } = {},
+    ) => req<NotificationPage>("GET", "/notifications", undefined, query),
     update: (id: string, update: NotificationUpdate) =>
       req<OrcNotification>("PATCH", `/notifications/${encodeURIComponent(id)}`, update),
-    markAllRead: () => req<{ ok: true }>("POST", "/notifications/read"),
+    markAllRead: (projectId?: string) =>
+      req<{ ok: true }>("POST", "/notifications/read", undefined, { project_id: projectId }),
   },
 
   kb: {
