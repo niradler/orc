@@ -1,17 +1,41 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
+import { DEFAULT_ENABLED_AGENTS } from "@orc/core/coding-agents";
 import { expect, test } from "@playwright/test";
 import { chooseChatAgent, openChatSettings } from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
 
+let previousSettings: { agents?: string[]; chat?: unknown };
+
+// Narrowing the enabled agents disables the codex provider and moves the chat default
+// to claude. Restore the prior state so later specs keep the pristine codex default;
+// resetting only `chat` cannot recover it while codex stays disabled.
+test.beforeEach(async ({ request }) => {
+  const current = await request.get("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+  });
+  expect(current.ok()).toBe(true);
+  previousSettings = await current.json();
+  const response = await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { agents: ["claude", "gemini"], chat: ChatSettingsSchema.parse({ mcp: "native" }) },
+  });
+  expect(response.ok()).toBe(true);
+});
+test.afterEach(async ({ request }) => {
+  const response = await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: {
+      agents: previousSettings.agents ?? [...DEFAULT_ENABLED_AGENTS],
+      chat: ChatSettingsSchema.parse(previousSettings.chat ?? {}),
+    },
+  });
+  expect(response.ok()).toBe(true);
+});
+
 for (const width of [390, 1440]) {
   test(`agent-specific launch options apply and survive conversation reopen at ${width}px`, async ({
     page,
-    request,
   }, info) => {
-    await request.patch("/api/settings", {
-      headers: { Authorization: `Bearer ${API_SECRET}` },
-      data: { agents: ["claude", "gemini"], chat: ChatSettingsSchema.parse({ mcp: "native" }) },
-    });
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),
     );
