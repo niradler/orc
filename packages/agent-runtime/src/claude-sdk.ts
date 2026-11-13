@@ -4,6 +4,7 @@ import {
   type Options,
   type Query,
   query,
+  type SDKControlInterruptResponse,
   type SDKResultMessage,
   type SDKUserMessage,
   type SpawnedProcess,
@@ -61,6 +62,13 @@ const ORC_SYSTEM_CONTEXT = `You are an agent orchestrated by ORC. ${ORC_TASK_GUI
 const SDK_ENV_PASSTHROUGH = /^CLAUDE_(CODE_ENTRYPOINT|AGENT_SDK_VERSION)$/;
 const AUTH_CACHE_TTL_MS = 60_000;
 const authCache = new Map<string, { at: number; loggedIn: boolean | null }>();
+
+let steerContinuationGraceMs = 120_000;
+/** Test hook: shorten the wait for a steer continuation that never arrives. */
+export function setClaudeSteerContinuationGraceMs(ms: number): void {
+  if (!Number.isFinite(ms) || ms <= 0) throw new Error("Grace must be a positive number of ms");
+  steerContinuationGraceMs = ms;
+}
 
 export function sdkChatOverrides(
   source: ClaudeChatOptions,
@@ -289,8 +297,8 @@ class ClaudeSDKSession implements AgentSession {
       return await new Promise<Record<string, string[]> | null>((resolve) => {
         const requestId = question.requestId;
         cancel = () => {
-          this.questionResolvers.delete(requestId);
-          push({ type: "request_resolved", data: { requestId } });
+          if (this.questionResolvers.delete(requestId))
+            push({ type: "request_resolved", data: { requestId } });
           resolve(null);
         };
         this.questionResolvers.set(requestId, { question, resolve });
@@ -314,6 +322,9 @@ class ClaudeSDKSession implements AgentSession {
   private async startTurn(prompt: string): Promise<void> {
     const previous = this.turn;
     if (previous) {
+      // Detach before draining: the replaced turn's unwind must not end an
+      // events() consumer that is about to read the replacement turn.
+      this.turn = null;
       previous.controller.abort();
       previous.input.end();
       await previous.finished;
@@ -367,8 +378,22 @@ class ClaudeSDKSession implements AgentSession {
       pending.resolve("denied");
       this.pushTurn(turn, { type: "request_resolved", data: { requestId } });
     }
-    if (turn.query) await turn.query.interrupt();
-    else turn.controller.abort();
+    if (turn.query) {
+      // cancelQueued stops delivered-but-unrun steers from executing after the
+      // interrupt; without it the CLI runs them after the stopped turn. The
+      // installed SDK implements the option ahead of its .d.ts signature, and
+      // older CLIs ignore it (interrupt_cancel_queued_v1) — the receipt's
+      // still_queued then lists survivors that may yet run.
+      const interrupt = turn.query.interrupt as (options?: {
+        cancelQueued?: boolean;
+      }) => Promise<SDKControlInterruptResponse | undefined>;
+      const receipt = await interrupt({ cancelQueued: true });
+      if (receipt?.still_queued.length) {
+        logger.debug("Claude interrupt left queued commands", {
+          count: receipt.still_queued.length,
+        });
+      }
+    } else turn.controller.abort();
   }
 
   /** Events from an unwinding turn must never reach the next turn's queue. */
@@ -380,6 +405,11 @@ class ClaudeSDKSession implements AgentSession {
     const abortController = turn.controller;
     const push = (event: AgentEvent) => this.pushTurn(turn, event);
     let nativeQuery: Query | undefined;
+    let continuationGrace: ReturnType<typeof setTimeout> | undefined;
+    const clearContinuationGrace = () => {
+      clearTimeout(continuationGrace);
+      continuationGrace = undefined;
+    };
     try {
       const supplied = this.opts.chatAgentOptions
         ? ChatAgentOptionsSchema.parse(this.opts.chatAgentOptions)
@@ -584,8 +614,8 @@ class ClaudeSDKSession implements AgentSession {
             try {
               result = await new Promise<PermissionResult>((resolve) => {
                 cancel = () => {
-                  this.permissionResolvers.delete(requestId);
-                  push({ type: "request_resolved", data: { requestId } });
+                  if (this.permissionResolvers.delete(requestId))
+                    push({ type: "request_resolved", data: { requestId } });
                   resolve("denied");
                 };
                 this.permissionResolvers.set(requestId, { tool: toolName, resolve });
@@ -614,7 +644,9 @@ class ClaudeSDKSession implements AgentSession {
       let streamedText = false;
       let lastResult: SDKResultMessage | undefined;
       const emitResult = (msg: SDKResultMessage) => {
+        if (turn.closing) return;
         turn.closing = true;
+        clearContinuationGrace();
         if (msg.is_error && !turn.stopping) {
           const errors = "errors" in msg ? (msg.errors as string[]) : [];
           push({
@@ -636,7 +668,25 @@ class ClaudeSDKSession implements AgentSession {
         // messages; closing the channel lets the SDK end stdin and exit.
         turn.input.end();
       };
+      // A steer the CLI never answers (lost/refused uuid) must not hold the
+      // turn open forever: end with the last result after a quiet period.
+      const armContinuationGrace = () => {
+        clearContinuationGrace();
+        continuationGrace = setTimeout(() => {
+          if (!turn.closing && lastResult) {
+            push({
+              type: "system_status",
+              data: "A steering message was not answered before the response ended.",
+            });
+            emitResult(lastResult);
+          }
+        }, steerContinuationGraceMs);
+      };
       for await (const msg of q) {
+        // After the final result, keep draining so the subprocess exits, but
+        // ignore anything a surviving queued command may still emit.
+        if (turn.closing) continue;
+        clearContinuationGrace();
         if (msg.type === "stream_event") {
           const event = msg.event;
           if (event.type === "content_block_start" && event.content_block.type === "text") {
@@ -718,14 +768,32 @@ class ClaudeSDKSession implements AgentSession {
         if (msg.type === "result") {
           this.runtimeSessionId = msg.session_id;
           lastResult = msg;
+          // A turn can answer several steers at once: coalesced sends share one
+          // result whose user_message_uuid is only the last member's, so consume
+          // every echoed uuid, not just the trigger.
+          const answered =
+            "user_message_uuids" in msg && Array.isArray(msg.user_message_uuids)
+              ? msg.user_message_uuids
+              : [];
+          for (const id of answered) turn.pendingSteers.delete(id);
           const trigger = "user_message_uuid" in msg ? msg.user_message_uuid : undefined;
           if (typeof trigger === "string") turn.pendingSteers.delete(trigger);
-          // The CLI runs queued steers as continuations of this query; keep
-          // reading until every delivered steer has had its result. Without
-          // a trigger id runs cannot be attributed, so end the turn instead
-          // of waiting for a continuation that may never come.
-          if (!turn.stopping && typeof trigger === "string" && turn.pendingSteers.size > 0)
+          // A delivered steer may still be in flight to the CLI: results can
+          // report queued_turn_count 0 and yet run the steer as a continuation
+          // (verified live), so pending steers remain the primary wait signal.
+          // queued_turn_count > 0 is an extra keep-waiting hint. Older CLIs
+          // echo no uuids at all; without an echo, runs cannot be attributed,
+          // so end the turn instead of paying the grace on every steer. The
+          // grace timer backstops a uuid the CLI never answers.
+          const queued = "queued_turn_count" in msg ? msg.queued_turn_count : undefined;
+          const trackable = typeof trigger === "string" || answered.length > 0;
+          const moreRuns =
+            (typeof queued === "number" && queued > 0) ||
+            (trackable && turn.pendingSteers.size > 0);
+          if (!turn.stopping && moreRuns) {
+            armContinuationGrace();
             continue;
+          }
           emitResult(msg);
         }
       }
@@ -752,7 +820,9 @@ class ClaudeSDKSession implements AgentSession {
         // subprocess releases stdin after the final result or an abort;
         // neither is a turn failure.
         logger.debug("Claude SDK stream closed", {
-          message: err instanceof Error ? err.message : String(err),
+          message:
+            this.opts.redactOutput?.(err instanceof Error ? err.message : String(err)) ??
+            (err instanceof Error ? err.message : String(err)),
         });
       } else {
         logger.error("Claude SDK query error", {
@@ -766,6 +836,7 @@ class ClaudeSDKSession implements AgentSession {
         });
       }
     } finally {
+      clearContinuationGrace();
       turn.input.end();
       try {
         await nativeQuery?.return();
@@ -776,7 +847,9 @@ class ClaudeSDKSession implements AgentSession {
         push({ type: "error", data: "Claude connection could not be closed cleanly." });
       }
       // A stale turn unwinding after a replacement must not end the new
-      // turn's events (R-15); only the current turn owns the done flag.
+      // turn's events (R-15); only the current turn owns the done flag. The
+      // finished turn stays attached: SDK callbacks still in flight (a pending
+      // question or approval) push their resolution through the same guard.
       if (this.turn === turn) {
         this.done = true;
         this.resolveNext?.();

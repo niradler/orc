@@ -17,7 +17,7 @@ const react = ${react};
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   HOOK_EVENTS: [],
   query: ({ prompt, options }) => {
-    const handle = { received: [], options, interrupts: 0, closed: 0, returnDelay: 0 };
+    const handle = { received: [], options, interrupts: 0, interruptOptions: undefined, closed: 0, returnDelay: 0 };
     queries.push(handle);
     activeQueries++;
     maxActiveQueries = Math.max(maxActiveQueries, activeQueries);
@@ -36,6 +36,8 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         handle.received.push(next.value);
         await react(handle, next.value);
       }
+      // Like the real SDK: once input ends the CLI exits and output ends.
+      handle.finish();
     })().catch(() => {});
     const stream = (async function* () {
       while (true) {
@@ -46,7 +48,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
     })();
     return {
       [Symbol.asyncIterator]: () => stream,
-      interrupt: async () => { handle.interrupts++; await handle.onInterrupt(handle); },
+      interrupt: async (options) => { handle.interrupts++; handle.interruptOptions = options; await handle.onInterrupt(handle); },
       return: async () => {
         handle.closed++;
         handle.finish();
@@ -68,7 +70,7 @@ const drain = async () => { const events = []; for await (const event of session
 const watch = () => { const events = []; const reading = (async () => { for await (const event of session.events()) events.push(event); })(); return { events, reading }; };
 const waitFor = async (events, predicate) => { while (!events.some(predicate)) await Bun.sleep(5); };
 const assertRejects = async (fn) => { try { await fn(); } catch { return; } throw new Error("expected rejection"); };
-const resultMessage = (sessionId, userMessageUuid) => ({type:"result",subtype:"success",session_id:sessionId,is_error:false,usage:{},duration_ms:1,user_message_uuid:userMessageUuid});
+const resultMessage = (sessionId, userMessageUuid, extra) => ({type:"result",subtype:"success",session_id:sessionId,is_error:false,usage:{},duration_ms:1,user_message_uuid:userMessageUuid,...(extra ?? {})});
 const textMessage = (text) => ({type:"assistant",message:{content:[{type:"text",text}]}});
 `;
 
@@ -99,7 +101,9 @@ test("steer delivers into the active turn and confirms only once the SDK consume
         handle.emit({type:"system",subtype:"init",session_id:"steer-fixture"});
         handle.emit(textMessage("working"));
         await gate;
-        handle.emit(resultMessage("steer-fixture", msg.uuid));
+        // The CLI can report an empty queue while a steer is still in flight
+        // and run it as a continuation anyway (verified live).
+        handle.emit(resultMessage("steer-fixture", msg.uuid, { queued_turn_count: 0 }));
       } else {
         handle.emit(textMessage("adjusted:" + msg.message.content));
         handle.emit(resultMessage("steer-fixture", msg.uuid));
@@ -170,6 +174,232 @@ try {
     throw new Error("queued steer ran after the interrupt");
   console.log("verified");
 } finally { openGate(); await session.close(); }
+`,
+  );
+});
+
+test("coalesced steers answered by one result complete the turn (user_message_uuids)", () => {
+  expectSuccess(
+    harness(`async (handle, msg) => {
+      if (handle.received.length === 1) {
+        handle.emit({type:"system",subtype:"init",session_id:"coalesce-fixture"});
+        handle.emit(textMessage("working"));
+        await gate;
+        handle.emit(resultMessage("coalesce-fixture", msg.uuid));
+      } else if (handle.received.length === 2) {
+        await gate2;
+      } else {
+        handle.emit(textMessage("answered both"));
+        handle.emit(resultMessage("coalesce-fixture", msg.uuid, {
+          user_message_uuids: [handle.received[1].uuid, handle.received[2].uuid],
+        }));
+      }
+    }`) +
+      `
+let openGate; let openGate2;
+const gate = new Promise((resolve) => { openGate = resolve; });
+const gate2 = new Promise((resolve) => { openGate2 = resolve; });
+try {
+  await session.send("start");
+  const { events, reading } = watch();
+  await waitFor(events, (event) => event.type === "text");
+  const first = session.steer("first steer");
+  const second = session.steer("second steer");
+  openGate();
+  openGate2();
+  await Promise.all([first, second]);
+  let hangTimer;
+  const hang = new Promise((resolve) => { hangTimer = setTimeout(() => resolve(false), 5000); });
+  const fast = await Promise.race([reading.then(() => true), hang]);
+  clearTimeout(hangTimer);
+  if (!fast) throw new Error("coalesced steers did not complete the turn (hang)");
+  await reading;
+  if (!events.some((event) => event.type === "text" && event.data.endsWith("answered both")))
+    throw new Error("coalesced steer answer missing");
+  const results = events.filter((event) => event.type === "result");
+  if (results.length !== 1) throw new Error("coalesced steers must complete the turn exactly once");
+  if (queries[0].closed !== 1) throw new Error("query was not closed exactly once");
+  console.log("verified");
+} finally { openGate(); openGate2(); await session.close(); }
+`,
+  );
+}, 15000);
+
+test("a CLI that echoes no uuids ends the steered turn without waiting for the grace", () => {
+  expectSuccess(
+    harness(`async (handle, msg) => {
+      if (handle.received.length === 1) {
+        handle.emit({type:"system",subtype:"init",session_id:"older-fixture"});
+        handle.emit(textMessage("working"));
+        await gate;
+        handle.emit(resultMessage("older-fixture", undefined));
+      } else {
+        handle.emit(textMessage("answered by an older producer"));
+        handle.emit(resultMessage("older-fixture", undefined));
+      }
+    }`) +
+      `
+const { setClaudeSteerContinuationGraceMs } = await import(${JSON.stringify(new URL("../claude-sdk.ts", import.meta.url).href)});
+setClaudeSteerContinuationGraceMs(5000);
+let openGate;
+const gate = new Promise((resolve) => { openGate = resolve; });
+try {
+  await session.send("start");
+  const { events, reading } = watch();
+  await waitFor(events, (event) => event.type === "text");
+  // Without a uuid echo the turn may end before the steer is pulled; the
+  // delivery then stays unconfirmed (a rejection), which is the honest outcome.
+  const steering = session.steer("steer for an older CLI").catch(() => {});
+  openGate();
+  await steering;
+  let hangTimer;
+  const hang = new Promise((resolve) => { hangTimer = setTimeout(() => resolve(false), 1500); });
+  const fast = await Promise.race([reading.then(() => true), hang]);
+  clearTimeout(hangTimer);
+  if (!fast) throw new Error("a CLI without uuid echo must end the turn without waiting for the grace");
+  await reading;
+  const results = events.filter((event) => event.type === "result");
+  if (results.length !== 1) throw new Error("older-producer turn must complete exactly once");
+  if (events.some((event) => event.type === "text" && event.data.includes("older producer")))
+    throw new Error("post-result output leaked into the turn");
+  console.log("verified");
+} finally { openGate(); setClaudeSteerContinuationGraceMs(120000); await session.close(); }
+`,
+  );
+}, 15000);
+
+test("a steer uuid the CLI never answers ends the turn after the continuation grace", () => {
+  expectSuccess(
+    harness(`async (handle, msg) => {
+      if (handle.received.length === 1) {
+        handle.emit({type:"system",subtype:"init",session_id:"backstop-fixture"});
+        handle.emit(textMessage("working"));
+        await gate;
+        handle.emit(resultMessage("backstop-fixture", msg.uuid, { queued_turn_count: 1 }));
+      } else {
+        handle.emit(textMessage("answered without echo"));
+        handle.emit(resultMessage("backstop-fixture", "not-the-steer-uuid", { queued_turn_count: 0 }));
+      }
+    }`) +
+      `
+const { setClaudeSteerContinuationGraceMs } = await import(${JSON.stringify(new URL("../claude-sdk.ts", import.meta.url).href)});
+setClaudeSteerContinuationGraceMs(150);
+let openGate;
+const gate = new Promise((resolve) => { openGate = resolve; });
+try {
+  await session.send("start");
+  const { events, reading } = watch();
+  await waitFor(events, (event) => event.type === "text");
+  const steering = session.steer("steer whose uuid is lost");
+  openGate();
+  await steering;
+  await reading;
+  const results = events.filter((event) => event.type === "result");
+  if (results.length !== 1) throw new Error("a lost uuid must not hold the turn open forever");
+  if (!events.some((event) => event.type === "system_status" && event.data.includes("not answered")))
+    throw new Error("the unanswered steer must be surfaced, not silently completed");
+  console.log("verified");
+} finally { openGate(); setClaudeSteerContinuationGraceMs(120000); await session.close(); }
+`,
+  );
+});
+
+test("interrupt cancels a delivered queued steer instead of letting it run after Stop", () => {
+  expectSuccess(
+    harness(`async (handle, msg) => {
+      if (handle.received.length === 1) {
+        handle.emit({type:"system",subtype:"init",session_id:"cancel-fixture"});
+        handle.emit(textMessage("working"));
+        handle.cancelled = new Promise((resolve) => { handle.resolveCancelled = resolve; });
+        handle.onInterrupt = async (h) => {
+          h.wasCancelled = h.interruptOptions?.cancelQueued === true;
+          h.resolveCancelled();
+          h.emit(resultMessage("cancel-fixture", msg.uuid));
+          h.finish();
+        };
+      } else {
+        await handle.cancelled;
+        if (!handle.wasCancelled) {
+          handle.emit(textMessage("SHOULD-NOT-RUN"));
+          handle.emit(resultMessage("cancel-fixture", msg.uuid));
+        }
+      }
+    }`) +
+      `
+try {
+  await session.send("start");
+  const { events, reading } = watch();
+  await waitFor(events, (event) => event.type === "text");
+  const steering = session.steer("delivered then cancelled").catch(() => {});
+  while (queries[0].received.length < 2) await Bun.sleep(5);
+  await session.interrupt();
+  await reading;
+  await steering;
+  if (queries[0].interruptOptions?.cancelQueued !== true)
+    throw new Error("interrupt must cancel queued steers");
+  const results = events.filter((event) => event.type === "result");
+  if (results.length !== 1 || results[0].data.outcome !== "stopped")
+    throw new Error("Stop must end the turn exactly once as stopped");
+  if (events.some((event) => event.type === "text" && event.data.includes("SHOULD-NOT-RUN")))
+    throw new Error("cancelled steer ran after the interrupt");
+  console.log("verified");
+} finally { await session.close(); }
+`,
+  );
+});
+
+test("messages emitted after the final result are ignored", () => {
+  expectSuccess(
+    harness(`async (handle, msg) => {
+      handle.emit({type:"system",subtype:"init",session_id:"late-fixture"});
+      handle.emit(textMessage("done"));
+      handle.emit(resultMessage("late-fixture", msg.uuid));
+      handle.emit(textMessage("LATE"));
+      handle.emit(resultMessage("late-fixture", msg.uuid));
+      handle.finish();
+    }`) +
+      `
+try {
+  await session.send("start");
+  const events = await drain();
+  const results = events.filter((event) => event.type === "result");
+  if (results.length !== 1) throw new Error("late result leaked into the turn");
+  if (events.some((event) => event.type === "text" && event.data.includes("LATE")))
+    throw new Error("late text leaked into the turn");
+  console.log("verified");
+} finally { await session.close(); }
+`,
+  );
+});
+
+test("an attached events() consumer survives turn replacement", () => {
+  expectSuccess(
+    harness(`async (handle, msg) => {
+      if (queries.length === 1) {
+        handle.returnDelay = 30;
+        handle.emit(textMessage("A"));
+        await new Promise((resolve) => handle.options.abortController.signal.addEventListener("abort", resolve, { once: true }));
+        handle.finish();
+      } else {
+        handle.emit({type:"system",subtype:"init",session_id:"replace-fixture"});
+        handle.emit(textMessage("B"));
+        handle.emit(resultMessage("replace-fixture", msg.uuid));
+        handle.finish();
+      }
+    }`) +
+      `
+try {
+  await session.send("A");
+  const { events, reading } = watch();
+  await waitFor(events, (event) => event.type === "text" && event.data === "A");
+  await session.send("B");
+  await reading;
+  if (!events.some((event) => event.type === "text" && event.data === "B"))
+    throw new Error("replacement turn text missing; the old unwind ended events()");
+  if (!events.some((event) => event.type === "result"))
+    throw new Error("replacement turn result missing; the old unwind ended events()");
+  console.log("verified");
+} finally { await session.close(); }
 `,
   );
 });

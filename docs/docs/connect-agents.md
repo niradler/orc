@@ -255,9 +255,10 @@ query; Claude picks it up within the same response, and the response completes o
 the steered message has been answered. Delivery is confirmed when the SDK has written
 the message to the agent; ordinary **Send** queues it for the next turn. Stop sends
 the SDK's native interrupt, releases pending approvals and questions, and keeps the
-native session, so the next message resumes the same conversation. Steering and
-interrupt require the SDK path; when Claude falls back to ACPX, the conservative
-ACPX capabilities apply.
+native session, so the next message resumes the same conversation. On current Claude
+versions, a steering message delivered but not yet answered when Stop lands is
+cancelled and does not run. Steering and interrupt require the SDK path; when Claude
+falls back to ACPX, the conservative ACPX capabilities apply.
 
 ACPX remains the compatibility path for other coding agents. It streams text,
 reasoning and tool results and keeps named sessions. Its CLI permissions are chosen
