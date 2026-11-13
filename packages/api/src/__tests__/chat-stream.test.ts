@@ -355,6 +355,48 @@ describe("/chat/stream account switching", () => {
     expect(continuationPrompt([])).toBeUndefined();
   });
 
+  test("keeps the newest turn when it alone exceeds the replay budget", () => {
+    const tool = (index: number) => ({
+      type: "tool" as const,
+      id: `tool-${index}`,
+      name: "shell",
+      input: "x".repeat(600),
+      result: "y".repeat(1_200),
+    });
+    // One assistant turn with enough tool work to exceed the 12k switch budget
+    // on its own: the newest turn must be clipped into the replay, not dropped.
+    const oversized = [
+      { id: "u-0", role: "user" as const, content: "Start the task", timestamp: 0 },
+      {
+        id: "a-0",
+        role: "assistant" as const,
+        content: "final answer",
+        timestamp: 1,
+        activity: Array.from({ length: 10 }, (_, index) => tool(index)),
+      },
+    ];
+    const prompt = continuationPrompt(oversized);
+    if (!prompt) throw new Error("Oversized newest turn dropped the whole replay");
+    expect(prompt).toContain("final answer");
+    expect(prompt).toContain("[Earlier conversation omitted]");
+    expect(prompt.length).toBeLessThan(14_000);
+
+    const huge = [
+      { id: "u-0", role: "user" as const, content: "Start the task", timestamp: 0 },
+      {
+        id: "a-0",
+        role: "assistant" as const,
+        content: "final answer",
+        timestamp: 1,
+        activity: Array.from({ length: 60 }, (_, index) => tool(index)),
+      },
+    ];
+    const fork = continuationPrompt(huge, "fork");
+    if (!fork) throw new Error("Oversized newest turn dropped the fork replay");
+    expect(fork).toContain("User (original request): Start the task");
+    expect(fork.length).toBeLessThan(103_000);
+  });
+
   test("switches a live conversation to another account of the same agent", async () => {
     const { restore } = accountFixture();
     try {

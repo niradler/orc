@@ -292,7 +292,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `POST` | `/session-handoffs` | Start a session handoff |
 | `GET` `POST` | `/chat/threads` | Chat threads |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
-| `POST` | `/chat/threads/{id}/fork` | Fork a chat at a completed assistant response |
+| `POST` | `/chat/threads/{id}/fork` | Fork a chat at an assistant response |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
@@ -322,7 +322,7 @@ retrying the same queued message does not start another turn. The web client bou
 recovery requests and backoff to 15 seconds, or 60 seconds after a server error,
 header timeout or `CHAT_MESSAGE_EXISTS`, then pauses the message in its queue.
 
-`POST /chat/threads/{id}/fork` copies the conversation up to one completed assistant
+`POST /chat/threads/{id}/fork` copies the conversation up to one assistant
 response into a new thread and returns it. It prefers the agent's native session
 fork, which keeps the provider's own conversation, when the response is the latest
 one and the adapter supports it (Claude, Codex, Pi, and ACP agents whose handshake

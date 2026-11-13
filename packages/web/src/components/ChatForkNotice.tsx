@@ -23,9 +23,10 @@ export function ChatForkNotice({ thread }: { thread: ChatThread | undefined }) {
         ? "The native fork starts with the next message."
         : "Continues the source agent session natively."
       : "Carries a bounded context replay into this chat.";
-  const detail =
-    fork.fallbackReason ??
-    (fork.partial ? "Older messages were not available in the copied transcript." : null);
+  const details = [
+    fork.fallbackReason,
+    fork.partial ? "Older messages were not available in the copied transcript." : null,
+  ].filter((detail): detail is string => !!detail);
 
   async function openSource(): Promise<void> {
     setError(null);
@@ -55,7 +56,11 @@ export function ChatForkNotice({ thread }: { thread: ChatThread | undefined }) {
             {thread.forkContext.truncated ? " · earlier messages omitted" : ""}
           </p>
         )}
-        {detail && <p className="mt-0.5">{detail}</p>}
+        {details.map((detail) => (
+          <p key={detail} className="mt-0.5">
+            {detail}
+          </p>
+        ))}
         <button
           type="button"
           className="mt-1 underline underline-offset-2 hover:text-on-surface"

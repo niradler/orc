@@ -790,6 +790,13 @@ function buildContinuation(
     if (!entry) continue;
     const cost = entry.text.length + 2;
     if (used + cost > budget) {
+      // A single long turn (text plus summarized tool work) must never swallow
+      // the whole replay: the newest turn is the one the agent needs to continue.
+      // Clip it into the remaining room and mark the rest as omitted.
+      if (!selected.length) {
+        const room = budget - used - 2;
+        if (room > 1) selected.unshift({ ...entry, text: clipText(entry.text, room) });
+      }
       omitted = true;
       break;
     }
@@ -1224,6 +1231,9 @@ async function forkPrefix(
         offset: from,
         limit: start - from,
       });
+      // The stored index says this chat had `end` turns; a transcript with fewer
+      // means it was rewritten or truncated, so a copy would have silent gaps.
+      if (page.total < end) throw new Error("The native transcript shrank.");
       for (let cursor = page.turns.length - 1; cursor >= 0; cursor--) {
         const turn = page.turns[cursor];
         if (!turn) continue;
@@ -1760,7 +1770,9 @@ async function startChat(
   // once a turn established one, the continuation was delivered and must not be
   // injected into it again. A native fork is attempted by beginTurn instead.
   if (body.threadId && thread.providerSwitch && !thread.runtimeId)
-    continuation ??= continuationPrompt(thread.messages, "switch");
+    // A forked chat that also changed account keeps its fork intro; the native
+    // branch replaces this continuation when the fork succeeds.
+    continuation ??= continuationPrompt(thread.messages, thread.forkPending ? "fork" : "switch");
   if (
     body.threadId &&
     thread.forkedFrom?.mode === "context" &&
@@ -2102,10 +2114,21 @@ async function beginTurn(
                 throw new Error(
                   "The fork's agent or workspace changed before the native fork started.",
                 );
-              run.session = await backend.forkSession(pending.sourceRuntimeId, opts);
+              const session = await backend.forkSession(pending.sourceRuntimeId, opts);
+              // A provider that ignores the fork flag and keeps the source id
+              // would make both chats share one native session.
+              const forkedId = session.getRuntimeSessionId?.();
+              if (forkedId && forkedId === pending.sourceRuntimeId) {
+                await session.close().catch(() => {});
+                throw new Error("The provider returned the source session instead of a new fork.");
+              }
+              run.session = session;
               markFork(thread, pending, "native");
               delete thread.forkPending;
               delete thread.forkContext;
+              // The native session already holds the history; never prepend a
+              // replay on top of it.
+              setup.continuation = undefined;
             } catch (error) {
               const reason = error instanceof Error ? error.message : String(error);
               markFork(thread, pending, "context", reason.slice(0, 500));

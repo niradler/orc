@@ -74,12 +74,25 @@ function failingForkBackend(): AgentBackend {
   };
 }
 
+function sameSessionForkBackend(): AgentBackend {
+  return {
+    ...nativeBackend(),
+    forkSession: async (source) => session(null, source),
+  };
+}
+
 // The chat route resolves the backend from the agent id, so both fixtures stand
 // in for the same adapter and each test installs the one it needs.
-function useBackend(kind: "native" | "context" | "failing"): void {
+function useBackend(kind: "native" | "context" | "failing" | "same"): void {
   registerBackend(
     "codex-cli",
-    kind === "native" ? nativeBackend : kind === "context" ? contextBackend : failingForkBackend,
+    kind === "native"
+      ? nativeBackend
+      : kind === "context"
+        ? contextBackend
+        : kind === "failing"
+          ? failingForkBackend
+          : sameSessionForkBackend,
   );
 }
 
@@ -318,6 +331,32 @@ describe("chat forks", () => {
     // The new message is appended after the replay, never included twice.
     expect(prompt.match(/AFTER-FALLBACK/g)).toHaveLength(1);
     expect(stored.runtimeId).toBe("native-started");
+  });
+
+  test("falls back when the provider returns the source session instead of a fork", async () => {
+    useBackend("same");
+    const source = seedThread();
+    const forked = ChatThreadSchema.parse(
+      await (
+        await req(app, "POST", `/chat/threads/${source.id}/fork`, {
+          messageId: source.messages[3]?.id,
+        })
+      ).json(),
+    );
+    expect(forked.forkedFrom?.mode).toBe("native");
+
+    const turn = await streamTurn({
+      threadId: forked.id,
+      messages: [{ role: "user", content: "AFTER-SAME-SESSION" }],
+    });
+    expect(turn.status).toBe(200);
+    const stored = ChatThreadSchema.parse(
+      await (await req(app, "GET", `/chat/threads/${forked.id}`)).json(),
+    );
+    expect(stored.forkedFrom?.mode).toBe("context");
+    expect(stored.forkedFrom?.fallbackReason).toContain("source session");
+    expect(stored.runtimeId).not.toBe("source-native");
+    expect(stored.forkPending).toBeUndefined();
   });
 
   test("rejects a lossy context fork when older native history is unavailable", async () => {
