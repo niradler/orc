@@ -176,4 +176,14 @@ test("should decline unsupported ACP elicitation modes and schemas", () => {
       },
     }),
   ).toThrow("Secret");
+  expect(() =>
+    acpElicitationForm("r", {
+      mode: "form",
+      message: "Sign in",
+      requestedSchema: {
+        type: "object",
+        properties: { code: { type: "string", title: "Code", format: "password" } },
+      },
+    }),
+  ).toThrow("Secret");
 });
