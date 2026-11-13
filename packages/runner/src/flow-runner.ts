@@ -1351,10 +1351,16 @@ async function flowWorktree(
   };
   try {
     const scope = task.git_repo ?? projectScope(task.project_id);
-    if (!scope) return (release(), null);
+    if (!scope) {
+      release();
+      return null;
+    }
     const run = gitRunner(host);
     const root = await repoRoot(scope, run).catch(() => null);
-    if (!root) return (release(), null);
+    if (!root) {
+      release();
+      return null;
+    }
     const paths = root.startsWith("/") ? posix : win32;
     const sub = paths.relative(root, scope).startsWith("..") ? "" : paths.relative(root, scope);
     const inLane = (lane: string) => (sub ? paths.join(lane, sub) : lane);
