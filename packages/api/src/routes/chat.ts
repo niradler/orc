@@ -59,6 +59,7 @@ import {
 } from "@orc/core/provider-service";
 import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
+import { prepareSessionDirectory } from "@orc/core/session-dir";
 import {
   type SessionFile,
   UPLOAD_MAX_BYTES,
@@ -107,7 +108,6 @@ import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-
 import { activeTurns, type ChatTarget, registerChatControl, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
-import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import { workspaceLaunch } from "../workspaces/service.js";
 
 const logger = createLogger("api:chat");

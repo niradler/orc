@@ -2,7 +2,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostExec } from "@orc/core/exec-host";
-import { gitError, gitRunner, repoRoot } from "../terminals/session-dir.js";
+import { gitError, gitRunner, repoRoot } from "@orc/core/session-dir";
 
 export interface GitFile {
   path: string;

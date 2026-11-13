@@ -1,13 +1,13 @@
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostRuntime } from "@orc/core/exec-host";
-import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 import {
   excludeOrcWorktrees,
   gitError,
   gitRunner,
   repoRoot,
   worktreePath,
-} from "../terminals/session-dir.js";
+} from "@orc/core/session-dir";
+import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 
 export function repositoryIdentity(value: string): string {
   const url = value.trim().replace(/\\/g, "/");

@@ -2,7 +2,7 @@ import { z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { OrcError, ValidationError } from "@orc/core/errors";
 import type { ExecHost } from "@orc/core/exec-host";
-import { gitRunner } from "../terminals/session-dir.js";
+import { gitRunner } from "@orc/core/session-dir";
 import { type GithubDeps, githubAuth, githubRemote } from "./github.js";
 import { gitStatus } from "./panel.js";
 

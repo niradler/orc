@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, normalize, resolve, sep } from "node:path";
 import { ConflictError, OrcError, ValidationError } from "@orc/core/errors";
-import { type GitResult, gitError, repoRoot } from "../terminals/session-dir.js";
+import { type GitResult, gitError, repoRoot } from "@orc/core/session-dir";
 
 export interface Worktree {
   path: string;

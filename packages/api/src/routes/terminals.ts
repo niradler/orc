@@ -12,6 +12,7 @@ import {
 import { jobShellArgv } from "@orc/core/job-settings";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import { ProviderIdSchema } from "@orc/core/providers";
+import { prepareSessionDirectory } from "@orc/core/session-dir";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
@@ -43,7 +44,6 @@ import {
   sessionDirDeps,
   terminalsAvailability,
 } from "../terminals/service.js";
-import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import {
   projectById,
   projectWorkspaceConfig,

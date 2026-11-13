@@ -148,6 +148,10 @@ export function usedWorkspacePorts(db: Database): number[] {
   });
 }
 
+export function deleteWorkspaceEnvironment(db: Database, path: string): void {
+  db.query("DELETE FROM workspace_environments WHERE worktree_path = ?").run(path);
+}
+
 export function deleteProjectWorkspaceEnvironments(db: Database, projectId: string): void {
   db.query("DELETE FROM workspace_environments WHERE project_id = ?").run(projectId);
 }
