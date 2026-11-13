@@ -148,7 +148,8 @@ describe("flow worktree isolation", () => {
     expect(a).toBe(join(repo, ".orc", "worktrees", `${taskId}-a`));
     expect(b).toBe(join(repo, ".orc", "worktrees", `${taskId}-b`));
     const listed = git("worktree", "list");
-    expect(listed).toContain(`${a} `);
+    // Git prints worktree paths with forward slashes on every platform.
+    expect(listed.replace(/\\/g, "/")).toContain(`${a.replace(/\\/g, "/")} `);
     expect(listed).toContain(`[orc/task/${taskId}-a]`);
     expect(listed).toContain(`[orc/task/${taskId}-b]`);
     expect(
