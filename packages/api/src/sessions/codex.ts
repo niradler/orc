@@ -13,6 +13,9 @@ import { parseCodexUsage } from "./usage-parsers.js";
 export const CODEX_STATE_DB = join(homedir(), ".codex", "state_5.sqlite");
 const logger = createLogger("api:codex-attention");
 
+/** Rollouts above this cap cannot be read whole; they keep an estimated lifetime total. */
+const CODEX_ROLLOUT_READ_LIMIT = 32 * 1024 * 1024;
+
 type ThreadRow = {
   id: string;
   title: string;
@@ -87,7 +90,8 @@ export function codexAdapter(
         return Promise.all(
           rows.map(async (r): Promise<SessionRecord> => {
             const updated = r.updated_at_ms ?? r.updated_at * 1000;
-            const live = (await runtime.stat(r.rollout_path))?.mtimeMs ?? null;
+            const rolloutStat = await runtime.stat(r.rollout_path);
+            const live = rolloutStat?.mtimeMs ?? null;
             const owned =
               runtime.host.kind === "local"
                 ? (options.writer ?? hasWriter)(join(lockDirectory, `${r.id}.lock`))
@@ -140,14 +144,37 @@ export function codexAdapter(
                 before?.usageVersion !== USAGE_EVENT_VERSION)
             ) {
               record.usage = async () => {
+                const expected = r.tokens_used > 0 ? r.tokens_used : null;
+                // An oversized rollout cannot be read whole. Keep the lifetime total as a
+                // single estimated request instead of throwing (and re-throwing every sync),
+                // so the session still reports usage and is not left permanently unindexed.
+                if (rolloutStat && rolloutStat.size > CODEX_ROLLOUT_READ_LIMIT) {
+                  const total = expected ?? 0;
+                  return {
+                    tokens: total,
+                    model: null,
+                    events: total
+                      ? [
+                          {
+                            key: "session",
+                            ts: lastActivityAt.getTime(),
+                            model: null,
+                            inputTokens: 0,
+                            outputTokens: 0,
+                            cacheReadTokens: 0,
+                            cacheWriteTokens: 0,
+                            reasoningTokens: 0,
+                            otherTokens: total,
+                            estimated: true,
+                          },
+                        ]
+                      : [],
+                  };
+                }
                 const content = new TextDecoder().decode(
-                  await runtime.readFile(r.rollout_path, 32 * 1024 * 1024),
+                  await runtime.readFile(r.rollout_path, CODEX_ROLLOUT_READ_LIMIT),
                 );
-                return parseCodexUsage(
-                  content,
-                  r.tokens_used > 0 ? r.tokens_used : null,
-                  lastActivityAt.getTime(),
-                );
+                return parseCodexUsage(content, expected, lastActivityAt.getTime());
               };
               record.usageVersion = USAGE_EVENT_VERSION;
             }

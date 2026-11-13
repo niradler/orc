@@ -136,9 +136,19 @@ for (const width of [1440, 390])
       await page.route("**/api/usage/report?*", async (route) => {
         const url = new URL(route.request().url());
         const granularity = url.searchParams.get("granularity") ?? "day";
+        const modelParam = url.searchParams.get("model");
+        const modelRow = modelParam
+          ? report.models.find((row) => (row.model ?? "__unknown__") === modelParam)
+          : undefined;
+        const totals = modelRow
+          ? Object.fromEntries(
+              Object.entries(modelRow).filter(([key]) => key !== "agent" && key !== "model"),
+            )
+          : report.totals;
         await route.fulfill({
           json: {
             ...report,
+            totals,
             days: Number(url.searchParams.get("days") ?? 30),
             granularity,
             filters: {
@@ -199,6 +209,20 @@ for (const width of [1440, 390])
       await expect(section).toContainText("Filtered to Codex");
       await expect(page.getByTestId("usage-models")).toBeVisible();
       await expect(page.getByTestId("usage-models")).toContainText("gpt-6");
+      // Selecting a model narrows the stat cards but the distribution keeps every
+      // model, so shares must stay relative to the full distribution (80/20), not
+      // clamp against the filtered total.
+      const modelRequest = page.waitForRequest(
+        (request) =>
+          request.url().includes("/api/usage/report") &&
+          new URL(request.url()).searchParams.get("model") === "gpt-6",
+      );
+      await page.getByTestId("usage-model").selectOption("gpt-6");
+      await modelRequest;
+      await expect(page.getByTestId("usage-total-tokens")).toHaveText("100k");
+      const modelRows = section.getByTestId("usage-model-row");
+      await expect(modelRows.nth(0)).toContainText("80.0%");
+      await expect(modelRows.nth(1)).toContainText("20.0%");
       await expect(section).toContainText("Coverage");
       expect(await section.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await page.reload();

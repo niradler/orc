@@ -138,7 +138,9 @@ export function opencodeAdapter(
             }>(
               runtime,
               path,
-              `SELECT id, data, time_created FROM session_message WHERE session_id = '${row.id}' AND type = 'assistant' ORDER BY seq`,
+              // Compaction summaries are billed model requests with the same token
+              // shape; excluding them undercounts the session's real consumption.
+              `SELECT id, data, time_created FROM session_message WHERE session_id = '${row.id}' AND type IN ('assistant', 'compaction') ORDER BY seq`,
             );
             let usage = parseOpenCodeUsage(messages);
             if (!usage.events.length) {

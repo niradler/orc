@@ -331,6 +331,48 @@ test("should roll aged raw rows up without changing totals", () => {
   expect(maintainUsageRetention(now)).toBe(0);
 });
 
+test("should keep estimated request counts when old usage rolls up", async () => {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  const oldTs = now - (USAGE_RAW_RETENTION_DAYS + 3) * 86_400_000;
+  sqlite.run(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, created_at) VALUES ('retention3', ?, 'gemini', 'direct', ?)",
+    [LIVE_CHAT_ID, Math.floor(now / 1000)],
+  );
+  // Insert raw aged rows so the retention sweep (not the write path) rolls them up.
+  const insertEvent = sqlite.query(
+    `INSERT INTO usage_events
+       (id, session_id, event_key, agent, model, ts, other_tokens, total_tokens,
+        requests, estimated_requests, resolution, estimated)
+     VALUES (?, 'retention3', ?, 'gemini', NULL, ?, ?, ?, 1, 1, 'request', 1)`,
+  );
+  insertEvent.run("ret3-old", "gemini-0", oldTs, 40, 40);
+  insertEvent.run("ret3-new", "gemini-1", now, 5, 5);
+  expect(maintainUsageRetention(now)).toBeGreaterThanOrEqual(1);
+  expect(
+    sqlite
+      .query<
+        { estimated_requests: number; estimated: number; requests: number; total: number },
+        []
+      >(
+        `SELECT estimated_requests, estimated, requests, total_tokens AS total
+         FROM usage_events WHERE session_id = 'retention3' AND resolution = 'rollup'`,
+      )
+      .get(),
+  ).toEqual({ estimated_requests: 1, estimated: 1, requests: 1, total: 40 });
+  const report = UsageReportSchema.parse(
+    await (
+      await app.request("/api/usage/report?days=0&agent=gemini&model=__unknown__", { headers })
+    ).json(),
+  );
+  expect(report.totals).toMatchObject({
+    total_tokens: 75,
+    requests: 3,
+    estimated_requests: 3,
+    sessions: 2,
+  });
+});
+
 test("should cap a chatty session while keeping represented requests and totals", () => {
   const sqlite = getSqlite();
   const now = Date.now();

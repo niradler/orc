@@ -198,6 +198,9 @@ function UsageChart({ points, granularity }: { points: ChartPoint[]; granularity
             {type.label}
           </span>
         ))}
+        <span className="ml-auto" title="Time buckets are grouped in UTC">
+          UTC
+        </span>
       </figcaption>
       <div className="h-48 w-full min-w-0 sm:h-60">
         <ResponsiveContainer width="100%" height="100%">
@@ -380,6 +383,11 @@ export function UsageSettings() {
     (totals?.cache_write_tokens ?? 0);
   const cacheHit = cacheInput > 0 ? ((totals?.cache_read_tokens ?? 0) / cacheInput) * 100 : null;
   const visibleModels = showAllModels ? models : models.slice(0, 6);
+  // Distribution rows stay unfiltered by their own facet so the user can switch
+  // agents/models; shares must therefore use the distribution's own total, not the
+  // filtered page total, which would clamp every other row to 100%.
+  const modelsTotal = models.reduce((sum, row) => sum + tokenTotal(row), 0);
+  const agentsTotal = agents.reduce((sum, row) => sum + tokenTotal(row), 0);
   const selectedModel = model ? models.find((row) => modelKey(row.model) === model) : undefined;
   const filtered = Boolean(agent || model);
 
@@ -471,6 +479,11 @@ export function UsageSettings() {
                 data-testid={`usage-granularity-${value}`}
                 aria-pressed={granularity === value}
                 disabled={value === "hour" && (days === "90" || days === "0")}
+                title={
+                  value === "hour" && (days === "90" || days === "0")
+                    ? "Hour buckets are available for periods up to 30 days"
+                    : undefined
+                }
                 onClick={() => setGranularity(value)}
                 className="min-h-11"
               >
@@ -679,7 +692,7 @@ export function UsageSettings() {
                     <ModelRow
                       key={`${row.agent}:${key}`}
                       row={row}
-                      total={totals.total_tokens}
+                      total={modelsTotal}
                       color={agentColor(row.agent, agentIds)}
                       expanded={expandedModel === `${row.agent}:${key}`}
                       onToggle={() =>
@@ -726,11 +739,11 @@ export function UsageSettings() {
                       <span className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                         <span className="text-sm">{agentName(row.agent)}</span>
                         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                          {count.format(value)} · {share(value, totals.total_tokens).toFixed(1)}%
+                          {count.format(value)} · {share(value, agentsTotal).toFixed(1)}%
                         </span>
                       </span>
                       <ShareBar
-                        value={share(value, totals.total_tokens)}
+                        value={share(value, agentsTotal)}
                         color={agentColor(row.agent, agentIds)}
                         label={`${agentName(row.agent)} share`}
                       />
