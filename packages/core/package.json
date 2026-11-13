@@ -40,6 +40,7 @@
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./exec-host": "./src/exec-host.ts",
+    "./session-dir": "./src/session-dir.ts",
     "./types": "./src/types.ts",
     "./logger": "./src/logger.ts",
     "./live-session": "./src/live-session.ts",

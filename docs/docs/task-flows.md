@@ -99,6 +99,7 @@ An LLM decides *what happened*. Nothing else. Where that verdict leads is code.
   "description": "...",
   "version": 1,
   "entry": "build",
+  "isolation": "worktree",       // "shared" (default) or a git worktree per agent lane
   "limits": {
     "max_node_executions": 24,        // total node runs before halting
     "execution_timeout_secs": 14400,  // wall clock for the whole run
@@ -188,6 +189,16 @@ Injected at start: `task_id`, `task_title`, `project_id`, `skill_name`, `require
 - Reaching **any** terminal ends the whole run and cancels branches still in flight.
 
 Fan-out costs roughly N× the tokens. Use it where one reviewer demonstrably misses things, not by default — and note that with the default `agent_loop.max_workers` of 1 the branches run one after another, so you pay the tokens without gaining wall-clock. Raise `max_workers` before choosing a custom parallel review graph.
+
+## Worktree isolation
+
+With `"isolation": "worktree"`, agent nodes work in git worktrees instead of the project checkout, so parallel nodes, or two tasks in one project, never edit the same files. The built-in `orc-default` and `orc-human-review` flows use it.
+
+- A node that needs a tree takes the most recently finished node's worktree when no running node holds it, so `build` → `review` → `build` stays in one tree.
+- A node that starts while that tree is busy, such as a parallel branch, gets its own `<repo>/.orc/worktrees/<task>-<node>` on branch `orc/task/<task>-<node>`.
+- A task with an explicit `git_worktree`, a resumed node session, or a project folder that is not a git repository keeps the existing behavior.
+- The task's flow panel shows each node's branch and folder.
+- When the task becomes `done` or `cancelled`, ORC runs `git worktree remove` on the flow's worktrees and keeps the branches. A tree with uncommitted or untracked changes is kept, and a task comment names it.
 
 ## Termination
 

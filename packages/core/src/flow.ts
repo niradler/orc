@@ -202,6 +202,7 @@ export const FlowDefinitionSchema = z.strictObject({
   description: z.string().max(2_000).default(""),
   version: z.number().int().min(1).default(1),
   entry: z.string().min(1),
+  isolation: z.enum(["shared", "worktree"]).default("shared"),
   limits: FlowLimitsSchema.default(DEFAULT_FLOW_LIMITS),
   nodes: z
     .record(z.string().min(1).max(64), FlowNodeSchema)

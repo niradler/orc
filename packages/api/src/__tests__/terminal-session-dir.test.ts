@@ -16,7 +16,7 @@ import {
   type GitResult,
   prepareSessionDirectory,
   REMOTE_EXCLUDE_SCRIPT,
-} from "../terminals/session-dir.js";
+} from "@orc/core/session-dir";
 
 function deps(over: Partial<Parameters<typeof prepareSessionDirectory>[1]> = {}) {
   return {
@@ -152,7 +152,7 @@ describe("prepareSessionDirectory with git", () => {
     await git(["add", "README.md"], repo);
     await git(["commit", "-m", "init"], repo);
 
-    const { runGit } = await import("../terminals/session-dir.js");
+    const { runGit } = await import("@orc/core/session-dir");
     const plainCwd = await prepareSessionDirectory(
       { cwd: plain, worktree: true },
       {

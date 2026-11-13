@@ -10,8 +10,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runGit } from "@orc/core/session-dir";
 import { isInside, removeWorktree, trackedWorktrees } from "../git/worktrees.js";
-import { runGit } from "../terminals/session-dir.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const folder = mkdtempSync(join(tmpdir(), "orc-git-integration-"));

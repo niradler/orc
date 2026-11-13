@@ -10,10 +10,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOCAL_HOST } from "@orc/core/exec-host";
+import { runGit } from "@orc/core/session-dir";
 import { gitStatus, parseStatus } from "../git/panel.js";
 import { listWorktrees } from "../git/worktrees.js";
 import { shutdownTerminals } from "../terminals/service.js";
-import { runGit } from "../terminals/session-dir.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;

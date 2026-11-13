@@ -1,8 +1,8 @@
 import { type ExecHost, hostIsDirectory, hostPlatform, resolveExecHost } from "@orc/core/exec-host";
+import { gitRunner } from "@orc/core/session-dir";
 import { getDb } from "@orc/db/client";
 import { observeCheckout } from "../realtime/sources.js";
 import { getTerminalManager } from "../terminals/service.js";
-import { gitRunner } from "../terminals/session-dir.js";
 import {
   isInside,
   type RemoveWorktreeDeps,

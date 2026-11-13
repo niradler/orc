@@ -2,7 +2,13 @@ import type { AgentSession } from "@orc/agent-runtime";
 import { openAgentSession } from "@orc/agent-runtime";
 import { readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
-import { type ExecHost, hostAlias, hostExec, resolveExecHost } from "@orc/core/exec-host";
+import {
+  type ExecHost,
+  execHostFor,
+  hostAlias,
+  hostExec,
+  resolveExecHost,
+} from "@orc/core/exec-host";
 import type { FlowCondition, FlowDefinition, FlowNode, NumericOperand } from "@orc/core/flow";
 import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
 import type { FlowAction, FlowState, FlowStep } from "@orc/core/flow-engine";
@@ -10,6 +16,7 @@ import { advanceFlow, checkFlowTimeout, describeHalt, startFlow } from "@orc/cor
 import { resolveFlowForTask } from "@orc/core/flow-service";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { excludeOrcWorktrees, gitRunner, repoRoot, worktreePath } from "@orc/core/session-dir";
 import type { SkillFull } from "@orc/core/skill-service";
 import { renderSkillInstructions } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
@@ -1266,7 +1273,101 @@ async function validateTaskWorktree(
     throw new Error(`Task worktree does not belong to the task repository: ${cwd}`);
 }
 
+const claimedWorktrees = new Set<string>();
+
+type FlowWorktreeRow = { cwd: string; status: string };
+
+function flowWorktreeRows(flowRunId: string): FlowWorktreeRow[] {
+  return getSqlite()
+    .query(
+      `SELECT gs.cwd, fnr.status FROM flow_node_runs fnr
+       JOIN gateway_sessions gs ON gs.id = fnr.gateway_session_id
+       WHERE fnr.flow_run_id = ? AND gs.cwd LIKE '%.orc/worktrees/%'
+       ORDER BY COALESCE(fnr.ended_at, fnr.started_at, fnr.created_at) DESC`,
+    )
+    .all(flowRunId) as FlowWorktreeRow[];
+}
+
+async function flowWorktree(
+  host: ExecHost,
+  task: TaskRow,
+  flowRunId: string,
+  nodeId: string,
+): Promise<string | null> {
+  const rows = flowWorktreeRows(flowRunId);
+  const held = new Set(rows.filter((row) => row.status === "running").map((row) => row.cwd));
+  const reusable = rows.find(
+    (row) => row.status !== "running" && !held.has(row.cwd) && !claimedWorktrees.has(row.cwd),
+  )?.cwd;
+  const scope = task.git_repo ?? projectScope(task.project_id);
+  if (reusable) {
+    claimedWorktrees.add(reusable);
+    return reusable;
+  }
+  if (!scope) return null;
+  const run = gitRunner(host);
+  const root = await repoRoot(scope, run).catch(() => null);
+  if (!root) return null;
+  const name = `${task.id}-${nodeId}`;
+  const path = worktreePath(root, name);
+  if (claimedWorktrees.has(path) || held.has(path)) return null;
+  claimedWorktrees.add(path);
+  try {
+    const existing = await run(["git", "-C", path, "rev-parse", "--is-inside-work-tree"]);
+    if (existing.code === 0) return path;
+    await excludeOrcWorktrees(host, root);
+    const branch = `orc/task/${name}`;
+    const created = await run(["git", "-C", root, "worktree", "add", "-b", branch, path]);
+    if (created.code === 0) return path;
+    const attached = await run(["git", "-C", root, "worktree", "add", path, branch]);
+    if (attached.code === 0) return path;
+    throw new Error(
+      `Could not create the flow worktree ${path}: ${(created.stderr || attached.stderr).trim()}`,
+    );
+  } catch (error) {
+    claimedWorktrees.delete(path);
+    throw error;
+  }
+}
+
+export async function retireFlowWorktrees(taskId: string): Promise<void> {
+  const task = getTask(taskId);
+  if (!task || !["done", "cancelled"].includes(task.status)) return;
+  const rows = getSqlite()
+    .query(
+      `SELECT DISTINCT gs.cwd, gs.execution_host FROM flow_node_runs fnr
+       JOIN gateway_sessions gs ON gs.id = fnr.gateway_session_id
+       WHERE fnr.task_id = ? AND gs.cwd LIKE '%.orc/worktrees/' || ? || '-%'
+         AND NOT EXISTS (SELECT 1 FROM flow_node_runs live JOIN gateway_sessions lgs
+           ON lgs.id = live.gateway_session_id WHERE live.status = 'running' AND lgs.cwd = gs.cwd)`,
+    )
+    .all(taskId, taskId) as { cwd: string; execution_host: string | null }[];
+  for (const row of rows) {
+    const host = execHostFor(row.execution_host);
+    const removed = await gitRunner(host)(["git", "-C", row.cwd, "worktree", "remove", row.cwd]);
+    if (removed.code === 0) {
+      claimedWorktrees.delete(row.cwd);
+      continue;
+    }
+    if (/is not a working tree|No such file|cannot change to/i.test(removed.stderr)) continue;
+    await addTaskComment(
+      taskId,
+      `Kept the flow worktree \`${row.cwd}\`: ${removed.stderr.trim() || "git worktree remove failed"}. Commit or discard its changes, then remove it.`,
+      "system",
+    );
+  }
+}
+
 async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
+  const claims: string[] = [];
+  try {
+    return await startNodeSession(nodeRun, claims);
+  } finally {
+    for (const path of claims) claimedWorktrees.delete(path);
+  }
+}
+
+async function startNodeSession(nodeRun: NodeRunRow, claims: string[]): Promise<boolean> {
   const loaded = loadRun(nodeRun.flow_run_id);
   if (!loaded) return false;
   const task = getTask(nodeRun.task_id);
@@ -1282,9 +1383,23 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
 
   const prev =
     nodeRun.resume_session === 1 ? previousNodeSession(nodeRun.flow_run_id, nodeRun.node_id) : null;
+  let isolated: string | null = null;
+  if (!prev && !task.git_worktree && loaded.def.isolation === "worktree") {
+    try {
+      isolated = await flowWorktree(host, task, nodeRun.flow_run_id, nodeRun.node_id);
+      if (isolated) claims.push(isolated);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(message);
+      await addTaskComment(task.id, `Flow node failed: ${message}`, "system");
+      await finishNodeRun(nodeRun.id, message);
+      return false;
+    }
+  }
   const cwd =
     prev?.cwd ??
     task.git_worktree ??
+    isolated ??
     projectScope(task.project_id) ??
     (host.kind === "ssh" ? "~" : process.cwd());
   if (task.git_worktree) {
@@ -2033,6 +2148,8 @@ export type FlowRunView = {
     summary: string | null;
     error: string | null;
     gateway_session_id: string | null;
+    cwd: string | null;
+    worktree_branch: string | null;
     /** When the row was written - a node that is queued or parked has no
      *  started_at yet, and this is the only clock a reader can use for it. */
     created_at: number;
@@ -2051,13 +2168,23 @@ export function getFlowRunView(flowRunId: string): FlowRunView | null {
     | null;
   if (!row) return null;
 
-  const nodes = getSqlite()
-    .query(
-      `SELECT node_id, node_kind, attempt, retry, status, outcome, summary, error,
-              gateway_session_id, created_at, started_at, ended_at
-       FROM flow_node_runs WHERE flow_run_id = ? ORDER BY created_at ASC`,
-    )
-    .all(flowRunId) as FlowRunView["nodes"];
+  const nodes = (
+    getSqlite()
+      .query(
+        `SELECT fnr.node_id, fnr.node_kind, fnr.attempt, fnr.retry, fnr.status, fnr.outcome,
+                fnr.summary, fnr.error, fnr.gateway_session_id, gs.cwd, fnr.created_at,
+                fnr.started_at, fnr.ended_at
+         FROM flow_node_runs fnr LEFT JOIN gateway_sessions gs ON gs.id = fnr.gateway_session_id
+         WHERE fnr.flow_run_id = ? ORDER BY fnr.created_at ASC`,
+      )
+      .all(flowRunId) as Omit<FlowRunView["nodes"][number], "worktree_branch">[]
+  ).map((node) => {
+    const name = node.cwd?.match(/[\\/]\.orc[\\/]worktrees[\\/]([^\\/]+)$/)?.[1];
+    return {
+      ...node,
+      worktree_branch: name?.startsWith(`${row.task_id}-`) ? `orc/task/${name}` : null,
+    };
+  });
 
   return {
     id: row.id,
