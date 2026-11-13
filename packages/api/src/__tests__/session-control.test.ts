@@ -23,6 +23,7 @@ import { HumanRequestStore } from "@orc/db/human-requests";
 import { deliverIdleAnswers } from "../human-request-delivery";
 import type { createApp } from "../server";
 import { deliverIdleSessionMessages } from "../session-message-delivery";
+import { chatControl } from "../sessions/turns";
 import { req, setupTestApp, teardownTestApp } from "./helpers";
 
 type Turn = { prompt: string; steers: string[]; release: () => void; cwd: string };
@@ -80,7 +81,11 @@ function turnFor(prompt: string): Promise<Turn> {
   return until(() => turns.find((turn) => turn.prompt.includes(prompt)), prompt);
 }
 
-async function startParent(prompt: string, cwd: string): Promise<ChatThread> {
+async function startParent(
+  prompt: string,
+  cwd: string,
+  extra: Record<string, unknown> = {},
+): Promise<ChatThread> {
   const response = await app.request("/api/chat/stream", {
     method: "POST",
     headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
@@ -88,6 +93,7 @@ async function startParent(prompt: string, cwd: string): Promise<ChatThread> {
       agent: "claude",
       workspace: { cwd },
       messages: [{ role: "user", content: prompt }],
+      ...extra,
     }),
   });
   const reader = response.body?.getReader();
@@ -295,7 +301,8 @@ describe("agent session control", () => {
     expect(queued.target.delivery).toBe("chat");
 
     childTurn.release();
-    await until(async () => (await status(child.session_id)).status === "idle", "child idle");
+    await until(() => !chatControl().running(child.session_id), "child turn ended");
+    expect((await status(child.session_id)).status).toBe("running");
     const delivering = deliverIdleSessionMessages();
     (await turnFor("stranger: please also lint")).release();
     (await turnFor(`Child session "child: audit"`)).release();
@@ -330,7 +337,7 @@ describe("agent session control", () => {
       )
     ).json<SessionMessageResult>();
     expect(sent.message.state).toBe("queued");
-    await until(async () => (await status(child.session_id)).status === "stopped", "stopped");
+    await until(() => !chatControl().running(child.session_id), "child turn stopped");
     const delivering = deliverIdleSessionMessages();
     (await turnFor("stop and fix the build first")).release();
     await delivering;
@@ -413,5 +420,45 @@ describe("agent session control", () => {
     expect(turn.steers.join("\n")).toContain("Answer: Use Postgres");
     expect(requests.get(asked.id).status).toBe("delivered");
     turn.release();
+  });
+
+  test("should start a child with the parent's permission mode and report a queued child as running", async () => {
+    const parent = await startParent("cautious: plan", repo, { permissionMode: "acceptEdits" });
+    (await turnFor("cautious: plan")).release();
+    await until(async () => (await status(parent.id)).status === "idle", "cautious idle");
+    const child = await (
+      await req(
+        app,
+        "POST",
+        "/sessions/live/spawn",
+        { prompt: "child: careful edit", notify: false },
+        as(parent.id),
+      )
+    ).json<SessionStatus>();
+    const thread = await (
+      await req(app, "GET", `/chat/threads/${child.session_id}`)
+    ).json<ChatThread>();
+    expect(thread.config.permissionMode).toBe("acceptEdits");
+    (await turnFor("child: careful edit")).release();
+    await until(async () => (await status(child.session_id)).status === "idle", "child idle");
+
+    await req(
+      app,
+      "POST",
+      "/session-messages",
+      { session_id: child.session_id, body: "one more pass" },
+      as(parent.id),
+    );
+    expect((await status(child.session_id)).status).toBe("running");
+    const waited = await (
+      await req(
+        app,
+        "POST",
+        `/sessions/live/${child.session_id}/wait`,
+        { timeout_s: 1 },
+        as(parent.id),
+      )
+    ).json<SessionStatus & { timed_out: boolean }>();
+    expect(waited.timed_out).toBe(true);
   });
 });

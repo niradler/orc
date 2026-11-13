@@ -420,6 +420,8 @@ app.openapi(
   },
 );
 
+const STEER_LIMIT = 32;
+
 function steerable(
   run: ChatRun | undefined,
 ): run is ChatRun & { session: AgentSession & Required<Pick<AgentSession, "steer">> } {
@@ -437,7 +439,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       throw new ConflictError("This steering request ID already has different content.");
     return previous.result;
   }
-  if (run.steering.size >= 32)
+  if (run.steering.size >= STEER_LIMIT)
     throw new ConflictError(
       "This response has reached its steering limit. Queue a message instead.",
     );
@@ -1732,12 +1734,14 @@ async function openChat(
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],
   spawnedBy?: ChatSpawn,
+  toolAllowlist?: string[],
 ): Promise<ChatRun> {
   const thread = body.threadId
     ? requireThread(body.threadId)
     : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
   if (!body.threadId && spawnedBy) thread.spawnedBy = spawnedBy;
+  if (!body.threadId && toolAllowlist) thread.toolAllowlist = toolAllowlist;
   if (body.threadId && body.projectId && body.projectId !== thread.projectId)
     throw new ValidationError("An existing conversation keeps its project");
   const project = thread.projectId
@@ -2467,6 +2471,8 @@ function projectRoot(projectId: string): string {
   return row.scope;
 }
 
+const startingSpawns = new Set<string>();
+
 export async function spawnChat(callerId: string, input: SessionSpawn): Promise<ChatThread> {
   const parent = spawnParent(callerId);
   const parentId = store().get(callerId) ? callerId : parent.sessionId;
@@ -2475,6 +2481,25 @@ export async function spawnChat(callerId: string, input: SessionSpawn): Promise<
     const existing = children.find((child) => child.spawnedBy?.requestId === input.request_id);
     if (existing) return existing;
   }
+  const key = input.request_id ? `${parentId}:${input.request_id}` : null;
+  if (key && startingSpawns.has(key))
+    throw new ConflictError(
+      "This session is already being started; retry with the same request_id",
+    );
+  if (key) startingSpawns.add(key);
+  try {
+    return await startChild(parent, parentId, children, input);
+  } finally {
+    if (key) startingSpawns.delete(key);
+  }
+}
+
+async function startChild(
+  parent: SpawnParent,
+  parentId: string,
+  children: ChatThread[],
+  input: SessionSpawn,
+): Promise<ChatThread> {
   if (spawnChain(parentId).length + 1 >= SESSION_MESSAGE_HOP_LIMIT)
     throw new ConflictError(
       `Spawn depth limit (${SESSION_MESSAGE_HOP_LIMIT}) reached; ask a human to start this session`,
@@ -2500,12 +2525,30 @@ export async function spawnChat(callerId: string, input: SessionSpawn): Promise<
         ? projectRoot(projectId)
         : null;
   if (!base) throw new ValidationError("The calling session has no folder to start from");
+  const source = store().get(parentId);
+  const agent = input.agent ?? parent.agent ?? undefined;
+  const sameAgent = !!source && agent === source.config.agent;
+  if (source?.toolAllowlist && agent !== "claude")
+    throw new ValidationError(
+      "This session has a tool allowlist that only Claude can enforce; start a Claude child",
+    );
+  const backend = agent ? chatBackendFor(agent) : null;
+  const permissionMode = source?.config.permissionMode ?? "default";
   const run = await openChat(
     {
       messages: [{ role: "user", content: input.prompt }],
-      ...(input.agent || parent.agent ? { agent: input.agent ?? parent.agent ?? undefined } : {}),
+      ...(agent ? { agent } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(projectId ? { projectId } : {}),
+      ...(backend && createBackend(backend).capabilities?.livePermissions !== false
+        ? { permissionMode }
+        : {}),
+      ...(sameAgent && source
+        ? {
+            agentOptions: source.config.agentOptions,
+            ...(source.config.providerId ? { providerId: source.config.providerId } : {}),
+          }
+        : {}),
       workspace: {
         host: crossProject ? undefined : parent.host,
         cwd: base,
@@ -2519,6 +2562,7 @@ export async function spawnChat(callerId: string, input: SessionSpawn): Promise<
       notify: input.notify,
       ...(input.request_id ? { requestId: input.request_id } : {}),
     },
+    source?.toolAllowlist,
   );
   if (input.title) {
     run.thread.title = input.title;
@@ -2533,6 +2577,9 @@ export function chatStatus(id: string): SessionStatus {
   const last = [...thread.messages].reverse().find((message) => message.role === "assistant");
   const waitingFor = run?.permissions.size ? "approval" : run?.questions.size ? "question" : null;
   const outcome = last?.turn?.outcome;
+  const queue = new SessionMessageStore(getSqlite())
+    .queued(thread.id)
+    .map(({ id, state, position }) => ({ id, state, position }));
   return {
     session_id: thread.id,
     title: thread.title,
@@ -2541,16 +2588,16 @@ export function chatStatus(id: string): SessionStatus {
       ? waitingFor
         ? "waiting"
         : "running"
-      : outcome === "failed"
-        ? "failed"
-        : outcome === "stopped"
-          ? "stopped"
-          : "idle",
+      : queue.length
+        ? "running"
+        : outcome === "failed"
+          ? "failed"
+          : outcome === "stopped"
+            ? "stopped"
+            : "idle",
     waiting_for: waitingFor,
     last_message: last?.content || null,
-    queue: new SessionMessageStore(getSqlite())
-      .queued(thread.id)
-      .map(({ id, state, position }) => ({ id, state, position })),
+    queue,
     parent_session_id: thread.spawnedBy?.sessionId ?? null,
     children: store()
       .children([thread.id])
@@ -2578,10 +2625,13 @@ registerChatControl({
     if (!thread || threadRun(thread.id) || runs.size >= 4) return null;
     return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
   },
-  canSteer: (target) => steerable(nativeRun(target)?.[1]),
+  canSteer: (target) => {
+    const run = nativeRun(target)?.[1];
+    return steerable(run) && run.steering.size < STEER_LIMIT;
+  },
   steer: async (target, text) => {
     const run = nativeRun(target)?.[1];
-    if (!steerable(run)) return false;
+    if (!steerable(run) || run.steering.size >= STEER_LIMIT) return false;
     await steerRun(run, text, crypto.randomUUID());
     return true;
   },

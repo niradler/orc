@@ -182,7 +182,7 @@ export class SessionMessageStore {
 
   private checkRate(sender: SessionMessageSender, targetSessionId: string): void {
     // Human and channel relays are not part of an agent-to-agent conversation.
-    if (sender.kind !== "session") return;
+    if (sender.kind !== "session" && !(sender.kind === "system" && sender.session_id)) return;
     const key = this.senderKey(sender);
     const count = this.db
       .query<{ count: number }, [string, string, number]>(

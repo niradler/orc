@@ -137,3 +137,39 @@ test("should deliver command results only to the requesting MCP workflow", async
     ).status,
   ).toBe("delivered");
 });
+
+test("should let a chat session that is bound by its chat id ask and read with its native session id", async () => {
+  const chatId = "5b8f4a52-1c1d-4a63-9f0e-0d8f1a0c2b11";
+  getSqlite()
+    .query("INSERT INTO chat_threads (id, title, updated_at, data) VALUES (?,?,?,?)")
+    .run(
+      chatId,
+      "bound chat",
+      Date.now(),
+      JSON.stringify({
+        id: chatId,
+        backend: "claude",
+        runtimeId: "native-chat-1",
+        projectId: "project-a",
+      }),
+    );
+  const options = { projectScopes: [{ id: "project-a", name: "human-a" }], agentSessionId: chatId };
+  const request = JSON.parse(
+    await executeTool(
+      "human_request",
+      {
+        kind: "question",
+        prompt: "Which branch?",
+        origin: { backend: "claude", session_id: "native-chat-1", request_id: "chat-native" },
+      },
+      options,
+    ),
+  );
+  expect(request.input.origin.session_id).toBe("native-chat-1");
+  expect(JSON.parse(await executeTool("human_request_get", { id: request.id }, options)).id).toBe(
+    request.id,
+  );
+  await expect(
+    executeTool("human_request_get", { id: request.id }, { agentSessionId: "unrelated-chat" }),
+  ).rejects.toThrow("another agent session");
+});

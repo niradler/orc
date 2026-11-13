@@ -40,7 +40,7 @@ function chatTarget(threadId: string): PushTarget | null {
     host: thread.host,
     cwd: thread.cwd,
     model: thread.config.model ?? null,
-    fingerprint: `chat:${thread.updatedAt}`,
+    fingerprint: `chat:${crypto.randomUUID()}`,
     threadId: thread.id,
   };
 }

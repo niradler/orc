@@ -81,6 +81,7 @@ import {
   tasks,
 } from "@orc/db/schema";
 import { ScratchpadStore } from "@orc/db/scratchpads";
+import { SessionMessageStore } from "@orc/db/session-messages";
 import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
 import { withTaskAudit } from "@orc/db/task-audit";
 import { executeJob } from "@orc/runner/executor";
@@ -323,7 +324,7 @@ export const toolDefinitions = [
   {
     name: "session_start",
     description:
-      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree branched from your current state, or from another project's checkout), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC pushes the child's final reply, failure, stop or human question into this session: steered into your live turn when the agent supports it, otherwise at your next safe point. Use session_wait to block instead, session_send to message it, session_stop to stop it.",
+      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC pushes the child's final reply, failure, stop or human question into this session: steered into your live turn when the agent supports it, otherwise at your next safe point. Use session_wait to block instead, session_send to message it, session_stop to stop it.",
     inputSchema: SessionSpawnSchema.omit({ project_id: true }).extend({ project: projectParam }),
   },
   {
@@ -1330,6 +1331,16 @@ function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): strin
   return resolveProjectId(input.project)?.id ?? null;
 }
 
+function callerOwns(caller: string | null | undefined, claimed: string): boolean {
+  if (!caller || caller === claimed) return true;
+  try {
+    const session = new SessionMessageStore(getSqlite()).resolveSender(caller);
+    return session.session_id === claimed || session.native_id === claimed;
+  } catch {
+    return false;
+  }
+}
+
 export async function executeTool(
   name: ToolName,
   args: unknown,
@@ -1402,7 +1413,7 @@ export async function executeTool(
       (!scope || !options.projectScopes.some((item) => item.id === scope))
     )
       throw new ValidationError("Human request is outside the selected MCP projects");
-    if (options.agentSessionId && options.agentSessionId !== input.origin.session_id)
+    if (!callerOwns(options.agentSessionId, input.origin.session_id))
       throw new ValidationError("Human request must belong to the calling agent session");
     return JSON.stringify(
       await orcApi("POST", "/human-requests", { body: { ...input, project_id: scope } }),
@@ -1419,7 +1430,7 @@ export async function executeTool(
         !options.projectScopes.some((item) => item.id === request.input.project_id)
       )
         throw new ValidationError("Human request is outside the selected MCP projects");
-      if (options.agentSessionId && options.agentSessionId !== request.input.origin.session_id)
+      if (!callerOwns(options.agentSessionId, request.input.origin.session_id))
         throw new ValidationError("Human request belongs to another agent session");
       return request;
     };

@@ -122,7 +122,7 @@ subagents:
 | `workspace`      | Same project                                                                   | Another project (`project`)               |
 | ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
 | `same` (default) | The caller's folder, sharing uncommitted edits                                 | Refused                                   |
-| `worktree`       | A new git worktree under `.orc/worktrees/` cut from the caller's current state | A new worktree of that project's checkout |
+| `worktree` | A new git worktree under `.orc/worktrees/` on a new branch cut from the caller's committed HEAD (uncommitted edits stay behind) | A new worktree of that project's checkout |
 | `project`        | The project's main checkout                                                    | That project's main checkout              |
 
 Another project must be inside the caller's MCP project scope.
@@ -138,8 +138,11 @@ Guardrails:
 
 - Only a session's parent, or an ancestor of the parent, can `steer`, `interrupt`
   or stop it. Any other session can only `queue`.
-- Children start in the default permission mode. A child's permission prompt or
-  question goes to a human, never to the parent.
+- A child inherits its parent chat's permission mode, agent options and tool
+  allowlist; a child of any other session starts in the default permission mode.
+  A child's permission prompt or question goes to a human, never to the parent.
+- A child's notifications to its parent count toward the 20-messages-per-hour cap
+  for that pair.
 - A chain of started sessions stops at three levels, and a session can start
   at most ten sessions an hour.
 
