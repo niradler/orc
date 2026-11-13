@@ -85,6 +85,13 @@ The session list's **Recents** and **Projects** views, ordered by last activity:
 <img src="/screens/session-projects-desktop.png" alt="Session list grouped by project on desktop" width="640">
 <img src="/screens/session-projects-phone.png" alt="Session list grouped by project on a phone" width="260">
 
+Forking at a response copies the conversation into a new chat. The notice names the
+source, whether the fork continued the agent's native session or carried a context
+replay, and what that replay included.
+
+<img src="/screens/chat-fork-desktop.png" alt="Fork notice above the copied messages in a forked chat" width="320">
+<img src="/screens/chat-fork-phone.png" alt="The same fork notice on a phone" width="260">
+
 ## Activity
 
 ![Activity](/screens/dashboard.png)
