@@ -21527,6 +21527,8 @@ export interface components {
             summary: string | null;
             error: string | null;
             gateway_session_id: string | null;
+            cwd: string | null;
+            worktree_branch: string | null;
             /** @description When the visit was recorded. A queued or human-parked node has no started_at, so this is the only clock for how long it has been waiting. */
             created_at: number;
             started_at: number | null;
