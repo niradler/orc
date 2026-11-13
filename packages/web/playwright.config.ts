@@ -19,7 +19,9 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  retries: 0,
+  // Opt-in only: a full run has ~1-2 load-sensitive flakes per shard set, so a release
+  // gate can allow one retry (PW_RETRIES=1) while everyday runs stay strict.
+  retries: Number(process.env.PW_RETRIES ?? 0),
   // run-e2e.ts starts one API and database per shard. A second worker in the
   // same shard would share that database, so each shard stays single-worker.
   workers: 1,
