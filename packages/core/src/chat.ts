@@ -202,6 +202,14 @@ export const ChatForkContextSchema = z.object({
 });
 export type ChatForkContext = z.infer<typeof ChatForkContextSchema>;
 
+export const ChatSpawnSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  requestId: z.string().min(1).max(128).optional(),
+  at: z.number().int().nonnegative(),
+  notify: z.boolean(),
+});
+export type ChatSpawn = z.infer<typeof ChatSpawnSchema>;
+
 export const ChatThreadSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -230,6 +238,7 @@ export const ChatThreadSchema = z.object({
   // Set when an account switch drops the native session; the next turn replays
   // bounded prior context so the conversation can continue in the new account.
   providerSwitch: z.object({ from: z.string() }).optional(),
+  spawnedBy: ChatSpawnSchema.optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

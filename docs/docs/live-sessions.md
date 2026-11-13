@@ -77,8 +77,8 @@ queued notes at the session's next safe point: before a tool call, at a prompt
 submit or stop hook, or when the agent reports session start. For an ended
 session, ORC resumes it with a bounded turn. Messages wait in a compact queue
 you can reorder or cancel until delivery starts. A delivered message records
-whether it arrived through a native hook (`hook`), an ORC chat turn (`chat`) or a
-resume (`resume`).
+whether it arrived through a native hook (`hook`), an ORC chat turn (`chat`), a
+resume (`resume`) or native steering into a running chat turn (`steer`).
 
 Live sessions of agents without a context-capable hook (for example Cursor or
 OpenCode) cannot receive a message while they are running; queue it after the
@@ -103,3 +103,50 @@ agent) and to chat channels with `/send <session id> <message>`.
 /send <id>            choose a target
 /send <id> Fix the failing test
 ```
+
+## Delegating to other sessions
+
+An agent can start and drive other sessions, the way Claude Code drives its
+subagents:
+
+| MCP tool                          | Does                                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                  |
+| `session_send`                    | Messages it: `queue`, `steer` or `interrupt`                                                       |
+| `session_status` / `session_list` | Status (`running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children |
+| `session_wait`                    | Blocks until it stops running, waits for a human, or replies (`until: message`)                    |
+| `session_stop`                    | Stops its current turn; the session stays resumable                                                |
+
+`session_start` takes `workspace`:
+
+| `workspace`      | Same project                                                                   | Another project (`project`)               |
+| ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
+| `same` (default) | The caller's folder, sharing uncommitted edits                                 | Refused                                   |
+| `worktree`       | A new git worktree under `.orc/worktrees/` cut from the caller's current state | A new worktree of that project's checkout |
+| `project`        | The project's main checkout                                                    | That project's main checkout              |
+
+Another project must be inside the caller's MCP project scope.
+
+With `notify` (default on), ORC tells the parent when the child finishes, fails,
+is stopped or waits for a human. If the parent is mid-turn on an agent with
+native steering (Claude through the Agent SDK, Pi, Codex) the note is steered
+into that turn; otherwise it is queued for the parent's next safe point, or
+starts the parent's next chat turn when it is idle. The same delivery path
+carries human messages and channel relays.
+
+Guardrails:
+
+- Only a session's parent, or an ancestor of the parent, can `steer`, `interrupt`
+  or stop it. Any other session can only `queue`.
+- Children start in the default permission mode. A child's permission prompt or
+  question goes to a human, never to the parent.
+- A chain of started sessions stops at three levels, and a session can start
+  at most ten sessions an hour.
+
+Chat and the session detail show the lineage: **Started by** links the parent,
+and **Started N sessions** lists the children, including the worker sessions
+of tasks the agent created with `task_create`.
+
+![Lineage on a parent chat](/screens/session-lineage-desktop.png)
+
+[Phone layout of a child chat](/screens/session-lineage-phone.png)

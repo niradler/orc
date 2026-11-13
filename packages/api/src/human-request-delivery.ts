@@ -13,7 +13,13 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { getHandoffService } from "./handoffs/service.js";
 import { LIVE_CHAT_ID } from "./session-watcher.js";
 import { codexWriterOwned } from "./sessions/ownership.js";
-import { activeTurns, runChatTurn, turnKey } from "./sessions/turns.js";
+import {
+  activeTurns,
+  type ChatTarget,
+  chatControl,
+  runChatTurn,
+  turnKey,
+} from "./sessions/turns.js";
 
 const logger = createLogger("human-request-delivery");
 export const PUSH_GRACE_MS = 15000;
@@ -28,6 +34,7 @@ export type PushTarget = {
   cwd: string;
   model: string | null;
   fingerprint: string;
+  threadId?: string;
 };
 
 export type DeliveryDeps = {
@@ -199,7 +206,7 @@ export function deliveryMessage(requests: HumanRequest[]): string {
     return lines.join("\n");
   });
   return [
-    "ORC is delivering the human response to your pending request while this session was idle. ORC marks it delivered; do not poll or acknowledge it. Continue the task with this result.",
+    "ORC is delivering the human response to your pending request. ORC marks it delivered; do not poll or acknowledge it. Continue the task with this result.",
     ...parts,
   ].join("\n\n");
 }
@@ -247,7 +254,15 @@ export async function deliverIdleAnswers(
   busy = new Map<string, string>(),
 ): Promise<void> {
   const groups = new Map<string, { target: PushTarget; requests: HumanRequest[] }>();
+  const steered = new Map<string, { target: ChatTarget; requests: HumanRequest[] }>();
   for (const request of deps.store.pushCandidates(PUSH_GRACE_MS)) {
+    const threadId = request.input.origin.chat_thread_id;
+    if (threadId && chatControl().canSteer({ threadId })) {
+      const group = steered.get(threadId) ?? { target: { threadId }, requests: [] };
+      group.requests.push(request);
+      steered.set(threadId, group);
+      continue;
+    }
     const target = await deps.target(request).catch(() => null);
     if (!target) continue;
     const key = turnKey(target.host, target.backend, target.runtimeId);
@@ -255,6 +270,12 @@ export async function deliverIdleAnswers(
     group.requests.push(request);
     groups.set(key, group);
   }
+  for (const [key, group] of groups)
+    if (activeTurns.has(key) && chatControl().canSteer(group.target))
+      steered.set(key, { target: group.target, requests: group.requests });
+  await Promise.all(
+    [...steered.values()].map(({ target, requests }) => steer(deps, target, requests)),
+  );
   // A held session is rechecked only once the watcher records a change to it.
   await Promise.all(
     [...groups]
@@ -263,44 +284,91 @@ export async function deliverIdleAnswers(
   );
 }
 
-async function deliver(
-  deps: DeliveryDeps,
+async function steer(
+  deps: Pick<DeliveryDeps, "store">,
+  target: ChatTarget,
+  requests: HumanRequest[],
+): Promise<void> {
+  const claimed = deps.store.claimPush(requests.map((request) => request.id).reverse());
+  if (!claimed.length) return;
+  changes.publish("human-requests");
+  try {
+    if (await chatControl().steer(target, deliveryMessage(claimed)))
+      for (const request of claimed) deps.store.pushed(request.id);
+    else for (const request of claimed) deps.store.releasePush(request.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const request of claimed) deps.store.pushFailed(request.id, message);
+  } finally {
+    changes.publish("human-requests");
+  }
+}
+
+export type DeliveryBatch<T> = {
+  claim(): T[];
+  prompt(items: T[]): string;
+  delivered(items: T[], via: "chat" | "resume"): void;
+  failed(items: T[], error: string): void;
+  changed(): void;
+  label: string;
+};
+
+export async function deliverWhenIdle<T>(
+  deps: Pick<DeliveryDeps, "idle" | "resumed" | "backend" | "chatTurn">,
   key: string,
   target: PushTarget,
-  requests: HumanRequest[],
   busy: Map<string, string>,
+  batch: DeliveryBatch<T>,
 ): Promise<void> {
   if (activeTurns.has(key)) return;
   activeTurns.add(key);
-  let claimed: HumanRequest[] = [];
+  let claimed: T[] = [];
   try {
     if (!(await deps.idle(target).catch(() => false))) {
       busy.set(key, target.fingerprint);
       return;
     }
     busy.delete(key);
-    claimed = deps.store.claimPush(requests.map((request) => request.id).reverse());
+    claimed = batch.claim();
     if (!claimed.length) return;
-    changes.publish("human-requests");
-    const prompt = deliveryMessage(claimed);
+    batch.changed();
+    const prompt = batch.prompt(claimed);
     const inChat = deps.chatTurn(target, prompt);
     if (inChat) await inChat;
     else {
       await runTurn(deps, target, prompt);
       await deps.resumed(target);
     }
-    for (const request of claimed) deps.store.pushed(request.id);
+    batch.delivered(claimed, inChat ? "chat" : "resume");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn("Could not push human answers into idle session", {
-      session: target.sourceId,
-      error: message,
-    });
-    for (const request of claimed) deps.store.pushFailed(request.id, message);
+    logger.warn(`Could not deliver ${batch.label}`, { session: target.sourceId, error: message });
+    batch.failed(claimed, message);
   } finally {
     activeTurns.delete(key);
-    if (claimed.length) changes.publish("human-requests");
+    if (claimed.length) batch.changed();
   }
+}
+
+function deliver(
+  deps: DeliveryDeps,
+  key: string,
+  target: PushTarget,
+  requests: HumanRequest[],
+  busy: Map<string, string>,
+): Promise<void> {
+  return deliverWhenIdle(deps, key, target, busy, {
+    label: "human answers into an idle session",
+    claim: () => deps.store.claimPush(requests.map((request) => request.id).reverse()),
+    prompt: deliveryMessage,
+    delivered: (claimed) => {
+      for (const request of claimed) deps.store.pushed(request.id);
+    },
+    failed: (claimed, message) => {
+      for (const request of claimed) deps.store.pushFailed(request.id, message);
+    },
+    changed: () => changes.publish("human-requests"),
+  });
 }
 
 export async function queuedAnswers(

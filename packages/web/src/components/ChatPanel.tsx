@@ -51,6 +51,7 @@ import {
   useSessionContext,
   useSessionLiveLink,
 } from "@/components/SessionHome";
+import { SessionLineage } from "@/components/SessionLineage";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -621,6 +622,7 @@ export function ChatPanel({
                   </div>
                 )}
                 <ChatForkNotice thread={thread ?? undefined} />
+                <SessionLineage sessionId={thread?.id ?? null} />
                 <ThreadPrimitive.Messages>
                   {({ message }) => {
                     const custom = message.metadata.custom;

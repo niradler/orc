@@ -657,6 +657,12 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -934,6 +940,12 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -1152,6 +1164,12 @@ export interface paths {
                             };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1374,6 +1392,12 @@ export interface paths {
                             };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1643,6 +1667,12 @@ export interface paths {
                             };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1923,6 +1953,12 @@ export interface paths {
                             };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
                             };
                             updatedAt: number;
                         };
@@ -2231,6 +2267,12 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                            };
                             updatedAt: number;
                         };
                     };
@@ -2506,6 +2548,12 @@ export interface paths {
                             };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
                             };
                             updatedAt: number;
                         };
@@ -18258,7 +18306,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                                 /** @enum {string|null} */
-                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                                 delivery_error: string | null;
                                 request_id: string | null;
                                 created_at: number;
@@ -18293,6 +18341,8 @@ export interface paths {
                     "application/json": {
                         body: string;
                         request_id?: string;
+                        /** @enum {string} */
+                        mode?: "queue" | "steer" | "interrupt";
                     };
                 };
             };
@@ -18322,7 +18372,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                                 /** @enum {string|null} */
-                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                                 delivery_error: string | null;
                                 request_id: string | null;
                                 created_at: number;
@@ -18334,10 +18384,17 @@ export interface paths {
                                 backend: string;
                                 status: string;
                                 /** @enum {string} */
-                                delivery: "hook" | "resume" | "unsupported";
+                                delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
                             };
                         };
                     };
+                };
+                /** @description Only an ancestor session can steer or interrupt */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
                 /** @description Session not found */
                 404: {
@@ -18385,6 +18442,8 @@ export interface paths {
                         backend?: string;
                         body: string;
                         request_id?: string;
+                        /** @enum {string} */
+                        mode?: "queue" | "steer" | "interrupt";
                     };
                 };
             };
@@ -18414,7 +18473,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                                 /** @enum {string|null} */
-                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                                 delivery_error: string | null;
                                 request_id: string | null;
                                 created_at: number;
@@ -18426,10 +18485,17 @@ export interface paths {
                                 backend: string;
                                 status: string;
                                 /** @enum {string} */
-                                delivery: "hook" | "resume" | "unsupported";
+                                delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
                             };
                         };
                     };
+                };
+                /** @description Only an ancestor session can steer or interrupt */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
                 /** @description Session not found */
                 404: {
@@ -18498,7 +18564,7 @@ export interface paths {
                             /** @enum {string} */
                             state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                             /** @enum {string|null} */
-                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                             delivery_error: string | null;
                             request_id: string | null;
                             created_at: number;
@@ -18581,7 +18647,7 @@ export interface paths {
                             /** @enum {string} */
                             state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                             /** @enum {string|null} */
-                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                             delivery_error: string | null;
                             request_id: string | null;
                             created_at: number;
@@ -18599,6 +18665,431 @@ export interface paths {
                 };
                 /** @description Message is no longer queued, or a safety limit was reached */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/spawn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a headless child chat session for the calling session (X-ORC-Session) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        prompt: string;
+                        agent?: string;
+                        model?: string;
+                        project_id?: string;
+                        /**
+                         * @default same
+                         * @enum {string}
+                         */
+                        workspace?: "same" | "worktree" | "project";
+                        title?: string;
+                        /** @default true */
+                        notify?: boolean;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Session status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+                /** @description Missing caller identity or invalid workspace */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Spawn limit reached or all chat workers are busy */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status, last reply, queue and lineage of a chat-run session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sessions started by this session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Child sessions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessions: {
+                                session_id: string;
+                                title: string;
+                                agent: string;
+                                /** @enum {string} */
+                                status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                                /** @enum {string|null} */
+                                waiting_for: "question" | "approval" | null;
+                                last_message: string | null;
+                                queue: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                    position: number;
+                                }[];
+                                parent_session_id: string | null;
+                                children: string[];
+                                project_id: string | null;
+                                cwd: string;
+                                updated_at: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The session that started this one and the sessions it started */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Parent and children */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            parent: {
+                                id: string;
+                                title: string;
+                                /** @enum {string} */
+                                kind: "chat" | "session";
+                                status: string;
+                                task_id: string | null;
+                            } | null;
+                            children: {
+                                id: string;
+                                title: string;
+                                /** @enum {string} */
+                                kind: "chat" | "session";
+                                status: string;
+                                task_id: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Block until a chat-run session stops running, waits for a human, or replies */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @default idle
+                         * @enum {string}
+                         */
+                        until?: "idle" | "message";
+                        /** @default 300 */
+                        timeout_s?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Status when the wait ended */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                            timed_out: boolean;
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a chat-run session's current turn; the session stays resumable */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+                /** @description Only an ancestor session can stop it */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Session not found */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };

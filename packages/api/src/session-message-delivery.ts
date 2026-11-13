@@ -1,6 +1,7 @@
 import { changes } from "@orc/core/changes";
 import { createLogger } from "@orc/core/logger";
 import { sessionMessageContext } from "@orc/core/session-messages";
+import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { SessionMessageStore } from "@orc/db/session-messages";
@@ -8,14 +9,15 @@ import { eq } from "drizzle-orm";
 import { getHandoffService } from "./handoffs/service.js";
 import {
   defaultDeliveryBackend,
+  deliverWhenIdle,
   type PushTarget,
   pushTargetForSession,
-  runTurn,
   sessionIdle,
 } from "./human-request-delivery.js";
-import { activeTurns, runChatTurn, turnKey } from "./sessions/turns.js";
+import { activeTurns, chatControl, runChatTurn, turnKey } from "./sessions/turns.js";
 
 const logger = createLogger("session-message-delivery");
+
 const SWEEP_MS = 5 * 60 * 1000;
 
 type DeliveryDeps = {
@@ -27,7 +29,31 @@ type DeliveryDeps = {
   chatTurn(target: PushTarget, prompt: string): Promise<void> | null;
 };
 
+function chatTarget(threadId: string): PushTarget | null {
+  const thread = new ChatStore(getSqlite()).get(threadId);
+  if (!thread) return null;
+  return {
+    sourceId: thread.id,
+    agent: thread.config.agent,
+    backend: thread.backend,
+    runtimeId: thread.runtimeId ?? thread.id,
+    host: thread.host,
+    cwd: thread.cwd,
+    model: thread.config.model ?? null,
+    fingerprint: `chat:${thread.updatedAt}`,
+    threadId: thread.id,
+  };
+}
+
+function deliveryKey(target: PushTarget): string {
+  return target.threadId && target.runtimeId === target.threadId
+    ? target.threadId
+    : turnKey(target.host, target.backend, target.runtimeId);
+}
+
 async function exitedTarget(sessionId: string): Promise<PushTarget | null> {
+  const chat = chatTarget(sessionId);
+  if (chat) return chat;
   const row = await getDb().query.gateway_sessions.findFirst({
     where: eq(gateway_sessions.id, sessionId),
   });
@@ -41,10 +67,17 @@ function defaultDeps(): DeliveryDeps {
   return {
     store: new SessionMessageStore(getSqlite()),
     target: exitedTarget,
-    idle: sessionIdle,
+    idle: async (target) =>
+      target.threadId
+        ? !chatControl().running(target.threadId) && !chatControl().full()
+        : sessionIdle(target),
     resumed: (target) => getHandoffService().markResumed(target.sourceId),
     backend: defaultDeliveryBackend(),
-    chatTurn: (target, prompt) => runChatTurn(target, prompt),
+    chatTurn: (target, prompt) =>
+      runChatTurn(target.threadId ? { threadId: target.threadId } : target, prompt) ??
+      (target.threadId
+        ? Promise.reject(new Error("The chat could not start a turn; retry when it is idle"))
+        : null),
   };
 }
 
@@ -56,8 +89,7 @@ export async function deliverIdleSessionMessages(
   for (const sessionId of deps.store.pendingTargets()) {
     const target = await deps.target(sessionId).catch(() => null);
     if (!target) continue;
-    const key = turnKey(target.host, target.backend, target.runtimeId);
-    targets.set(key, target);
+    targets.set(deliveryKey(target), target);
   }
   await Promise.all(
     [...targets]
@@ -66,49 +98,28 @@ export async function deliverIdleSessionMessages(
   );
 }
 
-async function deliver(
+function deliver(
   deps: DeliveryDeps,
   key: string,
   target: PushTarget,
   busy: Map<string, string>,
 ): Promise<void> {
-  if (activeTurns.has(key)) return;
-  activeTurns.add(key);
-  let claimed: ReturnType<SessionMessageStore["claim"]> = [];
-  try {
-    if (!(await deps.idle(target).catch(() => false))) {
-      busy.set(key, target.fingerprint);
-      return;
-    }
-    busy.delete(key);
-    claimed = deps.store.claimTarget(target.sourceId);
-    if (!claimed.length) return;
-    changes.publish("session-messages");
-    const prompt = sessionMessageContext(claimed);
-    const inChat = deps.chatTurn(target, prompt);
-    if (inChat) await inChat;
-    else {
-      await runTurn(deps, target, prompt);
-      await deps.resumed(target);
-    }
-    deps.store.deliver(
-      claimed.map((message) => message.id),
-      inChat ? "chat" : "resume",
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn("Could not deliver session message into an exited session", {
-      session: target.sourceId,
-      error: message,
-    });
-    deps.store.failed(
-      claimed.map((entry) => entry.id),
-      message,
-    );
-  } finally {
-    activeTurns.delete(key);
-    if (claimed.length) changes.publish("session-messages");
-  }
+  return deliverWhenIdle(deps, key, target, busy, {
+    label: "session messages into an exited session",
+    claim: () => deps.store.claimTarget(target.sourceId),
+    prompt: sessionMessageContext,
+    delivered: (claimed, via) =>
+      deps.store.deliver(
+        claimed.map((message) => message.id),
+        via,
+      ),
+    failed: (claimed, message) =>
+      deps.store.failed(
+        claimed.map((entry) => entry.id),
+        message,
+      ),
+    changed: () => changes.publish("session-messages"),
+  });
 }
 
 export function startSessionMessageDelivery(): () => void {

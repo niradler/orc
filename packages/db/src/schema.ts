@@ -93,6 +93,7 @@ export const tasks = sqliteTable(
     // An inline graph for this task alone, for work whose shape no named flow
     // covers. Takes precedence over flow_name.
     flow_override: text("flow_override", { mode: "json" }).$type<unknown>(),
+    origin_session_id: text("origin_session_id"),
     ...timestamps,
   },
   (t) => [uniqueIndex("tasks_github_issue_idx").on(t.project_id, t.github_issue_id)],
@@ -391,7 +392,7 @@ export const session_messages = sqliteTable(
     state: text("state", {
       enum: ["queued", "delivering", "delivered", "cancelled", "interrupted", "failed"],
     }).notNull(),
-    delivered_via: text("delivered_via", { enum: ["hook", "chat", "resume"] }),
+    delivered_via: text("delivered_via", { enum: ["hook", "chat", "resume", "steer"] }),
     delivery_error: text("delivery_error"),
     request_id: text("request_id"),
     created_at: integer("created_at", { mode: "timestamp_ms" }).notNull(),

@@ -49,7 +49,10 @@ export function buildOrcMcpServer(
   const query = new URLSearchParams();
   query.set("mode", mode);
   if (project) query.set("project", project);
-  if (previewSession) query.set("preview_session", previewSession);
+  if (previewSession) {
+    query.set("preview_session", previewSession);
+    query.set("session", previewSession);
+  }
   return {
     type: "http",
     ...(alwaysLoad ? { alwaysLoad: true } : {}),

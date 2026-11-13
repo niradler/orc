@@ -26,6 +26,7 @@ import {
   ChatPermissionModeSchema,
   type ChatQuestion,
   ChatSettingsSchema,
+  type ChatSpawn,
   type ChatThread,
   ChatThreadSchema,
   ChatWorkspaceSchema,
@@ -64,6 +65,12 @@ import {
   type UploadFile,
 } from "@orc/core/session-file-types";
 import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
+import {
+  SESSION_MESSAGE_HOP_LIMIT,
+  SESSION_SPAWN_HOURLY_LIMIT,
+  type SessionSpawn,
+  type SessionStatus,
+} from "@orc/core/session-messages";
 import { renderSkillInstructions } from "@orc/core/skill-service";
 import { AgentCapabilitiesSchema } from "@orc/core/types";
 import { ChatStore } from "@orc/db/chat";
@@ -71,6 +78,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
+import { SessionMessageStore } from "@orc/db/session-messages";
 import { SkillHistory } from "@orc/db/skill-history";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
@@ -90,10 +98,11 @@ import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { projectIdFor } from "../sessions/common.js";
+import { notifySpawner, spawnChain } from "../sessions/control.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
-import { activeTurns, registerChatTurns, turnKey } from "../sessions/turns.js";
+import { activeTurns, type ChatTarget, registerChatControl, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
@@ -411,6 +420,93 @@ app.openapi(
   },
 );
 
+function steerable(
+  run: ChatRun | undefined,
+): run is ChatRun & { session: AgentSession & Required<Pick<AgentSession, "steer">> } {
+  return !!run?.session?.steer && run.session.capabilities?.steering === true;
+}
+
+async function steerRun(run: ChatRun, input: string, requestId: string): Promise<ChatThread> {
+  if (!steerable(run))
+    throw new ConflictError("This response cannot be steered. Queue a message instead.");
+  if (input.trim() === "/compact")
+    throw new ConflictError("Wait for this turn to finish before compacting context.");
+  const previous = run.steering.get(requestId);
+  if (previous) {
+    if (previous.input !== input)
+      throw new ConflictError("This steering request ID already has different content.");
+    return previous.result;
+  }
+  if (run.steering.size >= 32)
+    throw new ConflictError(
+      "This response has reached its steering limit. Queue a message instead.",
+    );
+  if (run.thread.messages.some((message) => message.id === requestId))
+    throw new ConflictError("This message ID is already in use.");
+  const steer = run.session.steer.bind(run.session);
+  let dispatched = false;
+  const deliver = async (): Promise<ChatThread> => {
+    const message: ChatMessage = {
+      id: requestId,
+      role: "user",
+      content: input,
+      timestamp: Date.now(),
+      activity: [
+        {
+          type: "status",
+          id: `steering:${requestId}`,
+          text: "Sending this message into the active response.",
+        },
+      ],
+    };
+    run.thread.messages.push(message);
+    run.thread.updatedAt = Date.now();
+    try {
+      store().save(run.thread);
+    } catch (error) {
+      run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
+      throw error;
+    }
+    const saveDelivery = () => {
+      try {
+        store().save(run.thread);
+      } catch {
+        publish(run, {
+          type: "error",
+          message:
+            "The steering request was saved, but its delivery status could not be saved. Check the response before sending again.",
+        });
+      }
+    };
+    dispatched = true;
+    try {
+      await steer(expandChatInput(input, run.thread.projectId ?? null));
+    } catch {
+      message.activity = [
+        {
+          type: "status",
+          id: `steering:${requestId}`,
+          text: "Delivery unconfirmed. Check the response before sending again.",
+        },
+      ];
+      saveDelivery();
+      throw new ConflictError(
+        "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
+      );
+    }
+    delete message.activity;
+    saveDelivery();
+    return run.thread;
+  };
+  const result = deliver();
+  run.steering.set(requestId, { input, result });
+  // A failed intent save sent nothing, so the same ID may safely retry after storage recovers.
+  void result.catch(() => {
+    if (!dispatched) run.steering.delete(requestId);
+  });
+  return result;
+}
+
 app.openapi(
   createRoute({
     method: "post",
@@ -438,85 +534,9 @@ app.openapi(
   }),
   async (c) => {
     const run = runs.get(c.req.valid("param").id);
-    if (!run?.session?.steer || run.session.capabilities?.steering !== true)
-      throw new ConflictError("This response cannot be steered. Queue a message instead.");
+    if (!run) throw new ConflictError("This response cannot be steered. Queue a message instead.");
     const { input, requestId } = c.req.valid("json");
-    if (input.trim() === "/compact")
-      throw new ConflictError("Wait for this turn to finish before compacting context.");
-    const previous = run.steering.get(requestId);
-    if (previous) {
-      if (previous.input !== input)
-        throw new ConflictError("This steering request ID already has different content.");
-      return c.json(await previous.result);
-    }
-    if (run.steering.size >= 32)
-      throw new ConflictError(
-        "This response has reached its steering limit. Queue a message instead.",
-      );
-    if (run.thread.messages.some((message) => message.id === requestId))
-      throw new ConflictError("This message ID is already in use.");
-    const steer = run.session.steer.bind(run.session);
-    let dispatched = false;
-    const deliver = async (): Promise<ChatThread> => {
-      const message: ChatMessage = {
-        id: requestId,
-        role: "user",
-        content: input,
-        timestamp: Date.now(),
-        activity: [
-          {
-            type: "status",
-            id: `steering:${requestId}`,
-            text: "Sending this message into the active response.",
-          },
-        ],
-      };
-      run.thread.messages.push(message);
-      run.thread.updatedAt = Date.now();
-      try {
-        store().save(run.thread);
-      } catch (error) {
-        run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
-        throw error;
-      }
-      const saveDelivery = () => {
-        try {
-          store().save(run.thread);
-        } catch {
-          publish(run, {
-            type: "error",
-            message:
-              "The steering request was saved, but its delivery status could not be saved. Check the response before sending again.",
-          });
-        }
-      };
-      dispatched = true;
-      try {
-        await steer(expandChatInput(input, run.thread.projectId ?? null));
-      } catch {
-        message.activity = [
-          {
-            type: "status",
-            id: `steering:${requestId}`,
-            text: "Delivery unconfirmed. Check the response before sending again.",
-          },
-        ];
-        saveDelivery();
-        throw new ConflictError(
-          "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
-        );
-      }
-      delete message.activity;
-      saveDelivery();
-      return run.thread;
-    };
-    const result = deliver();
-    run.steering.set(requestId, { input, result });
-    // A failed intent save sent nothing, so the same ID may safely retry after storage recovers.
-    void result.catch(() => {
-      if (!dispatched) run.steering.delete(requestId);
-    });
-    return c.json(await result);
+    return c.json(await steerRun(run, input, requestId));
   },
 );
 
@@ -1705,10 +1725,19 @@ async function startChat(
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],
 ) {
+  return follow(c, await openChat(body, uploads));
+}
+
+async function openChat(
+  body: z.infer<typeof requestSchema>,
+  uploads: UploadFile[] = [],
+  spawnedBy?: ChatSpawn,
+): Promise<ChatRun> {
   const thread = body.threadId
     ? requireThread(body.threadId)
     : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
+  if (!body.threadId && spawnedBy) thread.spawnedBy = spawnedBy;
   if (body.threadId && body.projectId && body.projectId !== thread.projectId)
     throw new ValidationError("An existing conversation keeps its project");
   const project = thread.projectId
@@ -1834,7 +1863,7 @@ async function startChat(
       });
     },
   });
-  return follow(c, run);
+  return run;
 }
 
 type TurnSetup = {
@@ -2229,6 +2258,7 @@ async function beginTurn(
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
+            notifySpawner(thread, `${runId}:${event.data.requestId}`, "approval");
             run.permissions.add(event.data.requestId);
             changes.publish("human-requests");
             await emit(event);
@@ -2238,6 +2268,7 @@ async function beginTurn(
             );
           } else if (event.type === "question_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "question");
+            notifySpawner(thread, `${runId}:${event.data.requestId}`, "question");
             run.questions.set(event.data.requestId, event.data);
             changes.publish("human-requests");
             await emit(event);
@@ -2348,6 +2379,11 @@ async function beginTurn(
         resolveChatNotification(thread.id, `${runId}:${requestId}`);
       if (!stopped && (completed || failure))
         recordChatNotification(thread, runId, failure ? "failed" : "finished");
+      notifySpawner(
+        thread,
+        runId,
+        timedOut || failure ? "failed" : stopped ? "stopped" : "finished",
+      );
       // A watchdog stop is not a user stop: report it so an away user learns
       // the turn died instead of finding a silently frozen conversation.
       if (timedOut) recordChatNotification(thread, runId, "failed");
@@ -2366,7 +2402,7 @@ async function beginTurn(
       } finally {
         active.delete(key);
         runs.delete(runId);
-        changes.publish("human-requests");
+        changes.publish("human-requests", "session-messages");
         publish(run, { type: "turn", turn: assistant.turn });
         publish(run, { type: "done" });
         for (const listener of run.listeners) listener(null);
@@ -2384,12 +2420,178 @@ async function beginTurn(
   return { run, done };
 }
 
-registerChatTurns((session, prompt) => {
-  const [thread] = store()
-    .byRuntime(session.backend, session.host, session.runtimeId)
-    .sort((a, b) => b.updatedAt - a.updatedAt);
-  if (!thread || threadRun(thread.id) || runs.size >= 4) return null;
-  return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
+type SpawnParent = {
+  sessionId: string;
+  cwd: string | null;
+  projectId: string | null;
+  host: string | null;
+  agent: string | null;
+};
+
+function spawnParent(sessionId: string): SpawnParent {
+  const chat = store().get(sessionId);
+  if (chat)
+    return {
+      sessionId,
+      cwd: chat.cwd,
+      projectId: chat.projectId ?? null,
+      host: chat.host,
+      agent: chat.config.agent,
+    };
+  const row = getSqlite()
+    .query<
+      { id: string; cwd: string | null; project_id: string | null; execution_host: string | null },
+      [string]
+    >(
+      "SELECT id, cwd, project_id, execution_host FROM gateway_sessions WHERE id = ?1 OR runtime_session_id = ?1 ORDER BY updated_at DESC LIMIT 1",
+    )
+    .get(sessionId);
+  if (!row) throw new NotFoundError("Session", sessionId);
+  return {
+    sessionId: row.id,
+    cwd: row.cwd,
+    projectId: row.project_id,
+    host: row.execution_host,
+    agent: null,
+  };
+}
+
+function projectRoot(projectId: string): string {
+  const row = getSqlite()
+    .query<{ scope: string | null }, [string]>(
+      "SELECT scope FROM projects WHERE id = ? AND status = 'active'",
+    )
+    .get(projectId);
+  if (!row) throw new NotFoundError("Project", projectId);
+  if (!row.scope) throw new ValidationError("That project has no folder to work in");
+  return row.scope;
+}
+
+export async function spawnChat(callerId: string, input: SessionSpawn): Promise<ChatThread> {
+  const parent = spawnParent(callerId);
+  const parentId = store().get(callerId) ? callerId : parent.sessionId;
+  const children = store().children([parentId]);
+  if (input.request_id) {
+    const existing = children.find((child) => child.spawnedBy?.requestId === input.request_id);
+    if (existing) return existing;
+  }
+  if (spawnChain(parentId).length + 1 >= SESSION_MESSAGE_HOP_LIMIT)
+    throw new ConflictError(
+      `Spawn depth limit (${SESSION_MESSAGE_HOP_LIMIT}) reached; ask a human to start this session`,
+    );
+  const hourAgo = Date.now() - 60 * 60 * 1000;
+  if (
+    children.filter((child) => (child.spawnedBy?.at ?? 0) >= hourAgo).length >=
+    SESSION_SPAWN_HOURLY_LIMIT
+  )
+    throw new ConflictError(
+      `Hourly spawn limit (${SESSION_SPAWN_HOURLY_LIMIT}) reached for this session`,
+    );
+  const projectId = input.project_id ?? parent.projectId;
+  const crossProject = !!input.project_id && input.project_id !== parent.projectId;
+  if (input.workspace === "same" && crossProject)
+    throw new ValidationError(
+      "A session in another project cannot share this folder; use workspace worktree or project",
+    );
+  const base =
+    input.workspace === "same" || (input.workspace === "worktree" && !crossProject)
+      ? parent.cwd
+      : projectId
+        ? projectRoot(projectId)
+        : null;
+  if (!base) throw new ValidationError("The calling session has no folder to start from");
+  const run = await openChat(
+    {
+      messages: [{ role: "user", content: input.prompt }],
+      ...(input.agent || parent.agent ? { agent: input.agent ?? parent.agent ?? undefined } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(projectId ? { projectId } : {}),
+      workspace: {
+        host: crossProject ? undefined : parent.host,
+        cwd: base,
+        worktree: input.workspace === "worktree",
+      },
+    },
+    [],
+    {
+      sessionId: parentId,
+      at: Date.now(),
+      notify: input.notify,
+      ...(input.request_id ? { requestId: input.request_id } : {}),
+    },
+  );
+  if (input.title) {
+    run.thread.title = input.title;
+    store().save(run.thread);
+  }
+  return run.thread;
+}
+
+export function chatStatus(id: string): SessionStatus {
+  const thread = requireThread(id);
+  const run = threadRun(id)?.[1];
+  const last = [...thread.messages].reverse().find((message) => message.role === "assistant");
+  const waitingFor = run?.permissions.size ? "approval" : run?.questions.size ? "question" : null;
+  const outcome = last?.turn?.outcome;
+  return {
+    session_id: thread.id,
+    title: thread.title,
+    agent: thread.config.agent,
+    status: run
+      ? waitingFor
+        ? "waiting"
+        : "running"
+      : outcome === "failed"
+        ? "failed"
+        : outcome === "stopped"
+          ? "stopped"
+          : "idle",
+    waiting_for: waitingFor,
+    last_message: last?.content || null,
+    queue: new SessionMessageStore(getSqlite())
+      .queued(thread.id)
+      .map(({ id, state, position }) => ({ id, state, position })),
+    parent_session_id: thread.spawnedBy?.sessionId ?? null,
+    children: store()
+      .children([thread.id])
+      .map((child) => child.id),
+    project_id: thread.projectId ?? null,
+    cwd: thread.cwd,
+    updated_at: thread.updatedAt,
+  };
+}
+
+function nativeRun(target: ChatTarget): [string, ChatRun] | undefined {
+  if ("threadId" in target) return threadRun(target.threadId);
+  const key = turnKey(target.host, target.backend, target.runtimeId);
+  return [...runs].find(([, run]) => run.key === key);
+}
+
+registerChatControl({
+  turn: (target, prompt) => {
+    const thread =
+      "threadId" in target
+        ? store().get(target.threadId)
+        : store()
+            .byRuntime(target.backend, target.host, target.runtimeId)
+            .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (!thread || threadRun(thread.id) || runs.size >= 4) return null;
+    return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
+  },
+  canSteer: (target) => steerable(nativeRun(target)?.[1]),
+  steer: async (target, text) => {
+    const run = nativeRun(target)?.[1];
+    if (!steerable(run)) return false;
+    await steerRun(run, text, crypto.randomUUID());
+    return true;
+  },
+  stop: (threadId) => {
+    const run = threadRun(threadId)?.[1];
+    run?.stop();
+    return !!run;
+  },
+  running: (threadId) => !!threadRun(threadId),
+  full: () => runs.size >= 4,
 });
 
 app.openapi(
