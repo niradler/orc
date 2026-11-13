@@ -5,11 +5,13 @@ import { NotificationStore } from "@orc/db/notifications";
 import { PushStore } from "@orc/db/push";
 import webpush from "web-push";
 import {
+  attentionMessage,
   jobPushMessage,
   notifyPendingAttention,
   notifyPendingJobPushes,
   type PushDeps,
   sendPush,
+  sessionWaitingMessage,
 } from "../push/service.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -167,6 +169,23 @@ test("should retry attention pushes after a transient failure", async () => {
   await notifyPendingAttention(humanRequests, pushDeps);
   await notifyPendingAttention(humanRequests, pushDeps);
   expect(attempts).toBe(2);
+});
+
+test("should name the project in push titles", () => {
+  expect(sessionWaitingMessage({ id: "s1", backend: "codex", project: "Alpha" }).title).toBe(
+    "Alpha · Waiting for you",
+  );
+  expect(sessionWaitingMessage({ id: "s1", backend: "codex" }).title).toBe("Waiting for you");
+  const db = new Database(":memory:");
+  const requests = new HumanRequestStore(db);
+  const request = requests.create({
+    kind: "question",
+    prompt: "Which color?",
+    origin: { backend: "codex", session_id: "session-title", request_id: "request-title" },
+  });
+  expect(attentionMessage(request, "Alpha").title).toBe("Alpha · Question · codex");
+  expect(attentionMessage(request).title).toBe("Question · codex");
+  db.close();
 });
 
 test("should keep job push links inside ORC", () => {

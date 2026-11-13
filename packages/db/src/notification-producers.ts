@@ -1,23 +1,41 @@
 import type { Database } from "bun:sqlite";
 import { loadConfig } from "@orc/core/config";
 import type { NotificationInput, OrcNotification } from "@orc/core/notifications";
-import { NotificationStore } from "./notifications.js";
+import { folderLabel, NotificationStore, projectLabel } from "./notifications.js";
+
+/**
+ * A notification names where it came from: the owning project, or the source
+ * folder when no project claims it. The label is cosmetic, never user content.
+ */
+export function notificationProjectLabel(
+  db: Database,
+  projectId: string | null | undefined,
+  cwd?: string | null,
+): string | null {
+  return projectLabel(db, projectId) ?? folderLabel(cwd);
+}
+
+type NotificationEvent = Omit<NotificationInput, "created_at" | "expires_at" | "project_label"> & {
+  created_at?: number;
+  expires_at?: number;
+  /** The source folder, used for the label when no project owns it. */
+  cwd?: string | null;
+};
 
 export function publishNotification(
   db: Database,
-  event: Omit<NotificationInput, "created_at" | "expires_at"> & {
-    created_at?: number;
-    expires_at?: number;
-  },
+  event: NotificationEvent,
 ): OrcNotification | null {
-  const createdAt = event.created_at ?? Date.now();
+  const { cwd, ...input } = event;
+  const createdAt = input.created_at ?? Date.now();
   return new NotificationStore(db).publish({
-    ...event,
-    title: event.title.trim().slice(0, 200) || "Notification",
-    body: event.body?.slice(0, 500),
+    ...input,
+    project_label: notificationProjectLabel(db, input.project_id, cwd),
+    title: input.title.trim().slice(0, 200) || "Notification",
+    body: input.body?.slice(0, 500),
     created_at: createdAt,
     expires_at:
-      event.expires_at ??
+      input.expires_at ??
       createdAt + (loadConfig().preferences.notification_retention_days ?? 30) * 86400000,
   });
 }
@@ -35,9 +53,10 @@ export function publishJobNotification(db: Database, runId: string): void {
         exit_code: number | null;
         notify_on: string;
         project_id: string | null;
+        working_dir: string | null;
       },
       [string]
-    >(`SELECT r.id,r.job_id,r.status,r.ended_at,r.started_at,r.exit_code,j.name,j.notify_on,j.project_id
+    >(`SELECT r.id,r.job_id,r.status,r.ended_at,r.started_at,r.exit_code,j.name,j.notify_on,j.project_id,j.working_dir
     FROM job_runs r JOIN jobs j ON j.id=r.job_id WHERE r.id=?`)
     .get(runId);
   if (!run || !["success", "failed", "timeout"].includes(run.status) || run.notify_on === "never")
@@ -52,6 +71,7 @@ export function publishJobNotification(db: Database, runId: string): void {
     body: jobRunDetail(run),
     level: success ? "done" : "needs-you",
     project_id: run.project_id,
+    cwd: run.working_dir,
     path: `/jobs/${encodeURIComponent(run.job_id)}?run=${encodeURIComponent(run.id)}&project=all`,
     created_at: run.ended_at === null ? Date.now() : run.ended_at * 1000,
   });
