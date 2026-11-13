@@ -640,4 +640,29 @@ describe("agent session control", () => {
     for (const turn of turns) turn.release();
     await until(() => !chatControl().running(lead.id), "lead idle");
   });
+  test("should stop a child whose spawn was still starting when the parent's tree was stopped", async () => {
+    const lead = await startParent("inflight lead", repo);
+    await turnFor("inflight lead");
+    let open = () => {};
+    slow = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const spawning = req(
+      app,
+      "POST",
+      "/sessions/live/spawn",
+      { prompt: "inflight child", notify: true },
+      as(lead.id),
+    );
+    await Bun.sleep(20);
+    expect((await req(app, "POST", `/sessions/live/${lead.id}/stop`)).status).toBe(200);
+    open();
+    slow = Promise.resolve();
+    const child = await (await spawning).json<SessionStatus>();
+    await until(() => !chatControl().running(child.session_id), "in-flight child stopped");
+    await Bun.sleep(50);
+    expect((await status(child.session_id)).status).toBe("stopped");
+    expect((await inbox(lead.id)).filter((message) => message.state === "queued")).toEqual([]);
+    expect(chatControl().running(lead.id)).toBe(false);
+  });
 });

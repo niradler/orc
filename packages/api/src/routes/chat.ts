@@ -2496,8 +2496,11 @@ export async function spawnChat(callerId: string, input: SessionSpawn): Promise<
       "This session is already being started; retry with the same request_id",
     );
   if (key) startingSpawns.add(key);
+  const at = Date.now();
   try {
-    return await startChild(parent, parentId, children, input);
+    const child = await startChild(parent, parentId, children, input);
+    if ((treeStops.get(parentId) ?? 0) >= at) stopChat(child.id, true, parentId);
+    return child;
   } finally {
     if (key) startingSpawns.delete(key);
   }
@@ -2662,11 +2665,13 @@ function descendants(id: string): string[] {
 }
 
 const quietStops = new Set<string>();
+const treeStops = new Map<string, number>();
 
 export function stopChat(id: string, cascade: boolean, by: string | null): string[] {
   const stopped: string[] = [];
   const messages = new SessionMessageStore(getSqlite());
   for (const target of cascade ? [id, ...descendants(id)] : [id]) {
+    if (cascade) treeStops.set(target, Date.now());
     const thread = store().get(target);
     if (!thread) continue;
     const run = threadRun(target)?.[1];
