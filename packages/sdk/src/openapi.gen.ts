@@ -662,6 +662,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -945,6 +946,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -1170,6 +1172,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -1398,6 +1401,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -1673,6 +1677,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -1959,6 +1964,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -2272,6 +2278,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -2554,6 +2561,7 @@ export interface paths {
                                 requestId?: string;
                                 at: number;
                                 notify: boolean;
+                                prompt?: string;
                             };
                             updatedAt: number;
                         };
@@ -18837,7 +18845,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;
@@ -18914,7 +18922,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;
@@ -18980,7 +18988,7 @@ export interface paths {
                                 title: string;
                                 agent: string;
                                 /** @enum {string} */
-                                status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                                status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
                                 /** @enum {string|null} */
                                 waiting_for: "question" | "approval" | null;
                                 last_message: string | null;
@@ -19108,7 +19116,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;
@@ -19142,6 +19150,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Block until all (or any) of several chat-run sessions stop running, wait, or reply */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @default idle
+                         * @enum {string}
+                         */
+                        until?: "idle" | "message";
+                        /** @default 300 */
+                        timeout_s?: number;
+                        session_ids: string[];
+                        /**
+                         * @default all
+                         * @enum {string}
+                         */
+                        mode?: "all" | "any";
+                    };
+                };
+            };
+            responses: {
+                /** @description Statuses when the wait ended */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessions: {
+                                session_id: string;
+                                title: string;
+                                agent: string;
+                                /** @enum {string} */
+                                status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                                /** @enum {string|null} */
+                                waiting_for: "question" | "approval" | null;
+                                last_message: string | null;
+                                queue: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                    position: number;
+                                }[];
+                                parent_session_id: string | null;
+                                children: string[];
+                                project_id: string | null;
+                                cwd: string;
+                                updated_at: number;
+                            }[];
+                            timed_out: boolean;
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/live/{id}/stop": {
         parameters: {
             query?: never;
@@ -19151,10 +19243,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Stop a chat-run session's current turn; the session stays resumable */
+        /** Stop a chat-run session's current turn, and by default the sessions it started; sessions stay resumable */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    cascade?: "true" | "false";
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -19174,7 +19268,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;

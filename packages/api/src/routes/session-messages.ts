@@ -11,6 +11,7 @@ import {
   SessionSpawnSchema,
   type SessionStatus,
   SessionStatusSchema,
+  SessionWaitManySchema,
   SessionWaitSchema,
 } from "@orc/core/session-messages";
 import { ChatStore } from "@orc/db/chat";
@@ -19,8 +20,7 @@ import { SessionMessageStore } from "@orc/db/session-messages";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
 import { requireAncestor, sendToSession, sessionLineage } from "../sessions/control.js";
-import { chatControl } from "../sessions/turns.js";
-import { chatStatus, spawnChat } from "./chat.js";
+import { chatStatus, spawnChat, stopChat } from "./chat.js";
 
 const app = createRouter();
 app.use("/session-messages/*", bodyLimit({ maxSize: 20000 }));
@@ -263,8 +263,47 @@ app.openapi(
 );
 
 function settled(current: SessionStatus, initial: SessionStatus, until: "idle" | "message") {
-  if (current.status !== "running") return true;
+  if (current.status !== "running" && current.status !== "queued") return true;
   return until === "message" && current.last_message !== initial.last_message;
+}
+
+function waitFor(
+  ids: string[],
+  until: "idle" | "message",
+  mode: "all" | "any",
+  timeoutSecs: number,
+  signal: AbortSignal,
+): Promise<{ sessions: SessionStatus[]; timedOut: boolean }> {
+  const initial = ids.map((id) => chatStatus(id));
+  const done = (current: SessionStatus[]) => {
+    const flags = current.map((status, index) =>
+      settled(status, initial[index] as SessionStatus, until),
+    );
+    return mode === "all" ? flags.every(Boolean) : flags.some(Boolean);
+  };
+  if (done(initial)) return Promise.resolve({ sessions: initial, timedOut: false });
+  return new Promise((resolve) => {
+    let finish = (_timedOut: boolean) => {};
+    const unsubscribe = changes.subscribe(({ resources }) => {
+      if (
+        resources.includes("sessions") ||
+        resources.includes("session-messages") ||
+        resources.includes("human-requests")
+      )
+        finish(false);
+    });
+    const timer = setTimeout(() => finish(true), timeoutSecs * 1000);
+    const abort = () => finish(true);
+    signal.addEventListener("abort", abort);
+    finish = (timedOut) => {
+      const current = ids.map((id) => chatStatus(id));
+      if (!timedOut && !done(current)) return;
+      unsubscribe();
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      resolve({ sessions: current, timedOut });
+    };
+  });
 }
 
 app.openapi(
@@ -290,33 +329,41 @@ app.openapi(
     },
   }),
   async (c) => {
-    const id = c.req.valid("param").id;
     const { until, timeout_s } = c.req.valid("json");
-    const initial = chatStatus(id);
-    if (settled(initial, initial, until)) return c.json({ ...initial, timed_out: false }, 200);
-    const result = await new Promise<{ status: SessionStatus; timedOut: boolean }>((resolve) => {
-      let finish = (_timedOut: boolean) => {};
-      const unsubscribe = changes.subscribe(({ resources }) => {
-        if (
-          resources.includes("sessions") ||
-          resources.includes("session-messages") ||
-          resources.includes("human-requests")
-        )
-          finish(false);
-      });
-      const timer = setTimeout(() => finish(true), timeout_s * 1000);
-      const abort = () => finish(true);
-      c.req.raw.signal.addEventListener("abort", abort);
-      finish = (timedOut) => {
-        const current = chatStatus(id);
-        if (!timedOut && !settled(current, initial, until)) return;
-        unsubscribe();
-        clearTimeout(timer);
-        c.req.raw.signal.removeEventListener("abort", abort);
-        resolve({ status: current, timedOut });
-      };
-    });
-    return c.json({ ...result.status, timed_out: result.timedOut }, 200);
+    const result = await waitFor(
+      [c.req.valid("param").id],
+      until,
+      "all",
+      timeout_s,
+      c.req.raw.signal,
+    );
+    return c.json({ ...(result.sessions[0] as SessionStatus), timed_out: result.timedOut }, 200);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/sessions/live/wait",
+    tags: ["Sessions"],
+    summary: "Block until all (or any) of several chat-run sessions stop running, wait, or reply",
+    request: { body: { content: { "application/json": { schema: SessionWaitManySchema } } } },
+    responses: {
+      200: {
+        description: "Statuses when the wait ended",
+        content: {
+          "application/json": {
+            schema: z.object({ sessions: z.array(SessionStatusSchema), timed_out: z.boolean() }),
+          },
+        },
+      },
+      404: { description: "Session not found" },
+    },
+  }),
+  async (c) => {
+    const { session_ids, until, mode, timeout_s } = c.req.valid("json");
+    const result = await waitFor(session_ids, until, mode, timeout_s, c.req.raw.signal);
+    return c.json({ sessions: result.sessions, timed_out: result.timedOut }, 200);
   },
 );
 
@@ -325,8 +372,12 @@ app.openapi(
     method: "post",
     path: "/sessions/live/{id}/stop",
     tags: ["Sessions"],
-    summary: "Stop a chat-run session's current turn; the session stays resumable",
-    request: { params },
+    summary:
+      "Stop a chat-run session's current turn, and by default the sessions it started; sessions stay resumable",
+    request: {
+      params,
+      query: z.object({ cascade: z.enum(["true", "false"]).default("true") }),
+    },
     responses: {
       ...status,
       403: { description: "Only an ancestor session can stop it" },
@@ -336,7 +387,7 @@ app.openapi(
     const id = c.req.valid("param").id;
     chatStatus(id);
     requireAncestor(caller(c.req.header("X-ORC-Session")), id);
-    chatControl().stop(id);
+    stopChat(id, c.req.valid("query").cascade === "true");
     return c.json(chatStatus(id), 200);
   },
 );

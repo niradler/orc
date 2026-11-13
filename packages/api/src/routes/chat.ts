@@ -2407,6 +2407,7 @@ async function beginTurn(
         active.delete(key);
         runs.delete(runId);
         changes.publish("human-requests", "session-messages");
+        queueMicrotask(startPendingChildren);
         publish(run, { type: "turn", turn: assistant.turn });
         publish(run, { type: "done" });
         for (const listener of run.listeners) listener(null);
@@ -2534,41 +2535,131 @@ async function startChild(
     );
   const backend = agent ? chatBackendFor(agent) : null;
   const permissionMode = source?.config.permissionMode ?? "default";
-  const run = await openChat(
-    {
-      messages: [{ role: "user", content: input.prompt }],
-      ...(agent ? { agent } : {}),
-      ...(input.model ? { model: input.model } : {}),
-      ...(projectId ? { projectId } : {}),
-      ...(backend && createBackend(backend).capabilities?.livePermissions !== false
-        ? { permissionMode }
-        : {}),
-      ...(sameAgent && source
-        ? {
-            agentOptions: source.config.agentOptions,
-            ...(source.config.providerId ? { providerId: source.config.providerId } : {}),
-          }
-        : {}),
-      workspace: {
-        host: crossProject ? undefined : parent.host,
-        cwd: base,
-        worktree: input.workspace === "worktree",
-      },
+  const body: z.infer<typeof requestSchema> = {
+    messages: [{ role: "user", content: input.prompt }],
+    ...(agent ? { agent } : {}),
+    ...(input.model ? { model: input.model } : {}),
+    ...(projectId ? { projectId } : {}),
+    ...(backend && createBackend(backend).capabilities?.livePermissions !== false
+      ? { permissionMode }
+      : {}),
+    ...(sameAgent && source
+      ? {
+          agentOptions: source.config.agentOptions,
+          ...(source.config.providerId ? { providerId: source.config.providerId } : {}),
+        }
+      : {}),
+    workspace: {
+      host: crossProject ? undefined : parent.host,
+      cwd: base,
+      worktree: input.workspace === "worktree",
     },
-    [],
-    {
-      sessionId: parentId,
-      at: Date.now(),
-      notify: input.notify,
-      ...(input.request_id ? { requestId: input.request_id } : {}),
-    },
-    source?.toolAllowlist,
-  );
+  };
+  const spawnedBy: ChatSpawn = {
+    sessionId: parentId,
+    at: Date.now(),
+    notify: input.notify,
+    ...(input.request_id ? { requestId: input.request_id } : {}),
+  };
+  if (runs.size >= 4) return queueChild(body, input, spawnedBy, source?.toolAllowlist);
+  const run = await openChat(body, [], spawnedBy, source?.toolAllowlist);
   if (input.title) {
     run.thread.title = input.title;
     store().save(run.thread);
   }
   return run.thread;
+}
+
+async function queueChild(
+  body: z.infer<typeof requestSchema>,
+  input: SessionSpawn,
+  spawnedBy: ChatSpawn,
+  toolAllowlist: string[] | undefined,
+): Promise<ChatThread> {
+  const thread = await newThread(
+    body.agent,
+    body.model,
+    undefined,
+    { host: body.workspace?.host, cwd: body.workspace?.cwd },
+    body.providerId,
+  );
+  if (body.projectId) thread.projectId = body.projectId;
+  if (toolAllowlist) thread.toolAllowlist = toolAllowlist;
+  if (body.permissionMode !== undefined) thread.config.permissionMode = body.permissionMode;
+  if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
+  if (input.title) thread.title = input.title;
+  await checkChatWorkspaceRules(thread);
+  if (body.workspace?.worktree) {
+    const host = selectedTerminalHost(loadConfig(), thread.host);
+    const cwd = await prepareSessionDirectory(
+      { cwd: thread.cwd, worktree: true },
+      {
+        ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
+        validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
+      },
+    );
+    if (cwd === thread.cwd)
+      throw new ValidationError("Choose a Git repository folder to create a worktree.");
+    thread.cwd = cwd;
+  }
+  thread.spawnedBy = { ...spawnedBy, prompt: input.prompt };
+  thread.updatedAt = Date.now();
+  store().save(thread);
+  return thread;
+}
+
+function startPendingChildren(): void {
+  if (runs.size >= 4) return;
+  let pending: ChatThread[];
+  try {
+    pending = store().pendingSpawns();
+  } catch {
+    return;
+  }
+  for (const thread of pending) {
+    if (runs.size >= 4) return;
+    const prompt = thread.spawnedBy?.prompt;
+    if (!prompt || !thread.spawnedBy || threadRun(thread.id)) continue;
+    delete thread.spawnedBy.prompt;
+    beginTurn(thread, prompt).catch((error) => {
+      logger.warn("A queued child session could not start", { error, threadId: thread.id });
+      store().save(thread);
+      notifySpawner(thread, "start", "failed");
+    });
+  }
+}
+
+function descendants(id: string): string[] {
+  const found: string[] = [];
+  let level = [id];
+  while (level.length && found.length < 200) {
+    level = store()
+      .children(level)
+      .map((child) => child.id)
+      .filter((child) => !found.includes(child) && child !== id);
+    found.push(...level);
+  }
+  return found;
+}
+
+export function stopChat(id: string, cascade: boolean): string[] {
+  const stopped: string[] = [];
+  for (const target of cascade ? [id, ...descendants(id)] : [id]) {
+    const thread = store().get(target);
+    if (thread?.spawnedBy?.prompt) {
+      delete thread.spawnedBy.prompt;
+      store().save(thread);
+      stopped.push(target);
+    } else {
+      const run = threadRun(target)?.[1];
+      if (run) {
+        run.stop();
+        stopped.push(target);
+      }
+    }
+  }
+  if (stopped.length) changes.publish("sessions");
+  return stopped;
 }
 
 export function chatStatus(id: string): SessionStatus {
@@ -2584,17 +2675,19 @@ export function chatStatus(id: string): SessionStatus {
     session_id: thread.id,
     title: thread.title,
     agent: thread.config.agent,
-    status: run
-      ? waitingFor
-        ? "waiting"
-        : "running"
-      : queue.length
-        ? "running"
-        : outcome === "failed"
-          ? "failed"
-          : outcome === "stopped"
-            ? "stopped"
-            : "idle",
+    status: thread.spawnedBy?.prompt
+      ? "queued"
+      : run
+        ? waitingFor
+          ? "waiting"
+          : "running"
+        : queue.length
+          ? "running"
+          : outcome === "failed"
+            ? "failed"
+            : outcome === "stopped"
+              ? "stopped"
+              : "idle",
     waiting_for: waitingFor,
     last_message: last?.content || null,
     queue,
@@ -2642,6 +2735,7 @@ registerChatControl({
   },
   running: (threadId) => !!threadRun(threadId),
   full: () => runs.size >= 4,
+  startPending: startPendingChildren,
 });
 
 app.openapi(

@@ -129,6 +129,7 @@ export function startSessionMessageDelivery(): () => void {
   let check: ReturnType<typeof setTimeout> | undefined;
   let sweep: ReturnType<typeof setInterval> | undefined;
   const run = () => {
+    chatControl().startPending();
     deliverIdleSessionMessages(deps, busy).catch((err) =>
       logger.error("Session message delivery failed", err),
     );

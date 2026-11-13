@@ -461,4 +461,48 @@ describe("agent session control", () => {
     ).json<SessionStatus & { timed_out: boolean }>();
     expect(waited.timed_out).toBe(true);
   });
+
+  test("should queue a child while every chat worker is busy, wait on several children, and stop a whole tree", async () => {
+    const lead = await startParent("lead: fan out", repo);
+    const leadTurn = await turnFor("lead: fan out");
+    const spawn = async (prompt: string) =>
+      (
+        await req(app, "POST", "/sessions/live/spawn", { prompt, notify: true }, as(lead.id))
+      ).json<SessionStatus>();
+    const first = await spawn("worker one");
+    const second = await spawn("worker two");
+    const third = await spawn("worker three");
+    const queued = await spawn("worker four");
+    expect(queued.status).toBe("queued");
+    const firstTurn = await turnFor("worker one");
+
+    const any = req(
+      app,
+      "POST",
+      "/sessions/live/wait",
+      { session_ids: [first.session_id, second.session_id], mode: "any", timeout_s: 5 },
+      as(lead.id),
+    );
+    firstTurn.release();
+    const anyResult = await (await any).json<{ sessions: SessionStatus[]; timed_out: boolean }>();
+    expect(anyResult.timed_out).toBe(false);
+    expect(anyResult.sessions[0]?.status).toBe("idle");
+    await turnFor("worker four");
+    expect((await status(queued.session_id)).status).toBe("running");
+    const notice = await until(
+      () => leadTurn.steers.find((text) => text.includes(first.session_id)),
+      "lead notified",
+    );
+    expect(notice).toContain(`[orc child-session id=${first.session_id} outcome=finished]`);
+
+    const stopped = await req(app, "POST", `/sessions/live/${lead.id}/stop`);
+    expect(stopped.status).toBe(200);
+    await until(
+      () =>
+        [lead.id, second.session_id, third.session_id, queued.session_id].every(
+          (id) => !chatControl().running(id),
+        ),
+      "tree stopped",
+    );
+  });
 });

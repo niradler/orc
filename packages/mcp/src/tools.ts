@@ -48,6 +48,7 @@ import {
   SessionMessageResultSchema,
   SessionSpawnSchema,
   SessionStatusSchema,
+  SessionWaitManySchema,
   SessionWaitSchema,
 } from "@orc/core/session-messages";
 import { type SkillDownload, SkillDownloadSchema } from "@orc/core/skill-download";
@@ -344,13 +345,19 @@ export const toolDefinitions = [
   {
     name: "session_wait",
     description:
-      "Block until a session started with session_start stops running or waits for a human (until=idle), or posts a new reply (until=message). Returns its status and timed_out. Prefer notify on session_start when you have other work to do.",
+      "Block until a session started with session_start stops running or waits for a human (until=idle), or posts a new reply (until=message). Pass session_ids with mode all or any to wait on several children at once. Returns status and timed_out. Prefer notify on session_start when you have other work to do.",
     inputSchema: SessionWaitSchema.extend({
-      session_id: z
-        .string()
+      session_id: z.string().min(1).max(200).optional().describe("One session to wait on"),
+      session_ids: z
+        .array(z.string().min(1).max(200))
         .min(1)
-        .max(200)
-        .describe("Session id from session_start or session_list"),
+        .max(20)
+        .optional()
+        .describe("Several sessions to wait on together"),
+      mode: z
+        .enum(["all", "any"])
+        .default("all")
+        .describe("With session_ids: return when all of them, or the first one, settle"),
     }),
   },
   {
@@ -361,7 +368,7 @@ export const toolDefinitions = [
   {
     name: "session_stop",
     description:
-      "Stop the current turn of a session you started (or one of its descendants). The session stays resumable; send it a message to continue.",
+      "Stop the current turn of a session you started (or one of its descendants), and by default every session it started in turn. Queued children are cancelled. Sessions stay resumable; send a message to continue.",
     inputSchema: z
       .object({
         session_id: z
@@ -369,6 +376,7 @@ export const toolDefinitions = [
           .min(1)
           .max(200)
           .describe("Session id from session_start or session_list"),
+        cascade: z.boolean().default(true).describe("Also stop the sessions it started"),
       })
       .strict(),
   },
@@ -1567,26 +1575,54 @@ export async function executeTool(
           { headers },
         ),
       );
-    const { session_id, ...rest } = z
-      .object({ session_id: z.string().min(1).max(200) })
+    const scoped = async (id: string) => {
+      const current = SessionStatusSchema.parse(
+        await orcApi("GET", `/sessions/live/${encodeURIComponent(id)}/status`, { headers }),
+      );
+      if (options.projectScopes && !options.projectScopes.some((p) => p.id === current.project_id))
+        throw new ValidationError("Session is outside the selected MCP projects");
+      return current;
+    };
+    if (name === "session_wait") {
+      const input = SessionWaitSchema.extend({
+        session_id: z.string().min(1).max(200).optional(),
+        session_ids: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
+        mode: z.enum(["all", "any"]).default("all"),
+      }).parse(args);
+      const ids = input.session_ids ?? (input.session_id ? [input.session_id] : []);
+      if (!ids.length) throw new ValidationError("Pass session_id or session_ids");
+      for (const id of ids) await scoped(id);
+      const wait = SessionWaitManySchema.parse({
+        session_ids: ids,
+        mode: input.mode,
+        until: input.until,
+        timeout_s: input.timeout_s,
+      });
+      const result = await orcApi<{ sessions: unknown[]; timed_out: boolean }>(
+        "POST",
+        "/sessions/live/wait",
+        { body: wait, headers, timeoutMs: (wait.timeout_s + 30) * 1000 },
+      );
+      return JSON.stringify(
+        input.session_ids
+          ? result
+          : { ...(result.sessions[0] as object), timed_out: result.timed_out },
+      );
+    }
+    const { session_id, cascade } = z
+      .object({ session_id: z.string().min(1).max(200), cascade: z.boolean().default(true) })
       .passthrough()
       .parse(args);
-    const path = `/sessions/live/${encodeURIComponent(session_id)}`;
-    const current = SessionStatusSchema.parse(await orcApi("GET", `${path}/status`, { headers }));
-    if (options.projectScopes && !options.projectScopes.some((p) => p.id === current.project_id))
-      throw new ValidationError("Session is outside the selected MCP projects");
+    const current = await scoped(session_id);
     if (name === "session_status") return JSON.stringify(current);
-    if (name === "session_stop")
-      return JSON.stringify(
-        SessionStatusSchema.parse(await orcApi("POST", `${path}/stop`, { headers })),
-      );
-    const wait = SessionWaitSchema.parse(rest);
     return JSON.stringify(
-      await orcApi("POST", `${path}/wait`, {
-        body: wait,
-        headers,
-        timeoutMs: (wait.timeout_s + 30) * 1000,
-      }),
+      SessionStatusSchema.parse(
+        await orcApi(
+          "POST",
+          `/sessions/live/${encodeURIComponent(session_id)}/stop?cascade=${cascade}`,
+          { headers },
+        ),
+      ),
     );
   }
   if (name === "session_handoff") {

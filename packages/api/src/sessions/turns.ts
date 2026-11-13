@@ -14,6 +14,7 @@ export type ChatControl = {
   stop(threadId: string): boolean;
   running(threadId: string): boolean;
   full(): boolean;
+  startPending(): void;
 };
 
 let control: ChatControl = {
@@ -23,6 +24,7 @@ let control: ChatControl = {
   stop: () => false,
   running: () => false,
   full: () => true,
+  startPending: () => {},
 };
 
 export function registerChatControl(next: ChatControl): void {

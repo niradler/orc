@@ -351,9 +351,9 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_send` | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next) |
 | `session_start` | Start a headless child session with a prompt; returns its id at once |
 | `session_status` | A started session's status, last reply, queue, parent and children |
-| `session_wait` | Block until a started session stops running, waits for a human, or replies |
+| `session_wait` | Block until one or several started sessions stop running, wait for a human, or reply |
 | `session_list` | List the sessions this session started |
-| `session_stop` | Stop a started session's current turn; it stays resumable |
+| `session_stop` | Stop a started session's turn and, by default, the sessions it started |
 | `session_search` | Search archived and indexed session passages |
 | `session_read` | Read a cited archived-session passage or a page of turns |
 | `session_sync` | Request a one-hour upload capability for local session sync |
