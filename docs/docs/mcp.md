@@ -25,9 +25,10 @@ How agents connect to ORC's MCP server, how tool discovery works, and every tool
 The stdio server reads the local ORC database and calls the API for work only the daemon does (job runs, scheduling), so the daemon must be running. It finds the API through `ORC_API_BASE`, falling back to `api.host` / `api.port` from config.
 
 HTTP clients that need to attribute work to a live agent session add
-`?session=<session-id>` to the MCP URL. ORC resolves the ORC live session id or
-the agent's native id, and `session_send` uses it as the sender identity. Stdio
-MCP reads the same identity from the agent's environment instead.
+`?session=<session-id>` to the MCP URL. ORC resolves the ORC live session id, an
+ORC chat id or the agent's native id, and the session tools use it as the
+caller identity. ORC adds it automatically to every chat, flow and job session it
+starts. Stdio MCP reads the same identity from the agent's environment instead.
 
 ## Desktop preview tools
 
@@ -347,7 +348,12 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_restore` | Restore session state after compaction or restart |
 | `session_log` | Log a session summary after a unit of work |
 | `session_handoff` | Move a Claude Code or Codex session to ORC |
-| `session_send` | Send a note to another live or idle session at its next safe point |
+| `session_send` | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next) |
+| `session_start` | Start a headless child session with a prompt; returns its id at once |
+| `session_status` | A started session's status, last reply, queue, parent and children |
+| `session_wait` | Block until a started session stops running, waits for a human, or replies |
+| `session_list` | List the sessions this session started |
+| `session_stop` | Stop a started session's current turn; it stays resumable |
 | `session_search` | Search archived and indexed session passages |
 | `session_read` | Read a cited archived-session passage or a page of turns |
 | `session_sync` | Request a one-hour upload capability for local session sync |

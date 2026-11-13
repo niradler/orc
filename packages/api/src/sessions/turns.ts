@@ -5,15 +5,34 @@ export function turnKey(host: string | null, backend: string, runtimeId: string)
 }
 
 export type NativeSession = { host: string | null; backend: string; runtimeId: string };
-// Null when no chat shows this session; the caller then pushes in the background.
-export type ChatTurnRunner = (session: NativeSession, prompt: string) => Promise<void> | null;
+export type ChatTarget = NativeSession | { threadId: string };
 
-let chatTurns: ChatTurnRunner = () => null;
+export type ChatControl = {
+  turn(target: ChatTarget, prompt: string): Promise<void> | null;
+  steer(target: ChatTarget, text: string): Promise<boolean>;
+  canSteer(target: ChatTarget): boolean;
+  stop(threadId: string): boolean;
+  running(threadId: string): boolean;
+  full(): boolean;
+};
 
-export function registerChatTurns(runner: ChatTurnRunner): void {
-  chatTurns = runner;
+let control: ChatControl = {
+  turn: () => null,
+  steer: async () => false,
+  canSteer: () => false,
+  stop: () => false,
+  running: () => false,
+  full: () => true,
+};
+
+export function registerChatControl(next: ChatControl): void {
+  control = next;
 }
 
-export function runChatTurn(session: NativeSession, prompt: string): Promise<void> | null {
-  return chatTurns(session, prompt);
+export function chatControl(): ChatControl {
+  return control;
+}
+
+export function runChatTurn(session: ChatTarget, prompt: string): Promise<void> | null {
+  return control.turn(session, prompt);
 }

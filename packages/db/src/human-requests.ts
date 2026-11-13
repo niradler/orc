@@ -317,6 +317,12 @@ export class HumanRequestStore {
   }
 
   // The answer stays answered so the agent can still read it.
+  releasePush(id: string): void {
+    this.db
+      .query("UPDATE human_requests SET push_state=NULL WHERE id=? AND push_state='pushing'")
+      .run(id);
+  }
+
   pushFailed(id: string, error: string): void {
     this.db
       .query(
