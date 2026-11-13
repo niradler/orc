@@ -2647,6 +2647,10 @@ function startPendingChildren(): void {
       const saved = store().get(thread.id);
       if (!saved?.spawnedBy) return;
       delete saved.spawnedBy.prompt;
+      saved.spawnedBy.startError = (error instanceof Error ? error.message : String(error)).slice(
+        0,
+        2000,
+      );
       store().save(saved);
       if (!saved.spawnedBy.cancelled) notifySpawner(saved, "start", "failed");
     });
@@ -2672,6 +2676,8 @@ const treeStops = new Map<string, number>();
 export function stopChat(id: string, cascade: boolean, by: string | null): string[] {
   const stopped: string[] = [];
   const messages = new SessionMessageStore(getSqlite());
+  for (const [session, at] of treeStops)
+    if (Date.now() - at > 60 * 60 * 1000) treeStops.delete(session);
   for (const target of cascade ? [id, ...descendants(id)] : [id]) {
     if (cascade) treeStops.set(target, Date.now());
     const thread = store().get(target);
@@ -2683,11 +2689,11 @@ export function stopChat(id: string, cascade: boolean, by: string | null): strin
       delete thread.spawnedBy.prompt;
       thread.spawnedBy.cancelled = true;
       store().save(thread);
-      if (!run && !quiet) notifySpawner(thread, "cancel", "stopped");
+      if (!quiet) notifySpawner(thread, "cancel", "stopped");
     }
     for (const message of messages.queued(target)) messages.cancel(message.id);
     if (run) {
-      if (quiet) quietStops.add(target);
+      if (quiet || queued) quietStops.add(target);
       run.stop();
     }
     if (run || queued) stopped.push(target);
@@ -2717,13 +2723,13 @@ export function chatStatus(id: string): SessionStatus {
         ? "queued"
         : queue.length
           ? "running"
-          : outcome === "failed"
+          : outcome === "failed" || (thread.spawnedBy?.startError && !last)
             ? "failed"
             : outcome === "stopped" || (thread.spawnedBy?.cancelled && !last)
               ? "stopped"
               : "idle",
     waiting_for: waitingFor,
-    last_message: last?.content || null,
+    last_message: last?.content || thread.spawnedBy?.startError || null,
     queue,
     parent_session_id: thread.spawnedBy?.sessionId ?? null,
     children: store()
