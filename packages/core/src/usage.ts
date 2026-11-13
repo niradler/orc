@@ -28,7 +28,7 @@ export const UsageHistorySchema = z.object({
 });
 
 export const UsageQuotaSchema = z.object({
-  provider: z.enum(["codex", "claude"]),
+  provider: z.enum(["codex", "claude", "alibaba"]),
   provider_id: z.string().optional(),
   name: z.string().optional(),
   status: z.enum(["available", "unavailable", "signed_out"]),

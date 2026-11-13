@@ -298,7 +298,8 @@ app.openapi(
     method: "get",
     path: "/usage/quotas",
     tags: ["Usage"],
-    summary: "Read local Codex and Claude account quota windows (cached for 60 seconds)",
+    summary:
+      "Read local Codex, Claude and Alibaba Cloud account quota windows (cached for 60 seconds)",
     responses: {
       200: {
         description: "Per-provider quota availability and reset times; no credentials",
