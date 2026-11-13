@@ -241,7 +241,7 @@ test("recency follows the conversation date: opening keeps its place, a new mess
   expect(afterSend.map((entry) => entry.id)).toEqual([`chat:${resumed.id}`, "native:live-newer"]);
 });
 
-test("saved chats keep their recorded project and folder after reload", () => {
+test("saved chats keep their recorded project after reload", () => {
   const projects = [{ id: "shop", scope: "C:/Projects/shop" }];
   const assigned = {
     ...saved,
@@ -250,20 +250,8 @@ test("saved chats keep their recorded project and folder after reload", () => {
     runtimeId: null,
     projectId: "shop",
   };
-  const byFolder = {
-    ...saved,
-    id: "90000000-0000-4000-8000-000000000011",
-    sourceId: null,
-    runtimeId: null,
-    cwd: "C:\\projects\\SHOP\\packages\\web",
-  };
   expect(
     chatHistoryList([], [assigned], [], [], "", "shop", [], false, projects).map(
-      (entry) => entry.projectId,
-    ),
-  ).toEqual(["shop"]);
-  expect(
-    chatHistoryList([], [byFolder], [], [], "", "shop", [], false, projects).map(
       (entry) => entry.projectId,
     ),
   ).toEqual(["shop"]);

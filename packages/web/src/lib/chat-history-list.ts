@@ -13,7 +13,6 @@ type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   sourceId?: string | null;
   host?: string | null;
   projectId?: string | null;
-  cwd?: string | null;
 };
 type HistorySource =
   | { kind: "local"; tab: ChatTab }
@@ -244,13 +243,11 @@ export function chatHistoryList(
     const cwd =
       entry.kind === "local"
         ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
-        : entry.kind === "saved"
-          ? entry.thread.cwd
-          : entry.kind === "native"
-            ? entry.session.cwd
-            : entry.kind === "terminal"
-              ? entry.terminal.cwd
-              : null;
+        : entry.kind === "native"
+          ? entry.session.cwd
+          : entry.kind === "terminal"
+            ? entry.terminal.cwd
+            : null;
     entry.projectId = projectForFolder(cwd, projectFolders)?.id ?? entry.projectId;
   }
   return entries

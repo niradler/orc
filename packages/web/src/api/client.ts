@@ -816,7 +816,6 @@ export const api = {
           sourceId?: string | null;
           host?: string | null;
           projectId?: string | null;
-          cwd?: string | null;
         }[];
       }>("GET", "/chat/threads"),
     cancel: (runId: string) =>

@@ -46,7 +46,6 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: "source-session",
         host: "remote-a",
         projectId: null,
-        cwd: "/private",
       },
       {
         id: "legacy",
@@ -57,7 +56,6 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
-        cwd: null,
       },
       {
         id: "corrupt",
@@ -68,7 +66,6 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
-        cwd: null,
       },
       {
         id: "wrong-types",
@@ -79,7 +76,6 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
-        cwd: null,
       },
     ]);
     expect(JSON.stringify(summaries)).not.toContain("Private");
@@ -108,8 +104,7 @@ test("chat summaries keep the newest100 limit when stored data is malformed", ()
           summary.runtimeId === null &&
           summary.sourceId === null &&
           summary.host === null &&
-          summary.projectId === null &&
-          summary.cwd === null,
+          summary.projectId === null,
       ),
     ).toBe(true);
   } finally {
@@ -147,7 +142,6 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         sourceId: null,
         host: "host-b",
         projectId: null,
-        cwd: null,
       },
       {
         id: "chat-host-a",
@@ -158,7 +152,6 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         sourceId: null,
         host: "host-a",
         projectId: null,
-        cwd: null,
       },
     ]);
   } finally {
@@ -166,7 +159,7 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
   }
 });
 
-test("chat summaries expose project and folder so saved chats keep their grouping", () => {
+test("chat summaries expose project but not the working folder", () => {
   const db = new Database(":memory:");
   installChat(db);
   try {
@@ -201,7 +194,6 @@ test("chat summaries expose project and folder so saved chats keep their groupin
         sourceId: null,
         host: null,
         projectId: "proj-shop",
-        cwd: "/srv/shop",
       },
       {
         id: "unassigned",
@@ -212,10 +204,10 @@ test("chat summaries expose project and folder so saved chats keep their groupin
         sourceId: null,
         host: null,
         projectId: null,
-        cwd: "/srv/scratch",
       },
     ]);
     expect(JSON.stringify(summaries)).not.toContain("Private");
+    expect(JSON.stringify(summaries)).not.toContain("/srv/");
   } finally {
     db.close();
   }
