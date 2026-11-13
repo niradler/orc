@@ -31,7 +31,7 @@ type DeliveryDeps = {
 
 function chatTarget(threadId: string): PushTarget | null {
   const thread = new ChatStore(getSqlite()).get(threadId);
-  if (!thread) return null;
+  if (!thread || thread.held || thread.spawnedBy?.prompt) return null;
   return {
     sourceId: thread.id,
     agent: thread.config.agent,

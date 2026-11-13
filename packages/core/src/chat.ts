@@ -261,6 +261,7 @@ export const ChatThreadSchema = z.object({
   // bounded prior context so the conversation can continue in the new account.
   providerSwitch: z.object({ from: z.string() }).optional(),
   spawnedBy: ChatSpawnSchema.optional(),
+  held: z.boolean().optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

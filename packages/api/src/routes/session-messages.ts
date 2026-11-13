@@ -386,8 +386,9 @@ app.openapi(
   (c) => {
     const id = c.req.valid("param").id;
     chatStatus(id);
-    requireAncestor(caller(c.req.header("X-ORC-Session")), id);
-    stopChat(id, c.req.valid("query").cascade === "true");
+    const sender = caller(c.req.header("X-ORC-Session"));
+    requireAncestor(sender, id);
+    stopChat(id, c.req.valid("query").cascade === "true", sender.session_id ?? null);
     return c.json(chatStatus(id), 200);
   },
 );

@@ -1840,6 +1840,7 @@ async function openChat(
     );
   if (body.model !== undefined) thread.config.model = body.model;
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
+  delete thread.held;
   const { run } = await beginTurn(thread, input, {
     context: body.context,
     messageId: body.clientMessageId,
@@ -1971,6 +1972,7 @@ async function beginTurn(
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
+    quietStops.delete(thread.id);
     throw error;
   }
   thread.messages.push({
@@ -1999,6 +2001,7 @@ async function beginTurn(
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
+    quietStops.delete(thread.id);
     throw error;
   }
   let failure: string | null = null;
@@ -2632,11 +2635,13 @@ function startPendingChildren(): void {
     const prompt = thread.spawnedBy?.prompt;
     if (!prompt || !thread.spawnedBy || threadRun(thread.id)) continue;
     delete thread.spawnedBy.prompt;
-    store().save(thread);
     beginTurn(thread, prompt).catch((error) => {
       logger.warn("A queued child session could not start", { error, threadId: thread.id });
-      store().save(thread);
-      notifySpawner(thread, "start", "failed");
+      const saved = store().get(thread.id);
+      if (!saved?.spawnedBy) return;
+      delete saved.spawnedBy.prompt;
+      store().save(saved);
+      if (!saved.held) notifySpawner(saved, "start", "failed");
     });
   }
 }
@@ -2656,23 +2661,26 @@ function descendants(id: string): string[] {
 
 const quietStops = new Set<string>();
 
-export function stopChat(id: string, cascade: boolean): string[] {
+export function stopChat(id: string, cascade: boolean, by: string | null): string[] {
   const stopped: string[] = [];
   for (const target of cascade ? [id, ...descendants(id)] : [id]) {
     const thread = store().get(target);
+    if (!thread) continue;
     const run = threadRun(target)?.[1];
-    if (thread?.spawnedBy?.prompt) {
+    const quiet = target !== id || by === thread.spawnedBy?.sessionId;
+    thread.held = true;
+    if (run) run.thread.held = true;
+    if (thread.spawnedBy?.prompt) {
       delete thread.spawnedBy.prompt;
       thread.spawnedBy.cancelled = true;
-      store().save(thread);
-      if (target === id) notifySpawner(thread, "cancel", "stopped");
-      stopped.push(target);
+      if (!run && !quiet) notifySpawner(thread, "cancel", "stopped");
     }
+    store().save(thread);
     if (run) {
-      if (target !== id) quietStops.add(target);
+      if (quiet) quietStops.add(target);
       run.stop();
-      if (!stopped.includes(target)) stopped.push(target);
     }
+    if (run || thread.spawnedBy?.cancelled) stopped.push(target);
   }
   if (stopped.length) changes.publish("sessions");
   return stopped;
@@ -2691,13 +2699,13 @@ export function chatStatus(id: string): SessionStatus {
     session_id: thread.id,
     title: thread.title,
     agent: thread.config.agent,
-    status: thread.spawnedBy?.prompt
-      ? "queued"
-      : run
-        ? waitingFor
-          ? "waiting"
-          : "running"
-        : queue.length
+    status: run
+      ? waitingFor
+        ? "waiting"
+        : "running"
+      : thread.spawnedBy?.prompt
+        ? "queued"
+        : queue.length && !thread.held
           ? "running"
           : outcome === "failed"
             ? "failed"
@@ -2731,7 +2739,14 @@ registerChatControl({
         : store()
             .byRuntime(target.backend, target.host, target.runtimeId)
             .sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    if (!thread || thread.spawnedBy?.prompt || threadRun(thread.id) || runs.size >= 4) return null;
+    if (
+      !thread ||
+      thread.held ||
+      thread.spawnedBy?.prompt ||
+      threadRun(thread.id) ||
+      runs.size >= 4
+    )
+      return null;
     return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
   },
   canSteer: (target) => {
