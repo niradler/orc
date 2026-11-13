@@ -352,6 +352,49 @@ await shoot("desktop-preview-changes-light", {
   out: join(repoRoot, ".claude", "previews"),
 });
 
+/** Captures the chat surface itself, without opening the preview panel. */
+async function shootChat(
+  name: string,
+  path: string,
+  opts: { width: number; height: number; theme?: "dark" | "light"; out?: string },
+) {
+  const context = await browser.newContext({
+    viewport: { width: opts.width, height: opts.height },
+    deviceScaleFactor: opts.width < 700 ? 2 : 1,
+    isMobile: opts.width < 700,
+    hasTouch: opts.width < 700,
+  });
+  await context.addInitScript(({ theme }) => localStorage.setItem("orc_theme", theme), {
+    theme: opts.theme ?? "dark",
+  });
+  const page = await context.newPage();
+  page.on("pageerror", (error) => errors.push(`${name}: ${error.message}`));
+  page.on("response", (response) => {
+    if (response.status() >= 400)
+      errors.push(`${name}: HTTP ${response.status()} ${response.url()}`);
+  });
+  await demo(page);
+  await page.goto(`${BASE}${path}`);
+  await page.getByTestId("chat-panel").waitFor({ state: "visible" });
+  await page.waitForTimeout(700);
+  await page.screenshot({
+    path: join(opts.out ?? OUT, `${name}.png`),
+    animations: "disabled",
+  });
+  console.log(`captured ${name}`);
+  await context.close();
+}
+
+// The preview panel belongs to the chat page; the side chat stays plain (#293).
+await shootChat("desktop-side-chat-plain", `/activity?project=all&chat=open&chatThread=${CHAT}`, {
+  width: 1600,
+  height: 900,
+});
+await shootChat("phone-chat-preview-closed", `/chat?project=all&chatThread=${CHAT}`, {
+  width: 390,
+  height: 844,
+});
+
 await browser.close();
 if (errors.length) {
   console.error(errors.join("\n"));

@@ -130,7 +130,13 @@ In the Electron desktop app, **File → Browser and files** (Ctrl/Cmd+Shift+B),
 or **Browser and files** in the tray menu, opens a panel beside your conversation.
 Chat links and file attachments open in this panel. Enter an HTTP/HTTPS address
 and use Back, Forward and Reload. The external-link icon opens the page in your
-system browser; Ctrl/Cmd-clicking a web link does the same.
+system browser; Ctrl/Cmd-clicking a web link does the same. The panel belongs to
+the chat page; the side chat on other pages stays a plain conversation with no
+browser, file or agent-control entry points.
+
+![The side chat without the preview panel](/screens/desktop-side-chat-plain.png)
+
+<img src="/screens/phone-chat-preview-closed.png" alt="The chat page on a phone before the preview panel opens" width="260">
 
 Each conversation keeps its own browser and file tabs. The panel stays docked
 beside the conversation and opens only when you ask for it or follow a link; drag
