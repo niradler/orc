@@ -834,6 +834,8 @@ export const api = {
         undefined,
         { nullOn404: true, signal },
       ),
+    fork: (id: string, messageId: string) =>
+      req<ChatThread>("POST", `/chat/threads/${encodeURIComponent(id)}/fork`, { messageId }),
     session: (id: string) =>
       req<{ changed: boolean; running: boolean; queued: { id: string; title: string }[] }>(
         "GET",

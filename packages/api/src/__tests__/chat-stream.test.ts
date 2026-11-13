@@ -328,7 +328,7 @@ describe("/chat/stream account switching", () => {
   }
 
   test("replays bounded prior context after the native session is replaced", () => {
-    const messages = Array.from({ length: 40 }, (_, index) => ({
+    const messages = Array.from({ length: 240 }, (_, index) => ({
       id: `m-${index}`,
       role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
       content: `message ${index} ${"x".repeat(600)}`,
@@ -338,9 +338,20 @@ describe("/chat/stream account switching", () => {
     if (!prompt) throw new Error("Continuation prompt was not built");
     expect(prompt).toContain("[ORC account switch]");
     expect(prompt).toContain("--- End of prior conversation ---");
-    expect(prompt).toContain("message 39");
+    expect(prompt).toContain("message 239");
     expect(prompt).not.toContain("message 0 ");
+    expect(prompt).toContain("[Earlier conversation omitted]");
+    // An account switch keeps its historical 12k bound so a smaller-context
+    // provider is not handed a larger prompt than it used to receive.
     expect(prompt.length).toBeLessThan(14_000);
+    // A fork gets the long budget and keeps both the newest work and the
+    // request that started it.
+    const fork = continuationPrompt(messages, "fork");
+    if (!fork) throw new Error("Fork continuation prompt was not built");
+    expect(fork).toContain("[ORC fork]");
+    expect(fork).toContain("User (original request): message 0");
+    expect(fork.length).toBeGreaterThan(prompt.length * 4);
+    expect(fork.length).toBeLessThan(103_000);
     expect(continuationPrompt([])).toBeUndefined();
   });
 

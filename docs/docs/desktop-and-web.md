@@ -55,6 +55,7 @@ opens the chat page instead.
 - **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
+- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
 - The page keeps the workspace header and its single notification bell, and the sidebar at the width you chose. **Close chat** returns to the page you came from.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents

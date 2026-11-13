@@ -433,6 +433,29 @@ function useChatController() {
     [update],
   );
   /**
+   * A finished turn is assembled locally, so its message carries a client id and
+   * no persisted timing. Read the stored thread so copy, fork and duration work
+   * on the message the server actually saved. Skip it once a new turn started.
+   */
+  const syncThread = useCallback(
+    async (key: string) => {
+      const threadId = find(key)?.thread?.id;
+      if (!threadId) return;
+      const fresh = await api.chat.get(threadId).catch(() => null);
+      if (!fresh) return;
+      update(key, (tab) =>
+        tab.streaming && tab.thread?.id === threadId
+          ? {}
+          : {
+              thread: fresh,
+              messages: fresh.messages,
+              historyBefore: fresh.historyBefore ?? null,
+            },
+      );
+    },
+    [find, update],
+  );
+  /**
    * Reads one turn's events into a tab. Closing the stream detaches; the server keeps the turn.
    * Resolves false when there was no turn to follow.
    */
@@ -624,11 +647,14 @@ function useChatController() {
       } finally {
         if (current()) {
           streams.current.delete(key);
-          if (!busy) finish(key);
+          if (!busy) {
+            finish(key);
+            void syncThread(key);
+          }
         }
       }
     },
-    [apply, finish, update, find],
+    [apply, finish, syncThread, update, find],
   );
   const attach = useCallback(
     (key: string, threadId: string) =>
@@ -1449,6 +1475,9 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
           agent: message.agent,
           activity: message.activity,
           attachments: message.attachments,
+          // The message renderer needs the exact text for Copy; the parts tree
+          // alone does not expose it outside the assistant-ui slot.
+          content: message.content,
           turn: message.turn,
         },
       },

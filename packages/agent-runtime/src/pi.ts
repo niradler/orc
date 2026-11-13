@@ -49,6 +49,8 @@ export const PI_CAPABILITIES: AgentCapabilities = Object.freeze({
   interrupt: true,
   steering: true,
   mcp: true,
+  // `pi --fork <path|id>` copies a session into a new native identity.
+  fork: true,
 });
 export async function piCommand(
   opts: Pick<SessionOpts, "executionHost" | "providerExecutable">,
@@ -197,7 +199,11 @@ export class PiSession implements AgentSession {
           "rpc",
           "--extension",
           extension,
-          ...(this.opts.runtimeSessionId ? ["--session", this.opts.runtimeSessionId] : []),
+          ...(this.opts.forkSourceRuntimeId
+            ? ["--fork", this.opts.forkSourceRuntimeId]
+            : this.opts.runtimeSessionId
+              ? ["--session", this.opts.runtimeSessionId]
+              : []),
           ...(this.opts.model ? ["--model", this.opts.model] : []),
           ...(promptFile ? ["--append-system-prompt", promptFile] : []),
         ],
@@ -698,6 +704,7 @@ export function createPiBackend(): AgentBackend {
     profileCapabilities: { model: true, toolAllowlist: false },
     startSession: open,
     resumeSession: (runtimeSessionId, opts) => open({ ...opts, runtimeSessionId }),
+    forkSession: (sourceRuntimeId, opts) => open({ ...opts, forkSourceRuntimeId: sourceRuntimeId }),
     preflight: async (opts = {}) => {
       try {
         await piCommand(opts);

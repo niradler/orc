@@ -415,6 +415,15 @@ function createCodexBackend(): AgentBackend {
       return session;
     },
 
+    async forkSession(sourceRuntimeId, opts) {
+      if (!opts.interactive)
+        throw new Error("Codex exec cannot fork a native session; use chat for native forks.");
+      return new CodexAppSession(
+        { ...opts, forkSourceRuntimeId: sourceRuntimeId },
+        sessionExecHost(opts),
+      );
+    },
+
     async stop() {},
   };
 }
