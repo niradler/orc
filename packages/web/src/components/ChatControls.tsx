@@ -275,10 +275,12 @@ export function ChatSessionPicker({
   const adoptProject = useCallback(
     (projectId?: string | null) => {
       if (!projectId) return;
+      // Only scopes the header can show: paused and archived projects are not picker options.
+      if (!activeProjects.some((project) => project.id === projectId)) return;
       if (selectedProject.projectId === "all" || selectedProject.projectId === "unassigned")
         selectedProject.setProjectId(projectId);
     },
-    [selectedProject],
+    [activeProjects, selectedProject],
   );
   // Opening or switching to a folder-scoped session adopts its project unless the
   // header already has an explicit project selected.

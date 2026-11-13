@@ -17,7 +17,7 @@ specific project folder wins, and a worktree resolves to its shared checkout eve
 when it lives outside the project's folder. Opening a session from the session
 list adopts its project in the workspace header, so the session list and
 notification inbox follow the project you are actually working in. The mapping is
-re-evaluated when project folders change, and existing sessions and their
+re-evaluated when project folders change, and live sessions and their
 notifications move with them; a session whose project folder was moved away stops
 claiming the old project. Each project has one folder scope. Worktrees resolve to
 their shared checkout, and a project without a scope takes the repository roots of

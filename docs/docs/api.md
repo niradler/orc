@@ -367,7 +367,7 @@ All paths below use the `/api` prefix and the normal API authentication.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/notifications` | Current history, shared unread count and `has_more`; optional `project_id` (or `unassigned`) scopes both |
+| `GET` | `/notifications` | Current history, `has_more` and the unread count for the same scope; optional `project_id` (or `unassigned`) scopes both |
 | `PATCH` | `/notifications/{id}` | Shared `{read?: boolean, dismissed?: boolean}` |
 | `POST` | `/notifications/read` | Mark current notifications read; optional `project_id` (or `unassigned`) scopes it |
 

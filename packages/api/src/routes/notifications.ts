@@ -26,7 +26,7 @@ app.openapi(
     method: "get",
     path: "/notifications",
     tags: ["Notifications"],
-    summary: "List nonexpired notifications and the shared unread count",
+    summary: "List nonexpired notifications and the unread count for the same scope",
     request: {
       query: z.object({
         limit: z.coerce.number().int().min(1).max(100).default(50),

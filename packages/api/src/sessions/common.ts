@@ -47,6 +47,7 @@ const projectByCwd = new Map<string, string | null>();
 const repoRootByCwd = new Map<string, string | null>();
 let cachedProjects: ProjectRow[] | null = null;
 let cachedFolders: FolderRow[] | null = null;
+let foldersInFlight: Promise<FolderRow[]> | null = null;
 let cachedProjectsAt = 0;
 const PROJECT_ROWS_TTL_MS = 30_000;
 
@@ -56,6 +57,7 @@ export function invalidateProjectFolderCache(): void {
   repoRootByCwd.clear();
   cachedProjects = null;
   cachedFolders = null;
+  foldersInFlight = null;
   cachedProjectsAt = 0;
 }
 
@@ -68,6 +70,17 @@ export function invalidateProjectFolderCache(): void {
  */
 async function projectFolders(rows: ProjectRow[], localRuntime: HostRuntime): Promise<FolderRow[]> {
   if (cachedFolders) return cachedFolders;
+  // The reconcile maps several folders at once; one build is enough for all of them.
+  foldersInFlight ??= buildProjectFolders(rows, localRuntime).finally(() => {
+    foldersInFlight = null;
+  });
+  return foldersInFlight;
+}
+
+async function buildProjectFolders(
+  rows: ProjectRow[],
+  localRuntime: HostRuntime,
+): Promise<FolderRow[]> {
   const folders = new Map<string, FolderRow>();
   const add = (id: string, scope: string | null) => {
     if (!scope?.trim()) return;

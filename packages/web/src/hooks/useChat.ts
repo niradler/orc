@@ -714,7 +714,9 @@ function useChatController() {
         projectId:
           options.projectId !== undefined
             ? options.projectId
-            : (existing?.projectId ?? inferred ?? undefined),
+            : existing && existing.projectId !== undefined
+              ? existing.projectId
+              : (inferred ?? undefined),
         thread: next,
         messages: next.messages,
         config: next.config,

@@ -6276,7 +6276,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List nonexpired notifications and the shared unread count */
+        /** List nonexpired notifications and the unread count for the same scope */
         get: {
             parameters: {
                 query?: {
