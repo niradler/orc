@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type GitStatus } from "@/api/client";
 import { type DiffLine, diffLines, pairDiffLines } from "@/lib/git-diff";
 import { fileChangeState } from "@/lib/git-status";
+import { copyText } from "@/lib/terminal-runtime";
 
 export function DiffLines({
   lines,
@@ -146,6 +147,7 @@ export function FileDiffCard({
   toggle,
   sideBySide = false,
   openFile,
+  copyPath = false,
 }: {
   terminalId: string;
   file: GitStatus["files"][number];
@@ -155,15 +157,28 @@ export function FileDiffCard({
   toggle: () => void;
   sideBySide?: boolean;
   openFile?: ((path: string) => void) | undefined;
+  copyPath?: boolean;
 }) {
   const { staged, working, conflict, label } = fileChangeState(file);
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(copyTimer.current), []);
+  const copy = () => {
+    void copyText(file.path)
+      .then(() => {
+        setCopied(true);
+        window.clearTimeout(copyTimer.current);
+        copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  };
   return (
     <section
       data-testid="git-diff-file"
       data-path={file.path}
       className="border-t border-outline-variant overflow-hidden"
     >
-      <div data-testid="git-status-file" className="flex items-center px-2">
+      <div data-testid="git-status-file" className="flex flex-wrap items-center px-2">
         <input
           type="checkbox"
           aria-label={`Select ${file.path}`}
@@ -202,16 +217,32 @@ export function FileDiffCard({
                 : "Unstaged"}
           </span>
         </button>
-        {openFile && (
-          <button
-            type="button"
-            data-testid="git-open-file"
-            onClick={() => openFile(file.path)}
-            className="shrink-0 min-h-11 px-2 text-xs text-primary hover:bg-surface"
-            title={`Open ${file.path} in Files`}
-          >
-            Open file
-          </button>
+        {(openFile || copyPath) && (
+          <div className="git-file-actions ml-auto flex shrink-0 items-center">
+            {openFile && (
+              <button
+                type="button"
+                data-testid="git-open-file"
+                onClick={() => openFile(file.path)}
+                className="shrink-0 min-h-11 px-2 text-xs text-primary hover:bg-surface"
+                title={`Open ${file.path}`}
+              >
+                Open file
+              </button>
+            )}
+            {copyPath && (
+              <button
+                type="button"
+                data-testid="git-copy-path"
+                aria-label={copied ? `Copied ${file.path}` : `Copy path of ${file.path}`}
+                title={copied ? "Copied" : `Copy ${file.path}`}
+                onClick={copy}
+                className="shrink-0 inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+              </button>
+            )}
+          </div>
         )}
       </div>
       {open && (

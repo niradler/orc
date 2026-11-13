@@ -8,6 +8,12 @@
   font-size: 13px;
 }
 
+/* Desktop preview panel host: the combined/split diff layout follows the panel
+   width through the container queries below, not the viewport. */
+.preview-changes-host {
+  container-type: inline-size;
+}
+
 .git-local-body,
 .pr-review-panel,
 .pr-files-view {
@@ -705,5 +711,11 @@
   }
   .git-local-label-short {
     display: inline;
+  }
+  /* Preview panel only: keep the changed-file path readable by dropping row
+     actions to their own line. Terminal-workspace panes keep the inline layout. */
+  .preview-changes-host .git-file-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
   }
 }

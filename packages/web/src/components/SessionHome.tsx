@@ -18,7 +18,11 @@ import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import type { InspectorTab } from "@/lib/session-home";
-import { runningTerminalForSession } from "@/lib/terminal-links";
+import {
+  runningTerminalForFolder,
+  runningTerminalForSession,
+  terminalInFolder,
+} from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -44,14 +48,14 @@ export function useSessionContext(terminalId: string | null): SessionContext {
   const host = terminal ? terminal.host : (chat.thread?.host ?? null);
   const liveId = terminal ? terminal.live_session_id : (chat.thread?.sourceId ?? null);
   const session = liveId ? live.data?.find((item) => item.id === liveId) : undefined;
-  const sameFolder = (item: Terminal) =>
-    item.status === "running" && !!cwd && item.cwd === cwd && (item.host ?? null) === host;
+  const sameFolder = (item: Terminal) => terminalInFolder(item, cwd, host);
   return {
     terminal,
     cwd,
     host,
     session,
-    gitTerminal: terminal?.status === "running" ? terminal : terminals.find(sameFolder),
+    gitTerminal:
+      terminal?.status === "running" ? terminal : runningTerminalForFolder(terminals, cwd, host),
     shell: terminals.find(
       (item) => sameFolder(item) && item.kind === "shell" && item.id !== terminal?.id,
     ),
