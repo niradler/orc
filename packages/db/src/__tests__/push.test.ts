@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
+import { NotificationStore } from "../notifications.js";
 import { PushStore } from "../push.js";
 
 function fixture() {
@@ -97,6 +98,26 @@ test("should update topics and reject unknown devices", () => {
   expect(() => store.remove("missing")).toThrow("Push device not found");
   store.remove(device.id);
   expect(() => store.get(device.id)).toThrow("Push device not found");
+});
+
+test("should compose the project label into pending job push titles", () => {
+  const db = new Database(":memory:");
+  const store = new PushStore(db, () => 2000);
+  const device = store.subscribe(subscription);
+  new NotificationStore(db, () => 2000).publish({
+    type: "job.finished",
+    source_key: "job:label",
+    source_id: "job-label",
+    title: "Nightly finished",
+    level: "done",
+    project_label: "Alpha",
+    path: "/jobs/label",
+    created_at: 1500,
+    expires_at: 5000,
+  });
+  expect(store.pendingJobPushes(device.id, 1000)).toMatchObject([
+    { title: "Alpha · Nightly finished", path: "/jobs/label" },
+  ]);
 });
 
 test("should add job pushes to devices that already received every topic", () => {

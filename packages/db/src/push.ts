@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { notificationTitle } from "@orc/core/notifications";
 import {
   PUSH_TOPICS,
   type PushDevice,
@@ -225,8 +226,11 @@ export class PushStore {
       LIMIT 1000)`)
       .run(this.now());
     return this.db
-      .query<{ id: string; title: string; body: string; path: string }, [number, number, string]>(
-        `SELECT n.id, n.title, n.body, n.path FROM notifications n
+      .query<
+        { id: string; title: string; project_label: string | null; body: string; path: string },
+        [number, number, string]
+      >(
+        `SELECT n.id, n.title, n.project_label, n.body, n.path FROM notifications n
         WHERE n.type IN ('job.failed','job.finished') AND n.created_at >= ? AND n.expires_at > ?
           AND NOT EXISTS (
             SELECT 1 FROM notification_pushes p
@@ -234,7 +238,11 @@ export class PushStore {
           )
         ORDER BY n.created_at LIMIT 20`,
       )
-      .all(cursor, this.now(), deviceId);
+      .all(cursor, this.now(), deviceId)
+      .map(({ project_label, ...row }) => ({
+        ...row,
+        title: notificationTitle(row.title, project_label),
+      }));
   }
 
   reserveJobPush(notificationId: string, deviceId: string): boolean {

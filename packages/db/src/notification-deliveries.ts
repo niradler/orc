@@ -8,6 +8,7 @@ import {
   NotificationForwardingPolicySchema,
   NotificationSchema,
   notificationMatches,
+  notificationTitle,
   type OrcNotification,
 } from "@orc/core/notifications";
 import { z } from "zod";
@@ -163,7 +164,11 @@ export class NotificationDeliveryStore {
       )
       .get(id, this.now(), this.cutoff());
     if (!row) return null;
-    return NotificationSchema.parse({ ...row, requires_action: !!row.requires_action });
+    return NotificationSchema.parse({
+      ...row,
+      title: notificationTitle(String(row.title), row.project_label as string | null),
+      requires_action: !!row.requires_action,
+    });
   }
   list(limit = 50): NotificationDelivery[] {
     z.number().int().min(1).max(100).parse(limit);

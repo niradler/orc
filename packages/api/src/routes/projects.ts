@@ -18,9 +18,10 @@ import {
   type WorkspaceEnvironment,
   WorkspaceEnvironmentSchema,
 } from "@orc/core/workspace-environment";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
+import { NotificationStore } from "@orc/db/notifications";
 import {
   bridge_chats,
   comments,
@@ -481,6 +482,8 @@ app.openapi(updateRoute, async (c) => {
     where: eq(projects.id, id),
   });
   if (!updated) throw new Error("Expected updated to exist after write");
+  if (body.name !== undefined && body.name !== existing.name)
+    new NotificationStore(getSqlite()).relabelProject(id, body.name);
   if (mappingChanged) reassignSessions();
   return c.json(toDto(updated));
 });

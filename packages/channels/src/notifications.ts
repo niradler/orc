@@ -8,6 +8,7 @@ import {
   NotificationDeliveryStore,
   notificationDestination,
 } from "@orc/db/notification-deliveries";
+import { notificationProjectLabel } from "@orc/db/notification-producers";
 import type { ChannelService } from "./service.js";
 
 const active = new WeakSet<ChannelService>();
@@ -76,7 +77,10 @@ export async function forwardChannelNotifications(
           project_id: event.project_id,
           idempotency_key: claim.idempotency_key,
           message: {
-            text: notificationSummary(event),
+            text: notificationSummary(
+              event,
+              notificationProjectLabel(service.store.db, event.project_id),
+            ),
             format: "plain",
             links: [{ label: "Open in ORC", url: link.href }],
           },
