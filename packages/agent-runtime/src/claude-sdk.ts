@@ -388,7 +388,7 @@ class ClaudeSDKSession implements AgentSession {
         cancelQueued?: boolean;
       }) => Promise<SDKControlInterruptResponse | undefined>;
       const receipt = await interrupt({ cancelQueued: true });
-      if (receipt?.still_queued.length) {
+      if (receipt && receipt.still_queued.length > 0) {
         logger.debug("Claude interrupt left queued commands", {
           count: receipt.still_queued.length,
         });
@@ -674,10 +674,14 @@ class ClaudeSDKSession implements AgentSession {
         clearContinuationGrace();
         continuationGrace = setTimeout(() => {
           if (!turn.closing && lastResult) {
-            push({
-              type: "system_status",
-              data: "A steering message was not answered before the response ended.",
-            });
+            // During Stop the outcome is already "stopped"; the unanswered-steer
+            // note would be misleading there.
+            if (!turn.stopping) {
+              push({
+                type: "system_status",
+                data: "A steering message was not answered before the response ended.",
+              });
+            }
             emitResult(lastResult);
           }
         }, steerContinuationGraceMs);

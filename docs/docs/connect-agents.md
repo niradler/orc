@@ -251,9 +251,11 @@ continue to use execution mode, without chat's interactive controls.
 Claude chat uses the Claude Agent SDK in streaming-input mode. It supports native
 resume, approvals, questions, live permission changes, steering and interruption.
 While Claude is responding, **Send now** delivers a text message into the active
-query; Claude picks it up within the same response, and the response completes once
-the steered message has been answered. Delivery is confirmed when the SDK has written
-the message to the agent; ordinary **Send** queues it for the next turn. Stop sends
+query; Claude picks it up within the same response. On current Claude versions the
+response completes once the steered message has been answered; if it is never
+answered, the response ends after a quiet period with a note. Delivery is confirmed
+when the SDK has written the message to the agent; ordinary **Send** queues it for
+the next turn. Stop sends
 the SDK's native interrupt, releases pending approvals and questions, and keeps the
 native session, so the next message resumes the same conversation. On current Claude
 versions, a steering message delivered but not yet answered when Stop lands is
