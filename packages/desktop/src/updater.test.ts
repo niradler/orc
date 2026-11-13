@@ -56,6 +56,7 @@ test("should restore the daemon after an emitted installer failure and report fa
   } as unknown as BrowserWindow;
   const host = {
     getWindow: () => window,
+    isLocalUrl: () => true,
     settingsPath,
     showWindow: () => {},
     stopOwnedDaemon: async () => {

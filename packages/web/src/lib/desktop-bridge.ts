@@ -54,8 +54,38 @@ export interface DesktopUpdates {
   onChange(listener: (state: DesktopUpdateState) => void): () => void;
 }
 
+export type DesktopConnectionMode = "local" | "remote";
+export type DesktopHeaderPair = { name: string; value: string };
+export type DesktopConnectionDraft = {
+  mode: DesktopConnectionMode;
+  url?: string;
+  token?: string;
+  clear_token?: boolean;
+  headers?: DesktopHeaderPair[];
+};
+export type DesktopConnectionState = {
+  mode: DesktopConnectionMode;
+  current: DesktopConnectionMode;
+  url: string;
+  has_token: boolean;
+  headers: DesktopHeaderPair[];
+  editable: boolean;
+};
+export type DesktopConnectionTest = {
+  status: "ready" | "sign_in_required";
+  version: string;
+};
+
+export interface DesktopConnection {
+  state(): Promise<DesktopConnectionState>;
+  test(draft: DesktopConnectionDraft): Promise<DesktopConnectionTest>;
+  save(draft: DesktopConnectionDraft): Promise<DesktopConnectionState>;
+  openLocalSettings(): Promise<void>;
+}
+
 /** Exposed by the Electron preload; absent in a plain browser. */
 export interface OrcDesktopBridge {
+  connection?: DesktopConnection;
   preview?: {
     upload(
       session_id: string,
@@ -108,7 +138,7 @@ export interface OrcDesktopBridge {
     onBrowser(listener: (state: PreviewBrowserState) => void): () => void;
     onOpen(listener: (request: { kind: "url" | "panel"; target?: string }) => void): () => void;
   };
-  notify(notification: DesktopNotification): void;
+  notify?: (notification: DesktopNotification) => void;
   onOpen(listener: (path: string, id?: string) => void): () => void;
   updates?: DesktopUpdates;
 }
