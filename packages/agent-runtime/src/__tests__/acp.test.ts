@@ -46,7 +46,7 @@ for await (const line of createInterface({input:process.stdin})) {
    update('other-session',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'WRONG SESSION'}});
    update(session,{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Working'}});
    update(session,{sessionUpdate:'tool_call',toolCallId:'read-1',title:'Read file',kind:'read',status:'pending',rawInput:{path:'a.txt'}});
-   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',title:'Read file',kind:'read'},options:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
+   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',title:'Read file',kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
   }
  } else if(m.id==='permission') {
   update(session,{sessionUpdate:'tool_call_update',toolCallId:'read-1',status:'completed',rawOutput:'file contents'});
@@ -160,8 +160,8 @@ test("ACP refuses unsupported resume and protocol versions without creating anot
   }
 });
 
-test("ACP never escalates a once or session reply to a persistent permission", async () => {
-  const { session } = fixture({}, "persistent-only");
+test("ACP grants a session approval with the agent's allow_always option", async () => {
+  const { session } = fixture({}, "session-grant");
   await session.initialize();
   await session.send("Read");
   const events = await run(session, "session");
@@ -169,7 +169,49 @@ test("ACP never escalates a once or session reply to a persistent permission", a
     .filter((e) => e.type === "text")
     .map((e) => e.data)
     .join("");
+  expect(JSON.parse(text)).toEqual({
+    outcome: { outcome: "selected", optionId: "native-always" },
+  });
+});
+
+test("ACP never escalates an ordinary approval to allow_always when it is the only grant", async () => {
+  const { session } = fixture({}, "persistent-only");
+  await session.initialize();
+  await session.send("Read");
+  const events = await run(session, "approved");
+  const text = events
+    .filter((e) => e.type === "text")
+    .map((e) => e.data)
+    .join("");
   expect(JSON.parse(text)).toEqual({ outcome: { outcome: "cancelled" } });
+});
+
+test("ACP falls back to allow_once for a session approval when allow_always is absent", async () => {
+  const { session } = fixture();
+  await session.initialize();
+  await session.send("Read");
+  const events = await run(session, "session");
+  const text = events
+    .filter((e) => e.type === "text")
+    .map((e) => e.data)
+    .join("");
+  expect(JSON.parse(text)).toEqual({
+    outcome: { outcome: "selected", optionId: "native-allow" },
+  });
+});
+
+test("ACP refuses to steer without a declared capability and sends nothing", async () => {
+  const { session, cwd } = fixture({}, "cancel");
+  await session.initialize();
+  await session.send("Wait");
+  await expect(session.steer("steer")).rejects.toThrow("does not accept steering");
+  await session.interrupt();
+  await run(session);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(1);
 });
 
 test("ACP cancellation completes without losing native identity", async () => {

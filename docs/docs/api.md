@@ -405,8 +405,12 @@ the next send continues the same conversation; on Claude and ACPX it closes the 
 process. Pending approvals and questions are cancelled either way.
 
 `POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
-returns the updated conversation after the active native turn accepts it. It
-requires a live steering-capable session; stale and unsupported runs return `409`.
+returns the updated conversation once the message is dispatched into the active
+native turn. Codex and Pi confirm native acceptance before returning; OpenCode
+over direct ACP has no steer acknowledgment, so a later refusal is reported as a
+status message and steering is turned off for that turn. It
+requires a live steering-capable session (Codex, Pi and OpenCode over direct ACP);
+stale and unsupported runs return `409`.
 It keeps the original native thread and turn. Empty input is invalid. These routes
 use the same authentication as the rest of the API. The SDK exposes
 `client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.
