@@ -7743,6 +7743,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/usage/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-request token usage with model distributions and time buckets */
+        get: {
+            parameters: {
+                query?: {
+                    days?: "0" | "1" | "7" | "30" | "90";
+                    granularity?: "day" | "hour";
+                    agent?: string;
+                    model?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Totals, agent and model distributions, and time buckets for the period */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            days: number;
+                            /** Format: date-time */
+                            since: string | null;
+                            /** @enum {string} */
+                            granularity: "day" | "hour";
+                            filters: {
+                                agent: string | null;
+                                model: string | null;
+                            };
+                            totals: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                            };
+                            agents: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                                agent: string;
+                            }[];
+                            models: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                                agent: string;
+                                model: string | null;
+                            }[];
+                            buckets: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                                bucket: string;
+                            }[];
+                            coverage: {
+                                indexed_sessions: number;
+                                unindexed_sessions: number;
+                                unindexed_tokens: number;
+                                unknown_sessions: number;
+                                estimated_sessions: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/usage/quotas": {
         parameters: {
             query?: never;

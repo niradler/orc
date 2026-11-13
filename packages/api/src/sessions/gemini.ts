@@ -1,9 +1,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
+import { parseGeminiUsage } from "./usage-parsers.js";
 
 export const GEMINI_TMP_DIR = join(homedir(), ".gemini", "tmp");
 export const GeminiSession = z.object({
@@ -49,7 +51,7 @@ export function geminiAdapter(
   return {
     backend: "gemini",
     minIntervalMs: 30_000,
-    async list() {
+    async list(known) {
       const sessions = root ?? join(await runtime.home(), ".gemini", "tmp");
       const records: SessionRecord[] = [];
       for (const file of await runtime.listFiles(sessions)) {
@@ -70,7 +72,10 @@ export function geminiAdapter(
         const prompt = geminiText(
           data.messages.find((message) => message.type === "user")?.content,
         );
-        records.push({
+        const lastActivityAt = new Date(data.lastUpdated);
+        const usage = parseGeminiUsage(data.messages, lastActivityAt.getTime());
+        const before = known.get(data.sessionId);
+        const record: SessionRecord = {
           backend: "gemini",
           externalId: data.sessionId,
           title: oneLine(data.summary || prompt || data.sessionId, 120),
@@ -78,11 +83,19 @@ export function geminiAdapter(
           cwd: data.directories?.[0] ?? null,
           status: "stopped",
           createdAt: new Date(data.startTime),
-          lastActivityAt: new Date(data.lastUpdated),
+          lastActivityAt,
           transcriptPath: file.path,
-          tokensUsed:
-            data.messages.reduce((sum, message) => sum + (message.tokens?.total ?? 0), 0) || null,
-        });
+          tokensUsed: usage.tokens || null,
+        };
+        if (
+          !before ||
+          lastActivityAt.getTime() > before.lastActivityMs ||
+          before?.usageVersion !== USAGE_EVENT_VERSION
+        ) {
+          record.usage = async () => usage;
+          record.usageVersion = USAGE_EVENT_VERSION;
+        }
+        records.push(record);
       }
       return records;
     },

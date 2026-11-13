@@ -3,10 +3,11 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { pathLabel } from "@orc/core/display-path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
-import { CLAUDE_TOKENS_VERSION } from "@orc/core/usage";
+import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { isAlive, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
+import { type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
 
 export const CLAUDE_REGISTRY_DIR = join(homedir(), ".claude", "sessions");
 export const CLAUDE_DESKTOP_DIR = join(
@@ -65,24 +66,7 @@ export async function claudeTokens(path: string): Promise<number> {
 }
 
 function claudeTokensFromText(content: string): number {
-  const seen = new Set<string>();
-  let total = 0;
-  const take = (line: string) => {
-    if (!line.includes('"usage"')) return;
-    try {
-      const msg = JSON.parse(line)?.message;
-      const usage = msg?.usage;
-      if (!usage || (msg.id && seen.has(msg.id))) return;
-      if (msg.id) seen.add(msg.id);
-      total +=
-        (usage.input_tokens ?? 0) +
-        (usage.output_tokens ?? 0) +
-        (usage.cache_creation_input_tokens ?? 0) +
-        (usage.cache_read_input_tokens ?? 0);
-    } catch {}
-  };
-  for (const line of content.split("\n")) take(line);
-  return total;
+  return parseClaudeUsage(content).tokens;
 }
 
 export function firstPrompt(path: string): string | null {
@@ -226,7 +210,8 @@ export function claudeAdapter(
         if (
           !records.has(id) &&
           before.session &&
-          before.tokensVersion !== CLAUDE_TOKENS_VERSION &&
+          (before.tokensVersion !== CLAUDE_TOKENS_VERSION ||
+            before.usageVersion !== USAGE_EVENT_VERSION) &&
           transcripts.has(id)
         ) {
           records.set(id, { ...before.session });
@@ -239,18 +224,31 @@ export function claudeAdapter(
         const before = known.get(record.externalId);
         const mtime = transcript.mtimeMs;
         record.lastActivityAt = new Date(Math.max(record.lastActivityAt.getTime(), mtime));
+        const changed = !before || mtime - before.lastActivityMs >= 1000;
+        let parsed: ParsedUsage | null = null;
         if (
-          !before ||
-          before.tokensUsed == null ||
-          before.tokensVersion !== CLAUDE_TOKENS_VERSION ||
-          mtime - before.lastActivityMs >= 1000
+          changed ||
+          before?.tokensUsed == null ||
+          before?.tokensVersion !== CLAUDE_TOKENS_VERSION
         ) {
           const content = new TextDecoder().decode(
             await runtime.readFile(transcript.path, 150 * 1024 * 1024),
           );
-          record.tokens = async () => claudeTokensFromText(content);
+          parsed = parseClaudeUsage(content, mtime);
+          record.tokens = async () => parsed?.tokens ?? 0;
           record.tokensVersion = CLAUDE_TOKENS_VERSION;
           record.summary = firstPromptFromText(content);
+        }
+        if (changed || before?.usageVersion !== USAGE_EVENT_VERSION) {
+          record.usage = async () => {
+            if (parsed) return parsed;
+            const content = new TextDecoder().decode(
+              await runtime.readFile(transcript.path, 150 * 1024 * 1024),
+            );
+            parsed = parseClaudeUsage(content, mtime);
+            return parsed;
+          };
+          record.usageVersion = USAGE_EVENT_VERSION;
         }
       }
       return [...records.values()];
