@@ -335,7 +335,7 @@ for (let i = 0; i < 35; i++) {
 }
 db.close();
 history.close();
-const sessions = await codexAdapter(dbPath, { historyDb: historyPath, runtime: hostRuntime(host) }).list();
+const sessions = await codexAdapter(dbPath, { historyDb: historyPath, runtime: hostRuntime(host) }).list(new Map());
 expect(sessions).toHaveLength(35);
 expect(sessions.every(session => session.status === "running")).toBe(true);
 expect(new Set(sessions.map(session => session.externalId)).size).toBe(35);
@@ -423,7 +423,7 @@ test(
     sshScenario(`
 writeFileSync(process.env.HOME + "/fail-file-check", "");
 const runtime = hostRuntime(host);
-await expect(codexAdapter(process.env.HOME + "/state.sqlite", { runtime }).list())
+await expect(codexAdapter(process.env.HOME + "/state.sqlite", { runtime }).list(new Map()))
   .rejects.toThrow("Connection reset");
 await expect(runtime.isDirectory(process.env.HOME)).rejects.toThrow("Connection reset");
 await retireSshMaster(host.alias);
