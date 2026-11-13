@@ -398,6 +398,12 @@ permissions, native interruption, steering, MCP, fork and rollback. `source` is
 `adapter`, `negotiated` or `unknown`; unsupported and unknown operations are false.
 Chat SSE emits `capabilities` events and persists negotiated values with the thread.
 
+`POST /chat/runs/{id}/cancel` stops the running turn and returns `{ ok: true }`; a run
+that already finished returns `409`. On interrupt-capable backends (Pi, Codex,
+OpenCode/direct ACP) it sends the native interrupt and keeps the session resumable, so
+the next send continues the same conversation; on Claude and ACPX it closes the agent
+process. Pending approvals and questions are cancelled either way.
+
 `POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
 returns the updated conversation after the active native turn accepts it. It
 requires a live steering-capable session; stale and unsupported runs return `409`.

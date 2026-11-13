@@ -864,7 +864,8 @@ export class CodexAppSession implements AgentSession {
   }
 
   private async closeConnection(): Promise<void> {
-    if (!this.transportFailed) await this.interrupt().catch(() => {});
+    // An explicit Stop already interrupted the turn; do not interrupt a second time.
+    if (!this.transportFailed && !this.interrupting) await this.interrupt().catch(() => {});
     this.closed = true;
     for (const ready of this.readyWaiters) ready();
     this.readerAbort.abort();

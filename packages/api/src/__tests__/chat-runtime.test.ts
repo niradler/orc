@@ -58,6 +58,9 @@ let resultIdentity: string | undefined;
 let resultDurationMs: number | undefined;
 let narrateBeforeTool = false;
 let closed = 0;
+let interrupted = 0;
+let interruptible = false;
+let interruptCapability = true;
 let decision: string | undefined;
 let liveMode: string | undefined;
 const AUTH = { Authorization: "Bearer test-secret", "Content-Type": "application/json" };
@@ -66,9 +69,12 @@ function session(call: (typeof calls)[number]): AgentSession {
   const permission = new Promise<void>((done) => {
     resolve = done;
   });
-  return {
+  const s: AgentSession = {
     id: "fixture",
-    capabilities: CODEX_CAPABILITIES,
+    capabilities:
+      !interruptCapability && CODEX_CAPABILITIES
+        ? { ...CODEX_CAPABILITIES, interrupt: false }
+        : CODEX_CAPABILITIES,
     steer: async (prompt) => {
       nativeSteers.push(prompt);
       if (steeringDelay) await Bun.sleep(steeringDelay);
@@ -171,6 +177,12 @@ function session(call: (typeof calls)[number]): AgentSession {
       };
     },
   };
+  if (interruptible)
+    s.interrupt = async () => {
+      interrupted++;
+      resolve?.();
+    };
+  return s;
 }
 const request = (path: string, body?: unknown, auth = true) =>
   app.request(`/api${path}`, {
@@ -1512,6 +1524,96 @@ describe("native chat runtime", () => {
       messages: [{ role: "user", content: "continue after stopping" }],
     });
     expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
+  });
+
+  test("Stop interrupts a capable session and the next send resumes the same native session", async () => {
+    interruptible = true;
+    waitPermission = true;
+    try {
+      const response = await request("/chat/stream", {
+        messages: [{ role: "user", content: "interrupt native turn" }],
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing reader");
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"permission_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended early");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      const previousInterrupted = interrupted;
+      expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(200);
+      while (!(await reader.read()).done) {
+        /* wait for finally cleanup */
+      }
+      reader.releaseLock();
+      // Stop used the native interrupt, not a kill; the turn ended as stopped.
+      expect(interrupted).toBeGreaterThan(previousInterrupted);
+      const stoppedThread = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(stoppedThread.messages.at(-1)?.turn?.outcome).toBe("stopped");
+      expect(stoppedThread.runtimeId).toBe("early-native-fixture");
+      // The next send continues the same native session instead of starting a new one.
+      waitPermission = false;
+      await turn({
+        threadId: opened.thread.id,
+        messages: [{ role: "user", content: "continue after interrupt" }],
+      });
+      expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
+    } finally {
+      interruptible = false;
+      waitPermission = false;
+    }
+  });
+
+  test("Stop falls back to close when the backend does not advertise interrupt", async () => {
+    interruptible = true;
+    interruptCapability = false;
+    waitPermission = true;
+    try {
+      const response = await request("/chat/stream", {
+        messages: [{ role: "user", content: "cancel without interrupt capability" }],
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing reader");
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"permission_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended early");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      const previousInterrupted = interrupted;
+      const previousClosed = closed;
+      expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(200);
+      while (!(await reader.read()).done) {
+        /* wait for finally cleanup */
+      }
+      reader.releaseLock();
+      // Capability gate: an interrupt method alone is not enough; Stop kills as before.
+      expect(interrupted).toBe(previousInterrupted);
+      expect(closed).toBeGreaterThan(previousClosed);
+      const stoppedThread = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(stoppedThread.messages.at(-1)?.turn?.outcome).toBe("stopped");
+    } finally {
+      interruptible = false;
+      interruptCapability = true;
+      waitPermission = false;
+    }
   });
 
   test("a turn keeps running after the browser disconnects and can be reattached", async () => {

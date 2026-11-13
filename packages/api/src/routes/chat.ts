@@ -1494,7 +1494,13 @@ async function beginTurn(
     stop: () => {
       stopped = true;
       halt();
-      void run.session?.close().catch(() => {});
+      const session = run.session;
+      // Interrupt-capable backends end the turn cooperatively and keep the native
+      // session resumable for the next send; the per-turn transport still closes when
+      // the turn ends. Backends without a native interrupt (Claude/ACPX) are killed.
+      if (session?.interrupt && session.capabilities?.interrupt === true)
+        void session.interrupt().catch(() => session.close().catch(() => {}));
+      else void session?.close().catch(() => {});
     },
   };
   runs.set(runId, run);

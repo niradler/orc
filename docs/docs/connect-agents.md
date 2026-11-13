@@ -243,8 +243,9 @@ adapter, not proof that every installed agent version supports every native feat
 Codex chat uses `codex app-server` over stdio. It supports native resume, approvals,
 questions, live permission changes, steering and interruption. While Codex is
 responding, **Send now** sends a text message into that active turn; ordinary **Send**
-queues it for later. Stop requests native interruption before closing the process.
-Fork and conversation rollback are not exposed. Non-interactive `codex-cli` callers
+queues it for later. Stop interrupts the active turn and keeps the native session, so
+the next message continues the same conversation. Fork and conversation rollback are
+not exposed. Non-interactive `codex-cli` callers
 continue to use execution mode, without chat's interactive controls.
 
 ACPX remains the compatibility path for other coding agents. It streams text,
@@ -325,6 +326,11 @@ MCP connection before starting chat. Existing agent login and native MCP setting
 remain agent-owned. ACPX-specific launch flags do not apply to direct ACP. Failed
 resume preserves the original identity instead of silently starting fresh.
 
+
+Stop ends the current turn. On backends with a native interrupt — Pi, Codex and
+OpenCode/direct ACP — Stop sends that interrupt and keeps the session, so the next
+send resumes the same native conversation instead of starting a new one. Claude and
+ACPX have no native interrupt yet, so Stop closes the agent process as before.
 
 Stopping a native Codex or direct ACP turn revokes pending interactive requests and
 rejects new approval callbacks while cancellation completes, including when automatic

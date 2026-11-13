@@ -466,6 +466,113 @@ test("Pi stop drains handled extension commands before another question turn", a
   expect(events.some((e) => e.type === "system_status" && e.data === "answer:from ORC")).toBe(true);
 }, 15000);
 
+test("real Pi resumes the same native session after an interrupt-Stop", async () => {
+  let received!: () => void;
+  const started = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+  let requestCount = 0;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch() {
+      requestCount++;
+      // The first model request hangs so the turn can be stopped mid-flight; later
+      // requests (the resumed turn) reply normally.
+      if (requestCount === 1) {
+        received();
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(": waiting\n\n"));
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }
+      const chunks = [
+        {
+          choices: [
+            {
+              index: 0,
+              delta: { role: "assistant", content: "Resumed after stop" },
+              finish_reason: null,
+            },
+          ],
+        },
+        {
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        },
+      ];
+      return new Response(
+        `${chunks
+          .map(
+            (chunk) =>
+              "data: " +
+              JSON.stringify({
+                id: "fixture",
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "fixture",
+                ...chunk,
+              }) +
+              "\n\n",
+          )
+          .join("")}data: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+  const { session, cwd } = fixture({ model: "orc-fixture/fixture" });
+  writeFileSync(
+    join(cwd, "agent", "models.json"),
+    JSON.stringify({
+      providers: {
+        "orc-fixture": {
+          baseUrl: `http://127.0.0.1:${server.port}/v1`,
+          api: "openai-completions",
+          apiKey: "fixture-local-only",
+          models: [{ id: "fixture", contextWindow: 32000, maxTokens: 1000 }],
+        },
+      },
+    }),
+  );
+  try {
+    await session.initialize();
+    const runtimeSessionId = session.getRuntimeSessionId();
+    expect(runtimeSessionId).toBeTruthy();
+    await session.send("Stop this turn");
+    await started;
+    await session.interrupt();
+    expect(
+      (await collect(session)).some((e) => e.type === "result" && e.data.outcome === "stopped"),
+    ).toBe(true);
+    expect(session.getRuntimeSessionId()).toBe(runtimeSessionId);
+    // The chat runtime closes the per-turn transport after a Stop, then the next send
+    // resumes the native session; prove that resume continues the same identity.
+    await session.close();
+    const resumed = new PiSession({
+      cwd,
+      orcMcp: false,
+      model: "orc-fixture/fixture",
+      runtimeSessionId,
+      providerExecutable: piCli,
+      env: { PI_CODING_AGENT_DIR: join(cwd, "agent") },
+    });
+    owned.push({ cwd, session: resumed });
+    await resumed.initialize();
+    expect(resumed.getRuntimeSessionId()).toBe(runtimeSessionId);
+    await resumed.send("Continue");
+    expect(
+      (await collect(resumed)).some((e) => e.type === "text" && e.data === "Resumed after stop"),
+    ).toBe(true);
+  } finally {
+    await session.close();
+    await server.stop(true);
+  }
+}, 30000);
+
 test("Pi closes safely when an extension asks a shutdown question", async () => {
   const { session } = fixture();
   await session.initialize();
