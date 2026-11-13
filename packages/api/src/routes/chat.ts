@@ -2230,7 +2230,7 @@ async function beginTurn(
             message:
               "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
           });
-const sessionId = thread.runtimeId ?? run.session?.getRuntimeSessionId?.();
+        const sessionId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
         if (!thread.runtimeId && sessionId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(sessionId))
           thread.runtimeId = sessionId;
         // A backend may explicitly finish with no resumable native session (Pi only
