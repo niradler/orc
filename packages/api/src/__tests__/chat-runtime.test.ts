@@ -1620,6 +1620,79 @@ describe("native chat runtime", () => {
     }
   });
 
+  test("Claude steering and Stop ride the native steer/interrupt contract", async () => {
+    const originalClaude = createBackend("claude");
+    const claudeCapabilities = originalClaude.capabilities;
+    expect(claudeCapabilities).toMatchObject({ steering: true, interrupt: true });
+    interruptible = true;
+    waitPermission = true;
+    registerBackend("claude", () => ({
+      ...originalClaude,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => {
+        const call = { id: null, opts };
+        calls.push(call);
+        return { ...session(call), capabilities: claudeCapabilities };
+      },
+      resumeSession: async (id, opts) => {
+        const call = { id, opts };
+        calls.push(call);
+        return { ...session(call), capabilities: claudeCapabilities };
+      },
+    }));
+    try {
+      const response = await request("/chat/stream", {
+        agent: "claude",
+        messages: [{ role: "user", content: "claude native steer and stop" }],
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing reader");
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"permission_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended early");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      const steeringId = crypto.randomUUID();
+      const previousSteers = nativeSteers.length;
+      const steered = await request(`/chat/runs/${opened.runId}/steer`, {
+        input: "focus on tests",
+        requestId: steeringId,
+      });
+      expect(steered.status).toBe(200);
+      expect(nativeSteers.length).toBe(previousSteers + 1);
+      expect(nativeSteers.at(-1)).toBe("focus on tests");
+      const previousInterrupted = interrupted;
+      expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(200);
+      while (!(await reader.read()).done) {
+        /* wait for finally cleanup */
+      }
+      reader.releaseLock();
+      expect(interrupted).toBeGreaterThan(previousInterrupted);
+      const stoppedThread = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(stoppedThread.messages.at(-1)?.turn?.outcome).toBe("stopped");
+      expect(stoppedThread.runtimeId).toBe("native-fixture");
+      waitPermission = false;
+      await turn({
+        threadId: opened.thread.id,
+        messages: [{ role: "user", content: "continue after claude stop" }],
+      });
+      expect(calls[calls.length - 1]?.id).toBe("native-fixture");
+    } finally {
+      registerBackend("claude", () => originalClaude);
+      interruptible = false;
+      waitPermission = false;
+    }
+  });
+
   test("a turn that leaves no resumable session completes cleanly and the next send starts fresh", async () => {
     noResumable = true;
     try {
@@ -1815,6 +1888,11 @@ test("capability discovery requires auth and preserves provider/session isolatio
   const acpx = await (await request("/chat/capabilities?agent=gemini")).json();
   expect(acpx).toMatchObject({
     capabilities: { approvals: false, questions: false, livePermissions: false, steering: false },
+  });
+  const claude = await (await request("/chat/capabilities?agent=claude")).json();
+  expect(claude).toMatchObject({
+    backend: "claude",
+    capabilities: { steering: true, interrupt: true, approvals: true, questions: true },
   });
   expect((await request("/chat/capabilities?agent=--invalid")).status).toBe(400);
 });

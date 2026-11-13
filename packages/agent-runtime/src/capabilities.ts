@@ -32,6 +32,8 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = Object.freeze({
   approvals: true,
   questions: true,
   livePermissions: true,
+  interrupt: true,
+  steering: true,
   // Both the Claude SDK (forkSession) and the CLI (--fork-session) fork natively.
   fork: true,
 });
