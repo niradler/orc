@@ -255,6 +255,8 @@ class ClaudeSDKSession implements AgentSession {
   readonly id = ulid();
 
   private runtimeSessionId: string | undefined;
+  /** The first query resumes the source with `forkSession`; later queries resume the new id. */
+  private forkPending: boolean;
   private humanWaitCount = 0;
   private readonly humanReceipts = new Map<string, { id: string; version: number }[]>();
   private done = false;
@@ -278,6 +280,7 @@ class ClaudeSDKSession implements AgentSession {
     this.opts = opts;
     this.host = host;
     this.runtimeSessionId = opts.runtimeSessionId;
+    this.forkPending = !!opts.forkSourceRuntimeId;
   }
 
   private push(event: AgentEvent): void {
@@ -630,7 +633,11 @@ class ClaudeSDKSession implements AgentSession {
             }
             return { behavior: "deny", message: "Permission denied" };
           },
-          ...(this.runtimeSessionId ? { resume: this.runtimeSessionId } : {}),
+          ...(this.forkPending && !this.runtimeSessionId && this.opts.forkSourceRuntimeId
+            ? { resume: this.opts.forkSourceRuntimeId, forkSession: true }
+            : this.runtimeSessionId
+              ? { resume: this.runtimeSessionId }
+              : {}),
           ...(this.opts.model ? { model: this.opts.model } : {}),
           includePartialMessages: true,
         },
@@ -708,6 +715,7 @@ class ClaudeSDKSession implements AgentSession {
         }
         if (msg.type === "system" && msg.subtype === "init") {
           this.runtimeSessionId = msg.session_id;
+          this.forkPending = false;
           continue;
         }
 
@@ -1057,6 +1065,13 @@ function createClaudeSDKBackend(): AgentBackend {
 
     async resumeSession(runtimeSessionId, opts) {
       return new ClaudeSDKSession({ ...opts, runtimeSessionId }, sessionExecHost(opts));
+    },
+
+    async forkSession(sourceRuntimeId, opts) {
+      return new ClaudeSDKSession(
+        { ...opts, forkSourceRuntimeId: sourceRuntimeId },
+        sessionExecHost(opts),
+      );
     },
 
     async stop() {},

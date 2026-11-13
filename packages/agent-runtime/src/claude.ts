@@ -7,6 +7,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { CLAUDE_CAPABILITIES } from "./capabilities.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readProcessOutput, writeToStdin } from "./io.js";
 import { ORC_TOOLS_RULE, type OrcMcpConfigFile, writeOrcMcpConfigFile } from "./orc-mcp.js";
@@ -130,6 +131,8 @@ export class ClaudeSession implements AgentSession {
   private drainOutput: () => Promise<void> = async () => {};
   private cwd: string;
   private runtimeSessionId: string | undefined;
+  /** The first send resumes the source with `--fork-session`; later sends resume the new id. */
+  private forkPending: boolean;
   private readonly claudePath: string;
   private readonly autoApprove: boolean;
   private readonly model: string | undefined;
@@ -148,6 +151,7 @@ export class ClaudeSession implements AgentSession {
     this.host = host;
     this.cwd = opts.cwd;
     this.runtimeSessionId = opts.runtimeSessionId;
+    this.forkPending = !!opts.forkSourceRuntimeId;
     this.claudePath = claudePath;
     this.autoApprove = opts.autoApprove ?? false;
     this.model = opts.model;
@@ -361,7 +365,14 @@ export class ClaudeSession implements AgentSession {
     if (this.proc) {
       await this.close().catch(() => {});
     }
-    const resumeArgs = this.runtimeSessionId ? ["--resume", this.runtimeSessionId] : [];
+    const forkId =
+      !this.runtimeSessionId && this.forkPending ? this.opts.forkSourceRuntimeId : undefined;
+    const resumeArgs = this.runtimeSessionId
+      ? ["--resume", this.runtimeSessionId]
+      : forkId
+        ? ["--resume", forkId, "--fork-session"]
+        : [];
+    this.forkPending = false;
     this.runtimeSessionId = undefined;
     this.done = false;
     this.state.hasReceivedResult = false;
@@ -421,6 +432,7 @@ export class ClaudeSession implements AgentSession {
 function createClaudeBackend(): AgentBackend {
   return {
     name: "claude-cli",
+    capabilities: CLAUDE_CAPABILITIES,
     profileCapabilities: { model: true, toolAllowlist: true },
 
     async describe(): Promise<BackendDescription> {
@@ -479,6 +491,20 @@ function createClaudeBackend(): AgentBackend {
       if (!path) throw new Error(claudeMissing(host));
       const session = new ClaudeSession({ ...opts, runtimeSessionId }, path, host);
       await session.start({ ...opts, runtimeSessionId });
+      return session;
+    },
+
+    async forkSession(sourceRuntimeId, opts) {
+      const host = sessionExecHost(opts);
+      const path = await findClaudeCli(host, opts.providerExecutable);
+      if (!path) throw new Error(claudeMissing(host));
+      // The fork id is minted by the CLI on the first send, so start() stays lazy.
+      const session = new ClaudeSession(
+        { ...opts, forkSourceRuntimeId: sourceRuntimeId },
+        path,
+        host,
+      );
+      await session.start({ ...opts, forkSourceRuntimeId: sourceRuntimeId });
       return session;
     },
 

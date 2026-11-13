@@ -1,7 +1,7 @@
 import { withHumanRequests } from "./human-requests.js";
 import { providerSessionOptions, withProviderRedaction } from "./provider-session.js";
 import { sessionRules } from "./rules.js";
-import type { AgentBackend, AgentBackendName } from "./types.js";
+import type { AgentBackend, AgentBackendName, SessionOpts } from "./types.js";
 
 const registry = new Map<AgentBackendName, () => AgentBackend>();
 
@@ -24,6 +24,7 @@ export function createBackend(name: AgentBackendName): AgentBackend {
   const factory = registry.get(name);
   if (factory) {
     const backend = factory();
+    const forkSession = backend.forkSession;
     return {
       ...backend,
       preflight: async (opts = {}) => {
@@ -85,6 +86,33 @@ export function createBackend(name: AgentBackendName): AgentBackend {
           opts,
         );
       },
+      ...(forkSession
+        ? {
+            forkSession: async (sourceRuntimeId: string, opts: SessionOpts) => {
+              opts = providerSessionOptions(String(name), opts, true);
+              if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
+                throw new Error(
+                  `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
+                );
+              return withHumanRequests(
+                withProviderRedaction(
+                  await forkSession
+                    .call(backend, sourceRuntimeId, await sessionRules(String(name), opts))
+                    .catch((error: unknown) => {
+                      throw new Error(
+                        opts.redactOutput?.(
+                          error instanceof Error ? error.message : String(error),
+                        ) ?? String(error),
+                      );
+                    }),
+                  opts,
+                ),
+                String(name),
+                opts,
+              );
+            },
+          }
+        : {}),
     };
   }
   throw new Error(

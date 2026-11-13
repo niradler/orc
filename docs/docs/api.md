@@ -292,6 +292,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `POST` | `/session-handoffs` | Start a session handoff |
 | `GET` `POST` | `/chat/threads` | Chat threads |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
+| `POST` | `/chat/threads/{id}/fork` | Fork a chat at an assistant response |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
@@ -320,6 +321,24 @@ including while preparation is pending. Recover the original thread by message I
 retrying the same queued message does not start another turn. The web client bounds
 recovery requests and backoff to 15 seconds, or 60 seconds after a server error,
 header timeout or `CHAT_MESSAGE_EXISTS`, then pauses the message in its queue.
+
+`POST /chat/threads/{id}/fork` copies the conversation up to one assistant
+response into a new thread and returns it. It prefers the agent's native session
+fork, which keeps the provider's own conversation, when the response is the latest
+one and the adapter supports it (Claude, Codex, Pi, and ACP agents whose handshake
+advertises `session/fork`). A native fork is deferred until the new chat's first
+message, so no provider process starts for a fork you never use. Otherwise the new
+chat replays a bounded context (100,000 characters) that includes text, summarized
+tool calls, results, status entries and attachment names; the opening request is
+kept when older messages are omitted.
+
+The returned thread records `forkedFrom` (`threadId`, `messageId`, `mode` —
+`native` or `context` — plus `sourceTitle`, `fallbackReason` and `partial` when
+relevant), `forkPending` while a native fork has not started yet, and `forkContext`
+(`messageCount`, `truncated`, `includesActivity`) for a context fork. A context fork
+is rejected with `400` when the source has older native history ORC cannot read, so
+the copy never silently drops the beginning of a long conversation. Forking is
+rejected with `409` while the source or another turn is running.
 
 `POST /terminals` accepts `project_id` to use that project's workspace environment
 and ports, and `dev: true` to run its dev script in a shell terminal. A dev

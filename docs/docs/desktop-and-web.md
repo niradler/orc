@@ -55,6 +55,7 @@ opens the chat page instead.
 - **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
+- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
 - The page keeps the workspace header and its single notification bell, and the sidebar at the width you chose. **Close chat** returns to the page you came from.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents
@@ -83,6 +84,13 @@ The session list's **Recents** and **Projects** views, ordered by last activity:
 <img src="/screens/session-recents-phone.png" alt="Session list Recents view on a phone" width="260">
 <img src="/screens/session-projects-desktop.png" alt="Session list grouped by project on desktop" width="640">
 <img src="/screens/session-projects-phone.png" alt="Session list grouped by project on a phone" width="260">
+
+Forking at a response copies the conversation into a new chat. The notice names the
+source, whether the fork continued the agent's native session or carried a context
+replay, and what that replay included.
+
+<img src="/screens/chat-fork-desktop.png" alt="Fork notice above the copied messages in a forked chat" width="320">
+<img src="/screens/chat-fork-phone.png" alt="The same fork notice on a phone" width="260">
 
 ## Activity
 
