@@ -8,6 +8,9 @@ import { HumanRequestStore } from "../human-requests.js";
 
 function fixture() {
   const db = new Database(":memory:");
+  db.exec(
+    "CREATE TABLE chat_threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL)",
+  );
   let time = 10000;
   return {
     db,
@@ -24,6 +27,27 @@ const question = {
   prompt: "Which color?",
   choices: ["Blue", "Green"],
 };
+
+test("should label a chat request notification with the originating folder", () => {
+  const { db } = fixture();
+  const store = new HumanRequestStore(db);
+  const threadId = crypto.randomUUID();
+  db.query("INSERT INTO chat_threads(id,title,updated_at,data) VALUES(?,?,?,?)").run(
+    threadId,
+    "Chat",
+    1,
+    JSON.stringify({ cwd: "/work/happy-cactus" }),
+  );
+  const request = store.create({
+    ...question,
+    origin: { ...question.origin, chat_thread_id: threadId },
+  });
+  expect(
+    db
+      .query<{ title: string }, [string]>("SELECT title FROM notifications WHERE source_id=?")
+      .get(request.id)?.title,
+  ).toBe("happy-cactus · Question · codex");
+});
 
 test("should expire unavailable and undelivered requests after 72 hours while retaining their audit", () => {
   const { db, store, advance } = fixture();

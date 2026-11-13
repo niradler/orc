@@ -8,7 +8,7 @@ import { cleanupAuditLog } from "@orc/db/audit";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
-import { publishNotification } from "@orc/db/notification-producers";
+import { notificationProjectLabel, publishNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
 import { notify, sessionWaitingMessage } from "./push/service.js";
 import { activeTurns, turnKey } from "./sessions/turns.js";
@@ -128,6 +128,7 @@ export function recordChatNotification(
     level: kind === "finished" ? "done" : "needs-you",
     requires_action: waiting,
     project_id: thread.projectId ?? null,
+    cwd: thread.cwd,
     path: `/activity?chat=open&chatThread=${encodeURIComponent(thread.id)}${thread.projectId ? `&project=${encodeURIComponent(thread.projectId)}` : ""}`,
   });
 }
@@ -144,6 +145,7 @@ export function recordObservedNotification(
     nativeId: string;
     title: string;
     projectId: string | null;
+    cwd?: string | null;
     previous: string | null;
     status: string;
     waiting: boolean;
@@ -215,6 +217,7 @@ export function recordObservedNotification(
         return;
       if (kind === "finished")
         associateSessionSources(sqlite, event.id, event.backend, event.host, event.nativeId);
+      const project = notificationProjectLabel(sqlite, event.projectId, event.cwd);
       publishNotification(sqlite, {
         type: `agent.${kind}`,
         source_key: `observed:${event.id}:${kind}:${transitionId}`,
@@ -224,9 +227,10 @@ export function recordObservedNotification(
         level: kind === "question" ? "needs-you" : "done",
         requires_action: kind === "question",
         project_id: event.projectId,
+        cwd: event.cwd ?? null,
         path: `/sessions?session=${encodeURIComponent(event.id)}&project=all`,
       });
-      if (kind === "question") notify("attention", sessionWaitingMessage(event));
+      if (kind === "question") notify("attention", sessionWaitingMessage({ ...event, project }));
     } catch (error) {
       logger.error("Could not record session notification", error);
     }

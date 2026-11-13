@@ -4,7 +4,7 @@ import type { HumanRequest } from "@orc/core/human-requests";
 import type { NotificationPage, OrcNotification } from "@orc/core/notifications";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
-import { publishJobNotification } from "@orc/db/notification-producers";
+import { publishJobNotification, publishNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
 import { executeJob } from "@orc/runner/executor";
 import {
@@ -419,6 +419,71 @@ test("should let a person inspect an answer without claiming the agent received 
     (await req(app, "POST", `/human-requests/${created.id}/cancel`, { version: answered.version }))
       .status,
   ).toBe(200);
+});
+
+test("should label notifications with the project name or the source folder", async () => {
+  const sqlite = getSqlite();
+  sqlite.query("INSERT INTO projects(id,name) VALUES(?,?)").run("label-project", "Label Project");
+  const now = Date.now();
+  const thread = ChatThreadSchema.parse({
+    id: crypto.randomUUID(),
+    title: "Labelled session",
+    config: ChatSettingsSchema.parse({}),
+    cwd: "/work/label-folder",
+    host: null,
+    runtimeId: null,
+    backend: "codex",
+    sourceId: null,
+    messages: [],
+    updatedAt: now,
+    projectId: "label-project",
+  });
+  new ChatStore(sqlite).save(thread);
+  recordChatNotification(thread, "labelled", "question");
+  expect(
+    sqlite
+      .query<{ title: string }, [string]>("SELECT title FROM notifications WHERE source_key=?")
+      .get(`chat:${thread.id}:labelled`)?.title,
+  ).toBe("Label Project · Labelled session");
+
+  const observedId = `label-${crypto.randomUUID()}`;
+  recordObservedNotification(
+    {
+      id: observedId,
+      backend: "codex",
+      host: null,
+      nativeId: `native-${observedId}`,
+      title: "Observed session",
+      projectId: null,
+      cwd: "/work/folder-label",
+      previous: "running",
+      status: "idle",
+      waiting: false,
+      wasWaiting: false,
+      activity: now,
+    },
+    () => true,
+  );
+  await Bun.sleep(1100);
+  expect(
+    sqlite
+      .query<{ title: string }, [string]>(
+        "SELECT title FROM notifications WHERE source_id=? AND type='agent.finished'",
+      )
+      .get(observedId)?.title,
+  ).toBe("folder-label · Observed session");
+
+  const bare = publishNotification(sqlite, {
+    type: "future.label",
+    source_key: "label:bare",
+    source_id: "label-bare",
+    title: "Bare title",
+    level: "done",
+    path: "/activity",
+    created_at: now,
+    expires_at: now + 60000,
+  });
+  expect(bare?.title).toBe("Bare title");
 });
 
 test("should publish real job outcomes according to notify_on and deduplicate repeats", async () => {

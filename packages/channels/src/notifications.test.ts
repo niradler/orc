@@ -177,6 +177,18 @@ test("should forward a safe summary through the existing renderer and persist de
   await forwardChannelNotifications(f.service, new NotificationDeliveryStore(f.db, f.now));
   expect(f.payloads).toHaveLength(1);
 });
+test("should label forwarded summaries with the project name and never copy the title", async () => {
+  const f = fixture();
+  f.db.exec(
+    "CREATE TABLE projects(id TEXT PRIMARY KEY,name TEXT); INSERT INTO projects VALUES('p1','Alpha')",
+  );
+  f.advance();
+  f.publish("agent.finished", "p1");
+  await f.tick();
+  expect(f.payloads).toHaveLength(1);
+  expect(JSON.stringify(f.payloads)).toContain("Alpha: An agent finished its reply in ORC.");
+  expect(JSON.stringify(f.payloads)).not.toContain("PRIVATE");
+});
 test("should skip pre-opt-in history and notifications produced during a global pause", async () => {
   const f = fixture();
   f.store.savePolicy({ enabled: false });
@@ -391,7 +403,7 @@ test("should keep pending and successful deliveries across actual database close
 test("should forward only job events allowed by the common notify_on producer", async () => {
   const f = fixture();
   f.db.exec(
-    "CREATE TABLE jobs(id TEXT PRIMARY KEY,name TEXT,notify_on TEXT,project_id TEXT); CREATE TABLE job_runs(id TEXT PRIMARY KEY,job_id TEXT,status TEXT,ended_at INTEGER,started_at INTEGER,exit_code INTEGER)",
+    "CREATE TABLE jobs(id TEXT PRIMARY KEY,name TEXT,notify_on TEXT,project_id TEXT,working_dir TEXT); CREATE TABLE job_runs(id TEXT PRIMARY KEY,job_id TEXT,status TEXT,ended_at INTEGER,started_at INTEGER,exit_code INTEGER)",
   );
   for (const [index, policy, status] of [
     [1, "never", "failed"],
@@ -400,7 +412,9 @@ test("should forward only job events allowed by the common notify_on producer", 
     [4, "always", "success"],
   ] as const) {
     f.advance();
-    f.db.query("INSERT INTO jobs VALUES(?,?,?,NULL)").run(String(index), "PRIVATE job", policy);
+    f.db
+      .query("INSERT INTO jobs VALUES(?,?,?,NULL,NULL)")
+      .run(String(index), "PRIVATE job", policy);
     f.db
       .query("INSERT INTO job_runs VALUES(?,?,?,NULL,NULL,NULL)")
       .run(String(index), String(index), status);

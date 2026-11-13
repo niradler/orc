@@ -158,27 +158,33 @@ export function notificationMatches(
 }
 
 /** External delivery never copies user-authored titles, prompts, commands or tool output. */
-export function notificationSummary(event: Pick<OrcNotification, "type" | "level">): string {
-  switch (event.type) {
-    case "human.request":
-      return "An agent needs your response in ORC.";
-    case "agent.question":
-      return "An agent is waiting for your answer in ORC.";
-    case "agent.approval":
-      return "An agent is waiting for your approval in ORC.";
-    case "agent.finished":
-      return "An agent finished its reply in ORC.";
-    case "agent.failed":
-      return "An agent could not complete its turn in ORC.";
-    case "job.finished":
-      return "An ORC job completed successfully.";
-    case "job.failed":
-      return "An ORC job failed. Open ORC for details.";
-    default:
-      return event.level === "needs-you"
-        ? "A new ORC notification needs you."
-        : "You have a new ORC notification.";
-  }
+export function notificationSummary(
+  event: Pick<OrcNotification, "type" | "level">,
+  project?: string | null,
+): string {
+  const summary = (() => {
+    switch (event.type) {
+      case "human.request":
+        return "An agent needs your response in ORC.";
+      case "agent.question":
+        return "An agent is waiting for your answer in ORC.";
+      case "agent.approval":
+        return "An agent is waiting for your approval in ORC.";
+      case "agent.finished":
+        return "An agent finished its reply in ORC.";
+      case "agent.failed":
+        return "An agent could not complete its turn in ORC.";
+      case "job.finished":
+        return "An ORC job completed successfully.";
+      case "job.failed":
+        return "An ORC job failed. Open ORC for details.";
+      default:
+        return event.level === "needs-you"
+          ? "A new ORC notification needs you."
+          : "You have a new ORC notification.";
+    }
+  })();
+  return project ? `${project}: ${summary}` : summary;
 }
 
 export const NotificationDeliverySchema = z.object({

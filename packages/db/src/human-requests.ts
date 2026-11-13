@@ -5,6 +5,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors"
 import {
   CommandResultSchema,
   type HumanRequest,
+  type HumanRequestInput,
   HumanRequestInputSchema,
   HumanRequestSchema,
   HumanResponseSchema,
@@ -14,6 +15,20 @@ import { AuditLog, installAudit } from "./audit.js";
 import { publishNotification } from "./notification-producers.js";
 import { NotificationStore } from "./notifications.js";
 import { RuleStore } from "./rules.js";
+
+/** The folder a request came from, for a label when no project owns it. */
+export function humanRequestFolder(db: Database, input: HumanRequestInput): string | null {
+  if (input.action?.cwd) return input.action.cwd;
+  const threadId = input.origin.chat_thread_id;
+  if (!threadId) return null;
+  return (
+    db
+      .query<{ cwd: string | null }, [string]>(
+        "SELECT CASE WHEN json_valid(data) THEN json_extract(data,'$.cwd') END AS cwd FROM chat_threads WHERE id=?",
+      )
+      .get(threadId)?.cwd ?? null
+  );
+}
 
 export class HumanRequestStore {
   constructor(
@@ -176,6 +191,7 @@ export class HumanRequestStore {
         body: request.input.origin.session_title ?? "An agent needs your response.",
         level: "needs-you",
         project_id: request.input.project_id,
+        cwd: humanRequestFolder(this.db, request.input),
         path: `/activity?notifications=open&request=${encodeURIComponent(request.id)}`,
         requires_action: true,
         created_at: request.created_at,

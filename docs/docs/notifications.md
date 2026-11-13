@@ -8,6 +8,10 @@ phones both navigate to the page, and its back bar returns to where you were.
 
 Notifications cover human questions, approvals and commands, agent questions and
 outcomes, and job outcomes. Open an item to review the request or visit its source.
+Every alert names where it came from: the owning project, or the session's folder
+when no project owns it. The label appears in inbox rows, toasts, desktop
+notifications and browser push, while **By project** grouping and per-project
+muting keep working as before.
 Request forms stay collapsed until opened; drafts survive closing and reopening
 the menu. Read and dismissed state is stored on the server and shared by clients.
 Dismissal does not approve, answer, cancel or delete a source request.
@@ -116,7 +120,8 @@ groups match all known values. Unknown types are excluded unless **Include new o
 unknown types** is selected; they have no known outcome and cannot match an outcome
 filter. **Preview filters** evaluates the draft without sending a message.
 
-Forwarding sends fixed, escaped summaries and source links. It excludes titles,
+Forwarding sends fixed, escaped summaries and source links, prefixed with the
+project label when the source belongs to a project. It excludes titles,
 question text, command arguments, tool payloads, logs and credentials. Job events
 honor `notify_on`; human requests also retain their producer's `notify` provider
 selection. Selecting forwarding replaces the recipient's legacy **Interactive
