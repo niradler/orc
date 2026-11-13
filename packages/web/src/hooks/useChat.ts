@@ -734,20 +734,27 @@ function useChatController() {
     },
     [activate, openThread],
   );
-  const newTab = useCallback(() => {
-    const blank = tabsRef.current.find(isBlank);
-    if (blank) {
-      update(blank.key, () => ({
-        config: defaults.current,
-        projectId: creationProject.current,
-        error: null,
-      }));
-      return activate(blank.key);
-    }
-    const tab = blankTab(defaults.current, creationProject.current);
-    mutate((current) => [...current, tab]);
-    activate(tab.key);
-  }, [activate, mutate, update]);
+  const newTab = useCallback(
+    (options: { projectId?: string | null; fresh?: boolean; workspace?: ChatWorkspace } = {}) => {
+      const projectId =
+        options.projectId === undefined ? creationProject.current : options.projectId;
+      const blank = !options.fresh && tabsRef.current.find(isBlank);
+      if (blank) {
+        update(blank.key, () => ({
+          config: defaults.current,
+          projectId,
+          ...(options.workspace ? { workspace: options.workspace } : {}),
+          error: null,
+        }));
+        return activate(blank.key);
+      }
+      const tab = blankTab(defaults.current, projectId);
+      if (options.workspace) tab.workspace = options.workspace;
+      mutate((current) => [...current, tab]);
+      activate(tab.key);
+    },
+    [activate, mutate, update],
+  );
   const startAgentConversation = useCallback(
     (agent: string, providerId?: string, model = "", options?: ChatAgentOptions) => {
       const agentOptions = providerId ? {} : { ...defaults.current.agentOptions };

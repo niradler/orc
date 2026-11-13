@@ -1,4 +1,5 @@
 import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
+import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
@@ -11,6 +12,7 @@ type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   runtimeId?: string | null;
   sourceId?: string | null;
   host?: string | null;
+  projectId?: string | null;
 };
 type HistorySource =
   | { kind: "local"; tab: ChatTab }
@@ -50,6 +52,8 @@ export function chatHistoryList(
   query = "",
   projectScope = "all",
   terminals: readonly Terminal[] = [],
+  includeShells = false,
+  projectFolders: readonly { id: string; scope?: string | null }[] = [],
 ): ChatHistoryEntry[] {
   const matches = (text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
   const entries: ChatHistoryEntry[] = [];
@@ -129,6 +133,7 @@ export function chatHistoryList(
       title: thread.title,
       updatedAt: timestamp(thread.updatedAt),
       observedState: thread.running ? "working" : "idle",
+      projectId: thread.projectId,
     };
     entries.push(entry);
     keywords.set(entry.id, `${thread.title} ${thread.agent ?? ""}`);
@@ -158,7 +163,11 @@ export function chatHistoryList(
     if (!existing) entries.push(entry);
     else existing.seenKeys.push(`native:${session.id}`);
     entry.provider ??= session.agent;
-    entry.projectId = session.project_id;
+    entry.projectId =
+      session.project_id ??
+      entry.projectId ??
+      projectForFolder(session.cwd, projectFolders)?.id ??
+      session.project_id;
     observe(entry, liveSessionState(session));
     entry.updatedAt = Math.max(entry.updatedAt, date);
     keywords.set(
@@ -169,7 +178,7 @@ export function chatHistoryList(
     liveEntries.set(session.id, entry);
   }
   for (const terminal of terminals) {
-    if (terminal.status !== "running" || terminal.kind === "shell") continue;
+    if (terminal.status !== "running" || (terminal.kind === "shell" && !includeShells)) continue;
     const linked = terminal.live_session_id ? liveEntries.get(terminal.live_session_id) : undefined;
     if (linked) {
       if (linked.kind === "native") linked.terminalId ??= terminal.id;
@@ -228,6 +237,18 @@ export function chatHistoryList(
       entry.id,
       `${keywords.get(entry.id) ?? entry.title} ${session.title} ${session.agent}`,
     );
+  }
+  for (const entry of entries) {
+    if (entry.projectId) continue;
+    const cwd =
+      entry.kind === "local"
+        ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
+        : entry.kind === "native"
+          ? entry.session.cwd
+          : entry.kind === "terminal"
+            ? entry.terminal.cwd
+            : null;
+    entry.projectId = projectForFolder(cwd, projectFolders)?.id ?? entry.projectId;
   }
   return entries
     .filter(
