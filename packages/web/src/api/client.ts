@@ -56,7 +56,7 @@ import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
-import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
+import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
@@ -330,6 +330,7 @@ export type CreateTerminalInput = {
   cwd?: string;
   name?: string;
   live_session_id?: string;
+  fork?: boolean;
   worktree?: boolean;
   project_id?: string;
   dev?: boolean;
@@ -352,6 +353,13 @@ export type Worktree = {
 };
 
 export type WorktreeListing = { root: string | null; worktrees: Worktree[] };
+export type GitBranchListing = {
+  root: string | null;
+  current: string | null;
+  default_branch: string | null;
+  local: string[];
+  remote: string[];
+};
 export type BranchPull = {
   number: number;
   title: string;
@@ -834,6 +842,8 @@ export const api = {
         undefined,
         { nullOn404: true, signal },
       ),
+    fork: (id: string, messageId: string) =>
+      req<ChatThread>("POST", `/chat/threads/${encodeURIComponent(id)}/fork`, { messageId }),
     session: (id: string) =>
       req<{ changed: boolean; running: boolean; queued: { id: string; title: string }[] }>(
         "GET",
@@ -872,6 +882,12 @@ export const api = {
         req<import("@orc/core/providers").ProviderSettings>("PUT", "/settings/providers", settings),
     },
     usageHistory: (days: string) => req<UsageHistory>("GET", "/usage/history", undefined, { days }),
+    usageReport: (params: {
+      days: string;
+      granularity: "day" | "hour";
+      agent?: string;
+      model?: string;
+    }) => req<UsageReport>("GET", "/usage/report", undefined, params),
     usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {
       get: () => req<McpServerSettings>("GET", "/settings/mcp"),
@@ -1281,7 +1297,13 @@ export const api = {
       ),
     get: (id: string) => req<SessionDetail>("GET", `/sessions/${id}`),
     sync: () => req<{ results: SessionSyncResult[] }>("POST", "/sessions/live/sync"),
-    search: (params: { q: string; agent?: string; project_id?: string; limit?: number }) =>
+    search: (params: {
+      q: string;
+      agent?: string;
+      project_id?: string;
+      include_hidden?: boolean;
+      limit?: number;
+    }) =>
       req<SessionSearchResult>(
         "GET",
         "/sessions/live/search",
@@ -1300,6 +1322,7 @@ export const api = {
       task_id?: string;
       project_id?: string;
       active?: boolean;
+      include_hidden?: boolean;
       limit?: number;
     }) =>
       req<{ sessions: LiveSession[] }>(
@@ -1308,8 +1331,17 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    update: (
+      id: string,
+      input: { task_id?: string | null; display_title?: string | null; hidden?: boolean },
+    ) => req<LiveSession>("PATCH", `/sessions/live/${id}`, input),
     linkTask: (id: string, task_id: string | null) =>
       req<LiveSession>("PATCH", `/sessions/live/${id}`, { task_id }),
+    lineage: (id: string) =>
+      req<import("@orc/core/session-messages").SessionLineage>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/lineage`,
+      ),
     messages: (id: string) =>
       req<{ messages: SessionMessage[] }>(
         "GET",
@@ -1498,11 +1530,13 @@ export const api = {
     ) => req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
   },
   notifications: {
-    list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
-      req<NotificationPage>("GET", "/notifications", undefined, query),
+    list: (
+      query: { limit?: number; offset?: number; unread?: boolean; project_id?: string } = {},
+    ) => req<NotificationPage>("GET", "/notifications", undefined, query),
     update: (id: string, update: NotificationUpdate) =>
       req<OrcNotification>("PATCH", `/notifications/${encodeURIComponent(id)}`, update),
-    markAllRead: () => req<{ ok: true }>("POST", "/notifications/read"),
+    markAllRead: (projectId?: string) =>
+      req<{ ok: true }>("POST", "/notifications/read", undefined, { project_id: projectId }),
   },
 
   kb: {
@@ -1766,6 +1800,11 @@ export const api = {
       }>("POST", "/git/worktrees/cleanup", { items }),
     worktrees: (cwd: string, host?: string | null) =>
       req<WorktreeListing>("GET", "/git/worktrees", undefined, {
+        cwd,
+        host: host === null ? "" : host,
+      }),
+    branches: (cwd: string, host?: string | null) =>
+      req<GitBranchListing>("GET", "/git/branches", undefined, {
         cwd,
         host: host === null ? "" : host,
       }),

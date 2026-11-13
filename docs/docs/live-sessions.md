@@ -10,10 +10,39 @@ paths, network shares, file URLs and POSIX paths. For example,
 notification titles. Named sessions keep their titles; execution uses the original
 folder path. Codex uses the first prompt when its native title is only the folder.
 
+## Rename, hide and fork
+
+A session's own menu, **Rename**, stores your name on the ORC row. The agent's
+title still updates underneath, and **Use agent title** in the rename dialog drops
+the override, so a re-sync never resurrects a name you removed. **Hide** keeps the
+session and its transcript and only removes it from the default list; **Show
+hidden** in the filters brings hidden rows back with a **Hidden** label, and
+**Show** in the same menu restores one. Both survive a restart and a session
+re-sync. Hiding does not mute notifications, tasks or terminals that already point
+at the session.
+
+**Fork in terminal** starts a new native session from the session's history when
+the agent CLI supports it: Claude runs `claude --resume <id> --fork-session` and Pi
+runs `pi --fork <id>`. The fork is a new terminal and a new session row, and the
+original conversation is not touched. Codex, Cursor, Gemini, OpenCode and agents
+without a CLI fork do not offer the action; fork those conversations from an
+assistant response in chat instead, which uses the agent's native session fork or a
+bounded context replay.
+
 Activity and full-width session history share compact title/provider/state rows.
 An ORC terminal agent without observed session activity shows **Unknown**, rather
-than assuming it is idle. Terminals without recorded project ownership remain in
-All projects until that association is available.
+than assuming it is idle. A session's working folder decides its project: the most
+specific project folder wins, and a worktree resolves to its shared checkout even
+when it lives outside the project's folder. Opening a session from the session
+list adopts its project in the workspace header, so the session list and
+notification inbox follow the project you are actually working in. The mapping is
+re-evaluated when project folders change, and live sessions and their
+notifications move with them; a session whose project folder was moved away stops
+claiming the old project. Each project has one folder scope. Worktrees resolve to
+their shared checkout, and a project without a scope takes the repository roots of
+its known sessions as derived folders, so no second folder list is stored.
+OpenCode's session store is watched alongside the other agent stores, so its new
+sessions appear without waiting for another agent's activity.
 
 ![Compact Activity session rows with demo data](/screens/activity-session-rows.png)
 
@@ -67,8 +96,8 @@ queued notes at the session's next safe point: before a tool call, at a prompt
 submit or stop hook, or when the agent reports session start. For an ended
 session, ORC resumes it with a bounded turn. Messages wait in a compact queue
 you can reorder or cancel until delivery starts. A delivered message records
-whether it arrived through a native hook (`hook`), an ORC chat turn (`chat`) or a
-resume (`resume`).
+whether it arrived through a native hook (`hook`), an ORC chat turn (`chat`), a
+resume (`resume`) or native steering into a running chat turn (`steer`).
 
 Live sessions of agents without a context-capable hook (for example Cursor or
 OpenCode) cannot receive a message while they are running; queue it after the
@@ -93,3 +122,56 @@ agent) and to chat channels with `/send <session id> <message>`.
 /send <id>            choose a target
 /send <id> Fix the failing test
 ```
+
+## Delegating to other sessions
+
+An agent can start and drive other sessions, the way Claude Code drives its
+subagents:
+
+| MCP tool                          | Does                                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                  |
+| `session_send`                    | Messages it: `queue`, `steer` or `interrupt`                                                       |
+| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children |
+| `session_wait` | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children |
+| `session_stop` | Stops its current turn and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
+
+`session_start` takes `workspace`:
+
+| `workspace`      | Same project                                                                   | Another project (`project`)               |
+| ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
+| `same` (default) | The caller's folder, sharing uncommitted edits                                 | Refused                                   |
+| `worktree` | A new git worktree under `.orc/worktrees/` on a new branch cut from the caller's committed HEAD (uncommitted edits stay behind) | A new worktree of that project's checkout |
+| `project`        | The project's main checkout                                                    | That project's main checkout              |
+
+Another project must be inside the caller's MCP project scope.
+
+When all four chat workers are busy, `session_start` still returns at once: the child is `queued` and starts when a worker frees, even across an ORC restart.
+
+With `notify` (default on), ORC tells the parent when the child finishes, fails,
+is stopped or waits for a human. If the parent is mid-turn on an agent with
+native steering (Claude through the Agent SDK, Pi, Codex) the note is steered
+into that turn; otherwise it is queued for the parent's next safe point, or
+starts the parent's next chat turn when it is idle. Each note starts with a header line,
+`[orc child-session id=<id> outcome=<outcome>]`, so the parent can tell it from human text. The same delivery path
+carries human messages and channel relays.
+
+Guardrails:
+
+- Only a session's parent, or an ancestor of the parent, can `steer`, `interrupt`
+  or stop it. Any other session can only `queue`.
+- A child inherits its parent chat's permission mode, agent options and tool
+  allowlist; a child of any other session starts in the default permission mode.
+  A child's permission prompt or question goes to a human, never to the parent.
+- A child's notifications to its parent count toward the 20-messages-per-hour cap
+  for that pair.
+- A chain of started sessions stops at three levels, and a session can start
+  at most ten sessions an hour.
+
+Chat and the session detail show the lineage: **Started by** links the parent,
+and **Started N sessions** lists the children, including the worker sessions
+of tasks the agent created with `task_create`.
+
+![Lineage on a parent chat](/screens/session-lineage-desktop.png)
+
+[Phone layout of a child chat](/screens/session-lineage-phone.png)

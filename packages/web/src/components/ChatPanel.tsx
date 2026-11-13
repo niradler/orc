@@ -32,7 +32,9 @@ import {
   useChatContinueInTerminal,
 } from "@/components/ChatContinueInTerminal";
 import { ChatConversationInfo, ChatSessionPicker } from "@/components/ChatControls";
+import { ChatForkNotice } from "@/components/ChatForkNotice";
 import { ChatLiveAnnouncer, ChatLiveStatus } from "@/components/ChatLiveStatus";
+import { ChatMessageActions } from "@/components/ChatMessageActions";
 import { ChatPermissionChip } from "@/components/ChatPermissionSelect";
 import {
   ChatPromptMenu,
@@ -49,6 +51,7 @@ import {
   useSessionContext,
   useSessionLiveLink,
 } from "@/components/SessionHome";
+import { SessionLineage } from "@/components/SessionLineage";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -141,6 +144,7 @@ export function ChatPanel({
     steer,
     cancel,
     projectId,
+    openThread,
   } = useChat();
   const session = useQuery({
     queryKey: ["chat-threads", "session", thread?.id],
@@ -150,6 +154,10 @@ export function ChatPanel({
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
   const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  const forkDisabledReason =
+    streaming || refreshing || reconnecting || turnElsewhere
+      ? "Wait for the current response to finish before forking."
+      : undefined;
   const followedSession = useRef<string | null>(null);
   useEffect(() => {
     if (!session.data?.running) followedSession.current = null;
@@ -613,47 +621,68 @@ export function ChatPanel({
                     </p>
                   </div>
                 )}
+                <ChatForkNotice thread={thread ?? undefined} />
+                <SessionLineage sessionId={thread?.id ?? null} />
                 <ThreadPrimitive.Messages>
-                  {({ message }) => (
-                    <MessagePrimitive.Root
-                      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
-                      data-testid="chat-message"
-                      data-role={message.role}
-                      className="mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
-                    >
-                      <div
-                        className={
-                          message.role === "user"
-                            ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
-                            : undefined
-                        }
+                  {({ message }) => {
+                    const custom = message.metadata.custom;
+                    const live = custom.live === true;
+                    const content = typeof custom.content === "string" ? custom.content : "";
+                    return (
+                      <MessagePrimitive.Root
+                        style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
+                        data-testid="chat-message"
+                        data-role={message.role}
+                        className="group/message mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
                       >
                         <div
-                          data-testid="chat-message-agent"
                           className={
                             message.role === "user"
-                              ? "sr-only"
-                              : "mb-1 text-xs font-medium text-on-surface-variant"
+                              ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
+                              : undefined
                           }
                         >
-                          {message.role === "user"
-                            ? "You"
-                            : typeof message.metadata.custom.agent === "string"
-                              ? message.metadata.custom.agent
-                              : "Assistant"}
+                          <div
+                            data-testid="chat-message-agent"
+                            className={
+                              message.role === "user"
+                                ? "sr-only"
+                                : "mb-1 text-xs font-medium text-on-surface-variant"
+                            }
+                          >
+                            {message.role === "user"
+                              ? "You"
+                              : typeof custom.agent === "string"
+                                ? custom.agent
+                                : "Assistant"}
+                          </div>
+                          <div
+                            data-testid="chat-message-content"
+                            className="min-w-0 wrap-break-word"
+                          >
+                            <ChatActivityList
+                              value={custom.activity}
+                              turn={custom.turn}
+                              live={live}
+                            />
+                            <ChatAttachments value={custom.attachments} />
+                            <MessagePrimitive.Parts components={textParts} />
+                          </div>
                         </div>
-                        <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
-                          <ChatActivityList
-                            value={message.metadata.custom.activity}
-                            turn={message.metadata.custom.turn}
-                            live={message.metadata.custom.live === true}
+                        {!live && (
+                          <ChatMessageActions
+                            threadId={thread?.id}
+                            messageId={message.id}
+                            role={message.role === "user" ? "user" : "assistant"}
+                            content={content}
+                            turn={custom.turn}
+                            forkDisabledReason={forkDisabledReason}
+                            onForked={openThread}
                           />
-                          <ChatAttachments value={message.metadata.custom.attachments} />
-                          <MessagePrimitive.Parts components={textParts} />
-                        </div>
-                      </div>
-                    </MessagePrimitive.Root>
-                  )}
+                        )}
+                      </MessagePrimitive.Root>
+                    );
+                  }}
                 </ThreadPrimitive.Messages>
               </div>
             </ThreadPrimitive.Viewport>

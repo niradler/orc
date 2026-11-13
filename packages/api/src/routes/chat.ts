@@ -26,6 +26,7 @@ import {
   ChatPermissionModeSchema,
   type ChatQuestion,
   ChatSettingsSchema,
+  type ChatSpawn,
   type ChatThread,
   ChatThreadSchema,
   ChatWorkspaceSchema,
@@ -45,6 +46,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
+import { notificationTitle } from "@orc/core/notifications";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import {
   agentDefaultHome,
@@ -57,6 +59,7 @@ import {
 } from "@orc/core/provider-service";
 import { ProviderIdSchema } from "@orc/core/providers";
 import type { PushMessage } from "@orc/core/push";
+import { prepareSessionDirectory } from "@orc/core/session-dir";
 import {
   type SessionFile,
   UPLOAD_MAX_BYTES,
@@ -64,13 +67,21 @@ import {
   type UploadFile,
 } from "@orc/core/session-file-types";
 import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
+import {
+  SESSION_MESSAGE_HOP_LIMIT,
+  SESSION_SPAWN_HOURLY_LIMIT,
+  type SessionSpawn,
+  type SessionStatus,
+} from "@orc/core/session-messages";
 import { renderSkillInstructions } from "@orc/core/skill-service";
 import { AgentCapabilitiesSchema } from "@orc/core/types";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
+import { notificationProjectLabel } from "@orc/db/notification-producers";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
+import { SessionMessageStore } from "@orc/db/session-messages";
 import { SkillHistory } from "@orc/db/skill-history";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
@@ -89,13 +100,14 @@ import {
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
+import { projectIdFor } from "../sessions/common.js";
+import { notifySpawner, spawnChain } from "../sessions/control.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
-import { readTranscriptBytes } from "../sessions/transcript.js";
+import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
-import { activeTurns, registerChatTurns, turnKey } from "../sessions/turns.js";
+import { activeTurns, type ChatTarget, registerChatControl, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
-import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import { workspaceLaunch } from "../workspaces/service.js";
 
 const logger = createLogger("api:chat");
@@ -144,12 +156,15 @@ const runs = new Map<string, ChatRun>();
 /**
  * A turn is stopped after `idleMs` without any agent event, re-checking every
  * `recheckMs` while it waits for a human answer or an in-flight tool call, and
- * never runs past `hardMs`. Tests shorten these through setChatTurnLimits.
+ * never runs past `hardMs`. After a cooperative Stop, `stopGraceMs` bounds how long
+ * we wait for the agent to end the turn before forcing the transport closed. Tests
+ * shorten these through setChatTurnLimits.
  */
 const turnLimits = {
   idleMs: 15 * 60000,
   recheckMs: 60_000,
   hardMs: 4 * 60 * 60000,
+  stopGraceMs: 10_000,
 };
 export function setChatTurnLimits(limits: Partial<typeof turnLimits>): () => void {
   const previous = { ...turnLimits };
@@ -262,8 +277,9 @@ function requireThread(id: string): ChatThread {
 }
 
 function chatPush(thread: ChatThread, status: string, body: string): PushMessage {
+  const project = notificationProjectLabel(getSqlite(), thread.projectId, thread.cwd);
   return {
-    title: `${status} · ${truncate(thread.title, 120)}`,
+    title: notificationTitle(`${status} · ${truncate(thread.title, 120)}`, project),
     body,
     url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
     tag: `chat:${thread.id}`,
@@ -407,6 +423,95 @@ app.openapi(
   },
 );
 
+const STEER_LIMIT = 32;
+
+function steerable(
+  run: ChatRun | undefined,
+): run is ChatRun & { session: AgentSession & Required<Pick<AgentSession, "steer">> } {
+  return !!run?.session?.steer && run.session.capabilities?.steering === true;
+}
+
+async function steerRun(run: ChatRun, input: string, requestId: string): Promise<ChatThread> {
+  if (!steerable(run))
+    throw new ConflictError("This response cannot be steered. Queue a message instead.");
+  if (input.trim() === "/compact")
+    throw new ConflictError("Wait for this turn to finish before compacting context.");
+  const previous = run.steering.get(requestId);
+  if (previous) {
+    if (previous.input !== input)
+      throw new ConflictError("This steering request ID already has different content.");
+    return previous.result;
+  }
+  if (run.steering.size >= STEER_LIMIT)
+    throw new ConflictError(
+      "This response has reached its steering limit. Queue a message instead.",
+    );
+  if (run.thread.messages.some((message) => message.id === requestId))
+    throw new ConflictError("This message ID is already in use.");
+  const steer = run.session.steer.bind(run.session);
+  let dispatched = false;
+  const deliver = async (): Promise<ChatThread> => {
+    const message: ChatMessage = {
+      id: requestId,
+      role: "user",
+      content: input,
+      timestamp: Date.now(),
+      activity: [
+        {
+          type: "status",
+          id: `steering:${requestId}`,
+          text: "Sending this message into the active response.",
+        },
+      ],
+    };
+    run.thread.messages.push(message);
+    run.thread.updatedAt = Date.now();
+    try {
+      store().save(run.thread);
+    } catch (error) {
+      run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
+      throw error;
+    }
+    const saveDelivery = () => {
+      try {
+        store().save(run.thread);
+      } catch {
+        publish(run, {
+          type: "error",
+          message:
+            "The steering request was saved, but its delivery status could not be saved. Check the response before sending again.",
+        });
+      }
+    };
+    dispatched = true;
+    try {
+      await steer(expandChatInput(input, run.thread.projectId ?? null));
+    } catch {
+      message.activity = [
+        {
+          type: "status",
+          id: `steering:${requestId}`,
+          text: "Delivery unconfirmed. Check the response before sending again.",
+        },
+      ];
+      saveDelivery();
+      throw new ConflictError(
+        "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
+      );
+    }
+    delete message.activity;
+    saveDelivery();
+    return run.thread;
+  };
+  const result = deliver();
+  run.steering.set(requestId, { input, result });
+  // A failed intent save sent nothing, so the same ID may safely retry after storage recovers.
+  void result.catch(() => {
+    if (!dispatched) run.steering.delete(requestId);
+  });
+  return result;
+}
+
 app.openapi(
   createRoute({
     method: "post",
@@ -434,85 +539,9 @@ app.openapi(
   }),
   async (c) => {
     const run = runs.get(c.req.valid("param").id);
-    if (!run?.session?.steer || run.session.capabilities?.steering !== true)
-      throw new ConflictError("This response cannot be steered. Queue a message instead.");
+    if (!run) throw new ConflictError("This response cannot be steered. Queue a message instead.");
     const { input, requestId } = c.req.valid("json");
-    if (input.trim() === "/compact")
-      throw new ConflictError("Wait for this turn to finish before compacting context.");
-    const previous = run.steering.get(requestId);
-    if (previous) {
-      if (previous.input !== input)
-        throw new ConflictError("This steering request ID already has different content.");
-      return c.json(await previous.result);
-    }
-    if (run.steering.size >= 32)
-      throw new ConflictError(
-        "This response has reached its steering limit. Queue a message instead.",
-      );
-    if (run.thread.messages.some((message) => message.id === requestId))
-      throw new ConflictError("This message ID is already in use.");
-    const steer = run.session.steer.bind(run.session);
-    let dispatched = false;
-    const deliver = async (): Promise<ChatThread> => {
-      const message: ChatMessage = {
-        id: requestId,
-        role: "user",
-        content: input,
-        timestamp: Date.now(),
-        activity: [
-          {
-            type: "status",
-            id: `steering:${requestId}`,
-            text: "Sending this message into the active response.",
-          },
-        ],
-      };
-      run.thread.messages.push(message);
-      run.thread.updatedAt = Date.now();
-      try {
-        store().save(run.thread);
-      } catch (error) {
-        run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
-        throw error;
-      }
-      const saveDelivery = () => {
-        try {
-          store().save(run.thread);
-        } catch {
-          publish(run, {
-            type: "error",
-            message:
-              "The steering request was saved, but its delivery status could not be saved. Check the response before sending again.",
-          });
-        }
-      };
-      dispatched = true;
-      try {
-        await steer(expandChatInput(input, run.thread.projectId ?? null));
-      } catch {
-        message.activity = [
-          {
-            type: "status",
-            id: `steering:${requestId}`,
-            text: "Delivery unconfirmed. Check the response before sending again.",
-          },
-        ];
-        saveDelivery();
-        throw new ConflictError(
-          "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
-        );
-      }
-      delete message.activity;
-      saveDelivery();
-      return run.thread;
-    };
-    const result = deliver();
-    run.steering.set(requestId, { input, result });
-    // A failed intent save sent nothing, so the same ID may safely retry after storage recovers.
-    void result.catch(() => {
-      if (!dispatched) run.steering.delete(requestId);
-    });
-    return c.json(await result);
+    return c.json(await steerRun(run, input, requestId));
   },
 );
 
@@ -551,6 +580,8 @@ async function newThread(
     messages: [],
     updatedAt: Date.now(),
   };
+  const mappedProject = await projectIdFor(cwd, hostRuntime(host));
+  if (mappedProject) thread.projectId = mappedProject;
   if (sourceId) {
     const source = await getDb().query.gateway_sessions.findFirst({
       where: and(eq(gateway_sessions.id, sourceId), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
@@ -701,36 +732,147 @@ function providerForNativeHome(agent: string, transcriptPath: string | null): st
   return best?.id;
 }
 
-const CONTINUATION_MAX_CHARS = 12_000;
-
 /**
- * A new provider account has no native session for this chat, so the first
- * turn after the switch carries a bounded transcript of the conversation.
+ * A portable fork or account switch has no native session for this chat, so its
+ * first turn carries a bounded, self-contained transcript. Tool work is included
+ * because without edits and commands, a coding agent cannot continue the same
+ * task. A fork gets the long budget; an account switch keeps its historical
+ * 12k bound so a smaller-context provider is not handed a larger prompt than
+ * it used to receive.
  */
-function continuationPrompt(messages: ChatMessage[]): string | undefined {
-  const lines: string[] = [];
-  let used = 0;
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (!message) continue;
-    const text = message.content.trim();
-    if (!text) continue;
-    const available = CONTINUATION_MAX_CHARS - used;
-    if (available <= 40) break;
-    const role = message.role === "user" ? "User" : "Assistant";
-    const clipped = text.length > available ? `${text.slice(0, available - 1)}…` : text;
-    const line = `${role}: ${clipped}`;
-    lines.unshift(line);
-    used += line.length + 2;
+const FORK_CONTINUATION_MAX_CHARS = 100_000;
+const SWITCH_CONTINUATION_MAX_CHARS = 12_000;
+const CONTINUATION_MESSAGE_MAX_CHARS = 8_000;
+const CONTINUATION_TOOL_INPUT_MAX_CHARS = 600;
+const CONTINUATION_TOOL_RESULT_MAX_CHARS = 1_200;
+const CONTINUATION_ORIGINAL_REQUEST_MAX_CHARS = 2_000;
+
+type ContinuationEntry = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  activity: boolean;
+};
+
+function clipText(text: string, max: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, Math.max(0, max - 1))}…` : trimmed;
+}
+
+function continuationEntry(message: ChatMessage): ContinuationEntry | null {
+  const parts: string[] = [];
+  const content = message.content.trim();
+  if (content)
+    parts.push(
+      `${message.role === "user" ? "User" : "Assistant"}: ${clipText(content, CONTINUATION_MESSAGE_MAX_CHARS)}`,
+    );
+  let activity = false;
+  for (const item of message.activity ?? []) {
+    if (item.type === "tool") {
+      activity = true;
+      const input = clipText(item.input, CONTINUATION_TOOL_INPUT_MAX_CHARS);
+      parts.push(`Tool: ${item.name}${input ? ` ${input}` : ""}`);
+      if (item.result !== undefined)
+        parts.push(
+          `Result${item.isError ? " (error)" : ""}: ${clipText(item.result, CONTINUATION_TOOL_RESULT_MAX_CHARS)}`,
+        );
+    } else if (item.type === "status") {
+      activity = true;
+      parts.push(`Status: ${clipText(item.text, CONTINUATION_TOOL_RESULT_MAX_CHARS)}`);
+    }
   }
-  if (!lines.length) return undefined;
-  return [
-    "[ORC account switch] This chat moved to another provider account, so the previous native session is unavailable. Continue the same work from the conversation below, then handle the new user message. Do not repeat this context unless the user asks.",
+  for (const attachment of message.attachments ?? []) {
+    activity = true;
+    parts.push(`Attachment: ${attachment.name} (${attachment.mimeType})`);
+  }
+  return parts.length
+    ? { id: message.id, role: message.role, text: parts.join("\n"), activity }
+    : null;
+}
+
+type Continuation = {
+  prompt: string | undefined;
+  messageCount: number;
+  truncated: boolean;
+  includesActivity: boolean;
+};
+
+function buildContinuation(
+  messages: ChatMessage[],
+  kind: "switch" | "fork" = "switch",
+): Continuation {
+  const entries = messages
+    .map(continuationEntry)
+    .filter((entry): entry is ContinuationEntry => entry !== null);
+  const selected: ContinuationEntry[] = [];
+  let used = 0;
+  let omitted = false;
+  // Reserve room for the wrapper and, on a fork, for the original request when
+  // the tail fills the budget. Losing the opening task is worse than losing a
+  // recent tool result, so a fork keeps both ends of the conversation.
+  const budget =
+    (kind === "fork" ? FORK_CONTINUATION_MAX_CHARS : SWITCH_CONTINUATION_MAX_CHARS) -
+    (kind === "fork" ? CONTINUATION_ORIGINAL_REQUEST_MAX_CHARS + 500 : 0);
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index];
+    if (!entry) continue;
+    const cost = entry.text.length + 2;
+    if (used + cost > budget) {
+      // A single long turn (text plus summarized tool work) must never swallow
+      // the whole replay: the newest turn is the one the agent needs to continue.
+      // Clip it into the remaining room and mark the rest as omitted.
+      if (!selected.length) {
+        const room = budget - used - 2;
+        if (room > 1) selected.unshift({ ...entry, text: clipText(entry.text, room) });
+      }
+      omitted = true;
+      break;
+    }
+    selected.unshift(entry);
+    used += cost;
+  }
+  const firstUser = entries.find((entry) => entry.role === "user");
+  if (
+    kind === "fork" &&
+    omitted &&
+    firstUser &&
+    !selected.some((entry) => entry.id === firstUser.id)
+  ) {
+    const original = `User (original request): ${clipText(
+      firstUser.text.replace(/^User:\s*/, ""),
+      CONTINUATION_ORIGINAL_REQUEST_MAX_CHARS,
+    )}`;
+    selected.unshift({ ...firstUser, text: original });
+  }
+  if (!selected.length)
+    return { prompt: undefined, messageCount: 0, truncated: false, includesActivity: false };
+  const intro =
+    kind === "fork"
+      ? "[ORC fork] This chat was forked from another ORC conversation. It starts without the previous native session. Continue the same work from the history below, then handle the new user message. Tool calls are summarized; do not repeat the history unless asked."
+      : "[ORC account switch] This chat moved to another provider account, so the previous native session is unavailable. Continue the same work from the history below, then handle the new user message. Tool calls are summarized; do not repeat the history unless asked.";
+  const prompt = [
+    intro,
     "",
-    ...lines,
+    "<chat-history>",
+    ...(omitted ? ["[Earlier conversation omitted]"] : []),
+    selected.map((entry) => entry.text).join("\n\n"),
+    "</chat-history>",
     "",
     "--- End of prior conversation ---",
   ].join("\n");
+  return {
+    prompt,
+    messageCount: selected.length,
+    truncated: omitted,
+    includesActivity: selected.some((entry) => entry.activity),
+  };
+}
+
+function continuationPrompt(
+  messages: ChatMessage[],
+  kind: "switch" | "fork" = "switch",
+): string | undefined {
+  return buildContinuation(messages, kind).prompt;
 }
 
 app.openapi(
@@ -1059,6 +1201,234 @@ app.openapi(
     return c.json(thread);
   },
 );
+const FORK_HISTORY_MAX_MESSAGES = 5_000;
+/** Bound the copied display history; the replayed prompt has its own smaller cap. */
+const FORK_HISTORY_MAX_CHARS = 2_000_000;
+
+function transcriptTurnSize(turn: TranscriptTurn): number {
+  return turn.blocks.reduce(
+    (size, block) =>
+      size +
+      (block.type === "tool_use"
+        ? block.input.length + (block.result?.length ?? 0)
+        : block.text.length),
+    0,
+  );
+}
+
+/**
+ * The copied display transcript must include the source's older native pages,
+ * not only the last `CHAT_HISTORY_PAGE_SIZE` messages held on the thread.
+ * Returning `partial` lets the caller refuse a lossy context fork instead of
+ * silently dropping the beginning of a long conversation.
+ */
+async function forkPrefix(
+  thread: ChatThread,
+  messageId: string,
+): Promise<{ messages: ChatMessage[]; partial: boolean }> {
+  const index = thread.messages.findIndex((message) => message.id === messageId);
+  if (index < 0) throw new NotFoundError("Chat message", messageId);
+  const loaded = thread.messages.slice(0, index + 1);
+  if (!thread.historyBefore) return { messages: loaded, partial: false };
+  const source = await nativeSource(thread);
+  if (!source?.transcript_path) return { messages: loaded, partial: true };
+  const runtime = hostRuntime(execHostFor(thread.host));
+  if (!(await runtime.isFile(source.transcript_path))) return { messages: loaded, partial: true };
+  try {
+    const externalId = source.runtime_session_id ?? null;
+    const bytes = await loadTranscriptBytes(
+      runtime,
+      source.backend,
+      source.transcript_path,
+      externalId,
+    );
+    const cacheKey = transcriptCacheKey(
+      thread.host ?? "local",
+      source.backend,
+      source.transcript_path,
+      externalId,
+    );
+    const end = Math.max(0, thread.historyBefore);
+    const turns: TranscriptTurn[] = [];
+    let start = end;
+    let chars = 0;
+    // Walk newest pages backwards so the fork keeps the work nearest the answer.
+    collect: while (start > 0 && turns.length < FORK_HISTORY_MAX_MESSAGES) {
+      const from = Math.max(0, start - CHAT_HISTORY_PAGE_SIZE);
+      const page = await readTranscriptBytes(bytes, source.backend, cacheKey, {
+        offset: from,
+        limit: start - from,
+      });
+      // The stored index says this chat had `end` turns; a transcript with fewer
+      // means it was rewritten or truncated, so a copy would have silent gaps.
+      if (page.total < end) throw new Error("The native transcript shrank.");
+      for (let cursor = page.turns.length - 1; cursor >= 0; cursor--) {
+        const turn = page.turns[cursor];
+        if (!turn) continue;
+        const size = transcriptTurnSize(turn);
+        if (turns.length >= FORK_HISTORY_MAX_MESSAGES || chars + size > FORK_HISTORY_MAX_CHARS) {
+          start = from + cursor + 1;
+          break collect;
+        }
+        turns.unshift(turn);
+        chars += size;
+      }
+      start = from;
+    }
+    return {
+      messages: [...chatHistory(turns, thread.config.agent), ...loaded],
+      partial: start > 0,
+    };
+  } catch (error) {
+    logger.warn("Fork could not read older native history", { error, threadId: thread.id });
+    return { messages: loaded, partial: true };
+  }
+}
+
+function forkTitle(title: string): string {
+  const base = title.replace(/\s+\(fork\)$/i, "").trim() || "Chat";
+  return `${base.length > 94 ? base.slice(0, 93).trimEnd() : base} (fork)`;
+}
+
+/** Keep lineage immutable while recording how this fork ended up continuing. */
+function markFork(
+  thread: ChatThread,
+  pending: { threadId: string; messageId: string },
+  mode: "native" | "context",
+  fallbackReason?: string,
+): void {
+  const current = thread.forkedFrom;
+  thread.forkedFrom = {
+    threadId: current?.threadId ?? pending.threadId,
+    messageId: current?.messageId ?? pending.messageId,
+    mode,
+    ...(current?.sourceTitle ? { sourceTitle: current.sourceTitle } : {}),
+    ...(current?.partial ? { partial: true } : {}),
+    ...(fallbackReason ? { fallbackReason } : {}),
+  };
+}
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/threads/{id}/fork",
+    tags: ["Chat"],
+    description:
+      "Start a new conversation from the context up to one completed assistant response. Uses the agent's native conversation fork when the source is at its latest response and the backend supports it; otherwise replays a bounded, tool-aware transcript.",
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ messageId: z.string().min(1).max(256) }).strict(),
+          },
+        },
+      },
+    },
+    responses: response,
+  }),
+  async (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    if (
+      threadRun(thread.id) ||
+      (thread.runtimeId && active.has(turnKey(thread.host, thread.backend, thread.runtimeId)))
+    )
+      throw new ConflictError("Wait for the agent to finish before forking the conversation.");
+    const { messageId } = c.req.valid("json");
+    const index = thread.messages.findIndex((message) => message.id === messageId);
+    if (index < 0) throw new NotFoundError("Chat message", messageId);
+    if (thread.messages[index]?.role !== "assistant")
+      throw new ValidationError("Fork from an assistant response.");
+
+    const backend = createBackend(thread.backend);
+    const isHead = index === thread.messages.length - 1;
+    // A static adapter advertises fork from its build; ACP negotiates it per
+    // session, so its static capabilities never claim one. Accept either, since
+    // a chat captured before this feature may still record `fork: false`.
+    const forkCapability =
+      thread.capabilities?.fork === true || backend.capabilities?.fork === true;
+    // Browser suites run without a provider, and their mock turns record a fake
+    // runtime id; a native fork there would spawn the real agent.
+    const nativeEligible =
+      !chatMockEnabled() &&
+      !!thread.runtimeId &&
+      isHead &&
+      forkCapability &&
+      typeof backend.forkSession === "function";
+    const fallbackReason = nativeEligible
+      ? undefined
+      : !thread.runtimeId
+        ? "The source chat has no native session to fork."
+        : !forkCapability
+          ? `The ${thread.config.agent} agent does not support native session forks.`
+          : !isHead
+            ? "Native forks start from the latest response; earlier responses use a context replay."
+            : "This environment has no provider session to fork.";
+
+    const prefix = await forkPrefix(thread, messageId);
+    if (prefix.partial && !nativeEligible)
+      throw new ValidationError(
+        "This chat has older history that could not be read, so a context fork would lose it. Fork the latest response or reopen the source session first.",
+      );
+    const continuation = nativeEligible ? undefined : buildContinuation(prefix.messages, "fork");
+    if (!nativeEligible && !continuation?.prompt)
+      throw new ValidationError("This response has no context to carry into a fork.");
+
+    // Copied messages get fresh ids: the source keeps its send-recovery identity,
+    // and a fork must never answer by-message lookups for the original send.
+    const messages = prefix.messages.map((message) => ({
+      ...structuredClone(message),
+      id: crypto.randomUUID(),
+    }));
+    const forked: ChatThread = {
+      ...structuredClone(thread),
+      id: crypto.randomUUID(),
+      title: forkTitle(thread.title),
+      messages,
+      // The prefix is fixed context rather than new turns in this chat, so it
+      // does not count against the growing-history limit.
+      importedMessages: messages.length,
+      historyBefore: null,
+      runtimeId: null,
+      sourceId: null,
+      updatedAt: Date.now(),
+      forkedFrom: {
+        threadId: thread.id,
+        messageId,
+        mode: nativeEligible ? "native" : "context",
+        sourceTitle: thread.title.slice(0, 500),
+        ...(fallbackReason ? { fallbackReason } : {}),
+        ...(prefix.partial ? { partial: true } : {}),
+      },
+    };
+    delete forked.transcriptMark;
+    delete forked.providerSwitch;
+    delete forked.forkPending;
+    delete forked.forkContext;
+    if (nativeEligible && thread.runtimeId) {
+      // Native fork is deferred to the first turn: some backends only mint the
+      // new identity when they resume with their fork flag, and no idle process
+      // is left behind if the user never sends the first message.
+      forked.forkPending = {
+        threadId: thread.id,
+        messageId,
+        sourceRuntimeId: thread.runtimeId,
+        sourceBackend: thread.backend,
+        sourceHost: thread.host,
+        sourceAgent: thread.config.agent,
+        sourceCwd: thread.cwd,
+      };
+    } else if (continuation) {
+      forked.forkContext = {
+        messageCount: continuation.messageCount,
+        truncated: continuation.truncated,
+        includesActivity: continuation.includesActivity,
+      };
+    }
+    store().save(forked);
+    return c.json(forked);
+  },
+);
 app.openapi(
   createRoute({
     method: "post",
@@ -1360,10 +1730,21 @@ async function startChat(
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],
 ) {
+  return follow(c, await openChat(body, uploads));
+}
+
+async function openChat(
+  body: z.infer<typeof requestSchema>,
+  uploads: UploadFile[] = [],
+  spawnedBy?: ChatSpawn,
+  toolAllowlist?: string[],
+): Promise<ChatRun> {
   const thread = body.threadId
     ? requireThread(body.threadId)
     : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
+  if (!body.threadId && spawnedBy) thread.spawnedBy = spawnedBy;
+  if (!body.threadId && toolAllowlist) thread.toolAllowlist = toolAllowlist;
   if (body.threadId && body.projectId && body.projectId !== thread.projectId)
     throw new ValidationError("An existing conversation keeps its project");
   const project = thread.projectId
@@ -1424,11 +1805,39 @@ async function startChat(
       thread.providerSwitch = { from: previous ?? thread.config.agent };
     }
   }
-  // Replay only while the new account has no native session: once a turn established
-  // one, the continuation was delivered and must not be injected into it again.
+  // Replay only while the new account or a context fork has no native session:
+  // once a turn established one, the continuation was delivered and must not be
+  // injected into it again. A native fork is attempted by beginTurn instead.
   if (body.threadId && thread.providerSwitch && !thread.runtimeId)
-    continuation ??= continuationPrompt(thread.messages);
-  if (body.threadId && thread.messages.length && !thread.runtimeId && !thread.providerSwitch)
+    // A forked chat that also changed account keeps its fork intro; the native
+    // branch replaces this continuation when the fork succeeds.
+    continuation ??= continuationPrompt(thread.messages, thread.forkPending ? "fork" : "switch");
+  if (
+    body.threadId &&
+    thread.forkedFrom?.mode === "context" &&
+    !thread.runtimeId &&
+    !thread.forkPending
+  )
+    continuation ??= continuationPrompt(thread.messages, "fork");
+  // A turn that ended cleanly without establishing a native session — a Pi
+  // extension-command turn, which Pi only persists once the transcript holds a
+  // message — is safe to continue: the next send starts a fresh native session and
+  // there is no prior native context to lose. A turn that failed holding no session
+  // is still treated as unsafe to resume.
+  const lastAssistant = [...thread.messages]
+    .reverse()
+    .find((message) => message.role === "assistant");
+  const cleanSessionlessTurn =
+    lastAssistant?.turn?.outcome === "completed" || lastAssistant?.turn?.outcome === "stopped";
+  if (
+    body.threadId &&
+    thread.messages.length &&
+    !thread.runtimeId &&
+    !thread.providerSwitch &&
+    !cleanSessionlessTurn &&
+    !thread.forkedFrom &&
+    !thread.forkPending
+  )
     throw new ConflictError(
       "The previous turn did not establish a resumable session. Start a new chat.",
     );
@@ -1442,7 +1851,7 @@ async function startChat(
       if (!body.threadId && body.workspace?.worktree) {
         const host = selectedTerminalHost(loadConfig(), thread.host);
         const cwd = await prepareSessionDirectory(
-          { cwd: thread.cwd, worktree: true },
+          { cwd: thread.cwd, worktree: true, base: body.workspace.base },
           {
             ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
             validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
@@ -1461,7 +1870,7 @@ async function startChat(
       });
     },
   });
-  return follow(c, run);
+  return run;
 }
 
 type TurnSetup = {
@@ -1499,6 +1908,8 @@ async function beginTurn(
   const key = thread.runtimeId ? turnKey(thread.host, thread.backend, thread.runtimeId) : thread.id;
   if (!setup.reserved && (active.has(key) || threadRun(thread.id)))
     throw new ConflictError("This session is already responding.");
+  if (thread.spawnedBy?.prompt)
+    throw new ConflictError("This session is queued to start; wait for it or stop it first.");
   if (runs.size >= 4)
     throw new ConflictError("All chat workers are busy. Try again when a response finishes.");
   const mock = chatMockEnabled();
@@ -1507,6 +1918,7 @@ async function beginTurn(
   const runId = crypto.randomUUID();
   let stopped = false;
   let halt = () => {};
+  let stopFallback: ReturnType<typeof setTimeout> | undefined;
   const halted = new Promise<void>((resolve) => {
     halt = resolve;
   });
@@ -1528,7 +1940,19 @@ async function beginTurn(
     stop: () => {
       stopped = true;
       halt();
-      void run.session?.close().catch(() => {});
+      const session = run.session;
+      // Interrupt-capable backends end the turn cooperatively and keep the native
+      // session resumable for the next send; the per-turn transport still closes when
+      // the turn ends. Backends without a native interrupt (ACPX) are killed.
+      if (session?.interrupt && session.capabilities?.interrupt === true) {
+        void session.interrupt().catch(() => session.close().catch(() => {}));
+        // An agent that acknowledges the interrupt but never ends the turn must not
+        // hold the worker forever; force the transport closed after a grace period.
+        // Idempotent per-run: repeated Stops do not stack timers.
+        stopFallback ??= setTimeout(() => {
+          void session.close().catch(() => {});
+        }, turnLimits.stopGraceMs);
+      } else void session?.close().catch(() => {});
     },
   };
   runs.set(runId, run);
@@ -1550,6 +1974,7 @@ async function beginTurn(
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
+    quietStops.delete(thread.id);
     throw error;
   }
   thread.messages.push({
@@ -1578,11 +2003,13 @@ async function beginTurn(
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
+    quietStops.delete(thread.id);
     throw error;
   }
   let failure: string | null = null;
   let completed = false;
   let responded = false;
+  let noResumableSession = false;
   let agentDurationMs: number | undefined;
   let agentOutcome: "completed" | "stopped" | "failed" | undefined;
   const execute = async () => {
@@ -1703,9 +2130,75 @@ async function beginTurn(
           )
             throw new ConflictError("End the original agent session before resuming it in chat.");
         }
-        run.session = thread.runtimeId
-          ? await backend.resumeSession(thread.runtimeId, opts)
-          : await backend.startSession(opts);
+        if (!thread.runtimeId && thread.forkPending) {
+          const pending = thread.forkPending;
+          if (mock) {
+            // The mock never has a provider session; keep the notice honest.
+            markFork(
+              thread,
+              pending,
+              "context",
+              "This environment has no provider session to fork.",
+            );
+            delete thread.forkPending;
+          } else
+            try {
+              if (!backend.forkSession)
+                throw new Error(`The ${thread.backend} backend does not support native forks.`);
+              // The fork must continue the source in its own agent, host and
+              // folder; changing any of them before the first message makes the
+              // native identity meaningless.
+              if (
+                pending.sourceBackend !== thread.backend ||
+                (pending.sourceHost ?? null) !== (thread.host ?? null) ||
+                pending.sourceAgent !== thread.config.agent ||
+                pending.sourceCwd !== thread.cwd
+              )
+                throw new Error(
+                  "The fork's agent or workspace changed before the native fork started.",
+                );
+              const session = await backend.forkSession(pending.sourceRuntimeId, opts);
+              // A provider that ignores the fork flag and keeps the source id
+              // would make both chats share one native session.
+              const forkedId = session.getRuntimeSessionId?.();
+              if (forkedId && forkedId === pending.sourceRuntimeId) {
+                await session.close().catch(() => {});
+                throw new Error("The provider returned the source session instead of a new fork.");
+              }
+              run.session = session;
+              markFork(thread, pending, "native");
+              delete thread.forkPending;
+              delete thread.forkContext;
+              // The native session already holds the history; never prepend a
+              // replay on top of it.
+              setup.continuation = undefined;
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error);
+              markFork(thread, pending, "context", reason.slice(0, 500));
+              delete thread.forkPending;
+            }
+          if (thread.forkedFrom?.mode === "context" && !thread.forkPending) {
+            // The just-sent user message is appended after this context; do not
+            // replay it twice.
+            const fallback = buildContinuation(thread.messages.slice(0, -1), "fork");
+            setup.continuation ??= fallback.prompt;
+            thread.forkContext = {
+              messageCount: fallback.messageCount,
+              truncated: fallback.truncated,
+              includesActivity: fallback.includesActivity,
+            };
+          }
+          if (!mock)
+            await emit({
+              type: "thread",
+              thread: { ...thread, messages: thread.messages.slice(-1) },
+              runId,
+            });
+        }
+        if (!run.session)
+          run.session = thread.runtimeId
+            ? await backend.resumeSession(thread.runtimeId, opts)
+            : await backend.startSession(opts);
         if (stopped) return;
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
@@ -1726,22 +2219,14 @@ async function beginTurn(
         let receivedResult = false;
         let outputBytes = 0;
         for await (const event of run.session.events()) {
-          if (stopped) break;
-          touch();
-          if (event.type === "tool_use") toolsPending++;
-          else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
-          outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
-          if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
-          if (event.type === "capabilities") {
-            thread.capabilities = event.data;
-            await emit({ type: "capabilities", capabilities: event.data });
-            continue;
-          }
+          // Always consume the terminal result — even after a Stop — so the turn's
+          // outcome, native identity and resumability are recorded, not discarded.
           if (event.type === "result") {
             const duration = event.data.durationMs;
             if (typeof duration === "number" && Number.isFinite(duration) && duration >= 0)
               agentDurationMs = duration;
             agentOutcome = event.data.outcome;
+            noResumableSession = event.data.resumable === false;
             if (agentOutcome === "stopped") stopped = true;
             if (agentOutcome === "failed") failure ??= "The agent could not complete the response.";
             if (
@@ -1766,11 +2251,25 @@ async function beginTurn(
             receivedResult = true;
             break;
           }
+          // After a Stop, drain remaining events without emitting them; the loop ends
+          // at the result above or when the session closes (bounded by stopFallback).
+          if (stopped) continue;
+          touch();
+          if (event.type === "tool_use") toolsPending++;
+          else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
+          outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
+          if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
+          if (event.type === "capabilities") {
+            thread.capabilities = event.data;
+            await emit({ type: "capabilities", capabilities: event.data });
+            continue;
+          }
           if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
             await emit({ type: event.type, text: event.data });
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
+            notifySpawner(thread, `${runId}:${event.data.requestId}`, "approval");
             run.permissions.add(event.data.requestId);
             changes.publish("human-requests");
             await emit(event);
@@ -1780,6 +2279,7 @@ async function beginTurn(
             );
           } else if (event.type === "question_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "question");
+            notifySpawner(thread, `${runId}:${event.data.requestId}`, "question");
             run.questions.set(event.data.requestId, event.data);
             changes.publish("human-requests");
             await emit(event);
@@ -1798,8 +2298,14 @@ async function beginTurn(
             message:
               "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
           });
-        completed = receivedResult && !!thread.runtimeId && !stopped;
-        if (receivedResult && !thread.runtimeId)
+        const sessionId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
+        if (!thread.runtimeId && sessionId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(sessionId))
+          thread.runtimeId = sessionId;
+        // A backend may explicitly finish with no resumable native session (Pi only
+        // persists a session once its transcript has a message). That is a valid
+        // completion: there is no native history to lose, so the next send starts fresh.
+        completed = receivedResult && (!!thread.runtimeId || noResumableSession) && !stopped;
+        if (receivedResult && !thread.runtimeId && !noResumableSession)
           await emit({
             type: "error",
             message:
@@ -1814,6 +2320,7 @@ async function beginTurn(
       if (!stopped) await emit({ type: "error", message }).catch(() => {});
     } finally {
       clearTimeout(timer);
+      clearTimeout(stopFallback);
       if (timedOut) {
         // The stop path is otherwise silent; without this the chat shows a
         // stopped turn with no explanation of why the agent went quiet. The
@@ -1848,9 +2355,28 @@ async function beginTurn(
               : "completed",
       };
       assistant.timestamp = finishedAt;
-      const nativeId = run.session?.getRuntimeSessionId?.();
+      // Do not pin a native id the backend explicitly reported as non-resumable;
+      // there is no persisted session behind it, so the next send starts fresh.
+      const nativeId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
+      if (thread.forkedFrom?.mode === "native" && !thread.runtimeId && !thread.forkPending) {
+        // The provider accepted the fork request but never returned an identity.
+        // Do not silently start a context-free chat next turn: record the
+        // fallback now, and carry the transcript on the retry.
+        markFork(
+          thread,
+          thread.forkedFrom,
+          "context",
+          failure ?? "The native fork did not establish a session.",
+        );
+        const fallback = buildContinuation(thread.messages, "fork");
+        thread.forkContext = {
+          messageCount: fallback.messageCount,
+          truncated: fallback.truncated,
+          includesActivity: fallback.includesActivity,
+        };
+      }
       // A switched account has a working session again; stop replaying history.
       if (thread.providerSwitch && completed && thread.runtimeId) delete thread.providerSwitch;
       await run.session?.close().catch(() => {});
@@ -1864,6 +2390,12 @@ async function beginTurn(
         resolveChatNotification(thread.id, `${runId}:${requestId}`);
       if (!stopped && (completed || failure))
         recordChatNotification(thread, runId, failure ? "failed" : "finished");
+      if (!quietStops.delete(thread.id))
+        notifySpawner(
+          thread,
+          runId,
+          timedOut || failure ? "failed" : stopped ? "stopped" : "finished",
+        );
       // A watchdog stop is not a user stop: report it so an away user learns
       // the turn died instead of finding a silently frozen conversation.
       if (timedOut) recordChatNotification(thread, runId, "failed");
@@ -1882,7 +2414,8 @@ async function beginTurn(
       } finally {
         active.delete(key);
         runs.delete(runId);
-        changes.publish("human-requests");
+        changes.publish("human-requests", "session-messages");
+        queueMicrotask(startPendingChildren);
         publish(run, { type: "turn", turn: assistant.turn });
         publish(run, { type: "done" });
         for (const listener of run.listeners) listener(null);
@@ -1900,12 +2433,343 @@ async function beginTurn(
   return { run, done };
 }
 
-registerChatTurns((session, prompt) => {
-  const [thread] = store()
-    .byRuntime(session.backend, session.host, session.runtimeId)
-    .sort((a, b) => b.updatedAt - a.updatedAt);
-  if (!thread || threadRun(thread.id) || runs.size >= 4) return null;
-  return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
+type SpawnParent = {
+  sessionId: string;
+  cwd: string | null;
+  projectId: string | null;
+  host: string | null;
+  agent: string | null;
+};
+
+function spawnParent(sessionId: string): SpawnParent {
+  const chat = store().get(sessionId);
+  if (chat)
+    return {
+      sessionId,
+      cwd: chat.cwd,
+      projectId: chat.projectId ?? null,
+      host: chat.host,
+      agent: chat.config.agent,
+    };
+  const row = getSqlite()
+    .query<
+      { id: string; cwd: string | null; project_id: string | null; execution_host: string | null },
+      [string]
+    >(
+      "SELECT id, cwd, project_id, execution_host FROM gateway_sessions WHERE id = ?1 OR runtime_session_id = ?1 ORDER BY updated_at DESC LIMIT 1",
+    )
+    .get(sessionId);
+  if (!row) throw new NotFoundError("Session", sessionId);
+  return {
+    sessionId: row.id,
+    cwd: row.cwd,
+    projectId: row.project_id,
+    host: row.execution_host,
+    agent: null,
+  };
+}
+
+function projectRoot(projectId: string): string {
+  const row = getSqlite()
+    .query<{ scope: string | null }, [string]>(
+      "SELECT scope FROM projects WHERE id = ? AND status = 'active'",
+    )
+    .get(projectId);
+  if (!row) throw new NotFoundError("Project", projectId);
+  if (!row.scope) throw new ValidationError("That project has no folder to work in");
+  return row.scope;
+}
+
+const startingSpawns = new Set<string>();
+
+export async function spawnChat(callerId: string, input: SessionSpawn): Promise<ChatThread> {
+  const parent = spawnParent(callerId);
+  const parentId = store().get(callerId) ? callerId : parent.sessionId;
+  if (treeStops.has(parentId) && !threadRun(parentId))
+    throw new ConflictError("This session is stopped; only a running session can start others");
+  const children = store().children([parentId]);
+  if (input.request_id) {
+    const existing = children.find((child) => child.spawnedBy?.requestId === input.request_id);
+    if (existing) return existing;
+  }
+  const key = input.request_id ? `${parentId}:${input.request_id}` : null;
+  if (key && startingSpawns.has(key))
+    throw new ConflictError(
+      "This session is already being started; retry with the same request_id",
+    );
+  if (key) startingSpawns.add(key);
+  const at = Date.now();
+  try {
+    const child = await startChild(parent, parentId, children, input);
+    if ((treeStops.get(parentId) ?? 0) >= at) stopChat(child.id, true, parentId);
+    return child;
+  } finally {
+    if (key) startingSpawns.delete(key);
+  }
+}
+
+async function startChild(
+  parent: SpawnParent,
+  parentId: string,
+  children: ChatThread[],
+  input: SessionSpawn,
+): Promise<ChatThread> {
+  if (spawnChain(parentId).length + 1 >= SESSION_MESSAGE_HOP_LIMIT)
+    throw new ConflictError(
+      `Spawn depth limit (${SESSION_MESSAGE_HOP_LIMIT}) reached; ask a human to start this session`,
+    );
+  const hourAgo = Date.now() - 60 * 60 * 1000;
+  if (
+    children.filter((child) => (child.spawnedBy?.at ?? 0) >= hourAgo).length >=
+    SESSION_SPAWN_HOURLY_LIMIT
+  )
+    throw new ConflictError(
+      `Hourly spawn limit (${SESSION_SPAWN_HOURLY_LIMIT}) reached for this session`,
+    );
+  const projectId = input.project_id ?? parent.projectId;
+  const crossProject = !!input.project_id && input.project_id !== parent.projectId;
+  if (input.workspace === "same" && crossProject)
+    throw new ValidationError(
+      "A session in another project cannot share this folder; use workspace worktree or project",
+    );
+  const base =
+    input.workspace === "same" || (input.workspace === "worktree" && !crossProject)
+      ? parent.cwd
+      : projectId
+        ? projectRoot(projectId)
+        : null;
+  if (!base) throw new ValidationError("The calling session has no folder to start from");
+  const source = store().get(parentId);
+  const agent = input.agent ?? parent.agent ?? undefined;
+  const sameAgent = !!source && agent === source.config.agent;
+  if (source?.toolAllowlist && agent !== "claude")
+    throw new ValidationError(
+      "This session has a tool allowlist that only Claude can enforce; start a Claude child",
+    );
+  const backend = agent ? chatBackendFor(agent) : null;
+  const permissionMode = source?.config.permissionMode ?? "default";
+  const body: z.infer<typeof requestSchema> = {
+    messages: [{ role: "user", content: input.prompt }],
+    ...(agent ? { agent } : {}),
+    ...(input.model ? { model: input.model } : {}),
+    ...(projectId ? { projectId } : {}),
+    ...(backend && createBackend(backend).capabilities?.livePermissions !== false
+      ? { permissionMode }
+      : {}),
+    ...(sameAgent && source
+      ? {
+          agentOptions: source.config.agentOptions,
+          ...(source.config.providerId ? { providerId: source.config.providerId } : {}),
+        }
+      : {}),
+    workspace: {
+      host: crossProject ? undefined : parent.host,
+      cwd: base,
+      worktree: input.workspace === "worktree",
+    },
+  };
+  const spawnedBy: ChatSpawn = {
+    sessionId: parentId,
+    at: Date.now(),
+    notify: input.notify,
+    ...(input.request_id ? { requestId: input.request_id } : {}),
+  };
+  if (runs.size >= 4) return queueChild(body, input, spawnedBy, source?.toolAllowlist);
+  const run = await openChat(body, [], spawnedBy, source?.toolAllowlist).catch((error) => {
+    if (error instanceof ConflictError && runs.size >= 4) return null;
+    throw error;
+  });
+  if (!run) return queueChild(body, input, spawnedBy, source?.toolAllowlist);
+  if (input.title) {
+    run.thread.title = input.title;
+    store().save(run.thread);
+  }
+  return run.thread;
+}
+
+async function queueChild(
+  body: z.infer<typeof requestSchema>,
+  input: SessionSpawn,
+  spawnedBy: ChatSpawn,
+  toolAllowlist: string[] | undefined,
+): Promise<ChatThread> {
+  const thread = await newThread(
+    body.agent,
+    body.model,
+    undefined,
+    { host: body.workspace?.host, cwd: body.workspace?.cwd },
+    body.providerId,
+  );
+  if (body.projectId) thread.projectId = body.projectId;
+  if (toolAllowlist) thread.toolAllowlist = toolAllowlist;
+  if (body.permissionMode !== undefined) thread.config.permissionMode = body.permissionMode;
+  if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
+  if (input.title) thread.title = input.title;
+  await checkChatWorkspaceRules(thread);
+  if (body.workspace?.worktree) {
+    const host = selectedTerminalHost(loadConfig(), thread.host);
+    const cwd = await prepareSessionDirectory(
+      { cwd: thread.cwd, worktree: true },
+      {
+        ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
+        validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
+      },
+    );
+    if (cwd === thread.cwd)
+      throw new ValidationError("Choose a Git repository folder to create a worktree.");
+    thread.cwd = cwd;
+  }
+  thread.spawnedBy = { ...spawnedBy, prompt: input.prompt };
+  thread.updatedAt = Date.now();
+  store().save(thread);
+  spawnsPending = true;
+  return thread;
+}
+
+let spawnsPending = true;
+
+function startPendingChildren(): void {
+  if (runs.size >= 4 || !spawnsPending) return;
+  let pending: ChatThread[];
+  try {
+    pending = store().pendingSpawns();
+  } catch {
+    return;
+  }
+  spawnsPending = pending.length > 0;
+  for (const thread of pending) {
+    if (runs.size >= 4) return;
+    const prompt = thread.spawnedBy?.prompt;
+    if (!prompt || !thread.spawnedBy || threadRun(thread.id)) continue;
+    delete thread.spawnedBy.prompt;
+    beginTurn(thread, prompt).catch((error) => {
+      logger.warn("A queued child session could not start", { error, threadId: thread.id });
+      const saved = store().get(thread.id);
+      if (!saved?.spawnedBy) return;
+      delete saved.spawnedBy.prompt;
+      store().save(saved);
+      if (!saved.spawnedBy.cancelled) notifySpawner(saved, "start", "failed");
+    });
+  }
+}
+
+function descendants(id: string): string[] {
+  const found: string[] = [];
+  let level = [id];
+  while (level.length && found.length < 200) {
+    level = store()
+      .children(level)
+      .map((child) => child.id)
+      .filter((child) => !found.includes(child) && child !== id);
+    found.push(...level);
+  }
+  return found;
+}
+
+const quietStops = new Set<string>();
+const treeStops = new Map<string, number>();
+
+export function stopChat(id: string, cascade: boolean, by: string | null): string[] {
+  const stopped: string[] = [];
+  const messages = new SessionMessageStore(getSqlite());
+  for (const target of cascade ? [id, ...descendants(id)] : [id]) {
+    if (cascade) treeStops.set(target, Date.now());
+    const thread = store().get(target);
+    if (!thread) continue;
+    const run = threadRun(target)?.[1];
+    const quiet = target !== id || by === thread.spawnedBy?.sessionId;
+    const queued = thread.spawnedBy?.prompt;
+    if (thread.spawnedBy && queued) {
+      delete thread.spawnedBy.prompt;
+      thread.spawnedBy.cancelled = true;
+      store().save(thread);
+      if (!run && !quiet) notifySpawner(thread, "cancel", "stopped");
+    }
+    for (const message of messages.queued(target)) messages.cancel(message.id);
+    if (run) {
+      if (quiet) quietStops.add(target);
+      run.stop();
+    }
+    if (run || queued) stopped.push(target);
+  }
+  if (stopped.length) changes.publish("sessions");
+  return stopped;
+}
+
+export function chatStatus(id: string): SessionStatus {
+  const thread = requireThread(id);
+  const run = threadRun(id)?.[1];
+  const last = [...thread.messages].reverse().find((message) => message.role === "assistant");
+  const waitingFor = run?.permissions.size ? "approval" : run?.questions.size ? "question" : null;
+  const outcome = last?.turn?.outcome;
+  const queue = new SessionMessageStore(getSqlite())
+    .queued(thread.id)
+    .map(({ id, state, position }) => ({ id, state, position }));
+  return {
+    session_id: thread.id,
+    title: thread.title,
+    agent: thread.config.agent,
+    status: run
+      ? waitingFor
+        ? "waiting"
+        : "running"
+      : thread.spawnedBy?.prompt
+        ? "queued"
+        : queue.length
+          ? "running"
+          : outcome === "failed"
+            ? "failed"
+            : outcome === "stopped" || (thread.spawnedBy?.cancelled && !last)
+              ? "stopped"
+              : "idle",
+    waiting_for: waitingFor,
+    last_message: last?.content || null,
+    queue,
+    parent_session_id: thread.spawnedBy?.sessionId ?? null,
+    children: store()
+      .children([thread.id])
+      .map((child) => child.id),
+    project_id: thread.projectId ?? null,
+    cwd: thread.cwd,
+    updated_at: thread.updatedAt,
+  };
+}
+
+function nativeRun(target: ChatTarget): [string, ChatRun] | undefined {
+  if ("threadId" in target) return threadRun(target.threadId);
+  const key = turnKey(target.host, target.backend, target.runtimeId);
+  return [...runs].find(([, run]) => run.key === key);
+}
+
+registerChatControl({
+  turn: (target, prompt) => {
+    const thread =
+      "threadId" in target
+        ? store().get(target.threadId)
+        : store()
+            .byRuntime(target.backend, target.host, target.runtimeId)
+            .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (!thread || thread.spawnedBy?.prompt || threadRun(thread.id) || runs.size >= 4) return null;
+    return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
+  },
+  canSteer: (target) => {
+    const run = nativeRun(target)?.[1];
+    return steerable(run) && run.steering.size < STEER_LIMIT;
+  },
+  steer: async (target, text) => {
+    const run = nativeRun(target)?.[1];
+    if (!steerable(run) || run.steering.size >= STEER_LIMIT) return false;
+    await steerRun(run, text, crypto.randomUUID());
+    return true;
+  },
+  stop: (threadId) => {
+    const run = threadRun(threadId)?.[1];
+    run?.stop();
+    return !!run;
+  },
+  running: (threadId) => !!threadRun(threadId),
+  full: () => runs.size >= 4,
+  startPending: startPendingChildren,
 });
 
 app.openapi(

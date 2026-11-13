@@ -38,6 +38,17 @@ test.describe("phone keyboard composer", () => {
             },
           }),
         );
+        await page.route("**/api/git/branches?**", (route) =>
+          route.fulfill({
+            json: {
+              root: "/workspace/product",
+              current: "main",
+              default_branch: "origin/main",
+              local: ["main"],
+              remote: ["origin/main"],
+            },
+          }),
+        );
         await page.addInitScript(() => {
           const viewport = new EventTarget();
           Object.assign(viewport, {

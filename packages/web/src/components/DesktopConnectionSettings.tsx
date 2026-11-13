@@ -207,7 +207,7 @@ export function DesktopConnectionSettings() {
               <TokenInput
                 value={token}
                 placeholder={
-                  state?.has_token ? "Saved token — leave blank to keep" : "Paste a token"
+                  state?.has_token ? "Saved token; leave blank to keep" : "Paste a token"
                 }
                 onChange={(value) => {
                   setToken(value);

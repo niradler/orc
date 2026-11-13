@@ -81,7 +81,7 @@ import type {
   SkillSyncInput,
   SkillSyncResult,
 } from "@orc/core/skill-import-types";
-import type { SessionCacheUsage, UsageHistory, UsageQuota } from "@orc/core/usage";
+import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@orc/core/usage";
 import type {
   AgentBackendInfo,
   AgentFull,
@@ -274,11 +274,13 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
     },
     notifications: {
-      list: (query: { limit?: number; offset?: number; unread?: boolean } = {}) =>
-        c<NotificationPage>("GET", "/notifications", undefined, query),
+      list: (
+        query: { limit?: number; offset?: number; unread?: boolean; project_id?: string } = {},
+      ) => c<NotificationPage>("GET", "/notifications", undefined, query),
       update: (id: string, update: NotificationUpdate) =>
         c<OrcNotification>("PATCH", `/notifications/${e(id)}`, update),
-      markAllRead: () => c<{ ok: true }>("POST", "/notifications/read"),
+      markAllRead: (projectId?: string) =>
+        c<{ ok: true }>("POST", "/notifications/read", undefined, { project_id: projectId }),
     },
     push: {
       config: () => c<PushConfig>("GET", "/push/config"),
@@ -863,6 +865,14 @@ export function createOrcClient(options?: OrcClientOptions) {
     usage: {
       history: (days: "7" | "30" | "90" | "0" = "30") =>
         c<UsageHistory>("GET", "/usage/history", undefined, { days }),
+      report: (
+        params: {
+          days?: "1" | "7" | "30" | "90" | "0";
+          granularity?: "day" | "hour";
+          agent?: string;
+          model?: string;
+        } = {},
+      ) => c<UsageReport>("GET", "/usage/report", undefined, params),
       quotas: () => c<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     },
     sessions: {

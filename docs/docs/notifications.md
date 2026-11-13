@@ -8,6 +8,11 @@ phones both navigate to the page, and its back bar returns to where you were.
 
 Notifications cover human questions, approvals and commands, agent questions and
 outcomes, and job outcomes. Open an item to review the request or visit its source.
+Every alert names where it came from: the owning project, or the session's folder
+when no project owns it. The label appears in inbox rows, toasts, desktop
+notifications and browser push, while **By project** grouping and per-project
+muting keep working as before. Labels follow the source: assigning a session to a
+project or renaming that project updates the notifications still in the inbox.
 Request forms stay collapsed until opened; drafts survive closing and reopening
 the menu. Read and dismissed state is stored on the server and shared by clients.
 Dismissal does not approve, answer, cancel or delete a source request.
@@ -23,7 +28,11 @@ Desktop and phone share one inbox logic. Updates from the same session or
 request collapse into a quiet summary row with a count and the most urgent
 state; expand it to see each update. **Latest** lists groups newest first;
 **By project** adds a section per project with sticky headers and counts, and
-the choice persists across reloads. **Needs you** narrows the inbox to items
+the choice persists across reloads. When the workspace header has a specific
+project selected, the inbox and its unread count follow that project, including
+items recorded before the session's folder was assigned, and **Mark all read**
+only clears the items in that project. Choose **All projects** to see every
+project again. **Needs you** narrows the inbox to items
 that require an action. Human requests keep their review card in the row, so
 questions, approvals and commands are answered inline without leaving the
 inbox; drafts survive closing and reopening. Phone rows keep mark-read and
@@ -112,7 +121,9 @@ groups match all known values. Unknown types are excluded unless **Include new o
 unknown types** is selected; they have no known outcome and cannot match an outcome
 filter. **Preview filters** evaluates the draft without sending a message.
 
-Forwarding sends fixed, escaped summaries and source links. It excludes titles,
+Forwarding sends fixed, escaped summaries and source links, prefixed with the
+project name when the source belongs to a project. A folder name is never
+forwarded, so an unassigned source keeps the plain summary. It excludes titles,
 question text, command arguments, tool payloads, logs and credentials. Job events
 honor `notify_on`; human requests also retain their producer's `notify` provider
 selection. Selecting forwarding replaces the recipient's legacy **Interactive

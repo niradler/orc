@@ -16,6 +16,7 @@ import {
   type ChatWorkspace,
 } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
+import { projectForFolder } from "@orc/core/project-path";
 import type { ProviderProfile } from "@orc/core/providers";
 import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES } from "@orc/core/session-file-types";
 import {
@@ -32,6 +33,7 @@ import {
 import { useLocation, useSearchParams } from "react-router-dom";
 import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
+import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
@@ -206,6 +208,17 @@ function waitingConflict(cause: unknown): boolean {
 function useChatController() {
   const [params] = useSearchParams();
   const selectedProject = params.get("project") ?? readStorage("orc_selected_project");
+  const projects = useProjects();
+  const projectFolders = useMemo(
+    () => (projects.data ?? []).filter((project) => project.status !== "archived" && project.scope),
+    [projects.data],
+  );
+  const foldersRef = useRef(projectFolders);
+  foldersRef.current = projectFolders;
+  const projectForCwd = useCallback(
+    (cwd: string | null | undefined) => projectForFolder(cwd, foldersRef.current)?.id ?? null,
+    [],
+  );
   const creationProject = useRef<string | null | undefined>(undefined);
   creationProject.current =
     selectedProject === "unassigned"
@@ -433,6 +446,29 @@ function useChatController() {
     [update],
   );
   /**
+   * A finished turn is assembled locally, so its message carries a client id and
+   * no persisted timing. Read the stored thread so copy, fork and duration work
+   * on the message the server actually saved. Skip it once a new turn started.
+   */
+  const syncThread = useCallback(
+    async (key: string) => {
+      const threadId = find(key)?.thread?.id;
+      if (!threadId) return;
+      const fresh = await api.chat.get(threadId).catch(() => null);
+      if (!fresh) return;
+      update(key, (tab) =>
+        tab.streaming && tab.thread?.id === threadId
+          ? {}
+          : {
+              thread: fresh,
+              messages: fresh.messages,
+              historyBefore: fresh.historyBefore ?? null,
+            },
+      );
+    },
+    [find, update],
+  );
+  /**
    * Reads one turn's events into a tab. Closing the stream detaches; the server keeps the turn.
    * Resolves false when there was no turn to follow.
    */
@@ -624,11 +660,14 @@ function useChatController() {
       } finally {
         if (current()) {
           streams.current.delete(key);
-          if (!busy) finish(key);
+          if (!busy) {
+            finish(key);
+            void syncThread(key);
+          }
         }
       }
     },
-    [apply, finish, update, find],
+    [apply, finish, syncThread, update, find],
   );
   const attach = useCallback(
     (key: string, threadId: string) =>
@@ -694,8 +733,16 @@ function useChatController() {
       options: { activate?: boolean; follow?: boolean; projectId?: string | null } = {},
     ) => {
       const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
+      // A stored project wins, including an explicit `null`; a folder that matches
+      // nothing stays unknown rather than claiming to be unassigned.
+      const inferred = next.projectId === undefined ? projectForCwd(next.cwd) : next.projectId;
       const loaded = {
-        projectId: options.projectId !== undefined ? options.projectId : existing?.projectId,
+        projectId:
+          options.projectId !== undefined
+            ? options.projectId
+            : existing && existing.projectId !== undefined
+              ? existing.projectId
+              : (inferred ?? undefined),
         thread: next,
         messages: next.messages,
         config: next.config,
@@ -724,7 +771,7 @@ function useChatController() {
       if (existing?.streaming) return;
       if (options.follow !== false) void attach(key, next.id);
     },
-    [activate, attach, mutate, update, find],
+    [activate, attach, mutate, update, find, projectForCwd],
   );
   const showThread = useCallback(
     async (id: string) => {
@@ -737,7 +784,10 @@ function useChatController() {
   const newTab = useCallback(
     (options: { projectId?: string | null; fresh?: boolean; workspace?: ChatWorkspace } = {}) => {
       const projectId =
-        options.projectId === undefined ? creationProject.current : options.projectId;
+        options.projectId !== undefined
+          ? options.projectId
+          : ((options.workspace?.cwd ? projectForCwd(options.workspace.cwd) : null) ??
+            creationProject.current);
       const blank = !options.fresh && tabsRef.current.find(isBlank);
       if (blank) {
         update(blank.key, () => ({
@@ -753,7 +803,7 @@ function useChatController() {
       mutate((current) => [...current, tab]);
       activate(tab.key);
     },
-    [activate, mutate, update],
+    [activate, mutate, update, projectForCwd],
   );
   const startAgentConversation = useCallback(
     (agent: string, providerId?: string, model = "", options?: ChatAgentOptions) => {
@@ -1449,6 +1499,9 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
           agent: message.agent,
           activity: message.activity,
           attachments: message.attachments,
+          // The message renderer needs the exact text for Copy; the parts tree
+          // alone does not expose it outside the assistant-ui slot.
+          content: message.content,
           turn: message.turn,
         },
       },

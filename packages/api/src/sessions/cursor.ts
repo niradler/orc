@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { oneLine, statusFromMtime } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
@@ -92,7 +93,7 @@ export function cursorAdapter(
   return {
     backend: "cursor",
     minIntervalMs: 30_000,
-    async list() {
+    async list(known) {
       const byId = new Map<string, SessionRecord>();
       const home = await runtime.home();
       const projectsDir =
@@ -176,7 +177,38 @@ export function cursorAdapter(
           });
         }
       }
-      return [...byId.values()];
+      const records = [...byId.values()];
+      for (const record of records) {
+        const tokens = record.tokensUsed ?? 0;
+        if (tokens <= 0) continue;
+        const before = known.get(record.externalId);
+        if (
+          before &&
+          record.lastActivityAt.getTime() <= before.lastActivityMs &&
+          before.usageVersion === USAGE_EVENT_VERSION
+        )
+          continue;
+        record.usage = async () => ({
+          tokens,
+          model: null,
+          events: [
+            {
+              key: "session",
+              ts: record.lastActivityAt.getTime(),
+              model: null,
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              reasoningTokens: 0,
+              otherTokens: tokens,
+              estimated: true,
+            },
+          ],
+        });
+        record.usageVersion = USAGE_EVENT_VERSION;
+      }
+      return records;
     },
   };
 }

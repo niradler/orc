@@ -129,10 +129,6 @@ function jsonObjectEnd(text: string, start: number): number {
   return -1;
 }
 
-/**
- * Bailian CLI output can mix pretty-printed JSON with update notices, so read the
- * first complete object that carries quota fields instead of parsing all of stdout.
- */
 export function parseAlibabaOutput(stdout: string): unknown {
   for (let start = stdout.indexOf("{"); start !== -1; start = stdout.indexOf("{", start + 1)) {
     const end = jsonObjectEnd(stdout, start);
@@ -140,9 +136,7 @@ export function parseAlibabaOutput(stdout: string): unknown {
     try {
       const value: unknown = JSON.parse(stdout.slice(start, end + 1));
       if (value && typeof value === "object" && "hasQuotaData" in value) return value;
-    } catch {
-      // Keep scanning past notices that are not JSON objects.
-    }
+    } catch {}
   }
   return null;
 }

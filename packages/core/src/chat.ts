@@ -153,13 +153,85 @@ export const ChatWorkspaceSchema = z
       .optional(),
     cwd: z.string().trim().max(4096).optional(),
     worktree: z.boolean().default(false),
+    /** Ref the new worktree branches from. Omitted means the checkout's current HEAD. */
+    base: z
+      .string()
+      .trim()
+      .min(1)
+      .max(255)
+      .refine(
+        (value) =>
+          !value.startsWith("-") &&
+          [...value].every((char) => {
+            const code = char.codePointAt(0) ?? 0;
+            return code > 0x1f && code !== 0x7f && !/\s/.test(char);
+          }),
+        "Choose a Git branch name",
+      )
+      .optional(),
   })
   .strict()
   .refine(
     (value) => !value.worktree || !!value.cwd?.trim(),
     "Choose a folder before creating a worktree",
+  )
+  .refine(
+    (value) => !value.base || value.worktree,
+    "Choose to create a worktree before selecting a base branch",
   );
 export type ChatWorkspace = z.infer<typeof ChatWorkspaceSchema>;
+
+/** How a fork continues the source conversation. */
+export const ChatForkModeSchema = z.enum(["native", "context"]);
+export type ChatForkMode = z.infer<typeof ChatForkModeSchema>;
+
+export const ChatForkSchema = z.object({
+  threadId: z.string().uuid(),
+  messageId: z.string(),
+  mode: ChatForkModeSchema,
+  /** Kept for the fork notice without an extra round trip to the source chat. */
+  sourceTitle: z.string().max(500).optional(),
+  /** Why native was unavailable, or why a native attempt fell back to context. */
+  fallbackReason: z.string().max(500).optional(),
+  /** The copied display transcript is missing older messages. */
+  partial: z.boolean().optional(),
+});
+export type ChatFork = z.infer<typeof ChatForkSchema>;
+
+/**
+ * A native fork starts lazily on the first turn: the source session must not be
+ * touched by the fork request, and some backends only expose the new identity
+ * after that turn.
+ */
+export const ChatForkPendingSchema = z.object({
+  threadId: z.string().uuid(),
+  messageId: z.string(),
+  sourceRuntimeId: z.string().min(1).max(256),
+  sourceBackend: z.string().min(1).max(64),
+  sourceHost: z.string().nullable(),
+  sourceAgent: z.string().min(1).max(64),
+  sourceCwd: z.string(),
+});
+export type ChatForkPending = z.infer<typeof ChatForkPendingSchema>;
+
+/** How much of the source conversation a portable fork carries into its first turn. */
+export const ChatForkContextSchema = z.object({
+  messageCount: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  includesActivity: z.boolean(),
+});
+export type ChatForkContext = z.infer<typeof ChatForkContextSchema>;
+
+export const ChatSpawnSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  requestId: z.string().min(1).max(128).optional(),
+  at: z.number().int().nonnegative(),
+  notify: z.boolean(),
+  prompt: z.string().max(100000).optional(),
+  cancelled: z.boolean().optional(),
+});
+export type ChatSpawn = z.infer<typeof ChatSpawnSchema>;
+
 export const ChatThreadSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -176,9 +248,19 @@ export const ChatThreadSchema = z.object({
   importedMessages: z.number().int().nonnegative().optional(),
   projectId: z.string().optional(),
   transcriptMark: z.string().max(100).optional(),
+  // The source conversation and answer this chat was forked from. `mode` records
+  // whether the new chat continues a native provider session or replays a
+  // portable transcript; `partial` marks an incomplete copied display history.
+  forkedFrom: ChatForkSchema.optional(),
+  // Present only while a native fork has not created its session yet. The first
+  // turn consumes it, then either establishes the native session or falls back.
+  forkPending: ChatForkPendingSchema.optional(),
+  // The portable context a fork delivered on its first turn, for the UI notice.
+  forkContext: ChatForkContextSchema.optional(),
   // Set when an account switch drops the native session; the next turn replays
   // bounded prior context so the conversation can continue in the new account.
   providerSwitch: z.object({ from: z.string() }).optional(),
+  spawnedBy: ChatSpawnSchema.optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

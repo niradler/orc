@@ -1,7 +1,9 @@
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
+import { parseOpenCodeUsage } from "./usage-parsers.js";
 
 const SESSION_LIMIT = 500;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -10,14 +12,19 @@ const SessionRow = z.object({
   id: z.string().regex(SESSION_ID),
   directory: z.string().nullish(),
   title: z.string().nullish(),
+  model: z.string().nullish(),
   time_created: z.number().finite(),
   time_updated: z.number().finite(),
   tokens_input: z.number().nullish(),
   tokens_output: z.number().nullish(),
   tokens_reasoning: z.number().nullish(),
+  tokens_cache_read: z.number().nullish(),
+  tokens_cache_write: z.number().nullish(),
 });
 
 const SESSION_COLUMNS =
+  "id, directory, title, model, time_created, time_updated, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write";
+const LEGACY_SESSION_COLUMNS =
   "id, directory, title, time_created, time_updated, tokens_input, tokens_output, tokens_reasoning";
 
 /** Queries a table that may not exist in this OpenCode version's database. */
@@ -34,6 +41,42 @@ async function queryTable<T extends object>(
   }
 }
 
+function openCodeModel(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const model = JSON.parse(raw) as { id?: string; modelID?: string; providerID?: string };
+    const id = model.id ?? model.modelID;
+    if (!id) return null;
+    return model.providerID ? `${model.providerID}/${id}` : id;
+  } catch {
+    return null;
+  }
+}
+
+/** Older OpenCode versions lack model/cache columns; fall back to the shared subset. */
+async function sessionRows(
+  runtime: HostRuntime,
+  path: string,
+  table: "session" | "session_v2",
+  tail: string,
+): Promise<Record<string, unknown>[]> {
+  try {
+    return await queryTable<Record<string, unknown>>(
+      runtime,
+      path,
+      `SELECT ${SESSION_COLUMNS} FROM ${table} ${tail}`,
+    );
+  } catch (error) {
+    if (!/no such column/i.test(error instanceof Error ? error.message : String(error)))
+      throw error;
+    return queryTable<Record<string, unknown>>(
+      runtime,
+      path,
+      `SELECT ${LEGACY_SESSION_COLUMNS} FROM ${table} ${tail}`,
+    );
+  }
+}
+
 export async function opencodeDbPath(runtime: HostRuntime): Promise<string> {
   const home = await runtime.home();
   const sep = runtime.host.kind === "ssh" || !home.includes("\\") ? "/" : "\\";
@@ -47,22 +90,14 @@ export function opencodeAdapter(
   return {
     backend: "opencode",
     minIntervalMs: 30_000,
-    async list() {
+    async list(known) {
       const path = dbPath ?? (await opencodeDbPath(runtime));
       if (!(await runtime.isFile(path))) return [];
       // OpenCode 2.2+ keeps sessions in session_v2; the legacy session table
       // still holds conversations created before the migration, so read both.
       const tail = `WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT ${SESSION_LIMIT}`;
-      const current = await queryTable<Record<string, unknown>>(
-        runtime,
-        path,
-        `SELECT ${SESSION_COLUMNS} FROM session_v2 ${tail}`,
-      );
-      const legacy = await queryTable<Record<string, unknown>>(
-        runtime,
-        path,
-        `SELECT ${SESSION_COLUMNS} FROM session ${tail}`,
-      );
+      const current = await sessionRows(runtime, path, "session_v2", tail);
+      const legacy = await sessionRows(runtime, path, "session", tail);
       const seen = new Set<string>();
       const records: SessionRecord[] = [];
       for (const raw of [...current, ...legacy]) {
@@ -71,8 +106,13 @@ export function opencodeAdapter(
         seen.add(parsed.data.id);
         const row = parsed.data;
         const tokens =
-          (row.tokens_input ?? 0) + (row.tokens_output ?? 0) + (row.tokens_reasoning ?? 0);
-        records.push({
+          (row.tokens_input ?? 0) +
+          (row.tokens_output ?? 0) +
+          (row.tokens_reasoning ?? 0) +
+          (row.tokens_cache_read ?? 0) +
+          (row.tokens_cache_write ?? 0);
+        const model = openCodeModel(row.model);
+        const record: SessionRecord = {
           backend: "opencode",
           externalId: row.id,
           title: oneLine(row.title || row.id, 120),
@@ -81,8 +121,73 @@ export function opencodeAdapter(
           createdAt: new Date(row.time_created),
           lastActivityAt: new Date(row.time_updated),
           transcriptPath: path,
+          ...(model ? { model } : {}),
           tokensUsed: tokens || null,
-        });
+        };
+        const before = known.get(row.id);
+        if (
+          !before ||
+          row.time_updated > before.lastActivityMs ||
+          before?.usageVersion !== USAGE_EVENT_VERSION
+        ) {
+          record.usage = async () => {
+            const messages = await queryTable<{
+              id: string;
+              data: string;
+              time_created: number;
+            }>(
+              runtime,
+              path,
+              // Compaction summaries are billed model requests with the same token
+              // shape; excluding them undercounts the session's real consumption.
+              `SELECT id, data, time_created FROM session_message WHERE session_id = '${row.id}' AND type IN ('assistant', 'compaction') ORDER BY seq`,
+            );
+            let usage = parseOpenCodeUsage(messages);
+            if (!usage.events.length) {
+              const legacyMessages = await queryTable<{
+                id: string;
+                data: string;
+                time_created: number;
+              }>(
+                runtime,
+                path,
+                `SELECT id, data, time_created FROM message WHERE session_id = '${row.id}'`,
+              );
+              usage = parseOpenCodeUsage(
+                legacyMessages.filter((message) => {
+                  try {
+                    return (JSON.parse(message.data) as { role?: string }).role === "assistant";
+                  } catch {
+                    return false;
+                  }
+                }),
+              );
+            }
+            if (!usage.events.length && tokens > 0) {
+              return {
+                tokens,
+                model,
+                events: [
+                  {
+                    key: "session",
+                    ts: row.time_updated,
+                    model,
+                    inputTokens: row.tokens_input ?? 0,
+                    outputTokens: row.tokens_output ?? 0,
+                    cacheReadTokens: row.tokens_cache_read ?? 0,
+                    cacheWriteTokens: row.tokens_cache_write ?? 0,
+                    reasoningTokens: row.tokens_reasoning ?? 0,
+                    otherTokens: 0,
+                    estimated: true,
+                  },
+                ],
+              };
+            }
+            return usage;
+          };
+          record.usageVersion = USAGE_EVENT_VERSION;
+        }
+        records.push(record);
       }
       records.sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime());
       return records.slice(0, SESSION_LIMIT);

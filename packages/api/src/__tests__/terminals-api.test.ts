@@ -543,7 +543,7 @@ describe("POST /terminals", () => {
     expect(first.status).toBe(201);
     const info = await first.json();
     const pty = ptys.at(-1);
-    expect(pty?.argv.slice(1)).toEqual(["--resume", "sess-live-ok"]);
+    expect(pty?.argv.slice(1, 3)).toEqual(["--resume", "sess-live-ok"]);
     expect(pty?.argv[0]).toContain("claude");
     expect(pty?.options.cwd).toBe(root);
     expect(info.live_session_id).toBe("live-ok");
@@ -566,6 +566,47 @@ describe("POST /terminals", () => {
     expect(res.status).toBe(201);
     expect(ptys.at(-1)?.argv.slice(1)).toEqual(["resume", "sess-live-codex"]);
     await req(app, "DELETE", `/terminals/${(await res.json()).id}`);
+  });
+
+  test("forks claude into a new terminal without claiming the source session", async () => {
+    await seedLive("live-fork", { title: "original work" });
+    const forked = await req(app, "POST", "/terminals", {
+      live_session_id: "live-fork",
+      fork: true,
+    });
+    expect(forked.status).toBe(201);
+    const info = await forked.json();
+    expect(ptys.at(-1)?.argv.slice(1, 4)).toEqual(["--resume", "sess-live-fork", "--fork-session"]);
+    expect(info.live_session_id).toBeNull();
+    expect(info.name).toBe("original work (fork)");
+    expect(getTerminalManager().findByLiveSession("live-fork")).toBeNull();
+
+    const resumed = await req(app, "POST", "/terminals", {
+      live_session_id: "live-fork",
+    });
+    expect(resumed.status).toBe(201);
+    const resumeInfo = await resumed.json();
+    expect(resumeInfo.id).not.toBe(info.id);
+    expect(resumeInfo.live_session_id).toBe("live-fork");
+    expect(ptys.at(-1)?.argv.slice(1, 3)).toEqual(["--resume", "sess-live-fork"]);
+
+    await req(app, "DELETE", `/terminals/${info.id}`);
+    await req(app, "DELETE", `/terminals/${resumeInfo.id}`);
+  });
+
+  test("a backend without a CLI fork is refused before spawning", async () => {
+    await seedLive("live-fork-codex", { backend: "codex" });
+    const before = ptys.length;
+    const res = await req(app, "POST", "/terminals", {
+      live_session_id: "live-fork-codex",
+      fork: true,
+    });
+    expect(res.status).toBe(400);
+    expect(ptys.length).toBe(before);
+  });
+
+  test("a fork flag without a source session is refused", async () => {
+    expect((await req(app, "POST", "/terminals", { kind: "claude", fork: true })).status).toBe(400);
   });
 });
 

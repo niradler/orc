@@ -2,9 +2,9 @@ import { loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { type ExecHost, resolveExecHost } from "@orc/core/exec-host";
 import { resolveGithubAuth } from "@orc/core/github-auth";
+import { type GitResult, gitRunner } from "@orc/core/session-dir";
 import { getDb } from "@orc/db/client";
 import { z } from "zod";
-import { type GitResult, gitRunner } from "../terminals/session-dir.js";
 import { gitStatus } from "./panel.js";
 import { knownWorktrees } from "./registry.js";
 

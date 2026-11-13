@@ -39,6 +39,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   const [params, setParams] = useSearchParams();
   const agent = params.get("agent") ?? "";
   const showEnded = params.get("ended") !== "0";
+  const showHidden = params.get("hidden") === "1";
   const query = params.get("q") ?? "";
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const openId = params.get("session");
@@ -79,8 +80,8 @@ export function LiveSessions({ projectId }: { projectId: string }) {
 
   const searching = query.trim().length >= 2;
   const scopedProject = projectId === "all" ? undefined : projectId;
-  const list = useLiveSessions(!showEnded, scopedProject);
-  const search = useSessionSearch(searching ? query.trim() : "", agent, scopedProject);
+  const list = useLiveSessions(!showEnded, scopedProject, showHidden);
+  const search = useSessionSearch(searching ? query.trim() : "", agent, scopedProject, showHidden);
   const { data: projects } = useProjects();
   const sync = useSyncSessions();
 
@@ -134,7 +135,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
     id: (s) => s.id,
     version: (s) => String(activity(s)),
     lookup: (id) => byId.get(id),
-    resetKey: [projectId, stateFilter, agent, showEnded, query, order].join("\n"),
+    resetKey: [projectId, stateFilter, agent, showEnded, showHidden, query, order].join("\n"),
     loading: isLoading,
   });
   const visible = stable.items;
@@ -201,7 +202,12 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           />
         </div>
         <ResponsiveFilters
-          activeCount={Number(Boolean(agent)) + Number(!showEnded) + Number(order === "asc")}
+          activeCount={
+            Number(Boolean(agent)) +
+            Number(!showEnded) +
+            Number(showHidden) +
+            Number(order === "asc")
+          }
         >
           <select
             aria-label="Sort sessions by date"
@@ -238,6 +244,15 @@ export function LiveSessions({ projectId }: { projectId: string }) {
               Show ended
             </label>
           }
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-[13px] text-outline lg:min-h-8">
+            <input
+              type="checkbox"
+              data-testid="show-hidden"
+              checked={showHidden}
+              onChange={(e) => setParam("hidden", e.target.checked ? "1" : null)}
+            />
+            Show hidden
+          </label>
         </ResponsiveFilters>
       </div>
       <div {...stable.listProps}>
@@ -282,6 +297,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                   data-session-id={session.session_id}
                   data-agent={session.agent}
                   data-state={stateOf(session)}
+                  data-hidden={session.hidden ? "true" : undefined}
                   className="min-w-0 py-1"
                 >
                   <div className={`${sessionRowClass} hover:bg-surface`}>
@@ -316,6 +332,11 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       </span>
                       {session.handoff?.status === "ready" && (
                         <span data-testid="handoff-ready">Ready to resume</span>
+                      )}
+                      {session.hidden && (
+                        <span data-testid="session-hidden-badge" className="text-outline">
+                          Hidden
+                        </span>
                       )}
                     </div>
                     {session.summary && session.summary !== session.name && (

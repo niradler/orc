@@ -51,7 +51,7 @@ first agent starts there; a failure is reported but does not block the agent.
 
 **New terminal** selects Local or an existing SSH-config host for that launch. The launcher offers a shell plus enabled named providers from **Settings → Providers** whose native CLI is installed on that host (or has a configured local executable). Provider launches receive their environment overrides and, for Claude/Codex, their default model. Chat JSON options apply to the chat adapter; package setups retain their own launch configuration. A plain shell does not receive a coding provider's environment. Selecting a host scopes launcher availability, folder browsing and worktrees to that host. The global SSH setting is unchanged. Searching a supported SSH host in the terminal palette offers **New terminal on that host**, which opens the launcher without executing anything automatically.
 
-Remote folder choices are kept separately from Local during the launch menu's lifetime. The new-worktree checkbox preference is remembered. Existing terminals retain their host, and resumed agent sessions retain their saved execution host.
+Remote folder choices are kept separately from Local during the launch menu's lifetime. The new-worktree checkbox preference is remembered. Existing terminals retain their host, and resumed agent sessions retain their saved execution host. Resuming a session in a terminal from the session list reattaches the running terminal when one exists; **Fork in terminal** always opens a new terminal on the same host and folder and leaves the source conversation and any resume terminal unchanged.
 
 ### Supported execution hosts
 

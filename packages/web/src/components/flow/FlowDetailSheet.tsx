@@ -73,18 +73,18 @@ export function FlowDetailSheet({
                   </code>
                 </DetailField>
                 <DetailField label="Max node executions">
-                  {definition.limits.max_node_executions ?? "—"}
+                  {definition.limits.max_node_executions ?? "-"}
                 </DetailField>
                 <DetailField label="Timeout">
                   {definition.limits.execution_timeout_secs
                     ? `${definition.limits.execution_timeout_secs}s`
-                    : "—"}
+                    : "-"}
                 </DetailField>
                 <DetailField label="Max parallel">
-                  {definition.limits.max_parallel ?? "—"}
+                  {definition.limits.max_parallel ?? "-"}
                 </DetailField>
                 <DetailField label="Halt status">
-                  {definition.limits.halt_task_status ?? "—"}
+                  {definition.limits.halt_task_status ?? "-"}
                 </DetailField>
               </div>
 
@@ -129,7 +129,7 @@ export function FlowDetailSheet({
 
               <div className="space-y-1">
                 <div className="font-label text-xs text-outline">
-                  Edges ({definition.edges.length}) — evaluated in order
+                  Edges ({definition.edges.length}), evaluated in order
                 </div>
                 {/* Keyed by position: an edge has no id, two edges may share
                     from/to and differ only in `when`, and the order is the

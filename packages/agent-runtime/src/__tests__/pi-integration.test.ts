@@ -37,6 +37,7 @@ function fixture(opts: Partial<SessionOpts> = {}) {
       if(args==='dialog') {const answer=await ctx.ui.input('Your answer');ctx.ui.notify('answer:'+answer);}
       if(args==='permission') {const tool={toolName:'write',input:{path:'proof.txt',content:'proof'}};const allowed=await ctx.ui.confirm('ORC tool approval',JSON.stringify({tool:tool.toolName,input:tool.input}));ctx.ui.notify('approved:'+allowed);}
       if(args==='slow'){ctx.ui.notify('slow-started');await new Promise(resolve=>setTimeout(resolve,200));ctx.ui.notify('slow-ended');}
+      if(args==='slowlong'){ctx.ui.notify('slow-started');await new Promise(resolve=>setTimeout(resolve,3500));ctx.ui.notify('slow-ended');}
       if(args==='broken')throw new Error('extension deliberately failed');
       if(args==='shutdown')pi.on('session_shutdown',async(_event,c)=>await c.ui.confirm('Exit?','Confirm shutdown')); 
     }});
@@ -464,6 +465,177 @@ test("Pi stop drains handled extension commands before another question turn", a
   await session.send("/probe dialog");
   const events = await collect(session);
   expect(events.some((e) => e.type === "system_status" && e.data === "answer:from ORC")).toBe(true);
+}, 15000);
+
+test("real Pi resumes the same native session after an interrupt-Stop", async () => {
+  let received!: () => void;
+  const started = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+  let requestCount = 0;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch() {
+      requestCount++;
+      // The first model request hangs so the turn can be stopped mid-flight; later
+      // requests (the resumed turn) reply normally.
+      if (requestCount === 1) {
+        received();
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(": waiting\n\n"));
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }
+      const chunks = [
+        {
+          choices: [
+            {
+              index: 0,
+              delta: { role: "assistant", content: "Resumed after stop" },
+              finish_reason: null,
+            },
+          ],
+        },
+        {
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        },
+      ];
+      return new Response(
+        `${chunks
+          .map(
+            (chunk) =>
+              "data: " +
+              JSON.stringify({
+                id: "fixture",
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "fixture",
+                ...chunk,
+              }) +
+              "\n\n",
+          )
+          .join("")}data: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+  const { session, cwd } = fixture({ model: "orc-fixture/fixture" });
+  writeFileSync(
+    join(cwd, "agent", "models.json"),
+    JSON.stringify({
+      providers: {
+        "orc-fixture": {
+          baseUrl: `http://127.0.0.1:${server.port}/v1`,
+          api: "openai-completions",
+          apiKey: "fixture-local-only",
+          models: [{ id: "fixture", contextWindow: 32000, maxTokens: 1000 }],
+        },
+      },
+    }),
+  );
+  try {
+    await session.initialize();
+    const runtimeSessionId = session.getRuntimeSessionId();
+    expect(runtimeSessionId).toBeTruthy();
+    await session.send("Stop this turn");
+    await started;
+    await session.interrupt();
+    expect(
+      (await collect(session)).some((e) => e.type === "result" && e.data.outcome === "stopped"),
+    ).toBe(true);
+    expect(session.getRuntimeSessionId()).toBe(runtimeSessionId);
+    // The chat runtime closes the per-turn transport after a Stop, then the next send
+    // resumes the native session; prove that resume continues the same identity.
+    await session.close();
+    const resumed = new PiSession({
+      cwd,
+      orcMcp: false,
+      model: "orc-fixture/fixture",
+      runtimeSessionId,
+      providerExecutable: piCli,
+      env: { PI_CODING_AGENT_DIR: join(cwd, "agent") },
+    });
+    owned.push({ cwd, session: resumed });
+    await resumed.initialize();
+    expect(resumed.getRuntimeSessionId()).toBe(runtimeSessionId);
+    await resumed.send("Continue");
+    expect(
+      (await collect(resumed)).some((e) => e.type === "text" && e.data === "Resumed after stop"),
+    ).toBe(true);
+  } finally {
+    await session.close();
+    await server.stop(true);
+  }
+}, 30000);
+
+for (const command of ["slow", "slowlong"])
+  test(`Pi reports no resumable session after an interrupted /probe ${command} turn`, async () => {
+    const { session, cwd } = fixture();
+    try {
+      await session.initialize();
+      const rawId = session.getRuntimeSessionId();
+      expect(rawId).toBeTruthy();
+      await session.send(`/probe ${command}`);
+      for await (const event of session.events())
+        if (event.type === "system_status" && event.data === "slow-started") break;
+      await session.interrupt();
+      const result = (await collect(session)).find((e) => e.type === "result") as
+        | Extract<AgentEvent, { type: "result" }>
+        | undefined;
+      // An extension-command turn appends no transcript message, so Pi never persists
+      // the session. The result must say so instead of handing out a non-resumable id.
+      expect(result?.data).toMatchObject({ outcome: "stopped", resumable: false });
+      expect(result?.data.runtimeSessionId).toBeUndefined();
+      await session.close();
+      // Proves the session was never written: resuming that exact id fails.
+      const resume = new PiSession({
+        cwd,
+        orcMcp: false,
+        runtimeSessionId: rawId,
+        providerExecutable: piCli,
+        env: { PI_CODING_AGENT_DIR: join(cwd, "agent") },
+      });
+      owned.push({ cwd, session: resume });
+      await expect(resume.initialize()).rejects.toThrow();
+      // The next send starts a fresh native session and continues working.
+      const fresh = new PiSession({
+        cwd,
+        orcMcp: false,
+        providerExecutable: piCli,
+        env: { PI_CODING_AGENT_DIR: join(cwd, "agent") },
+      });
+      owned.push({ cwd, session: fresh });
+      await fresh.initialize();
+      await fresh.send("/probe identity");
+      expect(
+        (await collect(fresh)).some(
+          (e) => e.type === "system_status" && String(e.data).startsWith("native-id:"),
+        ),
+      ).toBe(true);
+    } finally {
+      await session.close();
+    }
+  }, 30000);
+
+test("Pi reports no resumable session after a completed extension-command turn", async () => {
+  const { session } = fixture();
+  try {
+    await session.initialize();
+    await session.send("/probe dialog");
+    const result = (await collect(session)).find((e) => e.type === "result") as
+      | Extract<AgentEvent, { type: "result" }>
+      | undefined;
+    expect(result?.data).toMatchObject({ outcome: "completed", resumable: false });
+    expect(result?.data.runtimeSessionId).toBeUndefined();
+  } finally {
+    await session.close();
+  }
 }, 15000);
 
 test("Pi closes safely when an extension asks a shutdown question", async () => {

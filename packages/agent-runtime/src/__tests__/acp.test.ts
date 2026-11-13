@@ -39,20 +39,20 @@ for await (const line of createInterface({input:process.stdin})) {
   promptId=m.id;
   if(mode==='exit') { process.exit(2); }
   else if(mode==='oversize') process.stdout.write('x'.repeat(2100000));
-  else if(mode==='cancel'||mode==='cancel-late') {}
+  else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold') {}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
   else {
    update('other-session',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'WRONG SESSION'}});
    update(session,{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Working'}});
    update(session,{sessionUpdate:'tool_call',toolCallId:'read-1',title:'Read file',kind:'read',status:'pending',rawInput:{path:'a.txt'}});
-   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',title:'Read file',kind:'read'},options:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
+   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',title:'Read file',kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
   }
  } else if(m.id==='permission') {
   update(session,{sessionUpdate:'tool_call_update',toolCallId:'read-1',status:'completed',rawOutput:'file contents'});
   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.result)}});
   emit({id:promptId,result:{stopReason:'end_turn'}});
- } else if(m.method==='session/cancel') {if(mode==='cancel-late')ask('late-cancel');else emit({id:promptId,result:{stopReason:'cancelled'}});}
+ } else if(m.method==='session/cancel') {if(mode==='cancel-late')ask('late-cancel');else if(mode!=='cancel-hold')emit({id:promptId,result:{stopReason:'cancelled'}});}
 }`,
   );
   const session = new AcpSession({ cwd, orcMcp: false, ...opts }, [process.execPath, script]);
@@ -160,8 +160,8 @@ test("ACP refuses unsupported resume and protocol versions without creating anot
   }
 });
 
-test("ACP never escalates a once or session reply to a persistent permission", async () => {
-  const { session } = fixture({}, "persistent-only");
+test("ACP grants a session approval with the agent's allow_always option", async () => {
+  const { session } = fixture({}, "session-grant");
   await session.initialize();
   await session.send("Read");
   const events = await run(session, "session");
@@ -169,7 +169,49 @@ test("ACP never escalates a once or session reply to a persistent permission", a
     .filter((e) => e.type === "text")
     .map((e) => e.data)
     .join("");
+  expect(JSON.parse(text)).toEqual({
+    outcome: { outcome: "selected", optionId: "native-always" },
+  });
+});
+
+test("ACP never escalates an ordinary approval to allow_always when it is the only grant", async () => {
+  const { session } = fixture({}, "persistent-only");
+  await session.initialize();
+  await session.send("Read");
+  const events = await run(session, "approved");
+  const text = events
+    .filter((e) => e.type === "text")
+    .map((e) => e.data)
+    .join("");
   expect(JSON.parse(text)).toEqual({ outcome: { outcome: "cancelled" } });
+});
+
+test("ACP falls back to allow_once for a session approval when allow_always is absent", async () => {
+  const { session } = fixture();
+  await session.initialize();
+  await session.send("Read");
+  const events = await run(session, "session");
+  const text = events
+    .filter((e) => e.type === "text")
+    .map((e) => e.data)
+    .join("");
+  expect(JSON.parse(text)).toEqual({
+    outcome: { outcome: "selected", optionId: "native-allow" },
+  });
+});
+
+test("ACP refuses to steer without a declared capability and sends nothing", async () => {
+  const { session, cwd } = fixture({}, "cancel");
+  await session.initialize();
+  await session.send("Wait");
+  await expect(session.steer("steer")).rejects.toThrow("does not accept steering");
+  await session.interrupt();
+  await run(session);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(1);
 });
 
 test("ACP cancellation completes without losing native identity", async () => {
@@ -179,6 +221,22 @@ test("ACP cancellation completes without losing native identity", async () => {
   await session.interrupt();
   const events = await run(session);
   expect(events.some((e) => e.type === "system_status" && e.data.includes("stopped"))).toBe(true);
+  expect(session.getRuntimeSessionId()).toBe("native-acp");
+});
+
+test("ACP closing after an explicit Stop does not send a second session/cancel", async () => {
+  // cancel-hold acknowledges nothing, so the turn stays busy; a close that
+  // re-cancels would put a second session/cancel on the wire.
+  const { session, cwd } = fixture({}, "cancel-hold");
+  await session.initialize();
+  await session.send("Wait");
+  await session.interrupt();
+  await session.close();
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/cancel")).toHaveLength(1);
   expect(session.getRuntimeSessionId()).toBe("native-acp");
 });
 

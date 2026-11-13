@@ -12,6 +12,7 @@ import {
 import { jobShellArgv } from "@orc/core/job-settings";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import { ProviderIdSchema } from "@orc/core/providers";
+import { prepareSessionDirectory } from "@orc/core/session-dir";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
@@ -43,7 +44,6 @@ import {
   sessionDirDeps,
   terminalsAvailability,
 } from "../terminals/service.js";
-import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import {
   projectById,
   projectWorkspaceConfig,
@@ -122,6 +122,10 @@ const createTerminalRoute = createRoute({
             cwd: z.string().min(1).optional(),
             name: z.string().max(120).optional(),
             live_session_id: z.string().min(1).optional(),
+            fork: z.boolean().optional().openapi({
+              description:
+                "With live_session_id: open a new session from that session's history instead of resuming it. The source session is left untouched.",
+            }),
             worktree: z.boolean().optional().openapi({
               description: "Start an agent in a new git worktree of the cwd's repo",
             }),
@@ -352,6 +356,9 @@ app.openapi(createTerminalRoute, async (c) => {
     checkRules(scope);
   };
 
+  if (body.fork && !body.live_session_id)
+    throw new ValidationError("A fork needs the live session it starts from");
+
   if (body.setup) {
     if (body.providerId)
       throw new ValidationError("Package setups manage their own provider configuration.");
@@ -385,7 +392,7 @@ app.openapi(createTerminalRoute, async (c) => {
   if (body.live_session_id) {
     if (body.worktree) throw new ValidationError("A resumed session keeps its own folder");
     if (body.host !== undefined) throw new ValidationError("A resumed session keeps its own host");
-    const existing = manager.findByLiveSession(body.live_session_id);
+    const existing = body.fork ? null : manager.findByLiveSession(body.live_session_id);
     if (existing) {
       checkRules(existing.cwd);
       return c.json(existing, 200);
@@ -397,11 +404,12 @@ app.openapi(createTerminalRoute, async (c) => {
       ),
     });
     if (!row) throw new NotFoundError("Live session", body.live_session_id);
-    const handoff = await getHandoffService().verifyResume(row.id);
+    const forking = body.fork === true;
+    const handoff = forking ? null : await getHandoffService().verifyResume(row.id);
     host = execHostFor(row.execution_host ?? null, config);
     deps = await launchDeps(config, host);
     checkRules(row.cwd);
-    if (row.status === "idle" || row.status === "running") {
+    if (!forking && (row.status === "idle" || row.status === "running")) {
       const original = manager.linkLiveSession(
         {
           id: row.id,
@@ -430,6 +438,7 @@ app.openapi(createTerminalRoute, async (c) => {
           session_id: row.runtime_session_id ?? null,
           cwd: row.cwd ?? null,
         },
+        fork: forking,
       },
       deps,
     );
@@ -438,7 +447,7 @@ app.openapi(createTerminalRoute, async (c) => {
       host,
       configureProviderLaunch(launch, body.providerId ?? launch.kind, true),
     );
-    const concurrent = manager.findByLiveSession(row.id);
+    const concurrent = forking ? null : manager.findByLiveSession(row.id);
     if (concurrent) {
       checkRules(concurrent.cwd);
       return c.json(concurrent, 200);
@@ -446,8 +455,11 @@ app.openapi(createTerminalRoute, async (c) => {
     checkRules(row.cwd);
     const info = manager.create({
       launch: resumedLaunch,
-      name: body.name ?? row.title ?? undefined,
-      liveSessionId: row.id,
+      name:
+        body.name ??
+        (forking ? `${row.display_title ?? row.title ?? row.backend} (fork)` : row.title) ??
+        undefined,
+      ...(forking ? {} : { liveSessionId: row.id }),
     });
     if (handoff) await getHandoffService().markResumed(row.id);
     rememberTerminalFolder(info.cwd, info.host);
@@ -458,7 +470,7 @@ app.openapi(createTerminalRoute, async (c) => {
         kind: info.kind,
         host: info.host,
         cwd: info.cwd,
-        source: "resume",
+        source: forking ? "fork" : "resume",
         live_session_id: row.id,
       },
     });

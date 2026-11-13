@@ -46,6 +46,18 @@ async function workspaceFixture(page: import("@playwright/test").Page, hosts = [
       json: { root: cwd, worktrees: [{ path: cwd, branch: "refs/heads/main", main: true }] },
     });
   });
+  await page.route("**/api/git/branches?**", (route) => {
+    const cwd = new URL(route.request().url()).searchParams.get("cwd") ?? "";
+    return route.fulfill({
+      json: {
+        root: cwd,
+        current: "main",
+        default_branch: "origin/main",
+        local: ["main"],
+        remote: ["origin/main"],
+      },
+    });
+  });
   await page.addInitScript(() => {
     localStorage.setItem(
       "orc_folder_history",

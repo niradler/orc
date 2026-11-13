@@ -119,7 +119,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const phone = !useBreakpoint("md");
-  const { tabs, activeKey } = useChat();
+  const { tabs, activeKey, projectScope } = useChat();
   const requests = useHumanRequests();
   const sessions = useActiveLiveSessionsSummary();
   const [expanded, setExpanded] = useState(false);
@@ -146,11 +146,17 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     requests: requests.data,
     sessions: sessions.data?.sessions,
   };
+  const notificationProject = projectScope === "all" ? undefined : projectScope;
   const query = useInfiniteQuery({
-    queryKey: ["notifications", { showRead }],
+    queryKey: ["notifications", { showRead, project: notificationProject ?? "all" }],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      api.notifications.list({ limit: PAGE_SIZE, offset: pageParam, unread: !showRead }),
+      api.notifications.list({
+        limit: PAGE_SIZE,
+        offset: pageParam,
+        unread: !showRead,
+        ...(notificationProject ? { project_id: notificationProject } : {}),
+      }),
     getNextPageParam: (last, _pages, offset) => (last.has_more ? offset + PAGE_SIZE : undefined),
     refetchInterval: useResourceFallback(),
   });
@@ -410,7 +416,8 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     dismiss: (id) => update.mutate({ id, dismissed: true }),
     markAllRead: () => {
       setSelected(null);
-      markAll.mutate();
+      // Only what the scoped inbox shows, so another project's unread items survive.
+      markAll.mutate(notificationProject);
     },
     markAllBusy: markAll.isPending,
     hasNextPage: query.hasNextPage,
@@ -990,7 +997,7 @@ function RequestDetails({
   if (!expanded && !value)
     return (
       <Button variant="ghost" size="sm" onClick={onToggle}>
-        {summary} — Review request
+        {summary} · Review request
       </Button>
     );
   if (request.isPending && !value) return <p role="status">Loading request…</p>;

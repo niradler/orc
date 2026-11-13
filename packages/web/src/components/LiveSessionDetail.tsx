@@ -5,6 +5,7 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
+import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { StateBadge } from "@/components/StateBadge";
@@ -183,7 +184,7 @@ export function LiveSessionDetail({
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [cursor, setCursor] = useState(0);
-  const { data: all } = useLiveSessions(false);
+  const { data: all } = useLiveSessions(false, undefined, true);
   const session: LiveSession | undefined = all?.find((s) => s.id === sessionId);
   const live = session !== undefined && session.status !== "stopped";
   const search = query.trim().length >= 2 ? query.trim() : "";
@@ -252,11 +253,17 @@ export function LiveSessionDetail({
               </span>
               <SessionTaskLink session={session} linkTestId="detail-open-task" />
               <ResumeActions session={session} />
+              {session.hidden && (
+                <span data-testid="detail-session-hidden" className="text-outline">
+                  Hidden from list
+                </span>
+              )}
               <SessionScratchpads session={session} />
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
           )}
           {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
+          {session && <SessionLineage sessionId={session.id} />}
           {session && <SessionMessageInbox key={session.id} session={session} live={live} />}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-[150px] flex-1">

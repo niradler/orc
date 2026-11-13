@@ -55,6 +55,8 @@ const FlowNodeRunSchema = z
     summary: z.string().nullable(),
     error: z.string().nullable(),
     gateway_session_id: z.string().nullable(),
+    cwd: z.string().nullable(),
+    worktree_branch: z.string().nullable(),
     created_at: z.number().openapi({
       description:
         "When the visit was recorded. A queued or human-parked node has no started_at, so this is the only clock for how long it has been waiting.",

@@ -61,6 +61,26 @@ export class ChatStore {
       .all(runtimeId, backend, host ?? "")
       .flatMap((row) => this.get(row.id) ?? []);
   }
+  children(sessionIds: string[]): ChatThread[] {
+    if (!sessionIds.length) return [];
+    return this.db
+      .query<{ id: string }, string[]>(
+        `SELECT id FROM chat_threads WHERE json_valid(data)
+          AND json_extract(data, '$.spawnedBy.sessionId') IN (${sessionIds.map(() => "?").join(",")})
+          ORDER BY updated_at DESC LIMIT 200`,
+      )
+      .all(...sessionIds)
+      .flatMap((row) => this.get(row.id) ?? []);
+  }
+  pendingSpawns(): ChatThread[] {
+    return this.db
+      .query<{ id: string }, []>(
+        `SELECT id FROM chat_threads WHERE json_valid(data)
+          AND json_extract(data, '$.spawnedBy.prompt') IS NOT NULL ORDER BY updated_at ASC LIMIT 50`,
+      )
+      .all()
+      .flatMap((row) => this.get(row.id) ?? []);
+  }
   byMessage(messageId: string): ChatThread | null {
     const row = this.db
       .query<{ id: string }, [string]>(

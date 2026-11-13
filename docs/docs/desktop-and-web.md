@@ -6,13 +6,13 @@ The dashboard is served by the daemon at `http://localhost:7700`. The desktop ap
 
 ## Layout
 
-| Area | Contents |
-| --- | --- |
-| Sidebar | Activity, Chat, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`. |
-| Project picker | Scopes most pages to one project, all projects, or unassigned items. A project with sessions waiting on you shows how many. |
-| Chat panel | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; OpenCode uses direct ACP; other agents run through ACPX. |
-| Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands |
-| Next session | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing. |
+| Area            | Contents                                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar         | Activity, Chat, Tasks, Knowledge, Terminals, Library, Settings. Shows the execution host, for example `Connected (local)`.                                                   |
+| Project picker  | Scopes most pages to one project, all projects, or unassigned items. A project with sessions waiting on you shows how many.                                                  |
+| Chat panel      | Talk to any enabled coding agent from any page. Pick the agent and model at the top. Claude and Codex run natively; OpenCode uses direct ACP; other agents run through ACPX. |
+| Command palette | **Ctrl+K** (**Cmd+K** on macOS) to search and run commands                                                                                                                   |
+| Next session    | **Alt+J** (**Option+J** on macOS) opens the next session that needs you, then the next finished session you have not seen. It does nothing while you are typing.             |
 
 Popup menus and pickers across the dashboard close when you tap outside or press
 Escape, including project, session, document and terminal actions. Tapping the
@@ -21,15 +21,15 @@ folder dialog keeps it usable without discarding your draft.
 
 Pages are grouped in the sidebar:
 
-| Group | Pages |
-| --- | --- |
-| Activity | Activity, Sessions, Jobs, Webhooks, Audit |
-| Chat | Chat |
-| Tasks | Tasks |
-| Knowledge | Knowledge base, Memories |
-| Terminals | Terminals |
-| Library | Skills, Packages, Agents, Rules, Scratchpads |
-| Settings | Settings |
+| Group     | Pages                                        |
+| --------- | -------------------------------------------- |
+| Activity  | Activity, Sessions, Jobs, Webhooks, Audit    |
+| Chat      | Chat                                         |
+| Tasks     | Tasks                                        |
+| Knowledge | Knowledge base, Memories                     |
+| Terminals | Terminals                                    |
+| Library   | Skills, Packages, Agents, Rules, Scratchpads |
+| Settings  | Settings                                     |
 
 Projects has its own page at `/projects`. Every page has a shareable URL.
 
@@ -50,11 +50,12 @@ Below 1280px wide, the chat has no side panel: starting a chat from any page
 opens the chat page instead.
 
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
-  - **Recents** lists every session by last activity, newest first. **Projects** groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. Sessions without a recorded project are matched to a project whose scope folder contains their working folder. Both views follow the project selected in the workspace header — pick **All projects** to browse every project — and sessions in archived or paused projects stay listed under their project.
-  - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order.
+  - **Recents** lists every session by last activity, newest first. **Projects** groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
+  - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
 - **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
+- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
 - The page keeps the workspace header and its single notification bell, and the sidebar at the width you chose. **Close chat** returns to the page you came from.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents
@@ -83,6 +84,13 @@ The session list's **Recents** and **Projects** views, ordered by last activity:
 <img src="/screens/session-recents-phone.png" alt="Session list Recents view on a phone" width="260">
 <img src="/screens/session-projects-desktop.png" alt="Session list grouped by project on desktop" width="640">
 <img src="/screens/session-projects-phone.png" alt="Session list grouped by project on a phone" width="260">
+
+Forking at a response copies the conversation into a new chat. The notice names the
+source, whether the fork continued the agent's native session or carried a context
+replay, and what that replay included.
+
+<img src="/screens/chat-fork-desktop.png" alt="Fork notice above the copied messages in a forked chat" width="320">
+<img src="/screens/chat-fork-phone.png" alt="The same fork notice on a phone" width="260">
 
 ## Activity
 
@@ -122,7 +130,13 @@ In the Electron desktop app, **File → Browser and files** (Ctrl/Cmd+Shift+B),
 or **Browser and files** in the tray menu, opens a panel beside your conversation.
 Chat links and file attachments open in this panel. Enter an HTTP/HTTPS address
 and use Back, Forward and Reload. The external-link icon opens the page in your
-system browser; Ctrl/Cmd-clicking a web link does the same.
+system browser; Ctrl/Cmd-clicking a web link does the same. The panel belongs to
+the chat page; the side chat on other pages stays a plain conversation with no
+browser, file or agent-control entry points.
+
+![The side chat without the preview panel](/screens/desktop-side-chat-plain.png)
+
+<img src="/screens/phone-chat-preview-closed.png" alt="The chat page on a phone before the preview panel opens" width="260">
 
 Each conversation keeps its own browser and file tabs. The panel stays docked
 beside the conversation and opens only when you ask for it or follow a link; drag
@@ -430,23 +444,23 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 
 ![Settings](/screens/settings.png)
 
-| Section | Controls |
-| --- | --- |
-| Connection | In a browser, the API URL for this browser. In the desktop app, the local or remote server, optional access token and proxy headers. |
-| Security | Sign-in status and sign-out, default sign-in lifetime, allowed web origins, access tokens (minted by entering the secret) |
-| Appearance | Theme |
-| Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config` |
-| Server | **Restart ORC server** (closes terminals, keeps settings, reconnects) |
-| Notifications | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions, chat replies and job results. Push needs HTTPS. |
-| Agents | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. |
-| Channels | Telegram and Slack connections |
-| Chat | Default models, instructions, tools and permission mode for chat |
-| MCP | Build the MCP config snippet for your agent. See [Connect agents](./connect-agents.md). |
-| Integrations | APIs and MCP servers in the `spec` CLI registry |
-| Knowledge | Parser, embeddings and knowledge defaults |
-| Terminals | Terminal font for new terminals |
-| Storage | Where settings are stored |
-| About | Server, desktop and Electron versions, platform, runtime, data folder, uptime, project links, and desktop update channel |
+| Section        | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Connection     | In a browser, the API URL for this browser. In the desktop app, the local or remote server, optional access token and proxy headers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Security       | Sign-in status and sign-out, default sign-in lifetime, allowed web origins, access tokens (minted by entering the secret)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Appearance     | Theme                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Server         | **Restart ORC server** (closes terminals, keeps settings, reconnects)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Notifications  | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions, chat replies and job results. Push needs HTTPS.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Agents         | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. |
+| Channels       | Telegram and Slack connections                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Chat           | Default models, instructions, tools and permission mode for chat                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| MCP            | Build the MCP config snippet for your agent. See [Connect agents](./connect-agents.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Integrations   | APIs and MCP servers in the `spec` CLI registry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Knowledge      | Parser, embeddings and knowledge defaults                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Terminals      | Terminal font for new terminals                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Storage        | Where settings are stored                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| About          | Server, desktop and Electron versions, platform, runtime, data folder, uptime, project links, and desktop update channel                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 The desktop app stores its selected server, token and headers in `connection.json` in the app's data folder. This is a client-side target, separate from the server's `~/.orc/config.json`; switching servers does not repoint the CLI or stdio MCP. The integrated preview browser, local file picker, update controls and native notifications are available only in the local dashboard, so a remote window does not show them.
 
@@ -502,7 +516,16 @@ phone touch targets are at least 44px. Send stays visible at the right.
 
 The folder picker shows the full path, copy action, recent folders, host choices
 when configured, and browsing. Branch/worktree controls appear for Git folders.
-Folder and branch controls hide after launch; conversation details show the working folder.
+**Run in** keeps the current checkout, creates a worktree from the current branch,
+creates one from the repository default branch (for example `origin/main`), or
+creates one from any local or remote branch you pick. The branch chip shows the
+chosen base. Bases come from refs already in the checkout; ORC does not fetch
+before creating the worktree. Folder and branch controls hide after launch;
+conversation details show the working folder.
+
+<img src="/screens/chat-run-in-1440.png" alt="Run in options in the desktop chat panel" width="380">
+<img src="/screens/chat-run-in-390.png" alt="Run in options for the current checkout, the current branch, the default branch and another branch" width="260">
+
 Changing agent after launch starts a separate session. The model picker disables
 changes during a response or when the backend selects its own model. Effort stays
 in agent options. The permissions control appears for a non-default mode only when
@@ -517,17 +540,17 @@ Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach fil
 
 The desktop app is an Electron shell around the same dashboard. On top of the browser experience it:
 
-| Capability | Detail |
-| --- | --- |
-| Runs the daemon for you | Reuses a verified local daemon, including one on another port, or starts the bundled `orc` daemon |
-| Configures auth | Generates an API secret for a daemon it starts when none is set, and sends the configured secret automatically. No sign-in screen. |
-| Installs the CLI | `~/.orc/bin/orc`, added to your shell `PATH` |
-| Tray icon | **Open orc**, **Start at login** toggle, **Quit orc** |
-| Start at login | On by default, starts hidden in the tray |
-| Keeps running when closed | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits. |
-| Recovers from startup failures and crashes | Waits briefly for a starting daemon, then offers **Retry** or **Quit** if it cannot connect |
-| Remembers the window | Size, position and maximized state |
-| Updates | Installed macOS, Windows and Linux apps check GitHub Releases at startup and every four hours, download in the background, and offer **Restart to update** |
+| Capability                                 | Detail                                                                                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runs the daemon for you                    | Reuses a verified local daemon, including one on another port, or starts the bundled `orc` daemon                                                          |
+| Configures auth                            | Generates an API secret for a daemon it starts when none is set, and sends the configured secret automatically. No sign-in screen.                         |
+| Installs the CLI                           | `~/.orc/bin/orc`, added to your shell `PATH`                                                                                                               |
+| Tray icon                                  | **Open orc**, **Start at login** toggle, **Quit orc**                                                                                                      |
+| Start at login                             | On by default, starts hidden in the tray                                                                                                                   |
+| Keeps running when closed                  | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits.                            |
+| Recovers from startup failures and crashes | Waits briefly for a starting daemon, then offers **Retry** or **Quit** if it cannot connect                                                                |
+| Remembers the window                       | Size, position and maximized state                                                                                                                         |
+| Updates                                    | Installed macOS, Windows and Linux apps check GitHub Releases at startup and every four hours, download in the background, and offer **Restart to update** |
 
 Quitting the app (**Quit orc**) stops the daemon only if the app started it.
 
@@ -551,10 +574,10 @@ unverified daemon or send it the configured secret.
 
 Command-line flags for the app executable:
 
-| Flag | Effect |
-| --- | --- |
-| `--hidden` | Start without opening a window |
-| `--quit` | Quit the running instance and the daemon it started |
+| Flag       | Effect                                              |
+| ---------- | --------------------------------------------------- |
+| `--hidden` | Start without opening a window                      |
+| `--quit`   | Quit the running instance and the daemon it started |
 
 Links to other sites open in the desktop preview panel. Use its external-link
 icon or Ctrl/Cmd-click a web link to open your system browser.

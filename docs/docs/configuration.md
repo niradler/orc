@@ -253,19 +253,36 @@ use provider quota; it does not erase the displayed ORC transcript.
 
 ## Usage in Settings
 
-Open **Settings → Usage** for session token history and account quotas. History
-shows lifetime token totals for imported native sessions started in the last 7,
-30 or 90 days, or all time, across all projects. Daily rows use UTC session start
-dates; they do not represent tokens consumed that day. Missing counts are reported
-separately, Cursor counts are estimates, and these totals are not billed costs.
-Claude totals include input, output, cache-creation and cache-read tokens, with
-repeated assistant messages counted once. Older Claude counts refresh from
-available transcripts on the next session sync, even for unchanged sessions.
-Until a refresh succeeds, those counts are excluded from token totals and
-reported among sessions without complete token counts. Inaccessible transcripts
-remain unknown; ORC does not substitute their old partial counts.
-The existing session importers determine which tokens are counted; this view does
-not rescan transcripts or include managed gateway sessions a second time.
+Open **Settings → Usage** for request-level token usage and account quotas. ORC
+indexes each assistant request recorded by the local Claude, Codex, Pi, OpenCode,
+Gemini and Cursor importers: model, request time, input, output, cache-read,
+cache-write, reasoning and unsplit totals. The page groups that ledger by agent,
+model and UTC day or hour, so the selected period reflects tokens consumed during
+the period rather than lifetime totals of sessions that started in it.
+
+Filters narrow the page by period (24 hours, 7, 30 or 90 days, or all time), time
+bucket, agent and model. The distribution table shows model shares and expands a
+model to its token split and request, session and estimate counts. Clicking an
+agent filters the page to that agent. The default view keeps long lists compact;
+secondary detail opens on demand and the account quota list starts collapsed.
+
+Gemini records only a per-message total, and Cursor exposes a context estimate
+rather than per-request usage, so those requests are marked estimated. Codex
+rollouts larger than the import cap keep their lifetime total as an estimated
+remainder, and model names are unknown for that remainder. Claude output splits
+thinking tokens out of output, and cached input is counted once. Repeated
+assistant messages are counted once by message id. The Coverage section reports
+sessions started in the period that have not been indexed yet and excludes their
+lifetime totals from the distribution, rather than mixing the two accounting
+models. No billed cost is shown: ORC has no reliable price source for every
+provider and plan.
+
+Raw requests are kept for 95 days, just past the 90-day window, so every normal
+period stays exact. Older usage rolls up per session, UTC day and model: totals,
+model/agent shares, request counts and session counts survive for **All time**
+without keeping every request. A single session that exceeds 5,000 rows inside the
+window also compacts its oldest rows by model. Retention runs on the normal
+session-sync path, not on a timer or a page poll.
 
 ![Usage in Settings with demo data](/screens/settings-usage.png)
 
@@ -288,12 +305,16 @@ stored credentials are not read by ORC. An account without an active token plan,
 a missing login and an unreachable CLI all display an unavailable state. Alibaba
 Cloud coding-plan quotas are not shown.
 
-The authenticated read-only routes `GET /api/usage/history?days=30` and
-`GET /api/usage/quotas` expose the same data. History accepts `7`, `30`, `90`, or
-`0` (all time). Quota requests share a 60-second server cache and an 8-second
-provider timeout. The Usage panel polls quotas once a minute while open; Refresh
-retries both views while respecting that cache. Provider quota interfaces can
-change; unavailable quota data does not prevent session history from loading.
+The authenticated read-only routes `GET /api/usage/report`, `GET
+/api/usage/history` and `GET /api/usage/quotas` expose the same data. Report
+accepts `days=1|7|30|90|0`, `granularity=day|hour`, and optional `agent` and
+`model` filters; model `__unknown__` selects requests without a model. History
+remains available for clients that need lifetime totals by session start date.
+Quota requests share a 60-second server cache and an 8-second provider timeout.
+The Usage panel refreshes itself from the shared SSE change stream when newly
+indexed requests arrive; it does not poll. Refresh re-reads both views on demand
+and respects the quota cache. Provider quota interfaces can change; unavailable
+quota data does not prevent usage from loading.
 
 Where ORC keeps its config and data, every config key and environment variable you are likely to set, logs, running as a background service, and authentication.
 

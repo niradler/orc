@@ -1,9 +1,11 @@
 import { isAbsolute, join, posix } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
+import { parsePiUsage } from "./usage-parsers.js";
 
 const headerSchema = z.object({
   type: z.literal("session"),
@@ -22,7 +24,17 @@ const entrySchema = z.object({
       role: z.string(),
       content: z.unknown(),
       toolCallId: z.string().optional(),
-      usage: z.object({ totalTokens: z.number().finite().nonnegative().optional() }).optional(),
+      model: z.string().optional(),
+      usage: z
+        .object({
+          input: z.number().finite().nonnegative().optional(),
+          output: z.number().finite().nonnegative().optional(),
+          cacheRead: z.number().finite().nonnegative().optional(),
+          cacheWrite: z.number().finite().nonnegative().optional(),
+          reasoning: z.number().finite().nonnegative().optional(),
+          totalTokens: z.number().finite().nonnegative().optional(),
+        })
+        .optional(),
     })
     .passthrough()
     .optional(),
@@ -95,7 +107,7 @@ export function piAdapter(
   return {
     backend: "pi",
     minIntervalMs: 5_000,
-    async list() {
+    async list(known) {
       const records: SessionRecord[] = [];
       const directories = root ? [root] : await piSessionRoots(runtime);
       const files = (
@@ -118,7 +130,15 @@ export function piAdapter(
           parsed.messages.find((item) => item.message.role === "user")?.message.content,
         );
         const name = parsed.entries.filter((item) => item.type === "session_info").at(-1)?.name;
-        records.push({
+        const lastActivityAt = new Date(
+          parsed.entries.reduce(
+            (latest, item) => Math.max(latest, Date.parse(item.timestamp)),
+            Date.parse(parsed.header.timestamp),
+          ),
+        );
+        const usage = parsePiUsage(parsed.messages, lastActivityAt.getTime());
+        const before = known.get(parsed.header.id);
+        const record: SessionRecord = {
           backend: "pi",
           externalId: parsed.header.id,
           title: oneLine(name || prompt || parsed.header.id, 120),
@@ -126,19 +146,20 @@ export function piAdapter(
           cwd: parsed.header.cwd,
           status: "stopped",
           createdAt: new Date(parsed.header.timestamp),
-          lastActivityAt: new Date(
-            parsed.entries.reduce(
-              (latest, item) => Math.max(latest, Date.parse(item.timestamp)),
-              Date.parse(parsed.header.timestamp),
-            ),
-          ),
+          lastActivityAt,
           transcriptPath: file.path,
-          tokensUsed:
-            parsed.entries.reduce(
-              (sum, item) => sum + (item.message?.usage?.totalTokens ?? 0),
-              0,
-            ) || null,
-        });
+          model: usage.model,
+          tokensUsed: usage.tokens || null,
+        };
+        if (
+          !before ||
+          lastActivityAt.getTime() > before.lastActivityMs ||
+          before?.usageVersion !== USAGE_EVENT_VERSION
+        ) {
+          record.usage = async () => usage;
+          record.usageVersion = USAGE_EVENT_VERSION;
+        }
+        records.push(record);
       }
       return records;
     },

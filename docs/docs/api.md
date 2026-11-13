@@ -75,18 +75,33 @@ evidence is `null`. No prompt text, credentials or transcript paths are returned
 The route uses normal API authentication and the session's stored execution host;
 clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
 
-`GET /api/usage/history?days=30` returns imported session lifetime token totals,
-grouped by agent and UTC session start date. `days` accepts `7`, `30` (default),
-`90`, or `0` for all time. Totals include session count, recorded tokens, unknown
-counts and estimated counts; these are session cohorts, not daily billed usage.
+`GET /api/usage/report` returns request-level usage for the selected period:
+totals, per-agent and per-model distributions, UTC day or hour buckets, and
+coverage for sessions that are not indexed yet. Query parameters are `days`
+(`1`, `7`, `30` default, `90`, or `0` for all time), `granularity` (`day` default
+or `hour`), and optional `agent` and `model` filters. Pass `model=__unknown__` to
+select requests without a model. Each aggregate includes input, output,
+cache-read, cache-write, reasoning and unsplit (`other`) tokens plus request,
+session and estimated-request counts. Request and estimate counts are sums over
+represented requests, so a daily rollup counts every request it stands for. Raw
+requests are kept for 95 days; older usage is rolled up per session, UTC day and
+model, so `days=0` still returns complete totals and distributions without
+per-request rows. The route returns `Cache-Control: no-store`
+and uses normal API authentication. The SDK exposes `orc.usage.report({ days:
+"30" })`.
+
+`GET /api/usage/history?days=30` remains available for clients that need imported
+session lifetime totals grouped by agent and UTC session start date. `days`
+accepts `7`, `30` (default), `90`, or `0`. These are session cohorts, not tokens
+consumed during the period.
 
 `GET /api/usage/quotas` returns local Codex, Claude and Alibaba Cloud quota windows
 with percentage used, reset timestamps, availability and check time. Alibaba Cloud
 appears when the Bailian CLI (`bl`) is installed. Requests share a 60-second
-cache. Neither route returns credentials. Both use normal API authentication.
-See [Usage in Settings](./configuration.md#usage-in-settings) for account support
-and history limits. The SDK exposes `orc.usage.history("30")` and
-`orc.usage.quotas()`.
+cache. None of these routes returns credentials. See
+[Usage in Settings](./configuration.md#usage-in-settings) for indexing, estimate
+and coverage limits. The SDK exposes `orc.usage.history("30")`,
+`orc.usage.report({ days: "30" })` and `orc.usage.quotas()`.
 
 ## Pagination
 
@@ -281,8 +296,8 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher |
-| `PATCH` | `/sessions/live/{id}` | Link a live session to a task |
+| `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones |
+| `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
 | `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
@@ -293,11 +308,13 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `POST` | `/session-handoffs` | Start a session handoff |
 | `GET` `POST` | `/chat/threads` | Chat threads |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
+| `POST` | `/chat/threads/{id}/fork` | Fork a chat at an assistant response |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
 | `GET` | `/terminals/{id}/git/status` | Git status of a terminal checkout |
 | `GET` | `/git/worktrees` | Checkouts of a repo |
+| `GET` | `/git/branches` | Local, remote and default branches of a repo |
 
 Chat streams include `turn` events with `startedAt` (Unix milliseconds), followed
 at completion by `finishedAt`, `durationMs` and `outcome` (`completed`, `stopped`,
@@ -315,6 +332,11 @@ lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the
 server stores the message, then the full thread — and attach to
 `/chat/threads/{id}/live` instead of sending the message again.
 
+A first send may include `workspace` with `host`, `cwd`, `worktree` and `base`.
+When `worktree` is true, the server creates an isolated `orc/<id>` worktree from
+`base` (a local or remote-tracking branch already present in the checkout);
+omitting `base` uses the checkout's current `HEAD`.
+
 First sends reserve `clientMessageId` before agent and workspace preparation.
 Repeating that ID without a thread returns `409` with code `CHAT_MESSAGE_EXISTS`,
 including while preparation is pending. Recover the original thread by message ID;
@@ -322,12 +344,44 @@ retrying the same queued message does not start another turn. The web client bou
 recovery requests and backoff to 15 seconds, or 60 seconds after a server error,
 header timeout or `CHAT_MESSAGE_EXISTS`, then pauses the message in its queue.
 
+`POST /chat/threads/{id}/fork` copies the conversation up to one assistant
+response into a new thread and returns it. It prefers the agent's native session
+fork, which keeps the provider's own conversation, when the response is the latest
+one and the adapter supports it (Claude, Codex, Pi, and ACP agents whose handshake
+advertises `session/fork`). A native fork is deferred until the new chat's first
+message, so no provider process starts for a fork you never use. Otherwise the new
+chat replays a bounded context (100,000 characters) that includes text, summarized
+tool calls, results, status entries and attachment names; the opening request is
+kept when older messages are omitted.
+
+The returned thread records `forkedFrom` (`threadId`, `messageId`, `mode` —
+`native` or `context` — plus `sourceTitle`, `fallbackReason` and `partial` when
+relevant), `forkPending` while a native fork has not started yet, and `forkContext`
+(`messageCount`, `truncated`, `includesActivity`) for a context fork. A context fork
+is rejected with `400` when the source has older native history ORC cannot read, so
+the copy never silently drops the beginning of a long conversation. Forking is
+rejected with `409` while the source or another turn is running.
+
 `POST /terminals` accepts `project_id` to use that project's workspace environment
 and ports, and `dev: true` to run its dev script in a shell terminal. A dev
 terminal rejects an agent `kind` or `providerId`, and fails when the project has no
 dev script. Terminal responses include `project_id`, `worktree_path`, `dev` and
 `preview_url`. For a dev terminal, the first printed `http(s)` URL becomes
 `preview_url` and stays until that terminal exits.
+
+`POST /terminals` with `live_session_id` resumes that session's native CLI
+conversation. Adding `fork: true` starts a new session from the same history
+instead: Claude runs `--resume <id> --fork-session` and Pi runs `--fork <id>`. The
+fork is a separate terminal with no live-session link, so the source row, its task
+link and any resume terminal stay untouched. Backends without a native CLI fork
+answer `400`; fork their conversation in chat instead.
+
+`PATCH /sessions/live/{id}` takes any of `task_id` (null unlinks),
+`display_title` (a trimmed name of 1–200 characters, or null to fall back to the
+agent's title) and `hidden` (true or false). `display_title` and `hidden_at` are
+stored on the session row, so a re-sync that rewrites the agent title or notices
+new activity keeps both. `GET /sessions/live` and `/sessions/live/search` omit
+hidden rows unless asked with `include_hidden=true`.
 
 ### Human requests, rules and scratchpads
 
@@ -368,9 +422,9 @@ All paths below use the `/api` prefix and the normal API authentication.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/notifications` | Current history, shared unread count and `has_more` |
+| `GET` | `/notifications` | Current history, `has_more` and the unread count for the same scope; optional `project_id` (or `unassigned`) scopes both |
 | `PATCH` | `/notifications/{id}` | Shared `{read?: boolean, dismissed?: boolean}` |
-| `POST` | `/notifications/read` | Mark all current notifications read |
+| `POST` | `/notifications/read` | Mark current notifications read; optional `project_id` (or `unassigned`) scopes it |
 
 Listing accepts `limit` (1–100, default50), `offset` (default0) and
 `unread=true|false` (defaultfalse). Each notification includes a generic `type`,
@@ -399,9 +453,19 @@ permissions, native interruption, steering, MCP, fork and rollback. `source` is
 `adapter`, `negotiated` or `unknown`; unsupported and unknown operations are false.
 Chat SSE emits `capabilities` events and persists negotiated values with the thread.
 
+`POST /chat/runs/{id}/cancel` stops the running turn and returns `{ ok: true }`; a run
+that already finished returns `409`. On interrupt-capable backends (Pi, Codex,
+OpenCode/direct ACP) it sends the native interrupt and keeps the session resumable, so
+the next send continues the same conversation; on Claude and ACPX it closes the agent
+process. Pending approvals and questions are cancelled either way.
+
 `POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
-returns the updated conversation after the active native turn accepts it. It
-requires a live steering-capable session; stale and unsupported runs return `409`.
+returns the updated conversation once the message is dispatched into the active
+native turn. Codex and Pi confirm native acceptance before returning; OpenCode
+over direct ACP has no steer acknowledgment, so a later refusal is reported as a
+status message and steering is turned off for that turn. It
+requires a live steering-capable session (Codex, Pi and OpenCode over direct ACP);
+stale and unsupported runs return `409`.
 It keeps the original native thread and turn. Empty input is invalid. These routes
 use the same authentication as the rest of the API. The SDK exposes
 `client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.

@@ -629,8 +629,41 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -881,8 +914,41 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1075,8 +1141,41 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1272,8 +1371,41 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1516,8 +1648,41 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1771,8 +1936,41 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1859,6 +2057,242 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/threads/{id}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Start a new conversation from the context up to one completed assistant response. Uses the agent's native conversation fork when the source is at its latest response and the backend supports it; otherwise replays a bounded, tool-aware transcript. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        messageId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Chat conversation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            title: string;
+                            config: {
+                                providerId?: string;
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. Load a skill's supporting files only when its instructions call for them, with skill_read and ref set to the file path if available, otherwise from the local skill folder. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
+                            cwd: string;
+                            host: string | null;
+                            runtimeId: string | null;
+                            backend: string;
+                            capabilities?: {
+                                /** @enum {number} */
+                                version: 1;
+                                /** @enum {string} */
+                                source: "unknown" | "adapter" | "negotiated";
+                                resume: boolean;
+                                modelSelection: boolean;
+                                images: boolean;
+                                toolOutput: boolean;
+                                approvals: boolean;
+                                questions: boolean;
+                                livePermissions: boolean;
+                                interrupt: boolean;
+                                steering: boolean;
+                                mcp: boolean;
+                                fork: boolean;
+                                rollback: boolean;
+                            };
+                            sourceId: string | null;
+                            toolAllowlist?: string[];
+                            messages: {
+                                id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant";
+                                content: string;
+                                timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                };
+                                agent?: string;
+                                activity?: ({
+                                    /** @enum {string} */
+                                    type: "thinking";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "tool";
+                                    id: string;
+                                    name: string;
+                                    input: string;
+                                    result?: string;
+                                    isError?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "status";
+                                    id: string;
+                                    text: string;
+                                })[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                    description?: string;
+                                }[];
+                            }[];
+                            historyBefore?: number | null;
+                            importedMessages?: number;
+                            projectId?: string;
+                            transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
+                            providerSwitch?: {
+                                from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
+                            };
+                            updatedAt: number;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -2101,8 +2535,41 @@ export interface paths {
                             importedMessages?: number;
                             projectId?: string;
                             transcriptMark?: string;
+                            forkedFrom?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                /** @enum {string} */
+                                mode: "native" | "context";
+                                sourceTitle?: string;
+                                fallbackReason?: string;
+                                partial?: boolean;
+                            };
+                            forkPending?: {
+                                /** Format: uuid */
+                                threadId: string;
+                                messageId: string;
+                                sourceRuntimeId: string;
+                                sourceBackend: string;
+                                sourceHost: string | null;
+                                sourceAgent: string;
+                                sourceCwd: string;
+                            };
+                            forkContext?: {
+                                messageCount: number;
+                                truncated: boolean;
+                                includesActivity: boolean;
+                            };
                             providerSwitch?: {
                                 from: string;
+                            };
+                            spawnedBy?: {
+                                sessionId: string;
+                                requestId?: string;
+                                at: number;
+                                notify: boolean;
+                                prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -2201,6 +2668,7 @@ export interface paths {
                             cwd?: string;
                             /** @default false */
                             worktree?: boolean;
+                            base?: string;
                         };
                         system?: string;
                         autoApprove?: boolean;
@@ -6276,13 +6744,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List nonexpired notifications and the shared unread count */
+        /** List nonexpired notifications and the unread count for the same scope */
         get: {
             parameters: {
                 query?: {
                     limit?: number;
                     offset?: number | null;
                     unread?: "true" | "false";
+                    project_id?: string;
                 };
                 header?: never;
                 path?: never;
@@ -6363,10 +6832,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark all current notifications read across clients */
+        /** Mark current notifications read across clients */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    project_id?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -7276,6 +7747,116 @@ export interface paths {
                                 estimated_sessions: number;
                                 date: string;
                             }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/usage/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-request token usage with model distributions and time buckets */
+        get: {
+            parameters: {
+                query?: {
+                    days?: "0" | "1" | "7" | "30" | "90";
+                    granularity?: "day" | "hour";
+                    agent?: string;
+                    model?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Totals, agent and model distributions, and time buckets for the period */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            days: number;
+                            /** Format: date-time */
+                            since: string | null;
+                            /** @enum {string} */
+                            granularity: "day" | "hour";
+                            filters: {
+                                agent: string | null;
+                                model: string | null;
+                            };
+                            totals: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                            };
+                            agents: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                                agent: string;
+                            }[];
+                            models: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                                agent: string;
+                                model: string | null;
+                            }[];
+                            buckets: {
+                                input_tokens: number;
+                                output_tokens: number;
+                                cache_read_tokens: number;
+                                cache_write_tokens: number;
+                                reasoning_tokens: number;
+                                other_tokens: number;
+                                total_tokens: number;
+                                requests: number;
+                                sessions: number;
+                                estimated_requests: number;
+                                bucket: string;
+                            }[];
+                            coverage: {
+                                indexed_sessions: number;
+                                unindexed_sessions: number;
+                                unindexed_tokens: number;
+                                unknown_sessions: number;
+                                estimated_sessions: number;
+                            };
                         };
                     };
                 };
@@ -17074,6 +17655,8 @@ export interface paths {
                     /** @description Project id, or unassigned for sessions without a project; filtered before limit */
                     project_id?: string;
                     active?: "true" | "false";
+                    /** @description Include sessions a human hid from the list */
+                    include_hidden?: "true" | "false";
                     limit?: number;
                 };
                 header?: never;
@@ -17117,6 +17700,8 @@ export interface paths {
                     q: string;
                     agent?: string;
                     project_id?: string;
+                    /** @description Include sessions a human hid from the list */
+                    include_hidden?: "true" | "false";
                     limit?: number;
                 };
                 header?: never;
@@ -17371,7 +17956,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Link a live session to a task, or unlink it with task_id null */
+        /**
+         * Rename, hide or link a live session
+         * @description Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -17384,7 +17972,9 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        task_id: string | null;
+                        task_id?: string | null;
+                        display_title?: string | null;
+                        hidden?: boolean;
                     };
                 };
             };
@@ -17852,7 +18442,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                                 /** @enum {string|null} */
-                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                                 delivery_error: string | null;
                                 request_id: string | null;
                                 created_at: number;
@@ -17887,6 +18477,8 @@ export interface paths {
                     "application/json": {
                         body: string;
                         request_id?: string;
+                        /** @enum {string} */
+                        mode?: "queue" | "steer" | "interrupt";
                     };
                 };
             };
@@ -17916,7 +18508,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                                 /** @enum {string|null} */
-                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                                 delivery_error: string | null;
                                 request_id: string | null;
                                 created_at: number;
@@ -17928,10 +18520,17 @@ export interface paths {
                                 backend: string;
                                 status: string;
                                 /** @enum {string} */
-                                delivery: "hook" | "resume" | "unsupported";
+                                delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
                             };
                         };
                     };
+                };
+                /** @description Only an ancestor session can steer or interrupt */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
                 /** @description Session not found */
                 404: {
@@ -17979,6 +18578,8 @@ export interface paths {
                         backend?: string;
                         body: string;
                         request_id?: string;
+                        /** @enum {string} */
+                        mode?: "queue" | "steer" | "interrupt";
                     };
                 };
             };
@@ -18008,7 +18609,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                                 /** @enum {string|null} */
-                                delivered_via: "hook" | "chat" | "resume" | null;
+                                delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                                 delivery_error: string | null;
                                 request_id: string | null;
                                 created_at: number;
@@ -18020,10 +18621,17 @@ export interface paths {
                                 backend: string;
                                 status: string;
                                 /** @enum {string} */
-                                delivery: "hook" | "resume" | "unsupported";
+                                delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
                             };
                         };
                     };
+                };
+                /** @description Only an ancestor session can steer or interrupt */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
                 /** @description Session not found */
                 404: {
@@ -18092,7 +18700,7 @@ export interface paths {
                             /** @enum {string} */
                             state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                             /** @enum {string|null} */
-                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                             delivery_error: string | null;
                             request_id: string | null;
                             created_at: number;
@@ -18175,7 +18783,7 @@ export interface paths {
                             /** @enum {string} */
                             state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
                             /** @enum {string|null} */
-                            delivered_via: "hook" | "chat" | "resume" | null;
+                            delivered_via: "hook" | "chat" | "resume" | "steer" | null;
                             delivery_error: string | null;
                             request_id: string | null;
                             created_at: number;
@@ -18193,6 +18801,517 @@ export interface paths {
                 };
                 /** @description Message is no longer queued, or a safety limit was reached */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/spawn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a headless child chat session for the calling session (X-ORC-Session) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        prompt: string;
+                        agent?: string;
+                        model?: string;
+                        project_id?: string;
+                        /**
+                         * @default same
+                         * @enum {string}
+                         */
+                        workspace?: "same" | "worktree" | "project";
+                        title?: string;
+                        /** @default true */
+                        notify?: boolean;
+                        request_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Session status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+                /** @description Missing caller identity or invalid workspace */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Spawn limit reached or all chat workers are busy */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status, last reply, queue and lineage of a chat-run session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sessions started by this session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Child sessions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessions: {
+                                session_id: string;
+                                title: string;
+                                agent: string;
+                                /** @enum {string} */
+                                status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                                /** @enum {string|null} */
+                                waiting_for: "question" | "approval" | null;
+                                last_message: string | null;
+                                queue: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                    position: number;
+                                }[];
+                                parent_session_id: string | null;
+                                children: string[];
+                                project_id: string | null;
+                                cwd: string;
+                                updated_at: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The session that started this one and the sessions it started */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Parent and children */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            parent: {
+                                id: string;
+                                title: string;
+                                /** @enum {string} */
+                                kind: "chat" | "session";
+                                status: string;
+                                task_id: string | null;
+                            } | null;
+                            children: {
+                                id: string;
+                                title: string;
+                                /** @enum {string} */
+                                kind: "chat" | "session";
+                                status: string;
+                                task_id: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Block until a chat-run session stops running, waits for a human, or replies */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @default idle
+                         * @enum {string}
+                         */
+                        until?: "idle" | "message";
+                        /** @default 300 */
+                        timeout_s?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Status when the wait ended */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                            timed_out: boolean;
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Block until all (or any) of several chat-run sessions stop running, wait, or reply */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @default idle
+                         * @enum {string}
+                         */
+                        until?: "idle" | "message";
+                        /** @default 300 */
+                        timeout_s?: number;
+                        session_ids: string[];
+                        /**
+                         * @default all
+                         * @enum {string}
+                         */
+                        mode?: "all" | "any";
+                    };
+                };
+            };
+            responses: {
+                /** @description Statuses when the wait ended */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessions: {
+                                session_id: string;
+                                title: string;
+                                agent: string;
+                                /** @enum {string} */
+                                status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                                /** @enum {string|null} */
+                                waiting_for: "question" | "approval" | null;
+                                last_message: string | null;
+                                queue: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                    position: number;
+                                }[];
+                                parent_session_id: string | null;
+                                children: string[];
+                                project_id: string | null;
+                                cwd: string;
+                                updated_at: number;
+                            }[];
+                            timed_out: boolean;
+                        };
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a chat-run session's current turn, and by default the sessions it started; sessions stay resumable */
+        post: {
+            parameters: {
+                query?: {
+                    cascade?: "true" | "false";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            session_id: string;
+                            title: string;
+                            agent: string;
+                            /** @enum {string} */
+                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            /** @enum {string|null} */
+                            waiting_for: "question" | "approval" | null;
+                            last_message: string | null;
+                            queue: {
+                                id: string;
+                                /** @enum {string} */
+                                state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                                position: number;
+                            }[];
+                            parent_session_id: string | null;
+                            children: string[];
+                            project_id: string | null;
+                            cwd: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+                /** @description Only an ancestor session can stop it */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Session not found */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -18725,6 +19844,8 @@ export interface paths {
                         cwd?: string;
                         name?: string;
                         live_session_id?: string;
+                        /** @description With live_session_id: open a new session from that session's history instead of resuming it. The source session is left untouched. */
+                        fork?: boolean;
                         /** @description Start an agent in a new git worktree of the cwd's repo */
                         worktree?: boolean;
                         /** @description Project whose workspace environment and ports this terminal uses */
@@ -19111,6 +20232,45 @@ export interface paths {
                             root: string | null;
                             worktrees: components["schemas"]["Worktree"][];
                         };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List local, remote and default branches for a repo */
+        get: {
+            parameters: {
+                query: {
+                    cwd: string;
+                    host?: "" | string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Branches; root is null when the folder is not in a git repo */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GitBranches"];
                     };
                 };
             };
@@ -21011,6 +22171,8 @@ export interface components {
             summary: string | null;
             error: string | null;
             gateway_session_id: string | null;
+            cwd: string | null;
+            worktree_branch: string | null;
             /** @description When the visit was recorded. A queued or human-parked node has no started_at, so this is the only clock for how long it has been waiting. */
             created_at: number;
             started_at: number | null;
@@ -21374,6 +22536,10 @@ export interface components {
             status: "idle" | "running" | "stopped" | "error";
             /** @default false */
             waiting_for_human: boolean;
+            /** @default false */
+            hidden: boolean;
+            /** @default false */
+            renamed: boolean;
             project_id: string | null;
             task: {
                 id: string;
@@ -21892,6 +23058,13 @@ export interface components {
             upstream_gone?: boolean;
             stale?: boolean;
             active_terminal?: string | null;
+        };
+        GitBranches: {
+            root: string | null;
+            current: string | null;
+            default_branch: string | null;
+            local: string[];
+            remote: string[];
         };
         PullReview: {
             repo: string;

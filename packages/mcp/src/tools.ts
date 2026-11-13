@@ -43,7 +43,14 @@ import {
 } from "@orc/core/scratchpad";
 import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-archive";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
-import { SessionMessageCreateSchema, SessionMessageResultSchema } from "@orc/core/session-messages";
+import {
+  SessionMessageCreateSchema,
+  SessionMessageResultSchema,
+  SessionSpawnSchema,
+  SessionStatusSchema,
+  SessionWaitManySchema,
+  SessionWaitSchema,
+} from "@orc/core/session-messages";
 import { type SkillDownload, SkillDownloadSchema } from "@orc/core/skill-download";
 import {
   createSkill as createSkillFs,
@@ -75,6 +82,7 @@ import {
   tasks,
 } from "@orc/db/schema";
 import { ScratchpadStore } from "@orc/db/scratchpads";
+import { SessionMessageStore } from "@orc/db/session-messages";
 import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
 import { withTaskAudit } from "@orc/db/task-audit";
 import { executeJob } from "@orc/runner/executor";
@@ -311,8 +319,66 @@ export const toolDefinitions = [
   {
     name: "session_send",
     description:
-      "Send a short note to another live or idle ORC session. Target with the ORC live session id, or the agent's native session id plus backend. Delivery happens at the recipient's next safe point; it cannot approve tools or change configuration. Use the Sessions view or the user's session id for the target. Pass a stable request_id when retrying the same note.",
+      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) delivers at the recipient's next safe point; steer injects it into a session's running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt only work on sessions you started. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
     inputSchema: SessionMessageCreateSchema,
+  },
+  {
+    name: "session_start",
+    description:
+      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC pushes the child's final reply, failure, stop or human question into this session: steered into your live turn when the agent supports it, otherwise at your next safe point. Use session_wait to block instead, session_send to message it, session_stop to stop it.",
+    inputSchema: SessionSpawnSchema.omit({ project_id: true }).extend({ project: projectParam }),
+  },
+  {
+    name: "session_status",
+    description:
+      "Status of a session started with session_start: running, waiting (for a human question or approval), idle, failed or stopped; its last reply, queued messages, parent and children.",
+    inputSchema: z
+      .object({
+        session_id: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("Session id from session_start or session_list"),
+      })
+      .strict(),
+  },
+  {
+    name: "session_wait",
+    description:
+      "Block until a session started with session_start stops running or waits for a human (until=idle), or posts a new reply (until=message). Pass session_ids with mode all or any to wait on several children at once. Returns status and timed_out. Prefer notify on session_start when you have other work to do.",
+    inputSchema: SessionWaitSchema.extend({
+      session_id: z.string().min(1).max(200).optional().describe("One session to wait on"),
+      session_ids: z
+        .array(z.string().min(1).max(200))
+        .min(1)
+        .max(20)
+        .optional()
+        .describe("Several sessions to wait on together"),
+      mode: z
+        .enum(["all", "any"])
+        .default("all")
+        .describe("With session_ids: return when all of them, or the first one, settle"),
+    }),
+  },
+  {
+    name: "session_list",
+    description: "List the sessions this session started, with status and last reply.",
+    inputSchema: z.object({}).strict(),
+  },
+  {
+    name: "session_stop",
+    description:
+      "Stop the current turn of a session you started (or one of its descendants), and by default every session it started in turn. Queued children are cancelled. Sessions stay resumable; send a message to continue.",
+    inputSchema: z
+      .object({
+        session_id: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("Session id from session_start or session_list"),
+        cascade: z.boolean().default(true).describe("Also stop the sessions it started"),
+      })
+      .strict(),
   },
   {
     name: "session_search",
@@ -1273,6 +1339,16 @@ function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): strin
   return resolveProjectId(input.project)?.id ?? null;
 }
 
+function callerOwns(caller: string | null | undefined, claimed: string): boolean {
+  if (!caller || caller === claimed) return true;
+  try {
+    const session = new SessionMessageStore(getSqlite()).resolveSender(caller);
+    return session.session_id === claimed || session.native_id === claimed;
+  } catch {
+    return false;
+  }
+}
+
 export async function executeTool(
   name: ToolName,
   args: unknown,
@@ -1345,7 +1421,7 @@ export async function executeTool(
       (!scope || !options.projectScopes.some((item) => item.id === scope))
     )
       throw new ValidationError("Human request is outside the selected MCP projects");
-    if (options.agentSessionId && options.agentSessionId !== input.origin.session_id)
+    if (!callerOwns(options.agentSessionId, input.origin.session_id))
       throw new ValidationError("Human request must belong to the calling agent session");
     return JSON.stringify(
       await orcApi("POST", "/human-requests", { body: { ...input, project_id: scope } }),
@@ -1362,7 +1438,7 @@ export async function executeTool(
         !options.projectScopes.some((item) => item.id === request.input.project_id)
       )
         throw new ValidationError("Human request is outside the selected MCP projects");
-      if (options.agentSessionId && options.agentSessionId !== request.input.origin.session_id)
+      if (!callerOwns(options.agentSessionId, request.input.origin.session_id))
         throw new ValidationError("Human request belongs to another agent session");
       return request;
     };
@@ -1463,6 +1539,89 @@ export async function executeTool(
           body: input,
           headers: { "X-ORC-Session": options.agentSessionId },
         }),
+      ),
+    );
+  }
+  if (
+    name === "session_start" ||
+    name === "session_status" ||
+    name === "session_wait" ||
+    name === "session_list" ||
+    name === "session_stop"
+  ) {
+    if (!options.agentSessionId)
+      throw new ValidationError(
+        `${name} needs the calling session identity; reconnect MCP with ?session=<session id> or run inside an agent session`,
+      );
+    const headers = { "X-ORC-Session": options.agentSessionId };
+    if (name === "session_start") {
+      const { project, ...input } = SessionSpawnSchema.omit({ project_id: true })
+        .extend({ project: projectParam })
+        .parse(args);
+      return JSON.stringify(
+        SessionStatusSchema.parse(
+          await orcApi("POST", "/sessions/live/spawn", {
+            body: { ...input, ...(project ? { project_id: padProject(project, options) } : {}) },
+            headers,
+          }),
+        ),
+      );
+    }
+    if (name === "session_list")
+      return JSON.stringify(
+        await orcApi(
+          "GET",
+          `/sessions/live/${encodeURIComponent(options.agentSessionId)}/children`,
+          { headers },
+        ),
+      );
+    const scoped = async (id: string) => {
+      const current = SessionStatusSchema.parse(
+        await orcApi("GET", `/sessions/live/${encodeURIComponent(id)}/status`, { headers }),
+      );
+      if (options.projectScopes && !options.projectScopes.some((p) => p.id === current.project_id))
+        throw new ValidationError("Session is outside the selected MCP projects");
+      return current;
+    };
+    if (name === "session_wait") {
+      const input = SessionWaitSchema.extend({
+        session_id: z.string().min(1).max(200).optional(),
+        session_ids: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
+        mode: z.enum(["all", "any"]).default("all"),
+      }).parse(args);
+      const ids = input.session_ids ?? (input.session_id ? [input.session_id] : []);
+      if (!ids.length) throw new ValidationError("Pass session_id or session_ids");
+      for (const id of ids) await scoped(id);
+      const wait = SessionWaitManySchema.parse({
+        session_ids: ids,
+        mode: input.mode,
+        until: input.until,
+        timeout_s: input.timeout_s,
+      });
+      const result = await orcApi<{ sessions: unknown[]; timed_out: boolean }>(
+        "POST",
+        "/sessions/live/wait",
+        { body: wait, headers, timeoutMs: (wait.timeout_s + 30) * 1000 },
+      );
+      return JSON.stringify(
+        input.session_ids
+          ? result
+          : { ...(result.sessions[0] as object), timed_out: result.timed_out },
+      );
+    }
+    const { session_id, cascade } = z
+      .object({ session_id: z.string().min(1).max(200), cascade: z.boolean().default(true) })
+      .passthrough()
+      .parse(args);
+    const current = await scoped(session_id);
+    if (name === "session_status") return JSON.stringify(current);
+    return JSON.stringify(
+      SessionStatusSchema.parse(
+        await orcApi(
+          "POST",
+          `/sessions/live/${encodeURIComponent(session_id)}/stop?cascade=${cascade}`,
+          { headers },
+        ),
       ),
     );
   }
@@ -1966,6 +2125,7 @@ export async function executeTool(
             agent_backend: agent_backend as string | undefined,
             agent_model,
             max_review_rounds: max_review_rounds ?? 3,
+            origin_session_id: options.agentSessionId ?? null,
             created_at: now,
             updated_at: now,
           })
@@ -2574,6 +2734,7 @@ export async function executeTool(
                 project_id: resolved?.id,
                 priority: (item.priority ?? "normal") as "low" | "normal" | "high" | "critical",
                 author: author ?? "agent",
+                origin_session_id: options.agentSessionId ?? null,
                 status: "todo",
                 tags: item.tags,
                 skill_name: item.skill_name,

@@ -68,9 +68,43 @@ test("should validate messages, host and Git repository before allocating a chat
       })
     ).status,
   ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", "/chat/stream", {
+        messages: [{ role: "user", content: "Hi" }],
+        workspace: { ...workspace, base: "missing-branch" },
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", "/chat/stream", {
+        messages: [{ role: "user", content: "Hi" }],
+        workspace: { ...workspace, worktree: false, base: "main" },
+      })
+    ).status,
+  ).toBe(400);
+  const current = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"])
+    .stdout.toString()
+    .trim();
+  git(["switch", "-c", "issue/#42"]);
+  git([
+    "-c",
+    "user.email=test@example.invalid",
+    "-c",
+    "user.name=Test",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "Issue base",
+  ]);
+  const releaseHead = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "HEAD"])
+    .stdout.toString()
+    .trim();
+  git(["switch", current]);
   const response = await req(app, "POST", "/chat/stream", {
     messages: [{ role: "user", content: "Hi" }],
-    workspace,
+    workspace: { ...workspace, base: "issue/#42" },
   });
   expect(response.status).toBe(200);
   const events = (await response.text())
@@ -80,6 +114,9 @@ test("should validate messages, host and Git repository before allocating a chat
   const thread = events.find((event) => event.type === "thread").thread as ChatThread;
   expect(thread.cwd.startsWith(join(cwd, ".orc", "worktrees"))).toBe(true);
   expect(thread.host).toBeNull();
+  expect(
+    Bun.spawnSync(["git", "-C", thread.cwd, "rev-parse", "HEAD"]).stdout.toString().trim(),
+  ).toBe(releaseHead);
   const loaded = await (await req(app, "GET", `/chat/threads/${thread.id}`)).json<ChatThread>();
   expect(loaded.cwd).toBe(thread.cwd);
   expect(

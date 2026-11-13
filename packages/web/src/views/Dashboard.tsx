@@ -32,7 +32,7 @@ interface DashboardProps {
 }
 
 function displayedCount(query: { isLoading: boolean; error: unknown }, value: number) {
-  return query.isLoading ? "…" : query.error ? "—" : value;
+  return query.isLoading ? "…" : query.error ? "-" : value;
 }
 
 export default function Dashboard({ projectId: savedProjectId }: DashboardProps) {

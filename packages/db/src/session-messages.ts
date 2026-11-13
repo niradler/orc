@@ -13,6 +13,7 @@ import {
   sessionMessageHookSupported,
 } from "@orc/core/session-messages";
 import { AuditLog, installAudit } from "./audit.js";
+import { installChat } from "./chat.js";
 
 type MessageRow = {
   id: string;
@@ -45,6 +46,7 @@ type GatewayRow = {
   runtime_session_id: string | null;
   status: string;
   title: string | null;
+  chat?: boolean;
 };
 
 export type ClaimOptions = {
@@ -66,6 +68,7 @@ export class SessionMessageStore {
     private readonly now: () => number = Date.now,
   ) {
     installAudit(db);
+    installChat(db);
     db.exec(`CREATE TABLE IF NOT EXISTS session_messages (
       id TEXT PRIMARY KEY,
       project_id TEXT,
@@ -122,6 +125,15 @@ export class SessionMessageStore {
   }
 
   private resolveSession(identifier: string, backend?: string): GatewayRow | null {
+    const chat = this.db
+      .query<GatewayRow, [string]>(
+        `SELECT id, json_extract(data,'$.projectId') AS project_id,
+                json_extract(data,'$.backend') AS backend,
+                json_extract(data,'$.runtimeId') AS runtime_session_id, 'chat' AS status, title
+         FROM chat_threads WHERE id = ?`,
+      )
+      .get(identifier);
+    if (chat) return { ...chat, chat: true };
     const rows = this.db
       .query<GatewayRow, [string]>(
         `SELECT id, project_id, backend, runtime_session_id, status, title
@@ -170,7 +182,7 @@ export class SessionMessageStore {
 
   private checkRate(sender: SessionMessageSender, targetSessionId: string): void {
     // Human and channel relays are not part of an agent-to-agent conversation.
-    if (sender.kind !== "session") return;
+    if (sender.kind !== "session" && !(sender.kind === "system" && sender.session_id)) return;
     const key = this.senderKey(sender);
     const count = this.db
       .query<{ count: number }, [string, string, number]>(
@@ -233,11 +245,15 @@ export class SessionMessageStore {
             "Session",
             `${input.session_id}. Start it, let ORC discover it, then retry`,
           );
-        if (!target.runtime_session_id)
+        if (!target.chat && !target.runtime_session_id)
           throw new ConflictError(
             "That session has no agent session id yet; retry after it registers",
           );
-        if (target.status !== "stopped" && !sessionMessageHookSupported(target.backend))
+        if (
+          !target.chat &&
+          target.status !== "stopped" &&
+          !sessionMessageHookSupported(target.backend)
+        )
           throw new ConflictError(
             `${sessionMessageBackend(target.backend)} sessions cannot receive messages while running; send after the session ends`,
           );
@@ -322,6 +338,24 @@ export class SessionMessageStore {
         return message;
       })
       .immediate();
+  }
+
+  take(id: string): boolean {
+    return (
+      this.db
+        .query(
+          "UPDATE session_messages SET state = 'delivering', updated_at = ? WHERE id = ? AND state = 'queued'",
+        )
+        .run(this.now(), id).changes > 0
+    );
+  }
+
+  release(id: string): void {
+    this.db
+      .query(
+        "UPDATE session_messages SET state = 'queued', updated_at = ? WHERE id = ? AND state = 'delivering'",
+      )
+      .run(this.now(), id);
   }
 
   get(id: string): SessionMessage {

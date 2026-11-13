@@ -94,7 +94,7 @@ function hint(
   if (!selected) {
     // Any other name is passed to acpx as its agent identifier - that is how
     // gemini, codex and friends are reached, so it is not an error.
-    return `"${value}" is not a registered backend — it will be passed to acpx as an agent name.`;
+    return `"${value}" is not a registered backend; it will be passed to acpx as an agent name.`;
   }
   if (!selected.available) return selected.error ?? `Needs ${selected.requires}`;
   return selected.requires || "Ready.";

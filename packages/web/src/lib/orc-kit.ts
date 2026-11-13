@@ -4,7 +4,7 @@
 // with `orc-*` classes and no custom <style>; the kit follows the dashboard's current theme and
 // each pad pins the kit version it was written for, so old pads do not shift when the kit
 // changes. The token blocks must stay byte-identical with the dashboard's `:root` /
-// `:root.dark` rules in `packages/web/src/index.css` — `tests/unit/orc-kit.test.ts` enforces it.
+// `:root.dark` rules in `packages/web/src/index.css`; `tests/unit/orc-kit.test.ts` enforces it.
 // Copy the blocks from index.css when a token changes and bump ORC_KIT_VERSION (keeping the
 // previous CSS bundled as a retired version entry).
 

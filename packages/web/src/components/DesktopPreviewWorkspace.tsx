@@ -215,9 +215,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const preferences = usePreviewPreferences();
   const [params] = useSearchParams();
   const { pathname } = useLocation();
-  const chatShown = pathname === "/chat" || ["open", "full"].includes(params.get("chat") ?? "");
+  // The browser/files/changes panel belongs to the full-screen chat page; the side chat stays
+  // a plain conversation. `chat=full` is a legacy link to the chat page that is being replaced.
+  const chatPage = pathname === "/chat" || params.get("chat") === "full";
   const rawSession =
-    params.get(SESSION_LIVE_PARAM) ?? (chatShown ? (chat.thread?.id ?? null) : null);
+    params.get(SESSION_LIVE_PARAM) ?? (chatPage ? (chat.thread?.id ?? null) : null);
   const key = chat.activeKey;
   const [resolved, setResolved] = useState<{
     input: string;
@@ -307,6 +309,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       !chatPermission.saving &&
       preferences.settings?.agentBrowserControl === true,
   };
+  const panelVisible = chatPage && model.visible;
   const current = useRef({ key, session, nativeId, model });
   current.current = { key, session, nativeId, model };
   const modelsRef = useRef(models);
@@ -633,7 +636,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       },
       openLink,
       openFile,
-      visible: model.visible,
+      visible: panelVisible,
       toggle: () => edit(current.current.key, (old) => ({ ...old, visible: !old.visible })),
     }),
     [
@@ -641,7 +644,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       openFile,
       edit,
       preferences.settings,
-      model.visible,
+      panelVisible,
       chatPermission,
       nativeId,
       saveChatPermission,
@@ -668,7 +671,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     };
   }, [bridge, nativeId, model.agentAccess, edit, key]);
 
-  const browserVisible = model.visible && model.active === "browser" && !model.browser?.dialog;
+  const browserVisible = panelVisible && model.active === "browser" && !model.browser?.dialog;
   useLayoutEffect(() => {
     if (!bridge) return;
     if (!browserVisible) {
@@ -923,10 +926,10 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       ["127.0.0.1", "localhost", "[::1]"].includes(new URL(getApiUrl(), location.href).hostname));
 
   return (
-    <DesktopPreviewContext.Provider value={context}>
+    <DesktopPreviewContext.Provider value={chatPage ? context : null}>
       <div className="flex min-w-0 h-dvh w-full overflow-hidden">
-        <div className={model.visible && narrow ? "hidden" : "flex-1 min-w-0"}>{children}</div>
-        {model.visible && (
+        <div className={panelVisible && narrow ? "hidden" : "flex-1 min-w-0"}>{children}</div>
+        {panelVisible && (
           <aside
             ref={panel}
             data-testid="desktop-preview-panel"

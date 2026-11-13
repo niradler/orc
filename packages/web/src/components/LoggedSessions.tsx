@@ -88,8 +88,8 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
                     {session.summary ?? "No summary recorded"}
                   </p>
                   <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-outline">
-                    <span>Version {session.agent_version ?? "—"}</span>
-                    <span>{session.tokens_used?.toLocaleString() ?? "—"} tokens</span>
+                    <span>Version {session.agent_version ?? "-"}</span>
+                    <span>{session.tokens_used?.toLocaleString() ?? "-"} tokens</span>
                     <span>
                       {session.project_id
                         ? `Project ${session.project_id.slice(-6)}`
@@ -134,16 +134,16 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
                       </button>
                     </TableCell>
                     <TableCell className="font-label text-xs text-outline">
-                      {s.agent_version ?? "—"}
+                      {s.agent_version ?? "-"}
                     </TableCell>
                     <TableCell className="font-body text-xs text-on-surface-variant max-w-sm truncate">
-                      {s.summary ?? "—"}
+                      {s.summary ?? "-"}
                     </TableCell>
                     <TableCell className="font-label text-xs text-outline">
-                      {s.project_id ? s.project_id.slice(-6) : "—"}
+                      {s.project_id ? s.project_id.slice(-6) : "-"}
                     </TableCell>
                     <TableCell className="font-label text-xs text-outline text-right">
-                      {s.tokens_used != null ? s.tokens_used.toLocaleString() : "—"}
+                      {s.tokens_used != null ? s.tokens_used.toLocaleString() : "-"}
                     </TableCell>
                     <TableCell className="font-label text-xs text-outline">
                       {new Date(s.created_at).toLocaleString()}

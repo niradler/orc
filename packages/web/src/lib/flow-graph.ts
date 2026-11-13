@@ -633,7 +633,7 @@ export function awaitingHumanRun(run: FlowRun): FlowNodeRun | null {
 }
 
 export function formatDuration(startedAt: number | null, endedAt: number | null): string {
-  if (startedAt === null) return "—";
+  if (startedAt === null) return "-";
   const end = endedAt ?? Math.floor(Date.now() / 1000);
   const secs = Math.max(0, end - startedAt);
   if (secs < 60) return `${secs}s`;
@@ -644,6 +644,6 @@ export function formatDuration(startedAt: number | null, endedAt: number | null)
 }
 
 export function formatUnixTime(secs: number | null): string {
-  if (secs === null) return "—";
+  if (secs === null) return "-";
   return new Date(secs * 1000).toLocaleString();
 }

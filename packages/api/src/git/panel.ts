@@ -2,7 +2,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostExec } from "@orc/core/exec-host";
-import { gitError, gitRunner, repoRoot } from "../terminals/session-dir.js";
+import { gitError, gitRunner, repoRoot } from "@orc/core/session-dir";
 
 export interface GitFile {
   path: string;
@@ -64,6 +64,77 @@ export async function gitStatus(
     files: parseStatus(status.stdout),
     branches: branches.stdout.trim().split(/\r?\n/).filter(Boolean),
   };
+}
+
+export interface GitBranchListing {
+  root: string | null;
+  current: string | null;
+  default_branch: string | null;
+  local: string[];
+  remote: string[];
+}
+
+export async function gitBranches(host: ExecHost, cwd: string): Promise<GitBranchListing> {
+  const runGit = gitRunner(host);
+  const root = await repoRoot(cwd, runGit);
+  if (!root) return { root: null, current: null, default_branch: null, local: [], remote: [] };
+  const [current, local, remote] = await Promise.all([
+    runGit(["git", "-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"]),
+    runGit(["git", "-C", root, "for-each-ref", "--format=%(refname)", "refs/heads/"]),
+    runGit(["git", "-C", root, "for-each-ref", "--format=%(refname)%09%(symref)", "refs/remotes/"]),
+  ]);
+  if (local.code !== 0) throw gitError(local, "Cannot read branches");
+  if (remote.code !== 0) throw gitError(remote, "Cannot read remote branches");
+  const refs = (output: string) =>
+    output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  const localRefs = refs(local.stdout).map((ref) => ref.replace(/^refs\/heads\//, ""));
+  const remoteRefs = refs(remote.stdout).map((line) => {
+    const [ref = "", symref = ""] = line.split("\t");
+    return { ref: ref.replace(/^refs\/remotes\//, ""), symref: symref.trim() };
+  });
+  const remoteHeads = remoteRefs.filter((entry) => entry.symref).map((entry) => entry.ref);
+  const branches = remoteRefs.filter((entry) => !entry.symref).map((entry) => entry.ref);
+  return {
+    root,
+    current: current.code === 0 ? current.stdout.trim() || null : null,
+    default_branch: await defaultBranch(root, runGit, localRefs, remoteHeads, branches),
+    local: localRefs,
+    remote: branches,
+  };
+}
+
+async function defaultBranch(
+  root: string,
+  runGit: ReturnType<typeof gitRunner>,
+  local: string[],
+  remoteHeads: string[],
+  remote: string[],
+): Promise<string | null> {
+  const available = new Set([...local, ...remote]);
+  for (const ref of remoteHeads) {
+    const target = await runGit([
+      "git",
+      "-C",
+      root,
+      "symbolic-ref",
+      "--quiet",
+      "--short",
+      `refs/remotes/${ref}`,
+    ]);
+    const name = target.stdout.trim();
+    if (target.code === 0 && name && available.has(name)) return name;
+  }
+  const prefixes = ["origin", ...remoteHeads.map((ref) => ref.split("/")[0] ?? "origin")];
+  for (const prefix of new Set(prefixes))
+    for (const suffix of ["main", "master"]) {
+      const ref = `${prefix}/${suffix}`;
+      if (available.has(ref)) return ref;
+    }
+  for (const ref of ["main", "master"]) if (available.has(ref)) return ref;
+  return null;
 }
 
 export async function gitDiff(

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { LiveSession } from "../../src/api/client";
 import {
+  forkCommand,
   resumeCommand,
   resumeUnavailableReason,
   scopedSessionPath,
@@ -38,6 +39,17 @@ describe("agent session actions", () => {
   });
   test("should not pretend a Cursor IDE chat can resume through the separate CLI store", () => {
     expect(resumeCommand({ ...session, agent: "cursor" })).toBeNull();
+  });
+  test("should offer a native fork only where the CLI supports one", () => {
+    expect(forkCommand(session)).toBe("claude --resume session-id --fork-session");
+    expect(forkCommand({ ...session, agent: "pi" })).toBe("pi --fork session-id");
+    expect(forkCommand({ ...session, agent: "codex" })).toBeNull();
+    expect(forkCommand({ ...session, agent: "cursor" })).toBeNull();
+    expect(forkCommand({ ...session, session_id: null })).toBeNull();
+    expect(forkCommand({ ...session, session_id: "id; echo unsafe" })).toBeNull();
+    expect(forkCommand({ ...session, cwd: "/tmp/Nir's workspace" })).toBe(
+      "cd '/tmp/Nir'\\''s workspace' && claude --resume session-id --fork-session",
+    );
   });
   test("should reject command injection in native IDs and quote directory names", () => {
     expect(resumeCommand({ ...session, session_id: "id; echo unsafe" })).toBeNull();

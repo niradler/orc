@@ -57,6 +57,8 @@ export class CodexAppSession implements AgentSession {
   private interrupting = false;
   private shutdown: Promise<void> | undefined;
   private runtimeId: string | undefined;
+  /** Consumed by the first thread creation: `thread/fork` instead of start/resume. */
+  private forkSourceRuntimeId: string | undefined;
   private sequence = 0;
   private completedTurn = false;
   private compacting = false;
@@ -79,6 +81,7 @@ export class CodexAppSession implements AgentSession {
     private readonly spawnProcess: typeof hostSpawn = hostSpawn,
   ) {
     this.runtimeId = opts.runtimeSessionId;
+    this.forkSourceRuntimeId = opts.forkSourceRuntimeId;
   }
 
   private write(message: unknown): void {
@@ -614,30 +617,39 @@ export class CodexAppSession implements AgentSession {
         capabilities: { experimentalApi: true },
       });
       this.write({ method: "initialized" });
-      const result = await this.call(this.runtimeId ? "thread/resume" : "thread/start", {
-        ...(this.runtimeId ? { threadId: this.runtimeId, excludeTurns: true } : {}),
-        cwd: this.opts.cwd,
-        model: this.opts.model,
-        approvalPolicy: mode === "default" ? "on-request" : "never",
-        approvalsReviewer: "user",
-        sandbox:
-          mode === "bypassPermissions"
-            ? "danger-full-access"
-            : mode === "acceptEdits"
-              ? "workspace-write"
-              : "read-only",
-        ...(this.opts.systemPromptAppend
-          ? { developerInstructions: this.opts.systemPromptAppend }
-          : {}),
-      });
+      const forkFrom = this.forkSourceRuntimeId;
+      const result = await this.call(
+        this.runtimeId ? "thread/resume" : forkFrom ? "thread/fork" : "thread/start",
+        {
+          ...(this.runtimeId
+            ? { threadId: this.runtimeId, excludeTurns: true }
+            : forkFrom
+              ? { threadId: forkFrom, excludeTurns: true }
+              : {}),
+          cwd: this.opts.cwd,
+          model: this.opts.model,
+          approvalPolicy: mode === "default" ? "on-request" : "never",
+          approvalsReviewer: "user",
+          sandbox:
+            mode === "bypassPermissions"
+              ? "danger-full-access"
+              : mode === "acceptEdits"
+                ? "workspace-write"
+                : "read-only",
+          ...(this.opts.systemPromptAppend
+            ? { developerInstructions: this.opts.systemPromptAppend }
+            : {}),
+        },
+      );
       const id = object(result.thread).id;
       if (
         typeof id !== "string" ||
         !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(id) ||
         (this.runtimeId && id !== this.runtimeId)
       )
-        throw new Error("Codex did not resume the requested conversation.");
+        throw new Error("Codex did not return the requested conversation identity.");
       this.runtimeId = id;
+      this.forkSourceRuntimeId = undefined;
     }
     this.activeTurnId = undefined;
     this.startedTurns.clear();
@@ -864,7 +876,8 @@ export class CodexAppSession implements AgentSession {
   }
 
   private async closeConnection(): Promise<void> {
-    if (!this.transportFailed) await this.interrupt().catch(() => {});
+    // An explicit Stop already interrupted the turn; do not interrupt a second time.
+    if (!this.transportFailed && !this.interrupting) await this.interrupt().catch(() => {});
     this.closed = true;
     for (const ready of this.readyWaiters) ready();
     this.readerAbort.abort();

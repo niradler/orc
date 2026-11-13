@@ -70,12 +70,14 @@ export function branchName(worktree: ComposerWorktree | undefined): string | nul
 
 export function branchChipLabel({
   branch,
+  base,
   worktree,
 }: {
   branch: string | null;
+  base?: string | null;
   worktree: boolean;
 }): string {
-  if (worktree) return branch ? `New worktree from ${branch}` : "New worktree";
+  if (worktree) return base || branch ? `New worktree from ${base || branch}` : "New worktree";
   return branch ?? "Branch";
 }
 

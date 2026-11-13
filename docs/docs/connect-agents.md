@@ -243,9 +243,24 @@ adapter, not proof that every installed agent version supports every native feat
 Codex chat uses `codex app-server` over stdio. It supports native resume, approvals,
 questions, live permission changes, steering and interruption. While Codex is
 responding, **Send now** sends a text message into that active turn; ordinary **Send**
-queues it for later. Stop requests native interruption before closing the process.
-Fork and conversation rollback are not exposed. Non-interactive `codex-cli` callers
+queues it for later. Stop interrupts the active turn and keeps the native session, so
+the next message continues the same conversation. Fork and conversation rollback are
+not exposed. Non-interactive `codex-cli` callers
 continue to use execution mode, without chat's interactive controls.
+
+Claude chat uses the Claude Agent SDK in streaming-input mode. It supports native
+resume, approvals, questions, live permission changes, steering and interruption.
+While Claude is responding, **Send now** delivers a text message into the active
+query; Claude picks it up within the same response. On current Claude versions the
+response completes once the steered message has been answered; if it is never
+answered, the response ends after a quiet period with a note. Delivery is confirmed
+when the SDK has written the message to the agent; ordinary **Send** queues it for
+the next turn. Stop sends
+the SDK's native interrupt, releases pending approvals and questions, and keeps the
+native session, so the next message resumes the same conversation. On current Claude
+versions, a steering message delivered but not yet answered when Stop lands is
+cancelled and does not run. Steering and interrupt require the SDK path; when Claude
+falls back to ACPX, the conservative ACPX capabilities apply.
 
 ACPX remains the compatibility path for other coding agents. It streams text,
 reasoning and tool results and keeps named sessions. Its CLI permissions are chosen
@@ -261,13 +276,24 @@ guidance when you try to run it. Copilot remains supported; enable it in Setting
 OpenCode speaks ACP directly: ORC launches `opencode acp`
 on the execution host (an installation with ACP support) and negotiates capabilities per
 session, including native resume, model selection, image input, HTTP MCP,
-per-request approvals, questions and interruption. A missing install reports
+per-request approvals, questions, interruption and mid-turn steering. A missing install reports
 installation guidance instead of falling back to ACPX. The OpenCode provider
 profile's **Executable path** selects a specific installation, model choices load
 from `opencode models`, and an `agent_loop.acp_commands.opencode` entry overrides
-the built-in command entirely. If OpenCode moves a saved session into a worktree it
+the built-in command entirely. That override runs through the generic ACP
+backend, which keeps steering disabled. If OpenCode moves a saved session into a worktree it
 created, ORC follows it on resume, continues in that folder and updates the
 conversation's working folder.
+
+While OpenCode is responding, **Send now** sends a second `session/prompt` into
+the running turn. OpenCode's ACP server treats that prompt as steering, so the
+text reaches the model before its next step instead of waiting for the turn to
+end. This was verified against OpenCode 1.19.5 over `opencode acp`, including
+steering during a running tool call. The ACP handshake has no steering field, so
+ORC declares it for the OpenCode backend and keeps it on the negotiated session;
+if an OpenCode build rejects a mid-turn prompt, ORC turns the flag off for that
+session and reports that the message should be queued instead. Other direct ACP
+agents, and ACPX, keep steering disabled rather than assuming concurrency.
 
 Direct ACP advertises form elicitation and turns form questions into the same
 chat question card used by Codex and Claude, including single-choice,
@@ -314,11 +340,16 @@ advertised. Model selection uses an advertised model config option; unsupported
 explicit model choices fail instead of being ignored. Image input is negotiated
 for runtime callers. ORC's chat uploads retain their existing file-reference flow.
 
-**Allow for session** never writes the agent's persistent `allow_always` policy:
-ORC selects `allow_once`, or cancels when no safe matching option exists. Direct
-ACP does not advertise ORC filesystem, terminal, browser-login or native-rule-hook
-handlers. The agent runs its own tools under its own sandbox. ACP approval prompts
-are not a sandbox, and ORC's live permission-mode selector is unavailable for ACP.
+**Allow for session** selects the agent's `allow_always` option when it offers
+one, which delegates to that agent's own always-allow policy; when an agent
+offers only `allow_once`, ORC falls back to that one-shot grant.
+**Approve** stays one-shot: ORC never escalates an ordinary approval to a
+persistent agent policy. Direct ACP does not advertise ORC filesystem, terminal,
+browser-login or native-rule-hook handlers. The agent runs its own tools under
+its own sandbox. ACP approval prompts are not a sandbox, and ORC's live
+permission-mode selector is unavailable for ACP: the protocol has no approval-mode
+handshake, and OpenCode's `session/set_mode` selects its build/plan agent rather
+than ORC's `default`/`acceptEdits`/`bypassPermissions` modes.
 
 If the agent does not advertise HTTP MCP, select **Native configuration** for its
 MCP connection before starting chat. Existing agent login and native MCP settings
@@ -326,8 +357,13 @@ remain agent-owned. ACPX-specific launch flags do not apply to direct ACP. Faile
 resume preserves the original identity instead of silently starting fresh.
 
 
-Stopping a native Codex or direct ACP turn revokes pending interactive requests and
-rejects new approval callbacks while cancellation completes, including when automatic
+Stop ends the current turn. On backends with a native interrupt — Claude, Pi, Codex
+and OpenCode/direct ACP — Stop sends that interrupt and keeps the session, so the next
+send resumes the same native conversation instead of starting a new one. ACPX has no
+native interrupt, so Stop closes the agent process as before.
+
+Stopping a native Claude, Codex or direct ACP turn revokes pending interactive requests
+and rejects new approval callbacks while cancellation completes, including when automatic
 approvals were enabled. ACP requests while idle are also cancelled. Steering saves
 its intent before native delivery and reuses a request ID on retry; a delivery warning
 means to inspect the current response before sending another message.
@@ -339,3 +375,10 @@ Pi 1.5.2 or newer must be installed and authenticated on the execution host.
 This path uses Pi's own RPC protocol and an ORC session extension for permissions
 and scoped MCP; it does not require ACPX or `pi-acp`.
 See [Pi configuration and capabilities](./configuration.md#pi).
+
+Pi persists a native session only once its transcript holds a message. A turn made
+entirely of slash/extension commands (which send no model message) creates no
+resumable native session, so ORC starts the next message in a fresh Pi session. The
+ORC conversation continues normally — such commands leave no native transcript, so
+there is no history to lose. This also holds when such a turn is stopped: ORC does not
+pin a session id that cannot be resumed, so the next send works instead of failing.

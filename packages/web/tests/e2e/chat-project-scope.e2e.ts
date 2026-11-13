@@ -186,3 +186,98 @@ test("session history scopes assigned sources and local drafts without inventing
     for (const scope of ["p1", "p2", "unassigned", null])
       expect(observed).toContainEqual({ kind, scope });
 });
+
+test("opening a session from All projects adopts its project", async ({ page }) => {
+  const now = Date.now();
+  const threadId = "90000000-0000-4000-8000-000000000011";
+  await page.addInitScript((secret) => {
+    localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+    localStorage.setItem("orc_selected_project", "all");
+  }, API_SECRET);
+  await page.route(/\/api\/projects(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      json: {
+        projects: [
+          { id: "p1", name: "Project one", status: "active" },
+          { id: "p2", name: "Project two", status: "active" },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
+  await page.route("**/api/chat/threads", (route) =>
+    route.fulfill({
+      json: {
+        threads: [
+          {
+            id: threadId,
+            title: "Owned by project one",
+            agent: "codex",
+            runtimeId: "native-adopt",
+            sourceId: "source-adopt",
+            host: null,
+            running: false,
+            updatedAt: now,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route(`**/api/chat/threads/${threadId}`, (route) =>
+    route.fulfill({
+      json: {
+        id: threadId,
+        title: "Owned by project one",
+        config: ChatSettingsSchema.parse({ agent: "codex" }),
+        cwd: "/fixture",
+        host: null,
+        runtimeId: "native-adopt",
+        sourceId: "source-adopt",
+        backend: "codex-cli",
+        updatedAt: now,
+        messages: [],
+      } satisfies ChatThread,
+    }),
+  );
+  await page.route("**/api/chat/threads/*/live", (route) =>
+    route.fulfill({ status: 204, body: "" }),
+  );
+  for (const kind of ["live", "archive"] as const)
+    await page.route(`**/api/sessions/${kind}?**`, (route) =>
+      route.fulfill({
+        json: {
+          sessions:
+            kind === "live"
+              ? [
+                  {
+                    id: "source-adopt",
+                    session_id: "native-adopt",
+                    agent: "codex",
+                    name: "Owned by project one",
+                    project_id: "p1",
+                    host: null,
+                    cwd: "/fixture",
+                    status: "stopped",
+                    last_activity_at: new Date(now).toISOString(),
+                    created_at: new Date(now).toISOString(),
+                  },
+                ]
+              : [],
+          has_more: false,
+        },
+      }),
+    );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tasks?chat=open&project=all");
+  await openChatHistory(page);
+  const row = page.getByTestId("chat-session-list").locator(`[data-history-id="chat:${threadId}"]`);
+  await expect(row).toBeVisible();
+  await row.getByTestId("chat-resume-thread").click();
+  await waitHistoryClosed(page);
+  await expect(page.getByTestId("sidebar-project-select").filter({ visible: true })).toContainText(
+    "Project one",
+  );
+  await expect(page).toHaveURL(/project=p1/);
+});

@@ -43,6 +43,8 @@
   --color-series-2: light-dark(#eb6834, #d95926);
   --color-series-3: light-dark(#1baf7a, #199e70);
   --color-series-4: light-dark(#eda100, #c98500);
+  --color-series-5: light-dark(#7c5cd6, #9b7ce8);
+  --color-series-6: light-dark(#6b7280, #9ca3af);
   --color-on-surface: rgb(var(--foreground));
   --color-on-surface-variant: rgb(var(--muted-foreground));
   --color-outline-variant: rgb(var(--border));

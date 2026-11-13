@@ -80,8 +80,8 @@ export function McpSettingsForm() {
                 })
               }
             >
-              <option value="meta">Meta — discover tools on demand</option>
-              <option value="full">Full — list every tool</option>
+              <option value="meta">Meta: discover tools on demand</option>
+              <option value="full">Full: list every tool</option>
             </select>
             <p className="text-xs text-muted-foreground">
               An explicit connection mode overrides this default. Restart existing stdio clients to

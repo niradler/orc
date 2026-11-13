@@ -132,6 +132,7 @@ export async function runJobAction(
     session = await openAgentSession(action.backend, {
       cwd,
       env: { ...projectWorkspace.env, ...env },
+      orcPreviewSessionId: sessionId,
       redactOutput: redact,
       executionHost: hostAlias(host),
       chatAgentOptions: action.options,

@@ -16,7 +16,7 @@ import {
   type GitResult,
   prepareSessionDirectory,
   REMOTE_EXCLUDE_SCRIPT,
-} from "../terminals/session-dir.js";
+} from "@orc/core/session-dir";
 
 function deps(over: Partial<Parameters<typeof prepareSessionDirectory>[1]> = {}) {
   return {
@@ -97,9 +97,39 @@ describe("prepareSessionDirectory", () => {
       "/work/app",
       "worktree",
       "add",
+      "--no-track",
       "-b",
       "orc/abc123",
       cwd,
+    ]);
+  });
+
+  test("a requested base is resolved to a full local or remote ref", async () => {
+    const calls: string[][] = [];
+    const cwd = await prepareSessionDirectory(
+      { cwd: "/work/app", worktree: true, base: "issue/#42" },
+      deps({
+        runGit: async (args) => {
+          calls.push(args);
+          if (args.includes("rev-parse")) {
+            return { code: 0, stdout: "/work/app\n", stderr: "" };
+          }
+          if (args.includes("refs/heads/issue/#42")) return { code: 0, stdout: "", stderr: "" };
+          return { code: 1, stdout: "", stderr: "" };
+        },
+      }),
+    );
+    expect(calls.at(-1)).toEqual([
+      "git",
+      "-C",
+      "/work/app",
+      "worktree",
+      "add",
+      "--no-track",
+      "-b",
+      "orc/abc123",
+      cwd,
+      "refs/heads/issue/#42",
     ]);
   });
 
@@ -152,7 +182,7 @@ describe("prepareSessionDirectory with git", () => {
     await git(["add", "README.md"], repo);
     await git(["commit", "-m", "init"], repo);
 
-    const { runGit } = await import("../terminals/session-dir.js");
+    const { runGit } = await import("@orc/core/session-dir");
     const plainCwd = await prepareSessionDirectory(
       { cwd: plain, worktree: true },
       {

@@ -36,6 +36,7 @@ const answerFile=${JSON.stringify(`${argvFile}.answers`)};
 writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
 let forms=0;
 const prompts=new Map();
+const held=new Map();
 const schemas={
   single:{type:'object',required:['target'],properties:{target:{type:'string',title:'Target',description:'Where should this run?',oneOf:[{const:'local-value',title:'This machine',description:'Run locally'},{const:'remote-value',title:'Remote host',description:'Run over SSH'}]}}},
   multi:{type:'object',required:['colors'],properties:{colors:{type:'array',title:'Colors',items:{anyOf:[{const:'red-value',title:'Red'},{const:'blue-value',title:'Blue'}]},minItems:1,maxItems:2}}},
@@ -53,9 +54,19 @@ for await (const line of createInterface({input:process.stdin})) {
   else if(m.method==='session/set_config_option')emit({id:m.id,result:{configOptions:[]}});
   else if(m.method==='session/prompt'){
     const text=(m.params.prompt??[]).map(part=>part.type==='text'?part.text:'').join('\\n');
-    const scenario=['single','multi','free','custom','unsupported','cancel'].find(name=>text.includes(name));
-    if(!scenario){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OPENCODE REPLY'}});emit({id:m.id,result:{stopReason:'end_turn'}});}
-    else prompts.set(String(ask(scenario,'oc-ses-1')),{promptId:m.id,scenario});
+    if(text.includes('STEER-HOLD')){held.set('hold',m.id);update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'WORKING'}});}
+    else if(text.includes('STEER-REJECT')){emit({id:m.id,error:{code:-32000,message:'a prompt is already running'}});update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STILL RUNNING'}});}
+    else if(text.includes('STEER-LATE')){setTimeout(()=>emit({id:m.id,error:{code:-32000,message:'late turn failure'}}),2300);}
+    else if(text.includes('STEER-APPLY')){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STEERED'}});const target=held.get('hold');held.delete('hold');emit({id:m.id,result:{stopReason:'end_turn'}});if(target)emit({id:target,result:{stopReason:'end_turn'}});}
+    else{
+      const scenario=['single','multi','free','custom','unsupported','cancel'].find(name=>text.includes(name));
+      if(!scenario){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OPENCODE REPLY'}});emit({id:m.id,result:{stopReason:'end_turn'}});}
+      else prompts.set(String(ask(scenario,'oc-ses-1')),{promptId:m.id,scenario});
+    }
+  }
+  else if(m.method==='session/cancel'){
+    for(const id of held.values())emit({id,result:{stopReason:'cancelled'}});
+    held.clear();
   }
   else if(!m.method&&m.id!==undefined){
     const entry=prompts.get(String(m.id));
@@ -178,6 +189,7 @@ test("opencode backend runs the builtin ACP command with a provider executable o
         approvals: true,
         questions: true,
         interrupt: true,
+        steering: true,
       });
       const events = await drainText(session);
       expect(events.some((event) => event.type === "text" && event.data === "OPENCODE REPLY")).toBe(
@@ -210,6 +222,142 @@ test("opencode backend runs the builtin ACP command with a provider executable o
       await resumed.close();
     }
   } finally {
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test("opencode steers the active ACP turn with a second session/prompt", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-steer-"));
+  const { argvFile, session } = await startPeer(cwd);
+  try {
+    expect(session.capabilities?.steering).toBe(true);
+    await session.send("STEER-HOLD");
+    const events: AgentEvent[] = [];
+    const iterator = session.events()[Symbol.asyncIterator]();
+    const drain = async (until: () => boolean) => {
+      while (!until()) {
+        const next = await iterator.next();
+        if (next.done) return;
+        events.push(next.value);
+      }
+    };
+    await drain(() => events.some((event) => event.type === "text" && event.data === "WORKING"));
+    await session.steer?.("STEER-APPLY");
+    await drain(() => events.some((event) => event.type === "result"));
+    expect(events.some((event) => event.type === "text" && event.data === "STEERED")).toBe(true);
+    expect(events.filter((event) => event.type === "error")).toEqual([]);
+    const wire = readFileSync(`${argvFile}.wire`, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const prompts = wire.filter((request) => request.method === "session/prompt");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1].params).toMatchObject({
+      sessionId: prompts[0].params.sessionId,
+      prompt: [{ type: "text", text: "STEER-APPLY" }],
+    });
+  } finally {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test("opencode disables steering for the session when the agent rejects a mid-turn prompt", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-steer-reject-"));
+  const { session } = await startPeer(cwd);
+  try {
+    await session.send("STEER-HOLD");
+    const events: AgentEvent[] = [];
+    const iterator = session.events()[Symbol.asyncIterator]();
+    const drain = async (until: () => boolean) => {
+      while (!until()) {
+        const next = await iterator.next();
+        if (next.done) return;
+        events.push(next.value);
+      }
+    };
+    await drain(() => events.some((event) => event.type === "text" && event.data === "WORKING"));
+    await session.steer?.("STEER-REJECT");
+    await drain(() =>
+      events.some(
+        (event) => event.type === "system_status" && event.data.includes("rejected steering"),
+      ),
+    );
+    expect(session.capabilities?.steering).toBe(false);
+    expect(
+      events.some((event) => event.type === "capabilities" && event.data.steering === false),
+    ).toBe(true);
+    await drain(() =>
+      events.some((event) => event.type === "text" && event.data === "STILL RUNNING"),
+    );
+    await session.interrupt?.();
+    await drain(() => events.some((event) => event.type === "result"));
+    expect(session.alive()).toBe(true);
+    expect(session.getRuntimeSessionId?.()).toBe("oc-ses-1");
+  } finally {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test("opencode keeps steering when a prompt failure lands after the refusal window", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-steer-late-"));
+  const { session } = await startPeer(cwd);
+  try {
+    await session.send("STEER-HOLD");
+    const events: AgentEvent[] = [];
+    const iterator = session.events()[Symbol.asyncIterator]();
+    const drain = async (until: () => boolean) => {
+      while (!until()) {
+        const next = await iterator.next();
+        if (next.done) return;
+        events.push(next.value);
+      }
+    };
+    await drain(() => events.some((event) => event.type === "text" && event.data === "WORKING"));
+    await session.steer?.("STEER-LATE");
+    // The peer fails this prompt after the 2s refusal window; that belongs to the
+    // turn, not to steering support.
+    await Bun.sleep(2500);
+    expect(session.capabilities?.steering).toBe(true);
+    expect(
+      events.some(
+        (event) => event.type === "system_status" && event.data.includes("rejected steering"),
+      ),
+    ).toBe(false);
+    await session.interrupt?.();
+    await drain(() => events.some((event) => event.type === "result"));
+  } finally {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test("opencode refuses to steer without an active turn or while stopping", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-steer-idle-"));
+  const { session } = await startPeer(cwd);
+  try {
+    expect(session.capabilities?.steering).toBe(true);
+    await expect(session.steer?.("before any turn")).rejects.toThrow("no active turn");
+    const first = await drainText(session);
+    expect(first.some((event) => event.type === "result")).toBe(true);
+    await expect(session.steer?.("after the turn")).rejects.toThrow("no active turn");
+    await session.send("STEER-HOLD");
+    const events: AgentEvent[] = [];
+    const iterator = session.events()[Symbol.asyncIterator]();
+    const drain = async (until: () => boolean) => {
+      while (!until()) {
+        const next = await iterator.next();
+        if (next.done) return;
+        events.push(next.value);
+      }
+    };
+    await drain(() => events.some((event) => event.type === "text" && event.data === "WORKING"));
+    await session.interrupt?.();
+    await expect(session.steer?.("while stopping")).rejects.toThrow("no active turn");
+    await drain(() => events.some((event) => event.type === "result"));
+  } finally {
+    await session.close();
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });

@@ -32,6 +32,10 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = Object.freeze({
   approvals: true,
   questions: true,
   livePermissions: true,
+  interrupt: true,
+  steering: true,
+  // Both the Claude SDK (forkSession) and the CLI (--fork-session) fork natively.
+  fork: true,
 });
 export const CODEX_CAPABILITIES: AgentCapabilities = Object.freeze({
   ...CLAUDE_CAPABILITIES,
@@ -55,6 +59,10 @@ export const OPENCODE_CAPABILITIES: AgentCapabilities = Object.freeze({
   modelSelection: true,
   images: true,
   mcp: true,
+  // OpenCode accepts a second session/prompt during a turn as a steer. Verified
+  // against opencode 1.19.5 over `opencode acp`; steer() downgrades per session
+  // if an agent rejects one.
+  steering: true,
 });
 
 export function chatBackendFor(agent: string): string {
