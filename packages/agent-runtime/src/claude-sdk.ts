@@ -2,7 +2,10 @@ import { spawn } from "node:child_process";
 import {
   HOOK_EVENTS,
   type Options,
+  type Query,
   query,
+  type SDKResultMessage,
+  type SDKUserMessage,
   type SpawnedProcess,
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -148,6 +151,97 @@ async function sshSdkLaunch(
   };
 }
 
+function userMessage(content: string, uuid: NonNullable<SDKUserMessage["uuid"]>): SDKUserMessage {
+  return { type: "user", uuid, message: { role: "user", content }, parent_tool_use_id: null };
+}
+
+function messageUuid(): NonNullable<SDKUserMessage["uuid"]> {
+  return crypto.randomUUID() as NonNullable<SDKUserMessage["uuid"]>;
+}
+
+function stoppedResult(runtimeSessionId: string | undefined): AgentEvent {
+  return {
+    type: "result",
+    data: { ...(runtimeSessionId ? { runtimeSessionId } : {}), outcome: "stopped" },
+  };
+}
+
+/**
+ * Streaming-input channel for one turn. The SDK pulls each message and writes
+ * it to the CLI's stdin before asking for the next one, so a push resolves
+ * exactly when delivery is confirmed — that is the ack steer() reports.
+ */
+class TurnInput implements AsyncIterable<SDKUserMessage> {
+  private readonly pending: { message: SDKUserMessage; deliver: (error?: Error) => void }[] = [];
+  private inflight: ((error?: Error) => void) | null = null;
+  private ended = false;
+  private wake: (() => void) | null = null;
+
+  push(message: SDKUserMessage): Promise<void> {
+    if (this.ended) return Promise.reject(new Error("The turn is no longer accepting input."));
+    return new Promise<void>((resolve, reject) => {
+      this.pending.push({ message, deliver: (error) => (error ? reject(error) : resolve()) });
+      this.wake?.();
+      this.wake = null;
+    });
+  }
+
+  end(): void {
+    if (this.ended) return;
+    this.ended = true;
+    this.failPending();
+    this.wake?.();
+    this.wake = null;
+  }
+
+  private failPending(): void {
+    const error = new Error("The turn ended before this message was delivered.");
+    for (const entry of this.pending.splice(0)) entry.deliver(error);
+    this.inflight?.(error);
+    this.inflight = null;
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<SDKUserMessage> {
+    try {
+      while (true) {
+        while (this.pending.length > 0) {
+          // biome-ignore lint/style/noNonNullAssertion: shift() safe inside while(length>0)
+          const entry = this.pending.shift()!;
+          this.inflight = entry.deliver;
+          yield entry.message;
+          this.inflight = null;
+          entry.deliver();
+        }
+        if (this.ended) return;
+        await new Promise<void>((resolve) => {
+          this.wake = resolve;
+        });
+      }
+    } finally {
+      // query.return()/abort tears the iterator down mid-message; anything
+      // not confirmed by then is an unconfirmed delivery, not a silent drop.
+      this.ended = true;
+      this.failPending();
+    }
+  }
+}
+
+type ClaudeTurn = {
+  readonly controller: AbortController;
+  readonly input: TurnInput;
+  query: Query | undefined;
+  stopping: boolean;
+  /** Final result emitted or interrupt decided; no further input is accepted. */
+  closing: boolean;
+  /**
+   * Steers written to the CLI but not yet answered by a result. The CLI queues
+   * mid-turn input and runs it as a continuation of the same query, so the
+   * turn stays open until every delivered steer has had its run.
+   */
+  readonly pendingSteers: Set<string>;
+  finished: Promise<void>;
+};
+
 class ClaudeSDKSession implements AgentSession {
   readonly capabilities = CLAUDE_CAPABILITIES;
   readonly id = ulid();
@@ -167,8 +261,8 @@ class ClaudeSDKSession implements AgentSession {
     string,
     { question: ChatQuestion; resolve: (answers: Record<string, string[]> | null) => void }
   >();
-  private abortController: AbortController | null = null;
-  private runningQuery: Promise<void> | undefined;
+  private turn: ClaudeTurn | null = null;
+  private sendChain: Promise<void> = Promise.resolve();
   private readonly opts: SessionOpts;
   private readonly host: ExecHost;
 
@@ -185,42 +279,107 @@ class ClaudeSDKSession implements AgentSession {
   }
 
   private async waitForQuestion(
+    turn: ClaudeTurn,
     question: ChatQuestion,
     signal: AbortSignal,
   ): Promise<Record<string, string[]> | null> {
+    const push = (event: AgentEvent) => this.pushTurn(turn, event);
     let cancel = () => {};
     try {
       return await new Promise<Record<string, string[]> | null>((resolve) => {
         const requestId = question.requestId;
         cancel = () => {
           this.questionResolvers.delete(requestId);
-          this.push({ type: "request_resolved", data: { requestId } });
+          push({ type: "request_resolved", data: { requestId } });
           resolve(null);
         };
         this.questionResolvers.set(requestId, { question, resolve });
         signal.addEventListener("abort", cancel, { once: true });
         if (signal.aborted) cancel();
-        else this.push({ type: "question_request", data: question });
+        else push({ type: "question_request", data: question });
       });
     } finally {
       signal.removeEventListener("abort", cancel);
     }
   }
 
-  async send(prompt: string): Promise<void> {
-    if (this.abortController) {
-      this.abortController.abort();
-    }
-    await this.runningQuery;
-    this.done = false;
-    this.eventQueue.length = 0;
-    this.abortController = new AbortController();
-    this.runningQuery = this.driveQuery(prompt);
+  send(prompt: string): Promise<void> {
+    // Serialize sends: two concurrent sends used to orphan the first new
+    // driveQuery, whose unwind then ended the second turn's events (R-15).
+    const started = this.sendChain.then(() => this.startTurn(prompt));
+    this.sendChain = started.catch(() => {});
+    return started;
   }
 
-  private async driveQuery(prompt: string): Promise<void> {
-    const abortController = this.abortController;
-    let nativeQuery: ReturnType<typeof query> | undefined;
+  private async startTurn(prompt: string): Promise<void> {
+    const previous = this.turn;
+    if (previous) {
+      previous.controller.abort();
+      previous.input.end();
+      await previous.finished;
+    }
+    this.done = false;
+    this.eventQueue.length = 0;
+    const turn: ClaudeTurn = {
+      controller: new AbortController(),
+      input: new TurnInput(),
+      query: undefined,
+      stopping: false,
+      closing: false,
+      pendingSteers: new Set(),
+      finished: Promise.resolve(),
+    };
+    this.turn = turn;
+    // The initial prompt rides the same streaming input as steers; nobody
+    // awaits its delivery ack, but a teardown rejection must not be unhandled.
+    turn.input.push(userMessage(prompt, messageUuid())).catch(() => {});
+    turn.finished = this.driveQuery(turn);
+  }
+
+  async steer(prompt: string): Promise<void> {
+    const turn = this.turn;
+    if (!turn || this.done || turn.stopping || turn.closing)
+      throw new Error("No active Claude turn to steer.");
+    if (!prompt.trim() || prompt.length > 100000)
+      throw new Error("Enter a steering message up to 100000 characters.");
+    const uuid = messageUuid();
+    turn.pendingSteers.add(uuid);
+    try {
+      await turn.input.push(userMessage(prompt, uuid));
+    } catch (error) {
+      turn.pendingSteers.delete(uuid);
+      throw error;
+    }
+  }
+
+  async interrupt(): Promise<void> {
+    const turn = this.turn;
+    if (!turn || this.done || turn.stopping) return;
+    turn.stopping = true;
+    // Release anything the CLI is blocked on so the turn can actually end.
+    for (const [requestId, pending] of [...this.questionResolvers]) {
+      this.questionResolvers.delete(requestId);
+      pending.resolve(null);
+      this.pushTurn(turn, { type: "request_resolved", data: { requestId } });
+    }
+    for (const [requestId, pending] of [...this.permissionResolvers]) {
+      this.permissionResolvers.delete(requestId);
+      pending.resolve("denied");
+      this.pushTurn(turn, { type: "request_resolved", data: { requestId } });
+    }
+    if (turn.query) await turn.query.interrupt();
+    else turn.controller.abort();
+  }
+
+  /** Events from an unwinding turn must never reach the next turn's queue. */
+  private pushTurn(turn: ClaudeTurn, event: AgentEvent): void {
+    if (this.turn === turn) this.push(event);
+  }
+
+  private async driveQuery(turn: ClaudeTurn): Promise<void> {
+    const abortController = turn.controller;
+    const push = (event: AgentEvent) => this.pushTurn(turn, event);
+    let nativeQuery: Query | undefined;
     try {
       const supplied = this.opts.chatAgentOptions
         ? ChatAgentOptionsSchema.parse(this.opts.chatAgentOptions)
@@ -244,7 +403,7 @@ class ClaudeSDKSession implements AgentSession {
         ? createRulesHook(
             this.opts.ruleGuard,
             this.opts.cwd,
-            (event) => this.push(event),
+            (event) => push(event),
             (waiting) => {
               this.humanWaitCount = Math.max(0, this.humanWaitCount + (waiting ? 1 : -1));
             },
@@ -274,7 +433,7 @@ class ClaudeSDKSession implements AgentSession {
               )
             : resolveClaudeSdkLaunch();
       const q = query({
-        prompt,
+        prompt: turn.input,
         options: {
           ...sdkChatOverrides(options),
           ...launch,
@@ -336,17 +495,17 @@ class ClaudeSDKSession implements AgentSession {
               .filter(Boolean)
               .join("\n\n"),
           },
-          ...(abortController ? { abortController } : {}),
+          abortController,
           onElicitation: async (request, { signal }) => {
             const requestId = ulid();
             try {
               const form = elicitationForm(requestId, request);
-              const result = await this.waitForQuestion(form.question, signal);
+              const result = await this.waitForQuestion(turn, form.question, signal);
               return result
                 ? { action: "accept", content: form.content(result) }
                 : { action: "cancel" };
             } catch {
-              this.push({
+              push({
                 type: "system_status",
                 data: "MCP form declined: secret, URL authentication, or unsupported input requires the native client",
               });
@@ -354,8 +513,7 @@ class ClaudeSDKSession implements AgentSession {
             }
           },
           canUseTool: async (toolName, input, options) => {
-            const signal =
-              options?.signal ?? this.abortController?.signal ?? new AbortController().signal;
+            const signal = options?.signal ?? abortController.signal;
             if (this.opts.toolAllowlist !== undefined && toolName.startsWith(ORC_TOOL_PREFIX)) {
               return { behavior: "allow", updatedInput: input };
             }
@@ -370,6 +528,7 @@ class ClaudeSDKSession implements AgentSession {
             }
             const requestId = ulid();
             if (signal.aborted) return { behavior: "deny", message: "Request cancelled" };
+            if (turn.stopping) return { behavior: "deny", message: "The turn was interrupted." };
             if (toolName === "AskUserQuestion") {
               const source = input.questions;
               if (!Array.isArray(source))
@@ -395,7 +554,7 @@ class ClaudeSDKSession implements AgentSession {
                   behavior: "deny",
                   message: "Duplicate question text cannot be answered unambiguously",
                 };
-              const result = await this.waitForQuestion(question, signal);
+              const result = await this.waitForQuestion(turn, question, signal);
               if (!result) return { behavior: "deny", message: "Question cancelled" };
               return {
                 behavior: "allow",
@@ -416,7 +575,7 @@ class ClaudeSDKSession implements AgentSession {
               return { behavior: "allow", updatedInput: input };
             const command = JSON.stringify(input);
             logger.info("canUseTool called", { toolName, requestId });
-            this.push({
+            push({
               type: "permission_request",
               data: { requestId, tool: toolName, command, input, cwd: this.opts.cwd },
             });
@@ -426,7 +585,7 @@ class ClaudeSDKSession implements AgentSession {
               result = await new Promise<PermissionResult>((resolve) => {
                 cancel = () => {
                   this.permissionResolvers.delete(requestId);
-                  this.push({ type: "request_resolved", data: { requestId } });
+                  push({ type: "request_resolved", data: { requestId } });
                   resolve("denied");
                 };
                 this.permissionResolvers.set(requestId, { tool: toolName, resolve });
@@ -447,25 +606,50 @@ class ClaudeSDKSession implements AgentSession {
         },
       });
       nativeQuery = q;
+      turn.query = q;
 
       // Each text block is its own paragraph; joined bare, text before and after a tool
       // call runs together and breaks markdown such as a code fence opening mid-line.
       let wroteText = false;
       let streamedText = false;
+      let lastResult: SDKResultMessage | undefined;
+      const emitResult = (msg: SDKResultMessage) => {
+        turn.closing = true;
+        if (msg.is_error && !turn.stopping) {
+          const errors = "errors" in msg ? (msg.errors as string[]) : [];
+          push({
+            type: "error",
+            data: errors.join("\n") || `Claude error: ${msg.subtype}`,
+          });
+        } else {
+          push({
+            type: "result",
+            data: {
+              runtimeSessionId: msg.session_id,
+              usage: msg.usage,
+              durationMs: msg.duration_ms,
+              ...(turn.stopping ? { outcome: "stopped" as const } : {}),
+            },
+          });
+        }
+        // Streaming input keeps the subprocess alive waiting for more
+        // messages; closing the channel lets the SDK end stdin and exit.
+        turn.input.end();
+      };
       for await (const msg of q) {
         if (msg.type === "stream_event") {
           const event = msg.event;
           if (event.type === "content_block_start" && event.content_block.type === "text") {
-            if (wroteText) this.push({ type: "text", data: "\n\n" });
+            if (wroteText) push({ type: "text", data: "\n\n" });
             wroteText = true;
             streamedText = true;
           } else if (event.type === "content_block_delta" && event.delta.type === "text_delta")
-            this.push({ type: "text", data: event.delta.text });
+            push({ type: "text", data: event.delta.text });
           continue;
         }
         if (msg.type === "rate_limit_event") {
           const event = claudeLimitEvent(msg.rate_limit_info);
-          if (event) this.push(event);
+          if (event) push(event);
           continue;
         }
         if (msg.type === "system" && msg.subtype === "init") {
@@ -474,7 +658,7 @@ class ClaudeSDKSession implements AgentSession {
         }
 
         if (msg.type === "system" && msg.subtype === "compact_boundary") {
-          this.push({ type: "system_status", data: "Context compacted." });
+          push({ type: "system_status", data: "Context compacted." });
           continue;
         }
 
@@ -482,12 +666,12 @@ class ClaudeSDKSession implements AgentSession {
           for (const block of msg.message.content) {
             if (block.type === "text" && block.text) {
               if (!streamedText)
-                this.push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
+                push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
               wroteText = true;
             } else if (block.type === "thinking" && "thinking" in block && block.thinking) {
-              this.push({ type: "thinking", data: block.thinking as string });
+              push({ type: "thinking", data: block.thinking as string });
             } else if (block.type === "tool_use") {
-              this.push({
+              push({
                 type: "tool_use",
                 data: {
                   id: block.id,
@@ -516,7 +700,7 @@ class ClaudeSDKSession implements AgentSession {
               }
             }
             if (block.type === "tool_result")
-              this.push({
+              push({
                 type: "tool_result",
                 data: {
                   toolUseId: block.tool_use_id,
@@ -533,51 +717,72 @@ class ClaudeSDKSession implements AgentSession {
         // Keep reading after the result so the subprocess releases its working folder.
         if (msg.type === "result") {
           this.runtimeSessionId = msg.session_id;
-          if (msg.is_error) {
-            const errors = "errors" in msg ? (msg.errors as string[]) : [];
-            this.push({
-              type: "error",
-              data: errors.join("\n") || `Claude error: ${msg.subtype}`,
-            });
-          } else {
-            this.push({
-              type: "result",
-              data: {
-                runtimeSessionId: msg.session_id,
-                usage: msg.usage,
-                durationMs: msg.duration_ms,
-              },
-            });
-          }
+          lastResult = msg;
+          const trigger = "user_message_uuid" in msg ? msg.user_message_uuid : undefined;
+          if (typeof trigger === "string") turn.pendingSteers.delete(trigger);
+          // The CLI runs queued steers as continuations of this query; keep
+          // reading until every delivered steer has had its result. Without
+          // a trigger id runs cannot be attributed, so end the turn instead
+          // of waiting for a continuation that may never come.
+          if (!turn.stopping && typeof trigger === "string" && turn.pendingSteers.size > 0)
+            continue;
+          emitResult(msg);
+        }
+      }
+      // The stream can end without a final result: an interrupt may produce
+      // none, or the CLI may exit while steers were still queued.
+      if (!turn.closing) {
+        if (turn.stopping) {
+          turn.closing = true;
+          push(stoppedResult(this.runtimeSessionId));
+        } else if (lastResult) {
+          emitResult(lastResult);
         }
       }
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
+      if (turn.stopping && !turn.closing) {
+        turn.closing = true;
+        push(stoppedResult(this.runtimeSessionId));
+      } else if (
+        turn.closing ||
+        turn.controller.signal.aborted ||
+        (err as Error).name === "AbortError"
+      ) {
+        // The SDK raises a plain Error ("Operation aborted") while the
+        // subprocess releases stdin after the final result or an abort;
+        // neither is a turn failure.
+        logger.debug("Claude SDK stream closed", {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      } else {
         logger.error("Claude SDK query error", {
           message:
             this.opts.redactOutput?.(err instanceof Error ? err.message : String(err)) ??
             (err instanceof Error ? err.message : String(err)),
         });
-        this.push({
+        push({
           type: "error",
           data: err instanceof Error ? err.message : String(err),
         });
       }
     } finally {
+      turn.input.end();
       try {
         await nativeQuery?.return();
       } catch (error) {
         logger.warn("Claude SDK cleanup failed", {
           message: this.opts.redactOutput?.(String(error)) ?? String(error),
         });
-        this.push({ type: "error", data: "Claude connection could not be closed cleanly." });
+        push({ type: "error", data: "Claude connection could not be closed cleanly." });
       }
-      if (this.abortController === abortController) this.abortController = null;
+      // A stale turn unwinding after a replacement must not end the new
+      // turn's events (R-15); only the current turn owns the done flag.
+      if (this.turn === turn) {
+        this.done = true;
+        this.resolveNext?.();
+        this.resolveNext = null;
+      }
     }
-
-    this.done = true;
-    this.resolveNext?.();
-    this.resolveNext = null;
   }
 
   respondPermission(requestId: string, result: PermissionResult): void {
@@ -644,10 +849,13 @@ class ClaudeSDKSession implements AgentSession {
     this.questionResolvers.clear();
     for (const pending of this.permissionResolvers.values()) pending.resolve("denied");
     this.permissionResolvers.clear();
-    this.abortController?.abort();
-    this.abortController = null;
-    await this.runningQuery;
-    this.runningQuery = undefined;
+    await this.sendChain;
+    const turn = this.turn;
+    if (turn) {
+      turn.controller.abort();
+      turn.input.end();
+      await turn.finished;
+    }
     this.done = true;
     this.resolveNext?.();
     this.resolveNext = null;

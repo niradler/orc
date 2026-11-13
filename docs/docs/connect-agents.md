@@ -248,6 +248,17 @@ the next message continues the same conversation. Fork and conversation rollback
 not exposed. Non-interactive `codex-cli` callers
 continue to use execution mode, without chat's interactive controls.
 
+Claude chat uses the Claude Agent SDK in streaming-input mode. It supports native
+resume, approvals, questions, live permission changes, steering and interruption.
+While Claude is responding, **Send now** delivers a text message into the active
+query; Claude picks it up within the same response, and the response completes once
+the steered message has been answered. Delivery is confirmed when the SDK has written
+the message to the agent; ordinary **Send** queues it for the next turn. Stop sends
+the SDK's native interrupt, releases pending approvals and questions, and keeps the
+native session, so the next message resumes the same conversation. Steering and
+interrupt require the SDK path; when Claude falls back to ACPX, the conservative
+ACPX capabilities apply.
+
 ACPX remains the compatibility path for other coding agents. It streams text,
 reasoning and tool results and keeps named sessions. Its CLI permissions are chosen
 through launch flags; ORC cannot answer individual live ACPX permission requests.
@@ -327,13 +338,13 @@ remain agent-owned. ACPX-specific launch flags do not apply to direct ACP. Faile
 resume preserves the original identity instead of silently starting fresh.
 
 
-Stop ends the current turn. On backends with a native interrupt — Pi, Codex and
-OpenCode/direct ACP — Stop sends that interrupt and keeps the session, so the next
-send resumes the same native conversation instead of starting a new one. Claude and
-ACPX have no native interrupt yet, so Stop closes the agent process as before.
+Stop ends the current turn. On backends with a native interrupt — Claude, Pi, Codex
+and OpenCode/direct ACP — Stop sends that interrupt and keeps the session, so the next
+send resumes the same native conversation instead of starting a new one. ACPX has no
+native interrupt, so Stop closes the agent process as before.
 
-Stopping a native Codex or direct ACP turn revokes pending interactive requests and
-rejects new approval callbacks while cancellation completes, including when automatic
+Stopping a native Claude, Codex or direct ACP turn revokes pending interactive requests
+and rejects new approval callbacks while cancellation completes, including when automatic
 approvals were enabled. ACP requests while idle are also cancelled. Steering saves
 its intent before native delivery and reuses a request ID on retry; a delivery warning
 means to inspect the current response before sending another message.

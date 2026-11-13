@@ -32,6 +32,8 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = Object.freeze({
   approvals: true,
   questions: true,
   livePermissions: true,
+  interrupt: true,
+  steering: true,
 });
 export const CODEX_CAPABILITIES: AgentCapabilities = Object.freeze({
   ...CLAUDE_CAPABILITIES,
