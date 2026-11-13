@@ -706,8 +706,12 @@ const CONTINUATION_MAX_CHARS = 12_000;
 /**
  * A new provider account has no native session for this chat, so the first
  * turn after the switch carries a bounded transcript of the conversation.
+ * A fork starts from the same copied transcript without a native session.
  */
-function continuationPrompt(messages: ChatMessage[]): string | undefined {
+function continuationPrompt(
+  messages: ChatMessage[],
+  kind: "switch" | "fork" = "switch",
+): string | undefined {
   const lines: string[] = [];
   let used = 0;
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -724,13 +728,11 @@ function continuationPrompt(messages: ChatMessage[]): string | undefined {
     used += line.length + 2;
   }
   if (!lines.length) return undefined;
-  return [
-    "[ORC account switch] This chat moved to another provider account, so the previous native session is unavailable. Continue the same work from the conversation below, then handle the new user message. Do not repeat this context unless the user asks.",
-    "",
-    ...lines,
-    "",
-    "--- End of prior conversation ---",
-  ].join("\n");
+  const intro =
+    kind === "fork"
+      ? "[ORC fork] This chat was forked from another conversation, so it starts without the previous native session. Continue the same work from the conversation below, then handle the new user message. Do not repeat this context unless the user asks."
+      : "[ORC account switch] This chat moved to another provider account, so the previous native session is unavailable. Continue the same work from the conversation below, then handle the new user message. Do not repeat this context unless the user asks.";
+  return [intro, "", ...lines, "", "--- End of prior conversation ---"].join("\n");
 }
 
 app.openapi(
@@ -959,6 +961,11 @@ app.openapi(
     });
   },
 );
+function forkTitle(title: string): string {
+  const base = title.replace(/\s+\(fork\)$/i, "").trim() || "Chat";
+  return `${base.length > 94 ? base.slice(0, 93).trimEnd() : base} (fork)`;
+}
+
 app.openapi(
   createRoute({
     method: "post",
@@ -1057,6 +1064,62 @@ app.openapi(
     }
     store().save(thread);
     return c.json(thread);
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/threads/{id}/fork",
+    tags: ["Chat"],
+    description:
+      "Start a new conversation from the context up to one completed assistant response.",
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ messageId: z.string().min(1).max(256) }).strict(),
+          },
+        },
+      },
+    },
+    responses: response,
+  }),
+  (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    if (
+      threadRun(thread.id) ||
+      (thread.runtimeId && active.has(turnKey(thread.host, thread.backend, thread.runtimeId)))
+    )
+      throw new ConflictError("Wait for the agent to finish before forking the conversation.");
+    const { messageId } = c.req.valid("json");
+    const index = thread.messages.findIndex((message) => message.id === messageId);
+    if (index < 0) throw new NotFoundError("Chat message", messageId);
+    if (thread.messages[index]?.role !== "assistant")
+      throw new ValidationError("Fork from an assistant response.");
+    // Copied messages get fresh ids: the source keeps its send-recovery identity,
+    // and a fork must never answer by-message lookups for the original send.
+    const messages = thread.messages
+      .slice(0, index + 1)
+      .map((message) => ({ ...structuredClone(message), id: crypto.randomUUID() }));
+    const forked: ChatThread = {
+      ...structuredClone(thread),
+      id: crypto.randomUUID(),
+      title: forkTitle(thread.title),
+      messages,
+      // The prefix is fixed context rather than new turns in this chat, so it
+      // does not count against the growing-history limit.
+      importedMessages: messages.length,
+      historyBefore: null,
+      runtimeId: null,
+      sourceId: null,
+      updatedAt: Date.now(),
+      forkedFrom: { threadId: thread.id, messageId },
+    };
+    delete forked.transcriptMark;
+    delete forked.providerSwitch;
+    store().save(forked);
+    return c.json(forked);
   },
 );
 app.openapi(
@@ -1424,11 +1487,18 @@ async function startChat(
       thread.providerSwitch = { from: previous ?? thread.config.agent };
     }
   }
-  // Replay only while the new account has no native session: once a turn established
-  // one, the continuation was delivered and must not be injected into it again.
-  if (body.threadId && thread.providerSwitch && !thread.runtimeId)
-    continuation ??= continuationPrompt(thread.messages);
-  if (body.threadId && thread.messages.length && !thread.runtimeId && !thread.providerSwitch)
+  // Replay only while the new account or a fork has no native session: once a
+  // turn established one, the continuation was delivered and must not be
+  // injected into it again.
+  if (body.threadId && (thread.providerSwitch || thread.forkedFrom) && !thread.runtimeId)
+    continuation ??= continuationPrompt(thread.messages, thread.forkedFrom ? "fork" : "switch");
+  if (
+    body.threadId &&
+    thread.messages.length &&
+    !thread.runtimeId &&
+    !thread.providerSwitch &&
+    !thread.forkedFrom
+  )
     throw new ConflictError(
       "The previous turn did not establish a resumable session. Start a new chat.",
     );

@@ -52,6 +52,7 @@ opens the chat page instead.
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
   - **Recents** lists every session by last activity, newest first. **Projects** groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. Sessions without a recorded project are matched to a project whose scope folder contains their working folder. Both views follow the project selected in the workspace header — pick **All projects** to browse every project — and sessions in archived or paused projects stay listed under their project.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order.
+- **Message actions**: each completed assistant response shows its turn duration. Hover or focus a message for **Copy**, and on an assistant response **Fork to new session**, which opens a new chat with the conversation up to that answer and carries that context into its first turn. Touch devices keep both actions visible.
 - **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
@@ -73,8 +74,11 @@ Closing the page also returns to the original page after navigating Back and For
 
 ![Session home with its inspector and demo data](/screens/session-home-desktop.png)
 
+![Copy, fork and turn duration on an assistant response](/screens/chat-message-actions-desktop.png)
+
 <img src="/screens/session-home-phone.png" alt="Phone conversation with compact composer controls" width="260">
 <img src="/screens/session-list-phone.png" alt="Full-screen session list on a phone" width="260">
+<img src="/screens/chat-message-actions-phone.png" alt="Message actions remain visible on a phone" width="260">
 
 The session list's **Recents** and **Projects** views, ordered by last activity:
 

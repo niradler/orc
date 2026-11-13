@@ -271,6 +271,38 @@ describe("native chat runtime", () => {
       registerBackend("claude", () => originalClaude);
     }
   });
+  test("should replay a fork's copied context until its native session exists", async () => {
+    const source = await turn({ messages: [{ role: "user", content: "Fork source" }] });
+    const opened = source.events.find((event) => event.type === "thread");
+    if (opened?.type !== "thread") throw new Error("Missing thread");
+    const full = (await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread;
+    const answer = full.messages.find((message) => message.role === "assistant");
+    if (!answer) throw new Error("Missing assistant message");
+    const forkedResponse = await request(`/chat/threads/${opened.thread.id}/fork`, {
+      messageId: answer.id,
+    });
+    expect(forkedResponse.status).toBe(200);
+    const forked = (await forkedResponse.json()) as ChatThread;
+
+    const continued = await turn({
+      threadId: forked.id,
+      messages: [{ role: "user", content: "Continue after fork" }],
+    });
+    expect(continued.response.status).toBe(200);
+    expect(calls.at(-1)?.id).toBeNull();
+    expect(calls.at(-1)?.prompt).toContain("[ORC fork]");
+    expect(calls.at(-1)?.prompt).not.toContain("[ORC account switch]");
+    expect(calls.at(-1)?.prompt).toContain("User: Fork source");
+
+    const next = await turn({
+      threadId: forked.id,
+      messages: [{ role: "user", content: "A later turn" }],
+    });
+    expect(next.response.status).toBe(200);
+    expect(calls.at(-1)?.id).toBe("native-fixture");
+    expect(calls.at(-1)?.prompt).not.toContain("[ORC fork]");
+    calls.length = 0;
+  });
   test("should reserve compact as a native command on the same existing session", async () => {
     expect(
       (await turn({ messages: [{ role: "user", content: "/compact" }] })).response.status,

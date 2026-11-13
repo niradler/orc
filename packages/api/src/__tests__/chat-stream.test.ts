@@ -344,6 +344,21 @@ describe("/chat/stream account switching", () => {
     expect(continuationPrompt([])).toBeUndefined();
   });
 
+  test("replays a fork's copied context without calling it an account switch", () => {
+    const prompt = continuationPrompt(
+      [
+        { id: "user", role: "user", content: "Build the panel", timestamp: 1 },
+        { id: "assistant", role: "assistant", content: "Panel built", timestamp: 2 },
+      ],
+      "fork",
+    );
+    if (!prompt) throw new Error("Fork prompt was not built");
+    expect(prompt).toContain("[ORC fork]");
+    expect(prompt).not.toContain("[ORC account switch]");
+    expect(prompt).toContain("User: Build the panel");
+    expect(prompt).toContain("Assistant: Panel built");
+  });
+
   test("switches a live conversation to another account of the same agent", async () => {
     const { restore } = accountFixture();
     try {

@@ -1449,6 +1449,7 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
           agent: message.agent,
           activity: message.activity,
           attachments: message.attachments,
+          content: message.content,
           turn: message.turn,
         },
       },

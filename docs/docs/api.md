@@ -292,6 +292,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `POST` | `/session-handoffs` | Start a session handoff |
 | `GET` `POST` | `/chat/threads` | Chat threads |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
+| `POST` | `/chat/threads/{id}/fork` | Start a chat from the context up to one assistant response |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
@@ -320,6 +321,14 @@ including while preparation is pending. Recover the original thread by message I
 retrying the same queued message does not start another turn. The web client bounds
 recovery requests and backoff to 15 seconds, or 60 seconds after a server error,
 header timeout or `CHAT_MESSAGE_EXISTS`, then pauses the message in its queue.
+
+`POST /chat/threads/{id}/fork` accepts `{ "messageId": "<assistant message id>" }`
+and returns a new thread whose messages are the source prefix up to and including
+that response. Copied messages get fresh ids, so the source keeps its send-recovery
+identity. A fork starts without a native agent session and with no source session;
+its first turn replays the copied context with a bounded `[ORC fork]` prompt, then
+uses the native session it establishes. Forking is rejected while the source
+conversation is responding or for a non-assistant message.
 
 `POST /terminals` accepts `project_id` to use that project's workspace environment
 and ports, and `dev: true` to run its dev script in a shell terminal. A dev

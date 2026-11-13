@@ -176,6 +176,10 @@ export const ChatThreadSchema = z.object({
   importedMessages: z.number().int().nonnegative().optional(),
   projectId: z.string().optional(),
   transcriptMark: z.string().max(100).optional(),
+  // The source conversation and answer this chat was forked from. The copied
+  // prefix is replayed as bounded context on the first new turn because a fork
+  // starts without a native agent session.
+  forkedFrom: z.object({ threadId: z.string().uuid(), messageId: z.string() }).optional(),
   // Set when an account switch drops the native session; the next turn replays
   // bounded prior context so the conversation can continue in the new account.
   providerSwitch: z.object({ from: z.string() }).optional(),
