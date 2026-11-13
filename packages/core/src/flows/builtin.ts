@@ -127,6 +127,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   "orc-review-only": {
     name: "orc-review-only",
     version: 4,
+    isolation: "worktree",
     description:
       "Review existing work: inspect the artifact, verify acceptance criteria and reconcile relevant knowledge. Approve, request changes or pause when evidence is missing.",
     entry: "review",

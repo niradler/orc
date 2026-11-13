@@ -12,6 +12,7 @@ import {
   drainPendingNodes,
   getLatestFlowRunForTask,
   reportNodeOutcome,
+  retireFlowWorktrees,
   startFlowForTask,
 } from "../flow-runner.js";
 
@@ -43,6 +44,14 @@ const flow = {
     { from: "check", to: "done", when: { always: true } },
   ],
 };
+
+function worktrees(): string {
+  try {
+    return git("worktree", "list");
+  } catch {
+    return ".orc/worktrees";
+  }
+}
 
 async function until<T>(read: () => T | undefined | false, label: string): Promise<T> {
   for (let i = 0; i < 300; i++) {
@@ -180,7 +189,7 @@ describe("flow worktree isolation", () => {
         ).status === "done",
       "task done",
     );
-    await until(() => !git("worktree", "list").includes(".orc/worktrees"), "worktrees removed");
+    await until(() => !worktrees().includes(".orc/worktrees"), "worktrees removed");
     expect(git("branch", "--list", "orc/task/*")).toContain(`orc/task/${taskId}-a`);
     expect(git("log", "--format=%s", `orc/task/${taskId}-a`)).toContain("a");
   });
@@ -260,6 +269,109 @@ describe("flow worktree isolation", () => {
 
     await finish(taskId, "review one");
     await finish(taskId, "review_two");
-    await until(() => !git("worktree", "list").includes(".orc/worktrees"), "fan-out trees removed");
+    await until(() => !worktrees().includes(".orc/worktrees"), "fan-out trees removed");
   });
+
+  test("should continue a reopened task on its kept lane branch, inside the project's subfolder, and clean up once", async () => {
+    execFileSync("mkdir", ["-p", join(repo, "pkg")]);
+    writeFileSync(join(repo, "pkg", "keep.txt"), "x");
+    git("add", "pkg");
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "pkg");
+    const subProject = ulid();
+    await getDb()
+      .insert(projects)
+      .values({
+        id: subProject,
+        name: `flow-worktree-sub-${subProject}`,
+        scope: join(repo, "pkg"),
+      });
+    const single = {
+      name: "test-single",
+      isolation: "worktree",
+      entry: "work",
+      nodes: {
+        work: {
+          kind: "agent",
+          skill: "orc-coder",
+          backend: "flow-worktree-test",
+          outcomes: ["ok"],
+        },
+        done: { kind: "terminal", task_status: "done" },
+      },
+      edges: [{ from: "work", to: "done", when: { always: true } }],
+    };
+    const taskId = ulid();
+    await getDb().insert(tasks).values({
+      id: taskId,
+      title: "Reopened",
+      project_id: subProject,
+      skill_name: "orc-coder",
+      required_review: false,
+      flow_override: single,
+    });
+    expect((await startFlowForTask(taskId)).ok).toBe(true);
+    await drainPendingNodes();
+    const lane = join(repo, ".orc", "worktrees", `${taskId}-work`);
+    const first = await until(() => nodeCwd(taskId, "work"), "first cwd");
+    expect(first).toBe(join(lane, "pkg"));
+    writeFileSync(join(first, "round1.txt"), "one");
+    execFileSync("git", ["-C", first, "add", "round1.txt"]);
+    execFileSync("git", [
+      "-C",
+      first,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "-qm",
+      "round 1",
+    ]);
+    await finish(taskId, "work");
+    await until(() => !worktrees().includes(`${taskId}-work`), "first lane removed");
+
+    const comments = () =>
+      (
+        getSqlite()
+          .query(
+            "SELECT COUNT(*) AS n FROM comments WHERE resource_type = 'task' AND resource_id = ? AND content LIKE 'Kept the flow worktree%'",
+          )
+          .get(taskId) as { n: number }
+      ).n;
+    expect(comments()).toBe(0);
+
+    git(
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "master moved",
+    );
+    getSqlite()
+      .query("UPDATE tasks SET status = 'todo', claimed_by = NULL WHERE id = ?")
+      .run(taskId);
+    expect((await startFlowForTask(taskId)).ok).toBe(true);
+    await drainPendingNodes();
+    const second = await until(
+      () =>
+        getLatestFlowRunForTask(taskId)?.nodes.find(
+          (node) => node.node_id === "work" && node.status === "running",
+        )?.cwd as string | undefined,
+      "second cwd",
+    );
+    expect(second).toBe(join(lane, "pkg"));
+    expect(existsSync(join(second, "round1.txt"))).toBe(true);
+    expect(
+      getLatestFlowRunForTask(taskId)?.nodes.find((node) => node.node_id === "work")
+        ?.worktree_branch,
+    ).toBe(`orc/task/${taskId}-work`);
+    await finish(taskId, "work");
+    await Promise.all([retireFlowWorktrees(taskId), retireFlowWorktrees(taskId)]);
+    await until(() => !worktrees().includes(`${taskId}-work`), "second lane removed");
+    expect(comments()).toBe(0);
+  }, 20_000);
 });
