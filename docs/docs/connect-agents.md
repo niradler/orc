@@ -345,3 +345,10 @@ Pi 1.5.2 or newer must be installed and authenticated on the execution host.
 This path uses Pi's own RPC protocol and an ORC session extension for permissions
 and scoped MCP; it does not require ACPX or `pi-acp`.
 See [Pi configuration and capabilities](./configuration.md#pi).
+
+Pi persists a native session only once its transcript holds a message. A turn made
+entirely of slash/extension commands (which send no model message) creates no
+resumable native session, so ORC starts the next message in a fresh Pi session. The
+ORC conversation continues normally — such commands leave no native transcript, so
+there is no history to lose. This also holds when such a turn is stopped: ORC does not
+pin a session id that cannot be resumed, so the next send works instead of failing.

@@ -90,6 +90,12 @@ export type AgentEvent =
       type: "result";
       data: {
         runtimeSessionId?: string | undefined;
+        /**
+         * False when the backend deliberately left no resumable native session
+         * (e.g. Pi only persists a session once its transcript has a message).
+         * The turn still completed; the next send starts a fresh native session.
+         */
+        resumable?: boolean | undefined;
         /** The folder the backend actually resumed in, when it differs from the request. */
         cwd?: string | undefined;
         usage?: unknown;

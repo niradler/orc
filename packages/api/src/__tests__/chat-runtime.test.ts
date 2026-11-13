@@ -57,6 +57,7 @@ let failedTurn = false;
 let resultIdentity: string | undefined;
 let resultDurationMs: number | undefined;
 let narrateBeforeTool = false;
+let noResumable = false;
 let closed = 0;
 let interrupted = 0;
 let interruptible = false;
@@ -81,7 +82,7 @@ function session(call: (typeof calls)[number]): AgentSession {
       if (steeringFailure) throw new Error("fixture uncertain delivery");
       call.prompt = prompt;
     },
-    getRuntimeSessionId: () => (waitPermission ? "early-native-fixture" : undefined),
+    getRuntimeSessionId: () => (waitPermission || noResumable ? "early-native-fixture" : undefined),
     send: async (prompt) => {
       call.prompt = prompt;
     },
@@ -170,10 +171,12 @@ function session(call: (typeof calls)[number]): AgentSession {
       }
       yield {
         type: "result",
-        data: {
-          runtimeSessionId: resultIdentity ?? call.id ?? "native-fixture",
-          durationMs: resultDurationMs,
-        },
+        data: noResumable
+          ? { resumable: false, durationMs: resultDurationMs }
+          : {
+              runtimeSessionId: resultIdentity ?? call.id ?? "native-fixture",
+              durationMs: resultDurationMs,
+            },
       };
     },
   };
@@ -1559,14 +1562,15 @@ describe("native chat runtime", () => {
         await (await request(`/chat/threads/${opened.thread.id}`)).json(),
       );
       expect(stoppedThread.messages.at(-1)?.turn?.outcome).toBe("stopped");
-      expect(stoppedThread.runtimeId).toBe("early-native-fixture");
+      // The terminal result is consumed even on Stop, so its native id is authoritative.
+      expect(stoppedThread.runtimeId).toBe("native-fixture");
       // The next send continues the same native session instead of starting a new one.
       waitPermission = false;
       await turn({
         threadId: opened.thread.id,
         messages: [{ role: "user", content: "continue after interrupt" }],
       });
-      expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
+      expect(calls[calls.length - 1]?.id).toBe("native-fixture");
     } finally {
       interruptible = false;
       waitPermission = false;
@@ -1612,6 +1616,90 @@ describe("native chat runtime", () => {
     } finally {
       interruptible = false;
       interruptCapability = true;
+      waitPermission = false;
+    }
+  });
+
+  test("a turn that leaves no resumable session completes cleanly and the next send starts fresh", async () => {
+    noResumable = true;
+    try {
+      const first = await turn({
+        messages: [{ role: "user", content: "run an extension command" }],
+      });
+      const opened = first.events.find((event) => event.type === "thread") as Extract<
+        ChatEvent,
+        { type: "thread" }
+      >;
+      // The backend said the session is not resumable; that is not an error.
+      expect(first.events.some((event) => event.type === "error")).toBe(false);
+      const saved = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(saved.messages.at(-1)?.turn?.outcome).toBe("completed");
+      // No native id was pinned, even though the session could report one.
+      expect(saved.runtimeId).toBeFalsy();
+      // The next send starts a fresh native session instead of resuming a missing one.
+      const before = calls.length;
+      const second = await turn({
+        threadId: opened.thread.id,
+        messages: [{ role: "user", content: "continue" }],
+      });
+      expect(second.response.status).toBe(200);
+      expect(calls[before]?.id).toBeNull();
+      // The fresh turn establishes its own resumable session.
+      expect(second.events.some((event) => event.type === "error")).toBe(false);
+    } finally {
+      noResumable = false;
+    }
+  });
+
+  test("a stopped turn that left no resumable session can be continued with a fresh send", async () => {
+    // The reported scenario: interrupting an extension-command turn (which Pi never
+    // persists) must not pin a dead native id; the next send starts fresh.
+    noResumable = true;
+    interruptible = true;
+    waitPermission = true;
+    try {
+      const response = await request("/chat/stream", {
+        messages: [{ role: "user", content: "extension command, then stop" }],
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing reader");
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"permission_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended early");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(200);
+      while (!(await reader.read()).done) {
+        /* wait for finally cleanup */
+      }
+      reader.releaseLock();
+      const saved = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(saved.messages.at(-1)?.turn?.outcome).toBe("stopped");
+      // The terminal result (resumable:false) was consumed even though we stopped,
+      // so no native id was pinned despite the session being able to report one.
+      expect(saved.runtimeId).toBeFalsy();
+      const before = calls.length;
+      waitPermission = false;
+      const next = await turn({
+        threadId: opened.thread.id,
+        messages: [{ role: "user", content: "continue after stop" }],
+      });
+      expect(next.response.status).toBe(200);
+      expect(calls[before]?.id).toBeNull();
+    } finally {
+      noResumable = false;
+      interruptible = false;
       waitPermission = false;
     }
   });
