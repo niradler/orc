@@ -361,7 +361,10 @@ describe("agent session control", () => {
       )
     ).json<SessionStatus>();
     expect(child.cwd.startsWith(join(repo, ".orc", "worktrees"))).toBe(true);
-    expect(execFileSync("git", ["-C", repo, "worktree", "list"]).toString()).toContain(child.cwd);
+    // `git worktree list` prints forward slashes on every platform.
+    expect(
+      execFileSync("git", ["-C", repo, "worktree", "list"]).toString().replaceAll("\\", "/"),
+    ).toContain(child.cwd.replaceAll("\\", "/"));
     (await turnFor("child: isolated change")).release();
 
     const other = mkdtempSync(join(tmpdir(), "orc-session-control-other-"));

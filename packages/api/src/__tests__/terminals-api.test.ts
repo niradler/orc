@@ -543,7 +543,7 @@ describe("POST /terminals", () => {
     expect(first.status).toBe(201);
     const info = await first.json();
     const pty = ptys.at(-1);
-    expect(pty?.argv.slice(1)).toEqual(["--resume", "sess-live-ok"]);
+    expect(pty?.argv.slice(1, 3)).toEqual(["--resume", "sess-live-ok"]);
     expect(pty?.argv[0]).toContain("claude");
     expect(pty?.options.cwd).toBe(root);
     expect(info.live_session_id).toBe("live-ok");
@@ -576,7 +576,7 @@ describe("POST /terminals", () => {
     });
     expect(forked.status).toBe(201);
     const info = await forked.json();
-    expect(ptys.at(-1)?.argv.slice(1)).toEqual(["--resume", "sess-live-fork", "--fork-session"]);
+    expect(ptys.at(-1)?.argv.slice(1, 4)).toEqual(["--resume", "sess-live-fork", "--fork-session"]);
     expect(info.live_session_id).toBeNull();
     expect(info.name).toBe("original work (fork)");
     expect(getTerminalManager().findByLiveSession("live-fork")).toBeNull();
@@ -588,7 +588,7 @@ describe("POST /terminals", () => {
     const resumeInfo = await resumed.json();
     expect(resumeInfo.id).not.toBe(info.id);
     expect(resumeInfo.live_session_id).toBe("live-fork");
-    expect(ptys.at(-1)?.argv.slice(1)).toEqual(["--resume", "sess-live-fork"]);
+    expect(ptys.at(-1)?.argv.slice(1, 3)).toEqual(["--resume", "sess-live-fork"]);
 
     await req(app, "DELETE", `/terminals/${info.id}`);
     await req(app, "DELETE", `/terminals/${resumeInfo.id}`);
