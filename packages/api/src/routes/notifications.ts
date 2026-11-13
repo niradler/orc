@@ -75,11 +75,20 @@ app.openapi(
     method: "post",
     path: "/notifications/read",
     tags: ["Notifications"],
-    summary: "Mark all current notifications read across clients",
+    summary: "Mark current notifications read across clients",
+    request: {
+      query: z.object({
+        // Same sentinel as the list: `unassigned` marks notifications without a project.
+        project_id: z.string().min(1).max(256).optional(),
+      }),
+    },
     responses: { 200: json(z.object({ ok: z.literal(true) })) },
   }),
   (c) => {
-    store().markAllRead();
+    const { project_id } = c.req.valid("query");
+    store().markAllRead(
+      project_id === undefined ? undefined : project_id === "unassigned" ? null : project_id,
+    );
     return c.json({ ok: true as const }, 200);
   },
 );

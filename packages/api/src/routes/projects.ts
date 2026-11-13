@@ -40,14 +40,17 @@ import { invalidateProjectFolderCache } from "../sessions/common.js";
 const app = createRouter();
 const logger = createLogger("api:projects");
 
-/** A project's folder is its session identity; re-map known sessions after it changes. */
-async function reassignSessions(): Promise<void> {
+/**
+ * A project's folder is its session identity; re-map known sessions after it
+ * changes. This shells out to git per unmapped folder, so it runs in the
+ * background: the response must not wait for the whole workspace, and the
+ * published change events refresh open clients.
+ */
+function reassignSessions(): void {
   invalidateProjectFolderCache();
-  try {
-    await reconcileSessionProjects();
-  } catch (error) {
-    logger.error("Session project reassignment failed", error);
-  }
+  void reconcileSessionProjects().catch((error) =>
+    logger.error("Session project reassignment failed", error),
+  );
 }
 
 const WorkspaceSchema = WorkspaceEnvironmentSchema;
@@ -422,7 +425,7 @@ app.openapi(createRoute_, async (c) => {
     where: eq(projects.id, id),
   });
   if (!project) throw new Error("Expected project to exist after write");
-  await reassignSessions();
+  reassignSessions();
   return c.json(toDto(project), 201);
 });
 
@@ -444,6 +447,10 @@ app.openapi(updateRoute, async (c) => {
   const syncChanged =
     JSON.stringify(nextSync) !== JSON.stringify(existing.github_sync) ||
     nextRemote !== existing.git_remote_url;
+  const mappingChanged =
+    (body.scope !== undefined && body.scope !== existing.scope) ||
+    (body.name !== undefined && body.name !== existing.name) ||
+    (body.git_remote_url !== undefined && body.git_remote_url !== existing.git_remote_url);
   await db
     .update(projects)
     .set({
@@ -474,7 +481,7 @@ app.openapi(updateRoute, async (c) => {
     where: eq(projects.id, id),
   });
   if (!updated) throw new Error("Expected updated to exist after write");
-  await reassignSessions();
+  if (mappingChanged) reassignSessions();
   return c.json(toDto(updated));
 });
 
@@ -520,7 +527,7 @@ app.openapi(deleteRoute, async (c) => {
       .run();
     tx.delete(projects).where(eq(projects.id, id)).run();
   }, db);
-  await reassignSessions();
+  reassignSessions();
   return new Response(null, { status: 204 });
 });
 

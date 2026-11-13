@@ -18,7 +18,13 @@ import { watchResourcePath } from "./realtime/sources.js";
 import { indexSessionsWhenEnabled } from "./sessions/archive-local.js";
 import { CLAUDE_REGISTRY_DIR, claudeAdapter } from "./sessions/claude.js";
 import { codexAdapter } from "./sessions/codex.js";
-import { invalidateProjectFolderCache, LIVE_CHAT_ID, projectIdFor } from "./sessions/common.js";
+import {
+  invalidateProjectFolderCache,
+  LIVE_CHAT_ID,
+  leavesScope,
+  projectIdFor,
+  projectScopeFor,
+} from "./sessions/common.js";
 import { cursorAdapter, cursorStateDbPath } from "./sessions/cursor.js";
 import { cursorAgentAdapter } from "./sessions/cursor-agent.js";
 import { geminiAdapter } from "./sessions/gemini.js";
@@ -30,6 +36,9 @@ import type { KnownSession, SessionAdapter, SessionRecord } from "./sessions/typ
 export { LIVE_CHAT_ID };
 
 const logger = createLogger("api:session-sync");
+
+/** Unmapped folders shell out to git; this caps concurrent probes during a reconcile. */
+const MAPPING_CONCURRENCY = 8;
 
 const selectedHostAlias = (): string | null => {
   const host = resolveExecHost();
@@ -129,8 +138,6 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
       : {}),
   };
   if (existing) {
-    if (fields.project_id)
-      new NotificationStore(getSqlite()).assignProject(existing.id, mappedProject ?? null);
     const changed = Object.entries(fields).some(([key, value]) => {
       if (key === "updated_at") return false;
       const previous = existing[key as keyof typeof existing];
@@ -138,8 +145,13 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
         ? previous.getTime() !== value.getTime()
         : previous !== value;
     });
-    if (changed)
+    if (changed) {
       await db.update(gateway_sessions).set(fields).where(eq(gateway_sessions.id, existing.id));
+      // Only reflect the mapping after the session row holds it, so notifications
+      // never point at a project the session does not.
+      if (fields.project_id)
+        new NotificationStore(getSqlite()).assignProject(existing.id, fields.project_id);
+    }
     recordObservedNotification(
       {
         id: existing.id,
@@ -331,25 +343,49 @@ export const syncNow = () => runSync(currentAdapters, { force: true });
 /**
  * Re-run folder mapping for every known session. Project folders can be added or
  * changed after a session was first seen, and worktrees resolve to a checkout root
- * that no earlier sync may have known.
+ * that no earlier sync may have known. An assignment that its project's explicit
+ * scope no longer justifies is dropped, so moving a scope does not leave sessions
+ * and notifications behind in the old project.
  */
 export function reconcileSessionProjects(): Promise<number> {
   return serialized(async () => {
     invalidateProjectFolderCache();
     const db = getDb();
-    const rows = await db.query.gateway_sessions.findMany({
+    const localSessions = await db.query.gateway_sessions.findMany({
       where: eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
     });
+    const rows = localSessions.filter((row) => row.cwd);
+    const mapped: (string | null)[] = [];
+    // Each miss shells out to git; a handful at a time keeps a cold reconcile short
+    // without spawning one process per session at once.
+    for (let index = 0; index < rows.length; index += MAPPING_CONCURRENCY) {
+      const batch = rows.slice(index, index + MAPPING_CONCURRENCY);
+      mapped.push(
+        ...(await Promise.all(
+          batch.map((row) =>
+            projectIdFor(row.cwd as string, hostRuntime(execHostFor(row.execution_host ?? null))),
+          ),
+        )),
+      );
+    }
     const notifications = new NotificationStore(getSqlite());
     let changed = 0;
     let notificationsChanged = 0;
-    for (const row of rows) {
-      if (!row.cwd) continue;
-      const projectId = await projectIdFor(
-        row.cwd,
-        hostRuntime(execHostFor(row.execution_host ?? null)),
-      );
-      if (projectId === null) continue;
+    for (const [index, row] of rows.entries()) {
+      const projectId = mapped[index] ?? null;
+      if (projectId === null) {
+        const local = !row.execution_host || row.execution_host === "local";
+        if (!row.project_id || !local) continue;
+        const scope = await projectScopeFor(row.project_id);
+        if (scope !== undefined && (!scope || !leavesScope(row.cwd as string, scope))) continue;
+        await db
+          .update(gateway_sessions)
+          .set({ project_id: null, updated_at: new Date() })
+          .where(eq(gateway_sessions.id, row.id));
+        notificationsChanged += notifications.assignProject(row.id, null);
+        changed++;
+        continue;
+      }
       if (projectId !== row.project_id) {
         await db
           .update(gateway_sessions)

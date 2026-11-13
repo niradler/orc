@@ -1,5 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Navigate,
   Route,
@@ -126,13 +126,16 @@ export default function App() {
       navigate({ pathname: "/activity", search: search.toString() }, { replace: true });
     }
   }
-  function setProjectId(nextProjectId: string): void {
-    setSavedProjectId(nextProjectId);
-    const next = new URLSearchParams(window.location.search);
-    next.set("project", nextProjectId);
-    if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
-    navigate({ search: next.toString(), hash: window.location.hash });
-  }
+  const setProjectId = useCallback(
+    (nextProjectId: string): void => {
+      setSavedProjectId(nextProjectId);
+      const next = new URLSearchParams(window.location.search);
+      next.set("project", nextProjectId);
+      if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
+      navigate({ search: next.toString(), hash: window.location.hash });
+    },
+    [navigate],
+  );
 
   // Default to collapsed rail on tablet (<lg), expanded on desktop (≥lg).
   // This is a one-shot initialization - after mount the user owns the toggle.

@@ -145,3 +145,91 @@ test("reconciles an existing session and its notifications after a project folde
   ).json<{ notifications: { id: string }[] }>();
   expect(unrelated.notifications.some((item) => item.id === notification.id)).toBe(false);
 });
+
+test("drops an assignment its project's scope no longer justifies", async () => {
+  const movedBase = mkdtempSync(join(tmpdir(), "orc-project-moved-"));
+  const oldScope = join(movedBase, "old");
+  const newScope = join(movedBase, "new");
+  mkdirSync(oldScope, { recursive: true });
+  mkdirSync(newScope, { recursive: true });
+  try {
+    const created = await (
+      await req(app, "POST", "/projects", { name: "mapping-moved", scope: oldScope })
+    ).json<{ id: string }>();
+    const now = new Date();
+    await getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "moved-session",
+        chat_id: "__live-sessions__",
+        backend: "mapping-agent",
+        mode: "direct",
+        runtime_session_id: "moved-native",
+        project_id: null,
+        cwd: join(oldScope, "work"),
+        status: "stopped",
+        title: "Moved fixture",
+        created_at: now,
+        last_activity_at: now,
+      });
+    const store = new NotificationStore(getSqlite());
+    const notification = store.publish({
+      type: "agent.finished",
+      source_key: "moved:finished",
+      source_id: "moved-session",
+      title: "Moved fixture finished",
+      level: "done",
+      project_id: null,
+      path: "/sessions?session=moved-session",
+      created_at: Date.now(),
+      expires_at: Date.now() + 60_000,
+    });
+    if (!notification) throw new Error("Missing moved notification fixture");
+    await reconcileSessionProjects();
+    const assigned = getSqlite()
+      .query<{ project_id: string | null }, [string]>(
+        "SELECT project_id FROM gateway_sessions WHERE id=?",
+      )
+      .get("moved-session");
+    expect(assigned?.project_id).toBe(created.id);
+
+    // Moving the scope must not leave the old folder assigned to this project.
+    expect((await req(app, "PATCH", `/projects/${created.id}`, { scope: newScope })).status).toBe(
+      200,
+    );
+    await reconcileSessionProjects();
+    const cleared = getSqlite()
+      .query<{ project_id: string | null }, [string]>(
+        "SELECT project_id FROM gateway_sessions WHERE id=?",
+      )
+      .get("moved-session");
+    expect(cleared?.project_id).toBeNull();
+    const stored = getSqlite()
+      .query<{ project_id: string | null }, [string]>(
+        "SELECT project_id FROM notifications WHERE id=?",
+      )
+      .get(notification.id);
+    expect(stored?.project_id).toBeNull();
+
+    const unassigned = await (await req(app, "GET", "/notifications?project_id=unassigned")).json<{
+      notifications: { id: string }[];
+    }>();
+    expect(unassigned.notifications.some((item) => item.id === notification.id)).toBe(true);
+
+    // Marking all read in another project's scoped inbox must not touch this one.
+    await req(app, "POST", `/notifications/read?project_id=${encodeURIComponent(created.id)}`);
+    const stillUnread = await (
+      await req(app, "GET", "/notifications?project_id=unassigned&unread=true")
+    ).json<{ notifications: { id: string }[] }>();
+    expect(stillUnread.notifications.some((item) => item.id === notification.id)).toBe(true);
+
+    await req(app, "POST", "/notifications/read?project_id=unassigned");
+    const readScoped = await (await req(app, "GET", "/notifications?project_id=unassigned")).json<{
+      notifications: { id: string }[];
+      unread: number;
+    }>();
+    expect(readScoped.unread).toBe(0);
+  } finally {
+    rmSync(movedBase, { recursive: true, force: true });
+  }
+});

@@ -707,11 +707,14 @@ function useChatController() {
       options: { activate?: boolean; follow?: boolean; projectId?: string | null } = {},
     ) => {
       const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
+      // A stored project wins, including an explicit `null`; a folder that matches
+      // nothing stays unknown rather than claiming to be unassigned.
+      const inferred = next.projectId === undefined ? projectForCwd(next.cwd) : next.projectId;
       const loaded = {
         projectId:
           options.projectId !== undefined
             ? options.projectId
-            : (existing?.projectId ?? next.projectId ?? projectForCwd(next.cwd)),
+            : (existing?.projectId ?? inferred ?? undefined),
         thread: next,
         messages: next.messages,
         config: next.config,

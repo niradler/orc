@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 
 type SelectedProject = {
   projectId: string;
@@ -13,10 +13,10 @@ export function SelectedProjectProvider({
   setProjectId,
   children,
 }: SelectedProject & { children: ReactNode }) {
+  // A stable value keeps adoption effects from re-running on every render.
+  const value = useMemo(() => ({ projectId, setProjectId }), [projectId, setProjectId]);
   return (
-    <SelectedProjectContext.Provider value={{ projectId, setProjectId }}>
-      {children}
-    </SelectedProjectContext.Provider>
+    <SelectedProjectContext.Provider value={value}>{children}</SelectedProjectContext.Provider>
   );
 }
 

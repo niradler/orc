@@ -369,7 +369,7 @@ All paths below use the `/api` prefix and the normal API authentication.
 | --- | --- | --- |
 | `GET` | `/notifications` | Current history, shared unread count and `has_more`; optional `project_id` (or `unassigned`) scopes both |
 | `PATCH` | `/notifications/{id}` | Shared `{read?: boolean, dismissed?: boolean}` |
-| `POST` | `/notifications/read` | Mark all current notifications read |
+| `POST` | `/notifications/read` | Mark current notifications read; optional `project_id` (or `unassigned`) scopes it |
 
 Listing accepts `limit` (1–100, default50), `offset` (default0) and
 `unread=true|false` (defaultfalse). Each notification includes a generic `type`,

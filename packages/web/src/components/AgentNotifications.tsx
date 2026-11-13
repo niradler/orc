@@ -416,7 +416,8 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     dismiss: (id) => update.mutate({ id, dismissed: true }),
     markAllRead: () => {
       setSelected(null);
-      markAll.mutate();
+      // Only what the scoped inbox shows, so another project's unread items survive.
+      markAll.mutate(notificationProject);
     },
     markAllBusy: markAll.isPending,
     hasNextPage: query.hasNextPage,

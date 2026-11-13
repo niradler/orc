@@ -6364,10 +6364,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark all current notifications read across clients */
+        /** Mark current notifications read across clients */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    project_id?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;

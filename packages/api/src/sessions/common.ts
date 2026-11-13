@@ -60,11 +60,13 @@ export function invalidateProjectFolderCache(): void {
 }
 
 /**
- * Every folder that identifies a project: its explicit scope plus the repository
- * roots of its known sessions. That keeps worktrees and additional checkouts in
- * the same project without a second user-configured folder list.
+ * Every folder that identifies a project: its explicit scope plus, for projects
+ * without a scope, the repository roots of its known sessions. Those derived
+ * roots are what make an unscoped project useful without a second folder list.
+ * They are never mixed into a scoped project's folders: a session that no longer
+ * sits under that scope stops justifying its assignment.
  */
-async function projectFolders(rows: ProjectRow[]): Promise<FolderRow[]> {
+async function projectFolders(rows: ProjectRow[], localRuntime: HostRuntime): Promise<FolderRow[]> {
   if (cachedFolders) return cachedFolders;
   const folders = new Map<string, FolderRow>();
   const add = (id: string, scope: string | null) => {
@@ -73,8 +75,15 @@ async function projectFolders(rows: ProjectRow[]): Promise<FolderRow[]> {
     const key = `${id}:${process.platform === "win32" ? path.toLowerCase() : path}`;
     if (!folders.has(key)) folders.set(key, { id, scope });
   };
-  const local = hostRuntime(LOCAL_HOST);
-  for (const project of rows) add(project.id, project.scope);
+  const unscoped = new Set<string>();
+  for (const project of rows) {
+    add(project.id, project.scope);
+    if (!project.scope?.trim()) unscoped.add(project.id);
+  }
+  if (!unscoped.size) {
+    cachedFolders = [...folders.values()];
+    return cachedFolders;
+  }
   const sessions = getSqlite()
     .query<{ project_id: string; cwd: string }, []>(
       `SELECT project_id, cwd FROM gateway_sessions
@@ -86,7 +95,8 @@ async function projectFolders(rows: ProjectRow[]): Promise<FolderRow[]> {
     )
     .all();
   for (const session of sessions) {
-    add(session.project_id, (await repoRootFor(session.cwd, local)) ?? session.cwd);
+    if (!unscoped.has(session.project_id)) continue;
+    add(session.project_id, (await repoRootFor(session.cwd, localRuntime)) ?? session.cwd);
   }
   cachedFolders = [...folders.values()];
   return cachedFolders;
@@ -139,8 +149,39 @@ async function repoRootFor(cwd: string, runtime: HostRuntime): Promise<string | 
   return root;
 }
 
-function remoteName(url: string): string {
-  return basename(url.replace(/\/+$/, "").replace(/\.git$/i, "")).toLowerCase();
+/** Normalizes scheme, credentials and scp-like syntax so two spellings of one remote agree. */
+function remotePath(url: string): { full: string; name: string } {
+  const full = url
+    .trim()
+    .replace(/^[a-z+]+:\/\//i, "")
+    .replace(/^[^@/]+@/, "")
+    .replace(/^([^/:]+):(?!\/)/, "$1/")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+  return { full, name: basename(full) };
+}
+
+/**
+ * Only an unambiguous remote match may assign a project: two repositories with the
+ * same basename are different projects, and a wrong guess would stick.
+ */
+function projectForRemote(rows: ProjectRow[], url: string): string | null {
+  const remote = remotePath(url);
+  const matches = (candidates: ProjectRow[]): string | null =>
+    candidates.length === 1 ? (candidates[0]?.id ?? null) : null;
+  const remotes = rows.flatMap((project) =>
+    project.git_remote_url ? [{ project, remote: remotePath(project.git_remote_url) }] : [],
+  );
+  return (
+    matches(
+      remotes.filter((entry) => entry.remote.full === remote.full).map((entry) => entry.project),
+    ) ??
+    matches(rows.filter((project) => project.name.trim().toLowerCase() === remote.name)) ??
+    matches(
+      remotes.filter((entry) => entry.remote.name === remote.name).map((entry) => entry.project),
+    )
+  );
 }
 
 export async function projectIdFor(
@@ -152,9 +193,12 @@ export async function projectIdFor(
   const cached = projectByCwd.get(key);
   if (cached !== undefined) return cached;
   const rows = await projectRows();
-  const folders = await projectFolders(rows);
+  // Project scopes describe the local machine; a remote folder of the same name is
+  // a different folder, so remote sessions can only match by their git remote.
+  const local = runtime.host.kind !== "ssh";
+  const folders = local ? await projectFolders(rows, runtime) : [];
   let id = projectForFolder(cwd, folders)?.id ?? null;
-  if (!id) {
+  if (!id && local) {
     // Sessions often run in a worktree outside the project's folder. Resolve the
     // shared checkout first so sibling folders and worktrees agree on one project.
     const root = await repoRootFor(cwd, runtime);
@@ -166,19 +210,22 @@ export async function projectIdFor(
         timeoutMs: 30_000,
       });
       const url = result.code === 0 ? result.stdout.trim() : "";
-      if (url) {
-        const name = remoteName(url);
-        const row = rows.find(
-          (project) =>
-            (project.git_remote_url && remoteName(project.git_remote_url) === name) ||
-            project.name.toLowerCase() === name,
-        );
-        id = row?.id ?? null;
-      }
+      if (url) id = projectForRemote(rows, url);
     } catch {
       id = null;
     }
   }
   projectByCwd.set(key, id);
   return id;
+}
+
+/** A project's configured folder, or undefined when the project no longer exists. */
+export async function projectScopeFor(projectId: string): Promise<string | null | undefined> {
+  const row = (await projectRows()).find((project) => project.id === projectId);
+  return row ? row.scope : undefined;
+}
+
+/** True when a folder no longer sits under the scope that justified its assignment. */
+export function leavesScope(cwd: string, scope: string): boolean {
+  return projectForFolder(cwd, [{ id: "previous", scope }]) === undefined;
 }

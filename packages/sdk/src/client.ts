@@ -279,7 +279,8 @@ export function createOrcClient(options?: OrcClientOptions) {
       ) => c<NotificationPage>("GET", "/notifications", undefined, query),
       update: (id: string, update: NotificationUpdate) =>
         c<OrcNotification>("PATCH", `/notifications/${e(id)}`, update),
-      markAllRead: () => c<{ ok: true }>("POST", "/notifications/read"),
+      markAllRead: (projectId?: string) =>
+        c<{ ok: true }>("POST", "/notifications/read", undefined, { project_id: projectId }),
     },
     push: {
       config: () => c<PushConfig>("GET", "/push/config"),

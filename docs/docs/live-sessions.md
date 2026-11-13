@@ -14,12 +14,14 @@ Activity and full-width session history share compact title/provider/state rows.
 An ORC terminal agent without observed session activity shows **Unknown**, rather
 than assuming it is idle. A session's working folder decides its project: the most
 specific project folder wins, and a worktree resolves to its shared checkout even
-when it lives outside the project's folder. Sessions opened from a known folder
-adopt that project in the workspace header, so the session list and notification
-inbox follow the project you are actually working in. The mapping is re-evaluated
-when project folders change, and existing sessions and their notifications move
-with them. Each project has one folder scope; additional worktrees and repository
-roots are derived from the folder's git checkout rather than stored separately.
+when it lives outside the project's folder. Opening a session from the session
+list adopts its project in the workspace header, so the session list and
+notification inbox follow the project you are actually working in. The mapping is
+re-evaluated when project folders change, and existing sessions and their
+notifications move with them; a session whose project folder was moved away stops
+claiming the old project. Each project has one folder scope. Worktrees resolve to
+their shared checkout, and a project without a scope takes the repository roots of
+its known sessions as derived folders, so no second folder list is stored.
 OpenCode's session store is watched alongside the other agent stores, so its new
 sessions appear without waiting for another agent's activity.
 

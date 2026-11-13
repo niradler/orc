@@ -149,12 +149,20 @@ export function ChatSessionPicker({
     enabled: open,
   });
   const [refreshingSessions, setRefreshingSessions] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
   const refreshSessions = async () => {
     setRefreshingSessions(true);
+    setRefreshError("");
     try {
       // Ask the server to re-import native sessions first; watching covers most
       // agents, but a forced sync also catches external stores immediately.
-      await api.sessions.sync().catch(() => undefined);
+      try {
+        await api.sessions.sync();
+      } catch (cause) {
+        // Keep refreshing the lists even when the forced sync fails; a silent
+        // no-op would look like the click did nothing.
+        setRefreshError(cause instanceof Error ? cause.message : "Sessions could not be synced.");
+      }
       await Promise.all([
         threads.refetch(),
         live.refetch(),
@@ -275,12 +283,12 @@ export function ChatSessionPicker({
   // Opening or switching to a folder-scoped session adopts its project unless the
   // header already has an explicit project selected.
   const adoptedSignature = useRef("");
-  useEffect(() => {
-    const signature = `${chat.activeKey}:${chat.projectId ?? ""}:${active?.projectId ?? ""}`;
+  const adoptOnOpen = (projectId?: string | null) => {
+    const signature = `${chat.activeKey}:${projectId ?? ""}`;
     if (adoptedSignature.current === signature) return;
     adoptedSignature.current = signature;
-    adoptProject(chat.projectId ?? active?.projectId);
-  }, [chat.activeKey, chat.projectId, active?.projectId, adoptProject]);
+    adoptProject(projectId);
+  };
   useEffect(() => {
     if (!activeKeys) return;
     const keys = activeKeys.split("\n");
@@ -289,7 +297,7 @@ export function ChatSessionPicker({
   }, [activeKeys, activeUpdated]);
   const selectEntry = (entry: ChatHistoryEntry) => {
     markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
-    adoptProject(entry.projectId);
+    adoptOnOpen(entry.projectId);
     const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
     if (terminalId) {
       setOpen(false);
@@ -480,18 +488,22 @@ export function ChatSessionPicker({
                 </Button>
               ))}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              data-testid="session-list-refresh"
-              aria-label="Refresh sessions"
-              title="Refresh sessions"
-              disabled={refreshingSessions}
-              onClick={() => void refreshSessions()}
+            <ActionHelp
+              label="Refresh sessions"
+              description="Re-import agent sessions, then refresh threads, live sessions and archive."
             >
-              <RefreshCw className={refreshingSessions ? "animate-spin" : undefined} />
-            </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                data-testid="session-list-refresh"
+                aria-label="Refresh sessions"
+                disabled={refreshingSessions}
+                onClick={() => void refreshSessions()}
+              >
+                <RefreshCw className={refreshingSessions ? "animate-spin" : undefined} />
+              </Button>
+            </ActionHelp>
           </div>
           <Input
             data-testid="chat-session-search"
@@ -636,9 +648,10 @@ export function ChatSessionPicker({
           )}
         </>
       )}
-      {(error || threads.error || live.error || archive.error || projectsError) && (
+      {(error || refreshError || threads.error || live.error || archive.error || projectsError) && (
         <p role="alert" className="text-sm text-error wrap-break-word">
           {error ||
+            refreshError ||
             threads.error?.message ||
             live.error?.message ||
             archive.error?.message ||

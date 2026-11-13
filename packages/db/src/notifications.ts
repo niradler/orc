@@ -272,16 +272,25 @@ export class NotificationStore {
       .immediate();
   }
 
-  markAllRead(): void {
+  markAllRead(projectId?: string | null): void {
+    if (projectId !== undefined && projectId !== null) z.string().min(1).max(256).parse(projectId);
     const now = this.now();
     const cutoff = now - this.maximumAge();
+    // A scoped inbox marks only what it shows; no filter keeps the global behaviour.
+    const project =
+      projectId === undefined
+        ? ""
+        : projectId === null
+          ? " AND project_id IS NULL"
+          : " AND project_id=?";
+    const projectBindings = projectId === undefined || projectId === null ? [] : [projectId];
     this.db
       .transaction(() => {
         const updated = this.db
           .query(
-            "UPDATE notifications SET read_at=? WHERE read_at IS NULL AND dismissed_at IS NULL AND expires_at>? AND created_at>?",
+            `UPDATE notifications SET read_at=? WHERE read_at IS NULL AND dismissed_at IS NULL AND expires_at>? AND created_at>?${project}`,
           )
-          .run(now, now, cutoff);
+          .run(now, now, cutoff, ...projectBindings);
         if (updated.changes)
           new AuditLog(this.db, { now: () => now }).record({
             action: "notification.read_all",
