@@ -28,6 +28,7 @@ import { req, setupTestApp, teardownTestApp } from "./helpers";
 
 type Turn = { prompt: string; steers: string[]; release: () => void; cwd: string };
 
+let slow: Promise<void> = Promise.resolve();
 let app: ReturnType<typeof createApp>;
 let original: AgentBackend;
 const turns: Turn[] = [];
@@ -152,7 +153,10 @@ beforeAll(() => {
   let count = 0;
   registerBackend("claude", () => ({
     ...original,
-    preflight: async () => ({ ok: true }),
+    preflight: async () => {
+      await slow;
+      return { ok: true };
+    },
     startSession: async (opts) => fakeSession(opts.cwd, `native-${++count}`),
     resumeSession: async (id, opts) => fakeSession(opts.cwd, id),
   }));
@@ -504,5 +508,88 @@ describe("agent session control", () => {
         ),
       "tree stopped",
     );
+  });
+  test("should keep a cascade-stopped parent stopped instead of waking it with child notes", async () => {
+    const lead = await startParent("calm lead: fan out", repo);
+    await turnFor("calm lead: fan out");
+    const child = (
+      await req(
+        app,
+        "POST",
+        "/sessions/live/spawn",
+        { prompt: "calm worker", notify: true },
+        as(lead.id),
+      )
+    ).json<SessionStatus>();
+    const { session_id } = await child;
+    await turnFor("calm worker");
+    expect((await req(app, "POST", `/sessions/live/${lead.id}/stop`)).status).toBe(200);
+    await until(
+      () => !chatControl().running(lead.id) && !chatControl().running(session_id),
+      "tree stopped",
+    );
+    await Bun.sleep(50);
+    const before = turns.length;
+    void deliverIdleSessionMessages();
+    await Bun.sleep(200);
+    expect((await inbox(lead.id)).filter((message) => message.state !== "delivered")).toEqual([]);
+    expect(chatControl().running(lead.id)).toBe(false);
+    expect(turns.some((turn) => turn.prompt.includes(`id=${session_id}`))).toBe(false);
+    for (const turn of turns.slice(before)) turn.release();
+    await until(() => !chatControl().full(), "workers free");
+  });
+
+  test("should stop a queued child caught while it starts, report cancelled ones as stopped, and queue racing spawns", async () => {
+    const lead = await startParent("race lead: fan out", repo);
+    await turnFor("race lead: fan out");
+    const spawn = async (prompt: string) =>
+      (
+        await req(app, "POST", "/sessions/live/spawn", { prompt }, as(lead.id))
+      ).json<SessionStatus>();
+    const prompts = ["race one", "race two", "race three", "race four"];
+    const started = await Promise.all(prompts.map(spawn));
+    expect(started.map((child) => child.status).sort()).toEqual([
+      "queued",
+      "running",
+      "running",
+      "running",
+    ]);
+    const index = started.findIndex((child) => child.status === "queued");
+    const queued = started[index] as SessionStatus;
+    const queuedPrompt = prompts[index] as string;
+    const runningPrompt = prompts[
+      started.findIndex((child) => child.status === "running")
+    ] as string;
+    const cancelled = await spawn("race cancelled");
+    expect(cancelled.status).toBe("queued");
+    const send = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: queued.session_id,
+        messages: [{ role: "user", content: "jump the queue" }],
+      }),
+    });
+    expect(send.status).toBe(409);
+    expect((await req(app, "POST", `/sessions/live/${cancelled.session_id}/stop`)).status).toBe(
+      200,
+    );
+    expect((await status(cancelled.session_id)).status).toBe("stopped");
+
+    let open = () => {};
+    slow = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    (await turnFor(runningPrompt)).release();
+    await until(() => chatControl().running(queued.session_id), "queued child dequeued");
+    expect((await req(app, "POST", `/sessions/live/${queued.session_id}/stop`)).status).toBe(200);
+    open();
+    slow = Promise.resolve();
+    await until(() => !chatControl().running(queued.session_id), "dequeued child stopped");
+    expect(turns.some((turn) => turn.prompt.includes(queuedPrompt))).toBe(false);
+    expect((await status(queued.session_id)).status).toBe("stopped");
+    expect(turns.filter((turn) => turn.prompt === "jump the queue")).toEqual([]);
+    for (const turn of turns) turn.release();
+    await req(app, "POST", `/sessions/live/${lead.id}/stop`);
   });
 });
