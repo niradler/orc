@@ -68,8 +68,8 @@ Configure through the plugin entry:
       "options": {
         "command": "orc", // ORC executable (default: ORC_COMMAND or "orc")
         "rules": true, // false loads the plugin without enforcement
-        "timeoutMs": 30000, // blocking hook timeout; ask-user rules extend it automatically
-        "apiBase": "http://127.0.0.1:7700", // ORC origin for the rules plan and rule actions
+        "timeoutMs": 30000, // minimum blocking hook timeout; ask-user rules may wait longer
+        "apiBase": "http://127.0.0.1:7700", // plan fetch + hook actions; unset hooks use orc config
         "secretEnv": "ORC_API_SECRET" // env var holding the API secret
       }
     }

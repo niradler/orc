@@ -1,6 +1,6 @@
 import { ruleHookGate } from "./gate.js";
 import { runRuleHook } from "./hook.js";
-import { planRules, rulesForCwd } from "./plan.js";
+import { planFromResponse, planRules, rulesForCwd } from "./plan.js";
 import type {
   HookDecision,
   HookRun,
@@ -8,6 +8,7 @@ import type {
   OrcRuleRevision,
   RuleGateInput,
   RulePlan,
+  RulesPlanResponse,
 } from "./types.js";
 
 export type RuleClientSpec<Native extends string> = {
@@ -24,6 +25,10 @@ export type RuleClient<Native extends string> = {
   readonly blocking: ReadonlySet<Native>;
   rulesForCwd(history: readonly OrcRuleRevision[], cwd: string): OrcRule[];
   planRules(history: readonly OrcRuleRevision[], cwd: string): RulePlan<Native>;
+  planFromResponse(
+    data: RulesPlanResponse,
+    cwd: string,
+  ): { plan: RulePlan<Native> | undefined; disabled: boolean };
   gate(input: RuleGateInput<Native>): { run: boolean; timeoutMs: number };
   runHook(run: HookRun<Native>): Promise<HookDecision>;
 };
@@ -43,6 +48,7 @@ export function createRuleClient<Native extends string>(
     blocking,
     rulesForCwd: (history, cwd) => rulesForCwd(spec.backend, history, cwd),
     planRules: (history, cwd) => planRules(spec.phases, spec.backend, history, cwd),
+    planFromResponse: (data, cwd) => planFromResponse(spec.phases, spec.backend, data, cwd),
     gate: (input) => ruleHookGate(blocking, input),
     runHook: (run) => runRuleHook(spec.backend, blocking.has(run.native), run),
   };

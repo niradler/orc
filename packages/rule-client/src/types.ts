@@ -45,6 +45,12 @@ export type HookRun<Native extends string = string> = {
   signal?: AbortSignal | undefined;
 };
 
+export type RulesPlanResponse = {
+  enabled?: boolean;
+  history?: unknown;
+  history_truncated?: boolean;
+};
+
 export type RuleGateInput<Native extends string = string> = {
   enabled: boolean;
   plan: RulePlan<Native> | undefined;

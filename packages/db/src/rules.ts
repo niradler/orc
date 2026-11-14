@@ -74,6 +74,9 @@ function revision(row: RevisionRow): RuleRevision {
   };
 }
 
+/** Row cap for history(); clients treat a full page as possibly truncated. */
+export const RULE_HISTORY_LIMIT = 200;
+
 export class RuleStore {
   constructor(readonly db: Database) {
     installRules(db);
@@ -140,7 +143,7 @@ export class RuleStore {
   history(workspace?: string): RuleRevision[] {
     return this.db
       .query<RevisionRow, [string | null, string | null]>(
-        `SELECT r.*,h.revision_id=r.id AS current FROM rule_revisions r LEFT JOIN rule_heads h ON h.workspace=r.workspace WHERE (? IS NULL OR r.workspace=?) ORDER BY r.created_at DESC,r.id DESC LIMIT 200`,
+        `SELECT r.*,h.revision_id=r.id AS current FROM rule_revisions r LEFT JOIN rule_heads h ON h.workspace=r.workspace WHERE (? IS NULL OR r.workspace=?) ORDER BY r.created_at DESC,r.id DESC LIMIT ${RULE_HISTORY_LIMIT}`,
       )
       .all(...workspaceFilter(workspace))
       .map(revision);

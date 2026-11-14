@@ -1,6 +1,6 @@
 import { resolve, sep } from "node:path";
 import { DEFAULT_HOOK_MS, HUMAN_GRACE_MS } from "./hook.js";
-import type { OrcRule, OrcRuleRevision, RulePlan } from "./types.js";
+import type { OrcRule, OrcRuleRevision, RulePlan, RulesPlanResponse } from "./types.js";
 
 function inside(target: string, root: string): boolean {
   const t = resolve(target).toLowerCase();
@@ -58,4 +58,25 @@ export function planRules<Native extends string>(
     }
   }
   return { events, timeoutMs, count: rules.length };
+}
+
+/**
+ * Interpret a GET /rules response. A confirmed disable skips enforcement.
+ * An unrecognized or possibly truncated history is not a plan: blocking
+ * events fall back to the local hook (fail closed) instead of silently
+ * skipping enforcement.
+ */
+export function planFromResponse<Native extends string>(
+  phases: Readonly<Record<Native, string>>,
+  backend: string,
+  data: RulesPlanResponse,
+  cwd: string,
+): { plan: RulePlan<Native> | undefined; disabled: boolean } {
+  if (data.enabled === false) return { plan: undefined, disabled: true };
+  if (!Array.isArray(data.history) || data.history_truncated === true)
+    return { plan: undefined, disabled: false };
+  return {
+    plan: planRules(phases, backend, data.history as OrcRuleRevision[], cwd),
+    disabled: false,
+  };
 }

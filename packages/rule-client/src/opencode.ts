@@ -31,6 +31,7 @@ export const OPENCODE_BLOCKING_EVENTS: ReadonlySet<OpenCodeNativeEvent> = client
 export const opencodeRuleClient = client;
 export const rulesForCwd = client.rulesForCwd;
 export const planRules = client.planRules;
+export const planFromResponse = client.planFromResponse;
 export const ruleHookGate = client.gate;
 export const runRuleHook = client.runHook;
 

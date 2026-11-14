@@ -35,6 +35,7 @@ import {
   BLOCKING_EVENTS,
   type OrcRule,
   type PiNativeEvent,
+  planFromResponse,
   planRules,
   RULES_REFRESH_MS,
   type RulePlan,
@@ -62,6 +63,7 @@ type SessionState = {
   rules?: RulePlan | undefined;
   rulesError?: string | undefined;
   rulesDisabled: boolean;
+  rulesOptOut?: boolean;
   rulesCheckedAt: number;
   pendingContext: string[];
   sessionId: string;
@@ -281,9 +283,10 @@ async function refreshRules(session: SessionState): Promise<void> {
     if (session.health !== "up") return;
   }
   try {
-    const data = await session.api.rules();
-    if (data.enabled) session.rules = planRules(data.history, session.cwd);
-    else session.rulesDisabled = true;
+    const data = await session.api.rules(undefined, session.cwd);
+    const { plan, disabled } = planFromResponse(data, session.cwd);
+    session.rules = plan;
+    session.rulesDisabled = disabled;
   } catch (err) {
     session.rulesError = errorText(err, config.secret);
   }
@@ -318,6 +321,8 @@ async function initialize(
     });
   } catch (err) {
     session.configError = errorText(err, undefined);
+    // An explicit opt-out still applies when the config itself failed to load.
+    session.rulesOptOut = flagOverrides(pi).rules === false || process.env.PORC_RULES === "false";
     setStatus(ctx, session);
     if (options.announce) ctx.ui.notify(session.configError, "error");
     return;
@@ -597,7 +602,7 @@ async function restAction(
         .join("\n");
     }
     case "rule_list": {
-      const data = await api.rules();
+      const data = await api.rules(undefined, ctx.cwd);
       const plan = planRules(data.history, ctx.cwd);
       const current = data.history.filter((revision) => revision.current && revision.policy);
       const lines = current.flatMap((revision) =>
@@ -1024,7 +1029,7 @@ async function checkRules(
   ctx: ExtensionContext,
 ) {
   if (!session?.config)
-    return BLOCKING_EVENTS.has(native)
+    return BLOCKING_EVENTS.has(native) && !session?.rulesOptOut
       ? { block: true, reason: "ORC rules unavailable: porc configuration failed to load" }
       : undefined;
   const gate = ruleHookGate({

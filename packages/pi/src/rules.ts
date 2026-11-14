@@ -14,6 +14,7 @@ export {
   type PiNativeEvent,
   type PiRuleGate as RuleGate,
   type PiRulePlan as RulePlan,
+  planFromResponse,
   planRules,
   ruleHookGate,
   rulesForCwd,

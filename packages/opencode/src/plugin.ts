@@ -4,11 +4,11 @@ import { DEFAULT_HOOK_MS } from "@orc/rule-client/hook";
 import {
   type OpenCodeNativeEvent,
   type OpenCodeRulePlan,
-  type OrcRuleRevision,
-  planRules,
+  planFromResponse,
   ruleHookGate,
   runRuleHook,
 } from "@orc/rule-client/opencode";
+import type { RulesPlanResponse } from "@orc/rule-client/types";
 
 export type OrcPluginOptions = {
   /** ORC executable; defaults to ORC_COMMAND or `orc` on PATH. */
@@ -27,15 +27,15 @@ type ResolvedOptions = {
   command: string;
   rules: boolean;
   timeoutMs: number;
-  apiBase: string;
+  apiBase?: string;
   secret?: string;
 };
 
-function resolveOptions(raw: unknown): ResolvedOptions {
+export function resolveOptions(raw: unknown): ResolvedOptions {
   const options = (raw ?? {}) as OrcPluginOptions;
   const env = process.env;
   const secret = (options.secretEnv ? env[options.secretEnv] : env.ORC_API_SECRET)?.trim();
-  const apiBase = (options.apiBase ?? env.ORC_API_BASE)?.trim() || "http://127.0.0.1:7700";
+  const apiBase = (options.apiBase ?? env.ORC_API_BASE)?.trim();
   const timeoutMs =
     typeof options.timeoutMs === "number" &&
     Number.isInteger(options.timeoutMs) &&
@@ -47,7 +47,7 @@ function resolveOptions(raw: unknown): ResolvedOptions {
     command: options.command?.trim() || env.ORC_COMMAND?.trim() || "orc",
     rules: typeof options.rules === "boolean" ? options.rules : options.rules !== "false",
     timeoutMs,
-    apiBase,
+    ...(apiBase ? { apiBase } : {}),
     ...(secret ? { secret } : {}),
   };
 }
@@ -85,33 +85,39 @@ const plugin: Plugin.Plugin = {
       }
       const chunks = pending.get(sessionID) ?? [];
       chunks.push(context);
+      if (chunks.length > 32) chunks.splice(0, chunks.length - 32);
       pending.set(sessionID, chunks);
     };
 
+    const planBase = options.apiBase ?? "http://127.0.0.1:7700";
     let plan: OpenCodeRulePlan | undefined;
     let disabled = false;
     let checkedAt = 0;
-    const refreshPlan = async (): Promise<void> => {
-      if (Date.now() - checkedAt < RULES_REFRESH_MS) return;
-      checkedAt = Date.now();
-      try {
-        const response = await fetch(`${options.apiBase}/api/rules`, {
-          headers: options.secret ? { Authorization: `Bearer ${options.secret}` } : {},
-          signal: AbortSignal.timeout(3000),
-        });
-        if (!response.ok) throw new Error(`rules plan fetch failed (${response.status})`);
-        const data = (await response.json()) as {
-          enabled?: boolean;
-          history?: OrcRuleRevision[];
-        };
-        disabled = data.enabled === false;
-        plan = disabled ? undefined : planRules(data.history ?? [], cwd);
-      } catch {
-        // Offline or unauthenticated: no plan. Blocking events still run the
-        // hook against the local DB; a confirmed disable is the only skip.
-        plan = undefined;
-        disabled = false;
-      }
+    let inflight: Promise<void> | undefined;
+    const refreshPlan = (): Promise<void> => {
+      if (Date.now() - checkedAt < RULES_REFRESH_MS) return Promise.resolve();
+      inflight ??= (async () => {
+        try {
+          const response = await fetch(`${planBase}/api/rules?cwd=${encodeURIComponent(cwd)}`, {
+            headers: options.secret ? { Authorization: `Bearer ${options.secret}` } : {},
+            signal: AbortSignal.timeout(3000),
+          });
+          if (!response.ok) throw new Error(`rules plan fetch failed (${response.status})`);
+          const data = (await response.json()) as RulesPlanResponse;
+          const next = planFromResponse(data, cwd);
+          plan = next.plan;
+          disabled = next.disabled;
+        } catch {
+          // Offline or unauthenticated: no plan. Blocking events still run the
+          // hook against the local DB; a confirmed disable is the only skip.
+          plan = undefined;
+          disabled = false;
+        } finally {
+          checkedAt = Date.now();
+          inflight = undefined;
+        }
+      })();
+      return inflight;
     };
     const gateFor = async (native: OpenCodeNativeEvent) => {
       await refreshPlan();
@@ -130,10 +136,11 @@ const plugin: Plugin.Plugin = {
         cwd,
         env: {
           ORC_SESSION_ID: sessionID,
-          ORC_API_BASE: options.apiBase,
+          // Unset lets the hook CLI use its own orc config for the API origin.
+          ...(options.apiBase ? { ORC_API_BASE: options.apiBase } : {}),
           ...(options.secret ? { ORC_API_SECRET: options.secret } : {}),
         },
-        timeoutMs,
+        timeoutMs: Math.max(timeoutMs, options.timeoutMs),
       });
     await refreshPlan();
 

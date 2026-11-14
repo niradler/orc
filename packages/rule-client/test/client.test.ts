@@ -18,6 +18,7 @@ import {
   type OrcRuleRevision,
   PI_NATIVE_PHASES,
   type PiNativeEvent,
+  planFromResponse,
   planRules,
   ruleHookGate,
   rulesForCwd,
@@ -118,6 +119,25 @@ describe("planRules", () => {
     );
     expect([...plan.events].sort()).toEqual(["execute.after", "execute.before", "prompt"]);
     expect(plan.count).toBe(3);
+  });
+});
+
+describe("planFromResponse", () => {
+  test("a confirmed disable skips; truncated or unrecognized history is not a plan", () => {
+    expect(planFromResponse({ enabled: false, history: [revision([rule()])] }, root)).toEqual({
+      plan: undefined,
+      disabled: true,
+    });
+    expect(
+      planFromResponse(
+        { enabled: true, history: [revision([rule()])], history_truncated: true },
+        root,
+      ).plan,
+    ).toBeUndefined();
+    expect(planFromResponse({ enabled: true }, root).plan).toBeUndefined();
+    const ok = planFromResponse({ enabled: true, history: [revision([rule()])] }, root);
+    expect(ok.disabled).toBe(false);
+    expect(ok.plan?.events.has("tool_call")).toBe(true);
   });
 });
 

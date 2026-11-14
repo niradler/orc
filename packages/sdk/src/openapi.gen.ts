@@ -11755,6 +11755,7 @@ export interface paths {
             parameters: {
                 query?: {
                     workspace?: string;
+                    cwd?: string;
                 };
                 header?: never;
                 path?: never;
@@ -11882,6 +11883,7 @@ export interface paths {
                                 created_at: number;
                                 current: boolean;
                             }[];
+                            history_truncated: boolean;
                             decisions: {
                                 id: string;
                                 revision_id: string;

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Plugin } from "@opencode/plugin";
-import plugin from "../src/plugin.js";
+import plugin, { resolveOptions } from "../src/plugin.js";
 
 type ToolBefore = {
   tool: string;
@@ -64,7 +64,7 @@ const log = join(directory, "calls.jsonl");
 const stubSource = `import { appendFileSync } from "node:fs";
 const payload = JSON.parse(await Bun.stdin.text());
 const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, payload, session: process.env.ORC_SESSION_ID }) + "\\n");
+appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, payload, session: process.env.ORC_SESSION_ID, apiBase: process.env.ORC_API_BASE ?? null }) + "\\n");
 const native = args[3];
 const command = String(payload.tool_input?.command ?? "");
 const prompt = String(payload.prompt ?? "");
@@ -80,6 +80,9 @@ if (native === "prompt") {
   console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: native, additionalContext: "tool guidance" } }));
 } else if (command.includes("exit2")) {
   process.exit(2);
+} else if (command.includes("slow")) {
+  await new Promise((r) => setTimeout(r, 400));
+  console.log("{}");
 } else {
   console.log("{}");
 }
@@ -122,7 +125,11 @@ const defaultHistory = [
     rule("prompt", ["prompt_submit"]),
   ]),
 ];
-let rulesResponse: { enabled: boolean; history: unknown[] } = {
+let rulesResponse: {
+  enabled: boolean;
+  history?: unknown[];
+  history_truncated?: boolean;
+} = {
   enabled: true,
   history: defaultHistory,
 };
@@ -242,6 +249,53 @@ describe("plan selection", () => {
     const { toolHooks } = await setup({ apiBase: deadUrl });
     await expect(toolHooks.before?.(toolEvent("blocked ssh"))).rejects.toThrow("guard: denied");
     expect(callCount()).toBe(1);
+  });
+
+  test("a truncated or unrecognized plan fails closed on blocking events", async () => {
+    rulesResponse = { enabled: true, history: defaultHistory, history_truncated: true };
+    const truncated = await setup();
+    await expect(truncated.toolHooks.before?.(toolEvent("blocked ssh"))).rejects.toThrow(
+      "guard: denied",
+    );
+    rulesResponse = { enabled: true };
+    const unrecognized = await setup();
+    await expect(unrecognized.toolHooks.before?.(toolEvent("blocked ssh"))).rejects.toThrow(
+      "guard: denied",
+    );
+  });
+
+  test("the hook receives the configured API origin", async () => {
+    const { toolHooks } = await setup();
+    await toolHooks.before?.(toolEvent("ls"));
+    const lines = readFileSync(log, "utf8").trim().split("\n");
+    const call = JSON.parse(lines[lines.length - 1] ?? "{}");
+    expect(call.apiBase).toBe(apiUrl);
+  });
+});
+
+describe("options", () => {
+  test("resolveOptions keeps apiBase unset unless configured", () => {
+    const saved = process.env.ORC_API_BASE;
+    delete process.env.ORC_API_BASE;
+    try {
+      expect(resolveOptions({}).apiBase).toBeUndefined();
+      expect(resolveOptions({ apiBase: "http://x:1" }).apiBase).toBe("http://x:1");
+      process.env.ORC_API_BASE = "http://env:2";
+      expect(resolveOptions({}).apiBase).toBe("http://env:2");
+      expect(resolveOptions({ rules: "false" }).rules).toBe(false);
+      expect(resolveOptions({ rules: false }).rules).toBe(false);
+      expect(resolveOptions({}).rules).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.ORC_API_BASE;
+      else process.env.ORC_API_BASE = saved;
+    }
+  });
+
+  test("timeoutMs is a floor, never below the plan timeout", async () => {
+    const { toolHooks } = await setup({ timeoutMs: 250 });
+    const event = toolEvent("slow ls");
+    await toolHooks.before?.(event);
+    expect(event.input).toEqual({ command: "slow ls" });
   });
 });
 

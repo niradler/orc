@@ -87,8 +87,8 @@ Pass options through the plugin entry:
 | ----------- | -------------------------------- | -------------------------------------------------- |
 | `command`   | `ORC_COMMAND` or `orc`           | ORC executable that runs the rule hook             |
 | `rules`     | `true`                           | `false` loads the plugin without enforcement       |
-| `timeoutMs` | `30000`                          | Blocking hook timeout; ask-user rules extend it automatically |
-| `apiBase`   | `ORC_API_BASE` or `http://127.0.0.1:7700` | ORC origin for the rules plan and rule actions |
+| `timeoutMs` | `30000`                          | Minimum blocking hook timeout; ask-user rules may wait longer |
+| `apiBase`   | `ORC_API_BASE` (unset otherwise) | ORC origin for the plan fetch and hook actions; when unset, the plan uses the local API and hooks use the orc config |
 | `secretEnv` | `ORC_API_SECRET`                 | Environment variable holding the API secret        |
 
 Session identity is forwarded as `ORC_SESSION_ID`, so rule decisions and writes are

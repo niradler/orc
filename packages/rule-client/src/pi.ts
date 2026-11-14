@@ -32,6 +32,7 @@ export const BLOCKING_EVENTS: ReadonlySet<PiNativeEvent> = client.blocking;
 
 export const rulesForCwd = client.rulesForCwd;
 export const planRules = client.planRules;
+export const planFromResponse = client.planFromResponse;
 export const ruleHookGate = client.gate;
 export const runRuleHook = client.runHook;
 

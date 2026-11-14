@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import porc from "../extensions/orc.js";
@@ -24,13 +24,13 @@ function fakePi() {
   };
 }
 
-function fakeCtx(cwd: string) {
+function fakeCtx(cwd: string, trusted = false) {
   return {
     cwd,
     hasUI: false,
     signal: undefined,
     sessionManager: { getSessionId: () => "pi-extension-test" },
-    isProjectTrusted: () => false,
+    isProjectTrusted: () => trusted,
     ui: {
       setStatus: () => undefined,
       notify: () => undefined,
@@ -202,6 +202,27 @@ describe("porc rule enforcement (issue #260)", () => {
     const decision = await handlers.tool_call?.(toolCall, ctx);
     expect(decision).toEqual({ block: true, reason: "guard: no" });
     expect(callCount()).toBe(1);
+  });
+
+  test("a config error fails closed unless rules are explicitly opted out", async () => {
+    const badDir = join(directory, "badcfg");
+    mkdirSync(join(badDir, ".pi"), { recursive: true });
+    writeFileSync(join(badDir, ".pi", "porc.json"), "{ not json");
+    const ctx = fakeCtx(badDir, true);
+    process.env.PORC_RULES = "true";
+    const guarded = fakePi();
+    porc(guarded.api as never);
+    await guarded.handlers.session_start?.({ reason: "startup" }, ctx);
+    expect(await guarded.handlers.tool_call?.(toolCall, ctx)).toEqual({
+      block: true,
+      reason: expect.stringContaining("configuration"),
+    });
+    process.env.PORC_RULES = "false";
+    const optedOut = fakePi();
+    porc(optedOut.api as never);
+    await optedOut.handlers.session_start?.({ reason: "startup" }, ctx);
+    expect(await optedOut.handlers.tool_call?.(toolCall, ctx)).toBeUndefined();
+    process.env.PORC_RULES = "true";
   });
 
   test("a confirmed global disable skips enforcement", async () => {

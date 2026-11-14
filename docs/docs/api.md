@@ -391,7 +391,7 @@ hidden rows unless asked with `include_hidden=true`.
 | `GET` | `/human-requests/{id}` | Agent read; marks an answered response seen |
 | `GET` | `/human-requests/{id}/view` | Human review without delivery/read side effects |
 | `POST` | `/human-requests/{id}/respond`, `/acknowledge`, `/cancel` | Answer and close |
-| `GET` | `/rules` | Active policy |
+| `GET` | `/rules` | Rule history; `?cwd=` scopes to current policies covering a directory (hook clients), `?workspace=` exact match; `history_truncated` marks a full 200-row page |
 | `GET` | `/rules/catalog` | Rule templates |
 | `POST` | `/rules/check`, `/rules/activate`, `/rules/revert` | Validate / activate / revert |
 | `GET` `POST` | `/scratchpads` | List / create |
