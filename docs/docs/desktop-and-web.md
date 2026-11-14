@@ -298,8 +298,6 @@ Browser tab.
 
 This flow is desktop-only; the web and phone inspector has no Browser tab.
 
-![Browser beside a demo conversation](/screens/desktop-preview-browser.png)
-
 ![Working-tree changes beside a demo conversation](/screens/desktop-preview-changes-wide.png)
 
 <img src="/screens/desktop-preview-changes-phone.png" alt="Changes tab in the inspector on a phone" width="260">
