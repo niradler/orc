@@ -64,7 +64,10 @@ opens the chat page instead.
   while project ownership is unavailable. The Activity session list uses the same
   compact row design, retaining search, filters, task links and resume actions.
 
-On a phone (below 768px) the chat is a touch-first surface. **Sessions**, the
+On a phone (below 768px) the chat is a touch-first surface. The header keeps the
+session title, **Sessions**, **New** and the actions menu on one line, with the
+**Terminal**, **Inspector**, **Refresh** and **Compact** controls on a second line
+(that line collapses while the software keyboard is open). **Sessions**, the
 **Inspector** and the **Terminal** open as full pages over the conversation,
 which stays mounted underneath so streams and drafts survive. They follow your
 finger:

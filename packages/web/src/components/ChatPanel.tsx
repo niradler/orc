@@ -277,9 +277,6 @@ export function ChatPanel({
   const header = useRef<HTMLElement>(null);
   const [headerWidth, setHeaderWidth] = useState(0);
   const headerWide = headerWidth >= 620;
-  // Phone header space is tight: below this width Refresh and Compact fold into
-  // the actions menu, keeping the Terminal and Inspector toggles always visible.
-  const phoneActionsInline = headerWidth >= (preview ? 378 : 340);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   useEffect(() => {
@@ -389,125 +386,62 @@ export function ChatPanel({
             ref={header}
             data-chat-gesture-header={phone ? "true" : undefined}
             className={cn(
-              "chat-header flex min-h-12 shrink-0 items-center gap-1 px-3 py-1",
+              "chat-header shrink-0",
+              // Desktop keeps every control on one line; the phone gives the title
+              // its own line and moves the panel/session controls to a second line.
+              phone
+                ? "flex flex-col gap-0.5 px-2 py-1"
+                : "flex min-h-12 items-center gap-1 px-3 py-1",
               !docked && !rail && !phone && "pl-40",
-              phone && "gap-0.5 px-2",
             )}
           >
             {phone ? (
               <>
-                <button
-                  type="button"
-                  data-testid="chat-sessions-button"
-                  aria-label="Sessions, session history"
-                  title="Session history"
-                  className={cn(iconButton, "min-h-11 min-w-11")}
-                  onClick={() => home.go({ listOpen: true })}
-                >
-                  <History size={17} />
-                </button>
-                <button
-                  type="button"
-                  data-testid="chat-clear-button"
-                  aria-label="New session"
-                  title="New session"
-                  disabled={tabs.some(
-                    (tab) =>
-                      tab.key !== activeKey &&
-                      (tab.permissions.length ||
-                        tab.questions.length ||
-                        tab.attention ||
-                        tab.error),
-                  )}
-                  className={cn(iconButton, "min-h-11 min-w-11")}
-                  onClick={() => {
-                    newTab();
-                    home.go({ terminalId: null });
-                  }}
-                >
-                  <SquarePen size={17} />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <h2
-                    className="truncate text-sm font-medium"
-                    title={`${projectName} / ${title ?? "New session"}`}
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    data-testid="chat-sessions-button"
+                    aria-label="Sessions, session history"
+                    title="Session history"
+                    className={cn(iconButton, "min-h-11 min-w-11")}
+                    onClick={() => home.go({ listOpen: true })}
                   >
-                    {title ?? "New session"}
-                  </h2>
-                  <p className="truncate text-xs text-muted-foreground">
-                    <span data-testid="session-project-breadcrumb">{projectName}</span>
-                    {" · "}
-                    {thread?.host ?? "local"}
-                  </p>
-                </div>
-              </>
-            ) : title || fullscreen ? (
-              <h2
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
-                title={fullscreen ? `${projectName} / ${title ?? "New session"}` : title}
-              >
-                {fullscreen && (
-                  <>
-                    <span
-                      data-testid="session-project-breadcrumb"
-                      className="max-w-[40%] truncate text-muted-foreground"
+                    <History size={17} />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chat-clear-button"
+                    aria-label="New session"
+                    title="New session"
+                    disabled={tabs.some(
+                      (tab) =>
+                        tab.key !== activeKey &&
+                        (tab.permissions.length ||
+                          tab.questions.length ||
+                          tab.attention ||
+                          tab.error),
+                    )}
+                    className={cn(iconButton, "min-h-11 min-w-11")}
+                    onClick={() => {
+                      newTab();
+                      home.go({ terminalId: null });
+                    }}
+                  >
+                    <SquarePen size={17} />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <h2
+                      className="truncate text-sm font-medium"
+                      title={`${projectName} / ${title ?? "New session"}`}
                     >
-                      {projectName}
-                    </span>
-                    <span aria-hidden="true" className="text-muted-foreground">
-                      /
-                    </span>
-                  </>
-                )}
-                <span className="min-w-0 truncate">{title ?? "New session"}</span>
-              </h2>
-            ) : (
-              <div className="min-w-0 flex-1" aria-hidden="true" />
-            )}
-            {preview && (
-              <button
-                type="button"
-                data-testid="chat-preview-toggle"
-                aria-label="Toggle preview panel"
-                aria-expanded={preview.visible}
-                title="Browser and files"
-                className={iconButton}
-                onClick={preview.toggle}
-              >
-                <Globe size={16} />
-              </button>
-            )}
-            {streaming && (
-              <LoaderCircle
-                size={14}
-                aria-hidden="true"
-                className="chat-compact-activity shrink-0 text-progress"
-              />
-            )}
-            {phone && <SessionHomeToggles home={home} gestures />}
-            {phone ? (
-              terminalCenter ? null : (
-                <div
-                  data-testid="chat-header-actions"
-                  className="flex shrink-0 items-center gap-0.5"
-                >
-                  {phoneActionsInline && (
-                    <>
-                      <ChatRefreshAction
-                        large
-                        stale={sessionChanged}
-                        busy={refreshing || reconnecting}
-                        disabled={!thread || refreshing}
-                        onRefresh={() => void reload()}
-                      />
-                      <ChatCompactAction
-                        large
-                        agent={config.agent}
-                        disabled={compactDisabled}
-                        onCompact={() => void send("/compact")}
-                      />
-                    </>
-                  )}
+                      {title ?? "New session"}
+                    </h2>
+                    <p className="truncate text-xs text-muted-foreground">
+                      <span data-testid="session-project-breadcrumb">{projectName}</span>
+                      {" · "}
+                      {thread?.host ?? "local"}
+                    </p>
+                  </div>
                   <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
                     <PopoverTrigger asChild>
                       <button
@@ -547,117 +481,181 @@ export function ChatPanel({
                         onOpen={() => setActionsOpen(false)}
                         labelled
                       />
-                      {!phoneActionsInline && (
-                        <>
-                          <ChatRefreshAction
-                            row
-                            stale={sessionChanged}
-                            busy={refreshing || reconnecting}
-                            disabled={!thread || refreshing}
-                            onRefresh={() => {
-                              setActionsOpen(false);
-                              void reload();
-                            }}
-                          />
-                          <ChatCompactAction
-                            row
-                            agent={config.agent}
-                            disabled={compactDisabled}
-                            onCompact={() => {
-                              setActionsOpen(false);
-                              void send("/compact");
-                            }}
-                          />
-                        </>
-                      )}
                     </PopoverContent>
                   </Popover>
                 </div>
-              )
-            ) : terminalCenter ? null : headerWide ? (
-              <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
-                <ChatRefreshAction
-                  stale={sessionChanged}
-                  busy={refreshing || reconnecting}
-                  disabled={!thread || refreshing}
-                  onRefresh={() => void reload()}
-                />
-                <ChatContinueInTerminal control={terminalControl} />
-                <ChatCompactAction
-                  agent={config.agent}
-                  disabled={compactDisabled}
-                  onCompact={() => void send("/compact")}
-                />
-                <ActionHelp label="Session settings">
-                  <button
-                    type="button"
-                    data-testid="chat-config-button"
-                    aria-label="Session settings"
-                    className={iconButton}
-                    onClick={() => setSettingsOpen(true)}
-                  >
-                    <Settings2 size={17} />
-                  </button>
-                </ActionHelp>
-              </div>
+                <div className="chat-header-controls flex items-center gap-0.5">
+                  <SessionHomeToggles home={home} gestures />
+                  {preview && (
+                    <button
+                      type="button"
+                      data-testid="chat-preview-toggle"
+                      aria-label="Toggle preview panel"
+                      aria-expanded={preview.visible}
+                      title="Browser and files"
+                      className={cn(iconButton, "min-h-11 min-w-11")}
+                      onClick={preview.toggle}
+                    >
+                      <Globe size={16} />
+                    </button>
+                  )}
+                  {streaming && (
+                    <LoaderCircle
+                      size={14}
+                      aria-hidden="true"
+                      className="chat-compact-activity shrink-0 text-progress"
+                    />
+                  )}
+                  {!terminalCenter && (
+                    <div
+                      data-testid="chat-header-actions"
+                      className="flex shrink-0 items-center gap-0.5"
+                    >
+                      <ChatRefreshAction
+                        large
+                        stale={sessionChanged}
+                        busy={refreshing || reconnecting}
+                        disabled={!thread || refreshing}
+                        onRefresh={() => void reload()}
+                      />
+                      <ChatCompactAction
+                        large
+                        agent={config.agent}
+                        disabled={compactDisabled}
+                        onCompact={() => void send("/compact")}
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : title || fullscreen ? (
+              <h2
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
+                title={fullscreen ? `${projectName} / ${title ?? "New session"}` : title}
+              >
+                {fullscreen && (
+                  <>
+                    <span
+                      data-testid="session-project-breadcrumb"
+                      className="max-w-[40%] truncate text-muted-foreground"
+                    >
+                      {projectName}
+                    </span>
+                    <span aria-hidden="true" className="text-muted-foreground">
+                      /
+                    </span>
+                  </>
+                )}
+                <span className="min-w-0 truncate">{title ?? "New session"}</span>
+              </h2>
             ) : (
-              <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Session actions"
-                    data-testid="chat-options-button"
-                    className={cn(iconButton, sessionChanged && "text-warning")}
-                  >
-                    <MoreHorizontal size={17} />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  data-testid="chat-actions-menu"
-                  aria-label="Session actions"
-                  align="end"
-                  className="flex w-52 flex-col gap-1 p-1"
-                >
+              <div className="min-w-0 flex-1" aria-hidden="true" />
+            )}
+            {!phone && preview && (
+              <button
+                type="button"
+                data-testid="chat-preview-toggle"
+                aria-label="Toggle preview panel"
+                aria-expanded={preview.visible}
+                title="Browser and files"
+                className={iconButton}
+                onClick={preview.toggle}
+              >
+                <Globe size={16} />
+              </button>
+            )}
+            {!phone && streaming && (
+              <LoaderCircle
+                size={14}
+                aria-hidden="true"
+                className="chat-compact-activity shrink-0 text-progress"
+              />
+            )}
+            {!phone &&
+              (terminalCenter ? null : headerWide ? (
+                <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
                   <ChatRefreshAction
-                    row
                     stale={sessionChanged}
                     busy={refreshing || reconnecting}
                     disabled={!thread || refreshing}
-                    onRefresh={() => {
-                      setActionsOpen(false);
-                      void reload();
-                    }}
+                    onRefresh={() => void reload()}
                   />
-                  <ChatContinueInTerminal
-                    control={terminalControl}
-                    onOpen={() => setActionsOpen(false)}
-                    labelled
-                  />
+                  <ChatContinueInTerminal control={terminalControl} />
                   <ChatCompactAction
-                    row
                     agent={config.agent}
                     disabled={compactDisabled}
-                    onCompact={() => {
-                      setActionsOpen(false);
-                      void send("/compact");
-                    }}
+                    onCompact={() => void send("/compact")}
                   />
-                  <button
-                    type="button"
-                    data-testid="chat-config-button"
-                    aria-label="Session settings"
-                    className={actionButton}
-                    onClick={() => {
-                      setActionsOpen(false);
-                      setSettingsOpen(true);
-                    }}
+                  <ActionHelp label="Session settings">
+                    <button
+                      type="button"
+                      data-testid="chat-config-button"
+                      aria-label="Session settings"
+                      className={iconButton}
+                      onClick={() => setSettingsOpen(true)}
+                    >
+                      <Settings2 size={17} />
+                    </button>
+                  </ActionHelp>
+                </div>
+              ) : (
+                <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Session actions"
+                      data-testid="chat-options-button"
+                      className={cn(iconButton, sessionChanged && "text-warning")}
+                    >
+                      <MoreHorizontal size={17} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    data-testid="chat-actions-menu"
+                    aria-label="Session actions"
+                    align="end"
+                    className="flex w-52 flex-col gap-1 p-1"
                   >
-                    <Settings2 size={17} />
-                    Session settings
-                  </button>
-                </PopoverContent>
-              </Popover>
-            )}
+                    <ChatRefreshAction
+                      row
+                      stale={sessionChanged}
+                      busy={refreshing || reconnecting}
+                      disabled={!thread || refreshing}
+                      onRefresh={() => {
+                        setActionsOpen(false);
+                        void reload();
+                      }}
+                    />
+                    <ChatContinueInTerminal
+                      control={terminalControl}
+                      onOpen={() => setActionsOpen(false)}
+                      labelled
+                    />
+                    <ChatCompactAction
+                      row
+                      agent={config.agent}
+                      disabled={compactDisabled}
+                      onCompact={() => {
+                        setActionsOpen(false);
+                        void send("/compact");
+                      }}
+                    />
+                    <button
+                      type="button"
+                      data-testid="chat-config-button"
+                      aria-label="Session settings"
+                      className={actionButton}
+                      onClick={() => {
+                        setActionsOpen(false);
+                        setSettingsOpen(true);
+                      }}
+                    >
+                      <Settings2 size={17} />
+                      Session settings
+                    </button>
+                  </PopoverContent>
+                </Popover>
+              ))}
             {fullscreen && !phone && <SessionHomeToggles home={home} />}
             {onToggleFullscreen && (
               <ActionHelp label="Full screen chat">
