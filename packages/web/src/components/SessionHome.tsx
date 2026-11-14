@@ -1,5 +1,5 @@
 import type { ChatThread } from "@orc/core/chat";
-import { PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
+import { Maximize2, Minimize2, PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, type LiveSession, type Terminal } from "@/api/client";
@@ -8,6 +8,7 @@ import { InspectorBrowser } from "@/components/inspector/InspectorBrowser";
 import { InspectorChangesHelp } from "@/components/inspector/InspectorChangesHelp";
 import { InspectorOverview } from "@/components/inspector/InspectorOverview";
 import { InspectorTabs } from "@/components/inspector/InspectorTabs";
+import { SessionTerminalHeader } from "@/components/SessionTerminalHeader";
 import { FilePanel } from "@/components/terminals/FilePanel";
 import { GitPanelBody } from "@/components/terminals/GitPanel";
 import { TerminalViewport } from "@/components/terminals/TerminalViewport";
@@ -188,7 +189,17 @@ export function SessionTerminalCenter({ context }: { context: SessionContext }) 
   );
 }
 
-export function SessionDrawer({ context }: { context: SessionContext }) {
+export function SessionDrawer({
+  context,
+  expanded,
+  onToggleExpanded,
+  onClose,
+}: {
+  context: SessionContext;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onClose: () => void;
+}) {
   const { create } = useTerminals();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -217,28 +228,57 @@ export function SessionDrawer({ context }: { context: SessionContext }) {
   return (
     <section
       data-testid="session-drawer"
+      data-expanded={expanded ? "true" : "false"}
       aria-label="Terminal"
-      style={{ height: height.width }}
+      style={expanded ? undefined : { height: height.width }}
       className={cn(
-        "relative flex shrink-0 flex-col border-t border-border bg-background",
+        "relative flex min-h-0 flex-col border-t border-border bg-background",
+        expanded ? "flex-1" : "shrink-0",
         reveal,
         "motion-safe:slide-in-from-bottom-4",
       )}
     >
-      {/* biome-ignore lint/a11y/useSemanticElements: pointer-driven splitter has no native element */}
-      <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize terminal"
-        aria-valuenow={height.width}
-        aria-valuemin={120}
-        aria-valuemax={560}
-        tabIndex={0}
-        data-testid="session-drawer-resize"
-        title="Drag to resize, use arrow keys, or double-click to reset"
-        className="absolute inset-x-0 -top-1 z-20 h-2 cursor-row-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
-        {...height.handleProps}
-      />
+      {!expanded && (
+        // biome-ignore lint/a11y/useSemanticElements: pointer-driven splitter has no native element
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize terminal"
+          aria-valuenow={height.width}
+          aria-valuemin={120}
+          aria-valuemax={560}
+          tabIndex={0}
+          data-testid="session-drawer-resize"
+          title="Drag to resize, use arrow keys, or double-click to reset"
+          className="absolute inset-x-0 -top-1 z-20 h-2 cursor-row-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
+          {...height.handleProps}
+        />
+      )}
+      <SessionTerminalHeader context={context}>
+        <ActionHelp label={expanded ? "Restore terminal size" : "Expand terminal"}>
+          <button
+            type="button"
+            data-testid="session-drawer-expand"
+            aria-label={expanded ? "Restore terminal size" : "Expand terminal"}
+            aria-pressed={expanded}
+            onClick={onToggleExpanded}
+            className={iconButton}
+          >
+            {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        </ActionHelp>
+        <ActionHelp label="Hide terminal" description="The terminal keeps running">
+          <button
+            type="button"
+            data-testid="session-drawer-close"
+            aria-label="Hide terminal"
+            onClick={onClose}
+            className={iconButton}
+          >
+            <X size={16} />
+          </button>
+        </ActionHelp>
+      </SessionTerminalHeader>
       {context.shell ? (
         <TerminalViewport terminalId={context.shell.id} />
       ) : (

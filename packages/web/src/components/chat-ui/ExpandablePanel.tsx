@@ -21,7 +21,7 @@ export function ExpandablePanel({
   heading?: ReactNode;
   testId: string;
   canExpand: boolean;
-  children: (expanded: boolean) => ReactNode;
+  children: (expanded: boolean, fullscreen: boolean) => ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -56,7 +56,7 @@ export function ExpandablePanel({
             </>
           )}
         </header>
-        {!fullscreen && children(expanded)}
+        {!fullscreen && children(expanded, false)}
       </Panel>
       <DialogContent
         ref={fullscreenView}
@@ -78,10 +78,10 @@ export function ExpandablePanel({
           Full current content. Press Escape or Close to return to chat.
         </DialogDescription>
         <div
-          className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto overscroll-contain"
           data-testid="chat-ui-fullscreen-content"
         >
-          {fullscreen && children(true)}
+          {fullscreen && children(true, true)}
         </div>
         {fullscreen && <ChatUiActionFeedback />}
       </DialogContent>

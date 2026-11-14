@@ -23,7 +23,7 @@ export type AgentState = (typeof AGENT_STATE_ORDER)[number];
 
 export const AGENT_STATES: Record<
   AgentState,
-  { label: string; help: string; Icon: LucideIcon; tone: string }
+  { label: string; help: string; Icon: LucideIcon; tone: string; spin?: boolean }
 > = {
   "needs-you": {
     label: "Needs you",
@@ -43,6 +43,7 @@ export const AGENT_STATES: Record<
     help: "The agent is working",
     Icon: LoaderCircle,
     tone: "text-progress",
+    spin: true,
   },
   idle: {
     label: "Idle",

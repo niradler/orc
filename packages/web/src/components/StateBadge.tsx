@@ -14,10 +14,15 @@ export function StateBadge({
   testId?: string;
   className?: string;
 }) {
-  const { label, help, Icon, tone } = AGENT_STATES[state];
+  const { label, help, Icon, tone, spin } = AGENT_STATES[state];
   const name = context ? `${context} · ${label}` : label;
   const icon = (
-    <Icon aria-hidden="true" size={14} strokeWidth={2.25} className={cn("shrink-0", tone)} />
+    <Icon
+      aria-hidden="true"
+      size={14}
+      strokeWidth={2.25}
+      className={cn("shrink-0", tone, spin && "motion-safe:animate-spin")}
+    />
   );
   if (compact)
     return (
