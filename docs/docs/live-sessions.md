@@ -77,15 +77,28 @@ Resume in chat imports the visible history and continues the original Pi UUID in
 
 A Claude permission prompt, Claude question, or Gemini tool-permission prompt sets that session to **Waiting for you** within a few seconds of the hook firing. ORC sends one browser push on the attention topic for that transition. Answering the prompt, or the turn ending, clears the flag. A session that stays waiting does not send another push. Codex questions continue to come from its transcript. OpenCode chat questions use the same question card and waiting state even though discovered OpenCode sessions still show as ended. Cursor's installed hooks do not include a permission event, so Cursor waits are unchanged.
 
-Install lifecycle hooks for Claude, Cursor and Gemini from this checkout:
+Lifecycle hooks are a choice, per agent. Install the native adapter into the settings
+file you pick — the same explicit install also enables [agent rules](./agent-rules.md):
 
-```powershell
-bun scripts/install-session-hooks.ts
+```bash
+orc rules install-hook claude --target ~/.claude/settings.json
+orc rules install-hook cursor --target ~/.cursor/hooks.json
+orc rules install-hook gemini --target ~/.gemini/settings.json
 ```
 
-The installer preserves existing hook entries and other settings, makes dated backups, and adds lifecycle events to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.gemini/settings.json`. Claude gains permission, notification, question and stop hooks. Gemini gains the notification hook beside its existing lifecycle events. New/resumed sessions register their owner PID in `~/.orc/live-sessions/`. Start, prompt, response, tool and stop hooks update the shared state; session-end hooks and dead owner processes end it. Existing sessions may need to resume or reload hooks once before they register. Hook-captured conversations begin when hooks are installed; old native history is retained when its transcript exists.
+The installer preserves existing hook entries and other settings and writes a dated
+backup. Nothing is installed globally or automatically; each agent is a separate
+decision, and `--events` can narrow the listeners. New/resumed sessions register their
+owner PID in `~/.orc/live-sessions/`. Start, prompt, response, tool and stop hooks update
+the shared state; session-end hooks and dead owner processes end it. Existing sessions
+may need to resume or reload hooks once before they register. Hook-captured conversations
+begin when hooks are installed; old native history is retained when its transcript exists.
 
-Hooks need Bun on the installation machine. They run a bounded owner lookup, write private local registry/transcript files, and never grant tool permissions or inject prompts. Native agent transcripts remain read-only. Full prompt/tool content belongs to the local conversation history and is not sent to external services by these hooks.
+Hooks need the `orc` executable on the installation machine. They run a bounded owner
+lookup, write private local registry/transcript files, and never grant tool permissions
+or inject prompts. Native agent transcripts remain read-only. Full prompt/tool content
+belongs to the local conversation history and is not sent to external services by these
+hooks.
 
 Other local agents can use `LiveRegistration`, `readRegistrations` and `writeRegistration` from `@orc/core/live-session` to participate in the same PID-backed lifecycle. Native discovery/resume commands still require a supported adapter; the dashboard automatically includes registered backend names in its filter.
 

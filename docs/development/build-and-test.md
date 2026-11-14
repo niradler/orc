@@ -19,13 +19,13 @@ That is the local pull-request gate. The pre-commit hook checks lint and formatt
 
 `bun run check` fixes lint and format in place. Pass `--changed <ref>` to compare with a branch other than `origin/master` (or `master` when the remote ref is missing). The command prints which packages it selected and why. Add `--plan` to print the commands without running them, for example `bun run ci:pr --plan`. Selection includes tracked working-tree and staged changes as well as branch commits; push from the checkout you validated. For a new branch, comparison still uses `origin/master`, so it includes all PR changes. Fetch the base before starting work to keep that comparison current.
 
-A change to `bun.lock`, the root manifest, `patches/`, `scripts/`, `hooks/`, `.github/`, `.githooks/`, or a root `tsconfig*.json` runs every package. Docs and other files outside a package do not add package tests. On a pull request they still run `@sanity`.
+A change to `bun.lock`, the root manifest, `patches/`, `scripts/`, `.github/`, `.githooks/`, or a root `tsconfig*.json` runs every package. Docs and other files outside a package do not add package tests. On a pull request they still run `@sanity`.
 
 ## Domains and the sanity tag
 
 A domain is a workspace package. `scripts/ci-domains.ts` reads each `packages/*/package.json` and the `workspace:` dependencies. A package change runs that package's `test` script and the same for every package that depends on it, directly or through another package. `@orc/web` unit tests are `test:unit`. Its units run when the pull-request gate selects `@orc/web`; the browser gate always runs the small sanity suite. Use `bun scripts/ci-local.ts --changed --e2e` to additionally run the full web browser suite when web is affected.
 
-`scripts/ci-domains.test.ts` fails if a source or test file is not under a package, `scripts/`, `hooks/`, or `docs/`. Adding a package with a `package.json` name and a `test` script is enough; there is no second list to edit. Vendored trees (`.examples`, `.demo`) and generated docs output are outside that check.
+`scripts/ci-domains.test.ts` fails if a source or test file is not under a package, `scripts/`, or `docs/`. Adding a package with a `package.json` name and a `test` script is enough; there is no second list to edit. Vendored trees (`.examples`, `.demo`) and generated docs output are outside that check.
 
 Browser specs live in `packages/web/tests/e2e/`. Put `@sanity` in the test title, or in a parent `describe` title. `--grep @sanity` matches that title:
 

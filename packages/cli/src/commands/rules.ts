@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { runHumanRuleActions } from "@orc/core/human-request-client";
-import { recordLiveSessionWait } from "@orc/core/live-session";
+import { recordLiveSessionEvent } from "@orc/core/live-session";
 import { createRuleAdapter } from "@orc/core/rule-adapter";
 import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
 import { copyRuleTemplate, RULE_CATALOG } from "@orc/core/rule-catalog";
@@ -83,7 +83,7 @@ export function rulesCommand(): Command {
         if (Buffer.byteLength(raw) > 1_100_000) throw new Error("Rule hook input too large");
         const parsed = JSON.parse(raw);
         try {
-          await recordLiveSessionWait(backend, event, parsed);
+          await recordLiveSessionEvent(backend, event, parsed);
         } catch (error) {
           console.error(
             `[orc live-session] ${error instanceof Error ? error.message : "Hook failed"}`,
@@ -241,8 +241,8 @@ export function rulesCommand(): Command {
         const previousEntries = hooks[event] ?? [];
         if (!Array.isArray(previousEntries)) throw new Error("Hook entries must be arrays");
         const legacyPaths = opts.legacyHooksDir
-          ? ["session-start.ts", "post-tool-use.ts", "pre-compact.ts"].map((file) =>
-              resolve(opts.legacyHooksDir, file).replaceAll("\\", "/").toLowerCase(),
+          ? ["session-start.ts", "post-tool-use.ts", "pre-compact.ts", "live-session.ts"].map(
+              (file) => resolve(opts.legacyHooksDir, file).replaceAll("\\", "/").toLowerCase(),
             )
           : [];
         const isLegacy = (handler: Record<string, unknown>): boolean => {

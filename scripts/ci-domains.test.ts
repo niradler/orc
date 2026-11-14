@@ -113,13 +113,11 @@ test("should own every source and test file", () => {
 
 test("should report a source file outside the owned trees", () => {
   expect(unownedSourcePaths(["tools/example.ts"], domains)).toEqual(["tools/example.ts"]);
-  expect(unownedSourcePaths(["scripts/ci-domains.ts", "hooks/session-start.ts"], domains)).toEqual(
-    [],
-  );
+  expect(unownedSourcePaths(["scripts/ci-domains.ts", "docs/docs/pi.md"], domains)).toEqual([]);
 });
 
-test("should run every package when a hook changes", () => {
-  const selection = selectDomains(["hooks/session-start.ts"], domains, dependents);
+test("should run every package when a shared script changes", () => {
+  const selection = selectDomains(["scripts/ci-domains.ts"], domains, dependents);
   expect(selection.runAll).toBe(true);
 });
 

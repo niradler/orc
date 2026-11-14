@@ -17,7 +17,6 @@
     ".": {
       "entry": [
         "scripts/*.ts",
-        "hooks/*.ts",
         "docs/.vitepress/config.ts",
         "docs/.vitepress/theme/index.ts"
       ]
