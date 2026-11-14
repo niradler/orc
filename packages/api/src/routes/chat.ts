@@ -1021,7 +1021,16 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ agentOptions: ChatAgentOptionsMapSchema }).strict(),
+            schema: z
+              .object({
+                agentOptions: ChatAgentOptionsMapSchema.optional(),
+                sendWhileRunning: z.enum(["steer", "queue"]).optional(),
+              })
+              .strict()
+              .refine(
+                (body) => body.agentOptions !== undefined || body.sendWhileRunning !== undefined,
+                "Provide agentOptions or sendWhileRunning",
+              ),
           },
         },
       },
@@ -1030,12 +1039,18 @@ app.openapi(
   }),
   (c) => {
     const thread = requireThread(c.req.valid("param").id);
-    const key = thread.runtimeId
-      ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
-      : thread.id;
-    if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
-      throw new ConflictError("Wait for the agent to finish before changing launch options.");
-    thread.config.agentOptions = c.req.valid("json").agentOptions;
+    const body = c.req.valid("json");
+    // Launch options rebuild the next turn, so they wait for the running one. The
+    // send preference only steers the composer and applies immediately.
+    if (body.agentOptions !== undefined) {
+      const key = thread.runtimeId
+        ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
+        : thread.id;
+      if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
+        throw new ConflictError("Wait for the agent to finish before changing launch options.");
+      thread.config.agentOptions = body.agentOptions;
+    }
+    if (body.sendWhileRunning !== undefined) thread.config.sendWhileRunning = body.sendWhileRunning;
     thread.updatedAt = Date.now();
     store().save(thread);
     return c.json(thread);
@@ -1622,6 +1637,8 @@ const requestSchema = z
     system: z.string().max(20000).optional(),
     autoApprove: z.boolean().optional(),
     permissionMode: ChatPermissionModeSchema.optional(),
+    // The composer's send preference, so a change made before the first message sticks.
+    sendWhileRunning: z.enum(["steer", "queue"]).optional(),
     agentOptions: ChatAgentOptionsMapSchema.optional(),
     // Where the user is chatting from. Sent to the agent only; the stored message stays the user's text.
     context: ChatTurnContextSchema.optional(),
@@ -1783,6 +1800,7 @@ async function openChat(
       throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = body.permissionMode;
   }
+  if (body.sendWhileRunning !== undefined) thread.config.sendWhileRunning = body.sendWhileRunning;
   // The switch mutates the shared thread, so every check that can reject the request
   // runs first: from the busy check below to beginTurn's reservation there must be no
   // await, or concurrent sends could move the conversation under each other.

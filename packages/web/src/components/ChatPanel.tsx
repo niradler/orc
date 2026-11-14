@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   History,
+  ListPlus,
   LoaderCircle,
   Maximize2,
   MoreHorizontal,
@@ -209,6 +210,7 @@ export function ChatPanel({
     moveQueued,
     forceQueued,
     send,
+    deliver,
     steer,
     cancel,
     projectId,
@@ -286,11 +288,23 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
+  // Steering carries text only, so an attachment takes the queue path either way.
+  const steersNow =
+    streaming &&
+    config.sendWhileRunning === "steer" &&
+    !files.length &&
+    thread?.capabilities?.steering === true;
+  const sendLabel = !streaming ? "Send message" : steersNow ? "Send now" : "Queue message";
   const submit = () => {
     if (!ready || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
-    void send(draft);
+    const text = draft;
     setDraft("");
+    // A failed steer keeps the text so the user can retry; a queued or steered
+    // message already left the composer.
+    void deliver(text).then((outcome) => {
+      if (outcome === "failed") setDraft((current) => (current === "" ? text : current));
+    });
   };
   const compactDisabled =
     !thread?.runtimeId ||
@@ -1137,7 +1151,29 @@ export function ChatPanel({
                     <ChatPermissionChip />
                   </div>
                   <div className="flex items-center gap-1">
-                    {streaming && thread?.capabilities?.steering && (
+                    {streaming && steersNow && (
+                      <ActionHelp
+                        label="Queue message"
+                        description="Hold this message until the current response finishes"
+                      >
+                        <button
+                          type="button"
+                          data-testid="chat-queue-button"
+                          onClick={() => {
+                            if (!draft.trim() && !files.length) return;
+                            const text = draft;
+                            setDraft("");
+                            void send(text);
+                          }}
+                          disabled={!draft.trim() && !files.length}
+                          aria-label="Queue message"
+                          className={iconButton}
+                        >
+                          <ListPlus size={17} />
+                        </button>
+                      </ActionHelp>
+                    )}
+                    {streaming && thread?.capabilities?.steering && !steersNow && (
                       <ActionHelp
                         label="Send now"
                         description="Send this message into the active response; ordinary Send queues it for later"
@@ -1167,12 +1203,12 @@ export function ChatPanel({
                         </button>
                       </ActionHelp>
                     )}
-                    <ActionHelp label={streaming ? "Queue message" : "Send message"}>
+                    <ActionHelp label={sendLabel}>
                       <button
                         type="submit"
                         disabled={!ready || (!draft.trim() && !files.length)}
                         data-testid="chat-send-button"
-                        aria-label={streaming ? "Queue message" : "Send message"}
+                        aria-label={sendLabel}
                         className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
                       >
                         <ArrowUp size={18} />

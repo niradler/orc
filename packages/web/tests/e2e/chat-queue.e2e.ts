@@ -7,7 +7,10 @@ import { API_SECRET, leavePhoneChatViaNav } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
 test.beforeEach(async ({ page, request }) => {
-  await request.patch("/api/settings", { headers, data: { chat: ChatSettingsSchema.parse({}) } });
+  await request.patch("/api/settings", {
+    headers,
+    data: { chat: ChatSettingsSchema.parse({ sendWhileRunning: "queue" }) },
+  });
   await page.addInitScript((secret) => {
     localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
   }, API_SECRET);

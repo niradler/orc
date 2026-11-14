@@ -543,8 +543,14 @@ applies so a stuck agent cannot hold a chat worker indefinitely.
 
 The composer groups folder, branch, agent/model and permissions into compact
 controls. Phones and narrow desktop panels use icons; wide composers show labels.
-Send queues the next message while a reply is running. If this session is already
-responding, or every chat worker is busy, that message stays queued and sends when
+While a reply is running, **Send** joins that turn when the backend accepts
+steering (Codex, Claude, Pi and OpenCode), so the agent reads the message before
+its next step. **While responding** in Session settings → Customize switches the
+conversation to **Queue for the next turn**; new chats take that default from
+Settings → Chat. The companion control beside Stop performs the other action
+either way, so both stay one press away. Attachments always queue, because
+steering carries text only.
+If this session is already responding, or every chat worker is busy, that message stays queued and sends when
 the turn ends, without an error. Open the pending list to edit a message, move it
 up or down, remove it, or send it ahead of the current reply.
 An expanded pending list stays open across busy-worker retries. After it drains,
@@ -585,7 +591,8 @@ in agent options. The permissions chip shows the open session's mode — includi
 activity, tools connection and capabilities, plus the identifiers: the ORC chat
 ID, the agent's native session ID used for resume, and the discovered session ID
 this chat continues when it was resumed. Each identifier can be copied.
-**Customize** holds permissions, agent launch options, session instructions and
+**Customize** holds permissions, while-responding behaviour, agent launch options,
+session instructions and
 agent browser control. **Analytics** counts messages, turns, tool calls and
 failures from the transcript, shows start, last-activity and turn timings, and
 reports context and cache usage when the session records it. Explanations sit

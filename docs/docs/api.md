@@ -461,7 +461,11 @@ process. Pending approvals and questions are cancelled either way.
 
 `POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
 returns the updated conversation once the message is dispatched into the active
-native turn. Codex and Pi confirm native acceptance before returning; OpenCode
+native turn. The web chat calls it by default when a steering-capable backend is
+responding; the conversation's `config.sendWhileRunning` (`"steer"` by default or
+`"queue"`) decides what Enter/Send does, and `PATCH /chat/threads/{id}/config`
+accepts `{ "sendWhileRunning": "queue" }` while a turn is running. Codex and Pi
+confirm native acceptance before returning; OpenCode
 over direct ACP has no steer acknowledgment, so a later refusal is reported as a
 status message and steering is turned off for that turn. It
 requires a live steering-capable session (Codex, Pi and OpenCode over direct ACP);

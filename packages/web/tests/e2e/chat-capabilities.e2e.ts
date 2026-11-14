@@ -116,6 +116,11 @@ for (const width of [390, 1440]) {
             }, 100);
             return Response.json(thread);
           }
+          if (url.pathname === `/api/chat/threads/${thread.id}/config`) {
+            const patch = JSON.parse(String(init?.body));
+            thread.config = { ...thread.config, ...patch };
+            return Response.json(thread);
+          }
           if (url.pathname === `/api/chat/threads/${thread.id}`) return Response.json(thread);
           if (url.pathname === `/api/chat/threads/${thread.id}/session`)
             return Response.json({ changed: false, running: false, queued: [] });
@@ -138,28 +143,30 @@ for (const width of [390, 1440]) {
     await input.fill("Implement the change");
     await page.getByTestId("chat-send-button").filter({ visible: true }).click();
     await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "true");
-    const steer = page.getByTestId("chat-steer-button");
-    await expect(steer).toBeVisible();
-    await expect(steer).toBeDisabled();
+    const queue = page.getByTestId("chat-queue-button");
+    await expect(queue).toBeVisible();
+    await expect(queue).toBeDisabled();
+    await expect(page.getByTestId("chat-steer-button")).toHaveCount(0);
     await input.fill("Focus on tests");
-    await expect(steer).toBeEnabled();
+    await expect(queue).toBeEnabled();
     await expect(page.getByTestId("chat-send-button").filter({ visible: true })).toHaveAttribute(
       "aria-label",
-      "Queue message",
+      "Send now",
     );
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
     await page.screenshot({ path: testInfo.outputPath(`steering-${width}.png`) });
-    await steer.click();
+    const send = page.getByTestId("chat-send-button").filter({ visible: true });
+    await send.click();
     if (width === 390) {
       await expect(page.getByRole("alert")).toContainText("fixture response lost");
       await expect(input).toHaveValue("Focus on tests");
-      await steer.click();
+      await send.click();
     }
     await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
     await expect(input).toHaveValue("");
-    await expect(steer).toHaveCount(0);
+    await expect(queue).toHaveCount(0);
     expect(await page.evaluate(() => Reflect.get(window, "steeringTest"))).toMatchObject({
       starts: 1,
       nativeSteers: 1,

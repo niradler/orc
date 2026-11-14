@@ -991,6 +991,7 @@ function useChatController() {
             providerId: config.providerId,
             model: config.model,
             agentOptions: config.agentOptions,
+            sendWhileRunning: config.sendWhileRunning,
             ...(config.permissionMode && ["claude", "codex", "pi"].includes(config.agent)
               ? { permissionMode: config.permissionMode }
               : {}),
@@ -1169,11 +1170,14 @@ function useChatController() {
   );
 
   const setDraft = useCallback(
-    (draft: string) =>
-      update(activeRef.current, (tab) => ({
-        draft,
-        ...(!tab.thread && !tab.draft.trim() && draft.trim() ? { createdAt: Date.now() } : {}),
-      })),
+    (next: string | ((current: string) => string)) =>
+      update(activeRef.current, (tab) => {
+        const draft = typeof next === "function" ? next(tab.draft) : next;
+        return {
+          draft,
+          ...(!tab.thread && !tab.draft.trim() && draft.trim() ? { createdAt: Date.now() } : {}),
+        };
+      }),
     [update],
   );
   const removeQueued = useCallback(
@@ -1233,6 +1237,72 @@ function useChatController() {
     input: string;
     requestId: string;
   } | null>(null);
+  // "unavailable" means the turn cannot take the message now (no live run in this
+  // API, capability withdrawn, steering limit). It is not a failure: the caller
+  // queues the message instead of asking the user to fix something.
+  const steerInput = useCallback(
+    async (key: string, input: string): Promise<"steered" | "unavailable" | "failed"> => {
+      const current = find(key);
+      if (!current?.streaming || !current.runId || !input.trim() || current.files.length)
+        return "unavailable";
+      setResponding(true);
+      try {
+        const previous = steeringRequest.current;
+        const requestId =
+          previous?.key === key && previous.runId === current.runId && previous.input === input
+            ? previous.requestId
+            : crypto.randomUUID();
+        steeringRequest.current = { key, runId: current.runId, input, requestId };
+        const thread = await api.chat.steer(current.runId, input, requestId);
+        steeringRequest.current = null;
+        const delivered = thread.messages.find((message) => message.id === requestId) ?? {
+          id: requestId,
+          role: "user" as const,
+          content: input,
+          timestamp: Date.now(),
+        };
+        update(key, (tab) => ({
+          thread,
+          draft: tab.draft === input ? "" : tab.draft,
+          messages: tab.messages.some((message) => message.id === requestId)
+            ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
+            : [...tab.messages, delivered],
+        }));
+        return "steered";
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.status === 409) return "unavailable";
+        update(key, () => ({
+          error: message(cause, "The message could not be sent into the active response."),
+        }));
+        return "failed";
+      } finally {
+        setResponding(false);
+      }
+    },
+    [find, update],
+  );
+  /** Enter/Send: steer the live turn or queue, following the chat's send preference. */
+  const deliver = useCallback(
+    async (input: string): Promise<"steered" | "queued" | "failed"> => {
+      const key = activeRef.current;
+      const current = find(key);
+      if (!current) return "failed";
+      const steers =
+        current.config.sendWhileRunning === "steer" &&
+        current.streaming &&
+        !!current.runId &&
+        !current.files.length &&
+        current.thread?.capabilities?.steering === true;
+      if (steers) {
+        const outcome = await steerInput(key, input);
+        if (outcome !== "unavailable") return outcome;
+      }
+      await send(input);
+      return "queued";
+    },
+    [find, send, steerInput],
+  );
+  /** The explicit steer control; queues the message when the turn cannot take it. */
   const steer = useCallback(async () => {
     const key = activeRef.current;
     const current = find(key);
@@ -1244,38 +1314,12 @@ function useChatController() {
       responding
     )
       return;
-    setResponding(true);
-    try {
-      const input = current.draft;
-      const previous = steeringRequest.current;
-      const requestId =
-        previous?.key === key && previous.runId === current.runId && previous.input === input
-          ? previous.requestId
-          : crypto.randomUUID();
-      steeringRequest.current = { key, runId: current.runId, input, requestId };
-      const thread = await api.chat.steer(current.runId, input, requestId);
-      steeringRequest.current = null;
-      const delivered = thread.messages.find((message) => message.id === requestId) ?? {
-        id: requestId,
-        role: "user" as const,
-        content: input,
-        timestamp: Date.now(),
-      };
-      update(key, (tab) => ({
-        thread,
-        draft: tab.draft === input ? "" : tab.draft,
-        messages: tab.messages.some((message) => message.id === requestId)
-          ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
-          : [...tab.messages, delivered],
-      }));
-    } catch (cause) {
-      update(key, () => ({
-        error: message(cause, "The message could not be sent into the active response."),
-      }));
-    } finally {
-      setResponding(false);
-    }
-  }, [find, update, responding]);
+    const input = current.draft;
+    const outcome = await steerInput(key, input);
+    if (outcome === "unavailable") await send(input);
+    if (outcome !== "failed")
+      update(key, (tab) => ({ draft: tab.draft === input ? "" : tab.draft }));
+  }, [find, responding, send, steerInput, update]);
 
   const respondPermission = useCallback(
     async (decision: "approved" | "denied") => {
@@ -1346,13 +1390,31 @@ function useChatController() {
     },
     [setConfig, update, find],
   );
+  const changeSendMode = useCallback(
+    async (sendWhileRunning: ChatConfig["sendWhileRunning"]) => {
+      const key = activeRef.current;
+      const current = find(key);
+      if (!current) return;
+      setConfig({ ...current.config, sendWhileRunning });
+      if (!current.thread) return;
+      try {
+        const updated = await api.chat.configure(current.thread.id, { sendWhileRunning });
+        update(key, (tab) => (tab.thread?.id === updated.id ? { thread: updated } : {}));
+      } catch (cause) {
+        update(key, () => ({
+          error: message(cause, "The send preference could not be saved."),
+        }));
+      }
+    },
+    [find, setConfig, update],
+  );
   const applyAgentOptions = useCallback(
     async (agent: string, options: ChatAgentOptions) => {
       const key = activeRef.current;
       const current = find(key);
       if (!current) return false;
       const agentOptions = { ...current.config.agentOptions, [agent]: options };
-      if (current.thread) await api.chat.configure(current.thread.id, agentOptions);
+      if (current.thread) await api.chat.configure(current.thread.id, { agentOptions });
       update(key, (tab) =>
         tab.config.agent === agent
           ? {
@@ -1427,6 +1489,7 @@ function useChatController() {
     config: tab.config,
     setConfig,
     changePermissions,
+    changeSendMode,
     applyAgentOptions,
     ready,
     thread: tab.thread,
@@ -1441,6 +1504,7 @@ function useChatController() {
     respondQuestion,
     responding,
     send,
+    deliver,
     cancel,
     streamingId: tab.assistantId,
     streamingAgent: tab.respondingAgent,
