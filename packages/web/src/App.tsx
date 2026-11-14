@@ -156,7 +156,7 @@ export default function App() {
   // is open and restore the user's own width after leaving it.
   const chatOnScreen = homeOpen || chatOpen;
   const sidebarAutoCollapsed = useRef(false);
-  const chatWasOnScreen = useRef(chatOnScreen);
+  const chatWasOnScreen = useRef(false);
   useEffect(() => {
     const was = chatWasOnScreen.current;
     chatWasOnScreen.current = chatOnScreen;

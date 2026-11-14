@@ -565,6 +565,10 @@ itself is fixed for the session.
 <img src="/screens/chat-run-in-1440.png" alt="Run in options in the desktop chat panel" width="380">
 <img src="/screens/chat-run-in-390.png" alt="Run in options for the current checkout, the current branch, the default branch and another branch" width="260">
 
+![Composer with the session folder, branch and permission chips](/screens/chat-session-composer-desktop.png)
+
+<img src="/screens/chat-session-composer-phone.png" alt="Phone composer with folder, branch and permission icons" width="260">
+
 Changing agent after launch starts a separate session. The model picker disables
 changes during a response or when the backend selects its own model. Effort stays
 in agent options. The permissions chip shows the open session's mode — including
@@ -581,6 +585,11 @@ failures from the transcript, shows start, last-activity and turn timings, and
 reports context and cache usage when the session records it. Explanations sit
 behind the info icon beside each label; new-chat defaults remain in Settings →
 Chat.
+
+![Session settings overview with the ORC, agent and resume identifiers](/screens/chat-session-settings-overview-desktop.png)
+![Session analytics with counts, turn timings and cache reuse](/screens/chat-session-settings-analytics-desktop.png)
+
+<img src="/screens/chat-session-settings-customize-phone.png" alt="Session settings customization on a phone" width="260">
 
 Pasting at least 16 KiB or 200 lines attaches the text as `pasted-text-N.txt`.
 Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach files.
