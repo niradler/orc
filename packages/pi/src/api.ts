@@ -119,10 +119,17 @@ export class OrcApiClient {
     return (await this.json<{ jobs: OrcJob[] }>(`/jobs${query}`)).jobs;
   }
 
-  async rules(workspace?: string): Promise<{ enabled: boolean; history: OrcRuleRevision[] }> {
-    return this.json(
-      withQuery("/rules", workspace ? `workspace=${encodeURIComponent(workspace)}` : ""),
-    );
+  async rules(
+    workspace?: string,
+    cwd?: string,
+  ): Promise<{ enabled: boolean; history: OrcRuleRevision[]; history_truncated?: boolean }> {
+    const query = [
+      workspace ? `workspace=${encodeURIComponent(workspace)}` : "",
+      cwd ? `cwd=${encodeURIComponent(cwd)}` : "",
+    ]
+      .filter(Boolean)
+      .join("&");
+    return this.json(withQuery("/rules", query));
   }
 
   async activateRules(

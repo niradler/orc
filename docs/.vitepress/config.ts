@@ -21,6 +21,7 @@ const sidebar = [
       { text: "REST API", link: "/docs/api" },
       { text: "Skills", link: "/docs/skills" },
       { text: "Pi and porc", link: "/docs/pi" },
+      { text: "OpenCode", link: "/docs/opencode" },
     ],
   },
   {

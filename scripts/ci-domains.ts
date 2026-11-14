@@ -11,8 +11,8 @@ const RUN_ALL_FILES = new Set([
   "Dockerfile",
   ".dockerignore",
 ]);
-const RUN_ALL_PREFIXES = ["patches/", "scripts/", "hooks/", ".github/", ".githooks/"];
-const OWNED_PREFIXES = ["scripts/", "hooks/", "docs/"];
+const RUN_ALL_PREFIXES = ["patches/", "scripts/", ".github/", ".githooks/"];
+const OWNED_PREFIXES = ["scripts/", "docs/"];
 const SKIP_DIRECTORIES = new Set([
   "node_modules",
   "dist",

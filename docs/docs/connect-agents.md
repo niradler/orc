@@ -1,6 +1,6 @@
 # Connect agents
 
-How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi and other MCP clients to ORC: MCP registration, session tracking, hooks and skills.
+How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi, OpenCode and other MCP clients to ORC: MCP registration, session tracking, hooks and skills.
 
 ## What each piece gives you
 
@@ -135,6 +135,25 @@ security notes.
 | `ORC_SESSION_ID` | Attribution for memory, knowledge and scratchpad writes   |
 | `ORC_API_SECRET` | Secret, when not in `~/.orc/config.json`                  |
 
+### OpenCode
+
+[`@orc/opencode`](https://www.npmjs.com/package/@orc/opencode) is a native OpenCode
+plugin that enforces ORC rules through OpenCode's own hooks. Add it to `opencode.json`
+(project) or `~/.config/opencode/opencode.json` (global):
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@orc/opencode"]
+}
+```
+
+It runs `orc rules hook opencode` per tool call, prompt and compaction, blocks denied
+calls fail-closed, and delivers rule context on the next model request. No `install-hook`
+step is needed. For ORC tools, register the MCP server under `mcp.servers` (HTTP
+`http://127.0.0.1:7700/mcp` with the bearer header, or stdio `orc mcp`). See
+[OpenCode](./opencode.md) for options and failure behavior.
+
 ### spec CLI
 
 If you use the `spec` CLI, register ORC once and every agent can reach it through `spec`:
@@ -164,13 +183,11 @@ It returns the project's active tasks and its memories by priority.
 | Gemini CLI           | History is discovered; live state and permission waits need lifecycle hooks                                    |
 | OpenCode             | History is read from its SQLite store. No setup; no live state.                                                |
 
-Install the Cursor and Gemini lifecycle hooks from a clone of the repository (needs Bun):
-
-```bash
-bun scripts/install-session-hooks.ts
-```
-
-It adds hooks to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.gemini/settings.json`, keeps existing entries and writes a dated backup of each file. Details: [Live sessions](./live-sessions.md).
+Live state and permission waits are a choice, per agent: install the native adapter with
+`orc rules install-hook` (see [Rule hooks](#rule-hooks) below). For Claude, Cursor and
+Gemini the same explicit install also provides live state and permission waits; Codex
+live state comes from native discovery and needs no hooks. Nothing is installed globally
+or automatically. Details: [Live sessions](./live-sessions.md).
 
 ## Rule hooks
 
@@ -188,12 +205,15 @@ orc rules install-hook gemini --target ~/.gemini/settings.json
 | `--target <file>`          | Settings file to merge into (required). Existing hooks are kept and a backup is written.                                    |
 | `--events <list>`          | Comma-separated event names; default is every supported event                                                               |
 | `--timeout-seconds <n>`    | Hook timeout (default `10`). Raise it above the ask-user request lifetime when using [human requests](./human-requests.md). |
-| `--legacy-hooks-dir <dir>` | Replace old `hooks/*.ts` continuity handlers in that directory                                                              |
+| `--legacy-hooks-dir <dir>` | Replace old `hooks/*.ts` continuity and live-session handlers in that directory                                             |
 
 Rule enforcement also needs `rules.enabled: true` (or `ORC_RULES_ENABLED=true`). See [Agent rules](./agent-rules.md) and [Human requests](./human-requests.md).
 
+Pi and OpenCode skip `install-hook`: `@orc/pi` and the `@orc/opencode` plugin embed the
+same rule adapter and forward native events to `orc rules hook <backend>`.
+
 ::: warning Old hook scripts
-Older setups pointed Claude Code at `bun /path/to/orc/hooks/session-start.ts`, `post-tool-use.ts` and `pre-compact.ts`. Those scripts now forward to the rule dispatcher. Migrate with `orc rules install-hook claude --target ~/.claude/settings.json --legacy-hooks-dir /path/to/orc/hooks`.
+Older setups pointed Claude Code at `bun /path/to/orc/hooks/session-start.ts`, `post-tool-use.ts`, `pre-compact.ts` or `live-session.ts`. Those scripts were removed from the repository. Migrate with `orc rules install-hook claude --target ~/.claude/settings.json --legacy-hooks-dir /path/to/orc/hooks`; the matching old handlers are replaced by the native adapter while other hooks are preserved.
 :::
 
 ## Skills
