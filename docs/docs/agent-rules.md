@@ -226,10 +226,16 @@ the plan refreshes periodically so later policy changes apply. OpenCode has no s
 start/end hooks; rules scoped to those events are not delivered there. See
 [Pi and porc](./pi.md) and [OpenCode](./opencode.md).
 
-Other managed backends refuse sessions in policy-protected workspaces. Protected chat
-cannot fall back to an unverified CLI/remote backend, and ORC refuses unqualified native
-agent terminals/package setups in protected workspaces. Human shell terminals remain
-available. Native Codex protocol support does not qualify ORC-managed Codex/ACPX/A2A/AgentAPI blocking.
+Other managed backends start in policy-protected workspaces but do not claim
+ACP-level enforcement. ORC adds one conversation status note that names the gap, then
+runs the session without rule interception. OpenCode can enforce the same policies
+inside its own process when the `@orc/opencode` plugin is installed in the workspace
+([OpenCode](./opencode.md)), but ORC cannot verify that from an ACP chat session, so it
+reports the chat as unverified and points at the plugin. `GET /api/rules` reports these
+adapters as `opencode_plugin_requires_install` or `unsupported`. Protected package
+setups and unqualified native agent terminals are still refused; human shell terminals
+remain available. Native Codex protocol support does not qualify ORC-managed
+Codex/ACPX/A2A/AgentAPI blocking.
 
 Hooks are not an OS sandbox. A human able to edit configuration, a process outside ORC,
 an unmediated remote execution channel, or another concurrent filesystem writer remains

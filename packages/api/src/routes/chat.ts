@@ -7,6 +7,7 @@ import {
   chatBackendFor,
   createBackend,
   discoverAgentModels,
+  type RuleGap,
   type SessionOpts,
   sessionRules,
   UNKNOWN_CAPABILITIES,
@@ -1566,22 +1567,31 @@ app.openapi(
   },
 );
 
-async function checkChatWorkspaceRules(thread: ChatThread, cwd = thread.cwd): Promise<void> {
-  if (
-    thread.backend === "claude" ||
-    !loadConfig().rules.enabled ||
-    !new RuleStore(getSqlite()).active(cwd).length
-  )
-    return;
+async function workspaceRuleGap(thread: ChatThread): Promise<RuleGap | undefined> {
+  if (!loadConfig().rules.enabled) return undefined;
   try {
-    await sessionRules(thread.backend, { cwd, executionHost: thread.host });
+    const opts = await sessionRules(thread.backend, {
+      cwd: thread.cwd,
+      executionHost: thread.host,
+      acpAgent: thread.config.agent,
+      acpxAgent: thread.config.agent,
+    });
+    return opts.ruleGap;
   } catch (error) {
+    // Claude has a verified hook, so a rule-storage failure must stay fatal there.
     throw new OrcError(
       error instanceof Error ? error.message : "This backend cannot enforce the workspace rules",
       "CHAT_RULE_ADAPTER",
       503,
     );
   }
+}
+
+/** Show the enforcement gap once per conversation instead of on every turn. */
+function hasRuleGapNote(thread: ChatThread, text: string): boolean {
+  return thread.messages.some((message) =>
+    message.activity?.some((item) => item.type === "status" && item.text === text),
+  );
 }
 
 const requestSchema = z
@@ -1773,7 +1783,6 @@ async function openChat(
       throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = body.permissionMode;
   }
-  await checkChatWorkspaceRules(thread);
   // The switch mutates the shared thread, so every check that can reject the request
   // runs first: from the busy check below to beginTurn's reservation there must be no
   // await, or concurrent sends could move the conversation under each other.
@@ -1854,7 +1863,6 @@ async function openChat(
           { cwd: thread.cwd, worktree: true, base: body.workspace.base },
           {
             ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
-            validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
           },
         );
         if (cwd === thread.cwd)
@@ -1958,6 +1966,7 @@ async function beginTurn(
   runs.set(runId, run);
   let attachments: SessionFile[] = [];
   let synced = true;
+  let ruleGap: RuleGap | undefined;
   try {
     if (!mock) {
       const check = await backend.preflight({
@@ -1971,6 +1980,8 @@ async function beginTurn(
     attachments = (await setup.prepare?.()) ?? [];
     if (thread.transcriptMark)
       synced = (await transcriptMark(thread).catch(() => null)) === thread.transcriptMark;
+    // Report an unenforceable protected workspace instead of refusing the turn.
+    ruleGap = await workspaceRuleGap(thread);
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
@@ -2060,6 +2071,8 @@ async function beginTurn(
         runId,
       });
       await emit({ type: "turn", turn: { startedAt } });
+      if (ruleGap && !hasRuleGapNote(thread, ruleGap.message))
+        await emit({ type: "system_status", text: ruleGap.message });
       if (mock) {
         await Promise.race([
           Bun.sleep(Math.min(Number(input.match(/after (\d+)ms/i)?.[1] ?? 75), 10000)),
@@ -2605,14 +2618,12 @@ async function queueChild(
   if (body.permissionMode !== undefined) thread.config.permissionMode = body.permissionMode;
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   if (input.title) thread.title = input.title;
-  await checkChatWorkspaceRules(thread);
   if (body.workspace?.worktree) {
     const host = selectedTerminalHost(loadConfig(), thread.host);
     const cwd = await prepareSessionDirectory(
       { cwd: thread.cwd, worktree: true },
       {
         ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
-        validateDirectory: (path) => checkChatWorkspaceRules(thread, path),
       },
     );
     if (cwd === thread.cwd)

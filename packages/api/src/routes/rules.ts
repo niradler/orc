@@ -325,6 +325,10 @@ app.openapi(
             interception: "native_hook_requires_install_trust_and_conformance",
           },
           { backend: "pi", interception: "pi_package_extension" },
+          {
+            backend: "opencode",
+            interception: "opencode_plugin_requires_install",
+          },
           { backend: "other", interception: "unsupported" },
         ],
       },
