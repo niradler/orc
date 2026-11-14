@@ -194,6 +194,7 @@ export function acpElicitationForm(requestId: string, raw: Record<string, unknow
       const customKey = companion.get(key);
       const optionText = choices.flatMap((choice) => [choice.label, choice.description]).join(" ");
       if (
+        field.format === "password" ||
         SECRET_FIELD.test([key, text(field.title), text(field.description), optionText].join(" "))
       )
         throw new Error("Secret input requires the agent's native client");
