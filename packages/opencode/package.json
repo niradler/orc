@@ -1,6 +1,6 @@
 {
   "name": "@orc/opencode",
-  "version": "0.1.65",
+  "version": "0.1.66",
   "description": "ORC rules for OpenCode: native plugin hooks that enforce workspace guardrails and automation through orc rules hook opencode",
   "type": "module",
   "keywords": [

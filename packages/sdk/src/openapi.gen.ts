@@ -664,6 +664,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -949,6 +950,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1176,6 +1178,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1406,6 +1409,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1683,6 +1687,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1971,6 +1976,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -2286,6 +2292,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -2570,6 +2577,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };

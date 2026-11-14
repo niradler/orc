@@ -190,7 +190,7 @@
     },
     "packages/opencode": {
       "name": "@orc/opencode",
-      "version": "0.1.65",
+      "version": "0.1.66",
       "dependencies": {
         "@orc/rule-client": "workspace:*",
       },
@@ -225,7 +225,7 @@
     },
     "packages/rule-client": {
       "name": "@orc/rule-client",
-      "version": "0.1.65",
+      "version": "0.1.66",
       "devDependencies": {
         "bun-types": "^1.4.4",
         "typescript": "^7.0.2",

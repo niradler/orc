@@ -1,6 +1,6 @@
 {
   "name": "@orc/rule-client",
-  "version": "0.1.65",
+  "version": "0.1.66",
   "description": "Shared ORC rule-hook client for coding agents: one generic adapter factory, per-agent native event maps",
   "type": "module",
   "license": "MIT",
