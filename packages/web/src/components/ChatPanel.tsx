@@ -3,6 +3,7 @@ import { supportsManualCompaction } from "@orc/core/coding-agents";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   ChevronDown,
   ChevronsDownUp,
@@ -239,15 +240,18 @@ export function ChatPanel({
     await refresh(sessionChanged);
     void session.refetch();
   };
-  const terminalControl = useChatContinueInTerminal();
+  const home = useSessionHome();
+  const terminalControl = useChatContinueInTerminal({
+    inChat: true,
+    onOpened: (terminal) => home.go({ terminalId: terminal.id }),
+  });
   const desktop = useBreakpoint("xl");
   const phone = !useBreakpoint("md");
   const compactViewport = useCompactViewport();
-  const home = useSessionHome();
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
-  const context = useSessionContext(fullscreen ? home.terminalId : null);
-  const terminalCenter = fullscreen && !!home.terminalId;
+  const context = useSessionContext(home.terminalId);
+  const terminalCenter = !!home.terminalId;
   const linkError = useSessionLiveLink(home, fullscreen);
   const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
   const projects = useProjects();
@@ -299,11 +303,13 @@ export function ChatPanel({
         <Settings2 size={17} />
         Session settings
       </button>
-      <ChatContinueInTerminal
-        control={terminalControl}
-        onOpen={() => setActionsOpen(false)}
-        labelled
-      />
+      {!terminalCenter && (
+        <ChatContinueInTerminal
+          control={terminalControl}
+          onOpen={() => setActionsOpen(false)}
+          labelled
+        />
+      )}
       {includeSessionActions && (
         <>
           <ChatRefreshAction
@@ -393,6 +399,21 @@ export function ChatPanel({
     if (open && !embedded && !window.matchMedia("(pointer: coarse)").matches)
       input.current?.focus();
   }, [open, embedded]);
+  // The terminal is another view of the same chat session, not a separate page:
+  // one control returns to the conversation without losing either side's state.
+  const terminalBack = terminalCenter ? (
+    <ActionHelp label="Back to chat">
+      <button
+        type="button"
+        data-testid="chat-terminal-back"
+        aria-label="Back to chat"
+        className={cn(iconButton, phone && "min-h-11 min-w-11")}
+        onClick={() => home.go({ terminalId: null }, { replace: true })}
+      >
+        <ArrowLeft size={18} />
+      </button>
+    </ActionHelp>
+  ) : null;
   if (!open) return <div data-testid="chat-panel-collapsed" className="hidden" />;
   return (
     <ThreadPrimitive.Root
@@ -445,9 +466,11 @@ export function ChatPanel({
               !docked && !rail && !phone && "pl-40",
             )}
           >
+            {!phone && terminalBack}
             {phone ? (
               <>
                 <div className="flex items-center gap-0.5">
+                  {terminalBack}
                   <button
                     type="button"
                     data-testid="chat-sessions-button"
