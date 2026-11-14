@@ -6,6 +6,7 @@ import { useSessionSeen } from "@/hooks/useSessionSeen";
 import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { type JumpKind, type JumpTarget, nextJump } from "@/lib/command-palette";
 import { needsUser } from "@/lib/session-filter";
+import { SESSION_TERMINAL_PARAM } from "@/lib/session-home";
 import { lastSeen, unseenState } from "@/lib/session-seen";
 import { workspaceDestination } from "@/lib/workspace-navigation";
 
@@ -42,6 +43,13 @@ export function useSessionJump({
       at: tab.messages[tab.messages.length - 1]?.timestamp ?? tab.createdAt ?? 0,
       open: () => {
         chat.selectTab(tab.key);
+        // The terminal view belongs to the conversation that opened it, so a
+        // jump to another chat leaves it before the new thread renders.
+        const params = new URLSearchParams(search);
+        if (params.has(SESSION_TERMINAL_PARAM)) {
+          params.delete(SESSION_TERMINAL_PARAM);
+          navigate({ search: params.toString() }, { replace: true });
+        }
         onOpenChat();
       },
     });

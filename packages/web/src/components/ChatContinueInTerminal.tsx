@@ -1,3 +1,4 @@
+import { nativeChatAgent } from "@orc/core/chat";
 import { useQuery } from "@tanstack/react-query";
 import { SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -28,6 +29,7 @@ export function useChatContinueInTerminal({
   const sessionRunning = !!sessionState.data?.running;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const opening = useRef(false);
   const threadId = useRef(thread?.id);
   useEffect(() => {
     threadId.current = thread?.id;
@@ -35,13 +37,14 @@ export function useChatContinueInTerminal({
     setPending(false);
   }, [thread?.id]);
   async function open() {
-    if (!thread) return false;
+    if (!thread || opening.current) return false;
+    opening.current = true;
     setPending(true);
     setError("");
     try {
       const matches = () =>
         api.sessions
-          .live({ active: false, limit: 5000 })
+          .live({ active: false, include_hidden: true, limit: 5000 })
           .then(({ sessions }) =>
             sessions.find(
               (session) =>
@@ -61,6 +64,9 @@ export function useChatContinueInTerminal({
         throw new Error(
           "This session is not available in Sessions yet. Try again after session discovery refreshes.",
         );
+      // The user may have switched chats while discovery or the sync was running;
+      // never move the new conversation into the old session's terminal.
+      if (threadId.current !== thread.id) return false;
       const existing = runningTerminalForSession(terminals, session.id);
       if (existing && inChat) {
         onOpened?.(existing);
@@ -69,6 +75,7 @@ export function useChatContinueInTerminal({
       const terminal = await openLiveSession(session, thread.config.providerId, false, {
         navigate: !inChat,
       });
+      if (threadId.current !== thread.id) return false;
       if (inChat) onOpened?.(terminal);
       return true;
     } catch (cause) {
@@ -76,6 +83,7 @@ export function useChatContinueInTerminal({
         setError(cause instanceof Error ? cause.message : "Could not continue in terminal.");
       return false;
     } finally {
+      opening.current = false;
       if (threadId.current === thread.id) setPending(false);
     }
   }
@@ -85,15 +93,18 @@ export function useChatContinueInTerminal({
       ? "Wait for the session to become idle."
       : !thread?.runtimeId
         ? "Send a message before continuing in a terminal."
-        : undefined;
+        : sessionState.isPending
+          ? "Checking whether the session is idle."
+          : undefined;
   return {
-    available: !!thread && ["codex", "claude", "opencode"].includes(thread.config.agent),
+    available: !!thread && !!nativeChatAgent(thread.config.agent),
     disabled:
       streaming ||
       refreshing ||
       reconnecting ||
       responding ||
       sessionRunning ||
+      sessionState.isPending ||
       pending ||
       !thread?.runtimeId,
     reason,

@@ -238,12 +238,17 @@ export function InspectorOverview({
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">
+              <p
+                data-testid="session-inspector-pull-request-status"
+                className="text-sm text-muted-foreground"
+              >
                 {github.data?.unavailable_reason === "no_remote"
                   ? "This checkout has no GitHub origin remote."
-                  : github.data?.auth === "none"
-                    ? "GitHub authentication is unavailable on this host."
-                    : "No open PR for this branch."}
+                  : github.data?.unavailable_reason === "detached_head"
+                    ? "Detached HEAD: select a branch to find its pull request."
+                    : github.data?.auth === "none"
+                      ? "GitHub authentication is unavailable on this host."
+                      : "No open PR for this branch."}
               </p>
             )}
           </div>
