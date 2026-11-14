@@ -252,6 +252,9 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("chat-messages")).toContainText("FIRST");
 
       // While a response streams, other accounts of the same agent stay locked.
+      // Wait for the previous turn to settle first: a send during streaming is
+      // queued (#330), so it would not reach the thread before the assertion.
+      await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
       await page.getByTestId("chat-input").fill("reply after 3000ms");
       await page.getByTestId("chat-input").press("Enter");
       await openChatAgentModel(page);

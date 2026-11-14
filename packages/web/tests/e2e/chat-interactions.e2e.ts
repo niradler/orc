@@ -71,6 +71,16 @@ for (const width of [390, 1440]) {
                           question: "Choose a color",
                           options: [{ label: "Blue", description: "Use blue" }],
                         },
+                        {
+                          id: "colors",
+                          header: "Colors",
+                          question: "Choose colors",
+                          multiSelect: true,
+                          options: [
+                            { label: "Red", description: "Use red" },
+                            { label: "Blue", description: "Use blue" },
+                          ],
+                        },
                       ],
                     },
                   });
@@ -164,7 +174,12 @@ for (const width of [390, 1440]) {
     );
     await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
     await page.getByTestId("chat-permission-allow").filter({ visible: true }).click();
-    await page.getByTestId("chat-question-answer").filter({ visible: true }).fill("Blue");
+    await page.getByTestId("chat-question-answer").filter({ visible: true }).first().fill("Blue");
+    const checkboxes = page.locator('input[type="checkbox"]').filter({ visible: true });
+    await expect(checkboxes).toHaveCount(2);
+    await checkboxes.nth(0).check();
+    await checkboxes.nth(1).check();
+    await page.screenshot({ path: testInfo.outputPath(`chat-question-${width}.png`) });
     await page.getByTestId("chat-question-submit").filter({ visible: true }).click();
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
     const state = await page.evaluate(
@@ -177,7 +192,10 @@ for (const width of [390, 1440]) {
     );
     expect(state.body).toMatchObject({ permissionMode: "bypassPermissions" });
     expect(state.permission).toEqual({ requestId: "approval-1", decision: "approved" });
-    expect(state.answer).toEqual({ requestId: "question-1", answers: { color: ["Blue"] } });
+    expect(state.answer).toEqual({
+      requestId: "question-1",
+      answers: { color: ["Blue"], colors: ["Red", "Blue"] },
+    });
     await openChatActions(page);
     const toTerminal = page.getByTestId("chat-continue-terminal").filter({ visible: true });
     await expect(toTerminal).toHaveAttribute("aria-label", "Continue in terminal");

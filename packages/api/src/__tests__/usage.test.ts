@@ -17,8 +17,10 @@ import { maintainUsageRetention, writeSessionUsage } from "../sessions/usage-eve
 import {
   createQuotaReader,
   createTargetQuotaReader,
+  decodeAlibabaQuota,
   decodeClaudeQuota,
   decodeCodexQuota,
+  parseAlibabaOutput,
 } from "../usage-quotas";
 
 const app = new Hono();
@@ -436,6 +438,115 @@ test("should decode quota windows including zero and exhausted usage and reject 
   expect(() =>
     decodeCodexQuota({ rate_limit: { primary_window: { used_percent: 101 } } }),
   ).toThrow();
+});
+
+test("should decode Alibaba Cloud token-plan ratios and skip accounts without quota data", () => {
+  const reset = 1_796_918_400_000;
+  expect(
+    decodeAlibabaQuota({
+      per1MonthPercentage: 0.4501,
+      per1MonthResetTime: reset,
+      hasQuotaData: true,
+    }),
+  ).toEqual([
+    { label: "Monthly token plan", used_percent: 45.01, resets_at: new Date(reset).toISOString() },
+  ]);
+  expect(
+    decodeAlibabaQuota({ per1MonthPercentage: 1.5, hasQuotaData: true })[0]?.used_percent,
+  ).toBe(100);
+  expect(decodeAlibabaQuota({ hasQuotaData: false })).toEqual([]);
+  expect(decodeAlibabaQuota({})).toEqual([]);
+  expect(() => decodeAlibabaQuota({ per1MonthPercentage: -1 })).toThrow();
+});
+
+test("should read the first quota object from Bailian CLI output and ignore update notices", () => {
+  const stdout = `{
+  "per1MonthPercentage": 0.25,
+  "per1MonthResetTime": 1796918400000,
+  "hasQuotaData": true
+}
+{"warning":{"message":"Update available","code":"UPDATE_AVAILABLE"}}`;
+  expect(parseAlibabaOutput(stdout)).toEqual({
+    per1MonthPercentage: 0.25,
+    per1MonthResetTime: 1796918400000,
+    hasQuotaData: true,
+  });
+  expect(parseAlibabaOutput('{"warning":{"message":"no quota here"}}')).toBeNull();
+  expect(parseAlibabaOutput("not json")).toBeNull();
+});
+
+test("should read Alibaba Cloud quota from the Bailian CLI and isolate CLI failures", async () => {
+  const calls: string[][] = [];
+  const read = createTargetQuotaReader(
+    {
+      home: "fixture",
+      read: async () => {
+        throw new Error("must not read files");
+      },
+      fetch: async () => {
+        throw new Error("must not fetch");
+      },
+      run: async (command, args) => {
+        calls.push([command, ...args]);
+        return {
+          exitCode: 0,
+          stdout:
+            '{"per1MonthPercentage":0.4,"per1MonthResetTime":1796918400000,"hasQuotaData":true}',
+          stderr: '{"warning":{"message":"private-update-notice"}}',
+        };
+      },
+    },
+    () => [{ provider: "alibaba" }],
+  );
+  const [quota] = await read();
+  expect(calls).toEqual([["bl", "usage", "token-plan", "--output", "json"]]);
+  expect(quota?.status).toBe("available");
+  expect(quota?.windows).toEqual([
+    {
+      label: "Monthly token plan",
+      used_percent: 40,
+      resets_at: new Date(1_796_918_400_000).toISOString(),
+    },
+  ]);
+  expect(JSON.stringify(quota)).not.toContain("private-update-notice");
+
+  const signedOut = createTargetQuotaReader(
+    {
+      home: "fixture",
+      read: async () => {
+        throw new Error("must not read files");
+      },
+      fetch: async () => {
+        throw new Error("must not fetch");
+      },
+      run: async () => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: "Authentication required. Run bl auth login.",
+      }),
+    },
+    () => [{ provider: "alibaba" }],
+  );
+  const [signedOutQuota] = await signedOut();
+  expect(signedOutQuota?.status).toBe("signed_out");
+  expect(signedOutQuota?.windows).toEqual([]);
+
+  const noPlan = createTargetQuotaReader(
+    {
+      home: "fixture",
+      read: async () => {
+        throw new Error("must not read files");
+      },
+      fetch: async () => {
+        throw new Error("must not fetch");
+      },
+      run: async () => ({ exitCode: 0, stdout: "{}", stderr: "" }),
+    },
+    () => [{ provider: "alibaba" }],
+  );
+  const [noPlanQuota] = await noPlan();
+  expect(noPlanQuota?.status).toBe("unavailable");
+  expect(noPlanQuota?.message).toContain("token plan");
 });
 
 test("should cache concurrent reads, use only fixed HTTPS endpoints, and never return credentials or provider errors", async () => {

@@ -32,7 +32,17 @@ for (const width of [390, 1440]) {
       await page.getByTestId("provider-advanced").locator("summary").click();
       const options = { thinkingLevel: "high", autoCompaction: true, autoRetry: false };
       await page.getByTestId("provider-options").fill(JSON.stringify(options));
+      // The options edit re-renders the provider form. Let that commit land before
+      // focusing the help trigger, otherwise focus can land on a node React replaces
+      // and the tooltip, which opens on focus, never renders.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
       const help = page.getByTestId("provider-options-help");
+      await help.scrollIntoViewIfNeeded();
       if (width === 1440) {
         await help.hover();
         await expect(page.getByTestId("provider-options-help-content")).toContainText(

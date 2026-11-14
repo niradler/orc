@@ -79,7 +79,8 @@ at the same login are flagged so a switch does not silently reuse one account.
 **Use for new sessions** saves that provider as the default without opening the
 full form.
 
-**Settings → Usage** shows a quota card per configured Claude/Codex provider, and
+**Settings → Usage** shows a quota card per configured Claude/Codex provider and for
+Alibaba Cloud when the Bailian CLI (`bl`) is installed, and
 session discovery, the live-session watcher and transcript search include every
 configured directory. Remote SSH accounts are not inspected: identity, quotas and
 session discovery for separate accounts currently read the local API host only.
@@ -295,6 +296,14 @@ and are never returned to the browser. Keychain-only, API-key and SSH-host login
 are not supported. Missing logins, expired access and unsupported provider
 responses display an unavailable state. Sign in again using the provider CLI
 when access expires; ORC does not refresh or modify provider credentials.
+
+When the Bailian CLI (`bl`) is on the API host's `PATH`, Usage also shows an
+Alibaba Cloud card. ORC runs `bl usage token-plan --output json` with an 8-second
+timeout and displays the reported monthly token-plan percentage and reset time.
+Only the percentage and reset timestamp are returned to the browser; the CLI's
+stored credentials are not read by ORC. An account without an active token plan,
+a missing login and an unreachable CLI all display an unavailable state. Alibaba
+Cloud coding-plan quotas are not shown.
 
 The authenticated read-only routes `GET /api/usage/report`, `GET
 /api/usage/history` and `GET /api/usage/quotas` expose the same data. Report

@@ -30,18 +30,45 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
    autho buffers. Resume after a failure with `--resume --yes`.
 5. **While macOS builds, back up the lab.** Run these on `lab-z170mx`
    (sudo password: autho `homelab` via `sudo -S`):
+   - Check quiescence first (active tasks/jobs/flows/gateway sessions/terminals
+     via DB + `/api/terminals`). Stale `doing` tasks whose id+`updated_at` match
+     the list already approved in the handoff are tolerated; anything new or
+     changed needs Nir's approval.
    - Stop orc.
    - `tar -czf` `/srv/docker-data/orc` together with `compose.yaml` and
      `/opt/homelab/secrets/orc.env` into `/mnt/backups/orc-before-<v>-<ts>/`.
-   - `tar -tzf` the archive to verify it, then start orc again.
+     Also copy `orc.db` there as `migration-check.db` (WAL sidecars vanish on a
+     clean stop) for the rollout smoke test, tag the prior image
+     `homelab-orc:before-<v>-<ts>`, and write `SHA256SUMS` plus a
+     `verification.json` (stopped-window `docker events` start-audit, entry
+     counts, integrity, counts baseline) into the backup dir.
+   - `tar -tzf` the archive to verify it, then start orc again. Absent
+     `daemon.pid`/`daemon.json`/`orc.db-wal`/`-shm` in the listing are expected:
+     graceful stop removes them.
 6. **Lab rollout after Docker publishes.**
-   - Get the `niradler/orc:<v>` digest.
-   - Smoke-test the new image on a spare port against a copy of the data. Check
-     health and that DB counts match.
-   - Pin `tag@digest` in `/opt/homelab/stacks/orc/compose.yaml`, then run
-     `sudo docker compose up -d`.
-   - Verify: health 200, anonymous 401, authenticated 200, dashboard and assets
-     load, and skills, agents and knowledge are present.
+   - Pull `niradler/orc:<v>@sha256:<digest>`; check `arch=amd64` and label
+     `org.opencontainers.image.revision` == the release commit.
+   - Smoke-test the image on a **fresh** extract of the backup's `data.tgz`
+     with `daemon.pid`/`daemon.json` deleted:
+     `docker run -d --network none --env-file /opt/homelab/secrets/orc.env -v <copy>:/data <image>`,
+     probe via `docker exec … bun` (no egress, no open port, no Telegram
+     interference). Health is **`/api/health`**. Expect: health 200 + version,
+     anonymous 401, authenticated 200, dashboard+assets 200, no secret in HTML,
+     `integrity_check` ok, table/tasks/FTS counts == baseline. Then delete
+     container and copy.
+   - Pin `tag@digest` in `/opt/homelab/stacks/orc/compose.yaml` (root-owned;
+     sudo, keep a `compose.yaml.before-<v>` copy, guard that only the image
+     line changes). The lab docker has **no compose plugin**: run compose
+     through the `homelab-code-server` helper image with docker socket, stack
+     dir and `orc.env` mounted, `--project-name orc`:
+     `up -d --no-deps --no-build --pull never orc`.
+   - Verify: healthy/restarts=0; in-container `/api/health` 200 + version,
+     anonymous 401, authenticated 200, dashboard and assets load, skills,
+     agents and knowledge counts present, integrity ok, env names and
+     mounts/ports/cmd/security settings unchanged; then the public origin
+     `https://orc.niradler.com/api/health` with CF Access service-token headers
+     from autho `homelab-access` (username = `CF-Access-Client-Id`, value =
+     `CF-Access-Client-Secret`); without them Cloudflare returns its login page.
 7. **Local desktop.** The release relaunches the desktop. Confirm the `orc --version`
    of both the bundled and the user CLI.
 8. **Finish.**
@@ -62,16 +89,20 @@ Speed rules:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Release `checks` fails on biome organizeImports | PR gate ran lint/format only (fixed in #263) | `bunx biome check --write ./packages ./scripts`, then PR |
+| GitHub asset upload `HTTP 502: Error creating policy` | Transient GitHub Releases upload failure | `--resume --yes`; uploads are idempotent (`--clobber`) |
 | Typecheck: two drizzle copies, `shouldInlineParams` | Worktree without `node_modules` resolves the main checkout's | `bun install` in the worktree |
 | Git Bash `cd` exits 1 with an fnm error and nothing runs | fnm shell hook | Launch from PowerShell with `Set-Location`, or use absolute paths |
 | npm step "Unexpected npm release archive" | package.json changed under a shared checkout | Dedicated worktree, then `--resume` |
 | npm PUT 202 and the version is not visible yet | Registry processing lag (up to 15 min or more) | `--resume` later; it won't republish |
 | Desktop verify timeout | `~/.orc/bin/orc.exe` locked by editor `orc mcp` processes | Ask Nir to close them, then `--resume --yes` |
-| Lab `docker build` prints usage | Lab docker has no build subcommand | `/usr/libexec/docker/cli-plugins/docker-buildx build --load` |
+| Lab `docker build`/`docker compose` prints usage or not found | Lab docker CLI has no build/compose subcommands | buildx plugin path for builds; `homelab-code-server` helper container with docker socket for compose |
 | Bump collides with an existing npm version | Previous release commit never reached master | Preflight version check (step 1) |
 | Fix PR's `changed` check sits queued | Homelab runner session went stale (container replaced) | Cancel the run, then `gh run rerun <id>`; check `gha-runner-pool.service` on the lab |
 | Backup tar prints `socket ignored` | SSH control sockets in `/data/.orc/ssh` | Harmless; sockets don't need backing up |
+| Backup verify claims `orc.db` missing though the archive is fine | `tar -tzf \| grep -q` under `set -o pipefail`: grep exits early, tar dies of SIGPIPE, pipeline "fails" | Materialize the listing into a file/var once, then grep it |
+| Smoke daemon exits: `daemon already running (pid N)` | Stale `daemon.pid` in reused/copied data (prior smoke was `rm -f`'d, not stopped) | Delete `daemon.pid`/`daemon.json` from the copy; always re-extract fresh |
+| Smoke health 404 or anonymous requests return 200 | Probed `/health` instead of `/api/health`; or ran without `--env-file orc.env` → open mode | Use `/api/health`; pass the env-file so auth matches prod |
+| Public origin check returns a Cloudflare login page | `orc.niradler.com` sits behind CF Access | Send `CF-Access-Client-Id`/`-Secret` from autho `homelab-access` |
 | Log stays empty during the release | autho buffers child output | Watch `.orc/release-state.json` `completed[]` |
 
 ## Self-improvement (required)
