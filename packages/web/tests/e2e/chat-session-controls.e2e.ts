@@ -149,7 +149,7 @@ for (const width of [1440, 390]) {
     // guard is against a runaway refetch rather than exactly one read.
     expect(savedReads).toBeGreaterThanOrEqual(1);
     expect(savedReads).toBeLessThanOrEqual(2);
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await expect(page.getByTestId("chat-config-dialog")).toContainText("build-host");
     await expect(page.getByTestId("chat-config-dialog")).toContainText(saved.cwd);
     await page.getByTestId("chat-agent-options").locator("summary").click();

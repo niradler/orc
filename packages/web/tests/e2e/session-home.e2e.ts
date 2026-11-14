@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { showSessionSection } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 import { HOME, mockSessionHome } from "./_session-home-demo";
 
@@ -10,10 +11,9 @@ const rowIds = [
 ];
 
 async function sessionList(page: Page, narrow: boolean) {
-  if (narrow) {
-    await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
-    return page.getByTestId("chat-sessions-dialog").getByTestId("chat-session-list");
-  }
+  if (narrow) await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+  await showSessionSection(page, "recents");
+  if (narrow) return page.getByTestId("chat-sessions-dialog").getByTestId("chat-session-list");
   return page.getByTestId("chat-session-sidebar").getByTestId("chat-session-list");
 }
 
@@ -382,6 +382,7 @@ test("breadcrumb uses recorded project ownership and unlinked terminal state sta
   const unknown = page.locator('[data-history-id="terminal:unlinked-terminal"]');
   await expect(unknown).toHaveAttribute("data-state", "unknown");
   await expect(unknown.getByTestId("chat-session-status")).toHaveAttribute("aria-label", /Unknown/);
+  await showSessionSection(page, "recents");
   await row(page.getByTestId("chat-session-list"), `chat:${HOME.chatB}`)
     .locator("button")
     .first()

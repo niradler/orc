@@ -70,21 +70,42 @@ export async function openChatActions(page: Page): Promise<void> {
     await page.getByTestId("chat-options-button").filter({ visible: true }).click();
 }
 
-export async function openChatSettings(page: Page): Promise<void> {
+export async function openChatSettings(
+  page: Page,
+  tab: "overview" | "customize" | "analytics" = "overview",
+): Promise<void> {
   await openChatActions(page);
   await page.getByTestId("chat-config-button").click();
   await expect(page.getByTestId("chat-config-dialog")).toBeVisible();
+  if (tab !== "overview") await page.getByTestId(`chat-settings-tab-${tab}`).click();
 }
 
-export async function openChatHistory(page: Page): Promise<void> {
+export async function showSessionSection(
+  page: Page,
+  section: "projects" | "recents",
+): Promise<void> {
+  const tab = page.getByTestId(`session-navigation-${section}`).filter({ visible: true }).first();
+  if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+}
+
+export async function openChatHistory(
+  page: Page,
+  section: "projects" | "recents" = "recents",
+): Promise<void> {
   const sidebar = page.getByTestId("chat-session-sidebar");
   const dialog = page.getByTestId("chat-sessions-dialog");
   const button = page.getByTestId("chat-sessions-button");
   // Wait for the chat to render before choosing a branch; sign-in may still be in progress.
   await expect(sidebar.or(dialog).or(button).filter({ visible: true }).first()).toBeVisible();
-  if (await sidebar.isVisible()) return;
+  if (await sidebar.isVisible()) {
+    await showSessionSection(page, section);
+    return;
+  }
   if (!(await dialog.isVisible())) await button.filter({ visible: true }).click();
-  await expect(page.getByTestId("chat-session-list")).toBeVisible();
+  await showSessionSection(page, section);
+  await expect(
+    page.getByTestId(section === "recents" ? "chat-session-list" : "session-project-list"),
+  ).toBeVisible();
 }
 
 export async function waitHistoryClosed(page: Page): Promise<void> {
