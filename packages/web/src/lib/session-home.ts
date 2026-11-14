@@ -7,9 +7,9 @@ export const DRAWER_PARAM = "drawer";
 /** Pane id shared by the desktop and phone inspector git/files panels. */
 export const INSPECTOR_PANE_ID = "session-inspector";
 
-export type InspectorTab = "overview" | "diff" | "files";
+export type InspectorTab = "overview" | "diff" | "files" | "browser";
 
-export const INSPECTOR_TABS: InspectorTab[] = ["overview", "diff", "files"];
+export const INSPECTOR_TABS: InspectorTab[] = ["overview", "diff", "files", "browser"];
 
 export interface SessionHomeState {
   terminalId: string | null;
@@ -98,5 +98,18 @@ export function pullRequestReviewParams(
   next.set("pane", INSPECTOR_PANE_ID);
   next.set("paneTerminal", target.terminalId);
   next.set("view", "git");
+  return next;
+}
+
+/** Opens a checkout file in the inspector's Files tab from its Changes tab. */
+export function inspectorFileParams(
+  params: URLSearchParams,
+  target: { terminalId: string; path: string },
+): URLSearchParams {
+  const next = patchSessionHome(params, { inspector: "files" });
+  next.set("view", "files");
+  next.set("pane", INSPECTOR_PANE_ID);
+  next.set("paneTerminal", target.terminalId);
+  next.set("file", target.path);
   return next;
 }

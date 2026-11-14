@@ -20,14 +20,36 @@ export async function mockPreviewBridge(page: Page) {
           restore: async () => null,
           chatPermission: async () => false,
           onBrowser: subscribe,
-          onOpen: subscribe,
+          onOpen: (callback: (request: unknown) => void) => {
+            const win = window as Window & { __previewOpen?: (request: unknown) => void };
+            win.__previewOpen = callback;
+            return () => {
+              win.__previewOpen = undefined;
+            };
+          },
           allow: async () => {},
           dirty: async () => {},
-          bounds: async () => {},
+          bounds: async (_session: string | null, bounds: unknown) => {
+            const win = window as Window & { __previewBounds?: unknown[] };
+            if (!win.__previewBounds) win.__previewBounds = [];
+            win.__previewBounds.push(bounds);
+          },
           preferences: async () => ({ agentBrowserControl: true, openLinksIn: "preview" }),
           onPreferences: subscribe,
           setPreferences: async (value: unknown) => value,
           pick: async () => null,
+          read: async () => null,
+          release: async () => {},
+          save: async () => {},
+          open: async () => null,
+          tab: async () => null,
+          navigate: async () => {},
+          display: async () => ({}),
+          control: async () => ({}),
+          upload: async () => ({}),
+          pageDialog: async () => {},
+          externalUrl: async () => {},
+          externalFile: async () => {},
         },
       },
     });
@@ -58,6 +80,30 @@ export async function mockPreviewBridge(page: Page) {
       },
     }),
   );
+  await page.route(`**/api/terminals/${HOME.terminal}/files*`, (r) => {
+    const path = new URL(r.request().url()).searchParams.get("path") ?? "";
+    return r.fulfill({
+      json: {
+        root: PREVIEW_FOLDER,
+        path,
+        entries: path
+          ? null
+          : [
+              { name: "src", path: "src", directory: true },
+              { name: "README.md", path: "README.md", directory: false },
+            ],
+        content: path
+          ? [
+              "export function total(items: Item[]) {",
+              "  return Math.round(items.reduce((sum, item) => sum + item.price, 0) * 100) / 100;",
+              "}",
+            ].join("\n")
+          : null,
+        binary: false,
+        truncated: false,
+      },
+    });
+  });
   await page.route(`**/api/terminals/${HOME.terminal}/git/worktrees`, (r) =>
     r.fulfill({
       json: {
