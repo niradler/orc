@@ -52,7 +52,7 @@ opens the chat page instead.
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
   - **Recents** lists every session by last activity, newest first. **Projects** groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
-- **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
+- **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes. On a phone the inspector is a full page with **Overview**, **Changes**, **Pull request** and **Files** tabs: the branch and PR summary, the working-tree review with staging and commit, the PR diff with comments, and the checkout's file editor.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
 - **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
@@ -63,19 +63,40 @@ opens the chat page instead.
   while project ownership is unavailable. The Activity session list uses the same
   compact row design, retaining search, filters, task links and resume actions.
 
-On a phone the list opens full screen from **Sessions** in the chat header and the inspector opens as a sheet.
+On a phone (below 768px) the chat is a touch-first surface. **Sessions**, the
+**Inspector** and the **Terminal** open as full pages over the conversation,
+which stays mounted underneath so streams and drafts survive. They follow your
+finger:
+
+- Swipe left from the right edge to open **Sessions**; swipe right to close it.
+- Swipe right from the left edge to open the **Inspector**; swipe left to close it.
+- Pull down on the chat header (or tap **Terminal**) to open the terminal page;
+  swipe up on its header, tap the close button or press Escape to close it.
+
+Swipes that start inside code blocks, diffs or the terminal canvas stay with
+that content. Every page also opens from its header button, closes with its back
+button or Escape, and is kept in the URL: `sessionList=show`,
+`inspector=overview|diff|pr|files` and `drawer=terminal`. Reload, Back and
+Forward restore the page, and the URL is shareable.
 The three-dot **Session actions** menu shows labeled actions with touch-sized rows
 on phones. It closes when you tap elsewhere in the chat or
 press Escape. Choosing an action also closes the menu; opening Session settings
 keeps the conversation and your draft in place. Agent, workspace and branch
 pickers also close when you tap outside them.
-Opening the list sets `sessionList=show` in the URL, so reload and Back restore it.
 Closing the page also returns to the original page after navigating Back and Forward.
 
 ![Session home with its inspector and demo data](/screens/session-home-desktop.png)
 
-<img src="/screens/session-home-phone.png" alt="Phone conversation with compact composer controls" width="260">
-<img src="/screens/session-list-phone.png" alt="Full-screen session list on a phone" width="260">
+<img src="/screens/session-home-phone.png" alt="Phone conversation with the Terminal and Inspector view bar" width="260">
+<img src="/screens/session-list-phone.png" alt="Full-screen Sessions page on a phone" width="260">
+
+The phone inspector: branch and pull-request summary, working-tree changes, PR
+review and the file editor.
+
+<img src="/screens/session-inspector-phone.png" alt="Phone inspector overview with branch and pull request cards" width="260">
+<img src="/screens/session-inspector-changes-phone.png" alt="Phone inspector Changes tab with the working-tree diff" width="260">
+<img src="/screens/session-inspector-pr-phone.png" alt="Phone inspector Pull request tab with the PR diff" width="260">
+<img src="/screens/session-inspector-files-phone.png" alt="Phone inspector Files tab with the file editor" width="260">
 
 The session list's **Recents** and **Projects** views, ordered by last activity:
 

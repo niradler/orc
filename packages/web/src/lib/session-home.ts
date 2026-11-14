@@ -4,7 +4,9 @@ export const SESSION_LIST_PARAM = "sessionList";
 export const INSPECTOR_PARAM = "inspector";
 export const DRAWER_PARAM = "drawer";
 
-export type InspectorTab = "overview" | "diff";
+export type InspectorTab = "overview" | "diff" | "files" | "pr";
+
+export const INSPECTOR_TABS: InspectorTab[] = ["overview", "diff", "files", "pr"];
 
 export interface SessionHomeState {
   terminalId: string | null;
@@ -30,7 +32,9 @@ export function readSessionHome(params: URLSearchParams): SessionHomeState {
     liveId: params.get(SESSION_LIVE_PARAM) || null,
     listHidden: params.get(SESSION_LIST_PARAM) === "hide",
     listOpen: params.get(SESSION_LIST_PARAM) === "show",
-    inspector: inspector === "overview" || inspector === "diff" ? inspector : null,
+    inspector: INSPECTOR_TABS.includes(inspector as InspectorTab)
+      ? (inspector as InspectorTab)
+      : null,
     drawer: params.get(DRAWER_PARAM) === "terminal",
   };
 }

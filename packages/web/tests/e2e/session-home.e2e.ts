@@ -282,6 +282,8 @@ test("phone session list is full screen and URL, reload, Back and Escape preserv
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await sessionList(page, true);
   await expect(page).toHaveURL(/sessionList=show/);
+  // The page slides in; measure its geometry once it rests.
+  await page.waitForTimeout(250);
   const dialog = page.getByTestId("chat-sessions-dialog");
   const box = await dialog.boundingBox();
   expect(box?.x).toBe(0);

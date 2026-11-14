@@ -1,5 +1,3 @@
-import type { ArchiveSession } from "@orc/core/session-archive";
-import { useQuery } from "@tanstack/react-query";
 import {
   ChevronRight,
   Folder,
@@ -13,8 +11,7 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
@@ -39,42 +36,12 @@ import { Input } from "@/components/ui/input";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import { useProjects } from "@/hooks/useProjects";
-import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
-import { useSessionSeen } from "@/hooks/useSessionSeen";
-import { useSsh } from "@/hooks/useSsh";
-import { useStableOrder } from "@/hooks/useStableOrder";
+import { type SessionHistory, useSessionHistory } from "@/hooks/useSessionHistory";
+import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
-import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
+import type { ChatHistoryEntry } from "@/lib/chat-history-list";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
-import { useSelectedProject } from "@/lib/selected-project";
-import { filterCounts, matchesFilter, parseFilter, type SessionFilter } from "@/lib/session-filter";
-import { markSeen } from "@/lib/session-seen";
-import { terminalPath } from "@/lib/terminal-links";
-import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
-
-const FILTER_KEY = "orc_chat_history_filter";
-const SECTION_KEY = "orc_chat_history_section";
-const UNASSIGNED_SECTION = "__unassigned__";
-
-type SessionSection = "projects" | "recents";
-
-function storedFilter(): SessionFilter {
-  try {
-    return parseFilter(localStorage.getItem(FILTER_KEY));
-  } catch {
-    return "all";
-  }
-}
-
-function storedSection(): SessionSection {
-  try {
-    return localStorage.getItem(SECTION_KEY) === "projects" ? "projects" : "recents";
-  } catch {
-    return "recents";
-  }
-}
 
 export function ChatSessionPicker({
   enabled = true,
@@ -91,254 +58,38 @@ export function ChatSessionPicker({
   hideTrigger?: boolean;
   home?: SessionHomeNav;
 }) {
-  const chat = useChat();
-  const navigate = useNavigate();
-  const { terminals } = useTerminals();
-  const projectScope = chat.projectScope;
-  const selectedProject = useSelectedProject();
-  const navigation = useSessionHome();
-  const setOpen = (next: boolean) => navigation.go({ listOpen: next });
-  const open = enabled && (docked || rail || navigation.listOpen);
-  const [search, setSearch] = useState("");
-  const [visibleCount, setVisibleCount] = useState(50);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  // All statuses: sessions can belong to archived/paused projects and must stay reachable.
-  const projectsQuery = useProjects();
-  const { data: projects, isLoading: projectsLoading, error: projectsError } = projectsQuery;
-  const { data: ssh } = useSsh();
-  const [section, setSection] = useState<SessionSection>(storedSection);
-  const [expandedProject, setExpandedProject] = useState<string | null>(null);
-  const chooseSection = (next: SessionSection) => {
-    setSection(next);
-    try {
-      localStorage.setItem(SECTION_KEY, next);
-    } catch {}
-  };
-
-  const [selectedArchive, setSelectedArchive] = useState<ArchiveSession | null>(null);
-  const [repository, setRepository] = useState("");
-  const [branch, setBranch] = useState("");
-  const [commit, setCommit] = useState("");
-  const [subdirectory, setSubdirectory] = useState("");
-  const threads = useQuery({
-    queryKey: ["chat-threads", open],
-    queryFn: api.chat.list,
-    enabled: open,
-    staleTime: 0,
-  });
-  const live = useQuery({
-    queryKey: ["chat-resume-sessions", open, projectScope],
-    queryFn: () =>
-      api.sessions.live({
-        active: false,
-        limit: 5000,
-        ...(projectScope === "all" ? {} : { project_id: projectScope }),
-      }),
-    enabled: open,
-    staleTime: 0,
-  });
-  const archive = useQuery({
-    queryKey: ["chat-resume-archive", search, projectScope],
-    queryFn: () =>
-      api.sessions.archive({
-        q: search,
-        limit: 30,
-        ...(projectScope === "all" ? {} : { project_id: projectScope }),
-      }),
-    enabled: open,
-  });
-  const [refreshingSessions, setRefreshingSessions] = useState(false);
-  const [refreshError, setRefreshError] = useState("");
-  const refreshSessions = async () => {
-    setRefreshingSessions(true);
-    setRefreshError("");
-    try {
-      // Ask the server to re-import native sessions first; watching covers most
-      // agents, but a forced sync also catches external stores immediately.
-      try {
-        await api.sessions.sync();
-      } catch (cause) {
-        // Keep refreshing the lists even when the forced sync fails; a silent
-        // no-op would look like the click did nothing.
-        setRefreshError(cause instanceof Error ? cause.message : "Sessions could not be synced.");
-      }
-      await Promise.all([
-        threads.refetch(),
-        live.refetch(),
-        archive.refetch(),
-        projectsQuery.refetch(),
-      ]);
-    } finally {
-      setRefreshingSessions(false);
-    }
-  };
-  async function select(load: () => ReturnType<typeof api.chat.get>, projectId?: string | null) {
-    setPending(true);
-    setError("");
-    try {
-      chat.openThread(await load(), { projectId });
-      setOpen(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Session could not be opened.");
-    } finally {
-      setPending(false);
-    }
-  }
-  const seen = useSessionSeen();
-  const [filter, setFilter] = useState<SessionFilter>(storedFilter);
-  // Folder matching stays limited to active projects; grouping resolves names for all statuses.
-  const activeProjects = (projects ?? []).filter((project) => project.status === "active");
-  const entries = chatHistoryList(
-    chat.tabs,
-    threads.data?.threads ?? [],
-    live.data?.sessions ?? [],
-    archive.data?.sessions ?? [],
+  const history = useSessionHistory({ enabled, docked, rail, home });
+  const {
+    chat,
+    open,
+    setOpen,
     search,
-    projectScope,
-    terminals,
-    !!home,
-    activeProjects,
-  );
-  const isSelected = (entry: ChatHistoryEntry) =>
-    home?.terminalId
-      ? entry.terminalId === home.terminalId
-      : entry.kind === "local" && entry.tab.key === chat.activeKey;
-  const states = new Map(
-    entries.map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
-  );
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const counts = filterCounts(states.values());
-  const loading = threads.isLoading || live.isLoading || archive.isLoading || projectsLoading;
-  const stable = useStableOrder({
-    items: entries.filter((entry) => matchesFilter(states.get(entry.id) ?? "idle", filter)),
-    id: (entry) => entry.id,
-    version: (entry) => String(entry.updatedAt),
-    lookup: (id) => byId.get(id),
-    resetKey: `${filter}\n${search}\n${projectScope}`,
+    setSearch,
+    visibleCount,
+    loadMore,
+    hasMore,
+    pending,
+    listError,
+    section,
+    chooseSection,
+    expandedProject,
+    setExpandedProject,
+    refreshingSessions,
+    refreshSessions,
+    filter,
+    setFilter,
+    counts,
+    stateOf,
+    isSelected,
+    stable,
+    shown,
+    projectGroups,
+    unassignedRows,
     loading,
-  });
-  const shown = stable.items.slice(0, visibleCount);
-  // Projects float up by their newest session; empty projects stay alphabetical at the end.
-  // Groups follow the active project scope and cover every assigned row, including sessions
-  // whose project is archived/paused or no longer listed, so none silently disappear.
-  const projectById = new Map((projects ?? []).map((project) => [project.id, project]));
-  const groups = new Map<
-    string,
-    {
-      project: { id: string; name: string; scope?: string | null };
-      rows: ChatHistoryEntry[];
-      latest: number;
-    }
-  >();
-  const groupFor = (projectId: string) => {
-    let group = groups.get(projectId);
-    if (!group) {
-      group = {
-        project: projectById.get(projectId) ?? {
-          id: projectId,
-          name: "Unknown project",
-          scope: null,
-        },
-        rows: [],
-        latest: 0,
-      };
-      groups.set(projectId, group);
-    }
-    return group;
-  };
-  for (const project of projects ?? []) {
-    if (project.status !== "active") continue;
-    if (projectScope !== "all" && project.id !== projectScope) continue;
-    groupFor(project.id);
-  }
-  for (const entry of stable.items) {
-    if (!entry.projectId) continue;
-    const group = groupFor(entry.projectId);
-    group.rows.push(entry);
-    group.latest = Math.max(group.latest, entry.updatedAt);
-  }
-  const projectGroups = [...groups.values()].sort(
-    (a, b) => b.latest - a.latest || a.project.name.localeCompare(b.project.name),
-  );
-  const unassignedRows = stable.items.filter((entry) => !entry.projectId);
-  const expandedRows =
-    expandedProject === UNASSIGNED_SECTION
-      ? unassignedRows
-      : (projectGroups.find((group) => group.project.id === expandedProject)?.rows ?? []);
-  const visibleEntries = section === "projects" ? expandedRows : stable.items;
-  const active = entries.find(
-    (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
-  );
-  const activeKeys = active?.seenKeys.join("\n") ?? "";
-  const activeUpdated = active?.updatedAt ?? 0;
-  const adoptProject = useCallback(
-    (projectId?: string | null) => {
-      if (!projectId) return;
-      // Only scopes the header can show: paused and archived projects are not picker options.
-      if (!activeProjects.some((project) => project.id === projectId)) return;
-      if (selectedProject.projectId === "all" || selectedProject.projectId === "unassigned")
-        selectedProject.setProjectId(projectId);
-    },
-    [activeProjects, selectedProject],
-  );
-  // Opening or switching to a folder-scoped session adopts its project unless the
-  // header already has an explicit project selected.
-  const adoptedSignature = useRef("");
-  const adoptOnOpen = (projectId?: string | null) => {
-    const signature = `${chat.activeKey}:${projectId ?? ""}`;
-    if (adoptedSignature.current === signature) return;
-    adoptedSignature.current = signature;
-    adoptProject(projectId);
-  };
-  useEffect(() => {
-    if (!activeKeys) return;
-    const keys = activeKeys.split("\n");
-    markSeen(keys, Math.max(Date.now(), activeUpdated));
-    return () => markSeen(keys);
-  }, [activeKeys, activeUpdated]);
-  const selectEntry = (entry: ChatHistoryEntry) => {
-    markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
-    adoptOnOpen(entry.projectId);
-    const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
-    if (terminalId) {
-      setOpen(false);
-      if (home) home.go({ terminalId });
-      else navigate(terminalPath(terminalId));
-    } else if (entry.kind === "local") {
-      chat.selectTab(entry.tab.key);
-      home?.go({ terminalId: null }, { chatThread: entry.tab.thread?.id });
-      setOpen(false);
-    } else if (entry.kind === "saved") {
-      if (home) {
-        home.go({ terminalId: null }, { chatThread: entry.thread.id });
-        setOpen(false);
-      } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
-    } else if (entry.kind === "native") {
-      home?.go({ terminalId: null });
-      void select(() => api.chat.resume(entry.session.id), entry.projectId);
-    } else if (entry.kind === "archive") {
-      const session = entry.session;
-      setSelectedArchive(session);
-      setRepository(session.metadata.repository ?? "");
-      setBranch(session.metadata.branch ?? "");
-      setCommit(session.metadata.commit ?? "");
-      setSubdirectory(session.metadata.subdirectory ?? "");
-      setError("");
-    }
-  };
-  const newProjectSession = (project: { id: string; scope?: string | null }) => {
-    adoptProject(project.id);
-    chat.newTab({
-      projectId: project.id,
-      fresh: true,
-      ...(project.scope?.trim()
-        ? { workspace: { cwd: project.scope, host: ssh?.host ?? null, worktree: false } }
-        : {}),
-    });
-    home?.go({ terminalId: null });
-    setOpen(false);
-  };
+    selectEntry,
+    newProjectSession,
+    selectedArchive,
+  } = history;
   if (rail)
     return (
       <aside
@@ -374,7 +125,7 @@ export function ChatSessionPicker({
         </ActionHelp>
         <div className="mt-2 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
           {shown.map((entry) => {
-            const state = states.get(entry.id) ?? "idle";
+            const state = stateOf(entry);
             const agent = entryAgent(entry);
             const selected = isSelected(entry);
             return (
@@ -417,55 +168,7 @@ export function ChatSessionPicker({
       newDisabled={pending}
     >
       {selectedArchive ? (
-        <section className="min-w-0 space-y-3">
-          <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
-            Back to sessions
-          </Button>
-          <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
-          <p className="text-sm text-muted-foreground">
-            Resume from a pushed repository, branch and exact commit. ORC verifies the checkout and
-            imports the native history before opening chat.
-          </p>
-          {(
-            [
-              ["repository", "Repository", repository, setRepository],
-              ["branch", "Branch", branch, setBranch],
-              ["commit", "Pushed commit", commit, setCommit],
-              ["subdirectory", "Repository subdirectory", subdirectory, setSubdirectory],
-            ] as const
-          ).map(([key, title, value, change]) => (
-            <label key={key} htmlFor={`chat-archive-${key}`} className="block space-y-2 text-sm">
-              {title}
-              <Input
-                id={`chat-archive-${key}`}
-                data-testid={`chat-archive-${key}`}
-                value={value}
-                onChange={(event) => change(event.target.value)}
-                disabled={pending}
-              />
-            </label>
-          ))}
-          <Button
-            data-testid="chat-archive-prepare"
-            disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
-            onClick={() =>
-              void select(async () => {
-                const handoff = await api.sessions.archiveResume(selectedArchive.id, {
-                  revision: selectedArchive.revision,
-                  repository,
-                  branch,
-                  commit,
-                  subdirectory,
-                });
-                if (handoff.status !== "ready" || !handoff.live_session_id)
-                  throw new Error(handoff.error || "The imported session is not ready to resume.");
-                return api.chat.resume(handoff.live_session_id);
-              }, selectedArchive.project_id)
-            }
-          >
-            {pending ? "Preparing…" : "Resume"}
-          </Button>
-        </section>
+        <ArchiveResumeForm history={history} />
       ) : (
         <>
           <div className="flex items-center gap-1">
@@ -512,23 +215,10 @@ export function ChatSessionPicker({
             aria-label="Search sessions"
             placeholder="Search sessions…"
             value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setVisibleCount(50);
-            }}
+            onChange={(event) => setSearch(event.target.value)}
           />
           <div className="min-w-0 space-y-2" {...stable.listProps}>
-            <SessionStateFilters
-              value={filter}
-              counts={counts}
-              onChange={(next) => {
-                setFilter(next);
-                setVisibleCount(50);
-                try {
-                  localStorage.setItem(FILTER_KEY, next);
-                } catch {}
-              }}
-            >
+            <SessionStateFilters value={filter} counts={counts} onChange={setFilter}>
               <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             </SessionStateFilters>
             {section === "projects" && (
@@ -548,17 +238,16 @@ export function ChatSessionPicker({
                     icon={<Folder size={14} className="shrink-0" aria-hidden />}
                     count={rows.length}
                     expanded={expandedProject === project.id}
-                    onToggle={() => {
-                      setVisibleCount(50);
-                      setExpandedProject(expandedProject === project.id ? null : project.id);
-                    }}
+                    onToggle={() =>
+                      setExpandedProject(expandedProject === project.id ? null : project.id)
+                    }
                     onNew={() => newProjectSession(project)}
                   >
                     {rows.slice(0, visibleCount).map((entry) => (
                       <HistoryRow
                         key={entry.id}
                         entry={entry}
-                        state={states.get(entry.id) ?? "idle"}
+                        state={stateOf(entry)}
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
@@ -580,19 +269,18 @@ export function ChatSessionPicker({
                     name="Unassigned"
                     icon={<Inbox size={14} className="shrink-0" aria-hidden />}
                     count={unassignedRows.length}
-                    expanded={expandedProject === UNASSIGNED_SECTION}
-                    onToggle={() => {
-                      setVisibleCount(50);
+                    expanded={expandedProject === "__unassigned__"}
+                    onToggle={() =>
                       setExpandedProject(
-                        expandedProject === UNASSIGNED_SECTION ? null : UNASSIGNED_SECTION,
-                      );
-                    }}
+                        expandedProject === "__unassigned__" ? null : "__unassigned__",
+                      )
+                    }
                   >
                     {unassignedRows.slice(0, visibleCount).map((entry) => (
                       <HistoryRow
                         key={entry.id}
                         entry={entry}
-                        state={states.get(entry.id) ?? "idle"}
+                        state={stateOf(entry)}
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
@@ -620,7 +308,7 @@ export function ChatSessionPicker({
                 <HistoryRow
                   key={entry.id}
                   entry={entry}
-                  state={states.get(entry.id) ?? "idle"}
+                  state={stateOf(entry)}
                   pending={pending}
                   selected={isSelected(entry)}
                   terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
@@ -639,28 +327,88 @@ export function ChatSessionPicker({
               {search || filter !== "all" ? "No sessions match." : "No sessions yet."}
             </p>
           )}
-          {visibleEntries.length > visibleCount && (
-            <Button
-              variant="ghost"
-              data-testid="chat-history-more"
-              onClick={() => setVisibleCount((count) => count + 50)}
-            >
+          {hasMore && (
+            <Button variant="ghost" data-testid="chat-history-more" onClick={loadMore}>
               Load older sessions
             </Button>
           )}
         </>
       )}
-      {(error || refreshError || threads.error || live.error || archive.error || projectsError) && (
+      {listError && (
         <p role="alert" className="text-sm text-error wrap-break-word">
-          {error ||
-            refreshError ||
-            threads.error?.message ||
-            live.error?.message ||
-            archive.error?.message ||
-            projectsError?.message}
+          {listError}
         </p>
       )}
     </SessionHistoryFrame>
+  );
+}
+
+export function ArchiveResumeForm({ history }: { history: SessionHistory }) {
+  const {
+    pending,
+    select,
+    selectedArchive,
+    setSelectedArchive,
+    repository,
+    setRepository,
+    branch,
+    setBranch,
+    commit,
+    setCommit,
+    subdirectory,
+    setSubdirectory,
+  } = history;
+  if (!selectedArchive) return null;
+  return (
+    <section className="min-w-0 space-y-3">
+      <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
+        Back to sessions
+      </Button>
+      <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
+      <p className="text-sm text-muted-foreground">
+        Resume from a pushed repository, branch and exact commit. ORC verifies the checkout and
+        imports the native history before opening chat.
+      </p>
+      {(
+        [
+          ["repository", "Repository", repository, setRepository],
+          ["branch", "Branch", branch, setBranch],
+          ["commit", "Pushed commit", commit, setCommit],
+          ["subdirectory", "Repository subdirectory", subdirectory, setSubdirectory],
+        ] as const
+      ).map(([key, title, value, change]) => (
+        <label key={key} htmlFor={`chat-archive-${key}`} className="block space-y-2 text-sm">
+          {title}
+          <Input
+            id={`chat-archive-${key}`}
+            data-testid={`chat-archive-${key}`}
+            value={value}
+            onChange={(event) => change(event.target.value)}
+            disabled={pending}
+          />
+        </label>
+      ))}
+      <Button
+        data-testid="chat-archive-prepare"
+        disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
+        onClick={() =>
+          void select(async () => {
+            const handoff = await api.sessions.archiveResume(selectedArchive.id, {
+              revision: selectedArchive.revision,
+              repository,
+              branch,
+              commit,
+              subdirectory,
+            });
+            if (handoff.status !== "ready" || !handoff.live_session_id)
+              throw new Error(handoff.error || "The imported session is not ready to resume.");
+            return api.chat.resume(handoff.live_session_id);
+          }, selectedArchive.project_id)
+        }
+      >
+        {pending ? "Preparing…" : "Resume"}
+      </Button>
+    </section>
   );
 }
 
@@ -825,7 +573,7 @@ function SessionHistoryFrame({
   );
 }
 
-function entryAgent(entry: ChatHistoryEntry): string {
+export function entryAgent(entry: ChatHistoryEntry): string {
   if (entry.kind === "local") return entry.tab.config.agent;
   if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
   if (entry.kind === "terminal") return entry.terminal.kind;
@@ -844,7 +592,7 @@ function ProviderMark({ agent }: { agent: string }) {
   );
 }
 
-function ProjectGroup({
+export function ProjectGroup({
   name,
   icon,
   count,
@@ -902,7 +650,7 @@ function ProjectGroup({
   );
 }
 
-function HistoryRow({
+export function HistoryRow({
   entry,
   state,
   pending,

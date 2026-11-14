@@ -69,3 +69,14 @@ test("phone list visibility survives URL round trips without overwriting a colla
   expect(patchSessionHome(opened, { listOpen: false }).has("sessionList")).toBe(false);
   expect(clearSessionHome(opened).get("project")).toBe("p");
 });
+
+test("inspector tabs include the phone git, PR and files views and stay shareable", () => {
+  for (const tab of ["overview", "diff", "files", "pr"] as const) {
+    const params = patchSessionHome(new URLSearchParams("project=p"), { inspector: tab });
+    expect(params.get("inspector")).toBe(tab);
+    expect(readSessionHome(params).inspector).toBe(tab);
+  }
+  expect(readSessionHome(new URLSearchParams("inspector=terminal")).inspector).toBeNull();
+  const closed = patchSessionHome(new URLSearchParams("inspector=files"), { inspector: null });
+  expect(closed.has("inspector")).toBe(false);
+});
