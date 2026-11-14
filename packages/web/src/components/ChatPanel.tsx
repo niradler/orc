@@ -484,7 +484,7 @@ export function ChatPanel({
                     </PopoverContent>
                   </Popover>
                 </div>
-                <div className="chat-header-controls flex items-center gap-0.5">
+                <div className="chat-header-controls flex items-center justify-end gap-0.5">
                   <SessionHomeToggles home={home} gestures />
                   {preview && (
                     <button
