@@ -135,7 +135,14 @@ describe("planFromResponse", () => {
       ).plan,
     ).toBeUndefined();
     expect(planFromResponse({ enabled: true }, root).plan).toBeUndefined();
-    const ok = planFromResponse({ enabled: true, history: [revision([rule()])] }, root);
+    // Older daemons omit the flag: version skew fails closed too.
+    expect(
+      planFromResponse({ enabled: true, history: [revision([rule()])] }, root).plan,
+    ).toBeUndefined();
+    const ok = planFromResponse(
+      { enabled: true, history: [revision([rule()])], history_truncated: false },
+      root,
+    );
     expect(ok.disabled).toBe(false);
     expect(ok.plan?.events.has("tool_call")).toBe(true);
   });

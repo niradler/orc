@@ -64,7 +64,9 @@ export function planRules<Native extends string>(
  * Interpret a GET /rules response. A confirmed disable skips enforcement.
  * An unrecognized or possibly truncated history is not a plan: blocking
  * events fall back to the local hook (fail closed) instead of silently
- * skipping enforcement.
+ * skipping enforcement. The truncation flag must be explicitly false —
+ * older daemons omit it and serve a cross-workspace page, so version skew
+ * also fails closed.
  */
 export function planFromResponse<Native extends string>(
   phases: Readonly<Record<Native, string>>,
@@ -73,7 +75,7 @@ export function planFromResponse<Native extends string>(
   cwd: string,
 ): { plan: RulePlan<Native> | undefined; disabled: boolean } {
   if (data.enabled === false) return { plan: undefined, disabled: true };
-  if (!Array.isArray(data.history) || data.history_truncated === true)
+  if (!Array.isArray(data.history) || data.history_truncated !== false)
     return { plan: undefined, disabled: false };
   return {
     plan: planRules(phases, backend, data.history as OrcRuleRevision[], cwd),

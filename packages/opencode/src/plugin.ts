@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin";
 import { RULES_REFRESH_MS } from "@orc/rule-client/gate";
 import { DEFAULT_HOOK_MS } from "@orc/rule-client/hook";
 import {
+  OPENCODE_BLOCKING_EVENTS,
   type OpenCodeNativeEvent,
   type OpenCodeRulePlan,
   planFromResponse,
@@ -140,7 +141,9 @@ const plugin: Plugin.Plugin = {
           ...(options.apiBase ? { ORC_API_BASE: options.apiBase } : {}),
           ...(options.secret ? { ORC_API_SECRET: options.secret } : {}),
         },
-        timeoutMs: Math.max(timeoutMs, options.timeoutMs),
+        timeoutMs: OPENCODE_BLOCKING_EVENTS.has(native)
+          ? Math.max(timeoutMs, options.timeoutMs)
+          : timeoutMs,
       });
     await refreshPlan();
 

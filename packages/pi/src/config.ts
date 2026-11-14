@@ -13,6 +13,12 @@ const BooleanString = z
   .pipe(z.enum(["1", "true", "yes", "on", "0", "false", "no", "off"]))
   .transform((value) => ["1", "true", "yes", "on"].includes(value));
 
+/** Whether a PORC_RULES-style env value explicitly disables rules. */
+export function envRulesDisabled(value: string | undefined): boolean {
+  const parsed = BooleanString.safeParse(value ?? "");
+  return parsed.success ? !parsed.data : false;
+}
+
 const HttpUrl = z
   .string()
   .trim()

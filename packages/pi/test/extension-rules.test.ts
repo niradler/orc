@@ -59,7 +59,11 @@ if (process.platform === "win32") {
   writeFileSync(stubCommand, `#!/usr/bin/env bun\n${stubSource}`, { mode: 0o755 });
 }
 
-let rulesResponse: { enabled: boolean; history: unknown[] } = { enabled: true, history: [] };
+let rulesResponse: {
+  enabled: boolean;
+  history: unknown[];
+  history_truncated?: boolean;
+} = { enabled: true, history: [], history_truncated: false };
 function startServer(port: number) {
   return Bun.serve({
     hostname: "127.0.0.1",
@@ -172,7 +176,7 @@ describe("porc rule enforcement (issue #260)", () => {
   });
 
   test("a loaded plan skips events without rules", async () => {
-    rulesResponse = { enabled: true, history: [] };
+    rulesResponse = { enabled: true, history: [], history_truncated: false };
     const { handlers, api } = fakePi();
     porc(api as never);
     const ctx = fakeCtx(directory);
@@ -183,14 +187,14 @@ describe("porc rule enforcement (issue #260)", () => {
   });
 
   test("periodic refresh picks up rules activated after session start", async () => {
-    rulesResponse = { enabled: true, history: [] };
+    rulesResponse = { enabled: true, history: [], history_truncated: false };
     const { handlers, api } = fakePi();
     porc(api as never);
     const ctx = fakeCtx(directory);
     await handlers.session_start?.({ reason: "startup" }, ctx);
     expect(await handlers.tool_call?.(toolCall, ctx)).toBeUndefined();
 
-    rulesResponse = { enabled: true, history: [preToolRevision()] };
+    rulesResponse = { enabled: true, history: [preToolRevision()], history_truncated: false };
     offset = 31_000;
     await handlers.before_agent_start?.(agentStart, ctx);
     writeFileSync(
@@ -226,7 +230,7 @@ describe("porc rule enforcement (issue #260)", () => {
   });
 
   test("a confirmed global disable skips enforcement", async () => {
-    rulesResponse = { enabled: false, history: [preToolRevision()] };
+    rulesResponse = { enabled: false, history: [preToolRevision()], history_truncated: false };
     const { handlers, api } = fakePi();
     porc(api as never);
     const ctx = fakeCtx(directory);
@@ -234,6 +238,6 @@ describe("porc rule enforcement (issue #260)", () => {
     const decision = await handlers.tool_call?.(toolCall, ctx);
     expect(decision).toBeUndefined();
     expect(callCount()).toBe(0);
-    rulesResponse = { enabled: true, history: [] };
+    rulesResponse = { enabled: true, history: [], history_truncated: false };
   });
 });

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError } from "@orc/core/errors";
@@ -238,7 +239,14 @@ app.openapi(
     path: "/rules",
     tags: ["Rules"],
     request: {
-      query: z.object({ workspace: z.string().optional(), cwd: z.string().optional() }),
+      query: z.object({
+        workspace: z.string().optional(),
+        cwd: z
+          .string()
+          .max(4096)
+          .refine((p) => isAbsolute(p), "cwd must be an absolute path")
+          .optional(),
+      }),
     },
     responses: {
       200: {

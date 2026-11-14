@@ -155,9 +155,12 @@ export class RuleStore {
         `SELECT r.*,1 AS current FROM rule_heads h JOIN rule_revisions r ON r.id=h.revision_id WHERE r.payload IS NOT NULL`,
       )
       .all();
-    if (rows.length > 1000) throw new ValidationError("Too many active workspace policies");
     const path = cwd === undefined ? null : workspace(cwd);
-    return rows.map(revision).filter((r) => path === null || withinWorkspace(r.workspace, path));
+    const scoped = rows
+      .map(revision)
+      .filter((r) => path === null || withinWorkspace(r.workspace, path));
+    if (scoped.length > 1000) throw new ValidationError("Too many active workspace policies");
+    return scoped;
   }
 
   activate(raw: unknown, expected: string | null, reason: string): RuleRevision {

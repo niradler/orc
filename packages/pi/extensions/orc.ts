@@ -9,7 +9,13 @@ import {
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { OrcApiClient, OrcApiError, type OrcProjectRoot } from "../src/api.js";
-import { loadPorcConfig, type PorcConfig, type PorcOverrides, porcPaths } from "../src/config.js";
+import {
+  envRulesDisabled,
+  loadPorcConfig,
+  type PorcConfig,
+  type PorcOverrides,
+  porcPaths,
+} from "../src/config.js";
 import { redact } from "../src/mcp.js";
 import { OrcMcpClient } from "../src/mcp-client.js";
 import {
@@ -36,7 +42,6 @@ import {
   type OrcRule,
   type PiNativeEvent,
   planFromResponse,
-  planRules,
   RULES_REFRESH_MS,
   type RulePlan,
   removeRule,
@@ -322,7 +327,8 @@ async function initialize(
   } catch (err) {
     session.configError = errorText(err, undefined);
     // An explicit opt-out still applies when the config itself failed to load.
-    session.rulesOptOut = flagOverrides(pi).rules === false || process.env.PORC_RULES === "false";
+    session.rulesOptOut =
+      flagOverrides(pi).rules === false || envRulesDisabled(process.env.PORC_RULES);
     setStatus(ctx, session);
     if (options.announce) ctx.ui.notify(session.configError, "error");
     return;
@@ -603,7 +609,7 @@ async function restAction(
     }
     case "rule_list": {
       const data = await api.rules(undefined, ctx.cwd);
-      const plan = planRules(data.history, ctx.cwd);
+      const plan = planFromResponse(data, ctx.cwd).plan;
       const current = data.history.filter((revision) => revision.current && revision.policy);
       const lines = current.flatMap((revision) =>
         (revision.policy?.rules ?? []).map(
@@ -612,7 +618,7 @@ async function restAction(
         ),
       );
       return [
-        `Rules ${data.enabled ? "enabled" : "disabled in ORC settings"}; ${plan.count} apply to Pi here.`,
+        `Rules ${data.enabled ? "enabled" : "disabled in ORC settings"}; ${plan?.count ?? 0} apply to Pi here.`,
         ...lines,
       ].join("\n");
     }
@@ -1022,6 +1028,13 @@ function hookEnv(session: SessionState): Record<string, string> {
   };
 }
 
+function pushRuleContext(session: SessionState | undefined, context: string): void {
+  if (!session) return;
+  session.pendingContext.push(context);
+  if (session.pendingContext.length > 32)
+    session.pendingContext.splice(0, session.pendingContext.length - 32);
+}
+
 async function checkRules(
   session: SessionState | undefined,
   native: PiNativeEvent,
@@ -1062,7 +1075,7 @@ function registerRuleHooks(pi: ExtensionAPI, state: PluginState): void {
     if (!decision) return undefined;
     if (decision.block) return { block: true, reason: decision.reason ?? "Blocked by an ORC rule" };
     if (decision.updatedInput) Object.assign(event.input, decision.updatedInput);
-    if (decision.context) session?.pendingContext.push(decision.context);
+    if (decision.context) pushRuleContext(session, decision.context);
     return undefined;
   });
 
@@ -1105,7 +1118,7 @@ function registerRuleHooks(pi: ExtensionAPI, state: PluginState): void {
       ctx.ui.notify(decision.reason ?? "Prompt blocked by an ORC rule", "warning");
       return { action: "handled" as const };
     }
-    if (decision?.context) state.session?.pendingContext.push(decision.context);
+    if (decision?.context) pushRuleContext(state.session, decision.context);
     return { action: "continue" as const };
   });
 }
@@ -1161,14 +1174,14 @@ export default function porc(pi: ExtensionAPI): void {
       { source: event.reason },
       ctx,
     );
-    if (decision?.context) state.session?.pendingContext.push(decision.context);
+    if (decision?.context) pushRuleContext(state.session, decision.context);
   });
 
   pi.on("session_before_compact", async (_event, ctx) => {
     const session = state.session;
     if (!session) return;
     const decision = await checkRules(session, "session_before_compact", {}, ctx);
-    if (decision?.context) session.pendingContext.push(decision.context);
+    if (decision?.context) pushRuleContext(session, decision.context);
   });
 
   pi.on("session_compact", async (_event, ctx) => {
@@ -1177,14 +1190,14 @@ export default function porc(pi: ExtensionAPI): void {
     session.contextInjected = false;
     session.offered.clear();
     const decision = await checkRules(session, "session_compact", {}, ctx);
-    if (decision?.context) session.pendingContext.push(decision.context);
+    if (decision?.context) pushRuleContext(session, decision.context);
   });
 
   pi.on("agent_end", async (_event, ctx) => {
     const session = state.session;
     if (!session) return;
     const decision = await checkRules(session, "agent_end", {}, ctx);
-    if (decision?.context) session.pendingContext.push(decision.context);
+    if (decision?.context) pushRuleContext(session, decision.context);
   });
 
   pi.on("before_agent_start", async (event, ctx) => {

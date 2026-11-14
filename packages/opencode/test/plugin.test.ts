@@ -132,13 +132,18 @@ let rulesResponse: {
 } = {
   enabled: true,
   history: defaultHistory,
+  history_truncated: false,
 };
+let lastRulesQuery = "";
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
   fetch(req) {
     const url = new URL(req.url);
-    if (url.pathname === "/api/rules") return Response.json(rulesResponse);
+    if (url.pathname === "/api/rules") {
+      lastRulesQuery = url.search;
+      return Response.json(rulesResponse);
+    }
     return new Response("not found", { status: 404 });
   },
 });
@@ -156,7 +161,7 @@ afterAll(() => {
 });
 afterEach(() => {
   offset = 0;
-  rulesResponse = { enabled: true, history: defaultHistory };
+  rulesResponse = { enabled: true, history: defaultHistory, history_truncated: false };
   writeFileSync(log, "");
 });
 
@@ -201,7 +206,7 @@ describe("plugin registration", () => {
 
 describe("plan selection", () => {
   test("a workspace without rules spawns no hooks", async () => {
-    rulesResponse = { enabled: true, history: [] };
+    rulesResponse = { enabled: true, history: [], history_truncated: false };
     const { toolHooks, sessionHooks } = await setup();
     await toolHooks.before?.(toolEvent("blocked ssh"));
     await toolHooks.after?.({ ...toolEvent("ls"), status: "completed", result: "ok" });
@@ -214,7 +219,7 @@ describe("plan selection", () => {
   });
 
   test("a confirmed global disable skips every hook", async () => {
-    rulesResponse = { enabled: false, history: defaultHistory };
+    rulesResponse = { enabled: false, history: defaultHistory, history_truncated: false };
     const { toolHooks } = await setup();
     await toolHooks.before?.(toolEvent("blocked ssh"));
     expect(callCount()).toBe(0);
@@ -224,6 +229,7 @@ describe("plan selection", () => {
     rulesResponse = {
       enabled: true,
       history: [revision([rule("prompt-only", ["prompt_submit"])])],
+      history_truncated: false,
     };
     const { toolHooks, sessionHooks } = await setup();
     await toolHooks.before?.(toolEvent("blocked ssh"));
@@ -235,11 +241,15 @@ describe("plan selection", () => {
   });
 
   test("refresh picks up rules activated after setup", async () => {
-    rulesResponse = { enabled: true, history: [] };
+    rulesResponse = { enabled: true, history: [], history_truncated: false };
     const { toolHooks } = await setup();
     await toolHooks.before?.(toolEvent("blocked ssh"));
     expect(callCount()).toBe(0);
-    rulesResponse = { enabled: true, history: [revision([rule("pre", ["pre_tool"])])] };
+    rulesResponse = {
+      enabled: true,
+      history: [revision([rule("pre", ["pre_tool"])])],
+      history_truncated: false,
+    };
     offset = 31_000;
     await expect(toolHooks.before?.(toolEvent("blocked ssh"))).rejects.toThrow("guard: denied");
     expect(callCount()).toBe(1);
@@ -342,6 +352,7 @@ describe("execute.before", () => {
     expect(call.payload.tool_call_id).toBe("call-1");
     expect(call.payload.tool_name).toBe("bash");
     expect(call.session).toBe("ses-1");
+    expect(lastRulesQuery).toContain(`cwd=${encodeURIComponent(directory)}`);
   });
 });
 
