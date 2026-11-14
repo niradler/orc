@@ -1,9 +1,63 @@
+import { ChatSettingsSchema } from "@orc/core/chat";
 import { type HumanRequest, HumanRequestSchema } from "@orc/core/human-requests";
 import type { OrcNotification } from "@orc/core/notifications";
 import type { Page } from "@playwright/test";
 import { API_SECRET } from "./_helpers";
 
 const now = Date.parse("2026-11-06T09:00:00Z");
+export const NOTIFY_CHAT_THREAD = "60000000-0000-4000-8000-000000000001";
+
+/** Serves one saved chat thread so the bell can compare it with a chat notification. */
+export async function mockChatThread(page: Page, id = NOTIFY_CHAT_THREAD) {
+  const thread = {
+    id,
+    title: "Notification chat",
+    updatedAt: now,
+    config: ChatSettingsSchema.parse({ agent: "codex" }),
+    cwd: "/home/demo/acme-shop",
+    host: null,
+    runtimeId: null,
+    sourceId: null,
+    backend: "codex-cli",
+    messages: [{ id: "welcome", role: "assistant", content: "Ready", timestamp: now }],
+  };
+  await page.addInitScript(
+    (threadId) =>
+      localStorage.setItem(
+        "orc_chat_tabs",
+        JSON.stringify({ threads: [threadId], active: threadId }),
+      ),
+    id,
+  );
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
+  await page.route("**/api/chat/threads", (route) =>
+    route.fulfill({
+      json: { threads: [{ id, title: thread.title, updatedAt: now, running: false }] },
+    }),
+  );
+  await page.route(`**/api/chat/threads/${id}`, (route) => route.fulfill({ json: thread }));
+  await page.route(`**/api/chat/threads/${id}/live`, (route) => route.fulfill({ status: 204 }));
+}
+
+export function chatCompletion(threadId = NOTIFY_CHAT_THREAD): OrcNotification {
+  return {
+    id: `notification-chat-${threadId}`,
+    type: "agent.finished",
+    source_id: threadId,
+    title: "Notification chat",
+    body: "The agent finished its reply.",
+    level: "done",
+    project_id: null,
+    path: `/activity?chat=open&chatThread=${threadId}`,
+    requires_action: false,
+    created_at: now,
+    expires_at: now + 30 * 86400000,
+    read_at: null,
+    dismissed_at: null,
+  };
+}
 
 export function liveSession(index: number, status: string, waiting = false) {
   return {
@@ -110,6 +164,7 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
     return [...notifications.values()].filter((item) => !item.dismissed_at);
   };
   const responses: Array<{ id: string; body: unknown }> = [];
+  const updates: Array<{ id: string; body: unknown }> = [];
   await page.addInitScript((secret) => {
     localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
     const win = window as unknown as { __chimeNotes: number; AudioContext: unknown };
@@ -166,6 +221,7 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
     const item = notifications.get(id);
     if (!item) return route.fulfill({ status: 404, json: { error: "Unknown notification" } });
     const update = route.request().postDataJSON();
+    updates.push({ id, body: update });
     if (update.read !== undefined) item.read_at = update.read ? now : null;
     if (update.dismissed !== undefined) item.dismissed_at = update.dismissed ? now : null;
     return route.fulfill({ json: item });
@@ -201,6 +257,8 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
   return {
     state,
     responses,
+    updates,
+    addNotification: (item: OrcNotification) => notifications.set(item.id, item),
     chimeNotes: () =>
       page.evaluate(() => (window as unknown as { __chimeNotes: number }).__chimeNotes),
   };

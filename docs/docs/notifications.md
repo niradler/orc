@@ -48,6 +48,8 @@ agent backend, execution host and native session ID. The alert opens where the
 latest turn ran; opening another read-only view creates no new completion alert.
 Matching native IDs on different hosts or agent backends stay separate.
 When a session continues, its latest completion alert is automatically marked read.
+A completion for a chat or session that is already open and focused is marked read
+and dismissed as soon as it arrives, so the bell stays quiet while you watch it.
 This applies to workspace chats and observed agent sessions. **Show read** includes
 the retained latest completion, rather than a history of every turn.
 Failures and pending questions or approvals are kept independently.

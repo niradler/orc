@@ -1,6 +1,54 @@
+import type { HumanRequest } from "@orc/core/human-requests";
 import type { OrcNotification } from "@orc/core/notifications";
 
 export type NotificationToastEntry = { id: string; items: OrcNotification[] };
+
+/** The open workspace the notifier compares against without importing UI modules. */
+export type NotificationView = {
+  active: boolean;
+  pathname: string;
+  search: string;
+  chatThreadId: string | null;
+  sessions?: readonly {
+    id: string;
+    agent: string;
+    host: string | null;
+    session_id: string | null;
+  }[];
+  requests?: readonly Pick<HumanRequest, "id" | "input">[];
+};
+
+/** True when the notification's own destination is already on screen. */
+export function notificationInView(item: OrcNotification, view: NotificationView): boolean {
+  if (!view.active) return false;
+  const params = new URLSearchParams(view.search);
+  const target = new URL(item.path, "http://orc.invalid");
+  const request =
+    item.type === "human.request"
+      ? view.requests?.find((request) => request.id === item.source_id)
+      : undefined;
+  const targetThread =
+    target.searchParams.get("chatThread") ?? request?.input.origin.chat_thread_id;
+  if (
+    (params.get("chat") || view.pathname === "/chat") &&
+    targetThread &&
+    targetThread === view.chatThreadId
+  )
+    return true;
+  if (view.pathname !== "/sessions") return false;
+  const sessionId = params.get("session");
+  if (target.pathname === "/sessions" && target.searchParams.get("session") === sessionId)
+    return true;
+  const session = view.sessions?.find((session) => session.id === sessionId);
+  const origin = request?.input.origin;
+  return (
+    !!session &&
+    !!origin &&
+    session.agent.replace(/-cli$/, "") === origin.backend.replace(/-cli$/, "") &&
+    session.host === (origin.execution_host ?? null) &&
+    session.session_id === (origin.native_session_id ?? origin.session_id)
+  );
+}
 
 export function mergeNotificationToasts(
   current: readonly NotificationToastEntry[],

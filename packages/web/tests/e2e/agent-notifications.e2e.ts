@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 import {
   approvalRequest,
+  chatCompletion,
   liveSession,
+  mockChatThread,
+  NOTIFY_CHAT_THREAD,
   notificationScenario,
   poll,
   sourcesLoaded,
@@ -140,6 +143,29 @@ test("Done: sessions finishing together collapse into one toast", async ({ page 
   await expect(page.getByTestId("notification-menu")).toBeVisible();
   await page.getByTestId("notification-menu").getByTestId("notification-open").first().click();
   await expect(page).toHaveURL(/\/sessions\?.*session=notify-live-1/);
+});
+
+test("Done: the open chat clears its completion without a toast", async ({ page }) => {
+  const scenario = await notificationScenario(page, { sessions: [], requests: [] });
+  await mockChatThread(page);
+  const loaded = sourcesLoaded(page);
+  await page.goto(`/chat?project=all&chatThread=${NOTIFY_CHAT_THREAD}`);
+  await loaded;
+  await expect(page.getByTestId("session-home")).toBeVisible();
+  await page.keyboard.press("Shift");
+
+  scenario.addNotification(chatCompletion());
+  await poll(page);
+  await page.clock.runFor(2_000);
+
+  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  expect(scenario.updates).toContainEqual({
+    id: `notification-chat-${NOTIFY_CHAT_THREAD}`,
+    body: { read: true, dismissed: true },
+  });
+  await expect(page.getByTestId("notification-bell").first()).toHaveAccessibleName(
+    "Notifications: 0 unread",
+  );
 });
 
 test("phone notifications stay closed during chat and open over the chat page", async ({
