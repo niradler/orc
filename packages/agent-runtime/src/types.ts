@@ -2,7 +2,7 @@ import type { ChatQuestion } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
 import type { AgentCapabilities } from "@orc/core/types";
 import type { OrcMcpMode } from "./orc-mcp.js";
-import type { SessionRuleGuard } from "./rules.js";
+import type { RuleGap, SessionRuleGuard } from "./rules.js";
 
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
@@ -32,6 +32,8 @@ export type SessionOpts = {
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;
   ruleGuard?: SessionRuleGuard;
+  /** Set when a protected workspace cannot be enforced by this backend. */
+  ruleGap?: RuleGap;
   env?: Record<string, string> | undefined;
   redactOutput?: ((text: string) => string) | undefined;
   cwd: string;

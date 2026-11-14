@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ChatThread } from "@orc/core/chat";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import type { RuleRevision } from "@orc/core/rule-types";
 import { getSqlite } from "@orc/db/client";
@@ -182,7 +183,7 @@ test("should administer and evaluate policies without a token in open mode", asy
   }
 });
 
-test("protected chat refuses an unverified backend before launching it", async () => {
+test("protected chat starts an unverified backend and reports the gap", async () => {
   const store = new RuleStore(getSqlite());
   const revision = store.activate(
     { ...policy, workspace: homedir() },
@@ -190,14 +191,33 @@ test("protected chat refuses an unverified backend before launching it", async (
     "Protect the default chat workspace",
   );
   loadConfig({ rules: { enabled: true } });
+  const previousMock = process.env.ORC_E2E_CHAT_MOCK;
+  process.env.ORC_E2E_CHAT_MOCK = "1";
   try {
     const response = await req(app, "POST", "/chat/stream", {
-      agent: "codex",
-      messages: [{ role: "user", content: "A backend must not start" }],
+      agent: "opencode",
+      messages: [{ role: "user", content: "Start anyway" }],
     });
-    expect(response.status).toBe(503);
-    expect((await response.json()).error).toContain("no verified ORC rule interception");
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("no blocking pre-tool hook");
+    expect(body).toContain("cannot be enforced");
+    const opened = body
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => JSON.parse(line.slice(5)) as { type: string; thread?: ChatThread })
+      .find((event) => event.type === "thread");
+    if (!opened?.thread) throw new Error("Missing chat thread event");
+    const second = await req(app, "POST", "/chat/stream", {
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "Second turn" }],
+    });
+    expect(second.status).toBe(200);
+    // The gap is part of the conversation history after the first turn.
+    expect(await second.text()).not.toContain("no blocking pre-tool hook");
   } finally {
+    if (previousMock === undefined) delete process.env.ORC_E2E_CHAT_MOCK;
+    else process.env.ORC_E2E_CHAT_MOCK = previousMock;
     store.revert(revision.id, "End isolated chat fixture");
     loadConfig({ rules: { enabled: false } });
   }

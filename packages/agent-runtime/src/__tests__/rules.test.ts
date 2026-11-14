@@ -172,7 +172,7 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("sessions created before policy activation pick it up; unsupported adapter refuses", async () => {
+test("sessions created before policy activation pick it up; unsupported adapters report a gap", async () => {
   const opts = await sessionRules("claude", { cwd: root, autoApprove: true });
   expect(opts.ruleGuard).toBeDefined();
   const store = new RuleStore(getSqlite());
@@ -209,10 +209,18 @@ test("sessions created before policy activation pick it up; unsupported adapter 
     failed: false,
   };
   expect(opts.ruleGuard?.evaluate(event).decision).toBe("deny");
-  await expect(sessionRules("codex-cli", { cwd: root })).rejects.toThrow("no verified");
+  const codex = await sessionRules("codex-cli", { cwd: root });
+  expect(codex.ruleGuard).toBeUndefined();
+  expect(codex.ruleGap).toMatchObject({
+    backend: "codex-cli",
+    agent: "codex",
+    policies: [revision.id],
+    reason: "no_blocking_pre_tool_hook",
+  });
+  expect(codex.ruleGap?.message).toContain("cannot be enforced");
   store.revert(revision.id, "Human revert");
   expect(opts.ruleGuard?.evaluate({ ...event, id: "after-revert" }).decision).toBe("abstain");
-  expect((await sessionRules("codex-cli", { cwd: root })).ruleGuard).toBeUndefined();
+  expect((await sessionRules("codex-cli", { cwd: root })).ruleGap).toBeUndefined();
 });
 
 test("SDK pre-tool callback fails closed on evaluator errors and malformed input", async () => {
