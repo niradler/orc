@@ -163,6 +163,8 @@ for (const width of [1440, 390, 320]) {
     await expect(frame.getByRole("img", { name: "Quarterly orders chart" })).toBeVisible();
     const iframe = page.getByTestId("chat-ui-scratchpad-html");
     await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+    await expect(panel).toContainText("Scratchpad");
+    await expect(panel.getByRole("link", { name: "Scratchpad: Dataset dashboard" })).toBeVisible();
     const contentFrame = await (await iframe.elementHandle())?.contentFrame();
     if (!contentFrame) throw new Error("Dashboard frame missing");
     const isolation = await contentFrame.evaluate(async () => {
@@ -196,6 +198,13 @@ for (const width of [1440, 390, 320]) {
     const dialog = page.getByTestId("chat-ui-fullscreen-dialog");
     await expect(dialog).toBeVisible();
     await expect(frame.getByRole("heading", { name: "Dataset dashboard" })).toBeVisible();
+    const scroller = dialog.getByTestId("chat-ui-fullscreen-content");
+    expect(
+      await scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1),
+    ).toBe(true);
+    const frameBox = await iframe.boundingBox();
+    const scrollerBox = await scroller.boundingBox();
+    expect(frameBox?.height ?? 0).toBeGreaterThan((scrollerBox?.height ?? 0) * 0.5);
     await page.screenshot({ path: testInfo.outputPath(`dashboard-fullscreen-${width}.png`) });
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toHaveCount(0);
