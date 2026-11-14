@@ -66,7 +66,7 @@
   --radius-lg: 0.5rem;
 }
 
-/* Appearance font size (Settings → Appearance): scales the rem-based interface
+/* Appearance font size (Settings → General → Appearance): scales the rem-based interface
    text on this device. Unlayered so it wins over the preflight root size. */
 html[data-font-size="large"] {
   font-size: 112.5%;

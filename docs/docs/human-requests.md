@@ -14,7 +14,7 @@ Without those hooks ORC cannot infer continuation in an external agent; retentio
 still applies. Dismissal never grants approval or claims an answer was delivered.
 Notification history expires separately after 30 days by default, even for
 unresolved requests; audit events default to 90 days. Both periods are configurable
-in Settings → Storage. See [Notifications](./notifications.md).
+in Settings → Notifications → Automatic cleanup. See [Notifications](./notifications.md).
 
 When an interactive managed agent exposes a structured question or approval, ORC automatically
 creates a durable request in the header's **Notifications** menu. Rules can also create

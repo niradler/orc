@@ -14,6 +14,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useBackends } from "@/hooks/useBackends";
 import { useSelectSshHost, useSsh, useTestSshHost } from "@/hooks/useSsh";
+import { orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
 
 const LOCAL = "__local__";
 
@@ -22,7 +23,11 @@ function errorText(error: unknown): string | null {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function SshHostSettings() {
+/**
+ * The execution host of the connected ORC server. `embedded` drops the section heading when the
+ * form sits inside the Hosts list row.
+ */
+export function SshHostSettings({ embedded = false }: { embedded?: boolean }) {
   const { data: ssh, error: loadError, refetch } = useSsh();
   const { data: backends } = useBackends();
   const select = useSelectSshHost();
@@ -38,10 +43,10 @@ export function SshHostSettings() {
 
   if (loadError)
     return (
-      <section>
-        <h2 className="mb-3 text-base font-semibold">Execution host</h2>
+      <div data-testid="ssh-settings">
+        {!embedded && <h2 className="mb-3 text-base font-semibold">Execution host</h2>}
         <ErrorState message={loadError.message} onRetry={() => void refetch()} />
-      </section>
+      </div>
     );
   if (!ssh)
     return (
@@ -58,18 +63,10 @@ export function SshHostSettings() {
   const disabled = ssh.locked || !ssh.supported;
   const claude = backends?.backends.find((backend) => backend.name === "claude");
   const result = test.data?.host === alias ? test.data : undefined;
+  const address = orcServerAddress();
 
-  return (
-    <section data-testid="ssh-settings">
-      <h2 className="font-headline font-semibold text-base  text-on-surface mb-1">
-        Execution host
-      </h2>
-      <p className="font-body text-sm text-muted-foreground mb-4">
-        Run every agent, terminal, git and file action on a host from{" "}
-        <code className="text-primary">~/.ssh/config</code>. Agents there reach orc through a
-        reverse tunnel on the remote port. Terminals already open keep their host.
-      </p>
-      <Separator className="bg-surface-highest mb-4" />
+  const body = (
+    <>
       <div className="space-y-4">
         {ssh.locked && (
           <p data-testid="ssh-locked" className="font-body text-sm text-tertiary">
@@ -100,7 +97,7 @@ export function SshHostSettings() {
                 data-testid="ssh-host-option-local"
                 className="font-label text-sm"
               >
-                Local (this machine)
+                {THIS_SERVER}
               </SelectItem>
               {hosts.map((host) => (
                 <SelectItem
@@ -114,9 +111,19 @@ export function SshHostSettings() {
               ))}
             </SelectContent>
           </Select>
+          {alias ? (
+            <p className="font-body text-sm text-muted-foreground">
+              SSH alias from <code className="text-primary">~/.ssh/config</code> on this ORC server.
+            </p>
+          ) : (
+            <p className="font-body text-sm text-muted-foreground">
+              Runs on the machine hosting this ORC server
+              {address ? ` (${address})` : ""}, not the browser's machine.
+            </p>
+          )}
           {hosts.length === 0 && (
             <p data-testid="page-empty" className="font-body text-sm text-muted-foreground">
-              No Host entries found in ~/.ssh/config on the machine running orc.
+              No Host entries in ~/.ssh/config on this ORC server.
             </p>
           )}
         </div>
@@ -203,6 +210,24 @@ export function SshHostSettings() {
           </p>
         )}
       </div>
+    </>
+  );
+
+  if (embedded) return <div data-testid="ssh-settings">{body}</div>;
+
+  return (
+    <section data-testid="ssh-settings">
+      <h2 className="font-headline font-semibold text-base  text-on-surface mb-1">
+        Execution host
+      </h2>
+      <p className="font-body text-sm text-muted-foreground mb-4">
+        Run every agent, terminal, git and file action on this ORC server or on a host from{" "}
+        <code className="text-primary">~/.ssh/config</code>. This applies to everyone using this ORC
+        server. Agents there reach orc through a reverse tunnel on the remote port. Terminals
+        already open keep their host.
+      </p>
+      <Separator className="bg-surface-highest mb-4" />
+      {body}
     </section>
   );
 }

@@ -58,6 +58,7 @@ import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/co
 import type { SessionHandoff } from "@orc/core/session-handoff";
 import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
+import { activeApiHeaders, readApiUrl } from "../lib/api-hosts";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
 
@@ -247,12 +248,7 @@ import type {
 
 export type SecuritySettings = { session_days: number; cors_origins: string[] };
 
-export const getApiUrl = (): string => {
-  // The desktop shell targets the selected server origin, so a stale browser override
-  // cannot point it at a different installation.
-  const desktop = (window as Window & { orcDesktop?: unknown }).orcDesktop;
-  return desktop ? "/api" : (localStorage.getItem("orc_api_url") ?? "/api");
-};
+export const getApiUrl = (): string => readApiUrl();
 
 export type TerminalKind = string;
 export type AgentSetup = {
@@ -574,6 +570,8 @@ export function apiFetch(path: string, init: RequestInit = {}): Promise<Response
   const headers = new Headers(init.headers);
   for (const [name, value] of Object.entries(authHeaders()))
     if (!headers.has(name)) headers.set(name, value);
+  for (const [name, value] of Object.entries(activeApiHeaders()))
+    if (!headers.has(name)) headers.set(name, value);
   return fetch(`${getApiUrl()}${path.startsWith("/") ? path : `/${path}`}`, {
     credentials: "include",
     ...init,
@@ -604,6 +602,7 @@ async function req<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...authHeaders(),
+    ...activeApiHeaders(),
     ...opts?.headers,
   };
   const res = await fetch(url, {
@@ -1568,7 +1567,8 @@ export const api = {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${getApiUrl()}/kb/bases/${enc(kbId)}/upload`);
         xhr.withCredentials = true;
-        for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
+        for (const [k, v] of Object.entries({ ...authHeaders(), ...activeApiHeaders() }))
+          xhr.setRequestHeader(k, v);
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress?.(e.loaded / e.total);
         };

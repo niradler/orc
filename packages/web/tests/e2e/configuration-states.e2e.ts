@@ -68,7 +68,10 @@ for (const scenario of pages) {
     const empty = page.getByTestId("empty-state").or(page.getByTestId("page-empty"));
     try {
       await gotoView(page, scenario.view);
-      if (scenario.view === "settings") await settingsSection(page, "execution");
+      if (scenario.view === "settings") {
+        await settingsSection(page, "execution");
+        await page.getByTestId("ssh-host-change").click();
+      }
       await expect(loading.first()).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath(`${scenario.view}-loading.png`) });
       state = "failed";
@@ -79,7 +82,7 @@ for (const scenario of pages) {
       state = "empty";
       await page.reload();
       if (scenario.view === "settings")
-        await expect(page.getByTestId("ssh-settings")).toBeVisible();
+        await expect(page.getByTestId("hosts-settings")).toBeVisible();
       else await expect(empty.first()).toBeVisible();
       await expect(failed).toHaveCount(0);
       await expect(loading).toHaveCount(0);

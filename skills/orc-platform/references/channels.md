@@ -127,7 +127,7 @@ Definitions live in SQLite (`channels`, `channel_targets`, `channel_routes`). Pr
 
 ## Two-way conversations and chat controls
 
-In Settings → Channels, pair a recipient, then choose **Set up agent replies**. Select its default project, agent and optional model, apply, then save. Agent `default` follows Chat Settings. The flow enables inbound/outbound/questions and retains recipient project restrictions. Earlier routing rules retain priority. Every selected project needs an active working folder available on the execution host.
+In Settings → Connections → Channels, pair a recipient, then choose **Set up agent replies**. Select its default project, agent and optional model, apply, then save. Agent `default` follows Chat Settings. The flow enables inbound/outbound/questions and retains recipient project restrictions. Earlier routing rules retain priority. Every selected project needs an active working folder available on the execution host.
 
 The first matching rule supplies defaults. Ordinary messages reach the selected agent; follow-ups resume its native session. Conversations are separated by connection, chat, thread, sender and route. Sessions and model choices are additionally separated by project. Unmatched messages explain setup; explicit ignore rules remain silent. Unapproved senders invoke neither controls nor agents.
 

@@ -2,7 +2,7 @@
 
 ## Coding providers
 
-Open **Settings → Providers**. Choose **New provider**, name it (for example,
+Open **Settings → Agents → Providers**. Choose **New provider**, name it (for example,
 **Claude LiteLLM**), select a coding-agent adapter, and configure its connection.
 You can create several providers using the same adapter. Claude Code and Codex
 use native integrations; Pi uses its native RPC interface, OpenCode uses direct ACP, and other coding agents use acpx.
@@ -59,10 +59,10 @@ Create another provider with the same adapter to work with more than one Claude
 Code or Codex login. While creating the provider, enable **Use a separate
 account**, or open an existing provider and set **Config directory**:
 
-| Adapter | Variable | Default |
-| --- | --- | --- |
+| Adapter     | Variable            | Default     |
+| ----------- | ------------------- | ----------- |
 | Claude Code | `CLAUDE_CONFIG_DIR` | `~/.claude` |
-| Codex | `CODEX_HOME` | `~/.codex` |
+| Codex       | `CODEX_HOME`        | `~/.codex`  |
 
 Each directory holds that account's CLI login, session history and state. The
 provider passes it to native chat, model discovery and terminal launches for
@@ -97,7 +97,7 @@ another device's settings; **Discard draft and reload** loads the saved version.
 
 Install [Pi](https://pi.dev/) 1.5.2 or newer on the execution host, with Node.js
 22.19 or newer, and configure its model credentials in Pi. Create a provider in
-**Settings → Providers** and choose **Pi**. Pi is optional and is not enabled by
+**Settings → Agents → Providers** and choose **Pi**. Pi is optional and is not enabled by
 default. ORC uses `pi --mode rpc`, preserving Pi's own credentials, extensions,
 skills and session files. An executable override selects the local Pi installation;
 SSH uses the remote installation.
@@ -149,10 +149,10 @@ rules that require unavailable interception prevent the session from starting.
 
 These are environment configurations of the Claude adapter:
 
-| Configuration | Environment overrides |
-| --- | --- |
+| Configuration  | Environment overrides                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------ |
 | Claude Bedrock | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and an `AWS_PROFILE` configured on the execution host |
-| Claude LiteLLM | `ANTHROPIC_BASE_URL` pointing to your gateway and a secret `ANTHROPIC_AUTH_TOKEN` |
+| Claude LiteLLM | `ANTHROPIC_BASE_URL` pointing to your gateway and a secret `ANTHROPIC_AUTH_TOKEN`                |
 
 Choose the model ID supported by your gateway or Bedrock deployment. If an
 inherited `ANTHROPIC_API_KEY` conflicts with gateway authentication, add an empty
@@ -320,12 +320,12 @@ Where ORC keeps its config and data, every config key and environment variable y
 
 ## Notification and audit retention
 
-Set these server-wide preferences in **Settings → Storage** or the JSON config:
+Set these server-wide preferences in **Settings → Notifications → Automatic cleanup** or the JSON config:
 
-| Config key | Default | Allowed days |
-| --- | --- | --- |
-| `preferences.notification_retention_days` | 30 | 1–3650 |
-| `preferences.audit_retention_days` | 90 | 1–3650 |
+| Config key                                | Default | Allowed days |
+| ----------------------------------------- | ------- | ------------ |
+| `preferences.notification_retention_days` | 30      | 1–3650       |
+| `preferences.audit_retention_days`        | 90      | 1–3650       |
 
 All notifications expire, including unresolved requests' alerts. Audit history
 retains the notification title and message independently until the audit event
@@ -335,19 +335,19 @@ shrink. See [Notifications](./notifications.md).
 
 ## Files and directories
 
-| Path | Holds |
-| --- | --- |
-| `ORC_HOME/config.json` | Global config. The CLI (`orc project use`), the dashboard and the desktop app write here. |
-| `./.orc/config.json` | Optional config read from the directory the process starts in |
-| `ORC_HOME/orc.db` | SQLite database (`db.path`) |
-| `ORC_HOME/knowledge/` | Knowledge base files and index (beside the database) |
-| `ORC_HOME/secret.key` | Key that encrypts stored secrets. Back it up with the database. |
-| `ORC_HOME/logs/orc.log` | Structured log |
-| `ORC_HOME/daemon.log` | Daemon stdout/stderr when run as a launchd or systemd service |
-| `ORC_HOME/daemon.pid` | PID of the running daemon |
-| `ORC_HOME/daemon.json` | Private runtime identity and current port of the running daemon; contains no credentials |
-| `ORC_HOME/desktop-daemon.log` | Daemon output when the desktop app started it |
-| `~/.orc/bin/` | CLI installed by the desktop app |
+| Path                          | Holds                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `ORC_HOME/config.json`        | Global config. The CLI (`orc project use`), the dashboard and the desktop app write here. |
+| `./.orc/config.json`          | Optional config read from the directory the process starts in                             |
+| `ORC_HOME/orc.db`             | SQLite database (`db.path`)                                                               |
+| `ORC_HOME/knowledge/`         | Knowledge base files and index (beside the database)                                      |
+| `ORC_HOME/secret.key`         | Key that encrypts stored secrets. Back it up with the database.                           |
+| `ORC_HOME/logs/orc.log`       | Structured log                                                                            |
+| `ORC_HOME/daemon.log`         | Daemon stdout/stderr when run as a launchd or systemd service                             |
+| `ORC_HOME/daemon.pid`         | PID of the running daemon                                                                 |
+| `ORC_HOME/daemon.json`        | Private runtime identity and current port of the running daemon; contains no credentials  |
+| `ORC_HOME/desktop-daemon.log` | Daemon output when the desktop app started it                                             |
+| `~/.orc/bin/`                 | CLI installed by the desktop app                                                          |
 
 `ORC_HOME` defaults to `~/.orc`, where `~` is `HOME` (`USERPROFILE` on Windows). Show the resolved paths and daemon state:
 
@@ -382,20 +382,20 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
 
 ### `api`
 
-| Key | Default | Env | Purpose |
-| --- | --- | --- | --- |
-| `api.port` | `7700` | `ORC_API_PORT` | API, dashboard and MCP port |
-| `api.host` | `127.0.0.1` | `ORC_API_HOST` | Bind address. `0.0.0.0` exposes ORC on the network. |
-| `api.secret` | none | `ORC_API_SECRET` | Bearer secret. Unset means no auth. |
-| `api.session_days` | `30` | `ORC_API_SESSION_DAYS` | Dashboard sign-in and default token lifetime (1-365) |
-| `api.cors_origins` | `[]` | `ORC_API_CORS_ORIGINS` (comma-separated) | Extra browser origins allowed to call the API |
+| Key                | Default     | Env                                      | Purpose                                              |
+| ------------------ | ----------- | ---------------------------------------- | ---------------------------------------------------- |
+| `api.port`         | `7700`      | `ORC_API_PORT`                           | API, dashboard and MCP port                          |
+| `api.host`         | `127.0.0.1` | `ORC_API_HOST`                           | Bind address. `0.0.0.0` exposes ORC on the network.  |
+| `api.secret`       | none        | `ORC_API_SECRET`                         | Bearer secret. Unset means no auth.                  |
+| `api.session_days` | `30`        | `ORC_API_SESSION_DAYS`                   | Dashboard sign-in and default token lifetime (1-365) |
+| `api.cors_origins` | `[]`        | `ORC_API_CORS_ORIGINS` (comma-separated) | Extra browser origins allowed to call the API        |
 
 ### `db`, `activeProject`
 
-| Key | Default | Env | Purpose |
-| --- | --- | --- | --- |
-| `db.path` | `ORC_HOME/orc.db` | `ORC_DB_PATH` | SQLite file |
-| `activeProject` | none | `ORC_ACTIVE_PROJECT` | Default project for CLI and MCP calls |
+| Key             | Default           | Env                  | Purpose                               |
+| --------------- | ----------------- | -------------------- | ------------------------------------- |
+| `db.path`       | `ORC_HOME/orc.db` | `ORC_DB_PATH`        | SQLite file                           |
+| `activeProject` | none              | `ORC_ACTIVE_PROJECT` | Default project for CLI and MCP calls |
 
 ### `agent_loop`
 
@@ -403,116 +403,116 @@ The task loop picks up `todo` and `changes_requested` tasks and runs agents on t
 
 `agent_loop.enabled` only turns the subsystem on at startup. Its cycles are recorded under the `orc-task-loop` system job, and disabling that job (Jobs page, `orc jobs`) stops every automatic cycle — scheduled ticks, task-change triggers and follow-ups — even while the setting is `true`. The disabled state survives restarts and re-enabling the job resumes the loop without an environment change. Disabling does not stop agents that are already running.
 
-| Key | Default | Env |
-| --- | --- | --- |
-| `agent_loop.enabled` | `false` | `ORC_AGENT_LOOP_ENABLED` |
-| `agent_loop.poll_interval_minutes` | `5` | `ORC_AGENT_LOOP_POLL_INTERVAL` |
-| `agent_loop.max_workers` | `1` | `ORC_AGENT_LOOP_MAX_WORKERS` |
-| `agent_loop.default_backend` | `claude` | `ORC_AGENT_LOOP_DEFAULT_BACKEND` |
-| `agent_loop.session_idle_timeout_minutes` | `20` | `ORC_AGENT_LOOP_IDLE_TIMEOUT` |
-| `agent_loop.session_max_lifetime_minutes` | `120` | `ORC_AGENT_LOOP_MAX_LIFETIME` |
-| `agent_loop.worker_auto_approve` | `true` | `ORC_AGENT_LOOP_AUTO_APPROVE` |
-| `agent_loop.default_flow` | `orc-default` | `ORC_AGENT_LOOP_DEFAULT_FLOW` |
-| `agent_loop.review_flow` | `orc-review-only` | `ORC_AGENT_LOOP_REVIEW_FLOW` |
-| `agent_loop.max_node_retries` | `2` | `ORC_AGENT_LOOP_MAX_NODE_RETRIES` |
-| `agent_loop.max_flow_runs_per_task` | `6` | `ORC_AGENT_LOOP_MAX_FLOW_RUNS` |
+| Key                                       | Default           | Env                               |
+| ----------------------------------------- | ----------------- | --------------------------------- |
+| `agent_loop.enabled`                      | `false`           | `ORC_AGENT_LOOP_ENABLED`          |
+| `agent_loop.poll_interval_minutes`        | `5`               | `ORC_AGENT_LOOP_POLL_INTERVAL`    |
+| `agent_loop.max_workers`                  | `1`               | `ORC_AGENT_LOOP_MAX_WORKERS`      |
+| `agent_loop.default_backend`              | `claude`          | `ORC_AGENT_LOOP_DEFAULT_BACKEND`  |
+| `agent_loop.session_idle_timeout_minutes` | `20`              | `ORC_AGENT_LOOP_IDLE_TIMEOUT`     |
+| `agent_loop.session_max_lifetime_minutes` | `120`             | `ORC_AGENT_LOOP_MAX_LIFETIME`     |
+| `agent_loop.worker_auto_approve`          | `true`            | `ORC_AGENT_LOOP_AUTO_APPROVE`     |
+| `agent_loop.default_flow`                 | `orc-default`     | `ORC_AGENT_LOOP_DEFAULT_FLOW`     |
+| `agent_loop.review_flow`                  | `orc-review-only` | `ORC_AGENT_LOOP_REVIEW_FLOW`      |
+| `agent_loop.max_node_retries`             | `2`               | `ORC_AGENT_LOOP_MAX_NODE_RETRIES` |
+| `agent_loop.max_flow_runs_per_task`       | `6`               | `ORC_AGENT_LOOP_MAX_FLOW_RUNS`    |
 
 Run `orc doctor` to see which backends are usable. See [Task flows](./task-flows.md).
 
 ### `runner` (jobs)
 
-| Key | Default | Env |
-| --- | --- | --- |
-| `runner.default_timeout_secs` | `300` | `ORC_RUNNER_TIMEOUT` |
-| `runner.max_concurrent_jobs` | `5` | `ORC_RUNNER_MAX_JOBS` |
-| `runner.log_retention_days` | `30` | `ORC_RUNNER_LOG_DAYS` |
+| Key                           | Default | Env                   |
+| ----------------------------- | ------- | --------------------- |
+| `runner.default_timeout_secs` | `300`   | `ORC_RUNNER_TIMEOUT`  |
+| `runner.max_concurrent_jobs`  | `5`     | `ORC_RUNNER_MAX_JOBS` |
+| `runner.log_retention_days`   | `30`    | `ORC_RUNNER_LOG_DAYS` |
 
 ### `context`, `memory`
 
-| Key | Default | Env | Purpose |
-| --- | --- | --- | --- |
-| `context.snapshot_max_bytes` | `2048` | `ORC_SNAPSHOT_MAX_BYTES` | Session snapshot budget |
-| `context.layer1_task_limit` | `10` | `ORC_LAYER1_TASKS` | Tasks in the `context` result |
-| `context.layer1_memory_limit` | `30` | `ORC_LAYER1_MEMORIES` | Memories in the `context` result |
-| `memory.max_content_chars` | `800` | none | Longest memory content |
+| Key                           | Default | Env                      | Purpose                          |
+| ----------------------------- | ------- | ------------------------ | -------------------------------- |
+| `context.snapshot_max_bytes`  | `2048`  | `ORC_SNAPSHOT_MAX_BYTES` | Session snapshot budget          |
+| `context.layer1_task_limit`   | `10`    | `ORC_LAYER1_TASKS`       | Tasks in the `context` result    |
+| `context.layer1_memory_limit` | `30`    | `ORC_LAYER1_MEMORIES`    | Memories in the `context` result |
+| `memory.max_content_chars`    | `800`   | none                     | Longest memory content           |
 
 ### `knowledge`
 
-| Key | Default | Env |
-| --- | --- | --- |
-| `knowledge.root` | beside `db.path` | `ORC_KNOWLEDGE_ROOT` |
-| `knowledge.parser` | `auto` | `ORC_KNOWLEDGE_PARSER` |
+| Key                            | Default                             | Env                                |
+| ------------------------------ | ----------------------------------- | ---------------------------------- |
+| `knowledge.root`               | beside `db.path`                    | `ORC_KNOWLEDGE_ROOT`               |
+| `knowledge.parser`             | `auto`                              | `ORC_KNOWLEDGE_PARSER`             |
 | `knowledge.embedding.provider` | `none` (`none`, `ollama`, `openai`) | `ORC_KNOWLEDGE_EMBEDDING_PROVIDER` |
-| `knowledge.embedding.base_url` | provider default | `ORC_KNOWLEDGE_EMBEDDING_URL` |
-| `knowledge.embedding.model` | provider default | `ORC_KNOWLEDGE_EMBEDDING_MODEL` |
-| `knowledge.embedding.api_key` | none | `ORC_KNOWLEDGE_EMBEDDING_API_KEY` |
-| `knowledge.max_upload_bytes` | `104857600` (100 MB) | none |
+| `knowledge.embedding.base_url` | provider default                    | `ORC_KNOWLEDGE_EMBEDDING_URL`      |
+| `knowledge.embedding.model`    | provider default                    | `ORC_KNOWLEDGE_EMBEDDING_MODEL`    |
+| `knowledge.embedding.api_key`  | none                                | `ORC_KNOWLEDGE_EMBEDDING_API_KEY`  |
+| `knowledge.max_upload_bytes`   | `104857600` (100 MB)                | none                               |
 
 Most knowledge settings are also editable under **Settings → Knowledge**.
 
 ### `terminals`, `ssh`
 
-| Key | Default | Env | Purpose |
-| --- | --- | --- | --- |
-| `terminals.enabled` | `true` | `ORC_TERMINALS_ENABLED` | Browser terminals |
-| `terminals.max` | `8` | none | Concurrent terminals (1-64) |
-| `terminals.shell` | unset | `ORC_TERMINALS_SHELL` | Shell executable, or a JSON array of executable and literal arguments |
-| `ssh.host` | none | `ORC_SSH_HOST` | `~/.ssh/config` host alias to run agents, terminals and git on |
-| `ssh.remote_port` | none | `ORC_SSH_REMOTE_PORT` | Port the reverse tunnel opens on the SSH host so agents there reach ORC |
+| Key                 | Default | Env                     | Purpose                                                                 |
+| ------------------- | ------- | ----------------------- | ----------------------------------------------------------------------- |
+| `terminals.enabled` | `true`  | `ORC_TERMINALS_ENABLED` | Browser terminals                                                       |
+| `terminals.max`     | `8`     | none                    | Concurrent terminals (1-64)                                             |
+| `terminals.shell`   | unset   | `ORC_TERMINALS_SHELL`   | Shell executable, or a JSON array of executable and literal arguments   |
+| `ssh.host`          | none    | `ORC_SSH_HOST`          | `~/.ssh/config` host alias to run agents, terminals and git on          |
+| `ssh.remote_port`   | none    | `ORC_SSH_REMOTE_PORT`   | Port the reverse tunnel opens on the SSH host so agents there reach ORC |
 
 In JSON configuration, `"terminals": { "shell": ["pwsh", "-NoLogo", "-NoProfile"] }` launches PowerShell without personal profiles. The first array entry must be a nonempty executable; up to 64 entries are supported. Arguments are passed literally, without shell parsing. Existing executable strings remain supported, including `ORC_TERMINALS_SHELL`; that environment variable accepts an executable, not a command line or JSON array. An unset shell keeps the platform default, including its usual profile loading.
 
-Pick the execution host from **Settings → Execution host**. Switching applies to new actions. When `ORC_SSH_HOST` is set, the selection is fixed.
+Pick the execution host from the SSH row under **Settings → Hosts**: **Change**, then choose **This ORC server** or an alias. Switching applies to new actions. When `ORC_SSH_HOST` is set, the selection is fixed.
 
 ### `rules`, `mcp`, `github`
 
-| Key | Default | Env | Purpose |
-| --- | --- | --- | --- |
-| `rules.enabled` | `false` | `ORC_RULES_ENABLED` | Enforce [agent rules](./agent-rules.md) |
-| `mcp.default_mode` | `meta` | none | MCP tool surface: `meta` or `full` |
-| `github.token` | none | `ORC_GITHUB_TOKEN` | Token for ORC's GitHub calls (pull requests, reviews) |
+| Key                | Default | Env                 | Purpose                                               |
+| ------------------ | ------- | ------------------- | ----------------------------------------------------- |
+| `rules.enabled`    | `false` | `ORC_RULES_ENABLED` | Enforce [agent rules](./agent-rules.md)               |
+| `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full`                    |
+| `github.token`     | none    | `ORC_GITHUB_TOKEN`  | Token for ORC's GitHub calls (pull requests, reviews) |
 
 ### `gateway` (Telegram, Slack)
 
-| Env | Effect |
-| --- | --- |
-| `ORC_TELEGRAM_TOKEN` | Enables the Telegram gateway with this bot token |
-| `ORC_SLACK_BOT_TOKEN`, `ORC_SLACK_APP_TOKEN` | Enables the Slack gateway (Socket Mode) |
+| Env                                          | Effect                                           |
+| -------------------------------------------- | ------------------------------------------------ |
+| `ORC_TELEGRAM_TOKEN`                         | Enables the Telegram gateway with this bot token |
+| `ORC_SLACK_BOT_TOKEN`, `ORC_SLACK_APP_TOKEN` | Enables the Slack gateway (Socket Mode)          |
 
-Channels are configured under **Settings → Channels**.
+Channels are configured under **Settings → Connections → Channels**.
 
 ### `speech`, `tts`
 
-| Env | Purpose |
-| --- | --- |
-| `ORC_SPEECH_PROVIDER` | `openai`, `groq` or `qwen` |
-| `ORC_SPEECH_LANGUAGE` | Transcription language |
-| `ORC_TTS_PROVIDER` | `openai` or `qwen` |
-| `ORC_TTS_VOICE` | Voice (default `alloy`) |
-| `ORC_TTS_MODE` | `voice_only` or `always` |
-| `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys |
+| Env                                                          | Purpose                    |
+| ------------------------------------------------------------ | -------------------------- |
+| `ORC_SPEECH_PROVIDER`                                        | `openai`, `groq` or `qwen` |
+| `ORC_SPEECH_LANGUAGE`                                        | Transcription language     |
+| `ORC_TTS_PROVIDER`                                           | `openai` or `qwen`         |
+| `ORC_TTS_VOICE`                                              | Voice (default `alloy`)    |
+| `ORC_TTS_MODE`                                               | `voice_only` or `always`   |
+| `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys       |
 
 Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_*` enables text-to-speech.
 
 ## Other environment variables
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ORC_HOME` | `~/.orc` | Data root: location of the database, `config.json`, `secret.key`, logs and the daemon files (`daemon.pid`, `daemon.json`, `daemon.log`, `desktop-daemon.log`). |
-| `ORC_API_BASE` | from `api.host`/`api.port` | ORC origin for the CLI, stdio MCP and hooks |
-| `ORC_SESSION_ID` | none | Session attribution for MCP and CLI writes |
-| `ORC_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `ORC_LOG_DIR` | `ORC_HOME` | Parent of the `logs/` directory |
-| `ORC_LOG_FILE` | on | `0` disables the log file |
-| `ORC_WEB_DIST` | bundled | Serve a different dashboard build |
-| `ORC_SQLITE_VEC_PATH` | bundled | sqlite-vec library for vector search |
-| `AGENTAPI_URL` | `http://localhost:3284` | agentapi server for the `agentapi` backend |
-| `ANTHROPIC_API_KEY` | none | `claude` backend |
+| Variable              | Default                    | Purpose                                                                                                                                                        |
+| --------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ORC_HOME`            | `~/.orc`                   | Data root: location of the database, `config.json`, `secret.key`, logs and the daemon files (`daemon.pid`, `daemon.json`, `daemon.log`, `desktop-daemon.log`). |
+| `ORC_API_BASE`        | from `api.host`/`api.port` | ORC origin for the CLI, stdio MCP and hooks                                                                                                                    |
+| `ORC_SESSION_ID`      | none                       | Session attribution for MCP and CLI writes                                                                                                                     |
+| `ORC_LOG_LEVEL`       | `info`                     | `debug`, `info`, `warn`, `error`                                                                                                                               |
+| `ORC_LOG_DIR`         | `ORC_HOME`                 | Parent of the `logs/` directory                                                                                                                                |
+| `ORC_LOG_FILE`        | on                         | `0` disables the log file                                                                                                                                      |
+| `ORC_WEB_DIST`        | bundled                    | Serve a different dashboard build                                                                                                                              |
+| `ORC_SQLITE_VEC_PATH` | bundled                    | sqlite-vec library for vector search                                                                                                                           |
+| `AGENTAPI_URL`        | `http://localhost:3284`    | agentapi server for the `agentapi` backend                                                                                                                     |
+| `ANTHROPIC_API_KEY`   | none                       | `claude` backend                                                                                                                                               |
 
 ## Ports
 
-| Port | Serves |
-| --- | --- |
+| Port   | Serves                                                                                              |
+| ------ | --------------------------------------------------------------------------------------------------- |
 | `7700` | REST API (`/api/*`), dashboard (`/`), MCP (`/mcp`), OpenAPI (`/openapi.json`), Swagger UI (`/docs`) |
 
 Change it with `api.port`, `ORC_API_PORT` or `orc --port <n> daemon start`. The desktop app reads the same setting.
@@ -554,11 +554,11 @@ orc daemon install     # register and start now
 orc daemon uninstall   # remove the registration
 ```
 
-| Platform | Mechanism | Restarts on crash |
-| --- | --- | --- |
-| macOS | launchd agent `~/Library/LaunchAgents/com.orc.daemon.plist` | Yes |
-| Linux | systemd user service `~/.config/systemd/user/orc-daemon.service` | Yes (on failure) |
-| Windows | Registry Run key `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\OrcDaemon` | No |
+| Platform | Mechanism                                                                       | Restarts on crash |
+| -------- | ------------------------------------------------------------------------------- | ----------------- |
+| macOS    | launchd agent `~/Library/LaunchAgents/com.orc.daemon.plist`                     | Yes               |
+| Linux    | systemd user service `~/.config/systemd/user/orc-daemon.service`                | Yes (on failure)  |
+| Windows  | Registry Run key `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\OrcDaemon` | No                |
 
 No admin rights needed. Service output goes to `~/.orc/daemon.log` on macOS and Linux.
 
@@ -590,12 +590,12 @@ orc --secret "$(openssl rand -hex 32)" daemon start   # one run
 
 or put it in `~/.orc/config.json` as `api.secret`, or set `ORC_API_SECRET`. The desktop app generates and saves one for you.
 
-| Client | How it authenticates |
-| --- | --- |
-| CLI, stdio MCP on the same machine | Reads the secret from config or `ORC_API_SECRET` |
-| HTTP clients, HTTP MCP | `Authorization: Bearer <secret or access token>` |
-| Dashboard | Asks for the secret once and stores a signed HttpOnly cookie for `api.session_days` |
-| Desktop app | Sends the secret it configured |
+| Client                             | How it authenticates                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| CLI, stdio MCP on the same machine | Reads the secret from config or `ORC_API_SECRET`                                    |
+| HTTP clients, HTTP MCP             | `Authorization: Bearer <secret or access token>`                                    |
+| Dashboard                          | Asks for the secret once and stores a signed HttpOnly cookie for `api.session_days` |
+| Desktop app                        | Sends the secret it configured                                                      |
 
 Unauthenticated paths: `/health`, `/api/health`, `/api/auth/session`, `/api/auth/token`. Handoff upload, session-sync, skill download and scratchpad content URLs skip the secret but check their own signed, expiring link.
 

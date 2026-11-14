@@ -29,6 +29,8 @@ test("desktop connection edits the shell target through the preload bridge", asy
     });
   });
   await gotoView(page, "settings");
+  await page.goto("/settings?settingsSection=connection");
+  await expect(page.getByTestId("host-row-api")).toBeVisible();
   await expect(page.getByTestId("desktop-connection")).toBeVisible();
   await expect(page.getByTestId("settings-api-url")).toHaveCount(0);
   await page.getByTestId("desktop-connection-mode").click();
@@ -83,6 +85,7 @@ test("a remote desktop window cannot edit the connection from the remote page", 
     });
   });
   await gotoView(page, "settings");
+  await page.goto("/settings?settingsSection=connection");
   await expect(page.getByTestId("desktop-connection")).toContainText("https://orc.example.com");
   await expect(page.getByTestId("desktop-connection-save")).toHaveCount(0);
   await expect(page.getByTestId("desktop-connection-local")).toBeVisible();

@@ -60,7 +60,7 @@ const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
 const QUIT_FLAG = "--quit";
 const CONNECTION_CHANNEL = "orc:connection";
-const CONNECTION_SECTION = "/settings?settingsSection=connection";
+const CONNECTION_SECTION = "/settings?settingsSection=hosts";
 
 type WindowTarget = { url: string; origin: string };
 
