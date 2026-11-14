@@ -111,6 +111,7 @@ export const RuleScriptSchema = z
     timeout_ms: z.number().int().min(100).max(30000),
   })
   .strict();
+const ruleAgentBackends = ["claude", "cursor", "gemini", "codex", "pi", "opencode"] as const;
 export const EventRuleSchema = z
   .object({
     ...base,
@@ -120,10 +121,7 @@ export const EventRuleSchema = z
       .object({
         agents: z.union([
           z.literal("all"),
-          z
-            .array(z.enum(["claude", "cursor", "gemini", "codex", "pi"]))
-            .min(1)
-            .max(5),
+          z.array(z.enum(ruleAgentBackends)).min(1).max(ruleAgentBackends.length),
         ]),
         events: z.array(identity).min(1).max(40),
       })

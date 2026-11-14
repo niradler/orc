@@ -664,6 +664,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -949,6 +950,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1176,6 +1178,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1406,6 +1409,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1683,6 +1687,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -1971,6 +1976,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -2286,6 +2292,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -2570,6 +2577,7 @@ export interface paths {
                                 notify: boolean;
                                 prompt?: string;
                                 cancelled?: boolean;
+                                startError?: string;
                             };
                             updatedAt: number;
                         };
@@ -11630,7 +11638,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -11776,7 +11784,7 @@ export interface paths {
                                         kind: "event";
                                         enabled: boolean;
                                         scope: {
-                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                             events: string[];
                                         };
                                         filter: {
@@ -11945,7 +11953,7 @@ export interface paths {
                                 kind: "event";
                                 enabled: boolean;
                                 scope: {
-                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                     events: string[];
                                 };
                                 filter: {
@@ -12064,7 +12072,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -12217,7 +12225,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                         events: string[];
                                     };
                                     filter: {

@@ -31,6 +31,7 @@ const agentNames: Record<RuleHookBackend, string> = {
   gemini: "Gemini CLI",
   codex: "Codex",
   pi: "Pi",
+  opencode: "OpenCode",
 };
 
 export function EventRuleEditor({

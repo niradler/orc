@@ -25,6 +25,8 @@ function template(value: Omit<RuleTemplate, "rule"> & { rule: unknown }): RuleTe
 
 const base = { kind: "event", enabled: true };
 const commandScope = { agents: ["claude"], events: ["pre_tool"] };
+// OpenCode has no session-start hook; continuity actions need an explicit scope.
+const sessionStartAgents = ["claude", "cursor", "gemini", "codex", "pi"];
 const rtkTarget = {
   type: "rewrite_command",
   argv: ["rtk", "rewrite", "{command}"],
@@ -129,7 +131,7 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
       ...base,
       id: "orc-load-context",
       reason: "Load shared workspace context",
-      scope: { agents: "all", events: ["session_start"] },
+      scope: { agents: sessionStartAgents, events: ["session_start"] },
       filter: {
         match: "all",
         conditions: [
@@ -185,7 +187,7 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
       ...base,
       id: "orc-restore",
       reason: "Restore saved session state",
-      scope: { agents: "all", events: ["session_start"] },
+      scope: { agents: sessionStartAgents, events: ["session_start"] },
       filter: {
         match: "all",
         conditions: [

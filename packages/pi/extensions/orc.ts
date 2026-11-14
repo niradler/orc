@@ -32,11 +32,14 @@ import {
   recallKeys,
 } from "../src/recall.js";
 import {
+  BLOCKING_EVENTS,
   type OrcRule,
   type PiNativeEvent,
   planRules,
+  RULES_REFRESH_MS,
   type RulePlan,
   removeRule,
+  ruleHookGate,
   runRuleHook,
   upsertRule,
 } from "../src/rules.js";
@@ -58,6 +61,8 @@ type SessionState = {
   recallError?: string | undefined;
   rules?: RulePlan | undefined;
   rulesError?: string | undefined;
+  rulesDisabled: boolean;
+  rulesCheckedAt: number;
   pendingContext: string[];
   sessionId: string;
   cwd: string;
@@ -134,7 +139,13 @@ function setStatus(ctx: ExtensionContext, session: SessionState): void {
   }
   const project = session.project ?? "global";
   const health = session.health === "up" ? "online" : session.health === "down" ? "offline" : "…";
-  const rules = session.rules?.count ? ` · ${session.rules.count} rules` : "";
+  const rules = session.rules
+    ? session.rules.count
+      ? ` · ${session.rules.count} rules`
+      : ""
+    : session.config.rules && !session.rulesDisabled
+      ? " · rules guarded"
+      : "";
   ctx.ui.setStatus("porc", `orc: ${project} · ${health}${rules}`);
 }
 
@@ -261,10 +272,18 @@ async function refreshRules(session: SessionState): Promise<void> {
   const config = session.config;
   session.rules = undefined;
   session.rulesError = undefined;
-  if (!config?.rules || !session.api || session.health !== "up") return;
+  session.rulesDisabled = false;
+  session.rulesCheckedAt = Date.now();
+  if (!config?.rules || !session.api) return;
+  if (session.health !== "up") {
+    // ORC may have started since initialization; blocking hooks fail closed until then.
+    session.health = (await session.api.health()) ? "up" : "down";
+    if (session.health !== "up") return;
+  }
   try {
     const data = await session.api.rules();
     if (data.enabled) session.rules = planRules(data.history, session.cwd);
+    else session.rulesDisabled = true;
   } catch (err) {
     session.rulesError = errorText(err, config.secret);
   }
@@ -283,6 +302,8 @@ async function initialize(
     health: "unknown",
     contextInjected: false,
     offered: new Set(),
+    rulesDisabled: false,
+    rulesCheckedAt: 0,
     pendingContext: [],
     sessionId: ctx.sessionManager.getSessionId(),
     cwd: ctx.cwd,
@@ -1002,14 +1023,24 @@ async function checkRules(
   payload: Record<string, unknown>,
   ctx: ExtensionContext,
 ) {
-  if (!session?.config?.rules || !session.rules?.events.has(native)) return undefined;
+  if (!session?.config)
+    return BLOCKING_EVENTS.has(native)
+      ? { block: true, reason: "ORC rules unavailable: porc configuration failed to load" }
+      : undefined;
+  const gate = ruleHookGate({
+    enabled: session.config.rules,
+    plan: session.rules,
+    disabled: session.rulesDisabled,
+    native,
+  });
+  if (!gate.run) return undefined;
   return runRuleHook({
     command: session.config.command,
     native,
     payload: { session_id: session.sessionId, cwd: ctx.cwd, ...payload },
     cwd: ctx.cwd,
     env: hookEnv(session),
-    timeoutMs: session.rules.timeoutMs.get(native) ?? 30_000,
+    timeoutMs: gate.timeoutMs,
     signal: ctx.signal,
   });
 }
@@ -1128,6 +1159,13 @@ export default function porc(pi: ExtensionAPI): void {
     if (decision?.context) state.session?.pendingContext.push(decision.context);
   });
 
+  pi.on("session_before_compact", async (_event, ctx) => {
+    const session = state.session;
+    if (!session) return;
+    const decision = await checkRules(session, "session_before_compact", {}, ctx);
+    if (decision?.context) session.pendingContext.push(decision.context);
+  });
+
   pi.on("session_compact", async (_event, ctx) => {
     const session = state.session;
     if (!session) return;
@@ -1137,10 +1175,21 @@ export default function porc(pi: ExtensionAPI): void {
     if (decision?.context) session.pendingContext.push(decision.context);
   });
 
+  pi.on("agent_end", async (_event, ctx) => {
+    const session = state.session;
+    if (!session) return;
+    const decision = await checkRules(session, "agent_end", {}, ctx);
+    if (decision?.context) session.pendingContext.push(decision.context);
+  });
+
   pi.on("before_agent_start", async (event, ctx) => {
     const session = state.session;
     if (!session?.config?.enabled || session.configError) return;
     const config = session.config;
+    if (config.rules && Date.now() - session.rulesCheckedAt >= RULES_REFRESH_MS) {
+      await refreshRules(session);
+      setStatus(ctx, session);
+    }
     if (config.systemPrompt) {
       event.systemPromptOptions.sections.orc = renderOrcPromptSection({
         ...(session.project ? { project: session.project } : {}),
