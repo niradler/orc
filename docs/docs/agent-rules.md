@@ -214,10 +214,15 @@ timeouts, crashes and actual edit payloads must be qualified before relying on t
 [Codex hook reference](https://learn.chatgpt.com/docs/hooks). Codex requires host trust;
 its native hooks do not intercept every hosted tool or execution path.
 
-Other managed backends refuse sessions in policy-protected workspaces. Protected chat
-cannot fall back to an unverified CLI/remote backend, and ORC refuses unqualified native
-agent terminals/package setups in protected workspaces. Human shell terminals remain
-available. Native Codex protocol support does not qualify ORC-managed Codex/ACPX/A2A/AgentAPI blocking.
+Other managed backends start in policy-protected workspaces but do not claim
+enforcement. ORC adds one conversation status note that names the gap, then runs the
+session without rule interception; `GET /api/rules` reports these adapters as
+`acp_observe_only` or `unsupported`. ACP (used by OpenCode) delivers tool-call
+notifications and optional permission prompts, not a synchronous per-tool gate that
+ORC can deny or rewrite, so it can show activity but cannot guarantee a block.
+Protected package setups and unqualified native agent terminals are still refused;
+human shell terminals remain available. Native Codex protocol support does not qualify
+ORC-managed Codex/ACPX/A2A/AgentAPI blocking.
 
 Hooks are not an OS sandbox. A human able to edit configuration, a process outside ORC,
 an unmediated remote execution channel, or another concurrent filesystem writer remains

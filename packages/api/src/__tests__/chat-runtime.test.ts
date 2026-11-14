@@ -466,7 +466,7 @@ describe("native chat runtime", () => {
     }
   });
 
-  test("should admit Codex native pause policies while refusing policies it cannot enforce", async () => {
+  test("should admit Codex native pause policies and start blocked backends with a gap note", async () => {
     const previous = process.env.ORC_RULES_ENABLED;
     process.env.ORC_RULES_ENABLED = "true";
     resetConfig();
@@ -499,15 +499,18 @@ describe("native chat runtime", () => {
         revision.id,
         "Unsupported native policy",
       );
+      const gap = await turn({
+        messages: [{ role: "user", content: "unsupported policy" }],
+        agent: "codex",
+      });
+      expect(gap.response.status).toBe(200);
       expect(
-        (
-          await request("/chat/stream", {
-            messages: [{ role: "user", content: "unsupported policy" }],
-            agent: "codex",
-          })
-        ).status,
-      ).toBe(503);
-      expect(calls).toHaveLength(count);
+        gap.events.some(
+          (event) => event.type === "system_status" && event.text.includes("cannot be enforced"),
+        ),
+      ).toBe(true);
+      // The turn still starts; the backend is not silently refused.
+      expect(calls).toHaveLength(count + 1);
     } finally {
       if (previous === undefined) delete process.env.ORC_RULES_ENABLED;
       else process.env.ORC_RULES_ENABLED = previous;
