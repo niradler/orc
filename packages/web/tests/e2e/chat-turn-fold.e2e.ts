@@ -317,14 +317,16 @@ test("streaming follows only while pinned and Jump to latest returns with a new 
   ]);
   const status = page.getByTestId("chat-activity-status");
   await expect(status).toContainText("Working for");
+  await expect(status).toContainText(/Codex/);
   await expect(page.getByTestId("chat-current-tool")).toContainText("Bash");
-  await expect(page.getByTestId("chat-current-tool")).toContainText("bun run scripts/run-e2e.ts");
-  expect(
-    await status
-      .locator("svg")
-      .first()
-      .evaluate((icon) => getComputedStyle(icon).animationName),
-  ).toBe("none");
+  await expect(page.getByTestId("chat-current-tool")).not.toContainText(
+    "bun run scripts/run-e2e.ts",
+  );
+  const spinner = page.getByTestId("chat-working-spinner");
+  expect(await spinner.evaluate((icon) => getComputedStyle(icon).animationName)).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  expect(await spinner.evaluate((icon) => getComputedStyle(icon).animationName)).not.toBe("none");
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const timer = page.getByTestId("chat-working-timer");
   const first = await timer.textContent();
   await expect.poll(() => timer.textContent(), { timeout: 4000 }).not.toBe(first);

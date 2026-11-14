@@ -117,7 +117,7 @@ test("stopping a chunked response preserves partial text and a new send finishes
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("chat-activity-status")).toContainText(
-    /codex\s*Working for \d+:\d{2}/,
+    /Codex\s*Working for \d+:\d{2}/i,
   );
   await page.screenshot({ path: testInfo.outputPath("chat-loading-partial.png") });
   await page.getByTestId("chat-cancel-button").click();

@@ -5,6 +5,7 @@ import {
   CircleAlert,
   Eye,
   FilePen,
+  Info,
   type LucideIcon,
   Search,
   SquareTerminal,
@@ -26,6 +27,13 @@ function toolIcon(tool: ChatTool, view: ToolView): LucideIcon {
   if (view.kind === "command") return SquareTerminal;
   if (view.kind === "lookup") return SEARCH_TOOLS.test(toolKey(tool.name)) ? Search : Eye;
   return Wrench;
+}
+
+/** The same icon the activity list uses, so the live trail matches the transcript. */
+export function activityIcon(item: ChatActivity): LucideIcon {
+  if (item.type === "thinking") return Brain;
+  if (item.type === "status") return Info;
+  return toolIcon(item, toolView(item));
 }
 
 export function DiffStat({ added, removed }: { added: number; removed: number }) {

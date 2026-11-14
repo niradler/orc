@@ -516,7 +516,7 @@ export function ChatPanel({
                     <LoaderCircle
                       size={14}
                       aria-hidden="true"
-                      className="chat-compact-activity shrink-0 text-progress"
+                      className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
                     />
                   )}
                   <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
@@ -598,7 +598,7 @@ export function ChatPanel({
               <LoaderCircle
                 size={14}
                 aria-hidden="true"
-                className="chat-compact-activity shrink-0 text-progress"
+                className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
               />
             )}
             {!phone &&

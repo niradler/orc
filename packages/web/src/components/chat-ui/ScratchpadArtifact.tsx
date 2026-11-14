@@ -3,6 +3,7 @@ import { lazy, Suspense } from "react";
 import { Markdown } from "@/components/Markdown";
 import { withOrcKit } from "@/lib/orc-kit";
 import { useTheme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 const DiagramPreview = lazy(() => import("./ScratchpadDiagramPreview"));
 
@@ -18,7 +19,15 @@ function isolatedHtml(content: string): string {
     : `${policy}${content}`;
 }
 
-export function ScratchpadArtifact({ pad, expanded }: { pad: Scratchpad; expanded: boolean }) {
+export function ScratchpadArtifact({
+  pad,
+  expanded,
+  fullscreen = false,
+}: {
+  pad: Scratchpad;
+  expanded: boolean;
+  fullscreen?: boolean;
+}) {
   const { theme } = useTheme();
   if (pad.kind === "html") {
     return (
@@ -28,7 +37,10 @@ export function ScratchpadArtifact({ pad, expanded }: { pad: Scratchpad; expande
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         srcDoc={isolatedHtml(withOrcKit(pad.content, theme))}
-        className={`w-full border border-outline-variant bg-white ${expanded ? "h-[70vh] min-h-80" : "h-72"}`}
+        className={cn(
+          "w-full border border-outline-variant bg-white",
+          fullscreen ? "h-full min-h-0" : expanded ? "h-[70vh] min-h-80" : "h-72",
+        )}
       />
     );
   }
@@ -40,10 +52,17 @@ export function ScratchpadArtifact({ pad, expanded }: { pad: Scratchpad; expande
           content={pad.content}
           title={pad.title}
           expanded={expanded}
+          fullscreen={fullscreen}
         />
       </Suspense>
     );
   }
+  if (fullscreen && pad.kind !== "doc")
+    return (
+      <div className="min-h-0 flex-1 overflow-auto">
+        <Markdown readable>{pad.content}</Markdown>
+      </div>
+    );
   if (expanded) return <Markdown readable>{pad.content}</Markdown>;
   return <p className="line-clamp-4 whitespace-pre-wrap break-words text-xs">{pad.content}</p>;
 }
