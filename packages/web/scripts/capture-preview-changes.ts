@@ -489,6 +489,25 @@ async function demo(page: Page, desktop = true) {
       },
     }),
   );
+  await page.route("**/api/git/worktrees?**", (r) =>
+    r.fulfill({
+      json: {
+        root: FOLDER,
+        worktrees: [
+          {
+            path: FOLDER,
+            branch: "fix/cart-rounding",
+            head: null,
+            main: true,
+            dirty: true,
+            detached: false,
+            locked: false,
+            prunable: false,
+          },
+        ],
+      },
+    }),
+  );
   await page.route(`**/api/terminals/${TERMINAL}/git/diff?**`, (r) => {
     const url = new URL(r.request().url());
     const path = url.searchParams.get("path") ?? "";
