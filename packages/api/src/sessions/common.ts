@@ -38,6 +38,16 @@ export function mtimeOf(path: string): number | null {
   }
 }
 
+/**
+ * Session activity is persisted in whole seconds, so comparing the stored value
+ * against a millisecond timestamp would report a change on every sync for the
+ * same request. Compare at the precision the ledger keeps.
+ */
+export function activityAdvanced(activity: Date | number, knownMs: number): boolean {
+  const activityMs = typeof activity === "number" ? activity : activity.getTime();
+  return Math.floor(activityMs / 1000) > Math.floor(knownMs / 1000);
+}
+
 export function oneLine(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;

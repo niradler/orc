@@ -77,7 +77,8 @@ clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`
 
 `GET /api/usage/report` returns request-level usage for the selected period:
 totals, per-agent and per-model distributions, UTC day or hour buckets, and
-coverage for sessions that are not indexed yet. Query parameters are `days`
+coverage for sessions that are not indexed yet or come from agents without
+request-level usage. Query parameters are `days`
 (`1`, `7`, `30` default, `90`, or `0` for all time), `granularity` (`day` default
 or `hour`), and optional `agent` and `model` filters. Pass `model=__unknown__` to
 select requests without a model. Each aggregate includes input, output,

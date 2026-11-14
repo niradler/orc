@@ -7863,6 +7863,7 @@ export interface paths {
                                 unindexed_sessions: number;
                                 unindexed_tokens: number;
                                 unknown_sessions: number;
+                                unsupported_sessions: number;
                                 estimated_sessions: number;
                             };
                         };

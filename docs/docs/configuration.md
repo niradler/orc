@@ -274,8 +274,11 @@ thinking tokens out of output, and cached input is counted once. Repeated
 assistant messages are counted once by message id. The Coverage section reports
 sessions started in the period that have not been indexed yet and excludes their
 lifetime totals from the distribution, rather than mixing the two accounting
-models. No billed cost is shown: ORC has no reliable price source for every
-provider and plan.
+models. A session is not re-indexed when its activity stays inside the second the
+ledger already recorded, and a larger backlog drains in bounded batches. Sessions
+from agents that do not record token usage (for example Cursor Agent chats) are
+reported separately instead of being counted as pending. No billed cost is shown:
+ORC has no reliable price source for every provider and plan.
 
 Raw requests are kept for 95 days, just past the 90-day window, so every normal
 period stays exact. Older usage rolls up per session, UTC day and model: totals,
@@ -285,6 +288,7 @@ window also compacts its oldest rows by model. Retention runs on the normal
 session-sync path, not on a timer or a page poll.
 
 ![Usage in Settings with demo data](/screens/settings-usage.png)
+[Phone layout](/screens/settings-usage-phone.png)
 
 Account quotas show percentage used and reset times for local Codex and Claude
 accounts on the API host, one card per configured provider. ORC reads the existing

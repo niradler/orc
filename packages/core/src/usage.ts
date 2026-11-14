@@ -47,6 +47,16 @@ export const UsageQuotasSchema = z.object({ accounts: z.array(UsageQuotaSchema) 
 
 const UsageTokenCount = z.number().finite().nonnegative();
 
+/** Backends whose importers record per-request or per-session usage events. */
+export const USAGE_SOURCE_BACKENDS = [
+  "claude",
+  "codex",
+  "cursor",
+  "gemini",
+  "opencode",
+  "pi",
+] as const;
+
 /** One request's consumption. `other_tokens` is unsplit usage some CLIs only expose as a total. */
 export const UsageTokenTotalsSchema = z.object({
   input_tokens: UsageTokenCount,
@@ -77,6 +87,7 @@ export const UsageCoverageSchema = z.object({
   unindexed_sessions: z.number().int().nonnegative(),
   unindexed_tokens: UsageTokenCount,
   unknown_sessions: z.number().int().nonnegative(),
+  unsupported_sessions: z.number().int().nonnegative(),
   estimated_sessions: z.number().int().nonnegative(),
 });
 
