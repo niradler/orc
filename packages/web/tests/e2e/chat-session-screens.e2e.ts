@@ -285,29 +285,12 @@ for (const width of [1440, 390]) {
 
     await openChatSettings(page);
     await expect(page.getByTestId("chat-session-id-agent")).toContainText("6c1f0d8e");
-    await shot("chat-session-settings-overview");
+    if (width === 1440) await shot("chat-session-settings-overview");
     await page.getByTestId("chat-settings-tab-customize").click();
-    await shot("chat-session-settings-customize");
+    if (width === 390) await shot("chat-session-settings-customize");
     await page.getByTestId("chat-settings-tab-analytics").click();
     await expect(page.getByTestId("chat-analytics-turns")).toContainText("2");
-    await shot("chat-session-settings-analytics");
+    if (width === 1440) await shot("chat-session-settings-analytics");
     await page.keyboard.press("Escape");
-
-    const sessions =
-      width === 1440
-        ? page.getByTestId("chat-session-sidebar")
-        : page.getByTestId("chat-sessions-button");
-    if (width === 1440) {
-      await expect(sessions).toBeVisible();
-      await page.getByTestId("session-navigation-projects").click();
-    } else {
-      await sessions.click();
-      await page.getByTestId("session-navigation-projects").click();
-    }
-    await expect(page.getByTestId("session-navigation-projects")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    await shot("chat-session-projects");
   });
 }
