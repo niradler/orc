@@ -170,7 +170,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
               <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             </SessionStateFilters>
             <div role="tablist" aria-label="Session navigation" className="flex gap-1">
-              {(["recents", "projects"] as const).map((value) => (
+              {(["projects", "recents"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"

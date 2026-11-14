@@ -95,7 +95,11 @@ block the agent from running ssh
 **Confirmation.** Each of these writes asks for confirmation first.
 
 **Enforcement.** Enforcement runs `orc rules hook pi <event>`, the same engine Claude and
-Codex hooks use. Rules must be enabled in ORC settings for enforcement.
+Codex hooks use. Rules must be enabled in ORC settings for enforcement. When the rules plan
+cannot be loaded (ORC offline or the fetch failed), blocking events (`tool_call`, `input`)
+still run the hook against the local ORC database and fail closed, like the Claude and Codex
+adapters. The plan refreshes at least every 30 seconds while the session runs, so rules
+activated later are picked up without restarting Pi.
 
 ## Connection and secrets
 

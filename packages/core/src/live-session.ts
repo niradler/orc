@@ -1,9 +1,11 @@
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -238,6 +240,141 @@ export async function recordLiveSessionWait(
       updatedAt: now,
       ...(cwd ? { cwd } : {}),
       ...(transcriptPath ? { transcriptPath } : {}),
+    },
+    dir,
+  );
+}
+
+const LiveHookInput = z.object({
+  session_id: z.string().optional(),
+  conversation_id: z.string().optional(),
+  cwd: z.string().optional(),
+  workspace_roots: z.array(z.string()).optional(),
+  transcript_path: z.string().optional(),
+  timestamp: z.string().optional(),
+  prompt: z.string().optional(),
+  prompt_response: z.string().optional(),
+  text: z.string().optional(),
+  tool_name: z.string().optional(),
+  tool_input: z.unknown().optional(),
+  tool_response: z.unknown().optional(),
+  tool_use_id: z.string().optional(),
+  tool_call_id: z.string().optional(),
+  notification_type: z.string().max(100).optional(),
+});
+
+const LIVE_STATUS_EVENTS: Record<string, "running" | "idle" | "stopped"> = {
+  SessionStart: "idle",
+  sessionStart: "idle",
+  BeforeAgent: "running",
+  beforeSubmitPrompt: "running",
+  AfterAgent: "idle",
+  stop: "idle",
+  SessionEnd: "stopped",
+  sessionEnd: "stopped",
+  afterAgentResponse: "running",
+  BeforeTool: "running",
+  AfterTool: "running",
+  preToolUse: "running",
+  postToolUse: "running",
+};
+
+/**
+ * Register a native hook event in the live-session registry: lifecycle status,
+ * owner PID and a bounded transcript capture. Non-status events only update the
+ * waiting state. Installed native adapters call this, so one explicit
+ * `orc rules install-hook` opt-in covers rules and live sessions together.
+ */
+export async function recordLiveSessionEvent(
+  backend: string,
+  event: string,
+  raw: unknown,
+  dir: string = LIVE_REGISTRY_DIR,
+): Promise<void> {
+  if (!["claude", "cursor", "cursor-agent", "gemini"].includes(backend)) return;
+  const input = LiveHookInput.parse(raw);
+  const externalId = input.session_id ?? input.conversation_id;
+  const notificationType = input.notification_type;
+  const toolName = input.tool_name;
+  const waiting = liveSessionWaiting(event, {
+    ...(notificationType !== undefined ? { notificationType } : {}),
+    ...(toolName !== undefined ? { toolName } : {}),
+  });
+  const status = LIVE_STATUS_EVENTS[event];
+  if (!externalId) throw new Error("Missing session identity");
+  if (!status) {
+    if (waiting !== undefined) await recordLiveSessionWait(backend, event, raw, dir);
+    return;
+  }
+  const previous = readRegistrations(dir).find(
+    (record) =>
+      (record.backend === backend || (backend === "cursor" && record.backend === "cursor-agent")) &&
+      record.externalId === externalId,
+  );
+  const now = Date.now();
+  const timestamp = input.timestamp;
+  const updatedAt = timestamp ? Date.parse(timestamp) : now;
+  if (previous && previous.updatedAt > updatedAt) return;
+  const owner =
+    status === "stopped" && previous
+      ? { pid: previous.pid, backend: previous.backend }
+      : await findAgentOwner(backend, externalId, previous?.pid);
+  const ownerBackend = owner.backend;
+  const pid = owner.pid;
+  const cwd = input.cwd ?? input.workspace_roots?.[0] ?? previous?.cwd;
+  const transcriptDir = join(dir, "transcripts");
+  mkdirSync(transcriptDir, { recursive: true });
+  // Validate identity before deriving a filesystem path.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(externalId))
+    throw new Error("Malformed session id");
+  const recordedPath = join(transcriptDir, `${ownerBackend}-${externalId}.jsonl`);
+  const isUser = event === "BeforeAgent" || event === "beforeSubmitPrompt";
+  const text = isUser ? input.prompt : (input.prompt_response ?? input.text);
+  const toolId = input.tool_use_id ?? input.tool_call_id;
+  const blocks = text
+    ? [{ type: "text", text: text.slice(0, 100_000) }]
+    : toolName
+      ? input.tool_response !== undefined
+        ? [{ type: "tool_result", tool_use_id: toolId, content: input.tool_response }]
+        : [{ type: "tool_use", id: toolId, name: toolName, input: input.tool_input }]
+      : [];
+  if (blocks.length) {
+    let size = 0;
+    try {
+      size = statSync(recordedPath).size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (size < 50 * 1024 * 1024)
+      appendFileSync(
+        recordedPath,
+        `${JSON.stringify({
+          role: isUser ? "user" : "assistant",
+          timestamp: new Date(now).toISOString(),
+          message: { content: blocks },
+        })}\n`,
+        { mode: 0o600 },
+      );
+  }
+  let retainedWaiting: boolean | undefined;
+  if (status === "stopped") retainedWaiting = false;
+  else if (waiting !== undefined) retainedWaiting = waiting;
+  else retainedWaiting = previous?.waiting;
+  writeRegistration(
+    {
+      backend: ownerBackend,
+      externalId,
+      pid,
+      status,
+      ...(retainedWaiting !== undefined ? { waiting: retainedWaiting } : {}),
+      title:
+        previous?.title ??
+        input.prompt?.replace(/\s+/g, " ").slice(0, 200) ??
+        `${ownerBackend} session`,
+      createdAt: previous?.createdAt ?? now,
+      updatedAt: Number.isFinite(updatedAt) ? updatedAt : now,
+      ...(cwd ? { cwd } : {}),
+      transcriptPath: input.transcript_path ?? previous?.transcriptPath ?? recordedPath,
     },
     dir,
   );

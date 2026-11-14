@@ -18,7 +18,9 @@ import { terminalPath } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 
 const FILTER_KEY = "orc_chat_history_filter";
-const SECTION_KEY = "orc_chat_history_section";
+// v2: per-project grouping became the default; the old key only records the
+// previous default, so it must not override the new one.
+const SECTION_KEY = "orc_chat_history_section_v2";
 export const UNASSIGNED_SECTION = "__unassigned__";
 
 export type SessionSection = "projects" | "recents";
@@ -33,9 +35,9 @@ function storedFilter(): SessionFilter {
 
 function storedSection(): SessionSection {
   try {
-    return localStorage.getItem(SECTION_KEY) === "projects" ? "projects" : "recents";
+    return localStorage.getItem(SECTION_KEY) === "recents" ? "recents" : "projects";
   } catch {
-    return "recents";
+    return "projects";
   }
 }
 

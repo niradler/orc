@@ -14,7 +14,20 @@ store.activate(
   {
     workspace: directory,
     project_id: null,
-    rules: [{ id: "shell", kind: "deny_tools", tools: ["Bash"], reason: "No shell" }],
+    rules: [
+      {
+        id: "shell",
+        kind: "event",
+        enabled: true,
+        reason: "No shell",
+        scope: { agents: "all", events: ["pre_tool"] },
+        filter: {
+          match: "all",
+          conditions: [{ predicate: { field: "tool", operator: "equals", value: "Bash" } }],
+        },
+        target: { type: "block" },
+      },
+    ],
   },
   null,
   "Native protocol validation",
@@ -56,6 +69,7 @@ try {
     ["cursor", "preToolUse"],
     ["gemini", "BeforeTool"],
     ["codex", "PreToolUse"],
+    ["opencode", "execute.before"],
   ] as const) {
     const raw = {
       session_id: "native",
@@ -122,6 +136,9 @@ try {
     true, "Installer retained unsafe failure setting");
   require((await run(["install-hook", "gemini", "--target", target])).code !==
     0, "Unqualified installer accepted");
+  for (const backend of ["pi", "opencode"] as const)
+    require((await run(["install-hook", backend, "--target", target])).code !==
+      0, `${backend}: package/plugin enforcement must not install settings hooks`);
   for (const backend of ["claude", "gemini", "codex"] as const) {
     const settings = join(directory, `${backend}.json`);
     const event = backend === "gemini" ? "BeforeTool" : "PreToolUse";
@@ -147,6 +164,47 @@ try {
       require(installed.hooks[event][1].hooks[0].onFailure ===
         "block", "Claude installer did not request failure blocking");
   }
+  const legacyDir = join(directory, "legacy-hooks");
+  mkdirSync(legacyDir, { recursive: true });
+  const legacySettings = join(directory, "legacy-claude.json");
+  const legacyCommand = (file: string) => `"${process.execPath}" "${join(legacyDir, file)}"`;
+  writeFileSync(
+    legacySettings,
+    JSON.stringify({
+      custom: "retained",
+      hooks: {
+        SessionStart: [
+          { hooks: [{ type: "command", command: legacyCommand("session-start.ts") }] },
+          { hooks: [{ type: "command", command: "keep-me" }] },
+        ],
+        Stop: [{ hooks: [{ type: "command", command: legacyCommand("live-session.ts") }] }],
+      },
+    }),
+  );
+  require((
+    await run([
+      "install-hook",
+      "claude",
+      "--target",
+      legacySettings,
+      "--legacy-hooks-dir",
+      legacyDir,
+    ])
+  ).code === 0, "Legacy migration failed");
+  const migrated = JSON.parse(readFileSync(legacySettings, "utf8"));
+  const commandsOf = (entries: { hooks?: { command: string }[] }[]) =>
+    entries.flatMap((entry) => (entry.hooks ?? []).map((handler) => handler.command));
+  const startCommands = commandsOf(migrated.hooks.SessionStart);
+  require(startCommands.includes("keep-me"), "Legacy migration lost unrelated hooks");
+  require(!startCommands.some((command: string) =>
+    command.includes("session-start.ts"),
+  ), "Legacy continuity handler survived migration");
+  require(startCommands.some((command: string) =>
+    command.includes("rules hook claude SessionStart"),
+  ), "Legacy migration did not install the native adapter");
+  require(!commandsOf(migrated.hooks.Stop).some((command: string) =>
+    command.includes("live-session.ts"),
+  ), "Legacy live-session handler survived migration");
   writeFileSync(
     join(directory, "report.json"),
     JSON.stringify(

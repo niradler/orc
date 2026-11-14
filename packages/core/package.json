@@ -81,6 +81,7 @@
     "./validate": "./src/validate.ts",
     "./rules": "./src/rules.ts",
     "./rule-hooks": "./src/rule-hooks.ts",
+    "./rule-adapter": "./src/rule-adapter.ts",
     "./rule-types": "./src/rule-types.ts",
     "./rule-events": "./src/rule-events.ts",
     "./rule-filters": "./src/rule-filters.ts",

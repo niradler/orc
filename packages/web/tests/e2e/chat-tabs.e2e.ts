@@ -1,6 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { chooseChatAgent, openChatActions, openChatSettings } from "./_chat-ui";
+import { chooseChatAgent, openChatActions, openChatSettings, showSessionSection } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -25,6 +25,7 @@ test("a run keeps going in its own tab while another conversation runs, and the 
   const foreground = `FG-${Date.now()}`;
   await page.goto("/tasks?chat=full");
   const panel = page.getByTestId("chat-panel");
+  await showSessionSection(page, "recents");
   await panel
     .getByTestId("chat-input")
     .fill(`Respond after 2500ms. Reply with exactly: ${background}.`);
@@ -67,14 +68,14 @@ test("a run keeps going in its own tab while another conversation runs, and the 
 test("chat preferences picked in the browser survive a reload", async ({ page }) => {
   await page.goto("/tasks?chat=full");
   await chooseChatAgent(page, "claude");
-  await openChatSettings(page);
+  await openChatSettings(page, "customize");
   await page.getByTestId("chat-permission-mode").selectOption("bypassPermissions");
   await page.keyboard.press("Escape");
   await page.reload();
   await expect(page.getByTestId("chat-panel").getByTestId("chat-agent-current")).toHaveText(
     "Claude Code",
   );
-  await openChatSettings(page);
+  await openChatSettings(page, "customize");
   await expect(page.getByTestId("chat-permission-mode")).toHaveValue("bypassPermissions");
 });
 
@@ -106,6 +107,7 @@ test("stopping a reply before its run is named and closing the tab still stops t
 }) => {
   await page.goto("/tasks?chat=full");
   const panel = page.getByTestId("chat-panel");
+  await showSessionSection(page, "recents");
   const first = `FIRST-${Date.now()}`;
   await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
   await panel.getByTestId("chat-send-button").click();

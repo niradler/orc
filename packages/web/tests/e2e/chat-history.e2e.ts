@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeRegistration } from "@orc/core/live-session";
 import { expect, test } from "@playwright/test";
+import { showSessionSection } from "./_chat-ui";
 import { apiGet, apiPost, gotoView } from "./_helpers";
 
 for (const width of [1440, 390]) {
@@ -92,6 +93,7 @@ for (const width of [1440, 390]) {
     expect(saved.messages).toHaveLength(502);
     await page.reload();
     await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+    await showSessionSection(page, "recents");
     await page
       .getByTestId("chat-session-select")
       .filter({ hasText: `Large history ${externalId}` })

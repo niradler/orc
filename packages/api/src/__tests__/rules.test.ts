@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, resetConfig } from "@orc/core/config";
@@ -201,4 +201,35 @@ test("protected chat refuses an unverified backend before launching it", async (
     store.revert(revision.id, "End isolated chat fixture");
     loadConfig({ rules: { enabled: false } });
   }
+});
+
+test("should scope hook-client history by cwd and flag truncation", async () => {
+  const norm = (p: string) => p.replaceAll("\\", "/").toLowerCase();
+  const before = await req(app, "GET", "/rules");
+  const heads = (await before.json<{ history: RuleRevision[] }>()).history;
+  const head = heads.find((r) => r.current && norm(r.workspace) === norm(root));
+  const activated = await req(app, "POST", "/rules/activate", {
+    policy,
+    expected_id: head?.id ?? null,
+    reason: "Scoped history",
+  });
+  expect(activated.status).toBe(201);
+  const sub = join(root, "sub");
+  mkdirSync(sub, { recursive: true });
+  const scoped = await req(app, "GET", `/rules?cwd=${encodeURIComponent(sub)}`);
+  expect(scoped.status).toBe(200);
+  const body = await scoped.json<{ history: RuleRevision[]; history_truncated: boolean }>();
+  expect(body.history_truncated).toBe(false);
+  expect(body.history).toHaveLength(1);
+  expect(body.history[0]?.current).toBe(true);
+  const other = mkdtempSync(join(tmpdir(), "orc-rules-other-"));
+  try {
+    const elsewhere = await req(app, "GET", `/rules?cwd=${encodeURIComponent(other)}`);
+    expect((await elsewhere.json<{ history: unknown[] }>()).history).toHaveLength(0);
+  } finally {
+    rmSync(other, { recursive: true, force: true });
+  }
+  expect((await req(app, "GET", "/rules?cwd=relative")).status).toBe(400);
+  const legacy = await req(app, "GET", "/rules");
+  expect((await legacy.json<{ history_truncated: boolean }>()).history_truncated).toBe(false);
 });

@@ -198,7 +198,7 @@ the Claude hook reference documents blocking SDK callback timeouts. Native comma
 failure blocking needs a newer Claude CLI; it must not be assumed for older installations.
 [Claude hook reference](https://code.claude.com/docs/en/hooks).
 
-`orc rules hook <claude|cursor|gemini|codex> <event>` implements stdin JSON/stdout JSON protocols
+`orc rules hook <claude|cursor|gemini|codex|pi|opencode> <event>` implements stdin JSON/stdout JSON protocols
 against the local configured SQLite DB. Denials/errors exit 2. This works without a running
 API, but is a transport adapter, not proof of coverage in every agent version.
 `orc rules install-hook <claude|cursor|gemini|codex> --target <settings-file>` preserves
@@ -213,6 +213,18 @@ timeouts, crashes and actual edit payloads must be qualified before relying on t
 [Gemini hook reference](https://geminicli.com/docs/hooks/reference/),
 [Codex hook reference](https://learn.chatgpt.com/docs/hooks). Codex requires host trust;
 its native hooks do not intercept every hosted tool or execution path.
+
+Pi and OpenCode embed the same adapter instead of installed settings hooks: `@orc/pi`
+(porc) forwards Pi `tool_call`, `tool_result` and `input` events, and the `@orc/opencode`
+plugin forwards OpenCode `execute.before`, `execute.after`, `prompt` and `compaction`
+hooks. Both run `orc rules hook <backend> <event>` per event and fail closed on blocking
+events when the hook cannot produce a decision. OpenCode tool denials surface as tool
+errors the model sees; prompt denials reject admission as a session error (qualified on
+OpenCode 2.3.0), with the reason recorded in the audit trail. When Pi cannot load the rules plan (ORC
+offline or the fetch failed), blocking events still run the hook against the local DB, and
+the plan refreshes periodically so later policy changes apply. OpenCode has no session
+start/end hooks; rules scoped to those events are not delivered there. See
+[Pi and porc](./pi.md) and [OpenCode](./opencode.md).
 
 Other managed backends refuse sessions in policy-protected workspaces. Protected chat
 cannot fall back to an unverified CLI/remote backend, and ORC refuses unqualified native
@@ -295,7 +307,7 @@ flow. This is a procedural option, not a measured quality improvement.
 against defective and clean expiry-boundary fixtures with a real agent.
 `bun scripts/validate-rule-hooks.ts` checks actual CLI processes and settings installation
 without changing global settings; `--executable=<path>` repeats it against a built binary.
-All four native protocols and settings merge/reinstallation are checked. Native host
+All five native protocols and settings merge/reinstallation are checked. Native host
 qualification remains separate from adapter/installer tests. Gemini events without stable
 tool IDs, and lifecycle events without generation/turn IDs, use fresh receipts; identical
 redeliveries without host identities cannot be universally deduplicated.
@@ -328,6 +340,6 @@ The Rules catalog includes editable templates for loading project context, recor
 
 These templates use `orc_action` targets: `load_context`, `record_event`, `snapshot_session`, `restore_session`, and `sync_agent_memory`. Actions call the authenticated local API and reuse existing ORC services. Configure the same database, `ORC_API_BASE`, API secret, and `ORC_RULES_ENABLED=true` for the agent hooks and API. Dry runs select actions without executing them. Receipt history records outcomes without storing returned context or imported note bodies. Continuity failures appear as diagnostics; command guards retain their existing enforcement behavior.
 
-The three old continuity scripts under `hooks/` now forward native events to the rule dispatcher. Install the native adapter into an explicit settings file; use `orc rules install-hook claude --target <settings-file> --legacy-hooks-dir <absolute-hooks-directory>` to replace those specific old handlers while preserving other hooks and creating a backup. Live-session identity and transcript connection remain adapter plumbing. This migration does not install global settings automatically.
+The legacy `hooks/` continuity and live-session scripts were removed. The native adapter installed with `orc rules install-hook <backend> --target <settings-file>` handles rules, live-session identity and transcript capture in one opt-in step; nothing is installed globally or automatically. To migrate an old setup, add `--legacy-hooks-dir <absolute-hooks-directory>` to replace the old `session-start.ts`, `post-tool-use.ts`, `pre-compact.ts` and `live-session.ts` handlers while preserving other hooks and creating a backup.
 
 `claude-share-memory` imports local Claude Markdown topic files into project-scoped ORC memory. Set its directory to `auto` or an explicit absolute path. Successful file writes trigger an import; session end rescans the configured directory. Each topic file's frontmatter `name` (normalized to a lowercase-hyphenated memory name) and `description` plus its body become one memory; updating the topic updates that memory, recorded in its history. Files without a description or over the memory content cap are skipped and reported. The `MEMORY.md` index is excluded. A project is required. Imported notes remain attributed facts, not automatically promoted instructions. Files are bounded and symlink escapes are rejected. Explicit configuration is required for remote memory sources or Claude settings overrides that automatic directory discovery cannot see. Source deletion does not delete shared memories.

@@ -1,4 +1,4 @@
-export type RuleHookBackend = "claude" | "cursor" | "gemini" | "codex" | "pi";
+export type RuleHookBackend = "claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode";
 export type RuleEventCapability = {
   native: string;
   event: string;
@@ -166,6 +166,19 @@ export const RULE_EVENT_ADAPTERS: Record<RuleHookBackend, RuleEventCapability[]>
     ["tool_call", "input"],
     ["tool_call", "tool_result", "input", "session_start", "session_compact"],
     ["tool_call"],
+  ),
+  // OpenCode plugin hooks; the session "context" hook only delivers queued rule
+  // context and is not a rule event. OpenCode has no session start/end hooks.
+  opencode: events(
+    {
+      "execute.before": "pre_tool",
+      "execute.after": "post_tool",
+      prompt: "prompt_submit",
+      compaction: "pre_compact",
+    },
+    ["execute.before", "prompt"],
+    ["execute.before", "execute.after", "prompt", "compaction"],
+    ["execute.before"],
   ),
 };
 

@@ -164,7 +164,7 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "activity");
     await page.goto("/?chat=open");
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await page.getByTestId("chat-permission-mode").selectOption("bypassPermissions");
     await page.keyboard.press("Escape");
     await page.getByTestId("chat-input").filter({ visible: true }).fill("Approval and question");

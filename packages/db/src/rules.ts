@@ -74,6 +74,9 @@ function revision(row: RevisionRow): RuleRevision {
   };
 }
 
+/** Row cap for history(); clients treat a full page as possibly truncated. */
+export const RULE_HISTORY_LIMIT = 200;
+
 export class RuleStore {
   constructor(readonly db: Database) {
     installRules(db);
@@ -140,7 +143,7 @@ export class RuleStore {
   history(workspace?: string): RuleRevision[] {
     return this.db
       .query<RevisionRow, [string | null, string | null]>(
-        `SELECT r.*,h.revision_id=r.id AS current FROM rule_revisions r LEFT JOIN rule_heads h ON h.workspace=r.workspace WHERE (? IS NULL OR r.workspace=?) ORDER BY r.created_at DESC,r.id DESC LIMIT 200`,
+        `SELECT r.*,h.revision_id=r.id AS current FROM rule_revisions r LEFT JOIN rule_heads h ON h.workspace=r.workspace WHERE (? IS NULL OR r.workspace=?) ORDER BY r.created_at DESC,r.id DESC LIMIT ${RULE_HISTORY_LIMIT}`,
       )
       .all(...workspaceFilter(workspace))
       .map(revision);
@@ -152,9 +155,12 @@ export class RuleStore {
         `SELECT r.*,1 AS current FROM rule_heads h JOIN rule_revisions r ON r.id=h.revision_id WHERE r.payload IS NOT NULL`,
       )
       .all();
-    if (rows.length > 1000) throw new ValidationError("Too many active workspace policies");
     const path = cwd === undefined ? null : workspace(cwd);
-    return rows.map(revision).filter((r) => path === null || withinWorkspace(r.workspace, path));
+    const scoped = rows
+      .map(revision)
+      .filter((r) => path === null || withinWorkspace(r.workspace, path));
+    if (scoped.length > 1000) throw new ValidationError("Too many active workspace policies");
+    return scoped;
   }
 
   activate(raw: unknown, expected: string | null, reason: string): RuleRevision {
