@@ -152,6 +152,27 @@ export default function App() {
   );
   const homeOpen = chatFullscreen;
   const chatOpen = chatRequested && desktopViewport;
+  // Chat needs the width: collapse the workspace navigation while a conversation
+  // is open and restore the user's own width after leaving it.
+  const chatOnScreen = homeOpen || chatOpen;
+  const sidebarAutoCollapsed = useRef(false);
+  const chatWasOnScreen = useRef(chatOnScreen);
+  useEffect(() => {
+    const was = chatWasOnScreen.current;
+    chatWasOnScreen.current = chatOnScreen;
+    if (chatOnScreen === was) return;
+    if (chatOnScreen && !sidebarCollapsed) {
+      sidebarAutoCollapsed.current = true;
+      setSidebarCollapsed(true);
+    } else if (!chatOnScreen && sidebarAutoCollapsed.current) {
+      sidebarAutoCollapsed.current = false;
+      setSidebarCollapsed(false);
+    }
+  }, [chatOnScreen, sidebarCollapsed]);
+  const toggleSidebar = useCallback(() => {
+    sidebarAutoCollapsed.current = false;
+    setSidebarCollapsed((value) => !value);
+  }, []);
   const navButtonRef = useRef<HTMLButtonElement>(null);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -253,7 +274,7 @@ export default function App() {
                       projectId={projectId}
                       onProjectChange={setProjectId}
                       collapsed={sidebarCollapsed}
-                      onToggle={() => setSidebarCollapsed((v) => !v)}
+                      onToggle={toggleSidebar}
                     />
                   </div>
 
