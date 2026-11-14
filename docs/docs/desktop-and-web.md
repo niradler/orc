@@ -53,7 +53,7 @@ opens the chat page instead.
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
   - **Recents** lists every session by last activity, newest first. **Projects** groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
-- **Inspector**: the panel button in the header opens the same three tabs on desktop and phone — **Overview**, **Changes** and **Files**. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its CI state. When a terminal is running in that folder, **Changes** combines the working-tree review (staging and commit) with the branch's PR review (diff and comments) behind Local / PR modes, and **Files** browses and edits the checkout. On a phone the inspector is a full page.
+- **Inspector**: the panel button in the header opens one panel with **Overview**, **Changes** and **Files** on desktop and phone. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its state, CI state and GitHub link. When a terminal is running in that folder, **Changes** combines the working-tree review (staging and commit) with the branch's PR review (diff, comments and an **Open on GitHub** link) behind Local / PR modes, and **Files** browses and edits the checkout. In the Electron desktop app the same panel adds a desktop-only **Browser** tab. On a phone the inspector is a full page.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
 - **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
@@ -84,8 +84,9 @@ finger:
 Swipes that start inside code blocks, diffs or the terminal canvas stay with
 that content. Every page also opens from its header button, closes with its back
 button or Escape, and is kept in the URL: `sessionList=show`,
-`inspector=overview|diff|files` and `drawer=terminal` (older `inspector=pr` links
-open the Changes tab's PR mode). Reload, Back and
+`inspector=overview|diff|files|browser` and `drawer=terminal` (older `inspector=pr` links
+open the Changes tab's PR mode; `browser` opens the desktop-only Browser tab and falls
+back to Overview on the web). Reload, Back and
 Forward restore the page, and the URL is shareable.
 The three-dot **Session actions** menu shows labeled actions with touch-sized rows
 on phones. It closes when you tap elsewhere in the chat or
@@ -155,36 +156,40 @@ While your pointer is over the list, or a row has keyboard focus, rows stay wher
 
 ## Terminals
 
-### Desktop browser, files and editor
+### Desktop browser, inspector and editor
 
 In the Electron desktop app, **File → Browser and files** (Ctrl/Cmd+Shift+B),
-or **Browser and files** in the tray menu, opens a panel beside your conversation.
-Chat links and file attachments open in this panel. Enter an HTTP/HTTPS address
-and use Back, Forward and Reload. The external-link icon opens the page in your
-system browser; Ctrl/Cmd-clicking a web link does the same. The panel belongs to
-the chat page; the side chat on other pages stays a plain conversation with no
+or **Browser and files** in the tray menu, opens the inspector's **Browser** tab
+beside your conversation. There is no second panel: the header's panel button
+opens the same inspector on desktop and web, and the Browser tab appears only in
+the desktop app. Chat links and file attachments open in that tab. Enter an
+HTTP/HTTPS address and use Back, Forward and Reload. The external-link icon opens
+the page in your system browser; Ctrl/Cmd-clicking a web link does the same. The
+panel belongs to the chat page; the side chat stays a plain conversation with no
 browser, file or agent-control entry points.
 
-![The side chat without the preview panel](/screens/desktop-side-chat-plain.png)
+![The side chat without the inspector](/screens/desktop-side-chat-plain.png)
 
-<img src="/screens/phone-chat-preview-closed.png" alt="The chat page on a phone before the preview panel opens" width="260">
+<img src="/screens/phone-chat-preview-closed.png" alt="The chat page on a phone before the inspector opens" width="260">
 
-Each conversation keeps its own browser and file tabs. The panel stays docked
-beside the conversation and opens only when you ask for it or follow a link; drag
-the divider (or use arrow keys on it) to resize. The **Files** tab browses every
-file in the session's folder and opens a file in an editor tab. Closing the panel keeps tabs and drafts in
-memory; closing a modified file asks before discarding it. Reloading or quitting
-discards these previews after the unsaved-change warning.
+Each conversation keeps its own browser and file tabs within the Browser tab. The
+inspector stays docked beside the conversation and opens only when you ask for it
+or follow a link; drag the divider (or use arrow keys on it) to resize. The
+**Files** tab browses every file in the session's folder and opens a file in an
+editor tab. Closing the panel keeps tabs and drafts in memory; closing a modified
+file asks before discarding it. Reloading or quitting discards these previews
+after the unsaved-change warning.
 
 The **Changes** tab shows the working-tree changes of the terminal running in the
 session's folder, reusing the terminal workspace's Git panel: the changed-file
-list, unified or side-by-side diffs, staging and commit. **Open file** opens a
-changed file in an editor tab; the copy icon copies the changed file's path to
-the clipboard. The commit draft, filters and selection are kept per terminal, so
-closing the panel or switching chats does not lose them. Wide panels split the
-file list and the diff; narrow panels and phones combine them behind the files
-toggle. When no terminal is running in the folder, the tab says so quietly and
-offers **Open terminal**; a failed terminal list shows an error with **Retry**.
+list, unified or side-by-side diffs, staging and commit, and a GitHub link for the
+branch's PR. **Open file** opens a changed file in the inspector's Files tab; the
+copy icon copies the changed file's path to the clipboard. The commit draft,
+filters and selection are kept per terminal, so closing the panel or switching
+chats does not lose them. Wide panels split the file list and the diff; narrow
+panels and phones combine them behind the files toggle. When no terminal is
+running in the folder, the **Overview** says so quietly and offers **Open
+terminal**; a failed terminal list shows an error with **Retry**.
 Pull-request review lives in the terminal workspace and in the inspector's
 combined **Changes** tab (its PR mode).
 
@@ -210,7 +215,7 @@ app); **Browser profile, display & recording** lists their status and saves comp
 to the selected chat workspace. Interrupted/failed downloads are never reported
 as saved. Each chat starts with a temporary cookie/storage profile.
 **Settings → Browser → Saved browser profiles** creates named profiles; select one
-under **Browser profile, display & recording** in the browser panel to remember site logins. Selecting the same profile in another
+under **Browser profile, display & recording** in the Browser tab to remember site logins. Selecting the same profile in another
 chat explicitly shares that profile's site storage. Temporary chats stay isolated.
 Profile choices and saved cookies survive app restart; session-only cookies follow
 the site's expiry rules. Switching profiles closes that chat's browser tabs after
@@ -283,17 +288,18 @@ not contain cookies or passwords; Chromium owns the separate profile partitions.
 Turning global agent access off overrides every chat's switch immediately. With
 global access on, the chat's **Session settings** switch can still disable control
 for that conversation. The browser toolbar does not contain a second access switch.
-Files and explicit MCP preview requests continue to open in the panel.
+Files and explicit MCP preview requests continue to open in the inspector's
+Browser tab.
 
 ![Desktop Browser settings with demo data](/screens/desktop-browser-settings.png)
 
-This flow is desktop-only; the web and phone UI are unchanged.
+This flow is desktop-only; the web and phone inspector has no Browser tab.
 
 ![Browser beside a demo conversation](/screens/desktop-preview-browser.png)
 
 ![Working-tree changes beside a demo conversation](/screens/desktop-preview-changes-wide.png)
 
-<img src="/screens/desktop-preview-changes-phone.png" alt="Changes tab in the preview panel on a phone" width="260">
+<img src="/screens/desktop-preview-changes-phone.png" alt="Changes tab in the inspector on a phone" width="260">
 
 ![Markdown editing beside a demo conversation](/screens/desktop-preview-markdown.png)
 
@@ -613,8 +619,8 @@ Command-line flags for the app executable:
 | `--hidden` | Start without opening a window                      |
 | `--quit`   | Quit the running instance and the daemon it started |
 
-Links to other sites open in the desktop preview panel. Use its external-link
-icon or Ctrl/Cmd-click a web link to open your system browser.
+Links to other sites open in the desktop inspector's Browser tab. Use its
+external-link icon or Ctrl/Cmd-click a web link to open your system browser.
 
 Install a desktop build containing this updater manually once. Older builds do not have an updater and cannot automatically install the feature itself; subsequent macOS, Windows and Linux updates can use the flow below.
 

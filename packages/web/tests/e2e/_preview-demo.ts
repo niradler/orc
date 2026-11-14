@@ -28,6 +28,18 @@ export async function mockPreviewBridge(page: Page) {
           onPreferences: subscribe,
           setPreferences: async (value: unknown) => value,
           pick: async () => null,
+          read: async () => null,
+          release: async () => {},
+          save: async () => {},
+          open: async () => null,
+          tab: async () => null,
+          navigate: async () => {},
+          display: async () => ({}),
+          control: async () => ({}),
+          upload: async () => ({}),
+          pageDialog: async () => {},
+          externalUrl: async () => {},
+          externalFile: async () => {},
         },
       },
     });
@@ -58,6 +70,30 @@ export async function mockPreviewBridge(page: Page) {
       },
     }),
   );
+  await page.route(`**/api/terminals/${HOME.terminal}/files*`, (r) => {
+    const path = new URL(r.request().url()).searchParams.get("path") ?? "";
+    return r.fulfill({
+      json: {
+        root: PREVIEW_FOLDER,
+        path,
+        entries: path
+          ? null
+          : [
+              { name: "src", path: "src", directory: true },
+              { name: "README.md", path: "README.md", directory: false },
+            ],
+        content: path
+          ? [
+              "export function total(items: Item[]) {",
+              "  return Math.round(items.reduce((sum, item) => sum + item.price, 0) * 100) / 100;",
+              "}",
+            ].join("\n")
+          : null,
+        binary: false,
+        truncated: false,
+      },
+    });
+  });
   await page.route(`**/api/terminals/${HOME.terminal}/git/worktrees`, (r) =>
     r.fulfill({
       json: {

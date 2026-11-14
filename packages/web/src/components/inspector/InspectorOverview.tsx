@@ -8,8 +8,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type GithubItem, type Terminal } from "@/api/client";
+import { api, type Terminal } from "@/api/client";
+import { CiStatus, prStateLabel, prStateTone } from "@/components/GithubPullStatus";
 import type { SessionContext } from "@/components/SessionHome";
+import { Button } from "@/components/ui/button";
 import {
   useWorkspaceByPath,
   workspacePortRange,
@@ -18,6 +20,7 @@ import {
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { fileChangeState } from "@/lib/git-status";
 import { pullRequestReviewParams } from "@/lib/session-home";
+import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
 /** Git status + the branch's GitHub PR, shared by every inspector surface so
@@ -44,32 +47,6 @@ export function useInspectorGit(git: Terminal | undefined) {
       )
     : undefined;
   return { status, github, branch, pr };
-}
-
-function CiBadge({ ci }: { ci: NonNullable<GithubItem["ci"]> }) {
-  const tone =
-    ci.state === "success"
-      ? "text-secondary"
-      : ci.state === "failure"
-        ? "text-error"
-        : ci.state === "pending"
-          ? "text-progress"
-          : "text-muted-foreground";
-  const label =
-    ci.state === "success"
-      ? "Checks passing"
-      : ci.state === "failure"
-        ? "Checks failing"
-        : ci.state === "pending"
-          ? "Checks running"
-          : "No checks";
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 text-xs", tone)}>
-      <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-      {label}
-      {ci.total > 0 && <span className="text-muted-foreground">· {ci.total}</span>}
-    </span>
-  );
 }
 
 function OverviewRow({
@@ -106,24 +83,51 @@ export function InspectorOverview({
   const staged = files.filter((file) => fileChangeState(file).staged).length;
   const conflicts = files.filter((file) => fileChangeState(file).conflict).length;
   const task = context.session?.task;
+  // The compare link needs a repository name; the branch's PR feed is the
+  // cheapest place to learn it when this branch has no PR yet.
+  const repo = github.data?.items.find((item) => item.kind === "pr")?.repo;
   const { data: workspace } = useWorkspaceByPath(context.cwd);
   const ports = workspace ? workspacePortRange(workspace) : null;
+  const terminals = useTerminals();
   if (!git)
     return (
       <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
         <SquareTerminal size={22} className="text-muted-foreground" aria-hidden="true" />
-        <p className="text-sm text-muted-foreground">
-          Git activity needs a running terminal in this session&apos;s folder.
-        </p>
-        <button
-          type="button"
-          data-testid="session-inspector-open-terminal"
-          onClick={() => home.go({ drawer: true })}
-          className="inline-flex min-h-11 items-center gap-2 rounded-md border border-control-border px-4 text-sm hover:bg-surface"
-        >
-          <SquareTerminal size={15} />
-          Open terminal
-        </button>
+        {terminals.error ? (
+          <>
+            <p
+              role="alert"
+              data-testid="session-inspector-terminals-error"
+              className="text-sm text-error"
+            >
+              Could not load terminals: {terminals.error.message}
+            </p>
+            <Button
+              variant="outline"
+              data-testid="session-inspector-terminals-retry"
+              onClick={() => void terminals.refetch()}
+            >
+              Retry
+            </Button>
+          </>
+        ) : (
+          <>
+            <p data-testid="session-inspector-git-empty" className="text-sm text-muted-foreground">
+              {terminals.isLoading
+                ? "Loading terminals…"
+                : "Git activity needs a running terminal in this session's folder."}
+            </p>
+            <button
+              type="button"
+              data-testid="session-inspector-open-terminal"
+              onClick={() => home.go({ drawer: true })}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-control-border px-4 text-sm hover:bg-surface"
+            >
+              <SquareTerminal size={15} />
+              Open terminal
+            </button>
+          </>
+        )}
         <dl className="mt-4 w-full space-y-3 text-left text-sm">
           <OverviewRow label="Host" testId="session-inspector-host">
             {context.host ?? "local"}
@@ -175,7 +179,10 @@ export function InspectorOverview({
           {conflicts > 0 && <span className="text-xs text-error">{conflicts} conflicts</span>}
         </div>
       </section>
-      <section className="rounded-lg border border-border bg-surface p-3">
+      <section
+        className="rounded-lg border border-border bg-surface p-3"
+        data-testid="session-inspector-pull-request-card"
+      >
         <div className="flex items-start gap-2.5">
           <GitPullRequest
             size={17}
@@ -185,28 +192,40 @@ export function InspectorOverview({
           <div className="min-w-0 flex-1">
             {github.isPending ? (
               <p className="text-sm text-muted-foreground">Checking pull requests…</p>
+            ) : github.error ? (
+              <>
+                <p role="alert" className="text-sm text-error">
+                  Could not check pull requests: {github.error.message}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void github.refetch()}
+                  className="mt-2 inline-flex min-h-9 items-center rounded-md border border-control-border px-3 text-[13px] hover:bg-surface"
+                >
+                  Retry
+                </button>
+              </>
             ) : pr ? (
               <>
                 <p
                   data-testid="session-inspector-pull-request"
                   className="text-[13px] font-medium leading-snug"
                 >
-                  #{pr.number} {pr.title}
+                  <span className="font-normal text-muted-foreground">{pr.repo} · </span>#
+                  {pr.number} {pr.title}
                 </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span
-                    className={cn(
-                      "text-xs",
-                      pr.state === "open"
-                        ? "text-secondary"
-                        : pr.state === "merged"
-                          ? "text-progress"
-                          : "text-muted-foreground",
-                    )}
+                    data-testid="session-inspector-pr-state"
+                    className={cn("text-xs", prStateTone(pr.state))}
                   >
-                    {pr.state === "open" ? "Open" : pr.state}
+                    {prStateLabel(pr.state)}
                   </span>
-                  {pr.ci && <CiBadge ci={pr.ci} />}
+                  {pr.ci ? (
+                    <CiStatus ci={pr.ci} />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No checks</span>
+                  )}
                 </div>
                 <div className="mt-2.5 flex flex-wrap gap-2">
                   <button
@@ -227,24 +246,41 @@ export function InspectorOverview({
                     Review diff
                   </button>
                   <a
+                    data-testid="session-inspector-open-pr"
                     href={pr.url}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-control-border px-3 text-[13px] hover:bg-surface"
                   >
-                    GitHub
+                    Open on GitHub
                     <ExternalLink size={12} aria-hidden="true" />
                   </a>
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                {github.data?.unavailable_reason === "no_remote"
-                  ? "This checkout has no GitHub origin remote."
-                  : github.data?.auth === "none"
-                    ? "GitHub authentication is unavailable on this host."
-                    : "No open PR for this branch."}
-              </p>
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {github.data?.unavailable_reason === "no_remote"
+                    ? "This checkout has no GitHub origin remote."
+                    : github.data?.auth === "none"
+                      ? "GitHub authentication is unavailable on this host. Authenticate gh there or configure a GitHub token."
+                      : github.data?.unavailable_reason === "detached_head"
+                        ? "Detached HEAD: select a branch to find its pull request."
+                        : "No open pull request for this branch."}
+                </p>
+                {branch && repo && github.data?.auth !== "none" && (
+                  <a
+                    data-testid="session-inspector-create-pr"
+                    href={`https://github.com/${repo}/compare/${encodeURIComponent(branch)}?expand=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-control-border px-3 text-[13px] hover:bg-surface"
+                  >
+                    Create a pull request
+                    <ExternalLink size={12} aria-hidden="true" />
+                  </a>
+                )}
+              </>
             )}
           </div>
         </div>

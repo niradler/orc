@@ -15,6 +15,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
+import { CiStatus, prStateLabel } from "@/components/GithubPullStatus";
 import { fileChangeState } from "@/lib/git-status";
 import { useTerminals } from "@/lib/terminals";
 import { FileDiffCard } from "./FileDiffCard";
@@ -293,6 +294,7 @@ export function GitPanelBody({
               <ExternalLink size={13} />
             </a>
           )}
+          {!localOnly && pull?.ci && <CiStatus ci={pull.ci} className="shrink-0 px-1" />}
         </fieldset>
         <div className="git-review-toolbar-end">
           <button
@@ -442,6 +444,9 @@ export function GitPanelBody({
                     className="block text-primary"
                   >
                     Open PR #{item.number}: {item.title}
+                    <span className="ml-2 text-xs text-on-surface-variant">
+                      {prStateLabel(item.state)}
+                    </span>
                   </a>
                 ))
             ) : (
@@ -734,6 +739,7 @@ export function GitPanelBody({
           key={`${pull.repo}:${pull.number}`}
           terminalId={terminal.id}
           number={pull.number}
+          ci={pull.ci ?? null}
           active={mode === "pr"}
         />
       )}

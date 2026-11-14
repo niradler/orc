@@ -1,8 +1,10 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns2, ExternalLink, List, MessageSquarePlus, RefreshCw, X } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
-import { api, type PullCommentInput, type PullReview } from "@/api/client";
+import { api, type GithubItem, type PullCommentInput, type PullReview } from "@/api/client";
+import { CiStatus, prStateLabel, prStateTone } from "@/components/GithubPullStatus";
 import { type DiffLine, diffLines, pairDiffLines } from "@/lib/git-diff";
+import { cn } from "@/lib/utils";
 import { TerminalSelect } from "./TerminalSelect";
 
 type CommentTarget = { path: string; line: number; side: "LEFT" | "RIGHT"; head: string };
@@ -239,10 +241,13 @@ export function PullReviewPanel({
   terminalId,
   number,
   active,
+  ci = null,
 }: {
   terminalId: string;
   number: number;
   active: boolean;
+  /** The branch's CI state, shown beside the PR state. */
+  ci?: GithubItem["ci"];
 }) {
   const client = useQueryClient();
   const commentPending =
@@ -297,11 +302,24 @@ export function PullReviewPanel({
     >
       <header className="pr-review-heading">
         <div>
-          <strong>{data?.title ?? `Pull request #${number}`}</strong>
+          <strong>
+            #{number} {data?.title ?? `Pull request #${number}`}
+          </strong>
           {data && (
             <p>
               {data.author} · {data.branch} into {data.base} · {data.head.slice(0, 7)}
             </p>
+          )}
+          {data && (
+            <div
+              data-testid="pr-status"
+              className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
+            >
+              <span className={cn("text-xs", prStateTone(data.state))}>
+                {prStateLabel(data.state)}
+              </span>
+              {ci && <CiStatus ci={ci} />}
+            </div>
           )}
         </div>
         <button
@@ -341,6 +359,17 @@ export function PullReviewPanel({
               Discussion{" "}
               <span>{data.discussion.length + data.reviews.length + data.comments.length}</span>
             </button>
+            <a
+              data-testid="pr-open-github"
+              href={data.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open this pull request on GitHub"
+              aria-label="Open this pull request on GitHub"
+            >
+              <ExternalLink size={14} />
+              <span className="max-sm:sr-only"> GitHub</span>
+            </a>
           </fieldset>
           {data.truncated && (
             <p className="pr-review-notice">

@@ -6,24 +6,6 @@ import {
   type PreviewRequest,
   previewLink,
 } from "@orc/core/desktop-preview";
-import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronRight,
-  ExternalLink,
-  File,
-  Files,
-  Folder,
-  FolderOpen,
-  GitBranch,
-  Globe,
-  LoaderCircle,
-  RefreshCw,
-  Save,
-  SquareTerminal,
-  X,
-} from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -34,53 +16,35 @@ import {
   useState,
 } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
-import { api, apiFetch, getApiUrl } from "@/api/client";
-import { CodeEditor } from "@/components/CodeEditor";
-import { HelpPopover } from "@/components/HelpPopover";
-import { GitPanelBody } from "@/components/terminals/GitPanel";
-import { Button } from "@/components/ui/button";
+import { api, apiFetch } from "@/api/client";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useChat } from "@/hooks/useChat";
-import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePreviewDelivery } from "@/hooks/usePreviewDelivery";
 import { usePreviewPreferences } from "@/hooks/usePreviewPreferences";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import {
   DesktopPreviewContext,
   type DesktopPreviewContextValue,
+  type PreviewFileTab,
 } from "@/lib/desktop-preview-context";
 import type { PreviewCompletion } from "@/lib/preview-delivery";
 import { SESSION_LIVE_PARAM } from "@/lib/session-home";
-import { runningTerminalForFolder } from "@/lib/terminal-links";
-import { useTerminals } from "@/lib/terminals";
 
-type FileTab = {
-  id: string;
-  file: PreviewFile;
-  text: string;
-  original: string;
-  saving: boolean;
-  error: string | null;
-  line: number | null;
-};
+type FileTab = PreviewFileTab & { file: PreviewFile };
 type Model = {
-  visible: boolean;
-  active: string;
+  active: "browser" | string;
   files: FileTab[];
   browser: PreviewBrowserState | null;
   error: string | null;
   loading: boolean;
 };
 const initialModel = (): Model => ({
-  visible: false,
   active: "browser",
   files: [],
   browser: null,
   error: null,
   loading: false,
 });
-const button =
-  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 rounded px-2 text-xs hover:bg-surface-highest disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11";
 function error(cause: unknown): string {
   return cause instanceof Error ? cause.message : "Preview could not be opened";
 }
@@ -123,86 +87,9 @@ async function saveRecording(
   return response.json();
 }
 
-function FileTreeLevel({
-  session,
-  path,
-  depth,
-  expanded,
-  toggle,
-  open,
-}: {
-  session: string;
-  path: string;
-  depth: number;
-  expanded: Set<string>;
-  toggle: (path: string) => void;
-  open: (path: string) => void;
-}): ReactNode {
-  const files = useQuery({
-    queryKey: ["session-files", session, path],
-    queryFn: () => api.sessions.files(session, path),
-  });
-  if (files.isPending) return <li className="px-3 py-1 text-on-surface-variant">Loading files…</li>;
-  if (files.error)
-    return (
-      <li role="alert" className="px-3 py-1 text-error">
-        {files.error.message}
-      </li>
-    );
-  if (!files.data.entries?.length)
-    return <li className="px-3 py-1 text-on-surface-variant">Empty folder</li>;
-  const root = files.data.root;
-  return files.data.entries.map((entry) => (
-    <li key={entry.path}>
-      <button
-        type="button"
-        title={entry.path}
-        className="flex h-7 w-full min-w-0 items-center gap-1 px-2 text-left hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus"
-        style={{ paddingLeft: 8 + depth * 12 }}
-        aria-expanded={entry.directory ? expanded.has(entry.path) : undefined}
-        onClick={() => (entry.directory ? toggle(entry.path) : open(`${root}/${entry.path}`))}
-      >
-        {entry.directory ? (
-          <ChevronRight
-            size={12}
-            className={`shrink-0 transition-transform ${expanded.has(entry.path) ? "rotate-90" : ""}`}
-          />
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
-        {entry.directory ? (
-          <Folder size={13} className="shrink-0" />
-        ) : (
-          <File size={13} className="shrink-0" />
-        )}
-        <span className="truncate">{entry.name}</span>
-      </button>
-      {entry.directory && expanded.has(entry.path) && (
-        <ul>
-          <FileTreeLevel
-            session={session}
-            path={entry.path}
-            depth={depth + 1}
-            expanded={expanded}
-            toggle={toggle}
-            open={open}
-          />
-        </ul>
-      )}
-    </li>
-  ));
-}
-
-function ChangesHelp(): ReactNode {
-  return (
-    <HelpPopover label="Changes" testId="preview-changes-help">
-      Shows the working-tree changes of the terminal running in this session's folder. Open a
-      changed file in an editor tab, or copy its path with the copy icon. Select files to stage and
-      commit them here. No terminal in the folder yet? Open one from this tab.
-    </HelpPopover>
-  );
-}
-
+/** Hosts the desktop browser, its file tabs and agent preview delivery, and
+ *  publishes them to the session inspector. It renders no panel of its own:
+ *  the inspector's Browser tab is the single surface on desktop and web. */
 export function DesktopPreviewWorkspace({ children }: { children: ReactNode }) {
   const bridge = desktopBridge()?.preview;
   if (!bridge) return children;
@@ -215,8 +102,8 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const preferences = usePreviewPreferences();
   const [params] = useSearchParams();
   const { pathname } = useLocation();
-  // The browser/files/changes panel belongs to the full-screen chat page; the side chat stays
-  // a plain conversation. `chat=full` is a legacy link to the chat page that is being replaced.
+  // The browser belongs to the full-screen chat page; the side chat stays a
+  // plain conversation. `chat=full` is a legacy link to the chat page.
   const chatPage = pathname === "/chat" || params.get("chat") === "full";
   const rawSession =
     params.get(SESSION_LIVE_PARAM) ?? (chatPage ? (chat.thread?.id ?? null) : null);
@@ -228,25 +115,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     host: string | null;
   } | null>(null);
   const session = resolved?.input === rawSession ? resolved.id : rawSession;
-  const {
-    terminals,
-    isLoading: terminalsLoading,
-    error: terminalsError,
-    refetch: refetchTerminals,
-    create: createTerminal,
-  } = useTerminals();
-  const [sessionFailed, setSessionFailed] = useState(false);
-  const sessionPending = !!rawSession && !sessionFailed && resolved?.input !== rawSession;
-  const folder = resolved?.input === rawSession ? resolved : null;
-  const gitTerminal = folder
-    ? runningTerminalForFolder(terminals, folder.cwd, folder.host)
-    : undefined;
-  const gitStatus = useQuery({
-    queryKey: ["git", gitTerminal?.id, "status"],
-    queryFn: () => api.git.status(gitTerminal?.id ?? ""),
-    enabled: !!gitTerminal,
-  });
-  const changeCount = gitStatus.data?.files.length ?? 0;
   const [models, setModels] = useState<Record<string, Model>>({});
   const [displayBusy, setDisplayBusy] = useState(false);
   const [recorded, setRecorded] = useState<{
@@ -300,18 +168,14 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     saving?: boolean;
   } | null>(null);
   const permissionSequence = useRef(0);
-  const model = {
-    ...storedModel,
-    agentAccess:
-      !!session &&
-      chatPermission?.id === nativeId &&
-      chatPermission.enabled &&
-      !chatPermission.saving &&
-      preferences.settings?.agentBrowserControl === true,
-  };
-  const panelVisible = chatPage && model.visible;
-  const current = useRef({ key, session, nativeId, model });
-  current.current = { key, session, nativeId, model };
+  const agentAccess =
+    !!session &&
+    chatPermission?.id === nativeId &&
+    chatPermission.enabled &&
+    !chatPermission.saving &&
+    preferences.settings?.agentBrowserControl === true;
+  const current = useRef({ key, session, nativeId, model: { ...storedModel, agentAccess } });
+  current.current = { key, session, nativeId, model: { ...storedModel, agentAccess } };
   const modelsRef = useRef(models);
   modelsRef.current = models;
   const edit = useCallback(
@@ -319,47 +183,36 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       setModels((all) => ({ ...all, [scope]: change(all[scope] ?? initialModel()) })),
     [],
   );
-  const [viewport, setViewport] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-  const width = usePanelWidth({
-    storageKey: "orc_preview_width",
-    initial: 520,
-    min: 320,
-    max: Math.max(320, Math.min(1000, viewport.width - 300)),
-    edge: "left",
-  });
   const [address, setAddress] = useState("");
-  const [tree, setTree] = useState<{ session: string | null; paths: Set<string> }>({
-    session: null,
-    paths: new Set(),
-  });
-  const narrow = viewport.width < 768;
   const [dialogText, setDialogText] = useState("");
   useEffect(
-    () => setDialogText(model.browser?.dialog?.default_prompt ?? ""),
-    [model.browser?.dialog?.default_prompt],
+    () => setDialogText(storedModel.browser?.dialog?.default_prompt ?? ""),
+    [storedModel.browser?.dialog?.default_prompt],
   );
-  const panel = useRef<HTMLElement>(null),
-    surface = useRef<HTMLDivElement>(null);
-  const dialogSession = model.browser?.dialog ? nativeId : null;
-  useEffect(() => {
-    if (!dialogSession || model.active !== "browser") return;
-    const previous = document.activeElement;
-    const frame = requestAnimationFrame(() =>
-      panel.current
-        ?.querySelector<HTMLElement>(
-          '[data-testid="preview-page-dialog"] input, [data-testid="preview-page-dialog"] button',
-        )
-        ?.focus(),
-    );
+  const [surface, setSurface] = useState<HTMLDivElement | null>(null);
+  const openListeners = useRef(new Set<() => void>());
+  const notifyOpen = useCallback(() => {
+    for (const listener of openListeners.current) listener();
+  }, []);
+  const subscribeOpen = useCallback((listener: () => void) => {
+    openListeners.current.add(listener);
     return () => {
-      cancelAnimationFrame(frame);
-      if (previous instanceof HTMLElement && previous !== document.body && previous.isConnected)
-        previous.focus();
+      openListeners.current.delete(listener);
     };
-  }, [dialogSession, model.active]);
+  }, []);
+  const attachSurface = useCallback((element: HTMLDivElement | null) => setSurface(element), []);
+  const openBrowser = useCallback(
+    (scope: string, active?: string) => {
+      edit(scope, (old) => ({
+        ...old,
+        active: active ?? "browser",
+        loading: false,
+        error: null,
+      }));
+      notifyOpen();
+    },
+    [edit, notifyOpen],
+  );
   const openSequence = useRef(0);
   const [profiles, setProfiles] = useState<PreviewProfile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<{
@@ -417,31 +270,49 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     };
   }, [bridge, session, key, edit]);
 
-  async function changeProfile(id: string | null): Promise<void> {
-    if (
-      model.browser &&
-      !window.confirm(
-        "Switch browser profile? This closes this chat's browser tabs. File drafts stay open. Choosing a saved profile shares its logins with other chats using that profile.",
+  const selectProfile = useCallback(
+    (id: string | null) => {
+      if (
+        storedModel.browser &&
+        !window.confirm(
+          "Switch browser profile? This closes this chat's browser tabs. File drafts stay open. Choosing a saved profile shares its logins with other chats using that profile.",
+        )
       )
-    )
-      return;
-    try {
-      const selected = await bridge?.selectProfile(nativeId, id);
-      setSelectedProfile({ session: nativeId, id: selected ?? null });
-      edit(key, (old) => ({ ...old, browser: null }));
-    } catch (cause) {
-      edit(key, (old) => ({ ...old, error: error(cause) }));
-    }
-  }
+        return;
+      void bridge
+        ?.selectProfile(nativeId, id)
+        .then((selected) => {
+          setSelectedProfile({ session: nativeId, id: selected ?? null });
+          edit(key, (old) => ({ ...old, browser: null }));
+        })
+        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+    },
+    [bridge, edit, key, nativeId, storedModel.browser],
+  );
 
-  async function changeTab(action: "tab_select" | "tab_close", tabId: string): Promise<void> {
-    try {
-      const browser = await bridge?.tab(nativeId, { action, tab_id: tabId });
-      edit(key, (old) => ({ ...old, browser: browser ?? null }));
-    } catch (cause) {
-      edit(key, (old) => ({ ...old, error: error(cause) }));
-    }
-  }
+  const changeTab = useCallback(
+    (action: "tab_select" | "tab_close", tabId: string) => {
+      void bridge
+        ?.tab(nativeId, { action, tab_id: tabId })
+        .then((browser) => edit(key, (old) => ({ ...old, browser: browser ?? null })))
+        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+    },
+    [bridge, edit, key, nativeId],
+  );
+  const navigate = useCallback(
+    (action: "back" | "forward" | "reload") => {
+      void bridge
+        ?.navigate(nativeId, action)
+        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+    },
+    [bridge, edit, key, nativeId],
+  );
+  const newTab = useCallback(() => {
+    void bridge
+      ?.open(nativeId, storedModel.browser?.url ?? "https://example.com", true)
+      .then((browser) => edit(key, (old) => ({ ...old, browser })))
+      .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+  }, [bridge, edit, key, nativeId, storedModel.browser?.url]);
 
   useEffect(() => {
     const sequence = ++permissionSequence.current;
@@ -481,11 +352,9 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!rawSession) {
       setResolved(null);
-      setSessionFailed(false);
       return;
     }
     let active = true;
-    setSessionFailed(false);
     void api.preview
       .session(rawSession)
       .then((value) => {
@@ -493,23 +362,15 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
           setResolved({ input: rawSession, id: value.id, cwd: value.cwd, host: value.host });
       })
       .catch((cause) => {
-        if (active) {
-          setSessionFailed(true);
-          edit(key, (old) => ({ ...old, error: error(cause) }));
-        }
+        if (active) edit(key, (old) => ({ ...old, error: error(cause) }));
       });
     return () => {
       active = false;
     };
   }, [rawSession, key, edit]);
   useEffect(() => {
-    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
-  useEffect(() => {
-    setAddress(model.browser?.url ?? "");
-  }, [model.browser?.url]);
+    setAddress(storedModel.browser?.url ?? "");
+  }, [storedModel.browser?.url]);
   useEffect(
     () =>
       bridge?.onBrowser((state) => {
@@ -539,7 +400,6 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
         throw new Error("Close unused previews before loading more file content");
       edit(scope, (value) => ({
         ...value,
-        visible: true,
         active: id,
         loading: false,
         error: null,
@@ -550,6 +410,11 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
               {
                 id,
                 file,
+                path: file.path,
+                kind: file.kind,
+                editable: file.editable,
+                ...(file.local_token ? { localToken: file.local_token } : {}),
+                host: file.host,
                 text: file.content,
                 original: file.content,
                 saving: false,
@@ -558,8 +423,9 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
               },
             ],
       }));
+      notifyOpen();
     },
-    [edit],
+    [edit, notifyOpen],
   );
   const openFile = useCallback(
     async (path: string, line?: number) => {
@@ -569,7 +435,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
           "Start or select a saved session to preview workspace files, or use Open file",
         );
       const sequence = ++openSequence.current;
-      edit(active.key, (old) => ({ ...old, visible: true, loading: true, error: null }));
+      edit(active.key, (old) => ({ ...old, loading: true, error: null }));
       try {
         const file = await api.preview.file(active.session, path);
         if (sequence !== openSequence.current)
@@ -586,12 +452,12 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const openUrl = useCallback(
     async (url: string) => {
       const active = current.current;
-      edit(active.key, (old) => ({ ...old, visible: true, active: "browser", error: null }));
+      openBrowser(active.key);
       if (!bridge) throw new Error("Desktop browser is unavailable");
       const state = await bridge.open(active.nativeId, url);
       edit(active.key, (old) => ({ ...old, browser: state }));
     },
-    [bridge, edit],
+    [bridge, edit, openBrowser],
   );
   const openLink = useCallback(
     async (href: string, baseFile?: string) => {
@@ -616,65 +482,40 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
         }
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return true;
-        edit(current.current.key, (old) => ({ ...old, visible: true, error: error(cause) }));
+        const active = current.current;
+        openBrowser(active.key);
+        edit(active.key, (old) => ({ ...old, error: error(cause) }));
       }
       return true;
     },
-    [openUrl, openFile, edit, bridge, preferences.settings?.openLinksIn],
-  );
-  const context = useMemo<DesktopPreviewContextValue>(
-    () => ({
-      browserControl: {
-        enabled:
-          chatPermission?.id === nativeId &&
-          chatPermission.enabled &&
-          preferences.settings?.agentBrowserControl === true,
-        globallyEnabled: preferences.settings?.agentBrowserControl !== false,
-        pending:
-          chatPermission?.id !== nativeId || !!chatPermission.saving || !preferences.settings,
-        setEnabled: saveChatPermission,
-      },
-      openLink,
-      openFile,
-      visible: panelVisible,
-      toggle: () => edit(current.current.key, (old) => ({ ...old, visible: !old.visible })),
-    }),
-    [
-      openLink,
-      openFile,
-      edit,
-      preferences.settings,
-      panelVisible,
-      chatPermission,
-      nativeId,
-      saveChatPermission,
-    ],
+    [openUrl, openFile, edit, bridge, preferences.settings?.openLinksIn, openBrowser],
   );
   useEffect(
     () =>
       bridge?.onOpen((request) => {
         if (request.kind === "url" && request.target)
-          void openUrl(request.target).catch((cause) =>
-            edit(current.current.key, (old) => ({ ...old, visible: true, error: error(cause) })),
-          );
-        else edit(current.current.key, (old) => ({ ...old, visible: true }));
+          void openUrl(request.target).catch((cause) => {
+            const active = current.current;
+            openBrowser(active.key);
+            edit(active.key, (old) => ({ ...old, error: error(cause) }));
+          });
+        else openBrowser(current.current.key);
       }),
-    [bridge, openUrl, edit],
+    [bridge, openUrl, edit, openBrowser],
   );
   useEffect(() => {
     if (!bridge) return;
     void bridge
-      .allow(nativeId, model.agentAccess)
+      .allow(nativeId, agentAccess)
       .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
     return () => {
       bridge.allow(nativeId, false).catch(() => {});
     };
-  }, [bridge, nativeId, model.agentAccess, edit, key]);
+  }, [bridge, nativeId, agentAccess, edit, key]);
 
-  const browserVisible = panelVisible && model.active === "browser" && !model.browser?.dialog;
   useLayoutEffect(() => {
     if (!bridge) return;
-    if (!browserVisible) {
+    if (!surface) {
       bridge.bounds(null, null).catch(() => {});
       return;
     }
@@ -683,16 +524,15 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const element = surface.current;
         const blocked = document.querySelector(
           '[role="dialog"][data-state="open"], [data-radix-popper-content-wrapper]',
         );
-        if (!browserVisible || !element || blocked) {
+        if (!surface.isConnected || blocked) {
           if (previous !== "hidden") bridge.bounds(null, null).catch(() => {});
           previous = "hidden";
           return;
         }
-        const rect = element.getBoundingClientRect();
+        const rect = surface.getBoundingClientRect();
         const bounds = {
           x: Math.max(0, rect.x),
           y: Math.max(0, rect.y),
@@ -707,8 +547,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       });
     };
     const observer = new ResizeObserver(update);
-    if (panel.current) observer.observe(panel.current);
-    if (surface.current) observer.observe(surface.current);
+    observer.observe(surface);
     const mutations = new MutationObserver(update);
     mutations.observe(document.body, {
       attributes: true,
@@ -725,7 +564,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       window.removeEventListener("resize", update);
       bridge.bounds(null, null).catch(() => {});
     };
-  }, [bridge, browserVisible, nativeId]);
+  }, [bridge, surface, nativeId]);
 
   const executeRequest = useCallback(
     async (request: PreviewRequest): Promise<PreviewCompletion> => {
@@ -741,7 +580,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       else if (request.kind === "browser") {
         if (!bridge || !active.model.agentAccess)
           throw new Error("Agent browser control was disabled");
-        edit(active.key, (old) => ({ ...old, visible: true, active: "browser" }));
+        openBrowser(active.key);
         await new Promise((resolve) => setTimeout(resolve, 100));
         assertSelected();
         if (!current.current.model.agentAccess)
@@ -778,13 +617,13 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       assertSelected();
       return { status: request.kind === "browser" ? "completed" : "opened", error: null, result };
     },
-    [bridge, edit, openUrl, openFile, finishRecording],
+    [bridge, openUrl, openFile, finishRecording, openBrowser],
   );
   const deliveryError = usePreviewDelivery(
     resolved?.input === rawSession ? resolved.id : null,
     key,
-    model.agentAccess,
-    model.browser !== null,
+    agentAccess,
+    storedModel.browser !== null,
     executeRequest,
   );
 
@@ -801,797 +640,266 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, bridge]);
-  const selected = model.files.find((tab) => tab.id === model.active);
-  async function display(command: BrowserAction): Promise<void> {
-    if (!bridge || displayBusy) return;
-    const scope = key,
-      id = nativeId;
-    setDisplayBusy(true);
-    try {
-      await finishRecording(await bridge.display(id, command), id);
-    } catch (cause) {
-      edit(scope, (old) => ({ ...old, error: error(cause) }));
-    } finally {
-      setDisplayBusy(false);
-    }
-  }
-  const updateFile = (id: string, change: (old: FileTab) => FileTab) =>
-    edit(key, (old) => ({
-      ...old,
-      files: old.files.map((tab) => (tab.id === id ? change(tab) : tab)),
-    }));
-  async function save(tab: FileTab): Promise<void> {
-    if (tab.saving || !tab.file.editable || tab.text === tab.original) return;
-    const scope = key,
-      text = tab.text;
-    edit(scope, (old) => ({
-      ...old,
-      files: old.files.map((file) =>
-        file.id === tab.id ? { ...file, saving: true, error: null } : file,
-      ),
-    }));
-    try {
-      if (tab.file.local_token) await bridge?.save(tab.file.local_token, text, tab.original);
-      else {
-        if (!session) throw new Error("Session is unavailable");
-        await api.preview.save(session, tab.file.path, text, tab.original);
-      }
+  const selected = storedModel.files.find((tab) => tab.id === storedModel.active) ?? null;
+
+  const display = useCallback(
+    (command: BrowserAction) => {
+      if (!bridge || displayBusy) return;
+      const scope = current.current.key,
+        id = current.current.nativeId;
+      setDisplayBusy(true);
+      void finishRecording(
+        bridge.display(id, command).finally(() => setDisplayBusy(false)),
+        id,
+      ).catch((cause) => edit(scope, (old) => ({ ...old, error: error(cause) })));
+    },
+    [bridge, displayBusy, edit, finishRecording],
+  );
+  const acceptDialog = useCallback(
+    (accept: boolean) => {
+      void bridge
+        ?.pageDialog(nativeId, accept, dialogText)
+        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+    },
+    [bridge, dialogText, edit, key, nativeId],
+  );
+  const updateFile = useCallback(
+    (id: string, change: (old: FileTab) => FileTab) =>
+      edit(current.current.key, (old) => ({
+        ...old,
+        files: old.files.map((tab) => (tab.id === id ? change(tab) : tab)),
+      })),
+    [edit],
+  );
+  const save = useCallback(
+    (id: string) => {
+      const scope = current.current.key;
+      const tab = (modelsRef.current[scope] ?? initialModel()).files.find((item) => item.id === id);
+      if (!tab || tab.saving || !tab.editable || tab.text === tab.original) return;
+      const text = tab.text;
       edit(scope, (old) => ({
         ...old,
         files: old.files.map((file) =>
-          file.id === tab.id ? { ...file, original: text, saving: false } : file,
+          file.id === tab.id ? { ...file, saving: true, error: null } : file,
         ),
       }));
-    } catch (cause) {
-      edit(scope, (old) => ({
-        ...old,
-        files: old.files.map((file) =>
-          file.id === tab.id ? { ...file, saving: false, error: error(cause) } : file,
-        ),
-      }));
-    }
-  }
-  function closeFile(tab: FileTab): void {
-    if (tab.saving) return;
-    if (
-      tab.text !== tab.original &&
-      !window.confirm("Discard unsaved changes and close this preview?")
-    )
-      return;
-    if (tab.file.local_token) void bridge?.release(tab.file.local_token);
-    edit(key, (old) => ({
-      ...old,
-      active: old.active === tab.id ? "browser" : old.active,
-      files: old.files.filter((file) => file.id !== tab.id),
-    }));
-  }
-  async function reloadFile(tab: FileTab): Promise<void> {
-    if (
-      tab.saving ||
-      (tab.text !== tab.original &&
-        !window.confirm("Discard this draft and reload the file from disk?"))
-    )
-      return;
-    try {
-      const file = tab.file.local_token
-        ? await bridge?.read(tab.file.local_token)
-        : session
-          ? await api.preview.file(session, tab.file.path)
-          : undefined;
-      if (!file) throw new Error("File context is unavailable");
-      updateFile(tab.id, (old) => ({
-        ...old,
-        file,
-        text: file.content,
-        original: file.content,
-        error: null,
-      }));
-    } catch (cause) {
-      updateFile(tab.id, (old) => ({ ...old, error: error(cause) }));
-    }
-  }
-  async function pick(): Promise<void> {
-    try {
-      const file = await bridge?.pick();
-      if (file) {
+      void (async () => {
         try {
-          addFile(key, file);
+          if (tab.localToken) await bridge?.save(tab.localToken, text, tab.original);
+          else {
+            const active = current.current;
+            if (!active.session) throw new Error("Session is unavailable");
+            await api.preview.save(active.session, tab.path, text, tab.original);
+          }
+          edit(scope, (old) => ({
+            ...old,
+            files: old.files.map((file) =>
+              file.id === tab.id ? { ...file, original: text, saving: false } : file,
+            ),
+          }));
+        } catch (cause) {
+          edit(scope, (old) => ({
+            ...old,
+            files: old.files.map((file) =>
+              file.id === tab.id ? { ...file, saving: false, error: error(cause) } : file,
+            ),
+          }));
+        }
+      })();
+    },
+    [bridge, edit],
+  );
+  const closeFile = useCallback(
+    (id: string) => {
+      const scope = current.current.key;
+      const tab = (modelsRef.current[scope] ?? initialModel()).files.find((item) => item.id === id);
+      if (!tab || tab.saving) return;
+      if (
+        tab.text !== tab.original &&
+        !window.confirm("Discard unsaved changes and close this preview?")
+      )
+        return;
+      if (tab.localToken) void bridge?.release(tab.localToken);
+      edit(scope, (old) => ({
+        ...old,
+        active: old.active === tab.id ? "browser" : old.active,
+        files: old.files.filter((file) => file.id !== tab.id),
+      }));
+    },
+    [bridge, edit],
+  );
+  const reloadFile = useCallback(
+    (id: string) => {
+      const scope = current.current.key;
+      const tab = (modelsRef.current[scope] ?? initialModel()).files.find((item) => item.id === id);
+      if (
+        !tab ||
+        tab.saving ||
+        (tab.text !== tab.original &&
+          !window.confirm("Discard this draft and reload the file from disk?"))
+      )
+        return;
+      void (async () => {
+        try {
+          const active = current.current;
+          const file = tab.localToken
+            ? await bridge?.read(tab.localToken)
+            : active.session
+              ? await api.preview.file(active.session, tab.path)
+              : undefined;
+          if (!file) throw new Error("File context is unavailable");
+          edit(scope, (old) => ({
+            ...old,
+            files: old.files.map((item) =>
+              item.id === id
+                ? { ...item, file, text: file.content, original: file.content, error: null }
+                : item,
+            ),
+          }));
+        } catch (cause) {
+          edit(scope, (old) => ({
+            ...old,
+            files: old.files.map((item) =>
+              item.id === id ? { ...item, error: error(cause) } : item,
+            ),
+          }));
+        }
+      })();
+    },
+    [bridge, edit],
+  );
+  const pick = useCallback(() => {
+    void (async () => {
+      try {
+        const file = await bridge?.pick();
+        if (!file) return;
+        try {
+          addFile(current.current.key, file);
         } catch (cause) {
           if (file.local_token) void bridge?.release(file.local_token);
           throw cause;
         }
+      } catch (cause) {
+        edit(current.current.key, (old) => ({ ...old, error: error(cause) }));
       }
-    } catch (cause) {
-      edit(key, (old) => ({ ...old, error: error(cause) }));
-    }
-  }
-  const [openingTerminal, setOpeningTerminal] = useState(false);
-  const [terminalError, setTerminalError] = useState("");
-  async function openChangesTerminal(): Promise<void> {
-    if (!folder || openingTerminal) return;
-    setOpeningTerminal(true);
-    setTerminalError("");
-    try {
-      await createTerminal({ kind: "shell", cwd: folder.cwd, host: folder.host });
-    } catch (cause) {
-      setTerminalError(cause instanceof Error ? cause.message : "Could not open a terminal");
-    } finally {
-      setOpeningTerminal(false);
-    }
-  }
-  const canExternal =
-    selected &&
-    (!!selected.file.local_token ||
-      !!selected.file.host ||
-      ["127.0.0.1", "localhost", "[::1]"].includes(new URL(getApiUrl(), location.href).hostname));
+    })();
+  }, [bridge, edit, addFile]);
+
+  const browser = useMemo<DesktopPreviewContextValue["browser"]>(
+    () => ({
+      state: storedModel.browser,
+      address,
+      setAddress,
+      files: storedModel.files,
+      activeFileId: selected?.id ?? null,
+      loading: storedModel.loading,
+      error: storedModel.error,
+      deliveryError,
+      profiles,
+      profileId: selectedProfile?.session === nativeId ? (selectedProfile.id ?? null) : null,
+      displayBusy,
+      recording:
+        recorded?.session === nativeId
+          ? {
+              path: recorded.path,
+              saving: recorded.saving,
+              name: recorded.name,
+              url: recorded.url,
+            }
+          : null,
+      dialogText,
+      setDialogText,
+      dismissError: () => edit(key, (old) => ({ ...old, error: null })),
+      open: (url: string) => {
+        void openUrl(url).catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+      },
+      navigate,
+      changeTab,
+      newTab,
+      display,
+      selectProfile,
+      showFile: (id: string) => edit(key, (old) => ({ ...old, active: id })),
+      closeFile,
+      reloadFile,
+      saveFile: save,
+      editFile: (id: string, text: string) => updateFile(id, (old) => ({ ...old, text })),
+      pick,
+      external: (url: string) => {
+        void bridge
+          ?.externalUrl(url)
+          .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+      },
+      externalFile: (path: string, host: string | null) => {
+        void bridge
+          ?.externalFile(path, host)
+          .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
+      },
+      openRecording: () => setRecordingOpen(true),
+      acceptDialog,
+      attachSurface,
+    }),
+    [
+      storedModel,
+      address,
+      selected?.id,
+      profiles,
+      selectedProfile,
+      nativeId,
+      displayBusy,
+      recorded,
+      dialogText,
+      deliveryError,
+      edit,
+      key,
+      openUrl,
+      navigate,
+      changeTab,
+      newTab,
+      display,
+      selectProfile,
+      closeFile,
+      reloadFile,
+      save,
+      updateFile,
+      pick,
+      bridge,
+      acceptDialog,
+      attachSurface,
+    ],
+  );
+
+  const context = useMemo<DesktopPreviewContextValue>(
+    () => ({
+      browserControl: {
+        enabled:
+          chatPermission?.id === nativeId &&
+          chatPermission.enabled &&
+          preferences.settings?.agentBrowserControl === true,
+        globallyEnabled: preferences.settings?.agentBrowserControl !== false,
+        pending:
+          chatPermission?.id !== nativeId || !!chatPermission.saving || !preferences.settings,
+        setEnabled: saveChatPermission,
+      },
+      browser,
+      openLink,
+      openFile,
+      subscribeOpen,
+    }),
+    [
+      browser,
+      chatPermission,
+      nativeId,
+      preferences.settings,
+      saveChatPermission,
+      openLink,
+      openFile,
+      subscribeOpen,
+    ],
+  );
 
   return (
     <DesktopPreviewContext.Provider value={chatPage ? context : null}>
-      <div className="flex min-w-0 h-dvh w-full overflow-hidden">
-        <div className={panelVisible && narrow ? "hidden" : "flex-1 min-w-0"}>{children}</div>
-        {panelVisible && (
-          <aside
-            ref={panel}
-            data-testid="desktop-preview-panel"
-            aria-label="Preview"
-            style={{ width: narrow ? "100%" : width.width }}
-            className="relative flex min-w-0 min-h-0 shrink-0 flex-col border-l border-border bg-background"
-          >
-            {!narrow && (
-              // biome-ignore lint/a11y/useSemanticElements: pointer-driven adjustable splitter has no native element
-              <div
-                role="separator"
-                aria-label="Resize preview"
-                aria-orientation="vertical"
-                aria-valuenow={width.width}
-                aria-valuemin={320}
-                aria-valuemax={Math.max(320, Math.min(1000, viewport.width - 300))}
-                tabIndex={0}
-                data-testid="desktop-preview-resize"
-                className="absolute left-0 inset-y-0 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
-                {...width.handleProps}
-              />
-            )}
-            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2 max-sm:h-12">
-              <nav aria-label="Preview tabs" className="flex min-w-0 flex-1 overflow-x-auto">
-                <button
-                  type="button"
-                  data-testid="preview-files-tab"
-                  className={button + (model.active === "files" ? " bg-surface-highest" : "")}
-                  aria-pressed={model.active === "files"}
-                  onClick={() => edit(key, (old) => ({ ...old, active: "files" }))}
-                >
-                  <Files size={14} />
-                  Files
-                </button>
-                <button
-                  type="button"
-                  data-testid="preview-browser-tab"
-                  className={button + (model.active === "browser" ? " bg-surface-highest" : "")}
-                  aria-pressed={model.active === "browser"}
-                  onClick={() => edit(key, (old) => ({ ...old, active: "browser" }))}
-                >
-                  <Globe size={14} />
-                  Browser
-                </button>
-                <button
-                  type="button"
-                  data-testid="preview-changes-tab"
-                  className={button + (model.active === "changes" ? " bg-surface-highest" : "")}
-                  aria-pressed={model.active === "changes"}
-                  onClick={() => edit(key, (old) => ({ ...old, active: "changes" }))}
-                >
-                  <GitBranch size={14} />
-                  Changes
-                  {changeCount > 0 && (
-                    <span className="text-on-surface-variant">{changeCount}</span>
-                  )}
-                </button>
-                {model.files.map((tab) => (
-                  <div key={tab.id} className="flex shrink-0 items-center">
-                    <button
-                      type="button"
-                      className={button + (model.active === tab.id ? " bg-surface-highest" : "")}
-                      title={tab.file.path}
-                      aria-pressed={model.active === tab.id}
-                      onClick={() => edit(key, (old) => ({ ...old, active: tab.id }))}
-                    >
-                      {tab.file.path.split(/[\\/]/).pop()}
-                      {tab.text !== tab.original ? " ●" : ""}
-                    </button>
-                    <button
-                      type="button"
-                      className={button}
-                      aria-label={`Close ${tab.file.path}`}
-                      disabled={tab.saving}
-                      onClick={() => closeFile(tab)}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </nav>
-              <button
-                type="button"
-                className={button}
-                data-testid="desktop-preview-pick"
-                aria-label="Open file"
-                title="Open file"
-                onClick={() => void pick()}
-              >
-                <FolderOpen size={14} />
-              </button>
-              <button
-                type="button"
-                className={button}
-                aria-label="Close preview"
-                title="Close preview"
-                onClick={() => edit(key, (old) => ({ ...old, visible: false }))}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {model.error && (
-              <div
-                role="alert"
-                className="flex shrink-0 items-start gap-2 px-3 py-1 text-xs text-error"
-              >
-                <span className="min-w-0 flex-1 break-words py-1">{model.error}</span>
-                <button
-                  type="button"
-                  className={button}
-                  aria-label="Dismiss preview error"
-                  data-testid="preview-error-dismiss"
-                  onClick={() => edit(key, (old) => ({ ...old, error: null }))}
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            )}
-            {preferences.error && (
-              <div role="alert" className="shrink-0 break-words px-3 py-2 text-xs text-error">
-                {preferences.error}
-              </div>
-            )}
-            {deliveryError && (
-              <div role="alert" className="shrink-0 break-words px-3 py-2 text-xs text-error">
-                Agent preview delivery unavailable: {deliveryError}
-              </div>
-            )}
-            {model.loading && (
-              <p role="status" className="flex items-center gap-2 px-3 py-2 text-xs">
-                <LoaderCircle className="animate-spin" size={13} />
-                Opening file…
-              </p>
-            )}
-            {model.active === "changes" && !gitTerminal && (
-              <div
-                data-testid="preview-changes-empty"
-                className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground"
-              >
-                {!session ? (
-                  <p>Start or select a saved session to see its working changes</p>
-                ) : sessionPending ? (
-                  <p role="status">Loading session…</p>
-                ) : !folder ? (
-                  <p>This session's workspace folder is unavailable.</p>
-                ) : terminalsLoading ? (
-                  <p>Loading terminals…</p>
-                ) : terminalsError ? (
-                  <>
-                    <p role="alert" className="text-error">
-                      Could not load terminals: {terminalsError.message}
-                    </p>
-                    <Button
-                      variant="outline"
-                      data-testid="preview-changes-retry-terminals"
-                      onClick={refetchTerminals}
-                    >
-                      Retry
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <p>No terminal is running in this session's folder.</p>
-                    <p className="text-xs">Open one to review its working-tree changes here.</p>
-                    <Button
-                      variant="outline"
-                      data-testid="preview-changes-open-terminal"
-                      disabled={openingTerminal}
-                      onClick={() => void openChangesTerminal()}
-                    >
-                      <SquareTerminal size={16} />
-                      {openingTerminal ? "Opening…" : "Open terminal"}
-                    </Button>
-                    {terminalError && (
-                      <p role="alert" className="text-error">
-                        {terminalError}
-                      </p>
-                    )}
-                  </>
-                )}
-                <ChangesHelp />
-              </div>
-            )}
-            {gitTerminal && (
-              <div
-                key={gitTerminal.id}
-                data-testid="preview-changes"
-                className={
-                  model.active === "changes"
-                    ? "preview-changes-host flex min-h-0 flex-1 flex-col"
-                    : "hidden"
-                }
-              >
-                <GitPanelBody
-                  terminal={gitTerminal}
-                  paneId="preview-changes"
-                  localOnly
-                  help={<ChangesHelp />}
-                  onOpenFile={(path) => void openFile(path).catch(() => {})}
-                  copyPath
-                  persistDraft
-                />
-              </div>
-            )}
-            {model.active === "files" ? (
-              session ? (
-                <ul
-                  data-testid="preview-file-tree"
-                  className="min-h-0 flex-1 overflow-auto py-1 text-xs"
-                >
-                  <FileTreeLevel
-                    session={session}
-                    path=""
-                    depth={0}
-                    expanded={tree.session === session ? tree.paths : new Set()}
-                    toggle={(path) =>
-                      setTree((old) => {
-                        const paths = new Set(old.session === session ? old.paths : []);
-                        if (!paths.delete(path)) paths.add(path);
-                        return { session, paths };
-                      })
-                    }
-                    open={(path) => void openFile(path).catch(() => {})}
-                  />
-                </ul>
-              ) : (
-                <p className="p-3 text-xs text-on-surface-variant">
-                  Start or select a saved session to browse its workspace
-                </p>
-              )
-            ) : model.active === "browser" ? (
-              <>
-                {model.browser?.dialog && (
-                  <div
-                    role="alertdialog"
-                    aria-label="Browser page dialog"
-                    className="border-b border-border p-4"
-                    data-testid="preview-page-dialog"
-                    onKeyDown={(event) => {
-                      if (
-                        event.key === "Escape" ||
-                        (event.key === "Enter" && event.target instanceof HTMLInputElement)
-                      ) {
-                        event.preventDefault();
-                        void bridge
-                          ?.pageDialog(nativeId, event.key === "Enter", dialogText)
-                          .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
-                      } else if (event.key === "Tab") {
-                        const controls = [
-                          ...event.currentTarget.querySelectorAll<HTMLElement>("input,button"),
-                        ];
-                        const index = controls.indexOf(document.activeElement as HTMLElement),
-                          next =
-                            controls[
-                              (index + (event.shiftKey ? -1 : 1) + controls.length) %
-                                controls.length
-                            ];
-                        if (next) {
-                          event.preventDefault();
-                          next.focus();
-                        }
-                      }
-                    }}
-                  >
-                    <p className="text-xs text-muted-foreground">Message from this browser page</p>
-                    <p className="my-2 break-words text-sm">{model.browser.dialog.message}</p>
-                    {model.browser.dialog.type === "prompt" && (
-                      <input
-                        aria-label="Page prompt response"
-                        data-testid="preview-page-prompt"
-                        className="form-control form-control-single"
-                        value={dialogText}
-                        onChange={(event) => setDialogText(event.target.value)}
-                      />
-                    )}
-                    <div className="mt-2 flex gap-2">
-                      {[false, true].map((accept) => (
-                        <button
-                          key={String(accept)}
-                          type="button"
-                          className={button}
-                          data-testid={accept ? "preview-dialog-accept" : "preview-dialog-dismiss"}
-                          onClick={() =>
-                            void bridge
-                              ?.pageDialog(nativeId, accept, dialogText)
-                              .catch((cause) =>
-                                edit(key, (old) => ({ ...old, error: error(cause) })),
-                              )
-                          }
-                        >
-                          {accept ? "Accept" : "Dismiss"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-center gap-1 border-b border-border px-2 py-1">
-                  <nav className="flex min-w-0 flex-1 overflow-x-auto" aria-label="Browser tabs">
-                    {model.browser?.tabs?.map((tab, index) => (
-                      <div key={tab.tab_id} className="flex shrink-0 items-center">
-                        <button
-                          type="button"
-                          className={button}
-                          title={tab.url}
-                          aria-pressed={tab.tab_id === model.browser?.tab_id}
-                          data-testid="preview-browser-page-tab"
-                          onClick={() => void changeTab("tab_select", tab.tab_id)}
-                        >
-                          {index + 1} ·{" "}
-                          {(URL.canParse(tab.url) && new URL(tab.url).hostname) ||
-                            tab.url ||
-                            "New tab"}
-                        </button>
-                        <button
-                          type="button"
-                          className={button}
-                          aria-label={`Close browser tab ${index + 1}`}
-                          onClick={() => void changeTab("tab_close", tab.tab_id)}
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </nav>
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label="New browser tab"
-                    data-testid="preview-browser-new-tab"
-                    onClick={() =>
-                      void bridge
-                        ?.open(nativeId, model.browser?.url ?? "https://example.com", true)
-                        .then((browser) => edit(key, (old) => ({ ...old, browser })))
-                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
-                    }
-                  >
-                    +
-                  </button>
-                </div>
-                <form
-                  className="flex shrink-0 items-center gap-1 border-b border-border p-2"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void openUrl(address.trim()).catch((cause) =>
-                      edit(key, (old) => ({ ...old, error: error(cause) })),
-                    );
-                  }}
-                >
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label="Back"
-                    disabled={!model.browser?.back}
-                    onClick={() =>
-                      void bridge
-                        ?.navigate(nativeId, "back")
-                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
-                    }
-                  >
-                    <ArrowLeft size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label="Forward"
-                    disabled={!model.browser?.forward}
-                    onClick={() =>
-                      void bridge
-                        ?.navigate(nativeId, "forward")
-                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
-                    }
-                  >
-                    <ArrowRight size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label="Reload page"
-                    disabled={!model.browser}
-                    onClick={() =>
-                      void bridge
-                        ?.navigate(nativeId, "reload")
-                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
-                    }
-                  >
-                    <RefreshCw size={14} />
-                  </button>
-                  <input
-                    aria-label="Preview URL"
-                    value={address}
-                    onChange={(event) => setAddress(event.target.value)}
-                    placeholder="https://example.com"
-                    className="min-w-0 flex-1 rounded border border-input bg-background px-2 h-8 text-xs"
-                  />
-                  <button type="submit" className={button}>
-                    Go
-                  </button>
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label="Open in system browser"
-                    title="Open in system browser"
-                    disabled={!model.browser}
-                    onClick={() =>
-                      void bridge
-                        ?.externalUrl(model.browser?.url ?? "")
-                        .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })))
-                    }
-                  >
-                    <ExternalLink size={14} />
-                  </button>
-                </form>
-                <details
-                  className="shrink-0 border-b border-border px-3 py-1 text-xs"
-                  data-testid="preview-display-settings"
-                >
-                  <summary className="cursor-pointer">Browser profile, display & recording</summary>
-                  <div className="flex flex-wrap items-center gap-2 py-2">
-                    <select
-                      aria-label="Browser profile"
-                      data-testid="preview-browser-profile"
-                      className="form-control h-8 min-w-0 max-w-48 text-xs"
-                      disabled={selectedProfile?.session !== nativeId}
-                      value={
-                        selectedProfile?.session === nativeId ? (selectedProfile.id ?? "") : ""
-                      }
-                      onChange={(event) => void changeProfile(event.target.value || null)}
-                    >
-                      <option value="">Temporary · this chat</option>
-                      {profiles.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {profile.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="Browser color scheme"
-                      className="form-control h-8 text-xs"
-                      disabled={!model.browser || displayBusy}
-                      value={model.browser?.color_scheme ?? "system"}
-                      onChange={(event) =>
-                        void display({
-                          action: "appearance",
-                          color_scheme: event.target.value as "system" | "light" | "dark",
-                        })
-                      }
-                    >
-                      <option value="system">System appearance</option>
-                      <option value="light">Light</option>
-                      <option value="dark">Dark</option>
-                    </select>
-                    <select
-                      aria-label="Browser viewport"
-                      className="form-control h-8 text-xs"
-                      defaultValue=""
-                      disabled={!model.browser || displayBusy}
-                      onChange={(event) => {
-                        if (event.target.value === "fill") {
-                          void display({ action: "resize_reset" });
-                          return;
-                        }
-                        const [width, height] = event.target.value.split("x").map(Number);
-                        if (width && height)
-                          void display({
-                            action: "resize",
-                            width,
-                            height,
-                            device_scale_factor: 1,
-                            mobile: width < 600,
-                          });
-                      }}
-                    >
-                      <option value="" disabled>
-                        Viewport size
-                      </option>
-                      <option value="1280x720">Desktop 1280 × 720</option>
-                      <option value="fill">Fit panel</option>
-                      <option value="768x1024">Tablet 768 × 1024</option>
-                      <option value="390x844">Phone 390 × 844</option>
-                    </select>
-                    <button
-                      type="button"
-                      className={button}
-                      data-testid="preview-record-start"
-                      disabled={!model.browser || displayBusy || model.browser.recording_available}
-                      onClick={() => void display({ action: "recording_start", max_seconds: 60 })}
-                    >
-                      Record browser
-                    </button>
-                    <button
-                      type="button"
-                      className={button}
-                      data-testid="preview-record-stop"
-                      disabled={!model.browser?.recording_available || displayBusy}
-                      onClick={() => void display({ action: "recording_stop" })}
-                    >
-                      Save recording
-                    </button>
-                    {model.browser?.recording && (
-                      <span role="status">Recording · up to 60 seconds</span>
-                    )}
-                    {recorded?.session === nativeId && (
-                      <button
-                        type="button"
-                        className={button}
-                        data-testid="preview-recording-view"
-                        onClick={() => setRecordingOpen(true)}
-                      >
-                        View {recorded.blob.type === "video/webm" ? "recording" : "download"}
-                        {recorded.saving
-                          ? " · saving…"
-                          : recorded.path
-                            ? " · saved"
-                            : " · save failed"}
-                      </button>
-                    )}
-                  </div>
-                  {model.browser?.downloads?.map((download) => (
-                    <div key={download.id} className="flex items-center gap-2 py-1">
-                      <span className="min-w-0 truncate">
-                        {download.name} · {download.status} · {Math.ceil(download.bytes / 1024)} KB
-                      </span>
-                      {download.status === "completed" && (
-                        <button
-                          type="button"
-                          className={button}
-                          disabled={displayBusy}
-                          onClick={() =>
-                            void display({ action: "download", download_id: download.id })
-                          }
-                        >
-                          Save to workspace
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </details>
-                <div
-                  role="status"
-                  className={`shrink-0 px-3 text-xs ${model.browser?.error ? "text-error" : "text-muted-foreground"}`}
-                >
-                  {model.browser?.error ?? (model.browser?.loading ? "Loading…" : "")}
-                </div>
-                <div
-                  ref={surface}
-                  data-testid="desktop-preview-browser-surface"
-                  className="flex min-h-0 flex-1 items-center justify-center text-sm text-on-surface-variant"
-                >
-                  {model.browser ? null : "Open a chat link or enter a URL"}
-                </div>
-              </>
-            ) : selected ? (
-              <>
-                <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
-                  <span
-                    title={selected.file.path}
-                    className="min-w-0 flex-1 truncate text-xs text-on-surface-variant"
-                  >
-                    {selected.file.path}
-                  </span>
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label="Reload file"
-                    title="Reload file"
-                    disabled={selected.saving}
-                    onClick={() => void reloadFile(selected)}
-                  >
-                    <RefreshCw size={14} />
-                  </button>
-                  {selected.file.kind === "text" && (
-                    <button
-                      type="button"
-                      data-testid="preview-save"
-                      className={button}
-                      disabled={
-                        !selected.file.editable ||
-                        selected.saving ||
-                        selected.text === selected.original
-                      }
-                      onClick={() => void save(selected)}
-                    >
-                      <Save size={14} />
-                      {selected.saving ? "Saving…" : "Save"}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className={button}
-                    aria-label="Open file in VS Code"
-                    title={
-                      canExternal
-                        ? "Open file in VS Code"
-                        : "External editor is unavailable for this remote API host"
-                    }
-                    disabled={!canExternal}
-                    onClick={() =>
-                      void bridge
-                        ?.externalFile(selected.file.path, selected.file.host)
-                        .catch((cause) =>
-                          updateFile(selected.id, (old) => ({ ...old, error: error(cause) })),
-                        )
-                    }
-                  >
-                    <ExternalLink size={14} />
-                  </button>
-                </div>
-                {selected.error && (
-                  <div role="alert" className="shrink-0 px-3 py-2 text-xs text-error">
-                    {selected.error}
-                    {selected.file.kind === "text" ? " Your draft is preserved." : ""}
-                  </div>
-                )}
-                {selected.file.kind === "image" ? (
-                  <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-3">
-                    <img
-                      data-testid="preview-image"
-                      src={selected.file.content}
-                      alt={selected.file.path.split(/[\\/]/).pop()}
-                      className="max-w-full max-h-full object-contain"
-                      onError={() =>
-                        updateFile(selected.id, (old) => ({
-                          ...old,
-                          error: "Image cannot be decoded by this desktop",
-                        }))
-                      }
-                    />
-                  </div>
-                ) : (
-                  <DesktopPreviewContext.Provider
-                    value={{ ...context, openLink: (href) => openLink(href, selected.file.path) }}
-                  >
-                    <div
-                      className="min-h-0 flex-1 overflow-hidden"
-                      data-testid="preview-file-editor"
-                    >
-                      <CodeEditor
-                        key={selected.id}
-                        path={selected.file.path}
-                        value={selected.text}
-                        {...(selected.line ? { line: selected.line } : {})}
-                        initialMode={
-                          selected.line || selected.text !== selected.original ? "edit" : "read"
-                        }
-                        readOnly={!selected.file.editable || selected.saving}
-                        onChange={(value) =>
-                          updateFile(selected.id, (old) => ({ ...old, text: value }))
-                        }
-                        onSave={() => void save(selected)}
-                        height="100%"
-                        compact
-                        previewLinks
-                        testId="preview-editor-input"
-                      />
-                    </div>
-                  </DesktopPreviewContext.Provider>
-                )}
-              </>
-            ) : null}
-          </aside>
-        )}
-      </div>
+      {children}
       <Dialog
         open={recordingOpen && recorded?.session === nativeId}
         onOpenChange={setRecordingOpen}

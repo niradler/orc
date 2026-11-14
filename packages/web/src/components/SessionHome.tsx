@@ -1,7 +1,10 @@
 import { PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, type LiveSession, type Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
+import { InspectorBrowser } from "@/components/inspector/InspectorBrowser";
+import { InspectorChangesHelp } from "@/components/inspector/InspectorChangesHelp";
 import { InspectorOverview } from "@/components/inspector/InspectorOverview";
 import { InspectorTabs } from "@/components/inspector/InspectorTabs";
 import { FilePanel } from "@/components/terminals/FilePanel";
@@ -13,7 +16,8 @@ import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
-import { INSPECTOR_PANE_ID, type InspectorTab } from "@/lib/session-home";
+import { useDesktopPreview } from "@/lib/desktop-preview-context";
+import { INSPECTOR_PANE_ID, type InspectorTab, inspectorFileParams } from "@/lib/session-home";
 import {
   runningTerminalForFolder,
   runningTerminalForSession,
@@ -119,7 +123,7 @@ export function SessionHomeToggles({
         label={home.inspector ? "Hide inspector" : "Show inspector"}
         description={
           gestures
-            ? "Git, changes, pull requests and files. Or swipe right from the left edge"
+            ? "Git, changes, pull requests, files and the desktop browser. Or swipe right from the left edge"
             : undefined
         }
       >
@@ -245,11 +249,22 @@ function InspectorBody({
   home: SessionHomeNav;
 }) {
   const git = context.gitTerminal;
-  const shown: InspectorTab = tab !== "overview" && git ? tab : "overview";
+  const preview = useDesktopPreview();
+  const [, setParams] = useSearchParams();
+  const browser = !!preview;
+  const shown: InspectorTab =
+    tab === "browser"
+      ? browser
+        ? "browser"
+        : "overview"
+      : tab !== "overview" && !git
+        ? "overview"
+        : tab;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <InspectorTabs
         git={!!git}
+        browser={browser}
         shown={shown}
         onSelect={(next) => home.go({ inspector: next }, { replace: true })}
         className="px-3 pb-2"
@@ -258,12 +273,25 @@ function InspectorBody({
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
           <InspectorOverview context={context} home={home} />
         </div>
+      ) : shown === "browser" ? (
+        <InspectorBrowser />
       ) : (
         // Container host: the git and files panels follow the inspector width,
         // the same compact layout the phone page and preview panel use.
         <div className="inspector-host flex min-h-0 flex-1 flex-col">
           {shown === "diff" && git && (
-            <GitPanelBody terminal={git} paneId={INSPECTOR_PANE_ID} persistDraft />
+            <GitPanelBody
+              terminal={git}
+              paneId={INSPECTOR_PANE_ID}
+              persistDraft
+              copyPath
+              help={<InspectorChangesHelp />}
+              onOpenFile={(path) =>
+                setParams((current) => inspectorFileParams(current, { terminalId: git.id, path }), {
+                  replace: true,
+                })
+              }
+            />
           )}
           {shown === "files" && git && (
             <FilePanel terminal={git} paneId={INSPECTOR_PANE_ID} active />
@@ -287,11 +315,15 @@ export function SessionInspector({
     storageKey: "orc_session_inspector_width",
     initial: 320,
     min: 260,
-    max: 720,
+    max: 960,
     edge: "left",
   });
+  const preview = useDesktopPreview();
   const tab = home.inspector ?? "overview";
   const close = () => home.go({ inspector: null });
+  // Browser requests (chat links, attachments, agent previews, the desktop
+  // menu) open this one panel on its Browser tab instead of a second panel.
+  useEffect(() => preview?.subscribeOpen(() => home.go({ inspector: "browser" })), [preview, home]);
   if (narrow)
     return (
       <Sheet open={!!home.inspector} onOpenChange={(open) => !open && close()}>
@@ -315,7 +347,7 @@ export function SessionInspector({
     <aside
       data-testid="session-inspector"
       aria-label="Inspector"
-      style={{ width: panel.width, maxWidth: "45%" }}
+      style={{ width: panel.width, maxWidth: "min(960px, 60vw)" }}
       className={cn(
         "relative flex min-h-0 shrink-0 flex-col border-l border-border bg-background pt-2",
         reveal,
@@ -329,7 +361,7 @@ export function SessionInspector({
         aria-label="Resize inspector"
         aria-valuenow={panel.width}
         aria-valuemin={260}
-        aria-valuemax={720}
+        aria-valuemax={960}
         tabIndex={0}
         data-testid="session-inspector-resize"
         title="Drag to resize, use arrow keys, or double-click to reset"
