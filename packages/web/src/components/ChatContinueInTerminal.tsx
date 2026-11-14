@@ -1,13 +1,31 @@
+import { useQuery } from "@tanstack/react-query";
 import { SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/api/client";
+import { api, type Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { useChat } from "@/hooks/useChat";
+import { runningTerminalForSession } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 
-export function useChatContinueInTerminal() {
-  const { thread, streaming } = useChat();
-  const { openLiveSession } = useTerminals();
+/** Continues the chat in a native terminal. Inside the chat page the caller swaps
+ *  the chat body to that terminal, so the conversation and the PTY stay one view. */
+export function useChatContinueInTerminal({
+  inChat = false,
+  onOpened,
+}: {
+  inChat?: boolean;
+  onOpened?: (terminal: Terminal) => void;
+} = {}) {
+  const { thread, streaming, refreshing, reconnecting, responding } = useChat();
+  const { openLiveSession, terminals } = useTerminals();
+  // The same query ChatPanel uses: a turn may still run in another browser or in
+  // the native agent after this chat's stream has closed.
+  const sessionState = useQuery({
+    queryKey: ["chat-threads", "session", thread?.id],
+    queryFn: () => api.chat.session(thread?.id ?? ""),
+    enabled: !!thread?.runtimeId,
+  });
+  const sessionRunning = !!sessionState.data?.running;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const threadId = useRef(thread?.id);
@@ -43,7 +61,15 @@ export function useChatContinueInTerminal() {
         throw new Error(
           "This session is not available in Sessions yet. Try again after session discovery refreshes.",
         );
-      await openLiveSession(session, thread.config.providerId);
+      const existing = runningTerminalForSession(terminals, session.id);
+      if (existing && inChat) {
+        onOpened?.(existing);
+        return true;
+      }
+      const terminal = await openLiveSession(session, thread.config.providerId, false, {
+        navigate: !inChat,
+      });
+      if (inChat) onOpened?.(terminal);
       return true;
     } catch (cause) {
       if (threadId.current === thread.id)
@@ -53,9 +79,24 @@ export function useChatContinueInTerminal() {
       if (threadId.current === thread.id) setPending(false);
     }
   }
+  const reason = streaming
+    ? "Available when the current response finishes."
+    : sessionRunning
+      ? "Wait for the session to become idle."
+      : !thread?.runtimeId
+        ? "Send a message before continuing in a terminal."
+        : undefined;
   return {
     available: !!thread && ["codex", "claude", "opencode"].includes(thread.config.agent),
-    disabled: streaming || pending || !thread?.runtimeId,
+    disabled:
+      streaming ||
+      refreshing ||
+      reconnecting ||
+      responding ||
+      sessionRunning ||
+      pending ||
+      !thread?.runtimeId,
+    reason,
     error,
     open,
   };
@@ -76,6 +117,7 @@ export function ChatContinueInTerminal({
       type="button"
       data-testid="chat-continue-terminal"
       aria-label="Continue in terminal"
+      title={control.reason}
       disabled={control.disabled}
       onClick={async () => {
         if (await control.open()) onOpen?.();
@@ -92,7 +134,13 @@ export function ChatContinueInTerminal({
   );
   return (
     <div className={labelled ? undefined : "relative"}>
-      {labelled ? button : <ActionHelp label="Continue in terminal">{button}</ActionHelp>}
+      {labelled ? (
+        button
+      ) : (
+        <ActionHelp label="Continue in terminal" description={control.reason}>
+          {button}
+        </ActionHelp>
+      )}
       {control.error &&
         (labelled ? (
           // Inside the actions menu: an absolute popup wider than the menu is

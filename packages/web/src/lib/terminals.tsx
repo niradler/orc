@@ -46,7 +46,12 @@ interface TerminalsContextValue {
   engineError: string | null;
   connectionOf: (id: string) => ConnectionState | undefined;
   create: (input: CreateTerminalInput) => Promise<Terminal>;
-  openLiveSession: (session: LiveSession, providerId?: string, fork?: boolean) => Promise<Terminal>;
+  openLiveSession: (
+    session: LiveSession,
+    providerId?: string,
+    fork?: boolean,
+    options?: { navigate?: boolean },
+  ) => Promise<Terminal>;
   remove: (id: string) => Promise<void>;
   rename: (id: string, name: string) => Promise<Terminal>;
   attach: (id: string, container: HTMLElement) => Promise<void>;
@@ -163,13 +168,21 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   );
 
   const openLiveSession = useCallback(
-    async (session: LiveSession, providerId?: string, fork = false): Promise<Terminal> => {
+    async (
+      session: LiveSession,
+      providerId?: string,
+      fork = false,
+      options: { navigate?: boolean } = {},
+    ): Promise<Terminal> => {
       const terminal = await create({
         kind: session.agent === "codex" ? "codex" : "claude",
         live_session_id: session.id,
         ...(fork ? { fork: true } : {}),
         providerId,
       });
+      // Chat keeps its own view: the caller swaps the chat body to the terminal
+      // instead of leaving for the Terminals page.
+      if (options.navigate === false) return terminal;
       const scope =
         new URLSearchParams(window.location.search).get("project") ?? session.project_id;
       navigate(`/terminals/${terminal.id}${scope ? `?project=${encodeURIComponent(scope)}` : ""}`);
