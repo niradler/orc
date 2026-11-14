@@ -251,13 +251,16 @@ export function InspectorOverview({
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">
+              <p
+                data-testid="session-inspector-pull-request-status"
+                className="text-sm text-muted-foreground"
+              >
                 {github.data?.unavailable_reason === "no_remote"
                   ? "This checkout has no GitHub origin remote."
-                  : github.data?.auth === "none"
-                    ? "GitHub authentication is unavailable on this host. Authenticate gh there or configure a GitHub token."
-                    : github.data?.unavailable_reason === "detached_head"
-                      ? "Detached HEAD: select a branch to find its pull request."
+                  : github.data?.unavailable_reason === "detached_head"
+                    ? "Detached HEAD: select a branch to find its pull request."
+                    : github.data?.auth === "none"
+                      ? "GitHub authentication is unavailable on this host. Authenticate gh there or configure a GitHub token."
                       : "No open pull request for this branch."}
               </p>
             )}

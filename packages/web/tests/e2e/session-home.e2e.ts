@@ -391,3 +391,28 @@ test("breadcrumb uses recorded project ownership and unlinked terminal state sta
     "Unknown project",
   );
 });
+
+test("inspector names a detached HEAD instead of claiming GitHub auth is missing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockSessionHome(page);
+  // A worktree checked out at a commit answers with auth "none" and a detached
+  // reason; only the reason explains the missing PR.
+  await page.route(`**/api/terminals/${HOME.terminal}/git/github`, (route) =>
+    route.fulfill({
+      json: {
+        auth: "none",
+        login: null,
+        items: [],
+        errors: [],
+        truncated: false,
+        unavailable_reason: "detached_head",
+      },
+    }),
+  );
+  await page.goto(`/chat?project=all&sessionTerminal=${HOME.terminal}&inspector=overview`);
+  const status = page.getByTestId("session-inspector-pull-request-status");
+  await expect(status).toContainText("Detached HEAD: select a branch");
+  await expect(status).not.toContainText("authentication is unavailable");
+});

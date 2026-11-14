@@ -1,7 +1,7 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { chooseChatAgent, openChatActions, openChatSettings, settingsSection } from "./_chat-ui";
-import { API_SECRET, gotoView, openTerminalOptions } from "./_helpers";
+import { API_SECRET, gotoView } from "./_helpers";
 
 for (const width of [390, 1440]) {
   test(`chat answers approvals/questions and exposes quiet continuation icons at ${width}px`, async ({
@@ -121,9 +121,9 @@ for (const width of [390, 1440]) {
       name: "Codex",
       cwd: "/fixture",
       host: null,
-      status: "exited",
-      pid: null,
-      exit_code: 0,
+      status: "running",
+      pid: 4242,
+      exit_code: null,
       live_session_id: "source-icons",
       created_at: new Date().toISOString(),
     };
@@ -173,6 +173,12 @@ for (const width of [390, 1440]) {
       "echo harmless",
     );
     await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+    // A running turn owns the session: resuming it in a terminal waits for idle.
+    await openChatActions(page);
+    await expect(
+      page.getByTestId("chat-continue-terminal").filter({ visible: true }),
+    ).toBeDisabled();
+    await page.keyboard.press("Escape");
     await page.getByTestId("chat-permission-allow").filter({ visible: true }).click();
     await page.getByTestId("chat-question-answer").filter({ visible: true }).first().fill("Blue");
     const checkboxes = page.locator('input[type="checkbox"]').filter({ visible: true });
@@ -209,13 +215,11 @@ for (const width of [390, 1440]) {
     await expect(toTerminal).toBeEnabled();
     await page.screenshot({ path: testInfo.outputPath(`chat-interactions-${width}.png`) });
     await toTerminal.click();
-    await expect(page).toHaveURL(/\/terminals\/icon-terminal/);
-    await openTerminalOptions(page);
-    const toChat = page.getByTestId("terminal-continue-chat").filter({ visible: true });
-    await expect(toChat).toHaveAttribute("title", "Resume in chat");
-    await expect(toChat).toHaveText("Resume");
-    await toChat.click();
-    await expect(page).toHaveURL(width < 1280 ? /\/chat\?/ : /chat=open/);
+    await expect(page).toHaveURL(/sessionTerminal=icon-terminal/);
+    await expect(page.getByTestId("terminal-viewport").filter({ visible: true })).toBeVisible();
+    await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeHidden();
+    await page.getByTestId("chat-terminal-back").click();
+    await expect(page).not.toHaveURL(/sessionTerminal=/);
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
