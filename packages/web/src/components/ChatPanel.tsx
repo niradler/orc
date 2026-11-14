@@ -249,6 +249,28 @@ export function ChatPanel({
   const rail = fullscreen && desktop && home.listHidden;
   const context = useSessionContext(home.terminalId);
   const terminalCenter = !!home.terminalId;
+  // The drawer can take the conversation's space; collapsing or closing it
+  // returns the column to the chat instead of leaving a half-empty screen.
+  const [drawerExpanded, setDrawerExpanded] = useState(false);
+  useEffect(() => {
+    if (!home.drawer) setDrawerExpanded(false);
+  }, [home.drawer]);
+  // A session switch starts the drawer at its normal height again.
+  const drawerSessionKey = useRef(activeKey);
+  useEffect(() => {
+    if (drawerSessionKey.current === activeKey) return;
+    drawerSessionKey.current = activeKey;
+    setDrawerExpanded(false);
+  }, [activeKey]);
+  const closeDrawer = () => {
+    setDrawerExpanded(false);
+    home.go({ drawer: false });
+    requestAnimationFrame(() =>
+      document
+        .querySelector<HTMLElement>('[data-testid="session-drawer-toggle"]')
+        ?.focus({ preventScroll: true }),
+    );
+  };
   const linkError = useSessionLiveLink(home, fullscreen);
   const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
   const projects = useProjects();
@@ -686,7 +708,12 @@ export function ChatPanel({
             </p>
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}
-          <div className={cn("flex min-h-0 flex-1 flex-col", terminalCenter && "hidden")}>
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col",
+              (terminalCenter || drawerExpanded) && "hidden",
+            )}
+          >
             <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
             {reconnecting && (
               <p
@@ -1156,7 +1183,14 @@ export function ChatPanel({
               </form>
             </div>
           </div>
-          {fullscreen && home.drawer && !phone && <SessionDrawer context={context} />}
+          {fullscreen && home.drawer && !phone && (
+            <SessionDrawer
+              context={context}
+              expanded={drawerExpanded}
+              onToggleExpanded={() => setDrawerExpanded((value) => !value)}
+              onClose={closeDrawer}
+            />
+          )}
         </div>
       </MobileChatShell>
       {fullscreen && !phone && <SessionInspector context={context} home={home} narrow={!desktop} />}

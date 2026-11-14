@@ -482,6 +482,46 @@ test("one tap on the terminal opens the keyboard and Android enter submits the l
   }
 });
 
+test("a short swipe does not raise the keyboard, while a tap still focuses", async ({
+  page,
+  request,
+}) => {
+  test.skip(
+    page.context().browser()?.browserType().name() !== "chromium",
+    "Touch gestures are driven through CDP",
+  );
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    host: null,
+  });
+  let output = "";
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes(`/terminals/${terminal.id}/ws`)) return;
+    socket.on("framereceived", ({ payload }) => {
+      output += payload.toString();
+    });
+  });
+  await gotoView(page, "terminals");
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  const surface = page.getByTestId("terminal-surface").first();
+  await expect(surface.locator("canvas").first()).toBeVisible();
+  await expect.poll(() => output.length).toBeGreaterThan(0);
+  const input = page.locator("textarea[aria-label='Terminal input']").first();
+  await input.evaluate((element) => (element as HTMLElement).blur());
+  await expect(input).not.toBeFocused();
+  const box = await surface.boundingBox();
+  if (!box) throw new Error("Missing terminal surface");
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  // A 12px drag is a scroll attempt that does not yet complete a wheel step.
+  // Lifting it must not replay a tap, which would focus the hidden input and
+  // raise the phone keyboard.
+  await touch(page, [[{ x, y }], [{ x, y: y + 12 }], []]);
+  await expect(input).not.toBeFocused();
+  await touch(page, [[{ x, y }], []]);
+  await expect(input).toBeFocused();
+});
+
 test("sticky ctrl from the key bar sends the next typed letter as a control key", async ({
   page,
   request,
