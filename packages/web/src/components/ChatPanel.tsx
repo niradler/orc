@@ -53,13 +53,14 @@ import {
   useSessionLiveLink,
 } from "@/components/SessionHome";
 import { SessionLineage } from "@/components/SessionLineage";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
+import { useCompactViewport } from "@/hooks/useVisualViewport";
 import { commandSegments } from "@/lib/chat-commands";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
@@ -241,6 +242,7 @@ export function ChatPanel({
   const terminalControl = useChatContinueInTerminal();
   const desktop = useBreakpoint("xl");
   const phone = !useBreakpoint("md");
+  const compactViewport = useCompactViewport();
   const home = useSessionHome();
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
@@ -279,6 +281,54 @@ export function ChatPanel({
   const headerWide = headerWidth >= 620;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // One menu vocabulary for the phone and the narrow desktop header: Settings
+  // first, then continue-in-terminal, then Refresh/Compact as labeled rows so the
+  // actions stay reachable even when the phone's second header line is collapsed.
+  const actionMenuRows = (includeSessionActions: boolean) => (
+    <>
+      <button
+        type="button"
+        data-testid="chat-config-button"
+        aria-label="Session settings"
+        className={actionButton}
+        onClick={() => {
+          setActionsOpen(false);
+          setSettingsOpen(true);
+        }}
+      >
+        <Settings2 size={17} />
+        Session settings
+      </button>
+      <ChatContinueInTerminal
+        control={terminalControl}
+        onOpen={() => setActionsOpen(false)}
+        labelled
+      />
+      {includeSessionActions && (
+        <>
+          <ChatRefreshAction
+            row
+            stale={sessionChanged}
+            busy={refreshing || reconnecting}
+            disabled={!thread || refreshing}
+            onRefresh={() => {
+              setActionsOpen(false);
+              void reload();
+            }}
+          />
+          <ChatCompactAction
+            row
+            agent={config.agent}
+            disabled={compactDisabled}
+            onCompact={() => {
+              setActionsOpen(false);
+              void send("/compact");
+            }}
+          />
+        </>
+      )}
+    </>
+  );
   useEffect(() => {
     if (!open || headerWide) setActionsOpen(false);
   }, [open, headerWide]);
@@ -442,6 +492,13 @@ export function ChatPanel({
                       {thread?.host ?? "local"}
                     </p>
                   </div>
+                  {streaming && (
+                    <LoaderCircle
+                      size={14}
+                      aria-hidden="true"
+                      className="chat-compact-activity shrink-0 text-progress"
+                    />
+                  )}
                   <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
                     <PopoverTrigger asChild>
                       <button
@@ -457,30 +514,16 @@ export function ChatPanel({
                         <MoreHorizontal size={17} />
                       </button>
                     </PopoverTrigger>
+                    {/* Anchor below the whole two-line header so the menu never
+                        covers the Terminal/Inspector/Refresh/Compact controls. */}
+                    <PopoverAnchor virtualRef={header} />
                     <PopoverContent
                       data-testid="chat-actions-menu"
                       aria-label="Session actions"
                       align="end"
                       className="flex w-56 flex-col gap-1 p-1"
                     >
-                      <button
-                        type="button"
-                        data-testid="chat-config-button"
-                        aria-label="Session settings"
-                        className={actionButton}
-                        onClick={() => {
-                          setActionsOpen(false);
-                          setSettingsOpen(true);
-                        }}
-                      >
-                        <Settings2 size={17} />
-                        Session settings
-                      </button>
-                      <ChatContinueInTerminal
-                        control={terminalControl}
-                        onOpen={() => setActionsOpen(false)}
-                        labelled
-                      />
+                      {actionMenuRows(compactViewport)}
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -498,13 +541,6 @@ export function ChatPanel({
                     >
                       <Globe size={16} />
                     </button>
-                  )}
-                  {streaming && (
-                    <LoaderCircle
-                      size={14}
-                      aria-hidden="true"
-                      className="chat-compact-activity shrink-0 text-progress"
-                    />
                   )}
                   {!terminalCenter && (
                     <div
@@ -616,43 +652,7 @@ export function ChatPanel({
                     align="end"
                     className="flex w-52 flex-col gap-1 p-1"
                   >
-                    <ChatRefreshAction
-                      row
-                      stale={sessionChanged}
-                      busy={refreshing || reconnecting}
-                      disabled={!thread || refreshing}
-                      onRefresh={() => {
-                        setActionsOpen(false);
-                        void reload();
-                      }}
-                    />
-                    <ChatContinueInTerminal
-                      control={terminalControl}
-                      onOpen={() => setActionsOpen(false)}
-                      labelled
-                    />
-                    <ChatCompactAction
-                      row
-                      agent={config.agent}
-                      disabled={compactDisabled}
-                      onCompact={() => {
-                        setActionsOpen(false);
-                        void send("/compact");
-                      }}
-                    />
-                    <button
-                      type="button"
-                      data-testid="chat-config-button"
-                      aria-label="Session settings"
-                      className={actionButton}
-                      onClick={() => {
-                        setActionsOpen(false);
-                        setSettingsOpen(true);
-                      }}
-                    >
-                      <Settings2 size={17} />
-                      Session settings
-                    </button>
+                    {actionMenuRows(true)}
                   </PopoverContent>
                 </Popover>
               ))}

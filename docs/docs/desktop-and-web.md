@@ -67,7 +67,9 @@ opens the chat page instead.
 On a phone (below 768px) the chat is a touch-first surface. The header keeps the
 session title, **Sessions**, **New** and the actions menu on one line, with the
 **Terminal**, **Inspector**, **Refresh** and **Compact** controls on a second line
-(that line collapses while the software keyboard is open). **Sessions**, the
+(right-aligned; it collapses when the viewport gets very short, such as with the
+software keyboard on a small screen, and the same actions stay available in the
+**⋯** menu). **Sessions**, the
 **Inspector** and the **Terminal** open as full pages over the conversation,
 which stays mounted underneath so streams and drafts survive. They follow your
 finger:
