@@ -309,10 +309,11 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` `POST` | `/chat/threads` | Chat threads |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
 | `POST` | `/chat/threads/{id}/fork` | Fork a chat at an assistant response |
+| `GET` | `/chat/threads/{id}/analytics` | Chat, tool, turn, context and compaction analytics |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
-| `GET` | `/terminals/{id}/git/status` | Git status of a terminal checkout |
+| `GET` | `/terminals/{id}/git/status` | Git status of a terminal or chat-session checkout |
 | `GET` | `/git/worktrees` | Checkouts of a repo |
 | `GET` | `/git/branches` | Local, remote and default branches of a repo |
 
@@ -326,6 +327,11 @@ reply and into its folded activity. Its `text` preserves that prose for expansio
 
 A turn opens with a `thread` event carrying the conversation metadata and only
 that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
+`GET /chat/threads/{id}/analytics` counts messages, turns, tool calls and failures
+from the stored chat transcript for every coding agent. When the agent's native
+session records token usage, it adds context growth, cache reuse and compaction
+markers. Agents without readable usage return `context.supported: false` with a
+reason instead of failing the request.
 `POST /chat/stream` accepts an optional `clientMessageId` (UUID) and stores it as
 the user message id, rejecting a repeat with `409`. If a first send's response is
 lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the

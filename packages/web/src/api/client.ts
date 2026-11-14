@@ -7,6 +7,7 @@ import type {
   ChannelView,
 } from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
+import type { ChatAnalytics } from "@orc/core/chat-analytics";
 import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
 import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
@@ -834,6 +835,8 @@ export const api = {
     cancel: (runId: string) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),
+    analytics: (id: string) =>
+      req<ChatAnalytics>("GET", `/chat/threads/${encodeURIComponent(id)}/analytics`),
     byMessage: (messageId: string, signal?: AbortSignal) =>
       req<ChatThread | null>(
         "GET",

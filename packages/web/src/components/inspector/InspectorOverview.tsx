@@ -76,7 +76,7 @@ export function InspectorOverview({
   context: SessionContext;
   home: SessionHomeNav;
 }) {
-  const git = context.gitTerminal;
+  const git = context.gitCheckout;
   const [, setParams] = useSearchParams();
   const { status, github, branch, pr } = useInspectorGit(git);
   const files = status.data?.files ?? [];
@@ -111,8 +111,8 @@ export function InspectorOverview({
           <>
             <p data-testid="session-inspector-git-empty" className="text-sm text-muted-foreground">
               {terminals.isLoading
-                ? "Loading terminals…"
-                : "Git activity needs a running terminal in this session's folder."}
+                ? "Loading session details…"
+                : "No folder is available for this session."}
             </p>
             <button
               type="button"

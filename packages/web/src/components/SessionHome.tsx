@@ -1,3 +1,4 @@
+import type { ChatThread } from "@orc/core/chat";
 import { PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -35,8 +36,32 @@ export interface SessionContext {
   cwd: string | null;
   host: string | null;
   session?: LiveSession;
-  gitTerminal?: Terminal;
+  /** The checkout Git acts on: a running terminal in the folder, or the chat
+   *  session's own folder when no terminal is running. */
+  gitCheckout?: Terminal;
   shell?: Terminal;
+}
+
+/** Git reads and writes the session folder directly, so the chat thread is a
+ *  checkout even when no terminal has been opened. */
+function sessionCheckout(thread: ChatThread | null): Terminal | undefined {
+  if (!thread?.cwd) return undefined;
+  return {
+    id: thread.id,
+    name: thread.title,
+    kind: "shell",
+    cwd: thread.cwd,
+    status: "running",
+    exit_code: null,
+    pid: null,
+    live_session_id: thread.sourceId ?? null,
+    host: thread.host ?? null,
+    project_id: thread.projectId ?? null,
+    worktree_path: null,
+    dev: false,
+    preview_url: null,
+    created_at: new Date(thread.updatedAt).toISOString(),
+  };
 }
 
 export function useSessionContext(terminalId: string | null): SessionContext {
@@ -54,8 +79,10 @@ export function useSessionContext(terminalId: string | null): SessionContext {
     cwd,
     host,
     session,
-    gitTerminal:
-      terminal?.status === "running" ? terminal : runningTerminalForFolder(terminals, cwd, host),
+    gitCheckout:
+      (terminal?.status === "running"
+        ? terminal
+        : runningTerminalForFolder(terminals, cwd, host)) ?? sessionCheckout(chat.thread),
     shell: terminals.find(
       (item) => sameFolder(item) && item.kind === "shell" && item.id !== terminal?.id,
     ),
@@ -248,7 +275,7 @@ function InspectorBody({
   tab: InspectorTab;
   home: SessionHomeNav;
 }) {
-  const git = context.gitTerminal;
+  const git = context.gitCheckout;
   const preview = useDesktopPreview();
   const [, setParams] = useSearchParams();
   const browser = !!preview;

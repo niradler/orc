@@ -157,6 +157,112 @@ test("should hide unsupported, malformed or unreported cache evidence rather tha
   ).toBeNull();
 });
 
+test("should read Pi usage and context edits on the active branch", () => {
+  const header = {
+    type: "session",
+    version: 3,
+    id: "00000000-0000-4000-8000-000000000001",
+    timestamp: "2026-11-06T12:00:00Z",
+    cwd: "/tmp",
+  };
+  const assistant = (id: string, parentId: string | null, timestamp: string, usage: unknown) => ({
+    type: "message",
+    id,
+    parentId,
+    timestamp,
+    message: { role: "assistant", content: [], usage },
+  });
+  const edit = {
+    type: "context_edit",
+    id: "edit",
+    parentId: "m1",
+    timestamp: "2026-11-06T12:10:00Z",
+    targetId: "m1",
+    replacement: { content: [] },
+  };
+  const result = readSessionCacheUsage(
+    "pi",
+    bytes([
+      header,
+      assistant("m1", null, "2026-11-06T12:01:00Z", {
+        input: 100,
+        output: 20,
+        cacheRead: 900,
+        cacheWrite: 50,
+      }),
+      edit,
+      assistant("m2", "edit", "2026-11-06T12:11:00Z", {
+        input: 10,
+        output: 5,
+        cacheRead: 40,
+        cacheWrite: 0,
+      }),
+    ]),
+  );
+  expect(result.timeline?.map((point) => point.context_tokens)).toEqual([1050, 50]);
+  expect(result.totals).toEqual({
+    input_tokens: 1100,
+    cached_input_tokens: 940,
+    cache_write_tokens: 50,
+  });
+  expect(result.output_tokens).toBe(25);
+  expect(result.requests).toBe(2);
+  expect(result.compactions).toEqual([
+    { recorded_at: "2026-11-06T12:10:00.000Z", pre_tokens: null, post_tokens: null },
+  ]);
+});
+
+test("should read OpenCode request usage from its database", async () => {
+  const rows = [
+    {
+      id: "m1",
+      type: "assistant",
+      time_created: 1_000,
+      data: JSON.stringify({
+        role: "assistant",
+        model: { providerID: "anthropic", modelID: "claude" },
+        time: { created: 1_000 },
+        tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 400, write: 50 } },
+      }),
+    },
+    {
+      id: "m2",
+      type: "compaction",
+      time_created: 2_000,
+      data: JSON.stringify({
+        role: "assistant",
+        model: { providerID: "anthropic", modelID: "claude" },
+        time: { created: 2_000 },
+        tokens: { input: 20, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
+    },
+  ];
+  const result = await loadSessionCacheUsage(
+    {
+      isFile: async () => true,
+      readFile: async () => new Uint8Array(),
+      sqliteQuery: async <T extends object>() => rows as T[],
+    },
+    "opencode",
+    "opencode.db",
+    "session-1",
+  );
+  expect(result.latest).toMatchObject({
+    input_tokens: 20,
+    cached_input_tokens: 0,
+    cache_write_tokens: 0,
+  });
+  expect(result.totals).toEqual({
+    input_tokens: 570,
+    cached_input_tokens: 400,
+    cache_write_tokens: 50,
+  });
+  expect(result.output_tokens).toBe(15);
+  expect(result.requests).toBe(2);
+  expect(result.timeline?.map((point) => point.context_tokens)).toEqual([550, 20]);
+  expect(result.compactions).toHaveLength(1);
+});
+
 test("should keep private source errors out of cache endpoint failures", async () => {
   await expect(
     loadSessionCacheUsage(

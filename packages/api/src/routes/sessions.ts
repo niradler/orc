@@ -476,10 +476,18 @@ app.openapi(
     });
     if (!row) throw new NotFoundError("Session", id);
     c.header("Cache-Control", "no-store");
-    if (!row.transcript_path || (row.backend !== "claude" && row.backend !== "codex"))
+    if (!row.transcript_path || !["claude", "codex", "pi", "opencode"].includes(row.backend))
       return c.json(emptySessionCacheUsage(), 200);
     const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
-    return c.json(await loadSessionCacheUsage(runtime, row.backend, row.transcript_path), 200);
+    return c.json(
+      await loadSessionCacheUsage(
+        runtime,
+        row.backend,
+        row.transcript_path,
+        row.runtime_session_id ?? null,
+      ),
+      200,
+    );
   },
 );
 

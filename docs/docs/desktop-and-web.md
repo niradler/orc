@@ -56,7 +56,7 @@ opens the chat page instead.
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
   - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
-- **Inspector**: the panel button in the header opens one panel with **Overview**, **Changes** and **Files** on desktop and phone. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its state, CI state and GitHub link; a checkout on a detached HEAD says so instead of reporting missing GitHub authentication. When a terminal is running in that folder, **Changes** combines the working-tree review (staging and commit) with the branch's PR review (diff, comments and an **Open on GitHub** link) behind Local / PR modes, and **Files** browses and edits the checkout. In the Electron desktop app the same panel adds a desktop-only **Browser** tab. On a phone the inspector is a full page.
+- **Inspector**: the panel button in the header opens one panel with **Overview**, **Changes** and **Files** on desktop and phone. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its state, CI state and GitHub link; a checkout on a detached HEAD says so instead of reporting missing GitHub authentication. **Changes** reads the session's folder directly — no terminal has to be running — and combines the working-tree review (staging and commit) with the branch's PR review (diff, comments and an **Open on GitHub** link) behind Local / PR modes, while **Files** browses and edits the checkout. In the Electron desktop app the same panel adds a desktop-only **Browser** tab. On a phone the inspector is a full page.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - **Continue in terminal**: when the response has finished and the session is idle, **Continue in terminal** in the session actions menu resumes that origin session in its native agent. This works for every native chat agent (Claude Code, Codex, Gemini CLI, OpenCode and Pi), including sessions you have hidden from the session list. The terminal opens as the chat view's main pane, leaving the conversation mounted behind it; the back arrow returns to the chat without losing the terminal or your draft. An already running terminal for that session is reused instead of started twice; if it has exited, a new one resumes the session. A link to an exited or deleted terminal says it is no longer running and the back arrow still returns to the chat.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
@@ -179,13 +179,13 @@ browser, file or agent-control entry points.
 Each conversation keeps its own browser and file tabs within the Browser tab. The
 inspector stays docked beside the conversation and opens when you ask for it, follow
 a link or an agent preview arrives; drag the divider (or use arrow keys on it) to
-resize. The **Files** tab browses the checkout of a running terminal in the
-session's folder and opens a file in an editor tab. Closing the panel keeps tabs
+resize. The **Files** tab browses the session's checkout, whether or not a
+terminal is running, and opens a file in an editor tab. Closing the panel keeps tabs
 and drafts in memory; closing a modified file asks before discarding it. Reloading
 or quitting discards these previews after the unsaved-change warning.
 
-The **Changes** tab shows the working-tree changes of the terminal running in the
-session's folder, reusing the terminal workspace's Git panel: the changed-file
+The **Changes** tab shows the session folder's working-tree changes, reusing the
+terminal workspace's Git panel: the changed-file
 list, unified or side-by-side diffs, staging and commit, and a GitHub link for the
 branch's PR. **Open file** opens a changed file in the inspector's Files tab; the
 copy icon copies the changed file's path to the clipboard. The commit draft,
@@ -584,15 +584,24 @@ in agent options. The permissions chip shows the open session's mode — includi
 activity, tools connection and capabilities, plus the identifiers: the ORC chat
 ID, the agent's native session ID used for resume, and the discovered session ID
 this chat continues when it was resumed. Each identifier can be copied.
-**Customize** holds permissions, agent launch options, session instructions and
-agent browser control. **Analytics** counts messages, turns, tool calls and
-failures from the transcript, shows start, last-activity and turn timings, and
-reports context and cache usage when the session records it. Explanations sit
-behind the info icon beside each label; new-chat defaults remain in Settings →
-Chat.
+**Customize** holds permissions, session instructions, agent browser control and,
+at the end, advanced launch options. **Analytics** counts messages, turns, tool
+calls and failures from the transcript for every coding agent. When the agent
+records usage, it adds context growth with cache reuse and compaction markers,
+per-tool call and failure bars, and turn-duration bars. Agents that do not expose
+usage still show chat-derived analytics with an explanation for the missing
+context data. Explanations sit behind the info icon beside each label; new-chat
+defaults remain in Settings → Chat.
+
+Advanced launch options use the selected agent's own format: Claude SDK options,
+Pi options, Codex App Server arguments, or ACPX arguments for agents launched
+through ACPX. Direct ACP agents such as OpenCode take their command from ORC
+configuration. Environment variables, executable paths and secrets belong to the
+agent's provider profile in Settings → Providers.
 
 ![Session settings overview with the ORC, agent and resume identifiers](/screens/chat-session-settings-overview-desktop.png)
-![Session analytics with counts, turn timings and cache reuse](/screens/chat-session-settings-analytics-desktop.png)
+![Session analytics with counts, tool usage, context growth, cache reuse and compaction](/screens/chat-session-settings-analytics-desktop.png)
+![Session analytics tool usage, failures and turn durations](/screens/chat-session-settings-analytics-tools-desktop.png)
 
 <img src="/screens/chat-session-settings-customize-phone.png" alt="Session settings customization on a phone" width="260">
 

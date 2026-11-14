@@ -1470,6 +1470,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/threads/{id}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Session analytics for this chat: message, turn and tool counts from the stored transcript, plus context and cache usage recorded by the agent. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Chat session analytics */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            messages: number;
+                            userMessages: number;
+                            assistantMessages: number;
+                            turns: number;
+                            toolCalls: number;
+                            toolFailures: number;
+                            attachments: number;
+                            startedAt: number | null;
+                            lastActivityAt: number | null;
+                            outcomes: {
+                                completed: number;
+                                stopped: number;
+                                failed: number;
+                                running: number;
+                            };
+                            durations: {
+                                averageMs: number | null;
+                                medianMs: number | null;
+                                p95Ms: number | null;
+                                totalMs: number | null;
+                            };
+                            tools: {
+                                name: string;
+                                calls: number;
+                                failures: number;
+                            }[];
+                            turnTimeline: {
+                                index: number;
+                                startedAt: number;
+                                durationMs: number | null;
+                                /** @enum {string} */
+                                outcome: "completed" | "stopped" | "failed" | "running";
+                                toolCalls: number;
+                                toolFailures: number;
+                                responseChars: number;
+                            }[];
+                            turnTimelineTruncated: boolean;
+                            context: {
+                                backend: string;
+                                model: string | null;
+                                supported: boolean;
+                                reason: string | null;
+                                usage: {
+                                    latest: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        /** Format: date-time */
+                                        may_be_cold_after: string | null;
+                                    } | null;
+                                    totals: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                    } | null;
+                                    output_tokens: number | null;
+                                    requests: number | null;
+                                    compactions: {
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        pre_tokens: number | null;
+                                        post_tokens: number | null;
+                                    }[] | null;
+                                    timeline: {
+                                        request: number;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        context_tokens: number;
+                                        cached_input_tokens: number;
+                                        output_tokens: number | null;
+                                    }[] | null;
+                                };
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/threads/{id}/refresh": {
         parameters: {
             query?: never;
@@ -20590,7 +20711,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Browse or preview files inside a terminal checkout */
+        /** Browse or preview files inside a terminal or session checkout */
         get: {
             parameters: {
                 query?: {
@@ -20626,7 +20747,7 @@ export interface paths {
                 };
             };
         };
-        /** Save an existing text file inside a terminal checkout */
+        /** Save an existing text file inside a terminal or session checkout */
         put: {
             parameters: {
                 query?: never;
@@ -20718,7 +20839,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Open pull requests for this terminal's current branch */
+        /** Open pull requests for this checkout's current branch */
         get: {
             parameters: {
                 query?: never;
@@ -20786,7 +20907,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Git status for a terminal checkout */
+        /** Git status for a terminal or chat session checkout */
         get: {
             parameters: {
                 query?: never;

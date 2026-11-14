@@ -35,6 +35,7 @@ import {
   nativeChatAgent,
   nativeChatResumeUnavailableReason,
 } from "@orc/core/chat";
+import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
 import { expandChatCommands } from "@orc/core/chat-commands";
 import {
   type ChatTurnContext,
@@ -100,6 +101,7 @@ import {
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
+import { readChatAnalytics, readChatContext } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { projectIdFor } from "../sessions/common.js";
 import { notifySpawner, spawnChain } from "../sessions/control.js";
@@ -661,6 +663,18 @@ async function nativeSource(thread: ChatThread): Promise<NativeSource | null> {
   );
 }
 
+/** A chat can attach to a native session ORC already discovered (for example
+ *  when a second chat reuses it); record that source so Resume session ID and
+ *  handoff checks name the real session instead of showing empty. */
+async function linkNativeSource(thread: ChatThread): Promise<ChatThread> {
+  if (thread.sourceId || !thread.runtimeId) return thread;
+  const source = await nativeSource(thread);
+  if (!source) return thread;
+  thread.sourceId = source.id;
+  store().save(thread);
+  return thread;
+}
+
 async function transcriptMark(thread: ChatThread, source?: NativeSource | null) {
   const row = source === undefined ? await nativeSource(thread) : source;
   if (!row?.transcript_path) return null;
@@ -921,7 +935,7 @@ app.openapi(
     request: { params },
     responses: response,
   }),
-  (c) => c.json(requireThread(c.req.valid("param").id)),
+  async (c) => c.json(await linkNativeSource(requireThread(c.req.valid("param").id))),
 );
 app.openapi(
   createRoute({
@@ -933,11 +947,11 @@ app.openapi(
     request: { params },
     responses: response,
   }),
-  (c) => {
+  async (c) => {
     const messageId = c.req.valid("param").id;
     const thread = store().byMessage(messageId);
     if (!thread) throw new NotFoundError("Chat message", messageId);
-    return c.json(thread);
+    return c.json(await linkNativeSource(thread));
   },
 );
 app.openapi(
@@ -986,6 +1000,40 @@ app.openapi(
         title: request.input.title ?? request.input.prompt.slice(0, 120),
       })),
     });
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads/{id}/analytics",
+    tags: ["Chat"],
+    description:
+      "Session analytics for this chat: message, turn and tool counts from the stored transcript, plus context and cache usage recorded by the agent.",
+    request: { params },
+    responses: {
+      200: {
+        description: "Chat session analytics",
+        content: { "application/json": { schema: ChatAnalyticsSchema } },
+      },
+      404: { description: "Chat not found" },
+    },
+  }),
+  async (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    const source = await nativeSource(thread);
+    const context = await readChatContext(
+      hostRuntime(execHostFor(thread.host)),
+      thread,
+      source
+        ? {
+            backend: source.backend,
+            model: source.model ?? null,
+            transcript_path: source.transcript_path ?? null,
+            runtime_session_id: source.runtime_session_id ?? null,
+          }
+        : null,
+    );
+    return c.json({ ...readChatAnalytics(thread), context });
   },
 );
 app.openapi(
@@ -2256,6 +2304,7 @@ async function beginTurn(
                 "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
               );
             thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
+            if (!thread.sourceId && event.data.runtimeSessionId) await linkNativeSource(thread);
             // A backend may have resumed the session in a folder it moved to (an
             // OpenCode worktree); follow it so the next turn loads from there.
             if (event.data.cwd && isAbsolute(event.data.cwd) && !event.data.cwd.includes("\0"))

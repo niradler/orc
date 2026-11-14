@@ -46,12 +46,16 @@ sessions appear without waiting for another agent's activity.
 
 ![Compact Activity session rows with demo data](/screens/activity-session-rows.png)
 
-Open a Codex or Claude session to see its last reported cached-input percentage.
-Expand that compact row for input, cached reads, cache writes when reported, and
-recorded session totals. Cached input is a share of **input** tokens, not output
-or total billed cost. Claude input includes uncached input plus cache reads and
-writes; Codex reports input with its cache reads already included. Claude totals
-deduplicate repeated messages; Codex totals use the provider's cumulative snapshot.
+Open a Claude, Codex, Pi or OpenCode session to see its last reported
+cached-input percentage. Expand that compact row for input, cached reads, cache
+writes when reported, and recorded session totals. Cached input is a share of
+**input** tokens, not output or total billed cost. Claude input includes uncached
+input plus cache reads and writes; Codex reports input with its cache reads
+already included. Claude totals deduplicate repeated messages; Codex totals use
+the provider's cumulative snapshot. Pi reads per-assistant usage on the active
+branch and marks context edits as compactions. OpenCode reads its per-request
+usage and compaction rows from the local session database; before/after context
+sizes are not recorded there.
 
 When Claude records a cache-write lifetime and activity timestamp, the indicator
 can change to **Cache may need rebuilding** after that lifetime has elapsed

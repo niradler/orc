@@ -21,7 +21,7 @@ export function MobileInspectorPage({
   home: SessionHomeNav;
 }) {
   const tab: InspectorTab = home.inspector ?? "overview";
-  const git = context.gitTerminal;
+  const git = context.gitCheckout;
   const [, setParams] = useSearchParams();
   const root = useRef<HTMLElement>(null);
   const close = () => home.go({ inspector: null });

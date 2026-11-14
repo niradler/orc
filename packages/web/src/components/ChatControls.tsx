@@ -1,4 +1,3 @@
-import type { ChatMessage, ChatTurn } from "@orc/core/chat";
 import {
   Check,
   ChevronRight,
@@ -20,8 +19,8 @@ import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { HelpPopover } from "@/components/HelpPopover";
-import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -45,7 +44,6 @@ import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { type SessionHistory, useSessionHistory } from "@/hooks/useSessionHistory";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
-import { formatDuration } from "@/lib/chat-activity";
 import type { ChatHistoryEntry } from "@/lib/chat-history-list";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
 import { cn } from "@/lib/utils";
@@ -764,7 +762,6 @@ export function ChatConversationInfo({
   const { config, changePermissions, thread, streaming } = useChat();
   const preview = useDesktopPreview();
   const capabilities = useAgentCapabilities(config.agent, thread);
-  const analytics = chatAnalytics(thread?.messages ?? []);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -777,7 +774,7 @@ export function ChatConversationInfo({
           const content = event.currentTarget as HTMLElement | null;
           content?.focus();
         }}
-        className="w-[calc(100%-1rem)] min-w-0 grid-cols-[minmax(0,1fr)] sm:max-w-2xl"
+        className="w-[calc(100%-1rem)] min-w-0 grid-cols-[minmax(0,1fr)] sm:max-w-3xl"
       >
         <div className="flex min-w-0 items-center gap-1 pr-8">
           <DialogTitle className="min-w-0 flex-1">Session settings</DialogTitle>
@@ -863,7 +860,7 @@ export function ChatConversationInfo({
                 <HelpPopover label="Session identifiers" testId="chat-session-ids-help">
                   ORC chat ID names this conversation in ORC. The agent session ID is the coding
                   agent's native session, used to resume it outside ORC. The resume session ID is
-                  the discovered ORC session this chat continues, when it was resumed.
+                  the discovered ORC session this chat continues, when ORC can match one.
                 </HelpPopover>
               </div>
               <dl className="space-y-2" data-testid="chat-session-ids">
@@ -894,7 +891,6 @@ export function ChatConversationInfo({
               config={config}
               onChange={(next) => void changePermissions(next)}
             />
-            <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
             <div className="text-sm">
               <div className="flex items-center gap-1">
                 <label htmlFor="chat-session-instructions" className="text-sm font-medium">
@@ -950,56 +946,12 @@ export function ChatConversationInfo({
                 )}
               </div>
             )}
+            <div className="border-t border-border pt-1">
+              <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
+            </div>
           </TabsContent>
           <TabsContent value="analytics" className="space-y-4">
-            <div className="flex items-center gap-1">
-              <h3 className="text-sm font-medium">Session analytics</h3>
-              <HelpPopover label="Session analytics" testId="chat-analytics-help">
-                Counts come from this chat's stored transcript. Context and cache figures appear
-                when the agent records usage for the session.
-              </HelpPopover>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <AnalyticsStat label="Messages" value={analytics.messages} />
-              <AnalyticsStat label="Turns" value={analytics.turns} />
-              <AnalyticsStat label="Tool calls" value={analytics.tools} />
-              <AnalyticsStat label="Tool failures" value={analytics.toolFailures} />
-            </div>
-            <dl className="space-y-3 text-sm wrap-break-word">
-              <SettingsRow label="Started">{when(analytics.startedAt)}</SettingsRow>
-              <SettingsRow label="Last activity">
-                {thread ? when(thread.updatedAt) : "—"}
-              </SettingsRow>
-              <SettingsRow label="Last turn">
-                {analytics.lastTurn
-                  ? [
-                      analytics.lastTurn.outcome ?? "running",
-                      analytics.lastTurn.durationMs !== undefined
-                        ? `${formatDuration(analytics.lastTurn.durationMs)}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : "No completed turn yet"}
-              </SettingsRow>
-              <SettingsRow label="Average turn">
-                {analytics.averageTurnMs === null ? "—" : formatDuration(analytics.averageTurnMs)}
-              </SettingsRow>
-              {analytics.attachments > 0 && (
-                <SettingsRow label="Attachments">{analytics.attachments}</SettingsRow>
-              )}
-            </dl>
-            {thread?.sourceId ? (
-              <div className="border-t border-border pt-3">
-                <SessionCacheUsage sessionId={thread.sourceId} live={streaming} />
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {thread
-                  ? "Context and cache usage are recorded for sessions resumed from an agent session or terminal."
-                  : "Analytics appear after the session starts."}
-              </p>
-            )}
+            <ChatSessionAnalytics threadId={thread?.id} streaming={streaming} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -1012,15 +964,6 @@ function SettingsRow({ label, children }: { label: string; children: ReactNode }
     <div>
       <dt className="text-muted-foreground">{label}</dt>
       <dd>{children}</dd>
-    </div>
-  );
-}
-
-function AnalyticsStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div data-testid={`chat-analytics-${label.toLowerCase().replace(" ", "-")}`}>
-      <p className="text-lg font-medium tabular-nums">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -1070,40 +1013,6 @@ function IdRow({
       )}
     </div>
   );
-}
-
-function chatAnalytics(messages: ChatMessage[]) {
-  let turns = 0;
-  let tools = 0;
-  let toolFailures = 0;
-  let attachments = 0;
-  let timed = 0;
-  let totalDuration = 0;
-  let lastTurn: ChatTurn | undefined;
-  for (const message of messages) {
-    attachments += message.attachments?.length ?? 0;
-    for (const activity of message.activity ?? []) {
-      if (activity.type !== "tool") continue;
-      tools += 1;
-      if (activity.isError) toolFailures += 1;
-    }
-    if (!message.turn) continue;
-    turns += 1;
-    lastTurn = message.turn;
-    if (message.turn.durationMs === undefined) continue;
-    timed += 1;
-    totalDuration += message.turn.durationMs;
-  }
-  return {
-    messages: messages.length,
-    turns,
-    tools,
-    toolFailures,
-    attachments,
-    startedAt: messages[0]?.timestamp,
-    lastTurn,
-    averageTurnMs: timed ? Math.round(totalDuration / timed) : null,
-  };
 }
 
 function when(value: number | undefined): string {

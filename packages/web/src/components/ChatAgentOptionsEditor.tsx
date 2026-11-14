@@ -1,5 +1,7 @@
 import { ChatAgentOptionsSchema, chatRuntime } from "@orc/core/chat-options";
+import { chatRuntimeFor } from "@orc/core/coding-agents";
 import { useEffect, useId, useState } from "react";
+import { agentDisplayName } from "@/components/AgentIcon";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +11,9 @@ export function ChatAgentOptionsEditor() {
   const { config, applyAgentOptions, thread, streaming } = useChat();
   const inputId = useId();
   const runtime = chatRuntime(config.agent);
+  const directAcp = thread?.backend === "acp" || chatRuntimeFor(config.agent) === "opencode";
   const saved = config.agentOptions[config.agent];
+  const legacyArgs = directAcp && saved?.runtime === "acpx" ? saved.args : [];
   const initial = JSON.stringify(
     saved?.runtime === "claude-sdk" || saved?.runtime === "pi"
       ? saved.options
@@ -94,63 +98,123 @@ export function ChatAgentOptionsEditor() {
     setFeedback("");
     setError("");
   }
+  const agentName = agentDisplayName(config.agent);
+  const fieldLabel =
+    runtime === "claude-sdk"
+      ? "Claude SDK options (JSON)"
+      : runtime === "pi"
+        ? "Pi options (JSON)"
+        : runtime === "codex"
+          ? "Codex App Server arguments (JSON array)"
+          : `${agentName} arguments via ACPX (JSON array)`;
+  const help = (
+    <HelpPopover label="Agent launch options" testId="chat-agent-options-help">
+      {directAcp
+        ? "Direct ACP agents read their launch command from ORC's agent_loop.acp_commands or a built-in ACP command. Environment variables and executables are saved per provider in Settings → Providers, including secret values. Changes apply to the next turn."
+        : runtime === "claude-sdk"
+          ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}. Environment variables and secrets belong to the agent profile in Settings → Providers.'
+          : runtime === "pi"
+            ? 'Pi fields: thinkingLevel, steeringMode, followUpMode, autoCompaction, autoRetry. Example: {"thinkingLevel":"high"}. Queue mode, auto-retry and auto-compaction are saved to Pi\'s own settings on the execution host; thinking level is session-only. Environment variables belong to the agent profile in Settings → Providers.'
+            : runtime === "acpx"
+              ? `Arguments passed to the ACPX transport that launches ${agentName}. Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions. Environment variables, executable paths and secrets belong to the agent profile in Settings → Providers.`
+              : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above. Environment variables and secrets belong to the agent profile in Settings → Providers."}{" "}
+      Options are kept separately for each agent.
+    </HelpPopover>
+  );
   return (
     <details data-testid="chat-agent-options" className="min-w-0 space-y-3 text-sm">
       <summary className="min-h-11 cursor-pointer py-3">Advanced launch options</summary>
-      <label htmlFor={inputId} className="block space-y-2">
-        <span>
-          {runtime === "claude-sdk"
-            ? "Claude SDK options (JSON)"
-            : runtime === "pi"
-              ? "Pi options (JSON)"
-              : `${runtime === "codex" ? "Codex App Server" : "ACPX"} arguments (JSON array)`}
-        </span>
-        <Textarea
-          id={inputId}
-          data-testid="chat-agent-options-input"
-          aria-label="Agent launch options"
-          rows={6}
-          maxLength={20000}
-          value={draft}
-          disabled={streaming || pending}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setFeedback("");
-          }}
-          className="font-mono text-xs"
-        />
-      </label>
-      <HelpPopover label="Agent launch options" testId="chat-agent-options-help">
-        {runtime === "claude-sdk"
-          ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}.'
-          : runtime === "pi"
-            ? 'Pi fields: thinkingLevel, steeringMode, followUpMode, autoCompaction, autoRetry. Example: {"thinkingLevel":"high"}. Queue mode, auto-retry and auto-compaction are saved to Pi\'s own settings on the execution host; thinking level is session-only.'
-            : runtime === "acpx"
-              ? 'Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions.'
-              : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above."}{" "}
-        Options are kept separately for each agent. Credentials stay in host configuration.
-      </HelpPopover>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          data-testid="chat-agent-options-example"
-          disabled={streaming || pending}
-          onClick={example}
-        >
-          {runtime === "codex" || runtime === "pi"
-            ? "High reasoning example"
-            : "Bypass permissions example"}
-        </Button>
-        <Button
-          type="button"
-          data-testid="chat-agent-options-apply"
-          disabled={streaming || pending}
-          onClick={() => void apply()}
-        >
-          {pending ? "Saving…" : "Apply options"}
-        </Button>
-      </div>
+      {directAcp ? (
+        <div className="flex items-start gap-1">
+          <p
+            className="min-w-0 text-xs text-muted-foreground"
+            data-testid="chat-agent-options-direct-acp"
+          >
+            {agentName} connects over ACP directly, so ACPX launch flags do not apply. Set its
+            command in ORC configuration and its environment, executable or secrets in Settings →
+            Providers. Those profile values also apply to this chat.
+          </p>
+          {help}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-start gap-1">
+            <label className="min-w-0" htmlFor={inputId}>
+              {fieldLabel}
+            </label>
+            {help}
+          </div>
+          <Textarea
+            id={inputId}
+            data-testid="chat-agent-options-input"
+            aria-label="Agent launch options"
+            rows={6}
+            maxLength={20000}
+            value={draft}
+            disabled={streaming || pending}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setFeedback("");
+            }}
+            className="font-mono text-xs"
+          />
+        </div>
+      )}
+      {directAcp && legacyArgs.length > 0 && (
+        <div className="space-y-2 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs">
+          <p className="text-warning">
+            Saved ACPX arguments cannot be used with this agent and will fail the next turn.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="chat-agent-options-clear"
+            disabled={streaming || pending}
+            onClick={() => {
+              setError("");
+              setFeedback("");
+              setPending(true);
+              void applyAgentOptions(config.agent, { runtime: "acpx", args: [] })
+                .then((ok) => {
+                  if (ok) setFeedback("Saved ACPX arguments were cleared.");
+                })
+                .catch((cause: unknown) => {
+                  setError(
+                    cause instanceof Error ? cause.message : "Launch options could not be saved.",
+                  );
+                })
+                .finally(() => setPending(false));
+            }}
+          >
+            Clear saved arguments
+          </Button>
+        </div>
+      )}
+      {!directAcp && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="chat-agent-options-example"
+            disabled={streaming || pending}
+            onClick={example}
+          >
+            {runtime === "codex" || runtime === "pi"
+              ? "High reasoning example"
+              : runtime === "acpx"
+                ? "Permission example"
+                : "SDK options example"}
+          </Button>
+          <Button
+            type="button"
+            data-testid="chat-agent-options-apply"
+            disabled={streaming || pending}
+            onClick={() => void apply()}
+          >
+            {pending ? "Saving…" : "Apply options"}
+          </Button>
+        </div>
+      )}
       {error && (
         <p
           role="alert"
