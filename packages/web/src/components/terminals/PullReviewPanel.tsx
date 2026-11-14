@@ -302,9 +302,7 @@ export function PullReviewPanel({
     >
       <header className="pr-review-heading">
         <div>
-          <strong>
-            #{number} {data?.title ?? `Pull request #${number}`}
-          </strong>
+          <strong>{data ? `#${number} ${data.title}` : `Pull request #${number}`}</strong>
           {data && (
             <p>
               {data.author} · {data.branch} into {data.base} · {data.head.slice(0, 7)}

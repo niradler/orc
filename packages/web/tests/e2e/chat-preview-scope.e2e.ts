@@ -58,6 +58,28 @@ test.describe("one chat panel at 1440px", () => {
     await expect(page.getByTestId("session-inspector-tab-overview")).toBeVisible();
     await expect(page.getByTestId("session-inspector-tab-browser")).toHaveCount(0);
   });
+
+  test("a desktop open request opens the single inspector on its Browser tab", async ({ page }) => {
+    await mockSessionHome(page);
+    await mockPreviewBridge(page);
+    await page.goto(CHAT_PAGE);
+    await expect(page.getByTestId("chat-panel")).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => !!(window as Window & { __previewOpen?: unknown }).__previewOpen),
+      )
+      .toBe(true);
+    await page.evaluate(() => {
+      (window as Window & { __previewOpen?: (request: unknown) => void }).__previewOpen?.({
+        kind: "url",
+        target: "https://example.com",
+      });
+    });
+    await expect(page.getByTestId("session-inspector")).toBeVisible();
+    await expect(page).toHaveURL(/inspector=browser/);
+    await expect(page.getByTestId("inspector-browser")).toBeVisible();
+    await expect(page.getByTestId("session-inspector")).toHaveCount(1);
+  });
 });
 
 test.describe("phone inspector", () => {
@@ -107,12 +129,36 @@ test.describe("side chat scope", () => {
     await expect(page.getByTestId("session-inspector")).toHaveCount(0);
     await expect(page.getByTestId("chat-preview-toggle")).toHaveCount(0);
 
-    // Returning to the chat page opens the same single inspector again.
+    // The side chat is a different surface; the chat page opens the inspector again.
     await page.getByTestId("chat-fullscreen-button").click();
     await expect(page.getByTestId("session-inspector")).toHaveCount(0);
     await page.getByTestId("session-inspector-toggle").filter({ visible: true }).click();
     await expect(page.getByTestId("session-inspector")).toBeVisible();
     await page.getByTestId("session-inspector-tab-browser").click();
     await expect(page.getByTestId("desktop-preview-browser-surface")).toBeVisible();
+  });
+});
+
+test.describe("narrow desktop inspector", () => {
+  test.use({ viewport: { width: 1024, height: 800 } });
+
+  test("keeps the Browser surface placed inside the sheet", async ({ page }) => {
+    await mockSessionHome(page);
+    await mockPreviewBridge(page);
+    await page.goto(`/chat?project=all&sessionTerminal=${HOME.terminal}`);
+    await openInspector(page);
+    await page.getByTestId("session-inspector-tab-browser").click();
+    await expect(page.getByTestId("inspector-browser")).toBeVisible();
+    await expect(page.getByTestId("desktop-preview-browser-surface")).toBeVisible();
+    // The inspector's own Sheet must not be treated as an overlay hiding the
+    // native browser view; the bridge still needs real bounds.
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const log = (window as Window & { __previewBounds?: unknown[] }).__previewBounds ?? [];
+          return log.some((entry) => !!entry && typeof entry === "object");
+        }),
+      )
+      .toBe(true);
   });
 });

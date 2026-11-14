@@ -915,28 +915,39 @@ export function ChatConversationInfo({
               </pre>
             </div>
             {preview && (
-              <div className="flex items-start justify-between gap-6 border-t border-border pt-4">
-                <div className="flex min-w-0 items-center gap-1">
-                  <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
-                    Allow agent browser control
-                  </label>
-                  <HelpPopover label="Agent browser control" testId="chat-browser-help">
-                    {preview.browserControl.globallyEnabled
-                      ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
-                      : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
-                  </HelpPopover>
+              <div className="border-t border-border pt-4">
+                <div className="flex items-start justify-between gap-6">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
+                      Allow agent browser control
+                    </label>
+                    <HelpPopover label="Agent browser control" testId="chat-browser-help">
+                      {preview.browserControl.globallyEnabled
+                        ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
+                        : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
+                    </HelpPopover>
+                  </div>
+                  <input
+                    type="checkbox"
+                    id="chat-browser-agent-access"
+                    data-testid="chat-browser-agent-access"
+                    className="mt-1 h-4 w-4 shrink-0"
+                    checked={preview.browserControl.enabled}
+                    disabled={
+                      preview.browserControl.pending || !preview.browserControl.globallyEnabled
+                    }
+                    onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
+                  />
                 </div>
-                <input
-                  type="checkbox"
-                  id="chat-browser-agent-access"
-                  data-testid="chat-browser-agent-access"
-                  className="mt-1 h-4 w-4 shrink-0"
-                  checked={preview.browserControl.enabled}
-                  disabled={
-                    preview.browserControl.pending || !preview.browserControl.globallyEnabled
-                  }
-                  onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
-                />
+                {preview.browserControl.error && (
+                  <p
+                    role="alert"
+                    data-testid="chat-browser-preferences-error"
+                    className="mt-2 text-xs text-error"
+                  >
+                    {preview.browserControl.error}
+                  </p>
+                )}
               </div>
             )}
           </TabsContent>

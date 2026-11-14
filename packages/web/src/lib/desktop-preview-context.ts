@@ -37,6 +37,8 @@ export interface DesktopBrowserPaneValue {
   deliveryError: string | null;
   profiles: PreviewProfile[];
   profileId: string | null;
+  /** The chat's profile selection is still loading; ignore changes until it resolves. */
+  profilesPending: boolean;
   displayBusy: boolean;
   recording: PreviewRecording | null;
   dialogText: string;
@@ -66,6 +68,8 @@ export interface DesktopPreviewContextValue {
     enabled: boolean;
     globallyEnabled: boolean;
     pending: boolean;
+    /** A preferences load/save failure the user must resolve in Settings. */
+    error: string | null;
     setEnabled(enabled: boolean): void;
   };
   browser: DesktopBrowserPaneValue;

@@ -323,7 +323,10 @@ export function SessionInspector({
   const close = () => home.go({ inspector: null });
   // Browser requests (chat links, attachments, agent previews, the desktop
   // menu) open this one panel on its Browser tab instead of a second panel.
-  useEffect(() => preview?.subscribeOpen(() => home.go({ inspector: "browser" })), [preview, home]);
+  useEffect(
+    () => preview?.subscribeOpen(() => home.go({ inspector: "browser" })),
+    [preview, home.go],
+  );
   if (narrow)
     return (
       <Sheet open={!!home.inspector} onOpenChange={(open) => !open && close()}>

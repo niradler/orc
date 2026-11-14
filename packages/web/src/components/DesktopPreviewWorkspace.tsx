@@ -524,9 +524,14 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const blocked = document.querySelector(
-          '[role="dialog"][data-state="open"], [data-radix-popper-content-wrapper]',
-        );
+        // A modal or popover above the surface must hide the native view. The
+        // narrow inspector is itself a modal Sheet, so ignore overlays that
+        // contain the surface instead of treating the panel as a blocker.
+        const blocked = [
+          ...document.querySelectorAll(
+            '[role="dialog"][data-state="open"], [data-radix-popper-content-wrapper]',
+          ),
+        ].some((overlay) => !overlay.contains(surface));
         if (!surface.isConnected || blocked) {
           if (previous !== "hidden") bridge.bounds(null, null).catch(() => {});
           previous = "hidden";
@@ -797,6 +802,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       deliveryError,
       profiles,
       profileId: selectedProfile?.session === nativeId ? (selectedProfile.id ?? null) : null,
+      profilesPending: selectedProfile?.session !== nativeId,
       displayBusy,
       recording:
         recorded?.session === nativeId
@@ -878,6 +884,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
         globallyEnabled: preferences.settings?.agentBrowserControl !== false,
         pending:
           chatPermission?.id !== nativeId || !!chatPermission.saving || !preferences.settings,
+        error: preferences.error,
         setEnabled: saveChatPermission,
       },
       browser,
@@ -890,6 +897,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       chatPermission,
       nativeId,
       preferences.settings,
+      preferences.error,
       saveChatPermission,
       openLink,
       openFile,

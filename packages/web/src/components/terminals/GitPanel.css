@@ -8,12 +8,6 @@
   font-size: 13px;
 }
 
-/* Desktop preview panel host: the combined/split diff layout follows the panel
-   width through the container queries below, not the viewport. */
-.preview-changes-host {
-  container-type: inline-size;
-}
-
 /* Inspector host (desktop panel and phone page): the git and files panels
    follow the inspector width through the container queries below. */
 .inspector-host {
@@ -725,7 +719,6 @@
   }
   /* Narrow hosts: keep the changed-file path readable by dropping row
      actions to their own line. Terminal-workspace panes keep the inline layout. */
-  .preview-changes-host .git-file-actions,
   .inspector-host .git-file-actions {
     flex-basis: 100%;
     justify-content: flex-end;

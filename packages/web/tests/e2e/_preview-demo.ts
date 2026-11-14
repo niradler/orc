@@ -20,10 +20,20 @@ export async function mockPreviewBridge(page: Page) {
           restore: async () => null,
           chatPermission: async () => false,
           onBrowser: subscribe,
-          onOpen: subscribe,
+          onOpen: (callback: (request: unknown) => void) => {
+            const win = window as Window & { __previewOpen?: (request: unknown) => void };
+            win.__previewOpen = callback;
+            return () => {
+              win.__previewOpen = undefined;
+            };
+          },
           allow: async () => {},
           dirty: async () => {},
-          bounds: async () => {},
+          bounds: async (_session: string | null, bounds: unknown) => {
+            const win = window as Window & { __previewBounds?: unknown[] };
+            if (!win.__previewBounds) win.__previewBounds = [];
+            win.__previewBounds.push(bounds);
+          },
           preferences: async () => ({ agentBrowserControl: true, openLinksIn: "preview" }),
           onPreferences: subscribe,
           setPreferences: async (value: unknown) => value,

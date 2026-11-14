@@ -83,9 +83,6 @@ export function InspectorOverview({
   const staged = files.filter((file) => fileChangeState(file).staged).length;
   const conflicts = files.filter((file) => fileChangeState(file).conflict).length;
   const task = context.session?.task;
-  // The compare link needs a repository name; the branch's PR feed is the
-  // cheapest place to learn it when this branch has no PR yet.
-  const repo = github.data?.items.find((item) => item.kind === "pr")?.repo;
   const { data: workspace } = useWorkspaceByPath(context.cwd);
   const ports = workspace ? workspacePortRange(workspace) : null;
   const terminals = useTerminals();
@@ -221,11 +218,7 @@ export function InspectorOverview({
                   >
                     {prStateLabel(pr.state)}
                   </span>
-                  {pr.ci ? (
-                    <CiStatus ci={pr.ci} />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">No checks</span>
-                  )}
+                  {pr.ci && <CiStatus ci={pr.ci} />}
                 </div>
                 <div className="mt-2.5 flex flex-wrap gap-2">
                   <button
@@ -258,29 +251,15 @@ export function InspectorOverview({
                 </div>
               </>
             ) : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  {github.data?.unavailable_reason === "no_remote"
-                    ? "This checkout has no GitHub origin remote."
-                    : github.data?.auth === "none"
-                      ? "GitHub authentication is unavailable on this host. Authenticate gh there or configure a GitHub token."
-                      : github.data?.unavailable_reason === "detached_head"
-                        ? "Detached HEAD: select a branch to find its pull request."
-                        : "No open pull request for this branch."}
-                </p>
-                {branch && repo && github.data?.auth !== "none" && (
-                  <a
-                    data-testid="session-inspector-create-pr"
-                    href={`https://github.com/${repo}/compare/${encodeURIComponent(branch)}?expand=1`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-control-border px-3 text-[13px] hover:bg-surface"
-                  >
-                    Create a pull request
-                    <ExternalLink size={12} aria-hidden="true" />
-                  </a>
-                )}
-              </>
+              <p className="text-sm text-muted-foreground">
+                {github.data?.unavailable_reason === "no_remote"
+                  ? "This checkout has no GitHub origin remote."
+                  : github.data?.auth === "none"
+                    ? "GitHub authentication is unavailable on this host. Authenticate gh there or configure a GitHub token."
+                    : github.data?.unavailable_reason === "detached_head"
+                      ? "Detached HEAD: select a branch to find its pull request."
+                      : "No open pull request for this branch."}
+              </p>
             )}
           </div>
         </div>

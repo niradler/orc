@@ -172,8 +172,10 @@ test("commit draft survives closing the inspector and switching chats", async ({
   await expect(panel.getByTestId("git-file-filter")).toHaveValue("total");
 
   // Another chat in the same folder resolves the same terminal: the draft is
-  // kept per terminal, not per chat tab.
+  // kept per terminal, not per chat tab. The list defaults to grouped Projects,
+  // so switch to the flat Recents view first.
   const list = page.getByTestId("chat-session-sidebar").getByTestId("chat-session-list");
+  await page.getByTestId("session-navigation-recents").click();
   await list.locator(`[data-history-id="chat:${HOME.chatB}"]`).locator("button").first().click();
   await expect(page.getByText("Three billing bugs are open.").first()).toBeVisible();
   await openChanges(page);

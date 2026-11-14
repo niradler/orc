@@ -9,7 +9,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { getApiUrl } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import {
@@ -47,6 +47,7 @@ function Tab({
 
 function FilePane({ tab }: { tab: PreviewFileTab }) {
   const preview = useDesktopPreview();
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   if (!preview) return null;
   const browser = preview.browser;
   const external =
@@ -104,12 +105,19 @@ function FilePane({ tab }: { tab: PreviewFileTab }) {
       )}
       {tab.kind === "image" ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-3">
-          <img
-            data-testid="preview-image"
-            src={tab.text}
-            alt={tab.path.split(/[\\/]/).pop()}
-            className="max-w-full max-h-full object-contain"
-          />
+          {failedSrc === tab.text ? (
+            <p role="alert" className="text-xs text-error">
+              Image cannot be decoded by this desktop.
+            </p>
+          ) : (
+            <img
+              data-testid="preview-image"
+              src={tab.text}
+              alt={tab.path.split(/[\\/]/).pop()}
+              className="max-w-full max-h-full object-contain"
+              onError={() => setFailedSrc(tab.text)}
+            />
+          )}
         </div>
       ) : (
         <DesktopPreviewContext.Provider
@@ -145,6 +153,8 @@ export function InspectorBrowser(): ReactNode {
   const state = preview?.browser.state ?? null;
   const dialog = state?.dialog ?? null;
   const dialogSession = dialog && state ? state.session_id : null;
+  const activeFileId = preview?.browser.activeFileId ?? null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: switching from a file tab back to the Browser tab must re-run the focus check
   useEffect(() => {
     if (!dialogSession) return;
     const previous = document.activeElement;
@@ -160,7 +170,7 @@ export function InspectorBrowser(): ReactNode {
       if (previous instanceof HTMLElement && previous !== document.body && previous.isConnected)
         previous.focus();
     };
-  }, [dialogSession]);
+  }, [dialogSession, activeFileId]);
   if (!preview) return null;
   const browser = preview.browser;
   const selected = browser.files.find((file) => file.id === browser.activeFileId) ?? null;
@@ -394,6 +404,7 @@ export function InspectorBrowser(): ReactNode {
                 aria-label="Browser profile"
                 data-testid="preview-browser-profile"
                 className="form-control h-8 min-w-0 max-w-48 text-xs"
+                disabled={browser.profilesPending}
                 value={browser.profileId ?? ""}
                 onChange={(event) => browser.selectProfile(event.target.value || null)}
               >
