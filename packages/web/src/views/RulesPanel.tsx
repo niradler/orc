@@ -22,8 +22,8 @@ import { EventRuleEditor } from "./EventRuleEditor";
 type Revision = Awaited<ReturnType<typeof api.rules.list>>["history"][number];
 type Rule = RulePolicy["rules"][number];
 const selectClass = "w-full rounded-md border border-control-border bg-background p-2 text-sm";
-const agents = ["claude", "codex", "cursor", "gemini", "pi"] as const;
-const hookAgents = agents.filter((agent) => agent !== "pi");
+const agents = ["claude", "codex", "cursor", "gemini", "pi", "opencode"] as const;
+const hookAgents = agents.filter((agent) => agent !== "pi" && agent !== "opencode");
 
 function workspaceKey(value: string): string {
   const path = value.trim().split("\\").join("/");
@@ -496,7 +496,7 @@ export function RulesPanel() {
                 <p className="text-xs text-muted-foreground">
                   Claude SDK sessions connect when rule enforcement is enabled. Native agents need
                   installed, trusted hooks and a supported host. Pi enforces rules through the
-                  @orc/pi package.
+                  @orc/pi package; OpenCode through the @orc/opencode plugin.
                 </p>
                 {hookAgents.map((agent) => (
                   <p key={agent} className="text-xs break-all">

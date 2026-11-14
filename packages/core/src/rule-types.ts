@@ -121,9 +121,9 @@ export const EventRuleSchema = z
         agents: z.union([
           z.literal("all"),
           z
-            .array(z.enum(["claude", "cursor", "gemini", "codex", "pi"]))
+            .array(z.enum(["claude", "cursor", "gemini", "codex", "pi", "opencode"]))
             .min(1)
-            .max(5),
+            .max(6),
         ]),
         events: z.array(identity).min(1).max(40),
       })

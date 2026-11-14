@@ -14,7 +14,20 @@ store.activate(
   {
     workspace: directory,
     project_id: null,
-    rules: [{ id: "shell", kind: "deny_tools", tools: ["Bash"], reason: "No shell" }],
+    rules: [
+      {
+        id: "shell",
+        kind: "event",
+        enabled: true,
+        reason: "No shell",
+        scope: { agents: "all", events: ["pre_tool"] },
+        filter: {
+          match: "all",
+          conditions: [{ predicate: { field: "tool", operator: "equals", value: "Bash" } }],
+        },
+        target: { type: "block" },
+      },
+    ],
   },
   null,
   "Native protocol validation",
@@ -56,6 +69,7 @@ try {
     ["cursor", "preToolUse"],
     ["gemini", "BeforeTool"],
     ["codex", "PreToolUse"],
+    ["opencode", "execute.before"],
   ] as const) {
     const raw = {
       session_id: "native",
@@ -122,6 +136,9 @@ try {
     true, "Installer retained unsafe failure setting");
   require((await run(["install-hook", "gemini", "--target", target])).code !==
     0, "Unqualified installer accepted");
+  for (const backend of ["pi", "opencode"] as const)
+    require((await run(["install-hook", backend, "--target", target])).code !==
+      0, `${backend}: package/plugin enforcement must not install settings hooks`);
   for (const backend of ["claude", "gemini", "codex"] as const) {
     const settings = join(directory, `${backend}.json`);
     const event = backend === "gemini" ? "BeforeTool" : "PreToolUse";

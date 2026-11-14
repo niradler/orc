@@ -1,6 +1,6 @@
 # Connect agents
 
-How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi and other MCP clients to ORC: MCP registration, session tracking, hooks and skills.
+How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi, OpenCode and other MCP clients to ORC: MCP registration, session tracking, hooks and skills.
 
 ## What each piece gives you
 
@@ -135,6 +135,25 @@ security notes.
 | `ORC_SESSION_ID` | Attribution for memory, knowledge and scratchpad writes   |
 | `ORC_API_SECRET` | Secret, when not in `~/.orc/config.json`                  |
 
+### OpenCode
+
+[`@orc/opencode`](https://www.npmjs.com/package/@orc/opencode) is a native OpenCode
+plugin that enforces ORC rules through OpenCode's own hooks. Add it to `opencode.json`
+(project) or `~/.config/opencode/opencode.json` (global):
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@orc/opencode"]
+}
+```
+
+It runs `orc rules hook opencode` per tool call, prompt and compaction, blocks denied
+calls fail-closed, and delivers rule context on the next model request. No `install-hook`
+step is needed. For ORC tools, register the MCP server under `mcp.servers` (HTTP
+`http://127.0.0.1:7700/mcp` with the bearer header, or stdio `orc mcp`). See
+[OpenCode](./opencode.md) for options and failure behavior.
+
 ### spec CLI
 
 If you use the `spec` CLI, register ORC once and every agent can reach it through `spec`:
@@ -191,6 +210,9 @@ orc rules install-hook gemini --target ~/.gemini/settings.json
 | `--legacy-hooks-dir <dir>` | Replace old `hooks/*.ts` continuity handlers in that directory                                                              |
 
 Rule enforcement also needs `rules.enabled: true` (or `ORC_RULES_ENABLED=true`). See [Agent rules](./agent-rules.md) and [Human requests](./human-requests.md).
+
+Pi and OpenCode skip `install-hook`: `@orc/pi` and the `@orc/opencode` plugin embed the
+same rule adapter and forward native events to `orc rules hook <backend>`.
 
 ::: warning Old hook scripts
 Older setups pointed Claude Code at `bun /path/to/orc/hooks/session-start.ts`, `post-tool-use.ts` and `pre-compact.ts`. Those scripts now forward to the rule dispatcher. Migrate with `orc rules install-hook claude --target ~/.claude/settings.json --legacy-hooks-dir /path/to/orc/hooks`.

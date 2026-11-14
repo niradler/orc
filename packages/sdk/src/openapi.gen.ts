@@ -663,6 +663,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -947,6 +948,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1173,6 +1175,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1402,6 +1405,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1678,6 +1682,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -1965,6 +1970,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -2279,6 +2285,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -2562,6 +2569,7 @@ export interface paths {
                                 at: number;
                                 notify: boolean;
                                 prompt?: string;
+                                cancelled?: boolean;
                             };
                             updatedAt: number;
                         };
@@ -11622,7 +11630,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -11768,7 +11776,7 @@ export interface paths {
                                         kind: "event";
                                         enabled: boolean;
                                         scope: {
-                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                            agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                             events: string[];
                                         };
                                         filter: {
@@ -11937,7 +11945,7 @@ export interface paths {
                                 kind: "event";
                                 enabled: boolean;
                                 scope: {
-                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                    agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                     events: string[];
                                 };
                                 filter: {
@@ -12056,7 +12064,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -12209,7 +12217,7 @@ export interface paths {
                                     kind: "event";
                                     enabled: boolean;
                                     scope: {
-                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi")[];
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex" | "pi" | "opencode")[];
                                         events: string[];
                                     };
                                     filter: {
@@ -17647,6 +17655,8 @@ export interface paths {
                     /** @description Project id, or unassigned for sessions without a project; filtered before limit */
                     project_id?: string;
                     active?: "true" | "false";
+                    /** @description Include sessions a human hid from the list */
+                    include_hidden?: "true" | "false";
                     limit?: number;
                 };
                 header?: never;
@@ -17690,6 +17700,8 @@ export interface paths {
                     q: string;
                     agent?: string;
                     project_id?: string;
+                    /** @description Include sessions a human hid from the list */
+                    include_hidden?: "true" | "false";
                     limit?: number;
                 };
                 header?: never;
@@ -17944,7 +17956,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Link a live session to a task, or unlink it with task_id null */
+        /**
+         * Rename, hide or link a live session
+         * @description Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -17957,7 +17972,9 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        task_id: string | null;
+                        task_id?: string | null;
+                        display_title?: string | null;
+                        hidden?: boolean;
                     };
                 };
             };
@@ -19827,6 +19844,8 @@ export interface paths {
                         cwd?: string;
                         name?: string;
                         live_session_id?: string;
+                        /** @description With live_session_id: open a new session from that session's history instead of resuming it. The source session is left untouched. */
+                        fork?: boolean;
                         /** @description Start an agent in a new git worktree of the cwd's repo */
                         worktree?: boolean;
                         /** @description Project whose workspace environment and ports this terminal uses */
@@ -22517,6 +22536,10 @@ export interface components {
             status: "idle" | "running" | "stopped" | "error";
             /** @default false */
             waiting_for_human: boolean;
+            /** @default false */
+            hidden: boolean;
+            /** @default false */
+            renamed: boolean;
             project_id: string | null;
             task: {
                 id: string;

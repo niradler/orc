@@ -1,0 +1,50 @@
+{
+  "name": "@orc/opencode",
+  "version": "0.1.65",
+  "description": "ORC rules for OpenCode: native plugin hooks that enforce workspace guardrails and automation through orc rules hook opencode",
+  "type": "module",
+  "keywords": [
+    "opencode-plugin",
+    "opencode",
+    "orc",
+    "rules",
+    "guardrails",
+    "hooks"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niradler/orc.git",
+    "directory": "packages/opencode"
+  },
+  "homepage": "https://github.com/niradler/orc/tree/master/packages/opencode",
+  "bugs": {
+    "url": "https://github.com/niradler/orc/issues"
+  },
+  "exports": {
+    ".": "./src/plugin.ts"
+  },
+  "files": [
+    "README.md",
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/plugin.ts --target bun --outfile dist/plugin.js",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@orc/rule-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.3.0",
+    "bun-types": "^1.4.4",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

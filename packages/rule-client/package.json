@@ -1,0 +1,44 @@
+{
+  "name": "@orc/rule-client",
+  "version": "0.1.65",
+  "description": "Shared ORC rule-hook client for coding agents: one generic adapter factory, per-agent native event maps",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niradler/orc.git",
+    "directory": "packages/rule-client"
+  },
+  "homepage": "https://github.com/niradler/orc/tree/master/packages/rule-client",
+  "bugs": {
+    "url": "https://github.com/niradler/orc/issues"
+  },
+  "exports": {
+    ".": "./src/factory.ts",
+    "./types": "./src/types.ts",
+    "./hook": "./src/hook.ts",
+    "./plan": "./src/plan.ts",
+    "./gate": "./src/gate.ts",
+    "./policy": "./src/policy.ts",
+    "./factory": "./src/factory.ts",
+    "./pi": "./src/pi.ts",
+    "./opencode": "./src/opencode.ts"
+  },
+  "files": [
+    "README.md",
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.4",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

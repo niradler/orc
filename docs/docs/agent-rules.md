@@ -198,7 +198,7 @@ the Claude hook reference documents blocking SDK callback timeouts. Native comma
 failure blocking needs a newer Claude CLI; it must not be assumed for older installations.
 [Claude hook reference](https://code.claude.com/docs/en/hooks).
 
-`orc rules hook <claude|cursor|gemini|codex> <event>` implements stdin JSON/stdout JSON protocols
+`orc rules hook <claude|cursor|gemini|codex|pi|opencode> <event>` implements stdin JSON/stdout JSON protocols
 against the local configured SQLite DB. Denials/errors exit 2. This works without a running
 API, but is a transport adapter, not proof of coverage in every agent version.
 `orc rules install-hook <claude|cursor|gemini|codex> --target <settings-file>` preserves
@@ -213,6 +213,16 @@ timeouts, crashes and actual edit payloads must be qualified before relying on t
 [Gemini hook reference](https://geminicli.com/docs/hooks/reference/),
 [Codex hook reference](https://learn.chatgpt.com/docs/hooks). Codex requires host trust;
 its native hooks do not intercept every hosted tool or execution path.
+
+Pi and OpenCode embed the same adapter instead of installed settings hooks: `@orc/pi`
+(porc) forwards Pi `tool_call`, `tool_result` and `input` events, and the `@orc/opencode`
+plugin forwards OpenCode `execute.before`, `execute.after`, `prompt` and `compaction`
+hooks. Both run `orc rules hook <backend> <event>` per event and fail closed on blocking
+events when the hook cannot produce a decision. When Pi cannot load the rules plan (ORC
+offline or the fetch failed), blocking events still run the hook against the local DB, and
+the plan refreshes periodically so later policy changes apply. OpenCode has no session
+start/end hooks; rules scoped to those events are not delivered there. See
+[Pi and porc](./pi.md) and [OpenCode](./opencode.md).
 
 Other managed backends refuse sessions in policy-protected workspaces. Protected chat
 cannot fall back to an unverified CLI/remote backend, and ORC refuses unqualified native
@@ -295,7 +305,7 @@ flow. This is a procedural option, not a measured quality improvement.
 against defective and clean expiry-boundary fixtures with a real agent.
 `bun scripts/validate-rule-hooks.ts` checks actual CLI processes and settings installation
 without changing global settings; `--executable=<path>` repeats it against a built binary.
-All four native protocols and settings merge/reinstallation are checked. Native host
+All five native protocols and settings merge/reinstallation are checked. Native host
 qualification remains separate from adapter/installer tests. Gemini events without stable
 tool IDs, and lifecycle events without generation/turn IDs, use fresh receipts; identical
 redeliveries without host identities cannot be universally deduplicated.

@@ -4,10 +4,11 @@ import { dirname, resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { runHumanRuleActions } from "@orc/core/human-request-client";
 import { recordLiveSessionWait } from "@orc/core/live-session";
+import { createRuleAdapter } from "@orc/core/rule-adapter";
 import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
 import { copyRuleTemplate, RULE_CATALOG } from "@orc/core/rule-catalog";
-import { RULE_EVENT_ADAPTERS, ruleEventCapability } from "@orc/core/rule-events";
-import { normalizeRuleHook, type RuleHookBackend, ruleHookOutput } from "@orc/core/rule-hooks";
+import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
+import type { RuleHookBackend } from "@orc/core/rule-hooks";
 import { sessionMessageContext } from "@orc/core/session-messages";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
@@ -77,8 +78,7 @@ export function rulesCommand(): Command {
     .description("Native hook stdin/stdout protocol; denied/error exit 2")
     .action(async (backend, event) => {
       try {
-        if (!Object.hasOwn(RULE_EVENT_ADAPTERS, backend))
-          throw new Error("Unsupported hook backend");
+        const adapter = createRuleAdapter(backend as RuleHookBackend);
         const raw = readFileSync(0, "utf8");
         if (Buffer.byteLength(raw) > 1_100_000) throw new Error("Rule hook input too large");
         const parsed = JSON.parse(raw);
@@ -89,7 +89,7 @@ export function rulesCommand(): Command {
             `[orc live-session] ${error instanceof Error ? error.message : "Hook failed"}`,
           );
         }
-        const normalized = normalizeRuleHook(backend as RuleHookBackend, event, parsed);
+        const normalized = adapter.normalize(event, parsed);
         if (normalized.phase === "post_tool" || normalized.phase === "post_tool_failure")
           new HumanRequestStore(getSqlite()).acknowledgeToolResults(
             normalized.session_id,
@@ -117,16 +117,14 @@ export function rulesCommand(): Command {
         let pending: ReturnType<SessionMessageStore["claim"]> = [];
         try {
           if (
-            ruleEventCapability(backend, `native:${event}`)?.context &&
+            adapter.capability(`native:${event}`)?.context &&
             normalized.session_id &&
             result.decision !== "deny"
           ) {
             pending = messages.claim(normalized.backend, normalized.session_id);
             if (pending.length) result.context.push(sessionMessageContext(pending));
           }
-          console.log(
-            JSON.stringify(ruleHookOutput(backend as RuleHookBackend, normalized, result)),
-          );
+          console.log(JSON.stringify(adapter.output(normalized, result)));
           messages.deliver(
             pending.map((message) => message.id),
             "hook",
@@ -182,6 +180,10 @@ export function rulesCommand(): Command {
       if (backend === "pi")
         throw new Error(
           "Pi enforces ORC rules through the @orc/pi package; no hook install needed",
+        );
+      if (backend === "opencode")
+        throw new Error(
+          "OpenCode enforces ORC rules through the @orc/opencode plugin; no hook install needed",
         );
       const hookTimeout = Number(opts.timeoutSeconds);
       if (!Number.isInteger(hookTimeout) || hookTimeout < 1 || hookTimeout > 604815)
