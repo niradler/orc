@@ -36,6 +36,7 @@ import {
   mergeNotificationToasts,
   NotificationFeed,
   type NotificationToastEntry,
+  notificationInView,
 } from "@/lib/notification-feed";
 import {
   getNotificationPrefs,
@@ -132,6 +133,9 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<NotificationToastEntry[]>([]);
   const [announcement, setAnnouncement] = useState("");
   const feed = useRef(new NotificationFeed());
+  // Completion IDs already settled for the open view; the inbox refetch catches up.
+  const acknowledged = useRef(new Set<string>());
+  const acknowledge = useRef<(items: readonly OrcNotification[]) => void>(() => {});
   const delivery = useRef({
     location,
     tabs,
@@ -189,6 +193,13 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       void refresh();
     },
   });
+  acknowledge.current = (settled) => {
+    for (const item of settled)
+      update.mutate(
+        { id: item.id, read: true, dismissed: true },
+        { onError: () => acknowledged.current.delete(item.id) },
+      );
+  };
   const show = (element: HTMLElement) => {
     setAnchor(element);
     setExpanded(true);
@@ -226,39 +237,45 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     );
   }, [query.data]);
 
+  const activeThreadId = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
+  // A completion for the chat or session already on screen is settled instead of
+  // waiting unread in the bell; the visible conversation is the acknowledgement.
+  useEffect(() => {
+    if (document.visibilityState === "hidden" || !document.hasFocus()) return;
+    const view = {
+      active: true,
+      pathname: location.pathname,
+      search: location.search,
+      chatThreadId: activeThreadId,
+      sessions: sessions.data?.sessions,
+      requests: requests.data,
+    };
+    const settled = items.filter(
+      (item) =>
+        item.level === "done" &&
+        !item.read_at &&
+        !item.dismissed_at &&
+        !acknowledged.current.has(item.id) &&
+        notificationInView(item, view),
+    );
+    if (!settled.length) return;
+    for (const item of settled) acknowledged.current.add(item.id);
+    acknowledge.current(settled);
+  }, [items, location.pathname, location.search, activeThreadId, sessions.data, requests.data]);
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       const state = delivery.current;
       const incoming = feed.current.flush(Date.now(), (item) => {
         if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
-        const params = new URLSearchParams(state.location.search);
-        const target = new URL(item.path, window.location.origin);
-        const threadId = state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id;
-        const request =
-          item.type === "human.request"
-            ? state.requests?.find((request) => request.id === item.source_id)
-            : undefined;
-        const targetThread =
-          target.searchParams.get("chatThread") ?? request?.input.origin.chat_thread_id;
-        if (
-          (params.get("chat") || state.location.pathname === "/chat") &&
-          targetThread &&
-          targetThread === threadId
-        )
-          return true;
-        if (state.location.pathname !== "/sessions") return false;
-        const sessionId = params.get("session");
-        if (target.pathname === "/sessions" && target.searchParams.get("session") === sessionId)
-          return true;
-        const session = state.sessions?.find((session) => session.id === sessionId);
-        const origin = request?.input.origin;
-        return (
-          !!session &&
-          !!origin &&
-          session.agent.replace(/-cli$/, "") === origin.backend.replace(/-cli$/, "") &&
-          session.host === (origin.execution_host ?? null) &&
-          session.session_id === (origin.native_session_id ?? origin.session_id)
-        );
+        return notificationInView(item, {
+          active: true,
+          pathname: state.location.pathname,
+          search: state.location.search,
+          chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
+          sessions: state.sessions,
+          requests: state.requests ?? undefined,
+        });
       });
       if (!incoming.length) return;
       setToasts((current) => mergeNotificationToasts(current, incoming));

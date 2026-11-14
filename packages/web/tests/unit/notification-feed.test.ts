@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
+import { HumanRequestSchema } from "@orc/core/human-requests";
 import type { OrcNotification } from "@orc/core/notifications";
-import { mergeNotificationToasts, NotificationFeed } from "../../src/lib/notification-feed";
+import {
+  mergeNotificationToasts,
+  NotificationFeed,
+  notificationInView,
+} from "../../src/lib/notification-feed";
 
 const item = (id: string, type = "future.type"): OrcNotification => ({
   id,
@@ -68,4 +73,129 @@ test("should collapse mixed completion bursts while keeping urgent notices separ
     { ...item("another", "future.completed"), level: "done" },
   ]);
   expect(next[1]?.items).toHaveLength(3);
+});
+
+const view = {
+  active: true,
+  pathname: "/chat",
+  search: "?project=all&chatThread=thread-1",
+  chatThreadId: "thread-1",
+};
+
+test("should recognize the open chat by thread, including a side panel link", () => {
+  const finished = {
+    ...item("finished", "agent.finished"),
+    path: "/activity?chat=open&chatThread=thread-1",
+  };
+  expect(notificationInView(finished, view)).toBe(true);
+  expect(
+    notificationInView(finished, {
+      ...view,
+      pathname: "/tasks",
+      search: "?chat=open&chatThread=thread-1",
+    }),
+  ).toBe(true);
+  expect(notificationInView(finished, { ...view, chatThreadId: "thread-2" })).toBe(false);
+  expect(
+    notificationInView(finished, { ...view, pathname: "/tasks", search: "?project=all" }),
+  ).toBe(false);
+  expect(notificationInView(finished, { ...view, active: false })).toBe(false);
+});
+
+test("should recognize a human request whose origin chat is open", () => {
+  const request = HumanRequestSchema.parse({
+    id: "request-1",
+    input: {
+      kind: "question",
+      prompt: "Continue?",
+      origin: {
+        session_id: "session-1",
+        backend: "codex",
+        request_id: "request-1",
+        chat_thread_id: "00000000-0000-4000-8000-000000000001",
+      },
+    },
+    status: "pending",
+    version: 1,
+    response: null,
+    created_at: 1000,
+    expires_at: 10000,
+    responded_at: null,
+    delivered_at: null,
+  });
+  const notification = {
+    ...item("request-1", "human.request"),
+    source_id: request.id,
+    path: `/activity?notifications=open&request=${request.id}`,
+  };
+  expect(
+    notificationInView(notification, {
+      ...view,
+      chatThreadId: "00000000-0000-4000-8000-000000000001",
+      requests: [request],
+    }),
+  ).toBe(true);
+  expect(notificationInView(notification, { ...view, requests: [], chatThreadId: null })).toBe(
+    false,
+  );
+});
+
+test("should recognize the open native session by direct link or origin identity", () => {
+  const session = {
+    id: "native-1",
+    agent: "codex-cli",
+    host: "lab",
+    session_id: "runtime-1",
+  };
+  const direct = { ...item("native", "agent.finished"), path: "/sessions?session=native-1" };
+  const sessions = {
+    active: true,
+    pathname: "/sessions",
+    search: "?session=native-1",
+    chatThreadId: null,
+    sessions: [session],
+  };
+  expect(notificationInView(direct, sessions)).toBe(true);
+  expect(notificationInView(direct, { ...sessions, search: "?session=native-2" })).toBe(false);
+  const request = HumanRequestSchema.parse({
+    id: "request-2",
+    input: {
+      kind: "question",
+      prompt: "Continue?",
+      origin: {
+        session_id: "gateway-1",
+        backend: "codex",
+        request_id: "request-2",
+        native_session_id: "runtime-1",
+        execution_host: "lab",
+      },
+    },
+    status: "pending",
+    version: 1,
+    response: null,
+    created_at: 1000,
+    expires_at: 10000,
+    responded_at: null,
+    delivered_at: null,
+  });
+  const notification = {
+    ...item(request.id, "human.request"),
+    source_id: request.id,
+    path: `/activity?notifications=open&request=${request.id}`,
+  };
+  expect(notificationInView(notification, { ...sessions, requests: [request] })).toBe(true);
+  expect(
+    notificationInView(notification, {
+      ...sessions,
+      requests: [
+        {
+          ...request,
+          input: {
+            ...request.input,
+            origin: { ...request.input.origin, execution_host: "elsewhere" },
+          },
+        },
+      ],
+    }),
+  ).toBe(false);
 });
