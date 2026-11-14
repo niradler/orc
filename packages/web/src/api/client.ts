@@ -1243,15 +1243,6 @@ export const api = {
   },
 
   sessions: {
-    files: (id: string, path: string) =>
-      req<{
-        root: string;
-        path: string;
-        entries: { name: string; path: string; directory: boolean }[] | null;
-        content: string | null;
-        binary: boolean;
-        truncated: boolean;
-      }>("GET", `/sessions/${encodeURIComponent(id)}/files`, undefined, { path }),
     cacheUsage: (id: string) =>
       req<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
     archive: (params: {

@@ -81,6 +81,7 @@ for (const width of [320, 390, 1440]) {
         await page.getByTestId("chat-config-button").click();
         await expect(page.getByTestId("chat-config-dialog")).toBeVisible();
         await expect(page.getByTestId("chat-actions-menu")).toBeHidden();
+        await page.getByTestId("chat-settings-tab-customize").click();
         await page.getByTestId("chat-agent-options").locator("summary").click();
         await page.getByTestId("chat-agent-options-input").fill("{}");
         await page.keyboard.press("Escape");

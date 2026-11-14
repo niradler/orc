@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatThread } from "@orc/core/chat";
@@ -200,7 +200,7 @@ test("protected chat starts an unverified backend and reports the gap", async ()
     });
     expect(response.status).toBe(200);
     const body = await response.text();
-    expect(body).toContain("no blocking pre-tool hook");
+    expect(body).toContain("no ACP-level pre-tool hook");
     expect(body).toContain("cannot be enforced");
     const opened = body
       .split("\n")
@@ -214,11 +214,42 @@ test("protected chat starts an unverified backend and reports the gap", async ()
     });
     expect(second.status).toBe(200);
     // The gap is part of the conversation history after the first turn.
-    expect(await second.text()).not.toContain("no blocking pre-tool hook");
+    expect(await second.text()).not.toContain("no ACP-level pre-tool hook");
   } finally {
     if (previousMock === undefined) delete process.env.ORC_E2E_CHAT_MOCK;
     else process.env.ORC_E2E_CHAT_MOCK = previousMock;
     store.revert(revision.id, "End isolated chat fixture");
     loadConfig({ rules: { enabled: false } });
   }
+});
+
+test("should scope hook-client history by cwd and flag truncation", async () => {
+  const norm = (p: string) => p.replaceAll("\\", "/").toLowerCase();
+  const before = await req(app, "GET", "/rules");
+  const heads = (await before.json<{ history: RuleRevision[] }>()).history;
+  const head = heads.find((r) => r.current && norm(r.workspace) === norm(root));
+  const activated = await req(app, "POST", "/rules/activate", {
+    policy,
+    expected_id: head?.id ?? null,
+    reason: "Scoped history",
+  });
+  expect(activated.status).toBe(201);
+  const sub = join(root, "sub");
+  mkdirSync(sub, { recursive: true });
+  const scoped = await req(app, "GET", `/rules?cwd=${encodeURIComponent(sub)}`);
+  expect(scoped.status).toBe(200);
+  const body = await scoped.json<{ history: RuleRevision[]; history_truncated: boolean }>();
+  expect(body.history_truncated).toBe(false);
+  expect(body.history).toHaveLength(1);
+  expect(body.history[0]?.current).toBe(true);
+  const other = mkdtempSync(join(tmpdir(), "orc-rules-other-"));
+  try {
+    const elsewhere = await req(app, "GET", `/rules?cwd=${encodeURIComponent(other)}`);
+    expect((await elsewhere.json<{ history: unknown[] }>()).history).toHaveLength(0);
+  } finally {
+    rmSync(other, { recursive: true, force: true });
+  }
+  expect((await req(app, "GET", "/rules?cwd=relative")).status).toBe(400);
+  const legacy = await req(app, "GET", "/rules");
+  expect((await legacy.json<{ history_truncated: boolean }>()).history_truncated).toBe(false);
 });

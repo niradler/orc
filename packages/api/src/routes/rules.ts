@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError } from "@orc/core/errors";
@@ -17,7 +18,7 @@ import {
 import { RuleEventSchema, RulePolicySchema } from "@orc/core/rules";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
-import { RuleStore } from "@orc/db/rules";
+import { RULE_HISTORY_LIMIT, RuleStore } from "@orc/db/rules";
 import { bodyLimit } from "hono/body-limit";
 import { recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
@@ -237,7 +238,16 @@ app.openapi(
     method: "get",
     path: "/rules",
     tags: ["Rules"],
-    request: { query: z.object({ workspace: z.string().optional() }) },
+    request: {
+      query: z.object({
+        workspace: z.string().optional(),
+        cwd: z
+          .string()
+          .max(4096)
+          .refine((p) => isAbsolute(p), "cwd must be an absolute path")
+          .optional(),
+      }),
+    },
     responses: {
       200: {
         description: "Rule history and redacted decisions",
@@ -246,6 +256,7 @@ app.openapi(
             schema: z.object({
               enabled: z.boolean(),
               history: z.array(RevisionSchema),
+              history_truncated: z.boolean(),
               decisions: z.array(
                 z.object({
                   id: z.string(),
@@ -287,11 +298,15 @@ app.openapi(
   }),
   (c) => {
     const store = controls();
-    const workspace = c.req.valid("query").workspace;
+    const { workspace, cwd } = c.req.valid("query");
+    // cwd scopes to current policies covering the directory (parent workspaces
+    // included) so hook clients never plan from a truncated cross-workspace page.
+    const history = cwd ? store.active(cwd) : store.history(workspace);
     return c.json(
       {
         enabled: loadConfig().rules.enabled,
-        history: store.history(workspace),
+        history,
+        history_truncated: !cwd && history.length === RULE_HISTORY_LIMIT,
         decisions: store.decisions(workspace),
         actions: store.actions(workspace),
         events: RULE_EVENT_ADAPTERS,
@@ -312,7 +327,7 @@ app.openapi(
           { backend: "pi", interception: "pi_package_extension" },
           {
             backend: "opencode",
-            interception: "acp_observe_only",
+            interception: "opencode_plugin_requires_install",
           },
           { backend: "other", interception: "unsupported" },
         ],

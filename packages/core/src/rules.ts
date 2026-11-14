@@ -1,6 +1,6 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { ruleEventCapability } from "./rule-events.js";
+import { type RuleHookBackend, ruleEventCapability } from "./rule-events.js";
 import { matchesRuleFilter } from "./rule-filters.js";
 
 export type {
@@ -101,10 +101,7 @@ export function evaluateRules(
   for (const rule of policy.rules) {
     if (
       !rule.enabled ||
-      (rule.scope.agents !== "all" &&
-        !rule.scope.agents.includes(
-          event.backend as "claude" | "cursor" | "gemini" | "codex" | "pi",
-        ))
+      (rule.scope.agents !== "all" && !rule.scope.agents.includes(event.backend as RuleHookBackend))
     )
       continue;
     if (

@@ -73,12 +73,14 @@ describe("OrcApiClient requests", () => {
     const { base, seen } = recorder({ enabled: true, history: [] });
     const api = new OrcApiClient(base, undefined, 1000);
     await api.rules("C:/work/app");
+    await api.rules(undefined, "C:/work/app/sub");
     await api.activateRules({ workspace: "C:/work/app", project_id: null, rules: [] }, "r1", "why");
     expect(seen.map((item) => `${item.method} ${item.path}`)).toEqual([
       "GET /api/rules?workspace=C%3A%2Fwork%2Fapp",
+      "GET /api/rules?cwd=C%3A%2Fwork%2Fapp%2Fsub",
       "POST /api/rules/activate",
     ]);
-    expect(seen[1]?.body).toEqual({
+    expect(seen[2]?.body).toEqual({
       policy: { workspace: "C:/work/app", project_id: null, rules: [] },
       expected_id: "r1",
       reason: "why",

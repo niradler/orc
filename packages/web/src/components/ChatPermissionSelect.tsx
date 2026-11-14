@@ -8,6 +8,7 @@ import {
   focusChipOption,
   onChipListKeyDown,
 } from "@/components/ComposerChip";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
@@ -31,8 +32,17 @@ export function ChatPermissionSelect({
   const supported = useAgentCapabilities(config.agent)?.livePermissions === true;
   const mode = effectivePermissionMode(config);
   return (
-    <label className="block space-y-2 text-sm">
-      <span>Permissions</span>
+    <div className="space-y-2 text-sm">
+      <div className="flex items-center gap-1">
+        <span>Permissions</span>
+        <HelpPopover label="Permissions">
+          {!supported
+            ? "This backend does not expose live permission modes. ACP approvals appear individually; ACPX uses Advanced launch options."
+            : mode === "bypassPermissions"
+              ? "Allows actions without permission prompts. Codex also runs without a sandbox. Workspace rules still apply."
+              : "Ask in chat keeps approval prompts. Workspace edits allow changes within the agent’s workspace policy."}
+        </HelpPopover>
+      </div>
       <select
         data-testid="chat-permission-mode"
         aria-label="Agent permissions"
@@ -47,14 +57,7 @@ export function ChatPermissionSelect({
         <option value="acceptEdits">Allow workspace edits</option>
         <option value="bypassPermissions">Full access / bypass permissions</option>
       </select>
-      <span className="block text-xs text-muted-foreground">
-        {!supported
-          ? "This backend does not expose live permission modes. ACP approvals appear individually; ACPX uses Advanced launch options."
-          : mode === "bypassPermissions"
-            ? "Allows actions without permission prompts. Codex also runs without a sandbox. Workspace rules still apply."
-            : "Ask in chat keeps approval prompts. Workspace edits allow changes within the agent’s workspace policy."}
-      </span>
-    </label>
+    </div>
   );
 }
 
@@ -64,7 +67,9 @@ export function ChatPermissionChip() {
   const [open, setOpen] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const mode = effectivePermissionMode(config);
-  if (!supported || mode === "default") return null;
+  // New chats keep the default quiet; an open session always shows its mode so
+  // the current permissions stay visible and changeable beside the composer.
+  if (!supported || (mode === "default" && !thread)) return null;
   const Icon = mode === "bypassPermissions" ? ShieldAlert : ShieldCheck;
   return (
     <Popover open={open} onOpenChange={setOpen}>

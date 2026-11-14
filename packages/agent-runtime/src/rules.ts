@@ -24,7 +24,11 @@ export type RuleGap = {
 };
 
 function gapMessage(agent: string): string {
-  return `${agent} has no blocking pre-tool hook in ORC, so active workspace rules cannot be enforced in this session. ORC still shows the agent's tool activity, but it cannot block or rewrite it. Use Claude when a session must be enforced.`;
+  const hint =
+    agent === "opencode"
+      ? "Install the @orc/opencode plugin in this workspace to enforce the same policies inside OpenCode."
+      : "Use Claude when a session must be enforced.";
+  return `${agent} has no ACP-level pre-tool hook in ORC, so active workspace rules cannot be enforced in this session. ORC still shows the agent's tool activity, but it cannot block or rewrite it. ${hint}`;
 }
 
 export async function sessionRules(backend: string, opts: SessionOpts): Promise<SessionOpts> {

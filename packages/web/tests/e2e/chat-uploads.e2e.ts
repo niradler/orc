@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { setWorkspaceFolder } from "./_chat-ui";
+import { openChatHistory, setWorkspaceFolder } from "./_chat-ui";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
@@ -28,12 +28,11 @@ for (const width of [1440, 390]) {
       buffer: Buffer.from("keep this draft"),
     });
     const newSession = page.getByTestId("chat-history-new");
-    if (!(await newSession.isVisible()))
-      await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+    if (!(await newSession.isVisible())) await openChatHistory(page);
     await newSession.click();
     await expect(page.getByTestId("chat-attachments")).toHaveCount(0);
-    if (!(await page.getByTestId("chat-session-select").isVisible()))
-      await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+    await expect(page.getByTestId("chat-sessions-dialog")).toBeHidden();
+    if (!(await page.getByTestId("chat-session-select").isVisible())) await openChatHistory(page);
     await page.getByTestId("chat-session-select").click();
     await expect(page.getByTestId("chat-attachments")).toContainText("draft.txt");
     await expect(page.getByTestId("chat-input")).toHaveValue("");

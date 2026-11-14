@@ -22,6 +22,11 @@ Start Pi in a repository and run `/orc`. ORC must be running, and `orc` must be 
 | Projects   | Detects the ORC project for `cwd`, including nested folders, or asks you to pick one: existing, new or global |
 | Theme      | `porc` and `porc-light`, matching `DESIGN.md`; apply with `/orc-theme`                                        |
 
+Rules fail closed: if the rules plan cannot be loaded because ORC is offline or the fetch
+failed, blocking events (`tool_call`, `input`) still run the hook against the local ORC
+database, exactly like the Claude and Codex adapters. The plan refreshes at least every
+30 seconds during a session, so rules activated later apply without restarting Pi.
+
 Memories and skills you create from Pi are written to ORC, so other agents and the UI see
 them. Pi still loads local skills from `.agents/skills`, `.pi/skills` and
 `~/.pi/agent/skills`, and local skills win on name clashes. ORC skills are fetched on
