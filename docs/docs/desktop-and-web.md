@@ -33,15 +33,19 @@ Pages are grouped in the sidebar:
 
 Projects has its own page at `/projects`. Every page has a shareable URL.
 
-The sun and moon button in the header switches between the dark and light themes:
+Switch between the dark and light themes in **Settings → Appearance**, or with the
+theme command in the command palette:
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
 
 ## Chat page
 
 **Chat** in the sidebar, under Activity, opens the chat page at `/chat`. It is a
-regular page: the workspace header keeps your navigation and notifications, the
-sidebar keeps whatever width you chose, and **Chat** shows as the active page.
+regular page: the workspace header keeps your navigation and notifications, and
+**Chat** shows as the active page. The sidebar collapses to its icon rail while a
+conversation is open, including the side chat, to give the conversation the width;
+leaving chat restores the width you had, and expanding it during chat keeps your
+choice.
 The chat panel's full-screen button, and the full-screen button on **Sessions**
 (on the page or on a row) or in the **Terminals** session list, open the same
 page.
@@ -50,32 +54,62 @@ Below 1280px wide, the chat has no side panel: starting a chat from any page
 opens the chat page instead.
 
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
-  - **Recents** lists every session by last activity, newest first. **Projects** groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
+  - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
-- **Inspector**: the panel button in the header shows the host, folder, branch, changed files, linked task and pull request for the selected session. When a terminal is running in that folder, a **Diff** tab shows its Git changes.
+- **Inspector**: the panel button in the header opens the same three tabs on desktop and phone — **Overview**, **Changes** and **Files**. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its CI state. When a terminal is running in that folder, **Changes** combines the working-tree review (staging and commit) with the branch's PR review (diff and comments) behind Local / PR modes, and **Files** browses and edits the checkout. On a phone the inspector is a full page.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
 - **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
-- The page keeps the workspace header and its single notification bell, and the sidebar at the width you chose. **Close chat** returns to the page you came from.
+- The page keeps the workspace header and its single notification bell. On desktop **Close chat** returns to the page you came from; on a phone the chat is a regular page, so you leave it with Back or the navigation drawer.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents
   show **Unknown** until agent activity supplies a state; they appear only in All projects
   while project ownership is unavailable. The Activity session list uses the same
   compact row design, retaining search, filters, task links and resume actions.
 
-On a phone the list opens full screen from **Sessions** in the chat header and the inspector opens as a sheet.
+On a phone (below 768px) the chat is a touch-first surface. The header keeps the
+session title, **Sessions**, **New** and the actions menu on one line, with the
+**Terminal**, **Inspector**, **Refresh** and **Compact** controls on a second line
+(right-aligned; it collapses when the viewport gets very short, such as with the
+software keyboard on a small screen, and the same actions stay available in the
+**⋯** menu). **Sessions**, the
+**Inspector** and the **Terminal** open as full pages over the conversation,
+which stays mounted underneath so streams and drafts survive. They follow your
+finger:
+
+- Swipe left from the right edge to open **Sessions**; swipe right to close it.
+- Swipe right from the left edge to open the **Inspector**; swipe left to close it.
+- Pull down on the chat header (or tap **Terminal**) to open the terminal page;
+  swipe up on its header, tap the close button or press Escape to close it.
+- Pull down from the very top of the screen with two fingers to open
+  **Notifications**, like the system shade; Back returns to the chat.
+
+Swipes that start inside code blocks, diffs or the terminal canvas stay with
+that content. Every page also opens from its header button, closes with its back
+button or Escape, and is kept in the URL: `sessionList=show`,
+`inspector=overview|diff|files` and `drawer=terminal` (older `inspector=pr` links
+open the Changes tab's PR mode). Reload, Back and
+Forward restore the page, and the URL is shareable.
 The three-dot **Session actions** menu shows labeled actions with touch-sized rows
 on phones. It closes when you tap elsewhere in the chat or
 press Escape. Choosing an action also closes the menu; opening Session settings
 keeps the conversation and your draft in place. Agent, workspace and branch
 pickers also close when you tap outside them.
-Opening the list sets `sessionList=show` in the URL, so reload and Back restore it.
-Closing the page also returns to the original page after navigating Back and Forward.
+Back and Forward move between the chat and the page you opened it from, just like
+any other page.
 
 ![Session home with its inspector and demo data](/screens/session-home-desktop.png)
 
-<img src="/screens/session-home-phone.png" alt="Phone conversation with compact composer controls" width="260">
-<img src="/screens/session-list-phone.png" alt="Full-screen session list on a phone" width="260">
+<img src="/screens/session-home-phone.png" alt="Phone conversation with the Terminal and Inspector header buttons" width="260">
+<img src="/screens/session-list-phone.png" alt="Full-screen Sessions page on a phone" width="260">
+
+The phone inspector: branch and pull-request summary, the combined Changes tab
+(working-tree and PR review) and the file editor.
+
+<img src="/screens/session-inspector-phone.png" alt="Phone inspector overview with branch and pull request cards" width="260">
+<img src="/screens/session-inspector-changes-phone.png" alt="Phone inspector Changes tab with the working-tree diff" width="260">
+<img src="/screens/session-inspector-pr-phone.png" alt="Phone inspector Changes tab in PR mode with the PR diff" width="260">
+<img src="/screens/session-inspector-files-phone.png" alt="Phone inspector Files tab with the file editor" width="260">
 
 The session list's **Recents** and **Projects** views, ordered by last activity:
 
@@ -154,7 +188,8 @@ closing the panel or switching chats does not lose them. Wide panels split the
 file list and the diff; narrow panels and phones combine them behind the files
 toggle. When no terminal is running in the folder, the tab says so quietly and
 offers **Open terminal**; a failed terminal list shows an error with **Retry**.
-Pull-request review stays in the terminal workspace and the session inspector.
+Pull-request review lives in the terminal workspace and in the inspector's
+combined **Changes** tab (its PR mode).
 
 The folder icon (**Open file**) uses the native picker for local files. Chat and MCP file paths
 resolve inside the selected session's folder on its execution host; paths outside
@@ -349,7 +384,9 @@ its action. Read and dismissed state is shared across clients.
 Desktop browsers show toasts. Needs-you toasts stay until dismissed or resolved;
 **Done** toasts are silent and close after six seconds, pausing on hover or focus.
 Sessions finishing together collapse into one notification. Use **Alt+N** or
-**Open notifications** in the command palette to reach notifications.
+**Open notifications** in the command palette to reach notifications. On a phone,
+pull down from the very top of the screen with two fingers to open the
+notification center from the chat, like the system shade.
 
 On all screens, the bell in the workspace header shows an unread count, including
 while the chat is open. New notifications never open the panel automatically. Tap the bell to read or
@@ -448,7 +485,7 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Connection     | In a browser, the API URL for this browser. In the desktop app, the local or remote server, optional access token and proxy headers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Security       | Sign-in status and sign-out, default sign-in lifetime, allowed web origins, access tokens (minted by entering the secret)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Appearance     | Theme                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Appearance     | Theme (dark or light, saved on the server) and interface font size — default, large or extra large — saved in this browser                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Server         | **Restart ORC server** (closes terminals, keeps settings, reconnects)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Notifications  | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions, chat replies and job results. Push needs HTTPS.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -520,16 +557,39 @@ when configured, and browsing. Branch/worktree controls appear for Git folders.
 creates one from the repository default branch (for example `origin/main`), or
 creates one from any local or remote branch you pick. The branch chip shows the
 chosen base. Bases come from refs already in the checkout; ORC does not fetch
-before creating the worktree. Folder and branch controls hide after launch;
-conversation details show the working folder.
+before creating the worktree. After launch the folder and branch chips stay in
+the composer as session information: the folder opens its full path with a copy
+action, and the branch shows the checkout's working branch. The execution folder
+itself is fixed for the session.
 
 <img src="/screens/chat-run-in-1440.png" alt="Run in options in the desktop chat panel" width="380">
 <img src="/screens/chat-run-in-390.png" alt="Run in options for the current checkout, the current branch, the default branch and another branch" width="260">
 
+![Composer with the session folder, branch and permission chips](/screens/chat-session-composer-desktop.png)
+
+<img src="/screens/chat-session-composer-phone.png" alt="Phone composer with folder, branch and permission icons" width="260">
+
 Changing agent after launch starts a separate session. The model picker disables
 changes during a response or when the backend selects its own model. Effort stays
-in agent options. The permissions control appears for a non-default mode only when
-the backend supports changing it live.
+in agent options. The permissions chip shows the open session's mode — including
+**Ask in chat** — when the backend supports changing it live.
+
+**Session settings** in the chat header organizes the conversation into tabs.
+**Overview** shows the agent, model, execution host and folder, backend, last
+activity, tools connection and capabilities, plus the identifiers: the ORC chat
+ID, the agent's native session ID used for resume, and the discovered session ID
+this chat continues when it was resumed. Each identifier can be copied.
+**Customize** holds permissions, agent launch options, session instructions and
+agent browser control. **Analytics** counts messages, turns, tool calls and
+failures from the transcript, shows start, last-activity and turn timings, and
+reports context and cache usage when the session records it. Explanations sit
+behind the info icon beside each label; new-chat defaults remain in Settings →
+Chat.
+
+![Session settings overview with the ORC, agent and resume identifiers](/screens/chat-session-settings-overview-desktop.png)
+![Session analytics with counts, turn timings and cache reuse](/screens/chat-session-settings-analytics-desktop.png)
+
+<img src="/screens/chat-session-settings-customize-phone.png" alt="Session settings customization on a phone" width="260">
 
 Pasting at least 16 KiB or 200 lines attaches the text as `pasted-text-N.txt`.
 Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach files.

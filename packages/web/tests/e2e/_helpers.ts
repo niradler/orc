@@ -1,6 +1,40 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import { type APIRequestContext, expect, type Locator, type Page } from "@playwright/test";
+
+/** Theme lives in Settings → Appearance (and the command palette). Specs that
+ *  only need the other theme for rendering switch it in place through the same
+ *  storage event the app listens to for cross-tab sync. */
+export async function toggleThemeInPlace(page: Page): Promise<void> {
+  const before = (await page.locator("html").getAttribute("data-theme")) ?? "dark";
+  const next = before === "dark" ? "light" : "dark";
+  await page.evaluate((value) => {
+    localStorage.setItem("orc_theme", value);
+    window.dispatchEvent(new StorageEvent("storage", { key: "orc_theme", newValue: value }));
+  }, next);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", next);
+}
+
+/** Theme is saved from Settings → Appearance. Switch to a specific theme through the
+ *  real UI and wait for the server save so a reload keeps it. */
+export async function setThemeViaSettings(page: Page, theme: "dark" | "light"): Promise<void> {
+  await page.goto("/settings?settingsSection=appearance");
+  await expect(page.getByTestId(`settings-theme-${theme}`)).toBeVisible();
+  if ((await page.locator("html").getAttribute("data-theme")) === theme) return;
+  const saved = page.waitForResponse(
+    (response) => response.url().endsWith("/settings") && response.request().method() === "PATCH",
+  );
+  await page.getByTestId(`settings-theme-${theme}`).click();
+  expect((await saved).status()).toBe(200);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+}
+
+/** The phone chat page has no close button: the nav drawer moves to another page. */
+export async function leavePhoneChatViaNav(page: Page, destination: string): Promise<void> {
+  await page.getByTestId("mobile-nav-open").click();
+  await page.getByTestId("mobile-nav-drawer").getByTestId(`nav-${destination}`).click();
+  await expect(page.getByTestId("mobile-nav-drawer")).toBeHidden();
+}
 
 export async function reviewAttentionRequest(card: Locator): Promise<void> {
   const review = card.getByTestId("attention-review");
@@ -158,13 +192,33 @@ export async function selectProject(page: Page, id: string): Promise<void> {
 }
 
 export async function apiDelete(request: APIRequestContext, path: string): Promise<void> {
-  await request.delete(`${API_BASE}${path}`, { headers: AUTH_HEADERS });
+  await connectRetry(() => request.delete(`${API_BASE}${path}`, { headers: AUTH_HEADERS }));
+}
+
+/**
+ * The e2e API briefly stops accepting connections while a heavy request holds its
+ * event loop; Playwright reports that as `connect ETIMEDOUT`/`ECONNREFUSED`. A
+ * connect-level failure means the request never reached the server, so a bounded
+ * retry cannot duplicate it. Other errors are rethrown immediately.
+ */
+async function connectRetry<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= 4 || !/connect (ETIMEDOUT|ECONNREFUSED)/i.test(message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
+  }
 }
 
 export async function apiGet<T>(request: APIRequestContext, path: string): Promise<T> {
-  const res = await request.get(`${API_BASE}${path}`, {
-    headers: AUTH_HEADERS,
-  });
+  const res = await connectRetry(() =>
+    request.get(`${API_BASE}${path}`, {
+      headers: AUTH_HEADERS,
+    }),
+  );
   if (!res.ok()) throw new Error(`GET ${path} failed: ${res.status()}`);
   return (await res.json()) as T;
 }
@@ -174,10 +228,12 @@ export async function apiPost<T>(
   path: string,
   body: unknown,
 ): Promise<T> {
-  const res = await request.post(`${API_BASE}${path}`, {
-    headers: AUTH_HEADERS,
-    data: body,
-  });
+  const res = await connectRetry(() =>
+    request.post(`${API_BASE}${path}`, {
+      headers: AUTH_HEADERS,
+      data: body,
+    }),
+  );
   if (!res.ok()) throw new Error(`POST ${path} failed: ${res.status()} ${await res.text()}`);
   return (await res.json()) as T;
 }
@@ -187,10 +243,12 @@ export async function apiPatch<T>(
   path: string,
   body: unknown,
 ): Promise<T> {
-  const res = await request.patch(`${API_BASE}${path}`, {
-    headers: AUTH_HEADERS,
-    data: body,
-  });
+  const res = await connectRetry(() =>
+    request.patch(`${API_BASE}${path}`, {
+      headers: AUTH_HEADERS,
+      data: body,
+    }),
+  );
   if (!res.ok()) throw new Error(`PATCH ${path} failed: ${res.status()} ${await res.text()}`);
   return (await res.json()) as T;
 }

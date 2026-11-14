@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { showSessionSection } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 import { HOME, mockSessionHome } from "./_session-home-demo";
 
@@ -10,10 +11,9 @@ const rowIds = [
 ];
 
 async function sessionList(page: Page, narrow: boolean) {
-  if (narrow) {
-    await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
-    return page.getByTestId("chat-sessions-dialog").getByTestId("chat-session-list");
-  }
+  if (narrow) await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+  await showSessionSection(page, "recents");
+  if (narrow) return page.getByTestId("chat-sessions-dialog").getByTestId("chat-session-list");
   return page.getByTestId("chat-session-sidebar").getByTestId("chat-session-list");
 }
 
@@ -168,7 +168,11 @@ for (const width of [1440, 390])
       await row(list, `chat:${HOME.chatA}`).locator("button").first().click();
       await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
 
-      await page.getByTestId("chat-close-button").filter({ visible: true }).click();
+      // The phone chat page has no close button: Back walks out through its
+      // history (thread switches push entries) to the page that opened it.
+      if (narrow) {
+        for (let i = 0; i < 6 && new URL(page.url()).pathname === "/chat"; i++) await page.goBack();
+      } else await page.getByTestId("chat-close-button").click();
       await expect(page).toHaveURL(/\/sessions\?project=all$/);
       await expect(page.getByTestId("live-sessions")).toBeVisible();
     });
@@ -282,6 +286,8 @@ test("phone session list is full screen and URL, reload, Back and Escape preserv
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await sessionList(page, true);
   await expect(page).toHaveURL(/sessionList=show/);
+  // The page slides in; measure its geometry once it rests.
+  await page.waitForTimeout(250);
   const dialog = page.getByTestId("chat-sessions-dialog");
   const box = await dialog.boundingBox();
   expect(box?.x).toBe(0);
@@ -324,14 +330,18 @@ test("Exit full screen returns to its source after Back and Forward", async ({ p
   await expect(page).toHaveURL(/\/sessions\?project=all$/);
 });
 
-test("closing the phone chat page leaves history as it was before opening it", async ({ page }) => {
+test("leaving the phone chat page with Back keeps history as it was before opening it", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockSessionHome(page);
   await page.goto("/activity?project=all");
   await page.goto("/tasks?project=all");
   await page.getByTestId("chat-open-button").click();
   await expect(page.getByTestId("session-home")).toBeVisible();
-  await page.getByRole("button", { name: "Close chat", exact: true }).click();
+  // Chat is a regular page on the phone: no close button, Back leaves it.
+  await expect(page.getByTestId("chat-close-button")).toHaveCount(0);
+  await page.goBack();
   await expect(page).toHaveURL(/\/tasks\?project=all$/);
   await page.goBack();
   await expect(page).toHaveURL(/\/activity\?project=all$/);
@@ -372,6 +382,7 @@ test("breadcrumb uses recorded project ownership and unlinked terminal state sta
   const unknown = page.locator('[data-history-id="terminal:unlinked-terminal"]');
   await expect(unknown).toHaveAttribute("data-state", "unknown");
   await expect(unknown.getByTestId("chat-session-status")).toHaveAttribute("aria-label", /Unknown/);
+  await showSessionSection(page, "recents");
   await row(page.getByTestId("chat-session-list"), `chat:${HOME.chatB}`)
     .locator("button")
     .first()

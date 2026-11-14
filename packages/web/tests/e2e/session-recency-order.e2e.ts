@@ -361,7 +361,7 @@ for (const width of [1440, 390]) {
     }));
     await page.addInitScript((secret) => {
       localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
-      localStorage.setItem("orc_chat_history_section", "recents");
+      localStorage.setItem("orc_chat_history_section_v2", "recents");
     }, API_SECRET);
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),
@@ -465,7 +465,7 @@ test("the Projects view follows the selected project scope", async ({ page }) =>
 test("the chosen session section persists across reloads", async ({ page }) => {
   const now = Date.now();
   await page.addInitScript(() => {
-    localStorage.setItem("orc_chat_history_section", "projects");
+    localStorage.setItem("orc_chat_history_section_v2", "projects");
   });
   await stubSessionRoutes(
     page,
@@ -474,7 +474,7 @@ test("the chosen session section persists across reloads", async ({ page }) => {
   );
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/tasks?chat=full");
-  await openChatHistory(page);
+  await openChatHistory(page, "projects");
   await expect(page.getByTestId("session-navigation-projects")).toHaveAttribute(
     "aria-selected",
     "true",

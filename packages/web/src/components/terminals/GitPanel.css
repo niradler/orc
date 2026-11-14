@@ -14,6 +14,12 @@
   container-type: inline-size;
 }
 
+/* Inspector host (desktop panel and phone page): the git and files panels
+   follow the inspector width through the container queries below. */
+.inspector-host {
+  container-type: inline-size;
+}
+
 .git-local-body,
 .pr-review-panel,
 .pr-files-view {
@@ -703,6 +709,11 @@
     flex-wrap: nowrap;
     gap: 4px;
   }
+  /* The inspector keeps a wrapping toolbar so the branch trigger and
+     mode tabs never overlap at 320-479px. */
+  .inspector-host .git-review-toolbar {
+    flex-wrap: wrap;
+  }
   .git-mode-tabs {
     gap: 2px;
   }
@@ -712,9 +723,10 @@
   .git-local-label-short {
     display: inline;
   }
-  /* Preview panel only: keep the changed-file path readable by dropping row
+  /* Narrow hosts: keep the changed-file path readable by dropping row
      actions to their own line. Terminal-workspace panes keep the inline layout. */
-  .preview-changes-host .git-file-actions {
+  .preview-changes-host .git-file-actions,
+  .inspector-host .git-file-actions {
     flex-basis: 100%;
     justify-content: flex-end;
   }

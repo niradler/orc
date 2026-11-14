@@ -191,7 +191,8 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await page.setViewportSize({ width: 390, height: 844 });
   const mobile = page.getByTestId("session-home");
   await expect(mobile.getByTestId("chat-message-content").last()).toContainText("fresh response");
-  await mobile.getByLabel("Close chat", { exact: true }).click();
+  // The phone chat page has no close button: Back returns to the page that opened it.
+  await page.goBack();
   await page.getByTestId("chat-open-button").click();
   await expect(mobile.getByTestId("chat-message")).toHaveCount(2);
   await saveClaudeDefault(page);

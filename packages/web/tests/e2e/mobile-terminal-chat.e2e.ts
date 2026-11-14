@@ -243,7 +243,8 @@ test("chat swipes independently and switching back preserves the terminal", asyn
     }
   }
   expect(await viewport.evaluate((element) => getComputedStyle(element).touchAction)).toBe("auto");
-  await sheet.getByTestId("chat-close-button").tap();
+  // The phone chat page has no close button: Back returns to the terminal it was opened from.
+  await page.goBack();
   await expect(page.getByTestId("terminal-surface")).toBeVisible();
   const current = await apiGet<{ pid: number; status: string }>(
     request,

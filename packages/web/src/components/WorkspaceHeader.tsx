@@ -3,10 +3,9 @@ import { type Ref, useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { AgentNotificationBell } from "@/components/AgentNotifications";
 import { CommandPalette } from "@/components/CommandPalette";
-import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { useProjects } from "@/hooks/useProjects";
-import { persistTheme, useTheme } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
 import { workspaceDestination, workspacePage, workspaceSection } from "@/lib/workspace-navigation";
 
 export function WorkspaceHeader({
@@ -42,7 +41,9 @@ export function WorkspaceHeader({
     }
   }, [pathname]);
   const { data: projects } = useProjects({ status: "active" });
-  const { theme, setTheme, error: themeError } = useTheme();
+  // Theme lives in Settings → Appearance (and the command palette); the header
+  // only surfaces a failed theme save.
+  const { error: themeError } = useTheme();
   const section = workspaceSection(pathname);
   const name =
     projectId === "all"
@@ -79,15 +80,6 @@ export function WorkspaceHeader({
           projectId={projectId}
           onProjectChange={onProjectChange}
           onOpenChat={onShowChat}
-        />
-        <AnimatedThemeToggler
-          data-testid="theme-toggle"
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          theme={theme}
-          onThemeChange={setTheme}
-          onBeforeThemeChange={persistTheme}
-          duration={180}
-          className={buttonVariants({ variant: "ghost", size: "icon" })}
         />
         {!chatPage && (
           <Button

@@ -14,7 +14,8 @@ import { DesktopPreviewWorkspace } from "@/components/DesktopPreviewWorkspace";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
 import { CHAT_THREAD_PARAM, ChatProvider } from "@/hooks/useChat";
-import { BREAKPOINTS } from "@/hooks/useMediaQuery";
+import { BREAKPOINTS, useBreakpoint } from "@/hooks/useMediaQuery";
+import { useNotificationShade } from "@/hooks/useNotificationShade";
 import { useProjects } from "@/hooks/useProjects";
 import { sessionHomeExitSteps, useSessionHomeEntry } from "@/hooks/useSessionHome";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
@@ -68,6 +69,7 @@ function KnowledgeRedirect() {
 
 export default function App() {
   useVisualViewport();
+  useNotificationShade(!useBreakpoint("md"));
   const [savedProjectId, setSavedProjectId] = useState<string>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) ?? "all";
@@ -150,6 +152,27 @@ export default function App() {
   );
   const homeOpen = chatFullscreen;
   const chatOpen = chatRequested && desktopViewport;
+  // Chat needs the width: collapse the workspace navigation while a conversation
+  // is open and restore the user's own width after leaving it.
+  const chatOnScreen = homeOpen || chatOpen;
+  const sidebarAutoCollapsed = useRef(false);
+  const chatWasOnScreen = useRef(false);
+  useEffect(() => {
+    const was = chatWasOnScreen.current;
+    chatWasOnScreen.current = chatOnScreen;
+    if (chatOnScreen === was) return;
+    if (chatOnScreen && !sidebarCollapsed) {
+      sidebarAutoCollapsed.current = true;
+      setSidebarCollapsed(true);
+    } else if (!chatOnScreen && sidebarAutoCollapsed.current) {
+      sidebarAutoCollapsed.current = false;
+      setSidebarCollapsed(false);
+    }
+  }, [chatOnScreen, sidebarCollapsed]);
+  const toggleSidebar = useCallback(() => {
+    sidebarAutoCollapsed.current = false;
+    setSidebarCollapsed((value) => !value);
+  }, []);
   const navButtonRef = useRef<HTMLButtonElement>(null);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -251,7 +274,7 @@ export default function App() {
                       projectId={projectId}
                       onProjectChange={setProjectId}
                       collapsed={sidebarCollapsed}
-                      onToggle={() => setSidebarCollapsed((v) => !v)}
+                      onToggle={toggleSidebar}
                     />
                   </div>
 

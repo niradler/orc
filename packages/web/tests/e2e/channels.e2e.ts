@@ -1,6 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
-import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import {
+  apiDelete,
+  apiGet,
+  apiPatch,
+  apiPost,
+  gotoView,
+  tid,
+  toggleThemeInPlace,
+} from "./_helpers";
 
 for (const width of [1440, 390]) {
   test(`Channels setup, recipient, nested routing and save/reopen at ${width}px`, async ({
@@ -250,16 +258,14 @@ for (const width of [1440, 390]) {
         path: `../../.claude/docs/channels-routing-${width}.png`,
         fullPage: false,
       });
-      await page.getByTestId("theme-toggle").click();
+      await toggleThemeInPlace(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-      await expect(page.locator("html")).not.toHaveAttribute("data-magicui-theme-vt", "active");
       await builder.screenshot({
         path: `../../.claude/docs/channels-conditions-light-${width}.png`,
       });
       await expect(builder.getByLabel("Group match").first()).toHaveValue("all");
-      await page.getByTestId("theme-toggle").click();
+      await toggleThemeInPlace(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-      await expect(page.locator("html")).not.toHaveAttribute("data-magicui-theme-vt", "active");
       expect(failures).toEqual([]);
     } finally {
       await apiDelete(request, `/projects/${project.id}`);

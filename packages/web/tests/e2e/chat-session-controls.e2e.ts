@@ -2,7 +2,7 @@ import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { captureState } from "./_capture-state";
 import { openChatActions, openChatHistory, openChatSettings, waitHistoryClosed } from "./_chat-ui";
-import { API_SECRET } from "./_helpers";
+import { API_SECRET, toggleThemeInPlace } from "./_helpers";
 
 for (const width of [1440, 390]) {
   test(`session provider identity, resume context and responsive header at ${width}px`, async ({
@@ -149,7 +149,7 @@ for (const width of [1440, 390]) {
     // guard is against a runaway refetch rather than exactly one read.
     expect(savedReads).toBeGreaterThanOrEqual(1);
     expect(savedReads).toBeLessThanOrEqual(2);
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await expect(page.getByTestId("chat-config-dialog")).toContainText("build-host");
     await expect(page.getByTestId("chat-config-dialog")).toContainText(saved.cwd);
     await page.getByTestId("chat-agent-options").locator("summary").click();
@@ -213,7 +213,7 @@ for (const width of [1440, 390]) {
     });
     if (width === 1440) {
       await page.getByTestId("chat-close-button").click();
-      await page.getByTestId("theme-toggle").click();
+      await toggleThemeInPlace(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
       await page.getByTestId("chat-open-button").click();
       await page.getByTestId("chat-fullscreen-button").filter({ visible: true }).click();
@@ -228,7 +228,7 @@ for (const width of [1440, 390]) {
         animations: "disabled",
       });
       await page.getByTestId("chat-close-button").click();
-      await page.getByTestId("theme-toggle").click();
+      await toggleThemeInPlace(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     }
   });

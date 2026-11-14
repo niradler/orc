@@ -1301,6 +1301,13 @@ function laneRoot(cwd: string): string {
   return cwd.match(/^(.*[\\/]\.orc[\\/]worktrees[\\/][^\\/]+)/)?.[1] ?? cwd;
 }
 
+// Removal has to run from the repository, never from inside the lane: Windows
+// refuses to delete the current directory of the process, so `git -C <lane>`
+// left every lane behind with "Permission denied" after deregistering it.
+function laneRepo(lane: string): string {
+  return lane.replace(/[\\/]\.orc[\\/]worktrees[\\/][^\\/]+$/, "");
+}
+
 function laneRows(column: "flow_run_id" | "task_id", id: string): FlowWorktreeRow[] {
   return (
     getSqlite()
@@ -1473,7 +1480,7 @@ export async function retireFlowWorktrees(taskId: string): Promise<void> {
         "-c",
         "status.showUntrackedFiles=normal",
         "-C",
-        lane,
+        laneRepo(lane),
         "worktree",
         "remove",
         lane,

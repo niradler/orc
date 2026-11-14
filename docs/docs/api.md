@@ -95,8 +95,9 @@ session lifetime totals grouped by agent and UTC session start date. `days`
 accepts `7`, `30` (default), `90`, or `0`. These are session cohorts, not tokens
 consumed during the period.
 
-`GET /api/usage/quotas` returns local Codex and Claude quota windows with percentage
-used, reset timestamps, availability and check time. Requests share a 60-second
+`GET /api/usage/quotas` returns local Codex, Claude and Alibaba Cloud quota windows
+with percentage used, reset timestamps, availability and check time. Alibaba Cloud
+appears when the Bailian CLI (`bl`) is installed. Requests share a 60-second
 cache. None of these routes returns credentials. See
 [Usage in Settings](./configuration.md#usage-in-settings) for indexing, estimate
 and coverage limits. The SDK exposes `orc.usage.history("30")`,

@@ -1,7 +1,8 @@
-import type { ArchiveSession } from "@orc/core/session-archive";
-import { useQuery } from "@tanstack/react-query";
+import type { ChatMessage, ChatTurn } from "@orc/core/chat";
 import {
+  Check,
   ChevronRight,
+  Copy,
   Folder,
   History,
   Inbox,
@@ -13,13 +14,14 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { HelpPopover } from "@/components/HelpPopover";
+import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -36,45 +38,17 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import { useProjects } from "@/hooks/useProjects";
-import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
-import { useSessionSeen } from "@/hooks/useSessionSeen";
-import { useSsh } from "@/hooks/useSsh";
-import { useStableOrder } from "@/hooks/useStableOrder";
+import { type SessionHistory, useSessionHistory } from "@/hooks/useSessionHistory";
+import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
-import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
+import { formatDuration } from "@/lib/chat-activity";
+import type { ChatHistoryEntry } from "@/lib/chat-history-list";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
-import { useSelectedProject } from "@/lib/selected-project";
-import { filterCounts, matchesFilter, parseFilter, type SessionFilter } from "@/lib/session-filter";
-import { markSeen } from "@/lib/session-seen";
-import { terminalPath } from "@/lib/terminal-links";
-import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
-
-const FILTER_KEY = "orc_chat_history_filter";
-const SECTION_KEY = "orc_chat_history_section";
-const UNASSIGNED_SECTION = "__unassigned__";
-
-type SessionSection = "projects" | "recents";
-
-function storedFilter(): SessionFilter {
-  try {
-    return parseFilter(localStorage.getItem(FILTER_KEY));
-  } catch {
-    return "all";
-  }
-}
-
-function storedSection(): SessionSection {
-  try {
-    return localStorage.getItem(SECTION_KEY) === "projects" ? "projects" : "recents";
-  } catch {
-    return "recents";
-  }
-}
 
 export function ChatSessionPicker({
   enabled = true,
@@ -91,254 +65,38 @@ export function ChatSessionPicker({
   hideTrigger?: boolean;
   home?: SessionHomeNav;
 }) {
-  const chat = useChat();
-  const navigate = useNavigate();
-  const { terminals } = useTerminals();
-  const projectScope = chat.projectScope;
-  const selectedProject = useSelectedProject();
-  const navigation = useSessionHome();
-  const setOpen = (next: boolean) => navigation.go({ listOpen: next });
-  const open = enabled && (docked || rail || navigation.listOpen);
-  const [search, setSearch] = useState("");
-  const [visibleCount, setVisibleCount] = useState(50);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  // All statuses: sessions can belong to archived/paused projects and must stay reachable.
-  const projectsQuery = useProjects();
-  const { data: projects, isLoading: projectsLoading, error: projectsError } = projectsQuery;
-  const { data: ssh } = useSsh();
-  const [section, setSection] = useState<SessionSection>(storedSection);
-  const [expandedProject, setExpandedProject] = useState<string | null>(null);
-  const chooseSection = (next: SessionSection) => {
-    setSection(next);
-    try {
-      localStorage.setItem(SECTION_KEY, next);
-    } catch {}
-  };
-
-  const [selectedArchive, setSelectedArchive] = useState<ArchiveSession | null>(null);
-  const [repository, setRepository] = useState("");
-  const [branch, setBranch] = useState("");
-  const [commit, setCommit] = useState("");
-  const [subdirectory, setSubdirectory] = useState("");
-  const threads = useQuery({
-    queryKey: ["chat-threads", open],
-    queryFn: api.chat.list,
-    enabled: open,
-    staleTime: 0,
-  });
-  const live = useQuery({
-    queryKey: ["chat-resume-sessions", open, projectScope],
-    queryFn: () =>
-      api.sessions.live({
-        active: false,
-        limit: 5000,
-        ...(projectScope === "all" ? {} : { project_id: projectScope }),
-      }),
-    enabled: open,
-    staleTime: 0,
-  });
-  const archive = useQuery({
-    queryKey: ["chat-resume-archive", search, projectScope],
-    queryFn: () =>
-      api.sessions.archive({
-        q: search,
-        limit: 30,
-        ...(projectScope === "all" ? {} : { project_id: projectScope }),
-      }),
-    enabled: open,
-  });
-  const [refreshingSessions, setRefreshingSessions] = useState(false);
-  const [refreshError, setRefreshError] = useState("");
-  const refreshSessions = async () => {
-    setRefreshingSessions(true);
-    setRefreshError("");
-    try {
-      // Ask the server to re-import native sessions first; watching covers most
-      // agents, but a forced sync also catches external stores immediately.
-      try {
-        await api.sessions.sync();
-      } catch (cause) {
-        // Keep refreshing the lists even when the forced sync fails; a silent
-        // no-op would look like the click did nothing.
-        setRefreshError(cause instanceof Error ? cause.message : "Sessions could not be synced.");
-      }
-      await Promise.all([
-        threads.refetch(),
-        live.refetch(),
-        archive.refetch(),
-        projectsQuery.refetch(),
-      ]);
-    } finally {
-      setRefreshingSessions(false);
-    }
-  };
-  async function select(load: () => ReturnType<typeof api.chat.get>, projectId?: string | null) {
-    setPending(true);
-    setError("");
-    try {
-      chat.openThread(await load(), { projectId });
-      setOpen(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Session could not be opened.");
-    } finally {
-      setPending(false);
-    }
-  }
-  const seen = useSessionSeen();
-  const [filter, setFilter] = useState<SessionFilter>(storedFilter);
-  // Folder matching stays limited to active projects; grouping resolves names for all statuses.
-  const activeProjects = (projects ?? []).filter((project) => project.status === "active");
-  const entries = chatHistoryList(
-    chat.tabs,
-    threads.data?.threads ?? [],
-    live.data?.sessions ?? [],
-    archive.data?.sessions ?? [],
+  const history = useSessionHistory({ enabled, docked, rail, home });
+  const {
+    chat,
+    open,
+    setOpen,
     search,
-    projectScope,
-    terminals,
-    !!home,
-    activeProjects,
-  );
-  const isSelected = (entry: ChatHistoryEntry) =>
-    home?.terminalId
-      ? entry.terminalId === home.terminalId
-      : entry.kind === "local" && entry.tab.key === chat.activeKey;
-  const states = new Map(
-    entries.map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
-  );
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const counts = filterCounts(states.values());
-  const loading = threads.isLoading || live.isLoading || archive.isLoading || projectsLoading;
-  const stable = useStableOrder({
-    items: entries.filter((entry) => matchesFilter(states.get(entry.id) ?? "idle", filter)),
-    id: (entry) => entry.id,
-    version: (entry) => String(entry.updatedAt),
-    lookup: (id) => byId.get(id),
-    resetKey: `${filter}\n${search}\n${projectScope}`,
+    setSearch,
+    visibleCount,
+    loadMore,
+    hasMore,
+    pending,
+    listError,
+    section,
+    chooseSection,
+    expandedProject,
+    setExpandedProject,
+    refreshingSessions,
+    refreshSessions,
+    filter,
+    setFilter,
+    counts,
+    stateOf,
+    isSelected,
+    stable,
+    shown,
+    projectGroups,
+    unassignedRows,
     loading,
-  });
-  const shown = stable.items.slice(0, visibleCount);
-  // Projects float up by their newest session; empty projects stay alphabetical at the end.
-  // Groups follow the active project scope and cover every assigned row, including sessions
-  // whose project is archived/paused or no longer listed, so none silently disappear.
-  const projectById = new Map((projects ?? []).map((project) => [project.id, project]));
-  const groups = new Map<
-    string,
-    {
-      project: { id: string; name: string; scope?: string | null };
-      rows: ChatHistoryEntry[];
-      latest: number;
-    }
-  >();
-  const groupFor = (projectId: string) => {
-    let group = groups.get(projectId);
-    if (!group) {
-      group = {
-        project: projectById.get(projectId) ?? {
-          id: projectId,
-          name: "Unknown project",
-          scope: null,
-        },
-        rows: [],
-        latest: 0,
-      };
-      groups.set(projectId, group);
-    }
-    return group;
-  };
-  for (const project of projects ?? []) {
-    if (project.status !== "active") continue;
-    if (projectScope !== "all" && project.id !== projectScope) continue;
-    groupFor(project.id);
-  }
-  for (const entry of stable.items) {
-    if (!entry.projectId) continue;
-    const group = groupFor(entry.projectId);
-    group.rows.push(entry);
-    group.latest = Math.max(group.latest, entry.updatedAt);
-  }
-  const projectGroups = [...groups.values()].sort(
-    (a, b) => b.latest - a.latest || a.project.name.localeCompare(b.project.name),
-  );
-  const unassignedRows = stable.items.filter((entry) => !entry.projectId);
-  const expandedRows =
-    expandedProject === UNASSIGNED_SECTION
-      ? unassignedRows
-      : (projectGroups.find((group) => group.project.id === expandedProject)?.rows ?? []);
-  const visibleEntries = section === "projects" ? expandedRows : stable.items;
-  const active = entries.find(
-    (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
-  );
-  const activeKeys = active?.seenKeys.join("\n") ?? "";
-  const activeUpdated = active?.updatedAt ?? 0;
-  const adoptProject = useCallback(
-    (projectId?: string | null) => {
-      if (!projectId) return;
-      // Only scopes the header can show: paused and archived projects are not picker options.
-      if (!activeProjects.some((project) => project.id === projectId)) return;
-      if (selectedProject.projectId === "all" || selectedProject.projectId === "unassigned")
-        selectedProject.setProjectId(projectId);
-    },
-    [activeProjects, selectedProject],
-  );
-  // Opening or switching to a folder-scoped session adopts its project unless the
-  // header already has an explicit project selected.
-  const adoptedSignature = useRef("");
-  const adoptOnOpen = (projectId?: string | null) => {
-    const signature = `${chat.activeKey}:${projectId ?? ""}`;
-    if (adoptedSignature.current === signature) return;
-    adoptedSignature.current = signature;
-    adoptProject(projectId);
-  };
-  useEffect(() => {
-    if (!activeKeys) return;
-    const keys = activeKeys.split("\n");
-    markSeen(keys, Math.max(Date.now(), activeUpdated));
-    return () => markSeen(keys);
-  }, [activeKeys, activeUpdated]);
-  const selectEntry = (entry: ChatHistoryEntry) => {
-    markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
-    adoptOnOpen(entry.projectId);
-    const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
-    if (terminalId) {
-      setOpen(false);
-      if (home) home.go({ terminalId });
-      else navigate(terminalPath(terminalId));
-    } else if (entry.kind === "local") {
-      chat.selectTab(entry.tab.key);
-      home?.go({ terminalId: null }, { chatThread: entry.tab.thread?.id });
-      setOpen(false);
-    } else if (entry.kind === "saved") {
-      if (home) {
-        home.go({ terminalId: null }, { chatThread: entry.thread.id });
-        setOpen(false);
-      } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
-    } else if (entry.kind === "native") {
-      home?.go({ terminalId: null });
-      void select(() => api.chat.resume(entry.session.id), entry.projectId);
-    } else if (entry.kind === "archive") {
-      const session = entry.session;
-      setSelectedArchive(session);
-      setRepository(session.metadata.repository ?? "");
-      setBranch(session.metadata.branch ?? "");
-      setCommit(session.metadata.commit ?? "");
-      setSubdirectory(session.metadata.subdirectory ?? "");
-      setError("");
-    }
-  };
-  const newProjectSession = (project: { id: string; scope?: string | null }) => {
-    adoptProject(project.id);
-    chat.newTab({
-      projectId: project.id,
-      fresh: true,
-      ...(project.scope?.trim()
-        ? { workspace: { cwd: project.scope, host: ssh?.host ?? null, worktree: false } }
-        : {}),
-    });
-    home?.go({ terminalId: null });
-    setOpen(false);
-  };
+    selectEntry,
+    newProjectSession,
+    selectedArchive,
+  } = history;
   if (rail)
     return (
       <aside
@@ -374,7 +132,7 @@ export function ChatSessionPicker({
         </ActionHelp>
         <div className="mt-2 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
           {shown.map((entry) => {
-            const state = states.get(entry.id) ?? "idle";
+            const state = stateOf(entry);
             const agent = entryAgent(entry);
             const selected = isSelected(entry);
             return (
@@ -417,55 +175,7 @@ export function ChatSessionPicker({
       newDisabled={pending}
     >
       {selectedArchive ? (
-        <section className="min-w-0 space-y-3">
-          <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
-            Back to sessions
-          </Button>
-          <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
-          <p className="text-sm text-muted-foreground">
-            Resume from a pushed repository, branch and exact commit. ORC verifies the checkout and
-            imports the native history before opening chat.
-          </p>
-          {(
-            [
-              ["repository", "Repository", repository, setRepository],
-              ["branch", "Branch", branch, setBranch],
-              ["commit", "Pushed commit", commit, setCommit],
-              ["subdirectory", "Repository subdirectory", subdirectory, setSubdirectory],
-            ] as const
-          ).map(([key, title, value, change]) => (
-            <label key={key} htmlFor={`chat-archive-${key}`} className="block space-y-2 text-sm">
-              {title}
-              <Input
-                id={`chat-archive-${key}`}
-                data-testid={`chat-archive-${key}`}
-                value={value}
-                onChange={(event) => change(event.target.value)}
-                disabled={pending}
-              />
-            </label>
-          ))}
-          <Button
-            data-testid="chat-archive-prepare"
-            disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
-            onClick={() =>
-              void select(async () => {
-                const handoff = await api.sessions.archiveResume(selectedArchive.id, {
-                  revision: selectedArchive.revision,
-                  repository,
-                  branch,
-                  commit,
-                  subdirectory,
-                });
-                if (handoff.status !== "ready" || !handoff.live_session_id)
-                  throw new Error(handoff.error || "The imported session is not ready to resume.");
-                return api.chat.resume(handoff.live_session_id);
-              }, selectedArchive.project_id)
-            }
-          >
-            {pending ? "Preparing…" : "Resume"}
-          </Button>
-        </section>
+        <ArchiveResumeForm history={history} />
       ) : (
         <>
           <div className="flex items-center gap-1">
@@ -512,23 +222,10 @@ export function ChatSessionPicker({
             aria-label="Search sessions"
             placeholder="Search sessions…"
             value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setVisibleCount(50);
-            }}
+            onChange={(event) => setSearch(event.target.value)}
           />
           <div className="min-w-0 space-y-2" {...stable.listProps}>
-            <SessionStateFilters
-              value={filter}
-              counts={counts}
-              onChange={(next) => {
-                setFilter(next);
-                setVisibleCount(50);
-                try {
-                  localStorage.setItem(FILTER_KEY, next);
-                } catch {}
-              }}
-            >
+            <SessionStateFilters value={filter} counts={counts} onChange={setFilter}>
               <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             </SessionStateFilters>
             {section === "projects" && (
@@ -548,17 +245,16 @@ export function ChatSessionPicker({
                     icon={<Folder size={14} className="shrink-0" aria-hidden />}
                     count={rows.length}
                     expanded={expandedProject === project.id}
-                    onToggle={() => {
-                      setVisibleCount(50);
-                      setExpandedProject(expandedProject === project.id ? null : project.id);
-                    }}
+                    onToggle={() =>
+                      setExpandedProject(expandedProject === project.id ? null : project.id)
+                    }
                     onNew={() => newProjectSession(project)}
                   >
                     {rows.slice(0, visibleCount).map((entry) => (
                       <HistoryRow
                         key={entry.id}
                         entry={entry}
-                        state={states.get(entry.id) ?? "idle"}
+                        state={stateOf(entry)}
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
@@ -580,19 +276,18 @@ export function ChatSessionPicker({
                     name="Unassigned"
                     icon={<Inbox size={14} className="shrink-0" aria-hidden />}
                     count={unassignedRows.length}
-                    expanded={expandedProject === UNASSIGNED_SECTION}
-                    onToggle={() => {
-                      setVisibleCount(50);
+                    expanded={expandedProject === "__unassigned__"}
+                    onToggle={() =>
                       setExpandedProject(
-                        expandedProject === UNASSIGNED_SECTION ? null : UNASSIGNED_SECTION,
-                      );
-                    }}
+                        expandedProject === "__unassigned__" ? null : "__unassigned__",
+                      )
+                    }
                   >
                     {unassignedRows.slice(0, visibleCount).map((entry) => (
                       <HistoryRow
                         key={entry.id}
                         entry={entry}
-                        state={states.get(entry.id) ?? "idle"}
+                        state={stateOf(entry)}
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
@@ -620,7 +315,7 @@ export function ChatSessionPicker({
                 <HistoryRow
                   key={entry.id}
                   entry={entry}
-                  state={states.get(entry.id) ?? "idle"}
+                  state={stateOf(entry)}
                   pending={pending}
                   selected={isSelected(entry)}
                   terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
@@ -639,28 +334,88 @@ export function ChatSessionPicker({
               {search || filter !== "all" ? "No sessions match." : "No sessions yet."}
             </p>
           )}
-          {visibleEntries.length > visibleCount && (
-            <Button
-              variant="ghost"
-              data-testid="chat-history-more"
-              onClick={() => setVisibleCount((count) => count + 50)}
-            >
+          {hasMore && (
+            <Button variant="ghost" data-testid="chat-history-more" onClick={loadMore}>
               Load older sessions
             </Button>
           )}
         </>
       )}
-      {(error || refreshError || threads.error || live.error || archive.error || projectsError) && (
+      {listError && (
         <p role="alert" className="text-sm text-error wrap-break-word">
-          {error ||
-            refreshError ||
-            threads.error?.message ||
-            live.error?.message ||
-            archive.error?.message ||
-            projectsError?.message}
+          {listError}
         </p>
       )}
     </SessionHistoryFrame>
+  );
+}
+
+export function ArchiveResumeForm({ history }: { history: SessionHistory }) {
+  const {
+    pending,
+    select,
+    selectedArchive,
+    setSelectedArchive,
+    repository,
+    setRepository,
+    branch,
+    setBranch,
+    commit,
+    setCommit,
+    subdirectory,
+    setSubdirectory,
+  } = history;
+  if (!selectedArchive) return null;
+  return (
+    <section className="min-w-0 space-y-3">
+      <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
+        Back to sessions
+      </Button>
+      <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
+      <p className="text-sm text-muted-foreground">
+        Resume from a pushed repository, branch and exact commit. ORC verifies the checkout and
+        imports the native history before opening chat.
+      </p>
+      {(
+        [
+          ["repository", "Repository", repository, setRepository],
+          ["branch", "Branch", branch, setBranch],
+          ["commit", "Pushed commit", commit, setCommit],
+          ["subdirectory", "Repository subdirectory", subdirectory, setSubdirectory],
+        ] as const
+      ).map(([key, title, value, change]) => (
+        <label key={key} htmlFor={`chat-archive-${key}`} className="block space-y-2 text-sm">
+          {title}
+          <Input
+            id={`chat-archive-${key}`}
+            data-testid={`chat-archive-${key}`}
+            value={value}
+            onChange={(event) => change(event.target.value)}
+            disabled={pending}
+          />
+        </label>
+      ))}
+      <Button
+        data-testid="chat-archive-prepare"
+        disabled={pending || !repository || !branch || !/^[a-f0-9]{40}$/i.test(commit)}
+        onClick={() =>
+          void select(async () => {
+            const handoff = await api.sessions.archiveResume(selectedArchive.id, {
+              revision: selectedArchive.revision,
+              repository,
+              branch,
+              commit,
+              subdirectory,
+            });
+            if (handoff.status !== "ready" || !handoff.live_session_id)
+              throw new Error(handoff.error || "The imported session is not ready to resume.");
+            return api.chat.resume(handoff.live_session_id);
+          }, selectedArchive.project_id)
+        }
+      >
+        {pending ? "Preparing…" : "Resume"}
+      </Button>
+    </section>
   );
 }
 
@@ -825,7 +580,7 @@ function SessionHistoryFrame({
   );
 }
 
-function entryAgent(entry: ChatHistoryEntry): string {
+export function entryAgent(entry: ChatHistoryEntry): string {
   if (entry.kind === "local") return entry.tab.config.agent;
   if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
   if (entry.kind === "terminal") return entry.terminal.kind;
@@ -844,7 +599,7 @@ function ProviderMark({ agent }: { agent: string }) {
   );
 }
 
-function ProjectGroup({
+export function ProjectGroup({
   name,
   icon,
   count,
@@ -902,7 +657,7 @@ function ProjectGroup({
   );
 }
 
-function HistoryRow({
+export function HistoryRow({
   entry,
   state,
   pending,
@@ -1006,99 +761,341 @@ export function ChatConversationInfo({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { config, changePermissions, thread } = useChat();
+  const { config, changePermissions, thread, streaming } = useChat();
   const preview = useDesktopPreview();
   const capabilities = useAgentCapabilities(config.agent, thread);
+  const analytics = chatAnalytics(thread?.messages ?? []);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="chat-config-dialog"
-        className="w-[calc(100%-1rem)] min-w-0 grid-cols-[minmax(0,1fr)]"
+        tabIndex={-1}
+        onOpenAutoFocus={(event) => {
+          // Do not focus a help trigger: its tooltip would become the top layer
+          // and swallow the Escape that closes the dialog.
+          event.preventDefault();
+          const content = event.currentTarget as HTMLElement | null;
+          content?.focus();
+        }}
+        className="w-[calc(100%-1rem)] min-w-0 grid-cols-[minmax(0,1fr)] sm:max-w-2xl"
       >
-        <DialogTitle>Session settings</DialogTitle>
-        <DialogDescription>
-          Loosening permissions applies right away, including to a pending approval. Stricter
-          permissions apply to your next message. Change new-chat defaults in Settings.
+        <div className="flex min-w-0 items-center gap-1 pr-8">
+          <DialogTitle className="min-w-0 flex-1">Session settings</DialogTitle>
+          <HelpPopover label="Session settings">
+            These settings belong to this conversation. Loosening permissions applies right away,
+            including to a pending approval; stricter permissions apply to your next message. New
+            chat defaults live in Settings → Chat.
+          </HelpPopover>
+        </div>
+        <DialogDescription className="sr-only">
+          Information, customization and analytics for this chat session.
         </DialogDescription>
-        <dl className="space-y-3 text-sm wrap-break-word">
-          <div>
-            <dt className="text-muted-foreground">Agent and working folder</dt>
-            <dd>
-              {config.agent} · {thread?.host || "Selected execution host"}
-              {thread?.cwd && <span className="block font-mono text-xs">{thread.cwd}</span>}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Tools</dt>
-            <dd>
-              {config.mcp === "orc"
-                ? "ORC MCP connection plus agent host configuration"
-                : "Agent host configuration"}
-            </dd>
-          </div>
-          <div>
-            <dd>
-              <ChatPermissionSelect
-                config={config}
-                onChange={(next) => void changePermissions(next)}
-              />
-            </dd>
-          </div>
-        </dl>
-        {preview && (
-          <div className="flex items-start justify-between gap-6 border-y border-border py-3">
-            <div>
-              <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
-                Allow agent browser control
-              </label>
-              <p
-                id="chat-browser-control-description"
-                className="mt-1 text-xs text-muted-foreground"
+        <Tabs defaultValue="overview" className="min-w-0">
+          <TabsList aria-label="Session settings sections" className="grid w-full grid-cols-3 p-0">
+            {(
+              [
+                ["overview", "Overview"],
+                ["customize", "Customize"],
+                ["analytics", "Analytics"],
+              ] as const
+            ).map(([value, label]) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                data-testid={`chat-settings-tab-${value}`}
+                className="bg-surface hover:bg-surface-high"
               >
-                {preview.browserControl.globallyEnabled
-                  ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
-                  : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value="overview" className="space-y-4">
+            <dl data-testid="chat-session-info" className="space-y-3 text-sm wrap-break-word">
+              <SettingsRow label="Agent">
+                <span data-testid="chat-settings-agent">{agentDisplayName(config.agent)}</span>
+                {config.model && (
+                  <span data-testid="chat-settings-model" className="text-muted-foreground">
+                    {" "}
+                    · {config.model}
+                  </span>
+                )}
+              </SettingsRow>
+              <SettingsRow label="Execution">
+                {thread
+                  ? `${thread.host || "Local"} · ${thread.cwd}`
+                  : "Starts with your first message"}
+                {thread?.cwd && (
+                  <span className="block font-mono text-xs break-all">{thread.cwd}</span>
+                )}
+              </SettingsRow>
+              {thread?.backend && (
+                <SettingsRow label="Backend">
+                  <span className="font-mono text-xs">{thread.backend}</span>
+                </SettingsRow>
+              )}
+              {thread && <SettingsRow label="Last activity">{when(thread.updatedAt)}</SettingsRow>}
+              <SettingsRow label="Tools">
+                {config.mcp === "orc"
+                  ? "ORC MCP connection plus agent host configuration"
+                  : "Agent host configuration"}
+              </SettingsRow>
+              {capabilities && (
+                <SettingsRow label="Capabilities">
+                  <span data-testid="chat-capabilities">
+                    {[
+                      capabilities.resume && "Resume",
+                      capabilities.approvals && "Approvals in chat",
+                      capabilities.questions && "Questions",
+                      capabilities.steering && "Send now",
+                      capabilities.interrupt && "Native stop",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "Basic text conversation"}
+                  </span>
+                </SettingsRow>
+              )}
+            </dl>
+            <section aria-labelledby="chat-session-ids-heading" className="space-y-2">
+              <div className="flex items-center gap-1">
+                <h3 id="chat-session-ids-heading" className="text-sm font-medium">
+                  Identifiers
+                </h3>
+                <HelpPopover label="Session identifiers" testId="chat-session-ids-help">
+                  ORC chat ID names this conversation in ORC. The agent session ID is the coding
+                  agent's native session, used to resume it outside ORC. The resume session ID is
+                  the discovered ORC session this chat continues, when it was resumed.
+                </HelpPopover>
+              </div>
+              <dl className="space-y-2" data-testid="chat-session-ids">
+                <IdRow id="orc" label="ORC chat ID" value={thread?.id} empty="Not saved yet" />
+                <IdRow
+                  id="agent"
+                  label="Agent session ID"
+                  value={thread?.runtimeId}
+                  empty="No native session yet"
+                />
+                <IdRow
+                  id="resume"
+                  label="Resume session ID"
+                  value={thread?.sourceId}
+                  empty="Not resumed from a session"
+                />
+              </dl>
+            </section>
+          </TabsContent>
+          <TabsContent value="customize" className="space-y-5">
+            {thread && (
+              <p className="text-sm text-muted-foreground wrap-break-word">
+                Runs in {thread.host || "Local"} ·{" "}
+                <span className="font-mono text-xs">{thread.cwd}</span>
               </p>
-            </div>
-            <input
-              type="checkbox"
-              id="chat-browser-agent-access"
-              data-testid="chat-browser-agent-access"
-              aria-describedby="chat-browser-control-description"
-              className="mt-1 h-4 w-4 shrink-0"
-              checked={preview.browserControl.enabled}
-              disabled={preview.browserControl.pending || !preview.browserControl.globallyEnabled}
-              onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
+            )}
+            <ChatPermissionSelect
+              config={config}
+              onChange={(next) => void changePermissions(next)}
             />
-          </div>
-        )}
-        {capabilities && (
-          <p data-testid="chat-capabilities" className="text-xs text-muted-foreground">
-            {[
-              capabilities.resume && "Resume",
-              capabilities.approvals && "Approvals in chat",
-              capabilities.questions && "Questions",
-              capabilities.steering && "Send now",
-              capabilities.interrupt && "Native stop",
-            ]
-              .filter(Boolean)
-              .join(" · ") || "Basic text conversation"}
-          </p>
-        )}
-        <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
-        <details className="text-sm">
-          <summary className="min-h-11 cursor-pointer py-3">Session instructions</summary>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
-            {config.system || "No additional instructions"}
-          </pre>
-          <p className="mt-2 text-xs text-muted-foreground">
-            {config.agent === "claude"
-              ? "Appended to Claude’s coding system prompt."
-              : "Sent as turn instructions to the agent."}{" "}
-            Agent and workspace instructions may also apply.
-          </p>
-        </details>
+            <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
+            <div className="text-sm">
+              <div className="flex items-center gap-1">
+                <label htmlFor="chat-session-instructions" className="text-sm font-medium">
+                  Session instructions
+                </label>
+                <HelpPopover label="Session instructions" testId="chat-instructions-help">
+                  {config.agent === "claude"
+                    ? "Appended to Claude’s coding system prompt."
+                    : "Sent as turn instructions to the agent."}{" "}
+                  Agent and workspace instructions may also apply.
+                </HelpPopover>
+              </div>
+              <pre
+                id="chat-session-instructions"
+                className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 text-xs wrap-break-word"
+              >
+                {config.system || "No additional instructions"}
+              </pre>
+            </div>
+            {preview && (
+              <div className="flex items-start justify-between gap-6 border-t border-border pt-4">
+                <div className="flex min-w-0 items-center gap-1">
+                  <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
+                    Allow agent browser control
+                  </label>
+                  <HelpPopover label="Agent browser control" testId="chat-browser-help">
+                    {preview.browserControl.globallyEnabled
+                      ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
+                      : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
+                  </HelpPopover>
+                </div>
+                <input
+                  type="checkbox"
+                  id="chat-browser-agent-access"
+                  data-testid="chat-browser-agent-access"
+                  className="mt-1 h-4 w-4 shrink-0"
+                  checked={preview.browserControl.enabled}
+                  disabled={
+                    preview.browserControl.pending || !preview.browserControl.globallyEnabled
+                  }
+                  onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
+                />
+              </div>
+            )}
+          </TabsContent>
+          <TabsContent value="analytics" className="space-y-4">
+            <div className="flex items-center gap-1">
+              <h3 className="text-sm font-medium">Session analytics</h3>
+              <HelpPopover label="Session analytics" testId="chat-analytics-help">
+                Counts come from this chat's stored transcript. Context and cache figures appear
+                when the agent records usage for the session.
+              </HelpPopover>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <AnalyticsStat label="Messages" value={analytics.messages} />
+              <AnalyticsStat label="Turns" value={analytics.turns} />
+              <AnalyticsStat label="Tool calls" value={analytics.tools} />
+              <AnalyticsStat label="Tool failures" value={analytics.toolFailures} />
+            </div>
+            <dl className="space-y-3 text-sm wrap-break-word">
+              <SettingsRow label="Started">{when(analytics.startedAt)}</SettingsRow>
+              <SettingsRow label="Last activity">
+                {thread ? when(thread.updatedAt) : "—"}
+              </SettingsRow>
+              <SettingsRow label="Last turn">
+                {analytics.lastTurn
+                  ? [
+                      analytics.lastTurn.outcome ?? "running",
+                      analytics.lastTurn.durationMs !== undefined
+                        ? `${formatDuration(analytics.lastTurn.durationMs)}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : "No completed turn yet"}
+              </SettingsRow>
+              <SettingsRow label="Average turn">
+                {analytics.averageTurnMs === null ? "—" : formatDuration(analytics.averageTurnMs)}
+              </SettingsRow>
+              {analytics.attachments > 0 && (
+                <SettingsRow label="Attachments">{analytics.attachments}</SettingsRow>
+              )}
+            </dl>
+            {thread?.sourceId ? (
+              <div className="border-t border-border pt-3">
+                <SessionCacheUsage sessionId={thread.sourceId} live={streaming} />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {thread
+                  ? "Context and cache usage are recorded for sessions resumed from an agent session or terminal."
+                  : "Analytics appear after the session starts."}
+              </p>
+            )}
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
+}
+
+function SettingsRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+function AnalyticsStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div data-testid={`chat-analytics-${label.toLowerCase().replace(" ", "-")}`}>
+      <p className="text-lg font-medium tabular-nums">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function IdRow({
+  id,
+  label,
+  value,
+  empty,
+}: {
+  id: string;
+  label: string;
+  value: string | null | undefined;
+  empty: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex min-w-0 items-start gap-2">
+      <div className="min-w-0 flex-1">
+        <dt className="text-xs text-muted-foreground">{label}</dt>
+        <dd
+          data-testid={`chat-session-id-${id}`}
+          className="font-mono text-xs break-all text-on-surface-variant"
+        >
+          {value ?? empty}
+        </dd>
+      </div>
+      {value && (
+        <button
+          type="button"
+          data-testid={`chat-session-id-copy-${id}`}
+          aria-label={copied ? `${label} copied` : `Copy ${label}`}
+          title={copied ? `${label} copied` : `Copy ${label}`}
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch {
+              /* The value stays visible for manual copying. */
+            }
+          }}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function chatAnalytics(messages: ChatMessage[]) {
+  let turns = 0;
+  let tools = 0;
+  let toolFailures = 0;
+  let attachments = 0;
+  let timed = 0;
+  let totalDuration = 0;
+  let lastTurn: ChatTurn | undefined;
+  for (const message of messages) {
+    attachments += message.attachments?.length ?? 0;
+    for (const activity of message.activity ?? []) {
+      if (activity.type !== "tool") continue;
+      tools += 1;
+      if (activity.isError) toolFailures += 1;
+    }
+    if (!message.turn) continue;
+    turns += 1;
+    lastTurn = message.turn;
+    if (message.turn.durationMs === undefined) continue;
+    timed += 1;
+    totalDuration += message.turn.durationMs;
+  }
+  return {
+    messages: messages.length,
+    turns,
+    tools,
+    toolFailures,
+    attachments,
+    startedAt: messages[0]?.timestamp,
+    lastTurn,
+    averageTurnMs: timed ? Math.round(totalDuration / timed) : null,
+  };
+}
+
+function when(value: number | undefined): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleString();
 }

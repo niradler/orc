@@ -1,7 +1,7 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { DEFAULT_ENABLED_AGENTS } from "@orc/core/coding-agents";
 import { expect, test } from "@playwright/test";
-import { chooseChatAgent, openChatSettings } from "./_chat-ui";
+import { chooseChatAgent, openChatSettings, showSessionSection } from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
 
 let previousSettings: { agents?: string[]; chat?: unknown };
@@ -45,7 +45,7 @@ for (const width of [390, 1440]) {
     const editor = page.getByTestId("chat-agent-options-input");
     const apply = page.getByTestId("chat-agent-options-apply");
     await chooseChatAgent(page, "gemini");
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await page.getByTestId("chat-agent-options-help").focus();
     await expect(page.getByTestId("chat-agent-options-help-content")).toContainText(
@@ -64,7 +64,7 @@ for (const width of [390, 1440]) {
     );
     await page.keyboard.press("Escape");
     await chooseChatAgent(page, "claude");
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await expect(editor).toHaveValue("{}");
     await editor.fill('{"permissionMode":"bypassPermissions","maxTurns":3,"effort":"low"}');
@@ -84,7 +84,7 @@ for (const width of [390, 1440]) {
       },
     });
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await editor.fill('["--deny-all", "--timeout", "20"]');
     const saved = page.waitForResponse(
@@ -99,8 +99,9 @@ for (const width of [390, 1440]) {
     );
     await page.reload();
     await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+    await showSessionSection(page, "recents");
     await page.getByTestId("chat-session-select").filter({ hasText: title }).click();
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await expect(editor).toHaveValue(JSON.stringify(["--deny-all", "--timeout", "20"], null, 2));
     await page.keyboard.press("Escape");

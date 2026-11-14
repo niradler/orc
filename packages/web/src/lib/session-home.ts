@@ -4,7 +4,12 @@ export const SESSION_LIST_PARAM = "sessionList";
 export const INSPECTOR_PARAM = "inspector";
 export const DRAWER_PARAM = "drawer";
 
-export type InspectorTab = "overview" | "diff";
+/** Pane id shared by the desktop and phone inspector git/files panels. */
+export const INSPECTOR_PANE_ID = "session-inspector";
+
+export type InspectorTab = "overview" | "diff" | "files";
+
+export const INSPECTOR_TABS: InspectorTab[] = ["overview", "diff", "files"];
 
 export interface SessionHomeState {
   terminalId: string | null;
@@ -30,7 +35,13 @@ export function readSessionHome(params: URLSearchParams): SessionHomeState {
     liveId: params.get(SESSION_LIVE_PARAM) || null,
     listHidden: params.get(SESSION_LIST_PARAM) === "hide",
     listOpen: params.get(SESSION_LIST_PARAM) === "show",
-    inspector: inspector === "overview" || inspector === "diff" ? inspector : null,
+    // `pr` links predate the combined Changes tab; PR review lives inside it.
+    inspector:
+      inspector === "pr"
+        ? "diff"
+        : INSPECTOR_TABS.includes(inspector as InspectorTab)
+          ? (inspector as InspectorTab)
+          : null,
     drawer: params.get(DRAWER_PARAM) === "terminal",
   };
 }
@@ -75,4 +86,17 @@ export function sessionHomeSearch(
   if (target.terminalId) next.set(SESSION_TERMINAL_PARAM, target.terminalId);
   else if (target.liveId) next.set(SESSION_LIVE_PARAM, target.liveId);
   return `?${next.toString()}`;
+}
+
+/** Opens the combined Changes tab directly in the PR review mode of GitPanelBody. */
+export function pullRequestReviewParams(
+  params: URLSearchParams,
+  target: { terminalId: string; number: number },
+): URLSearchParams {
+  const next = patchSessionHome(params, { inspector: "diff" });
+  next.set("pr", String(target.number));
+  next.set("pane", INSPECTOR_PANE_ID);
+  next.set("paneTerminal", target.terminalId);
+  next.set("view", "git");
+  return next;
 }

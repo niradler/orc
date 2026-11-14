@@ -67,3 +67,53 @@ export function useTheme() {
   );
   return { theme, setTheme: saveTheme, error };
 }
+
+export type FontSize = "default" | "large" | "x-large";
+export const FONT_SIZE_KEY = "orc_font_size";
+const FONT_SIZE_EVENT = "orc-font-size-change";
+
+export const FONT_SIZES: { value: FontSize; label: string; hint: string }[] = [
+  { value: "default", label: "Default", hint: "The standard interface text size." },
+  { value: "large", label: "Large", hint: "Enlarges interface text by about 12%." },
+  { value: "x-large", label: "Extra large", hint: "Enlarges interface text by about 25%." },
+];
+
+export function getFontSize(): FontSize {
+  const size = document.documentElement.dataset.fontSize;
+  return size === "large" || size === "x-large" ? size : "default";
+}
+
+function applyFontSize(size: FontSize) {
+  if (size === "default") delete document.documentElement.dataset.fontSize;
+  else document.documentElement.dataset.fontSize = size;
+  window.dispatchEvent(new Event(FONT_SIZE_EVENT));
+}
+
+/** Font size is a per-device reading preference, saved in this browser only. */
+export function setFontSize(size: FontSize) {
+  try {
+    localStorage.setItem(FONT_SIZE_KEY, size);
+  } catch {
+    // Appearance still works when browser storage is unavailable.
+  }
+  applyFontSize(size);
+}
+
+function subscribeFontSize(listener: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === FONT_SIZE_KEY || event.key === null) {
+      const size = event.newValue;
+      applyFontSize(size === "large" || size === "x-large" ? size : "default");
+    }
+  };
+  window.addEventListener(FONT_SIZE_EVENT, listener);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(FONT_SIZE_EVENT, listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+export function useFontSize() {
+  return useSyncExternalStore(subscribeFontSize, getFontSize, () => "default" as const);
+}

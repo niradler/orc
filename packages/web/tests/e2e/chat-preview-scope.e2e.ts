@@ -10,6 +10,7 @@ async function openSessionSettings(page: Page) {
     await page.getByTestId("chat-options-button").click();
   await page.getByTestId("chat-config-button").click();
   await expect(page.getByTestId("chat-config-dialog")).toBeVisible();
+  await page.getByTestId("chat-settings-tab-customize").click();
 }
 
 async function closeSessionSettings(page: Page) {

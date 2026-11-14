@@ -15,6 +15,10 @@ for (const width of [390, 1440]) {
     const input = page.getByTestId("chat-input").filter({ visible: true });
     await input.fill("[Example](https://example.com/chat-link)");
     await input.press("Enter");
+    // The link dialog lives inside the streamed answer; clicking mid-stream races the
+    // re-render that replaces it and detaches the modal. Users confirm links after the
+    // answer settles, so wait for the turn to finish first.
+    await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
     const link = page
       .locator('[data-testid="chat-message"][data-role="assistant"] [data-streamdown="link"]')
       .last();

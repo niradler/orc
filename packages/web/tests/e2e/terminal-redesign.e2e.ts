@@ -11,6 +11,7 @@ import {
   apiPost,
   repoRoot,
   splitTerminalPane,
+  toggleThemeInPlace,
 } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
@@ -311,7 +312,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.setViewportSize({ width: 1440, height: 900 });
       await expect(page.getByTestId("workspace-pane")).toHaveCount(3);
       const snapshot = await page.evaluate(() => localStorage.getItem("orc_workspace_layout"));
-      await page.getByTestId("theme-toggle").click();
+      await toggleThemeInPlace(page);
       expect(await page.evaluate(() => localStorage.getItem("orc_workspace_layout"))).toBe(
         snapshot,
       );

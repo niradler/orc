@@ -7877,7 +7877,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read local Codex and Claude account quota windows (cached for 60 seconds) */
+        /** Read local Codex, Claude and Alibaba Cloud account quota windows (cached for 60 seconds) */
         get: {
             parameters: {
                 query?: never;
@@ -7896,7 +7896,7 @@ export interface paths {
                         "application/json": {
                             accounts: {
                                 /** @enum {string} */
-                                provider: "codex" | "claude";
+                                provider: "codex" | "claude" | "alibaba";
                                 provider_id?: string;
                                 name?: string;
                                 /** @enum {string} */

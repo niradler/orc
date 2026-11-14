@@ -66,6 +66,15 @@
   --radius-lg: 0.5rem;
 }
 
+/* Appearance font size (Settings → Appearance): scales the rem-based interface
+   text on this device. Unlayered so it wins over the preflight root size. */
+html[data-font-size="large"] {
+  font-size: 112.5%;
+}
+html[data-font-size="x-large"] {
+  font-size: 125%;
+}
+
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
@@ -150,12 +159,6 @@
    the shell header and the breadcrumb row would leave the composer off-screen. */
 @utility chat-page {
   html[data-compact-viewport="true"]:has(&) .workspace-header {
-    display: none;
-  }
-}
-
-@utility chat-page-subheader {
-  html[data-compact-viewport="true"] & {
     display: none;
   }
 }
