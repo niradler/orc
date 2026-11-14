@@ -5,10 +5,16 @@
     <script>
       (() => {
         let theme = "dark";
-        try { if (localStorage.getItem("orc_theme") === "light") theme = "light"; } catch {}
+        let fontSize = "default";
+        try {
+          if (localStorage.getItem("orc_theme") === "light") theme = "light";
+          const size = localStorage.getItem("orc_font_size");
+          if (size === "large" || size === "x-large") fontSize = size;
+        } catch {}
         document.documentElement.classList.toggle("dark", theme === "dark");
         document.documentElement.dataset.theme = theme;
         document.documentElement.style.colorScheme = theme;
+        if (fontSize !== "default") document.documentElement.dataset.fontSize = fontSize;
       })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />

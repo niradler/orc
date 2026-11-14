@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import { toggleThemeInPlace } from "./_helpers";
 
 // Exercise the published agent skeleton, not a hand-maintained copy of the kit markup.
 const reference = readFileSync(
@@ -111,19 +112,7 @@ export async function checkHtmlKitElements(
     await expect(frame.getByRole("tabpanel", { name: "Last", exact: true })).toBeVisible();
     await expect(now).toHaveAttribute("aria-selected", "true");
     if (pass === 0) {
-      if (await page.getByTestId("theme-toggle").isVisible()) {
-        await page.getByTestId("theme-toggle").click();
-      } else {
-        await page.evaluate(
-          (nextTheme) => {
-            localStorage.setItem("orc_theme", nextTheme);
-            window.dispatchEvent(
-              new StorageEvent("storage", { key: "orc_theme", newValue: nextTheme }),
-            );
-          },
-          theme === "light" ? "dark" : "light",
-        );
-      }
+      await toggleThemeInPlace(page);
       await expect
         .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
         .not.toBe(theme);
@@ -232,21 +221,9 @@ export async function checkHtmlKit(page: Page, frameTestId: string, info: TestIn
     await contentFrame.evaluate(() => scrollTo(0, 0));
     await page.screenshot({ path: info.outputPath(`${frameTestId}-${theme}.png`) });
     if (pass === 0) {
-      if (await page.getByTestId("theme-toggle").isVisible()) {
-        await page.getByTestId("theme-toggle").click();
-      } else {
-        // Fullscreen chat hides the header. Exercise the real cross-tab theme subscription
-        // while keeping the chat artifact mounted, as when another ORC tab changes theme.
-        await page.evaluate(
-          (nextTheme) => {
-            localStorage.setItem("orc_theme", nextTheme);
-            window.dispatchEvent(
-              new StorageEvent("storage", { key: "orc_theme", newValue: nextTheme }),
-            );
-          },
-          theme === "light" ? "dark" : "light",
-        );
-      }
+      // Theme changes arrive through the cross-tab storage subscription, as when
+      // another ORC tab saves a new theme from Settings.
+      await toggleThemeInPlace(page);
       await expect
         .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
         .not.toBe(theme);

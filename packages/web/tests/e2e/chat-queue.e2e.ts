@@ -3,7 +3,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { holdChatStream } from "./_chat-stream";
 import { closeChatHistory, openChatActions, openChatHistory } from "./_chat-ui";
 import { pauseBrowserClock } from "./_clock";
-import { API_SECRET } from "./_helpers";
+import { API_SECRET, leavePhoneChatViaNav } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
 test.beforeEach(async ({ page, request }) => {
@@ -274,7 +274,8 @@ test("should retain mobile drafts and pending edits when hiding and reopening ch
   await page.setViewportSize({ width: 390, height: 844 });
   const panel = page.getByTestId("chat-panel").filter({ visible: true });
   await panel.getByTestId("chat-input").fill("Unsent mobile draft");
-  await panel.getByTestId("chat-close-button").click();
+  // The phone chat page has no close button: navigation moves to another page.
+  await leavePhoneChatViaNav(page, "tasks");
   await page.getByTestId("chat-open-button").click();
   await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent mobile draft");
   const release = await holdChatStream(page);
@@ -284,7 +285,7 @@ test("should retain mobile drafts and pending edits when hiding and reopening ch
     await expandQueue(panel);
     await panel.getByTestId("chat-queued-edit").click();
     await panel.getByTestId("chat-queued-input").fill("Saved after reopening");
-    await panel.getByTestId("chat-close-button").click();
+    await leavePhoneChatViaNav(page, "tasks");
     await page.getByTestId("chat-open-button").click();
     await expect(panel.getByTestId("chat-queued-input")).toHaveValue("Saved after reopening");
     await panel.getByTestId("chat-queued-save").click();

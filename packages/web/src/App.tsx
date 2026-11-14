@@ -14,7 +14,8 @@ import { DesktopPreviewWorkspace } from "@/components/DesktopPreviewWorkspace";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
 import { CHAT_THREAD_PARAM, ChatProvider } from "@/hooks/useChat";
-import { BREAKPOINTS } from "@/hooks/useMediaQuery";
+import { BREAKPOINTS, useBreakpoint } from "@/hooks/useMediaQuery";
+import { useNotificationShade } from "@/hooks/useNotificationShade";
 import { useProjects } from "@/hooks/useProjects";
 import { sessionHomeExitSteps, useSessionHomeEntry } from "@/hooks/useSessionHome";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
@@ -68,6 +69,7 @@ function KnowledgeRedirect() {
 
 export default function App() {
   useVisualViewport();
+  useNotificationShade(!useBreakpoint("md"));
   const [savedProjectId, setSavedProjectId] = useState<string>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) ?? "all";

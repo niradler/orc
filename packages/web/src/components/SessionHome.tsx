@@ -1,23 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
 import { PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import { api, type LiveSession, type Terminal } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
+import { InspectorOverview } from "@/components/inspector/InspectorOverview";
+import { InspectorTabs } from "@/components/inspector/InspectorTabs";
+import { FilePanel } from "@/components/terminals/FilePanel";
 import { GitPanelBody } from "@/components/terminals/GitPanel";
 import { TerminalViewport } from "@/components/terminals/TerminalViewport";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import {
-  useWorkspaceByPath,
-  workspacePortRange,
-  workspaceSetupLabel,
-} from "@/components/WorkspaceStatus";
 import { useActiveLiveSessions } from "@/hooks/useActiveLiveSessions";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
-import type { InspectorTab } from "@/lib/session-home";
+import { INSPECTOR_PANE_ID, type InspectorTab } from "@/lib/session-home";
 import {
   runningTerminalForFolder,
   runningTerminalForSession,
@@ -94,10 +90,20 @@ export function useSessionLiveLink(home: SessionHomeNav, enabled: boolean) {
   return error;
 }
 
-export function SessionHomeToggles({ home }: { home: SessionHomeNav }) {
+export function SessionHomeToggles({
+  home,
+  gestures = false,
+}: {
+  home: SessionHomeNav;
+  /** Phone: explain the equivalent touch gesture beside each toggle. */
+  gestures?: boolean;
+}) {
   return (
     <>
-      <ActionHelp label={home.drawer ? "Hide terminal" : "Show terminal"}>
+      <ActionHelp
+        label={home.drawer ? "Hide terminal" : "Show terminal"}
+        description={gestures ? "Or pull down on the chat header" : undefined}
+      >
         <button
           type="button"
           data-testid="session-drawer-toggle"
@@ -109,7 +115,14 @@ export function SessionHomeToggles({ home }: { home: SessionHomeNav }) {
           <PanelBottom size={17} />
         </button>
       </ActionHelp>
-      <ActionHelp label={home.inspector ? "Hide inspector" : "Show inspector"}>
+      <ActionHelp
+        label={home.inspector ? "Hide inspector" : "Show inspector"}
+        description={
+          gestures
+            ? "Git, changes, pull requests and files. Or swipe right from the left edge"
+            : undefined
+        }
+      >
         <button
           type="button"
           data-testid="session-inspector-toggle"
@@ -222,84 +235,6 @@ export function SessionDrawer({ context }: { context: SessionContext }) {
   );
 }
 
-function Overview({ context }: { context: SessionContext }) {
-  const git = context.gitTerminal;
-  const status = useQuery({
-    queryKey: ["git", git?.id, "status"],
-    queryFn: () => api.git.status(git?.id ?? ""),
-    enabled: !!git,
-  });
-  const github = useQuery({
-    queryKey: ["git", git?.id, "github", status.data?.branch],
-    queryFn: () => api.git.checkoutGithub(git?.id ?? ""),
-    enabled: !!git && !!status.data?.root,
-    staleTime: 60_000,
-  });
-  const branch = status.data?.branch;
-  const pr = branch
-    ? github.data?.items.find((item) => item.kind === "pr" && item.branch === branch)
-    : undefined;
-  const task = context.session?.task;
-  const changes = status.data?.files.length;
-  const { data: workspace } = useWorkspaceByPath(context.cwd);
-  const ports = workspace ? workspacePortRange(workspace) : null;
-  return (
-    <dl data-testid="session-inspector-overview" className="space-y-3 text-sm">
-      <OverviewRow label="Host">{context.host ?? "local"}</OverviewRow>
-      <OverviewRow label="Folder">{context.cwd}</OverviewRow>
-      <OverviewRow label="Branch">{branch}</OverviewRow>
-      <OverviewRow label="Changes">
-        {changes === undefined ? null : `${changes} ${changes === 1 ? "file" : "files"}`}
-      </OverviewRow>
-      <OverviewRow label="Workspace ports">{ports}</OverviewRow>
-      <OverviewRow label="Workspace setup">
-        {workspace ? workspaceSetupLabel(workspace) : null}
-      </OverviewRow>
-      <OverviewRow label="Preview">
-        {workspace?.preview_url && (
-          <a
-            className="text-primary hover:underline"
-            href={workspace.preview_url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open preview
-          </a>
-        )}
-      </OverviewRow>
-      <OverviewRow label="Task">
-        {task && (
-          <Link className="text-primary hover:underline" to={`/tasks/${task.id}`}>
-            {task.title}
-          </Link>
-        )}
-      </OverviewRow>
-      <OverviewRow label="Pull request">
-        {pr && (
-          <a
-            className="text-primary hover:underline"
-            href={pr.url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            #{pr.number} {pr.title}
-          </a>
-        )}
-      </OverviewRow>
-    </dl>
-  );
-}
-
-function OverviewRow({ label, children }: { label: string; children: ReactNode }) {
-  if (!children) return null;
-  return (
-    <div data-testid={`session-inspector-${label.toLowerCase().replace(" ", "-")}`}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="break-words">{children}</dd>
-    </div>
-  );
-}
-
 function InspectorBody({
   context,
   tab,
@@ -310,44 +245,31 @@ function InspectorBody({
   home: SessionHomeNav;
 }) {
   const git = context.gitTerminal;
-  const tabs: [InspectorTab, string][] = git
-    ? [
-        ["overview", "Overview"],
-        ["diff", "Diff"],
-      ]
-    : [["overview", "Overview"]];
-  const shown = tab === "diff" && git ? "diff" : "overview";
+  const shown: InspectorTab = tab !== "overview" && git ? tab : "overview";
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {tabs.length > 1 && (
-        <div role="tablist" aria-label="Inspector" className="flex gap-1 px-3 pb-2">
-          {tabs.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              data-testid={`session-inspector-tab-${id}`}
-              aria-selected={shown === id}
-              onClick={() => home.go({ inspector: id }, { replace: true })}
-              className={cn(
-                "min-h-8 rounded-md px-3 text-sm",
-                shown === id
-                  ? "bg-surface-highest text-on-surface"
-                  : "text-outline hover:bg-surface hover:text-on-surface",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+      <InspectorTabs
+        git={!!git}
+        shown={shown}
+        onSelect={(next) => home.go({ inspector: next }, { replace: true })}
+        className="px-3 pb-2"
+      />
+      {shown === "overview" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+          <InspectorOverview context={context} home={home} />
+        </div>
+      ) : (
+        // Container host: the git and files panels follow the inspector width,
+        // the same compact layout the phone page and preview panel use.
+        <div className="inspector-host flex min-h-0 flex-1 flex-col">
+          {shown === "diff" && git && (
+            <GitPanelBody terminal={git} paneId={INSPECTOR_PANE_ID} persistDraft />
+          )}
+          {shown === "files" && git && (
+            <FilePanel terminal={git} paneId={INSPECTOR_PANE_ID} active />
+          )}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {shown === "diff" && git ? (
-          <GitPanelBody terminal={git} paneId="session-inspector" />
-        ) : (
-          <Overview context={context} />
-        )}
-      </div>
     </div>
   );
 }

@@ -1,6 +1,15 @@
 import { expect, test } from "@playwright/test";
 import { captureState } from "./_capture-state";
-import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, selectProject, tid } from "./_helpers";
+import {
+  API_BASE,
+  AUTH_HEADERS,
+  apiGet,
+  apiPost,
+  gotoView,
+  selectProject,
+  tid,
+  toggleThemeInPlace,
+} from "./_helpers";
 
 for (const width of [1440, 390, 320]) {
   test(`skills show scope and enter multiselect explicitly at ${width}px`, async ({
@@ -129,23 +138,17 @@ for (const width of [1440, 390, 320]) {
     await page.getByTestId("skills-select-displayed").click();
     await captureState(page, { path: info.outputPath("skills-multiselect.png") });
     if (width === 390) {
-      const toggle = page.getByTestId("theme-toggle");
-      const wasDark = (await toggle.getAttribute("aria-label")) === "Switch to light theme";
-      if (!wasDark) {
-        await toggle.click();
-        await expect(toggle).toHaveAttribute("aria-label", "Switch to light theme");
-      }
-      await toggle.click();
-      await expect(toggle).toHaveAttribute("aria-label", "Switch to dark theme");
+      // Theme lives in Settings now; switch it in place for the light screenshot,
+      // then restore the theme this pass started with.
+      const wasDark = (await page.locator("html").getAttribute("data-theme")) === "dark";
+      if (!wasDark) await toggleThemeInPlace(page);
+      await toggleThemeInPlace(page);
       await page.mouse.move(0, 0);
       await captureState(page, {
         path: info.outputPath("skills-multiselect-light.png"),
         animations: "disabled",
       });
-      if (wasDark) {
-        await toggle.click();
-        await expect(toggle).toHaveAttribute("aria-label", "Switch to light theme");
-      }
+      if (wasDark) await toggleThemeInPlace(page);
     }
     await page.getByTestId("skills-bulk-hide").click();
     await expect(page.getByTestId("skills-select-displayed")).toBeDisabled();

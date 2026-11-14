@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiDelete, apiPost, gotoView, selectProject, tid } from "./_helpers";
+import { apiDelete, apiPost, gotoView, leavePhoneChatViaNav, selectProject, tid } from "./_helpers";
 
 test("shared project URLs align the shell and page without replacing the saved preference", async ({
   page,
@@ -85,7 +85,9 @@ test("Chat is generic and its open view restores from the URL across breakpoints
   // Below the side-panel breakpoint the side chat becomes the Chat page.
   await expect(page).toHaveURL(/\/chat\?/);
   await expect(page.getByTestId("session-home")).toBeVisible();
-  await page.getByRole("button", { name: "Close chat", exact: true }).click();
+  // The phone chat page has no close button: navigation moves to another page. A plain
+  // Back would land on the `chat=open` entry and redirect straight back into chat.
+  await leavePhoneChatViaNav(page, "activity");
   await expect(page.getByTestId("session-home")).toHaveCount(0);
   await expect(page).toHaveURL(/\/activity\?/);
   expect(new URL(page.url()).searchParams.has("chat")).toBe(false);

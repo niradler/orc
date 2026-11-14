@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureState } from "./_capture-state";
 import { openFinalFormStep } from "./_form-ui";
-import { apiGet, apiPost, gotoView, tid } from "./_helpers";
+import { apiGet, apiPost, gotoView, tid, toggleThemeInPlace } from "./_helpers";
 
 const markdown =
   "# Verification checklist\n\n- Preserve **drafts**\n- Check keyboard focus\n\nA concise fact 😀";
@@ -25,7 +25,7 @@ for (const width of [1440, 390, 320]) {
     await expect(page.getByTestId("new-memory-button")).toBeVisible();
     const desiredTheme = width === 320 ? "light" : "dark";
     if ((await page.locator("html").getAttribute("data-theme")) !== desiredTheme)
-      await page.getByTestId("theme-toggle").click();
+      await toggleThemeInPlace(page);
     await expect(page.locator("html")).toHaveAttribute("data-theme", desiredTheme);
     await page.getByTestId("new-memory-button").click();
     const dialog = page.getByTestId("memory-form-dialog");
