@@ -34,9 +34,10 @@ test.describe("Dashboard", () => {
       await expect(memoriesCard).toBeVisible();
       await expect(activeJobsCard).toBeVisible();
 
-      // Todo count should be >= 1 (we seeded one)
+      // Todo count should be >= 1 (we seeded one). The card renders a placeholder
+      // until the activity queries resolve, so wait for a real number first.
       const todoValue = todoCard.getByTestId("stat-card-value");
-      await expect(todoValue).toBeVisible();
+      await expect(todoValue).toHaveText(/^\d+$/);
       const raw = (await todoValue.textContent())?.trim() ?? "0";
       expect(Number(raw)).toBeGreaterThanOrEqual(1);
 
