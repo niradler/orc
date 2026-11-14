@@ -10,6 +10,7 @@ import {
   openWorkspaceFolder,
   settingsSection,
   setWorkspaceWorktree,
+  showSessionSection,
 } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
@@ -435,7 +436,7 @@ for (const width of [320, 820, 1440]) {
       },
     });
     await openChat(page);
-    await openChatSettings(page);
+    await openChatSettings(page, "customize");
     await expect(page.getByTestId("chat-config-dialog")).toContainText(prompt);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -461,6 +462,7 @@ for (const width of [320, 820, 1440]) {
     await page.reload();
     await expect(page.getByTestId("chat-input")).toBeEnabled();
     await page.getByTestId("chat-sessions-button").click();
+    await showSessionSection(page, "recents");
     await page.getByTestId("chat-session-search").fill(marker);
     await page.getByTestId("chat-session-select").filter({ hasText: marker }).click();
     await expect(page.getByTestId("chat-sessions-dialog")).toHaveCount(0);
@@ -620,6 +622,7 @@ test("coding-session selection opens native history before sending a continuatio
   });
   await openChat(page);
   await page.getByTestId("chat-sessions-button").click();
+  await showSessionSection(page, "recents");
   await page.getByTestId("chat-session-search").fill("Imported coding work");
   await page.getByTestId("chat-resume-live").filter({ hasText: "Imported coding work" }).click();
   await expect(page.getByTestId("chat-message-content")).toContainText("Earlier native answer");
@@ -676,6 +679,7 @@ test("synced sessions can supply missing checkout details before chat resume", a
   );
   await openChat(page);
   await page.getByTestId("chat-sessions-button").click();
+  await showSessionSection(page, "recents");
   await page.getByTestId("chat-session-search").fill(source.title);
   await page.getByTestId("chat-resume-archive").filter({ hasText: source.title }).click();
   await expect(page.getByTestId("chat-archive-prepare")).toBeDisabled();

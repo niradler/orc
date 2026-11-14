@@ -1,3 +1,4 @@
+import type { ChatThread } from "@orc/core/chat";
 import { useQuery } from "@tanstack/react-query";
 import {
   Check,
@@ -128,7 +129,9 @@ export function ChatWorkspaceControls() {
     if (ssh && !workspace && !thread && !streaming)
       setWorkspace({ host: ssh.host, cwd: folderHistory(ssh.host).last, worktree: false });
   }, [ssh, workspace, thread, streaming, setWorkspace]);
-  if (thread) return null;
+  // A running conversation keeps its execution folder; show where it runs and
+  // the checkout's branch instead of the new-chat pickers.
+  if (thread) return <SessionWorkspace thread={thread} />;
 
   const hosts = [null, ...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])];
   const listing = git.data;
@@ -675,6 +678,150 @@ export function ChatWorkspaceControls() {
         onPick={choose}
         returnFocusRef={folderTrigger}
       />
+    </fieldset>
+  );
+}
+
+/** Workspace identity of an open conversation: where it runs and the branch of
+ *  that checkout. A running session keeps its folder, so there is nothing to
+ *  pick here; the chips only show and copy it. */
+function SessionWorkspace({ thread }: { thread: ChatThread }) {
+  const { data: ssh } = useSsh();
+  const host = thread.host;
+  const cwd = thread.cwd;
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const git = useQuery({
+    queryKey: ["chat-workspace-git", host, cwd],
+    queryFn: () => api.git.worktrees(cwd, host),
+    enabled: !!ssh && !!cwd,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const listing = git.data;
+  const folderName = folderChipLabel(cwd, listing);
+  const folderLabel = host ? `${host} · ${folderName}` : folderName;
+  const location = `${host ?? "Local"}: ${cwd}`;
+  const branch = branchName(currentWorktree(listing, cwd));
+  const showBranch = !!listing?.root;
+  const copyPath = async () => {
+    try {
+      await navigator.clipboard.writeText(cwd);
+      setCopied(true);
+    } catch {
+      /* The full path stays visible for manual copying. */
+    }
+  };
+  return (
+    <fieldset
+      data-testid="chat-workspace"
+      data-session="true"
+      aria-label="Session workspace"
+      className="chat-workspace-controls m-0 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0"
+    >
+      <Popover
+        open={folderOpen}
+        onOpenChange={(open) => {
+          setFolderOpen(open);
+          if (!open) setCopied(false);
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-testid="chat-workspace-folder"
+            aria-label={`Session folder ${folderLabel}, ${location}`}
+            title={location}
+            className={cn(composerChip, "max-w-56")}
+          >
+            {host ? (
+              <Server size={14} aria-hidden="true" className="shrink-0" />
+            ) : (
+              <Folder size={14} aria-hidden="true" className="shrink-0" />
+            )}
+            <span
+              data-chip-label
+              data-testid="chat-workspace-folder-name"
+              className="min-w-0 truncate"
+            >
+              {folderLabel}
+            </span>
+            <ChevronDown
+              data-chip-label
+              size={12}
+              aria-hidden="true"
+              className="shrink-0 opacity-60"
+            />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          data-testid="chat-workspace-folder-picker"
+          aria-label="Session folder"
+          side="top"
+          align="start"
+          className="w-80 p-1.5"
+        >
+          <div className="flex min-w-0 items-start gap-1 px-2 pt-1">
+            <span
+              data-testid="chat-workspace-full-path"
+              className="min-w-0 flex-1 self-center break-all font-mono text-xs text-on-surface-variant"
+            >
+              {cwd}
+            </span>
+            <button
+              type="button"
+              data-testid="chat-workspace-copy-path"
+              aria-label={copied ? "Folder path copied" : "Copy folder path"}
+              title={copied ? "Folder path copied" : "Copy folder path"}
+              onClick={() => void copyPath()}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+            </button>
+          </div>
+        </PopoverContent>
+      </Popover>
+      {showBranch && (
+        <Popover open={branchOpen} onOpenChange={setBranchOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="chat-workspace-branch"
+              data-worktree="false"
+              aria-label={`Session branch: ${branch ?? "unavailable"}`}
+              title={branch ?? "Branch unavailable"}
+              className={cn(composerChip, "max-w-56")}
+            >
+              <GitBranch size={14} aria-hidden="true" className="shrink-0" />
+              <span data-chip-label className="min-w-0 truncate">
+                {branch ?? "No branch"}
+              </span>
+              <ChevronDown
+                data-chip-label
+                size={12}
+                aria-hidden="true"
+                className="shrink-0 opacity-60"
+              />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            data-testid="chat-workspace-branch-picker"
+            aria-label="Session branch"
+            side="top"
+            align="start"
+            className="w-80 max-w-[calc(100vw-2rem)] p-1.5"
+          >
+            <p className={chipHeading}>Working branch</p>
+            <p
+              data-testid="chat-workspace-branch-name"
+              className="px-2 py-1 font-mono text-xs break-all"
+            >
+              {branch ?? "Branch not reported for this folder."}
+            </p>
+          </PopoverContent>
+        </Popover>
+      )}
     </fieldset>
   );
 }
