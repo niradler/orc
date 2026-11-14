@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
-import { oneLine, statusFromMtime } from "./common.js";
+import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
 export const CURSOR_PROJECTS_DIR = join(homedir(), ".cursor", "projects");
@@ -184,7 +184,7 @@ export function cursorAdapter(
         const before = known.get(record.externalId);
         if (
           before &&
-          record.lastActivityAt.getTime() <= before.lastActivityMs &&
+          !activityAdvanced(record.lastActivityAt, before.lastActivityMs) &&
           before.usageVersion === USAGE_EVENT_VERSION
         )
           continue;
