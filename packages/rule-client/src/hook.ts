@@ -48,12 +48,23 @@ export function runRuleHook(
   return new Promise((done) => {
     const fail = (reason: string): void =>
       done(blocking ? { block: true, reason } : { block: false });
+    let body: string;
+    try {
+      body = JSON.stringify(run.payload);
+    } catch (err) {
+      fail(
+        `ORC rule hook payload could not be serialized: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
     let child: ReturnType<typeof spawn>;
     try {
+      // `command` is a user-configured executable line, like a native hook
+      // command; the appended args are fixed tokens without shell characters.
       child = spawn(run.command, ["rules", "hook", backend, run.native], {
         cwd: run.cwd,
         env: { ...process.env, ...run.env },
-        shell: process.platform === "win32",
+        shell: true,
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -104,6 +115,6 @@ export function runRuleHook(
       finish(blocking || !decision.block ? decision : { block: false });
     });
     child.stdin?.on("error", () => undefined);
-    child.stdin?.end(JSON.stringify(run.payload));
+    child.stdin?.end(body);
   });
 }

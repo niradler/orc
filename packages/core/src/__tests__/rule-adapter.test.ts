@@ -14,6 +14,7 @@ test("the factory builds an adapter for every supported backend", () => {
     expect(adapter.capability("pre_tool")?.event).toBe("pre_tool");
   }
   expect(() => createRuleAdapter("unknown" as RuleHookBackend)).toThrow("Unsupported");
+  expect(() => createRuleAdapter("constructor" as RuleHookBackend)).toThrow("Unsupported");
 });
 
 test("adapters keep native events addressable alongside canonical phases", () => {

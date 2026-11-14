@@ -32,6 +32,7 @@ import {
   recallKeys,
 } from "../src/recall.js";
 import {
+  BLOCKING_EVENTS,
   type OrcRule,
   type PiNativeEvent,
   planRules,
@@ -1022,7 +1023,10 @@ async function checkRules(
   payload: Record<string, unknown>,
   ctx: ExtensionContext,
 ) {
-  if (!session?.config) return undefined;
+  if (!session?.config)
+    return BLOCKING_EVENTS.has(native)
+      ? { block: true, reason: "ORC rules unavailable: porc configuration failed to load" }
+      : undefined;
   const gate = ruleHookGate({
     enabled: session.config.rules,
     plan: session.rules,
@@ -1155,12 +1159,26 @@ export default function porc(pi: ExtensionAPI): void {
     if (decision?.context) state.session?.pendingContext.push(decision.context);
   });
 
+  pi.on("session_before_compact", async (_event, ctx) => {
+    const session = state.session;
+    if (!session) return;
+    const decision = await checkRules(session, "session_before_compact", {}, ctx);
+    if (decision?.context) session.pendingContext.push(decision.context);
+  });
+
   pi.on("session_compact", async (_event, ctx) => {
     const session = state.session;
     if (!session) return;
     session.contextInjected = false;
     session.offered.clear();
     const decision = await checkRules(session, "session_compact", {}, ctx);
+    if (decision?.context) session.pendingContext.push(decision.context);
+  });
+
+  pi.on("agent_end", async (_event, ctx) => {
+    const session = state.session;
+    if (!session) return;
+    const decision = await checkRules(session, "agent_end", {}, ctx);
     if (decision?.context) session.pendingContext.push(decision.context);
   });
 

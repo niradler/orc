@@ -218,7 +218,9 @@ Pi and OpenCode embed the same adapter instead of installed settings hooks: `@or
 (porc) forwards Pi `tool_call`, `tool_result` and `input` events, and the `@orc/opencode`
 plugin forwards OpenCode `execute.before`, `execute.after`, `prompt` and `compaction`
 hooks. Both run `orc rules hook <backend> <event>` per event and fail closed on blocking
-events when the hook cannot produce a decision. When Pi cannot load the rules plan (ORC
+events when the hook cannot produce a decision. OpenCode tool denials surface as tool
+errors the model sees; prompt denials reject admission as a session error (qualified on
+OpenCode 2.3.0), with the reason recorded in the audit trail. When Pi cannot load the rules plan (ORC
 offline or the fetch failed), blocking events still run the hook against the local DB, and
 the plan refreshes periodically so later policy changes apply. OpenCode has no session
 start/end hooks; rules scoped to those events are not delivered there. See

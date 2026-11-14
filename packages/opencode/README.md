@@ -43,10 +43,18 @@ here; the shared catalog keeps them for agents that support them.
 
 ## Failure behavior
 
-Blocking hooks fail closed: a denied rule, a hook crash or a timeout rejects the tool call
-or prompt, and the model sees the reason. Non-blocking hooks fail open so observation never
-stalls a session. Enforcement reads the local ORC database through the CLI, so it keeps
-working while the ORC API is offline.
+The plugin fetches the rules plan from the ORC API (refreshed at least every 30s): only
+events that carry rules run the hook, and ask-user rules extend the hook timeout by their
+approval lifetime. Without a plan (ORC offline), blocking hooks still run against the
+local ORC database and fail closed; only a confirmed global disable skips enforcement.
+
+- `execute.before`: a denied rule, hook crash or timeout rejects the tool call; the model
+  sees the rule reason as a tool error.
+- `prompt`: a denied prompt is rejected before the model runs; OpenCode 2.x surfaces this
+  as a session error (qualified on OpenCode 2.3.0), and the reason is recorded in the ORC
+  audit trail.
+- `execute.after` / `compaction`: observation fails open and never defects the session,
+  but still waits for the hook up to its timeout.
 
 ## Options
 
@@ -60,8 +68,8 @@ Configure through the plugin entry:
       "options": {
         "command": "orc", // ORC executable (default: ORC_COMMAND or "orc")
         "rules": true, // false loads the plugin without enforcement
-        "timeoutMs": 30000, // blocking hook timeout; raise above ask-user lifetimes
-        "apiBase": "http://127.0.0.1:7700", // ORC origin for rule actions
+        "timeoutMs": 30000, // blocking hook timeout; ask-user rules extend it automatically
+        "apiBase": "http://127.0.0.1:7700", // ORC origin for the rules plan and rule actions
         "secretEnv": "ORC_API_SECRET" // env var holding the API secret
       }
     }

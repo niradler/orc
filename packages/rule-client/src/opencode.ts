@@ -20,16 +20,13 @@ export const OPENCODE_NATIVE_PHASES = {
 
 export type OpenCodeNativeEvent = keyof typeof OPENCODE_NATIVE_PHASES;
 
-export const OPENCODE_BLOCKING_EVENTS: ReadonlySet<OpenCodeNativeEvent> = new Set([
-  "execute.before",
-  "prompt",
-]);
-
 const client = createRuleClient<OpenCodeNativeEvent>({
   backend: "opencode",
   phases: OPENCODE_NATIVE_PHASES,
-  blocking: [...OPENCODE_BLOCKING_EVENTS],
+  blocking: ["execute.before", "prompt"],
 });
+
+export const OPENCODE_BLOCKING_EVENTS: ReadonlySet<OpenCodeNativeEvent> = client.blocking;
 
 export const opencodeRuleClient = client;
 export const rulesForCwd = client.rulesForCwd;

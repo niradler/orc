@@ -22,13 +22,13 @@ export const PI_NATIVE_PHASES = {
 
 export type PiNativeEvent = keyof typeof PI_NATIVE_PHASES;
 
-export const BLOCKING_EVENTS: ReadonlySet<PiNativeEvent> = new Set(["tool_call", "input"]);
-
 const client = createRuleClient<PiNativeEvent>({
   backend: "pi",
   phases: PI_NATIVE_PHASES,
-  blocking: [...BLOCKING_EVENTS],
+  blocking: ["tool_call", "input"],
 });
+
+export const BLOCKING_EVENTS: ReadonlySet<PiNativeEvent> = client.blocking;
 
 export const rulesForCwd = client.rulesForCwd;
 export const planRules = client.planRules;

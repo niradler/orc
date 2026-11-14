@@ -38,17 +38,29 @@ There is no `install-hook` step; OpenCode loads the plugin itself.
 | `session context`     | —               | Delivers queued rule context to the model         |
 
 Every hook forwards to `orc rules hook opencode <event>`, the same adapter the other
-agents use, evaluated against the local ORC database. Rule context is queued per session
-and delivered on the next model request. OpenCode has no session start/end hooks, so rules
-scoped to those events are not delivered here.
+agents use, evaluated against the local ORC database. The plugin fetches the workspace
+rules plan from the ORC API and refreshes it at least every 30 seconds, so only events
+that carry rules run the hook and ask-user rules get their approval lifetime plus a
+grace period as the hook timeout. Rule context is queued per session and delivered on
+the next model request. OpenCode has no session start/end hooks, so rules scoped to
+those events are not delivered here.
 
 ## Failure behavior
 
-Blocking hooks fail closed: a denied rule, a hook crash or a timeout rejects the tool call
-or prompt and the model sees the reason. Non-blocking hooks fail open so observation never
-stalls a session. Enforcement reads the local ORC database through the CLI, so it keeps
-working while the ORC API is offline. Hooks are not an OS sandbox; see
-[Agent rules](./agent-rules.md) for the guarantee boundary.
+Without a plan (ORC offline or unauthenticated), blocking hooks still run against the
+local ORC database and fail closed; only a confirmed global disable
+(`rules.enabled: false`) skips enforcement. A workspace without rules spawns no hooks.
+
+- `execute.before`: a denied rule, hook crash or timeout rejects the tool call; the
+  model sees the rule reason as a tool error.
+- `prompt`: a denied prompt is rejected before the model runs. OpenCode 2.x surfaces
+  this as a session error (qualified on OpenCode 2.3.0); the rule reason is recorded in
+  the ORC audit trail.
+- `execute.after` / `compaction`: observation fails open and never defects the session,
+  but still waits for the hook up to its timeout.
+
+Hooks are not an OS sandbox; see [Agent rules](./agent-rules.md) for the guarantee
+boundary.
 
 ## Configure
 
@@ -75,8 +87,8 @@ Pass options through the plugin entry:
 | ----------- | -------------------------------- | -------------------------------------------------- |
 | `command`   | `ORC_COMMAND` or `orc`           | ORC executable that runs the rule hook             |
 | `rules`     | `true`                           | `false` loads the plugin without enforcement       |
-| `timeoutMs` | `30000`                          | Blocking hook timeout; raise above ask-user lifetimes |
-| `apiBase`   | `ORC_API_BASE` or orc config     | ORC origin for rule actions                        |
+| `timeoutMs` | `30000`                          | Blocking hook timeout; ask-user rules extend it automatically |
+| `apiBase`   | `ORC_API_BASE` or `http://127.0.0.1:7700` | ORC origin for the rules plan and rule actions |
 | `secretEnv` | `ORC_API_SECRET`                 | Environment variable holding the API secret        |
 
 Session identity is forwarded as `ORC_SESSION_ID`, so rule decisions and writes are

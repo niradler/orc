@@ -185,9 +185,10 @@ const ADAPTER_SPECS: Record<RuleHookBackend, AdapterSpec> = {
 };
 
 export function createRuleAdapter(backend: RuleHookBackend): RuleAdapter {
+  if (!Object.hasOwn(RULE_EVENT_ADAPTERS, backend) || !Object.hasOwn(ADAPTER_SPECS, backend))
+    throw new Error(`Unsupported rule hook backend: ${backend}`);
   const events = RULE_EVENT_ADAPTERS[backend];
   const spec = ADAPTER_SPECS[backend];
-  if (!events || !spec) throw new Error(`Unsupported rule hook backend: ${backend}`);
   return {
     backend,
     events,

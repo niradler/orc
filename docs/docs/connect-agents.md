@@ -184,9 +184,10 @@ It returns the project's active tasks and its memories by priority.
 | OpenCode             | History is read from its SQLite store. No setup; no live state.                                                |
 
 Live state and permission waits are a choice, per agent: install the native adapter with
-`orc rules install-hook` (see [Rule hooks](#rule-hooks) below). The same explicit install
-also enables rule enforcement; nothing is installed globally or automatically.
-Details: [Live sessions](./live-sessions.md).
+`orc rules install-hook` (see [Rule hooks](#rule-hooks) below). For Claude, Cursor and
+Gemini the same explicit install also provides live state and permission waits; Codex
+live state comes from native discovery and needs no hooks. Nothing is installed globally
+or automatically. Details: [Live sessions](./live-sessions.md).
 
 ## Rule hooks
 

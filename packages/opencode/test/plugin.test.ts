@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +20,7 @@ type ToolAfter = {
   messageID: string;
   id: string;
   input: unknown;
-} & ({ status: "completed"; result: unknown } | { status: "error"; error: { message: string } });
+} & ({ status: "completed"; result: unknown } | { status: "error"; error?: { message: string } });
 type PromptEvent = { sessionID: string; messageID: string; prompt: { text: string } };
 type ContextEvent = { sessionID: string; system: Array<{ type: string; text: string }> };
 type CompactionEvent = { sessionID: string };
@@ -94,12 +94,74 @@ if (process.platform === "win32") {
   stubCommand = join(directory, "stub-orc");
   writeFileSync(stubCommand, `#!/usr/bin/env bun\n${stubSource}`, { mode: 0o755 });
 }
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
+
+function rule(id: string, events: string[]) {
+  return {
+    id,
+    reason: `probe ${id}`,
+    kind: "event",
+    enabled: true,
+    scope: { agents: "all", events },
+    filter: { match: "all", conditions: [] },
+    target: { type: "block" },
+  };
+}
+function revision(rules: unknown[]) {
+  return {
+    id: "rev1",
+    workspace: directory,
+    project_id: null,
+    current: true,
+    policy: { workspace: directory, project_id: null, rules },
+  };
+}
+const defaultHistory = [
+  revision([
+    rule("pre", ["pre_tool"]),
+    rule("post", ["post_tool"]),
+    rule("prompt", ["prompt_submit"]),
+  ]),
+];
+let rulesResponse: { enabled: boolean; history: unknown[] } = {
+  enabled: true,
+  history: defaultHistory,
+};
+const server = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  fetch(req) {
+    const url = new URL(req.url);
+    if (url.pathname === "/api/rules") return Response.json(rulesResponse);
+    return new Response("not found", { status: 404 });
+  },
+});
+const apiUrl = `http://127.0.0.1:${server.port}`;
+const deadUrl = "http://127.0.0.1:1";
+
+const realNow = Date.now;
+let offset = 0;
+Date.now = () => realNow() + offset;
+
+afterAll(() => {
+  Date.now = realNow;
+  server.stop(true);
+  rmSync(directory, { recursive: true, force: true });
+});
+afterEach(() => {
+  offset = 0;
+  rulesResponse = { enabled: true, history: defaultHistory };
+  writeFileSync(log, "");
+});
 
 async function setup(options: Record<string, unknown> = {}) {
-  const fake = fakeContext({ command: stubCommand, ...options }, directory);
+  const fake = fakeContext({ command: stubCommand, apiBase: apiUrl, ...options }, directory);
   await plugin.setup(fake.ctx);
   return fake;
+}
+
+function callCount(): number {
+  const text = readFileSync(log, "utf8").trim();
+  return text ? text.split("\n").length : 0;
 }
 
 function toolEvent(command: string): ToolBefore {
@@ -130,6 +192,59 @@ describe("plugin registration", () => {
   });
 });
 
+describe("plan selection", () => {
+  test("a workspace without rules spawns no hooks", async () => {
+    rulesResponse = { enabled: true, history: [] };
+    const { toolHooks, sessionHooks } = await setup();
+    await toolHooks.before?.(toolEvent("blocked ssh"));
+    await toolHooks.after?.({ ...toolEvent("ls"), status: "completed", result: "ok" });
+    await sessionHooks.prompt?.({
+      sessionID: "ses-1",
+      messageID: "m",
+      prompt: { text: "blocked" },
+    });
+    expect(callCount()).toBe(0);
+  });
+
+  test("a confirmed global disable skips every hook", async () => {
+    rulesResponse = { enabled: false, history: defaultHistory };
+    const { toolHooks } = await setup();
+    await toolHooks.before?.(toolEvent("blocked ssh"));
+    expect(callCount()).toBe(0);
+  });
+
+  test("the plan selects exactly its events", async () => {
+    rulesResponse = {
+      enabled: true,
+      history: [revision([rule("prompt-only", ["prompt_submit"])])],
+    };
+    const { toolHooks, sessionHooks } = await setup();
+    await toolHooks.before?.(toolEvent("blocked ssh"));
+    expect(callCount()).toBe(0);
+    await expect(
+      sessionHooks.prompt?.({ sessionID: "ses-1", messageID: "m", prompt: { text: "blocked" } }),
+    ).rejects.toThrow("prompt-guard: no");
+    expect(callCount()).toBe(1);
+  });
+
+  test("refresh picks up rules activated after setup", async () => {
+    rulesResponse = { enabled: true, history: [] };
+    const { toolHooks } = await setup();
+    await toolHooks.before?.(toolEvent("blocked ssh"));
+    expect(callCount()).toBe(0);
+    rulesResponse = { enabled: true, history: [revision([rule("pre", ["pre_tool"])])] };
+    offset = 31_000;
+    await expect(toolHooks.before?.(toolEvent("blocked ssh"))).rejects.toThrow("guard: denied");
+    expect(callCount()).toBe(1);
+  });
+
+  test("without a plan, blocking events still run the hook (fail closed)", async () => {
+    const { toolHooks } = await setup({ apiBase: deadUrl });
+    await expect(toolHooks.before?.(toolEvent("blocked ssh"))).rejects.toThrow("guard: denied");
+    expect(callCount()).toBe(1);
+  });
+});
+
 describe("execute.before", () => {
   test("a denied rule rejects the tool call with its reason", async () => {
     const { toolHooks } = await setup();
@@ -153,7 +268,7 @@ describe("execute.before", () => {
   });
 
   test("fails closed when the ORC command cannot run", async () => {
-    const { toolHooks } = await setup({ command: "porc-missing-command-xyz" });
+    const { toolHooks } = await setup({ command: "porc-missing-command-xyz", apiBase: deadUrl });
     await expect(toolHooks.before?.(toolEvent("ls"))).rejects.toThrow("ORC rule hook");
   });
 
@@ -178,9 +293,18 @@ describe("execute.before", () => {
 
 describe("execute.after", () => {
   test("never throws, even when the hook cannot run", async () => {
-    const { toolHooks } = await setup({ command: "porc-missing-command-xyz" });
+    const { toolHooks } = await setup({ command: "porc-missing-command-xyz", apiBase: deadUrl });
     const event: ToolAfter = { ...toolEvent("ls"), status: "completed", result: { content: "ok" } };
     await toolHooks.after?.(event);
+  });
+
+  test("never defects on a broken host error shape", async () => {
+    const { toolHooks } = await setup();
+    const event = { ...toolEvent("ls"), status: "error" } as ToolAfter;
+    await toolHooks.after?.(event);
+    const lines = readFileSync(log, "utf8").trim().split("\n");
+    const call = JSON.parse(lines[lines.length - 1] ?? "{}");
+    expect(call.payload.tool_response).toEqual({ error: "tool error" });
   });
 
   test("reports failed tool results as errors", async () => {
@@ -226,7 +350,7 @@ describe("prompt admission", () => {
   });
 
   test("fails closed when the ORC command cannot run", async () => {
-    const { sessionHooks } = await setup({ command: "porc-missing-command-xyz" });
+    const { sessionHooks } = await setup({ command: "porc-missing-command-xyz", apiBase: deadUrl });
     await expect(
       sessionHooks.prompt?.({ sessionID: "ses-1", messageID: "m", prompt: { text: "hello" } }),
     ).rejects.toThrow("ORC rule hook");
@@ -246,7 +370,7 @@ describe("context delivery", () => {
   });
 
   test("compaction context is queued without blocking", async () => {
-    const { sessionHooks } = await setup({ command: "porc-missing-command-xyz" });
+    const { sessionHooks } = await setup({ command: "porc-missing-command-xyz", apiBase: deadUrl });
     await sessionHooks.compaction?.({ sessionID: "ses-1" });
   });
 });
