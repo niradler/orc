@@ -74,7 +74,8 @@ for (const theme of ["dark", "light"] as const) {
         await expect(sheet.getByTestId("chat-message-content").last()).toContainText(
           "Mobile streaming response ✓",
         );
-        await sheet.getByRole("button", { name: "Close chat", exact: true }).tap();
+        // The phone chat page has no close button: Back returns to the page that opened it.
+        await page.goBack();
         await expect(page.getByTestId("session-home")).toHaveCount(0);
         expect(new URL(page.url()).searchParams.get("sentinel")).toBe("keep");
         await page.getByTestId("chat-open-button").tap();

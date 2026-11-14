@@ -11,7 +11,6 @@ import {
   LoaderCircle,
   Maximize2,
   MoreHorizontal,
-  PanelRight,
   Paperclip,
   Pencil,
   RefreshCw,
@@ -92,6 +91,74 @@ function attachmentKey(file: File): string {
     attachmentKeys.set(file, key);
   }
   return key;
+}
+
+/** Refresh and Compact render inline in wide headers and as labeled rows in the
+ *  actions menu; one component keeps every presentation identical. */
+function ChatRefreshAction({
+  row = false,
+  large = false,
+  stale,
+  busy,
+  disabled,
+  onRefresh,
+}: {
+  row?: boolean;
+  large?: boolean;
+  stale: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onRefresh: () => void;
+}) {
+  const button = (
+    <button
+      type="button"
+      data-testid="chat-refresh-button"
+      onClick={onRefresh}
+      disabled={disabled}
+      className={cn(
+        row ? actionButton : iconButton,
+        large && "min-h-11 min-w-11",
+        stale && "text-warning",
+      )}
+      data-stale={stale || undefined}
+      aria-label={stale ? "Refresh session: it changed outside this chat" : "Refresh session"}
+    >
+      <RefreshCw size={17} className={busy ? "animate-spin" : undefined} />
+      {row && "Refresh session"}
+    </button>
+  );
+  return row ? button : <ActionHelp label="Refresh session">{button}</ActionHelp>;
+}
+
+function ChatCompactAction({
+  agent,
+  row = false,
+  large = false,
+  disabled,
+  onCompact,
+}: {
+  agent: string;
+  row?: boolean;
+  large?: boolean;
+  disabled: boolean;
+  onCompact: () => void;
+}) {
+  if (!supportsManualCompaction(agent)) return null;
+  const button = (
+    <button
+      type="button"
+      data-testid="chat-compact-button"
+      aria-label="Compact context"
+      className={cn(row ? actionButton : iconButton, large && "min-h-11 min-w-11")}
+      disabled={disabled}
+      onClick={onCompact}
+    >
+      <ChevronsDownUp size={17} />
+      {row && "Compact context"}
+    </button>
+  );
+  return row ? button : <ActionHelp label="Compact context">{button}</ActionHelp>;
 }
 export function ChatPanel({
   open,
@@ -200,8 +267,19 @@ export function ChatPanel({
     void send(draft);
     setDraft("");
   };
+  const compactDisabled =
+    !thread?.runtimeId ||
+    streaming ||
+    reconnecting ||
+    refreshing ||
+    queued.length > 0 ||
+    files.length > 0;
   const header = useRef<HTMLElement>(null);
-  const [headerWide, setHeaderWide] = useState(false);
+  const [headerWidth, setHeaderWidth] = useState(0);
+  const headerWide = headerWidth >= 620;
+  // Phone header space is tight: below this width Refresh and Compact fold into
+  // the actions menu, keeping the Terminal and Inspector toggles always visible.
+  const phoneActionsInline = headerWidth >= (preview ? 378 : 340);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   useEffect(() => {
@@ -209,9 +287,7 @@ export function ChatPanel({
   }, [open, headerWide]);
   useLayoutEffect(() => {
     if (!open || !header.current) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setHeaderWide((entry?.contentRect.width ?? 0) >= 620),
-    );
+    const observer = new ResizeObserver(([entry]) => setHeaderWidth(entry?.contentRect.width ?? 0));
     observer.observe(header.current);
     return () => observer.disconnect();
   }, [open]);
@@ -315,7 +391,7 @@ export function ChatPanel({
             className={cn(
               "chat-header flex min-h-12 shrink-0 items-center gap-1 px-3 py-1",
               !docked && !rail && !phone && "pl-40",
-              phone && "px-2",
+              phone && "gap-0.5 px-2",
             )}
           >
             {phone ? (
@@ -408,50 +484,110 @@ export function ChatPanel({
                 className="chat-compact-activity shrink-0 text-progress"
               />
             )}
-            {terminalCenter ? null : headerWide ? (
-              <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
-                <ActionHelp label="Refresh session">
-                  <button
-                    type="button"
-                    data-testid="chat-refresh-button"
-                    onClick={() => void reload()}
-                    disabled={!thread || refreshing}
-                    className={cn(iconButton, sessionChanged && "text-warning")}
-                    data-stale={sessionChanged || undefined}
-                    aria-label={
-                      sessionChanged
-                        ? "Refresh session: it changed outside this chat"
-                        : "Refresh session"
-                    }
-                  >
-                    <RefreshCw
-                      size={17}
-                      className={refreshing || reconnecting ? "animate-spin" : undefined}
-                    />
-                  </button>
-                </ActionHelp>
-                <ChatContinueInTerminal control={terminalControl} />
-                {supportsManualCompaction(config.agent) && (
-                  <ActionHelp label="Compact context">
-                    <button
-                      type="button"
-                      data-testid="chat-compact-button"
-                      aria-label="Compact context"
-                      className={iconButton}
-                      disabled={
-                        !thread?.runtimeId ||
-                        streaming ||
-                        reconnecting ||
-                        refreshing ||
-                        queued.length > 0 ||
-                        files.length > 0
-                      }
-                      onClick={() => void send("/compact")}
+            {phone && <SessionHomeToggles home={home} gestures />}
+            {phone ? (
+              terminalCenter ? null : (
+                <div
+                  data-testid="chat-header-actions"
+                  className="flex shrink-0 items-center gap-0.5"
+                >
+                  {phoneActionsInline && (
+                    <>
+                      <ChatRefreshAction
+                        large
+                        stale={sessionChanged}
+                        busy={refreshing || reconnecting}
+                        disabled={!thread || refreshing}
+                        onRefresh={() => void reload()}
+                      />
+                      <ChatCompactAction
+                        large
+                        agent={config.agent}
+                        disabled={compactDisabled}
+                        onCompact={() => void send("/compact")}
+                      />
+                    </>
+                  )}
+                  <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Session actions"
+                        data-testid="chat-options-button"
+                        className={cn(
+                          iconButton,
+                          "min-h-11 min-w-11",
+                          sessionChanged && "text-warning",
+                        )}
+                      >
+                        <MoreHorizontal size={17} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      data-testid="chat-actions-menu"
+                      aria-label="Session actions"
+                      align="end"
+                      className="flex w-56 flex-col gap-1 p-1"
                     >
-                      <ChevronsDownUp size={17} />
-                    </button>
-                  </ActionHelp>
-                )}
+                      <button
+                        type="button"
+                        data-testid="chat-config-button"
+                        aria-label="Session settings"
+                        className={actionButton}
+                        onClick={() => {
+                          setActionsOpen(false);
+                          setSettingsOpen(true);
+                        }}
+                      >
+                        <Settings2 size={17} />
+                        Session settings
+                      </button>
+                      <ChatContinueInTerminal
+                        control={terminalControl}
+                        onOpen={() => setActionsOpen(false)}
+                        labelled
+                      />
+                      {!phoneActionsInline && (
+                        <>
+                          <ChatRefreshAction
+                            row
+                            stale={sessionChanged}
+                            busy={refreshing || reconnecting}
+                            disabled={!thread || refreshing}
+                            onRefresh={() => {
+                              setActionsOpen(false);
+                              void reload();
+                            }}
+                          />
+                          <ChatCompactAction
+                            row
+                            agent={config.agent}
+                            disabled={compactDisabled}
+                            onCompact={() => {
+                              setActionsOpen(false);
+                              void send("/compact");
+                            }}
+                          />
+                        </>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )
+            ) : terminalCenter ? null : headerWide ? (
+              <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
+                <ChatRefreshAction
+                  stale={sessionChanged}
+                  busy={refreshing || reconnecting}
+                  disabled={!thread || refreshing}
+                  onRefresh={() => void reload()}
+                />
+                <ChatContinueInTerminal control={terminalControl} />
+                <ChatCompactAction
+                  agent={config.agent}
+                  disabled={compactDisabled}
+                  onCompact={() => void send("/compact")}
+                />
                 <ActionHelp label="Session settings">
                   <button
                     type="button"
@@ -482,55 +618,30 @@ export function ChatPanel({
                   align="end"
                   className="flex w-52 flex-col gap-1 p-1"
                 >
-                  <button
-                    type="button"
-                    data-testid="chat-refresh-button"
-                    onClick={() => {
+                  <ChatRefreshAction
+                    row
+                    stale={sessionChanged}
+                    busy={refreshing || reconnecting}
+                    disabled={!thread || refreshing}
+                    onRefresh={() => {
                       setActionsOpen(false);
                       void reload();
                     }}
-                    disabled={!thread || refreshing}
-                    className={cn(actionButton, sessionChanged && "text-warning")}
-                    data-stale={sessionChanged || undefined}
-                    aria-label={
-                      sessionChanged
-                        ? "Refresh session: it changed outside this chat"
-                        : "Refresh session"
-                    }
-                  >
-                    <RefreshCw
-                      size={17}
-                      className={refreshing || reconnecting ? "animate-spin" : undefined}
-                    />
-                    Refresh session
-                  </button>
+                  />
                   <ChatContinueInTerminal
                     control={terminalControl}
                     onOpen={() => setActionsOpen(false)}
                     labelled
                   />
-                  {supportsManualCompaction(config.agent) && (
-                    <button
-                      type="button"
-                      data-testid="chat-compact-button"
-                      className={actionButton}
-                      disabled={
-                        !thread?.runtimeId ||
-                        streaming ||
-                        reconnecting ||
-                        refreshing ||
-                        queued.length > 0 ||
-                        files.length > 0
-                      }
-                      onClick={() => {
-                        setActionsOpen(false);
-                        void send("/compact");
-                      }}
-                    >
-                      <ChevronsDownUp size={17} />
-                      Compact context
-                    </button>
-                  )}
+                  <ChatCompactAction
+                    row
+                    agent={config.agent}
+                    disabled={compactDisabled}
+                    onCompact={() => {
+                      setActionsOpen(false);
+                      void send("/compact");
+                    }}
+                  />
                   <button
                     type="button"
                     data-testid="chat-config-button"
@@ -561,57 +672,22 @@ export function ChatPanel({
                 </button>
               </ActionHelp>
             )}
-            <ActionHelp label="Close chat">
-              <button
-                type="button"
-                onClick={onClose ?? onToggle}
-                data-testid="chat-close-button"
-                className={iconButton}
-                aria-label="Close chat"
-              >
-                <X size={18} />
-              </button>
-            </ActionHelp>
+            {/* The phone chat is a regular page: navigation (Back, the drawer or
+                another destination) leaves it, so it has no close button. */}
+            {!(fullscreen && phone) && (
+              <ActionHelp label="Close chat">
+                <button
+                  type="button"
+                  onClick={onClose ?? onToggle}
+                  data-testid="chat-close-button"
+                  className={iconButton}
+                  aria-label="Close chat"
+                >
+                  <X size={18} />
+                </button>
+              </ActionHelp>
+            )}
           </header>
-          {fullscreen && phone && (
-            <div
-              data-chat-gesture-header
-              className="chat-page-subheader flex shrink-0 items-center gap-1 border-b border-border px-2 py-1"
-            >
-              <ActionHelp
-                label={home.drawer ? "Hide terminal" : "Show terminal"}
-                description="Or pull down on the chat header"
-              >
-                <button
-                  type="button"
-                  data-testid="session-drawer-toggle"
-                  aria-label={home.drawer ? "Hide terminal" : "Show terminal"}
-                  aria-pressed={home.drawer}
-                  onClick={() => home.go({ drawer: !home.drawer })}
-                  className="flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface aria-pressed:bg-surface-highest aria-pressed:text-on-surface"
-                >
-                  <ChevronDown size={14} aria-hidden="true" />
-                  Terminal
-                </button>
-              </ActionHelp>
-              <ActionHelp
-                label={home.inspector ? "Hide inspector" : "Show inspector"}
-                description="Git, diffs, pull requests and files. Or swipe right from the left edge"
-              >
-                <button
-                  type="button"
-                  data-testid="session-inspector-toggle"
-                  aria-label={home.inspector ? "Hide inspector" : "Show inspector"}
-                  aria-pressed={!!home.inspector}
-                  onClick={() => home.go({ inspector: home.inspector ? null : "overview" })}
-                  className="flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface aria-pressed:bg-surface-highest aria-pressed:text-on-surface"
-                >
-                  <PanelRight size={14} aria-hidden="true" />
-                  Inspector
-                </button>
-              </ActionHelp>
-            </div>
-          )}
           {linkError && (
             <p role="alert" className="px-4 py-1 text-xs text-error">
               {linkError}

@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { resolve } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
-import { apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import { apiGet, apiPatch, apiPost, gotoView, tid, toggleThemeInPlace } from "./_helpers";
 
 for (const width of [1440, 390]) {
   for (const provider of ["github", "generic"] as const) {
@@ -297,7 +297,7 @@ test("mobile navigation opens configured sources and job connections without ove
   await expect(endpoint).toContainText("Connected jobs (1)");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await page.getByTestId("theme-toggle").click();
+  await toggleThemeInPlace(page);
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await page.evaluate(async () => {
     await Promise.all(

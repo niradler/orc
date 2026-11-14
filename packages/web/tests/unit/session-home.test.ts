@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   clearSessionHome,
   patchSessionHome,
+  pullRequestReviewParams,
   readSessionHome,
   sessionHomeSearch,
 } from "../../src/lib/session-home";
@@ -70,13 +71,29 @@ test("phone list visibility survives URL round trips without overwriting a colla
   expect(clearSessionHome(opened).get("project")).toBe("p");
 });
 
-test("inspector tabs include the phone git, PR and files views and stay shareable", () => {
-  for (const tab of ["overview", "diff", "files", "pr"] as const) {
+test("inspector tabs stay shareable and legacy PR links open the combined Changes tab", () => {
+  for (const tab of ["overview", "diff", "files"] as const) {
     const params = patchSessionHome(new URLSearchParams("project=p"), { inspector: tab });
     expect(params.get("inspector")).toBe(tab);
     expect(readSessionHome(params).inspector).toBe(tab);
   }
+  // PR review merged into Changes; old inspector=pr links keep working.
+  expect(readSessionHome(new URLSearchParams("inspector=pr")).inspector).toBe("diff");
   expect(readSessionHome(new URLSearchParams("inspector=terminal")).inspector).toBeNull();
   const closed = patchSessionHome(new URLSearchParams("inspector=files"), { inspector: null });
   expect(closed.has("inspector")).toBe(false);
+});
+
+test("PR review links open the combined Changes tab in PR mode and keep the scope", () => {
+  const params = pullRequestReviewParams(new URLSearchParams("project=p&chatThread=c1"), {
+    terminalId: "t1",
+    number: 418,
+  });
+  expect(readSessionHome(params).inspector).toBe("diff");
+  expect(params.get("pr")).toBe("418");
+  expect(params.get("pane")).toBe("session-inspector");
+  expect(params.get("paneTerminal")).toBe("t1");
+  expect(params.get("view")).toBe("git");
+  expect(params.get("project")).toBe("p");
+  expect(params.get("chatThread")).toBe("c1");
 });

@@ -1,6 +1,40 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import { type APIRequestContext, expect, type Locator, type Page } from "@playwright/test";
+
+/** Theme lives in Settings → Appearance (and the command palette). Specs that
+ *  only need the other theme for rendering switch it in place through the same
+ *  storage event the app listens to for cross-tab sync. */
+export async function toggleThemeInPlace(page: Page): Promise<void> {
+  const before = (await page.locator("html").getAttribute("data-theme")) ?? "dark";
+  const next = before === "dark" ? "light" : "dark";
+  await page.evaluate((value) => {
+    localStorage.setItem("orc_theme", value);
+    window.dispatchEvent(new StorageEvent("storage", { key: "orc_theme", newValue: value }));
+  }, next);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", next);
+}
+
+/** Theme is saved from Settings → Appearance. Switch to a specific theme through the
+ *  real UI and wait for the server save so a reload keeps it. */
+export async function setThemeViaSettings(page: Page, theme: "dark" | "light"): Promise<void> {
+  await page.goto("/settings?settingsSection=appearance");
+  await expect(page.getByTestId(`settings-theme-${theme}`)).toBeVisible();
+  if ((await page.locator("html").getAttribute("data-theme")) === theme) return;
+  const saved = page.waitForResponse(
+    (response) => response.url().endsWith("/settings") && response.request().method() === "PATCH",
+  );
+  await page.getByTestId(`settings-theme-${theme}`).click();
+  expect((await saved).status()).toBe(200);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+}
+
+/** The phone chat page has no close button: the nav drawer moves to another page. */
+export async function leavePhoneChatViaNav(page: Page, destination: string): Promise<void> {
+  await page.getByTestId("mobile-nav-open").click();
+  await page.getByTestId("mobile-nav-drawer").getByTestId(`nav-${destination}`).click();
+  await expect(page.getByTestId("mobile-nav-drawer")).toBeHidden();
+}
 
 export async function reviewAttentionRequest(card: Locator): Promise<void> {
   const review = card.getByTestId("attention-review");

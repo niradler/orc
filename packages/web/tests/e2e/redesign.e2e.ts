@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test";
 import { openFinalFormStep, revealFormField } from "./_form-ui";
-import { API_SECRET, apiDelete, apiPatch, apiPost, gotoView, selectProject, tid } from "./_helpers";
+import {
+  API_SECRET,
+  apiDelete,
+  apiPatch,
+  apiPost,
+  gotoView,
+  selectProject,
+  setThemeViaSettings,
+  tid,
+  toggleThemeInPlace,
+} from "./_helpers";
 import { selectKnowledgeBase } from "./_knowledge-ui";
 
 test("themes persist, grouped navigation works, and the mobile project shortcut opens one dialog", async ({
@@ -14,12 +24,8 @@ test("themes persist, grouped navigation works, and the mobile project shortcut 
   await gotoView(page, "tasks");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.getByTestId("workspace-sidebar").locator("nav > button")).toHaveCount(7);
-  // Reloading before the server save lands would load the old theme back.
-  const saved = page.waitForResponse(
-    (response) => response.url().endsWith("/settings") && response.request().method() === "PATCH",
-  );
-  await page.getByTestId("theme-toggle").click();
-  expect((await saved).status()).toBe(200);
+  // Theme lives in Settings → Appearance; saving there persists across a reload.
+  await setThemeViaSettings(page, "light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByTestId("nav-activity").click();
@@ -28,17 +34,10 @@ test("themes persist, grouped navigation works, and the mobile project shortcut 
   await page.getByTestId("nav-library").click();
   await page.getByTestId("nav-rules").click();
   await expect(page).toHaveURL(/\/rules/);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.getByTestId("theme-toggle").click();
+  // Incidental theme switches for rendering use the same cross-tab storage sync.
+  await toggleThemeInPlace(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(page.locator("html")).not.toHaveAttribute("data-magicui-theme-vt", "active");
-  await page.evaluate(() =>
-    Object.defineProperty(document, "startViewTransition", {
-      value: undefined,
-      configurable: true,
-    }),
-  );
-  await page.getByTestId("theme-toggle").click();
+  await toggleThemeInPlace(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
@@ -82,7 +81,7 @@ test("knowledge base document links use real documents and edits reopen after th
     await page
       .getByTestId("kb-document-content")
       .fill("# Agent backends\n\nSaved and reopened document content.");
-    await page.getByTestId("theme-toggle").click();
+    await toggleThemeInPlace(page);
     await expect(page.getByTestId("kb-document-content")).toContainText("Saved and reopened");
     await page.getByTestId("document-save").click();
     await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
@@ -134,7 +133,8 @@ test("Codex chat streams and keeps history while switching between desktop and m
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("chat-open-button").click();
   await expect(page.getByTestId("session-home")).toContainText(marker);
-  await page.getByRole("button", { name: "Close chat", exact: true }).click();
+  // The phone chat page has no close button: Back returns to the page that opened it.
+  await page.goBack();
   await expect(page.getByTestId("session-home")).toHaveCount(0);
   await expect(page).toHaveURL(/\/tasks\?/);
   await page.setViewportSize({ width: 1440, height: 900 });

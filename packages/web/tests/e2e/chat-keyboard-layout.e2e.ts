@@ -168,7 +168,8 @@ test.describe("phone keyboard composer", () => {
         );
         await expect.poll(pageHeight).toBe(844);
         await expect(input).toHaveValue(draft);
-        await sheet.getByTestId("chat-close-button").tap();
+        // The phone chat page has no close button: Back returns to the page that opened it.
+        await page.goBack();
         await page.getByTestId("chat-open-button").tap();
         await expect(page.getByTestId("session-home").getByTestId("chat-input")).toHaveValue(draft);
       });

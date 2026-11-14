@@ -66,6 +66,21 @@ async function swipe(page: Page, from: { x: number; y: number }, to: { x: number
   await touch(page, frames);
 }
 
+/** Two-finger pull from the very top of the screen, like the system shade. */
+async function shadeSwipe(page: Page, fromY = 20, distance = 170) {
+  const steps = 8;
+  const frames: { x: number; y: number }[][] = [];
+  for (let step = 0; step <= steps; step++) {
+    const y = fromY + (distance * step) / steps;
+    frames.push([
+      { x: 150, y },
+      { x: 240, y },
+    ]);
+  }
+  frames.push([]);
+  await touch(page, frames);
+}
+
 async function mockInspectorData(page: Page) {
   await page.route(`**/api/terminals/${HOME.terminal}/files?**`, (route) => {
     const path = new URL(route.request().url()).searchParams.get("path") ?? "";
@@ -212,7 +227,7 @@ test("interior horizontal swipes stay with the conversation", async ({ page }) =
   await expect(page).not.toHaveURL(/inspector=/);
 });
 
-test("inspector PR and Files tabs are shareable URLs that restore on reload and close on Escape", async ({
+test("legacy PR links open the combined Changes tab; Files stays shareable and Escape closes", async ({
   page,
 }) => {
   await mockSessionHome(page);
@@ -220,10 +235,12 @@ test("inspector PR and Files tabs are shareable URLs that restore on reload and 
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}&inspector=pr`);
   const inspector = page.getByTestId("session-inspector");
   await expect(inspector).toBeVisible();
-  await expect(inspector.getByTestId("session-inspector-tab-pr")).toHaveAttribute(
+  // inspector=pr links predate the merge: they open Changes, which holds the PR mode.
+  await expect(inspector.getByTestId("session-inspector-tab-diff")).toHaveAttribute(
     "aria-selected",
     "true",
   );
+  await inspector.getByTestId("git-pr-mode").click();
   await expect(inspector.getByTestId("pr-review-panel")).toContainText(
     "Round cart totals to cents",
   );
@@ -255,4 +272,27 @@ test("the Changes tab keeps the full git review with diffs and commit controls",
   await expect(
     inspector.getByRole("button", { name: /src\/cart\/total\.ts Modified/ }),
   ).toBeVisible();
+});
+
+test("two-finger pull from the top opens notifications; Back returns to the chat", async ({
+  page,
+}) => {
+  await mockSessionHome(page);
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
+  await shadeSwipe(page);
+  await expect(page).toHaveURL(/\/notifications\?project=all/);
+  await expect(page.getByTestId("notifications-page")).toBeVisible();
+  await page.getByTestId("notifications-back").click();
+  await expect(page).toHaveURL(/\/chat\?project=all/);
+  await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
+});
+
+test("two-finger pulls that start below the top zone stay with the content", async ({ page }) => {
+  await mockSessionHome(page);
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
+  await shadeSwipe(page, 300);
+  await expect(page).toHaveURL(/\/chat\?/);
+  await expect(page.getByTestId("notifications-page")).toHaveCount(0);
 });

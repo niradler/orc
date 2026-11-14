@@ -25,7 +25,7 @@ import { ViewHeader } from "@/components/ViewHeader";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
-import { setTheme, useTheme } from "@/lib/theme";
+import { FONT_SIZES, setFontSize, setTheme, useFontSize, useTheme } from "@/lib/theme";
 import { useViewParam } from "@/lib/view-params";
 
 const sections = [
@@ -71,6 +71,7 @@ const sectionLabels: Record<Section, string> = {
 export default function Settings() {
   const visibleSections = sections.filter((id) => id !== "browser" || !!desktopBridge()?.preview);
   const { theme } = useTheme();
+  const fontSize = useFontSize();
   const [section, setSection] = useViewParam<Section>(
     "settingsSection",
     "connection",
@@ -223,20 +224,45 @@ export default function Settings() {
           <section hidden={section !== "appearance"} aria-label="Appearance settings">
             <h2 className="mb-2 text-base font-medium">Appearance</h2>
             <p className="mb-5 text-xs text-muted-foreground">Changes save immediately.</p>
-            <fieldset aria-label="Theme" className="flex gap-2">
-              {(["dark", "light"] as const).map((value) => (
-                <Button
-                  key={value}
-                  variant={theme === value ? "secondary" : "outline"}
-                  aria-pressed={theme === value}
-                  data-testid={`settings-theme-${value}`}
-                  disabled={pending}
-                  onClick={() => void changeTheme(value)}
-                >
-                  {value === "dark" ? "Dark" : "Light"}
-                </Button>
-              ))}
-            </fieldset>
+            <div className="space-y-6">
+              <div>
+                <h3 className="mb-2 text-sm font-medium">Theme</h3>
+                <fieldset aria-label="Theme" className="flex gap-2">
+                  {(["dark", "light"] as const).map((value) => (
+                    <Button
+                      key={value}
+                      variant={theme === value ? "secondary" : "outline"}
+                      aria-pressed={theme === value}
+                      data-testid={`settings-theme-${value}`}
+                      disabled={pending}
+                      onClick={() => void changeTheme(value)}
+                    >
+                      {value === "dark" ? "Dark" : "Light"}
+                    </Button>
+                  ))}
+                </fieldset>
+              </div>
+              <div>
+                <h3 className="mb-2 text-sm font-medium">Font size</h3>
+                <fieldset aria-label="Font size" className="flex flex-wrap gap-2">
+                  {FONT_SIZES.map(({ value, label, hint }) => (
+                    <Button
+                      key={value}
+                      variant={fontSize === value ? "secondary" : "outline"}
+                      aria-pressed={fontSize === value}
+                      data-testid={`settings-font-size-${value}`}
+                      title={hint}
+                      onClick={() => setFontSize(value)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </fieldset>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Scales interface text in this browser; terminals keep their own font.
+                </p>
+              </div>
+            </div>
           </section>
           <div hidden={section !== "security"}>
             <SecuritySettings active={section === "security"} />

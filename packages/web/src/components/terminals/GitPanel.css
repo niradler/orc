@@ -14,8 +14,9 @@
   container-type: inline-size;
 }
 
-/* Phone inspector host: the same container-driven compact git layout. */
-.mobile-inspector-host {
+/* Inspector host (desktop panel and phone page): the git and files panels
+   follow the inspector width through the container queries below. */
+.inspector-host {
   container-type: inline-size;
 }
 
@@ -708,9 +709,9 @@
     flex-wrap: nowrap;
     gap: 4px;
   }
-  /* The phone inspector keeps a wrapping toolbar so the branch trigger and
+  /* The inspector keeps a wrapping toolbar so the branch trigger and
      mode tabs never overlap at 320-479px. */
-  .mobile-inspector-host .git-review-toolbar {
+  .inspector-host .git-review-toolbar {
     flex-wrap: wrap;
   }
   .git-mode-tabs {
@@ -725,7 +726,7 @@
   /* Narrow hosts: keep the changed-file path readable by dropping row
      actions to their own line. Terminal-workspace panes keep the inline layout. */
   .preview-changes-host .git-file-actions,
-  .mobile-inspector-host .git-file-actions {
+  .inspector-host .git-file-actions {
     flex-basis: 100%;
     justify-content: flex-end;
   }

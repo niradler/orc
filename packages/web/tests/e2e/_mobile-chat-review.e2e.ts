@@ -156,9 +156,12 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("button", { name: /src\/cart\/total\.ts Modified/ })).toBeVisible();
     await shot("inspector-changes");
 
-    await page.getByTestId("session-inspector-tab-pr").click();
+    // The PR review now lives inside the combined Changes tab (Local / PR modes).
+    await page.getByTestId("git-pr-mode").click();
     await expect(page.getByTestId("pr-review-panel")).toContainText("Round cart totals to cents");
     await shot("inspector-pr");
+    await page.getByTestId("git-local-mode").click();
+    await expect(page.getByTestId("terminal-git-panel")).toBeVisible();
 
     await page.getByTestId("session-inspector-tab-files").click();
     await expect(page.getByTestId("file-panel")).toBeVisible();
@@ -170,10 +173,18 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByTestId("session-drawer-toggle").click();
     await expect(page.getByTestId("session-drawer")).toBeVisible();
     await shot("terminal");
+
+    // Appearance (theme + font size) now lives in Settings.
+    await page.goto("/settings?settingsSection=appearance");
+    await expect(page.getByTestId("settings-theme-dark")).toBeVisible();
+    await expect(page.getByTestId("settings-font-size-default")).toBeVisible();
+    await shot("settings-appearance");
   });
 }
 
-test("desktop chat stays unchanged (dark)", async ({ page }, testInfo) => {
+test("desktop inspector keeps the same Overview / Changes / Files tabs (dark)", async ({
+  page,
+}, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await setTheme(page, "dark");
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -183,5 +194,18 @@ test("desktop chat stays unchanged (dark)", async ({ page }, testInfo) => {
   await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
   await page.getByTestId("session-inspector-toggle").click();
   await expect(page.getByTestId("session-inspector")).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("desktop-chat-dark.png") });
+  await expect(page.getByTestId("session-inspector-pull-request")).toContainText("#418");
+  await page.screenshot({ path: testInfo.outputPath("desktop-inspector-overview-dark.png") });
+
+  await page.getByTestId("session-inspector-tab-diff").click();
+  await expect(page.getByTestId("terminal-git-panel")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("desktop-inspector-changes-dark.png") });
+
+  await page.getByTestId("git-pr-mode").click();
+  await expect(page.getByTestId("pr-review-panel")).toContainText("Round cart totals to cents");
+  await page.screenshot({ path: testInfo.outputPath("desktop-inspector-pr-dark.png") });
+
+  await page.getByTestId("session-inspector-tab-files").click();
+  await expect(page.getByTestId("file-panel")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("desktop-inspector-files-dark.png") });
 });
