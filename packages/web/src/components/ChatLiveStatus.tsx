@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { activityIcon } from "@/components/chat-ui/tool-renderers";
+import { useNow } from "@/hooks/useNow";
 import { AGENT_STATES } from "@/lib/agent-state";
 import { foldLabel, foldTurn, formatClock } from "@/lib/chat-activity";
 import { toolKey } from "@/lib/chat-tools";
@@ -11,16 +12,7 @@ import { cn } from "@/lib/utils";
 const ANNOUNCE_EVERY_MS = 2000;
 const TRAIL_LIMIT = 4;
 
-type TrailEntry = { id: string; label: string; Icon: LucideIcon };
-
-function useNow(): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
-}
+type TrailEntry = { id: string; label: string; Icon: LucideIcon; startedAt?: number };
 
 /** A tool name reads better as a short label than as its provider's key. */
 function toolLabel(name: string): string {
@@ -39,6 +31,9 @@ function activityTrail(activity: ChatActivity[]): TrailEntry[] {
           id: item.id,
           label: item.type === "thinking" ? "Thinking" : toolLabel(item.name),
           Icon: activityIcon(item),
+          ...(item.type === "tool" && item.startedAt !== undefined
+            ? { startedAt: item.startedAt }
+            : {}),
         },
       ];
     })
@@ -87,6 +82,7 @@ export function ChatLiveStatus({
             {trail.map((entry, index) => {
               const current = index === trail.length - 1;
               const EntryIcon = entry.Icon;
+              const elapsed = current && entry.startedAt !== undefined ? now - entry.startedAt : 0;
               return (
                 <span
                   key={entry.id}
@@ -98,6 +94,14 @@ export function ChatLiveStatus({
                 >
                   <EntryIcon aria-hidden="true" size={12} className="shrink-0" />
                   <span className="truncate">{entry.label}</span>
+                  {elapsed >= 1000 && (
+                    <span
+                      data-testid="chat-current-tool-elapsed"
+                      className="shrink-0 tabular-nums text-on-surface-variant"
+                    >
+                      {formatClock(elapsed)}
+                    </span>
+                  )}
                   {!current && (
                     <span aria-hidden="true" className="shrink-0 text-outline">
                       ·

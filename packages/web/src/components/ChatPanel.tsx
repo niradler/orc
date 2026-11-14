@@ -1,6 +1,6 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { supportsManualCompaction } from "@orc/core/coding-agents";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
@@ -27,6 +27,7 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
+import { ChatBackgroundWork } from "@/components/ChatBackgroundWork";
 import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
@@ -60,7 +61,9 @@ import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
+import { useSessionChildren } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
+import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
@@ -236,6 +239,35 @@ export function ChatPanel({
   const reload = async () => {
     await refresh(sessionChanged);
     void session.refetch();
+  };
+  const children = useSessionChildren(thread?.id ?? null);
+  const lastMessage = messages[messages.length - 1];
+  const background = chatBackgroundWork(
+    streaming ? activity : lastMessage?.role === "assistant" ? (lastMessage.activity ?? []) : [],
+    children.data ?? [],
+  );
+  const queryClient = useQueryClient();
+  const [backgroundError, setBackgroundError] = useState<string | null>(null);
+  const openBackground = async (sessionId: string) => {
+    setBackgroundError(null);
+    try {
+      openThread(await api.chat.get(sessionId));
+    } catch (cause) {
+      setBackgroundError(
+        cause instanceof Error ? cause.message : "That session could not be opened.",
+      );
+    }
+  };
+  const stopBackground = async (sessionId: string) => {
+    setBackgroundError(null);
+    try {
+      await api.sessions.stop(sessionId);
+      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    } catch (cause) {
+      setBackgroundError(
+        cause instanceof Error ? cause.message : "That session could not be stopped.",
+      );
+    }
   };
   const home = useSessionHome();
   const terminalControl = useChatContinueInTerminal({
@@ -852,6 +884,12 @@ export function ChatPanel({
                 activity={activity}
               />
             )}
+            <ChatBackgroundWork
+              items={background}
+              error={backgroundError}
+              onOpen={(sessionId) => void openBackground(sessionId)}
+              onStop={(sessionId) => void stopBackground(sessionId)}
+            />
             <ChatLiveAnnouncer
               streaming={streaming}
               agent={streamingAgent}
