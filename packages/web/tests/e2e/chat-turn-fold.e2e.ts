@@ -305,6 +305,18 @@ for (const width of [1440, 390]) {
       "Failed",
     );
 
+    // The new windowing and provider controls keep a 44px touch target on a phone.
+    if (width === 390) {
+      for (const control of [
+        page.getByTestId("chat-turn-fold-summary"),
+        fold.getByTestId("chat-provider-activity").locator("summary").first(),
+        page.getByTestId("chat-tool").first().locator("summary").first(),
+      ]) {
+        const box = await control.boundingBox();
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+    }
+
     await page.reload();
     await page.getByTestId("chat-turn-fold-summary").click();
     await expect(fold.getByTestId("chat-tool")).toHaveCount(79);

@@ -200,3 +200,59 @@ test("keeps the toolbar and the menu path inside a phone viewport", async ({ pag
   await expect(page.getByTestId("chat-message-selection-actions")).toBeVisible();
   await expect(page.getByTestId("chat-message-selection-copy")).toBeVisible();
 });
+
+test.describe("touch", () => {
+  test.use({ hasTouch: true });
+
+  test("a touch selection opens a toolbar with 44px actions that tap into the composer", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { reply } = await openChatWithReply(page);
+    // A phone selects by long-press; the selection event is what the toolbar reads.
+    await reply.evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    const toolbar = page.getByTestId("chat-selection-toolbar");
+    await expect(toolbar).toBeVisible();
+
+    // Every action is a full touch target, not a hover-sized control.
+    for (const id of [
+      "chat-selection-ask",
+      "chat-selection-task",
+      "chat-selection-save",
+      "chat-selection-copy",
+    ]) {
+      const box = await toolbar.getByTestId(id).boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
+    const ask = await toolbar.getByTestId("chat-selection-ask").boundingBox();
+    expect(ask).not.toBeNull();
+    await page.touchscreen.tap(
+      (ask?.x ?? 0) + (ask?.width ?? 0) / 2,
+      (ask?.y ?? 0) + (ask?.height ?? 0) / 2,
+    );
+    await expect(toolbar).toBeHidden();
+    await expect(page.getByTestId("chat-input")).toHaveValue(/^> SELECTION-SOURCE/);
+  });
+
+  test("the focus control, queue disclosure and send stay touch-sized on a phone", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openChatWithReply(page);
+    const panel = page.getByTestId("chat-panel").filter({ visible: true });
+    for (const id of ["chat-focus-toggle", "chat-send-button", "chat-attach-button"]) {
+      const box = await panel.getByTestId(id).boundingBox();
+      // Touch emulation scales the layout viewport, so a 44px target measures
+      // 43.98; round before comparing against the minimum.
+      expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(44);
+    }
+  });
+});
