@@ -305,21 +305,25 @@ cookies or desktop bridge. Camera, microphone, location and other site permissio
 are blocked. Browser downloads are staged privately (16 MB each, four across the
 app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
-as saved. Each chat starts with a temporary cookie/storage profile.
-**Settings → General → Browser → Saved browser profiles** creates named profiles; select one
-under **Browser profile, display & recording** in the Browser tab to remember site logins. Selecting the same profile in another
-chat explicitly shares that profile's site storage. Temporary chats stay isolated.
-Profile choices and saved cookies survive app restart; session-only cookies follow
-the site's expiry rules. Switching profiles closes that chat's browser tabs after
+as saved. Every chat uses the shared **ORC browser** profile by default, so a site
+login made once works for you and your agents in every chat and survives restarts
+and daemon port changes. **Settings → General → Browser → Browser profiles** creates
+named profiles for a second set of logins; pick one, or **Temporary · this chat only**,
+under **Browser profile, display & recording** in the Browser tab. Temporary keeps
+cookies in memory and drops them when the chat's browser closes. Session-only cookies
+follow the site's expiry rules. Switching profiles closes that chat's browser tabs after
 confirmation and preserves file drafts. Use **+** to open a browser tab and each
 tab's close button to close it. Popups open another isolated tab. Limits are eight
 tabs per chat and 24 total; reaching a limit asks you to close a tab, without eviction.
 Tab IDs, URLs and the selected tab restore when you return after app restart.
-Temporary mode does not persist cookies; saved tab URLs are still restored.
-Browser settings also offers profile rename and removal. Removal asks for native
-confirmation, closes its tabs, clears cookies/site data/cache and resets chat selections.
+Browser settings also offers profile rename and removal, and **Clear browser data**
+for the ORC browser profile. Both ask for native confirmation, close the affected tabs
+and clear cookies/site data/cache; removal also resets chat selections to the default.
 
-**Import selected browser logins**, under Browser settings, connects to a local
+**Import logins**, under Browser settings (also linked from the Browser tab), copies
+cookies from Chrome, Edge, Brave, Arc, Vivaldi, Opera, Firefox or Safari into the
+selected profile, which is the ORC browser by default. Scan, pick the source profile,
+choose sites or **All sites**, and import. A second path connects to a local
 Chrome/Edge debugging endpoint you explicitly enable. Choose the destination ORC
 profile, enter the loopback debugging port, approve any source-browser prompt,
 then select sites from its open pages. Only those sites' applicable cookies are

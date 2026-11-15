@@ -68,10 +68,10 @@ export function BrowserSettings() {
             />
           </div>
           <p className="mt-4 text-xs text-muted-foreground">
-            Temporary browser logins end with the app; saved profiles retain them separately from
-            ORC. Camera, microphone and location stay blocked. Browser downloads are staged safely
-            and can be saved to the chat workspace. File previews stay inside ORC; the external-link
-            icon opens a source in VS Code.
+            Logins in the ORC browser and saved profiles persist across chats and restarts;
+            temporary ones end with the chat. Camera, microphone and location stay blocked. Browser
+            downloads are staged safely and can be saved to the chat workspace. File previews stay
+            inside ORC; the external-link icon opens a source in VS Code.
           </p>
           <BrowserProfilesSettings />
         </>

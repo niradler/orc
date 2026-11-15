@@ -9,6 +9,7 @@ import {
   PREVIEW_SETTINGS_EVENT,
   PreviewBoundsSchema,
   PreviewPreferencesSchema,
+  PreviewProfileChoiceSchema,
   previewWebUrl,
 } from "@orc/core/desktop-preview";
 import { app, type BrowserWindow, dialog, ipcMain, session, shell } from "electron";
@@ -50,8 +51,8 @@ const commandSchema = z.discriminatedUnion("action", [
     .object({
       action: z.literal("import_transfer"),
       source_id: z.string().uuid(),
-      profile_id: z.string().uuid(),
-      sites: z.array(z.string().url().max(8192)).min(1).max(50),
+      profile_id: z.union([z.literal("default"), z.string().uuid()]),
+      sites: z.array(z.string().url().max(8192)).min(1).max(1000),
     })
     .strict(),
   z.object({ action: z.literal("profiles") }).strict(),
@@ -71,7 +72,12 @@ const commandSchema = z.discriminatedUnion("action", [
       name: z.string().trim().min(1).max(80),
     })
     .strict(),
-  z.object({ action: z.literal("profile_remove"), profile_id: z.string().uuid() }).strict(),
+  z
+    .object({
+      action: z.literal("profile_remove"),
+      profile_id: z.union([z.literal("default"), z.string().uuid()]),
+    })
+    .strict(),
   z
     .object({ action: z.literal("profile_create"), name: z.string().trim().min(1).max(80) })
     .strict(),
@@ -79,7 +85,7 @@ const commandSchema = z.discriminatedUnion("action", [
     .object({
       action: z.literal("profile_select"),
       session_id: sessionId,
-      profile_id: z.string().uuid().nullable().optional(),
+      profile_id: PreviewProfileChoiceSchema.optional(),
     })
     .strict(),
   z
@@ -208,10 +214,11 @@ export function attachDesktopPreview(
       if (!window.isDestroyed()) window.webContents.send(PREVIEW_EVENT, state);
     },
     (id) => {
-      const profileId = host.profiles.selected(id);
+      const choice = host.profiles.selected(id);
+      if (choice === "temporary") return { id: null, partition: null };
       return {
-        id: profileId,
-        partition: profileId ? host.profiles.partition(profileId) : null,
+        id: choice === "default" ? null : choice,
+        partition: host.profiles.partition(choice),
       };
     },
     {
@@ -275,7 +282,10 @@ export function attachDesktopPreview(
         host.storeImporter.cancel();
         return host.importer.discover(input.port);
       case "import_transfer": {
-        const profile = host.profiles.list().find((profile) => profile.id === input.profile_id);
+        const profile =
+          input.profile_id === "default"
+            ? { name: "the ORC browser" }
+            : host.profiles.list().find((profile) => profile.id === input.profile_id);
         const hosts = [...new Set(input.sites.map((site) => new URL(site).hostname))];
         const confirm = await dialog.showMessageBox(host.window, {
           type: "question",
@@ -313,13 +323,16 @@ export function attachDesktopPreview(
       }
       case "profile_remove": {
         const partition = host.profiles.partition(input.profile_id);
+        const builtin = input.profile_id === "default";
         const profile = host.profiles.list().find((profile) => profile.id === input.profile_id);
         const result = await dialog.showMessageBox(host.window, {
           type: "warning",
-          buttons: ["Cancel", "Remove profile"],
+          buttons: ["Cancel", builtin ? "Clear browser data" : "Remove profile"],
           defaultId: 0,
           cancelId: 0,
-          message: `Remove ${profile?.name ?? "browser profile"}?`,
+          message: builtin
+            ? "Clear the ORC browser's logins and site data?"
+            : `Remove ${profile?.name ?? "browser profile"}?`,
           detail:
             "This signs out its sites and closes browser tabs using this profile. File drafts are preserved.",
         });
@@ -331,12 +344,12 @@ export function attachDesktopPreview(
         host.storeImporter.cancel();
         await host.imports;
         try {
-          host.browser.closeProfile(input.profile_id);
+          host.browser.closePartition(partition);
           const isolated = session.fromPartition(partition);
           await isolated.clearStorageData();
           await isolated.clearCache();
           isolated.flushStorageData();
-          host.profiles.remove(input.profile_id);
+          if (!builtin) host.profiles.remove(input.profile_id);
           host.window.webContents.send(PREVIEW_PROFILES_EVENT, host.profiles.list());
           return true;
         } finally {

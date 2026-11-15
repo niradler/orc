@@ -291,6 +291,10 @@ export const PreviewProfileSchema = z
   })
   .strict();
 export type PreviewProfile = z.infer<typeof PreviewProfileSchema>;
+export const PreviewBuiltinProfileSchema = z.enum(["default", "temporary"]);
+export type PreviewBuiltinProfile = z.infer<typeof PreviewBuiltinProfileSchema>;
+export const PreviewProfileChoiceSchema = z.union([PreviewBuiltinProfileSchema, z.string().uuid()]);
+export type PreviewProfileChoice = z.infer<typeof PreviewProfileChoiceSchema>;
 export interface PreviewImportSource {
   id: string;
   name: string;
