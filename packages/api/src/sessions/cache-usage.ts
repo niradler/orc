@@ -357,6 +357,7 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
           recorded_at: recordedAt,
           pre_tokens: timeline.at(-1)?.context_tokens ?? null,
           post_tokens: null,
+          trigger: null,
         });
         codexCompactedAt.push(timeline.length);
         continue;

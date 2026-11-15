@@ -3,6 +3,9 @@
   "version": "0.1.67",
   "type": "module",
   "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",

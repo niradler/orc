@@ -60,7 +60,7 @@ describe("updateTaskStatus", () => {
       where: eq(comments.resource_id, id),
     });
     expect(rows.length).toBe(1);
-    expect(rows[0].content).toBe("Starting work");
+    expect(rows[0]?.content).toBe("Starting work");
   });
 
   test("sets claimed_by on doing transition", async () => {

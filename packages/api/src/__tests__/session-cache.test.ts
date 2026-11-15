@@ -127,8 +127,18 @@ test("should count Codex compactions with the context before and after them", ()
   );
   expect(result.latest?.input_tokens).toBe(22_000);
   expect(result.compactions).toEqual([
-    { recorded_at: "2026-11-06T12:05:00.000Z", pre_tokens: 180_000, post_tokens: 22_000 },
-    { recorded_at: "2026-11-06T12:30:00.000Z", pre_tokens: 22_000, post_tokens: null },
+    {
+      recorded_at: "2026-11-06T12:05:00.000Z",
+      pre_tokens: 180_000,
+      post_tokens: 22_000,
+      trigger: null,
+    },
+    {
+      recorded_at: "2026-11-06T12:30:00.000Z",
+      pre_tokens: 22_000,
+      post_tokens: null,
+      trigger: null,
+    },
   ]);
 });
 
