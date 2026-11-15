@@ -1,8 +1,11 @@
 import type { ChatMessage, ChatTurn } from "@orc/core/chat";
 import {
+  BookOpen,
   Check,
   ChevronRight,
   Copy,
+  Eye,
+  EyeOff,
   Folder,
   History,
   Inbox,
@@ -10,6 +13,7 @@ import {
   PanelLeftOpen,
   Plus,
   RefreshCw,
+  Sparkles,
   SquarePen,
   SquareTerminal,
   X,
@@ -22,6 +26,8 @@ import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
 import { ChatSendModeSelect } from "@/components/ChatSendModeSelect";
 import { HelpPopover } from "@/components/HelpPopover";
+import { Highlight } from "@/components/Highlight";
+import { SessionArchiveView } from "@/components/SessionArchiveView";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
@@ -43,13 +49,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import { type SessionHistory, useSessionHistory } from "@/hooks/useSessionHistory";
+import {
+  SESSION_SORT_LABELS,
+  SESSION_SORTS,
+  type SessionHistory,
+  type SessionSort,
+  useSessionHistory,
+} from "@/hooks/useSessionHistory";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { formatDuration } from "@/lib/chat-activity";
-import type { ChatHistoryEntry } from "@/lib/chat-history-list";
+import { type ChatHistoryEntry, entryAgent } from "@/lib/chat-history-list";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
 import { THIS_SERVER } from "@/lib/host-labels";
+import { formatTokenCount } from "@/lib/live-sessions";
 import { cn } from "@/lib/utils";
 
 export function ChatSessionPicker({
@@ -96,8 +109,24 @@ export function ChatSessionPicker({
     unassignedRows,
     loading,
     selectEntry,
+    openSessionView,
     newProjectSession,
     selectedArchive,
+    archiveView,
+    setArchiveView,
+    deep,
+    setDeep,
+    deepSearching,
+    searchMeta,
+    archive,
+    agentFilter,
+    setAgentFilter,
+    agentOptions,
+    sort,
+    setSort,
+    includeHidden,
+    setIncludeHidden,
+    agentGroups,
   } = history;
   if (rail)
     return (
@@ -179,7 +208,7 @@ export function ChatSessionPicker({
       {selectedArchive ? (
         <ArchiveResumeForm history={history} />
       ) : (
-        <>
+        <div className="min-w-0 space-y-4" {...stable.listProps}>
           <div className="flex items-center gap-1">
             <div
               role="tablist"
@@ -202,6 +231,7 @@ export function ChatSessionPicker({
                 </Button>
               ))}
             </div>
+            <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             <ActionHelp
               label="Refresh sessions"
               description="Re-import agent sessions, then refresh threads, live sessions and archive."
@@ -219,17 +249,93 @@ export function ChatSessionPicker({
               </Button>
             </ActionHelp>
           </div>
-          <Input
-            data-testid="chat-session-search"
-            aria-label="Search sessions"
-            placeholder="Search sessions…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <div className="min-w-0 space-y-2" {...stable.listProps}>
-            <SessionStateFilters value={filter} counts={counts} onChange={setFilter}>
-              <StableOrderPill pending={stable.pending} onApply={stable.apply} />
-            </SessionStateFilters>
+          <div className="flex items-center gap-1">
+            <Input
+              data-testid="chat-session-search"
+              aria-label="Search sessions"
+              placeholder="Search sessions…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="min-w-0 flex-1"
+            />
+            <ActionHelp
+              label="Search inside conversations"
+              description="Also match words inside transcripts (ripgrep) and archived sessions. Requires ripgrep for live content; archived search uses embeddings when configured."
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Search inside conversations"
+                aria-pressed={deep}
+                data-testid="chat-session-deep-search"
+                onClick={() => setDeep(!deep)}
+                className={cn(deep && "bg-surface-highest text-on-surface")}
+              >
+                <Sparkles />
+              </Button>
+            </ActionHelp>
+          </div>
+          <div className="flex items-center gap-1">
+            <select
+              data-testid="chat-session-agent"
+              aria-label="Filter sessions by agent"
+              value={agentFilter}
+              onChange={(event) => setAgentFilter(event.target.value)}
+              className="h-8 min-w-0 flex-1 rounded-md border border-control-border bg-background px-2 text-xs text-on-surface"
+            >
+              <option value="">All agents</option>
+              {agentOptions.map((agent) => (
+                <option key={agent} value={agent}>
+                  {agentDisplayName(agent)}
+                </option>
+              ))}
+            </select>
+            <select
+              data-testid="chat-session-sort"
+              aria-label="Sort sessions"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as SessionSort)}
+              className="h-8 min-w-0 flex-1 rounded-md border border-control-border bg-background px-2 text-xs text-on-surface"
+            >
+              {SESSION_SORTS.map((value) => (
+                <option key={value} value={value}>
+                  {SESSION_SORT_LABELS[value]}
+                </option>
+              ))}
+            </select>
+            <ActionHelp
+              label="Show hidden sessions"
+              description="Hidden sessions stay out of the list until you show and restore them."
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Show hidden sessions"
+                aria-pressed={includeHidden}
+                data-testid="chat-session-hidden"
+                onClick={() => setIncludeHidden(!includeHidden)}
+                className={cn(includeHidden && "bg-surface-highest text-on-surface")}
+              >
+                {includeHidden ? <Eye /> : <EyeOff />}
+              </Button>
+            </ActionHelp>
+          </div>
+          {deepSearching && searchMeta && (
+            <p data-testid="chat-session-search-meta" className="text-[11px] text-muted-foreground">
+              {searchMeta.rg
+                ? `Searched conversation content in ${(searchMeta.ms / 1000).toFixed(1)}s`
+                : "Titles and summaries only. Install ripgrep to search conversation content."}
+            </p>
+          )}
+          {archive.data?.degraded && (
+            <p data-testid="chat-session-degraded" className="text-[11px] text-outline">
+              {archive.data.degraded}
+            </p>
+          )}
+          <div className="min-w-0 space-y-2">
+            <SessionStateFilters value={filter} counts={counts} onChange={setFilter} />
             {section === "projects" && (
               <section
                 role="tabpanel"
@@ -260,7 +366,9 @@ export function ChatSessionPicker({
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        query={search}
                         onSelect={() => selectEntry(entry)}
+                        onView={() => openSessionView(entry)}
                       />
                     ))}
                     {!rows.length && !loading && (
@@ -293,7 +401,9 @@ export function ChatSessionPicker({
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        query={search}
                         onSelect={() => selectEntry(entry)}
+                        onView={() => openSessionView(entry)}
                       />
                     ))}
                   </ProjectGroup>
@@ -305,26 +415,60 @@ export function ChatSessionPicker({
                 )}
               </section>
             )}
-            <div
-              role="tabpanel"
-              id="session-panel-recents"
-              aria-labelledby="session-tab-recents"
-              data-testid="chat-session-list"
-              hidden={section !== "recents"}
-              className="min-w-0 space-y-1"
-            >
-              {shown.map((entry) => (
-                <HistoryRow
-                  key={entry.id}
-                  entry={entry}
-                  state={stateOf(entry)}
-                  pending={pending}
-                  selected={isSelected(entry)}
-                  terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                  onSelect={() => selectEntry(entry)}
-                />
-              ))}
-            </div>
+            {section === "recents" && (
+              <div
+                role="tabpanel"
+                id="session-panel-recents"
+                aria-labelledby="session-tab-recents"
+                data-testid="chat-session-list"
+                className="min-w-0 space-y-1"
+              >
+                {sort === "agent"
+                  ? agentGroups.map((group) => (
+                      <div
+                        key={group.agent}
+                        data-testid={`chat-session-agent-group-${group.agent}`}
+                        className="min-w-0"
+                      >
+                        <p className="flex min-w-0 items-center gap-1.5 px-2 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-outline">
+                          <AgentIcon
+                            agent={group.agent}
+                            title={agentDisplayName(group.agent)}
+                            className="size-3.5"
+                          />
+                          <span className="min-w-0 truncate">{agentDisplayName(group.agent)}</span>
+                          <span className="tabular-nums">{group.rows.length}</span>
+                        </p>
+                        {group.rows.map((entry) => (
+                          <HistoryRow
+                            key={entry.id}
+                            entry={entry}
+                            state={stateOf(entry)}
+                            pending={pending}
+                            selected={isSelected(entry)}
+                            terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                            query={search}
+                            onSelect={() => selectEntry(entry)}
+                            onView={() => openSessionView(entry)}
+                          />
+                        ))}
+                      </div>
+                    ))
+                  : shown.map((entry) => (
+                      <HistoryRow
+                        key={entry.id}
+                        entry={entry}
+                        state={stateOf(entry)}
+                        pending={pending}
+                        selected={isSelected(entry)}
+                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        query={search}
+                        onSelect={() => selectEntry(entry)}
+                        onView={() => openSessionView(entry)}
+                      />
+                    ))}
+              </div>
+            )}
           </div>
           {loading && (
             <p role="status" className="px-2 text-xs text-muted-foreground">
@@ -341,13 +485,29 @@ export function ChatSessionPicker({
               Load older sessions
             </Button>
           )}
-        </>
+        </div>
       )}
       {listError && (
-        <p role="alert" className="text-sm text-error wrap-break-word">
-          {listError}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p
+            role="alert"
+            data-testid="chat-session-error"
+            className="text-sm text-error wrap-break-word"
+          >
+            {listError}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void refreshSessions()}
+            disabled={refreshingSessions}
+          >
+            Retry
+          </Button>
+        </div>
       )}
+      <SessionArchiveView session={archiveView} onClose={() => setArchiveView(null)} />
     </SessionHistoryFrame>
   );
 }
@@ -582,13 +742,6 @@ function SessionHistoryFrame({
   );
 }
 
-export function entryAgent(entry: ChatHistoryEntry): string {
-  if (entry.kind === "local") return entry.tab.config.agent;
-  if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
-  if (entry.kind === "terminal") return entry.terminal.kind;
-  return entry.session.agent;
-}
-
 function ProviderMark({ agent }: { agent: string }) {
   return (
     <AgentIcon
@@ -665,20 +818,25 @@ export function HistoryRow({
   pending,
   selected,
   terminal,
+  query = "",
   onSelect,
+  onView,
 }: {
   entry: ChatHistoryEntry;
   state: AgentState;
   pending: boolean;
   selected: boolean;
   terminal: boolean;
+  query?: string;
   onSelect: () => void;
+  onView?: () => void;
 }) {
   const chat = useChat();
   const tab = entry.kind === "local" ? entry.tab : null;
   const open = !!tab && !tab.hidden;
   const agent = entryAgent(entry);
   const status = AGENT_STATES[state].label;
+  const hidden = entry.kind === "native" && !!entry.session.hidden;
   const testId = terminal
     ? "chat-open-terminal"
     : entry.kind === "local"
@@ -697,60 +855,112 @@ export function HistoryRow({
       data-history-open={open ? "true" : "false"}
       data-active={selected ? "true" : "false"}
       data-state={state}
-      className={`${sessionRowClass} ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+      className={cn(
+        "group min-w-0 rounded-md",
+        selected ? "bg-surface-highest" : "hover:bg-surface",
+      )}
     >
-      <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
-        <button
-          type="button"
-          data-testid={testId}
-          aria-current={selected ? "true" : undefined}
-          disabled={pending}
-          onClick={onSelect}
-          className={sessionRowButtonClass}
-        >
-          <SessionRowContent
-            agent={agent}
-            title={entry.title}
-            state={state}
-            stateTestId="chat-session-status"
-            marker={
-              terminal && (
-                <SquareTerminal
-                  size={13}
-                  aria-hidden="true"
-                  className="shrink-0 text-muted-foreground"
-                />
-              )
-            }
-          />
-          <span className="sr-only">
-            {agent ? ` · ${agent}` : ""}
-            {terminal ? " · Terminal" : ""}
-            {tab?.draft ? " · Draft" : ""}
-            {entry.kind === "archive" ? " · Import and resume" : ""}
-          </span>
-          {entry.kind === "saved" && entry.thread.running && (
-            <span data-testid="chat-thread-running" className="sr-only">
-              Running
-            </span>
-          )}
-        </button>
-      </ActionHelp>
-      {open && tab && (
-        <ActionHelp
-          label={`Close ${entry.title} from open sessions`}
-          description="Close from open sessions; history and background work are kept"
-        >
+      <div className={sessionRowClass}>
+        <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
           <button
             type="button"
-            data-testid="chat-tab-close"
-            aria-label={`Close ${entry.title} from open sessions`}
-            onClick={() => chat.closeTab(tab.key)}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            data-testid={testId}
+            aria-current={selected ? "true" : undefined}
+            disabled={pending}
+            onClick={onSelect}
+            className={sessionRowButtonClass}
           >
-            <X size={13} />
+            <SessionRowContent
+              agent={agent}
+              title={
+                query.trim().length >= 2 ? (
+                  <Highlight text={entry.title} query={query} />
+                ) : (
+                  entry.title
+                )
+              }
+              state={state}
+              stateTestId="chat-session-status"
+              marker={
+                <>
+                  {entry.kind === "native" && entry.session.handoff?.status === "ready" && (
+                    <span data-testid="handoff-ready" className="shrink-0 text-[10px] text-primary">
+                      Ready to resume
+                    </span>
+                  )}
+                  {hidden && (
+                    <span
+                      data-testid="chat-session-hidden-badge"
+                      className="shrink-0 text-[10px] text-outline"
+                    >
+                      Hidden
+                    </span>
+                  )}
+                  {terminal && (
+                    <SquareTerminal
+                      size={13}
+                      aria-hidden="true"
+                      className="shrink-0 text-muted-foreground"
+                    />
+                  )}
+                </>
+              }
+            />
+            <span className="sr-only">
+              {agent ? ` · ${agent}` : ""}
+              {terminal ? " · Terminal" : ""}
+              {hidden ? " · Hidden" : ""}
+              {tab?.draft ? " · Draft" : ""}
+              {entry.kind === "archive" ? " · Import and resume" : ""}
+            </span>
+            {entry.kind === "saved" && entry.thread.running && (
+              <span data-testid="chat-thread-running" className="sr-only">
+                Running
+              </span>
+            )}
           </button>
         </ActionHelp>
+        {(entry.kind === "native" || entry.kind === "archive") && onView && (
+          <ActionHelp
+            label="View conversation"
+            description="Read the native transcript here without resuming the session"
+          >
+            <button
+              type="button"
+              data-testid="chat-session-view"
+              aria-label={`View ${entry.title}`}
+              onClick={onView}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-surface-highest hover:text-on-surface group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            >
+              <BookOpen size={13} />
+            </button>
+          </ActionHelp>
+        )}
+        {open && tab && (
+          <ActionHelp
+            label={`Close ${entry.title} from open sessions`}
+            description="Close from open sessions; history and background work are kept"
+          >
+            <button
+              type="button"
+              data-testid="chat-tab-close"
+              aria-label={`Close ${entry.title} from open sessions`}
+              onClick={() => chat.closeTab(tab.key)}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-surface-highest hover:text-on-surface group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            >
+              <X size={13} />
+            </button>
+          </ActionHelp>
+        )}
+      </div>
+      {entry.snippets?.[0] && (
+        <p
+          data-testid="chat-session-snippet"
+          className="truncate pl-8 pr-2 pb-1 text-[11px] text-muted-foreground"
+          title={entry.snippets[0]}
+        >
+          <Highlight text={entry.snippets[0]} query={query} />
+        </p>
       )}
     </div>
   );
@@ -759,9 +969,19 @@ export function HistoryRow({
 export function ChatConversationInfo({
   open,
   onOpenChange,
+  live = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  live?: {
+    id: string;
+    agent: string;
+    tokens_used: number | null;
+    tokens_estimated: boolean;
+    status: "idle" | "running" | "stopped" | "error";
+    created_at: string;
+    last_activity_at: string | null;
+  } | null;
 }) {
   const { config, changePermissions, changeSendMode, thread, streaming } = useChat();
   const preview = useDesktopPreview();
@@ -962,8 +1182,9 @@ export function ChatConversationInfo({
             <div className="flex items-center gap-1">
               <h3 className="text-sm font-medium">Session analytics</h3>
               <HelpPopover label="Session analytics" testId="chat-analytics-help">
-                Counts come from this chat's stored transcript. Context and cache figures appear
-                when the agent records usage for the session.
+                Counts come from this chat's stored transcript. Tokens, start and end times come
+                from the agent's native session when it has been discovered. Context and cache
+                figures appear when the agent records usage for the session.
               </HelpPopover>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -973,7 +1194,26 @@ export function ChatConversationInfo({
               <AnalyticsStat label="Tool failures" value={analytics.toolFailures} />
             </div>
             <dl className="space-y-3 text-sm wrap-break-word">
-              <SettingsRow label="Started">{when(analytics.startedAt)}</SettingsRow>
+              <SettingsRow label="Tokens">
+                <span data-testid="chat-analytics-tokens">
+                  {live?.tokens_used != null
+                    ? formatTokenCount(live.tokens_used, live.tokens_estimated)
+                    : "—"}
+                </span>
+                {live?.tokens_estimated && (
+                  <span className="text-muted-foreground"> · estimated</span>
+                )}
+              </SettingsRow>
+              <SettingsRow label="Started">
+                {live?.created_at ? when(Date.parse(live.created_at)) : when(analytics.startedAt)}
+              </SettingsRow>
+              <SettingsRow label="Ended">
+                {live?.status === "stopped" && live.last_activity_at
+                  ? when(Date.parse(live.last_activity_at))
+                  : live
+                    ? "Running"
+                    : "—"}
+              </SettingsRow>
               <SettingsRow label="Last activity">
                 {thread ? when(thread.updatedAt) : "—"}
               </SettingsRow>

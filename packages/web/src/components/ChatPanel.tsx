@@ -56,6 +56,7 @@ import {
   useSessionLiveLink,
 } from "@/components/SessionHome";
 import { SessionLineage } from "@/components/SessionLineage";
+import { SessionView } from "@/components/SessionView";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -757,7 +758,21 @@ export function ChatPanel({
               (terminalCenter || drawerExpanded) && "hidden",
             )}
           >
-            <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
+            <ChatConversationInfo
+              open={settingsOpen}
+              onOpenChange={setSettingsOpen}
+              live={session.data?.live ?? null}
+            />
+            {/* The session viewer belongs to the full-screen chat page. The side
+                panel stays mounted while hidden, and its sheet would be portaled
+                out of that hidden wrapper into a second copy. */}
+            {fullscreen && (
+              <SessionView
+                sessionId={home.viewId}
+                onClose={() => home.go({ viewId: null })}
+                onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
+              />
+            )}
             {reconnecting && (
               <p
                 role="status"

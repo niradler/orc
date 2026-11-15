@@ -962,6 +962,17 @@ app.openapi(
             schema: z.object({
               changed: z.boolean(),
               running: z.boolean(),
+              live: z
+                .object({
+                  id: z.string(),
+                  agent: z.string(),
+                  tokens_used: z.number().nullable(),
+                  tokens_estimated: z.boolean(),
+                  status: z.enum(["idle", "running", "stopped", "error"]),
+                  created_at: z.string().datetime(),
+                  last_activity_at: z.string().datetime().nullable(),
+                })
+                .nullable(),
               queued: z.array(z.object({ id: z.string(), title: z.string() })),
             }),
           },
@@ -984,9 +995,21 @@ app.openapi(
     const queued = thread.runtimeId
       ? await queuedAnswers(turnKey(thread.host, thread.backend, thread.runtimeId))
       : [];
+    const source = await nativeSource(thread);
     return c.json({
       changed,
       running,
+      live: source
+        ? {
+            id: source.id,
+            agent: source.backend,
+            tokens_used: source.tokens_used ?? null,
+            tokens_estimated: source.backend === "cursor" && source.tokens_used != null,
+            status: source.status,
+            created_at: source.created_at.toISOString(),
+            last_activity_at: source.last_activity_at?.toISOString() ?? null,
+          }
+        : null,
       queued: queued.map((request) => ({
         id: request.id,
         title: request.input.title ?? request.input.prompt.slice(0, 120),
@@ -1219,6 +1242,8 @@ app.openapi(
         // Sync to real native activity without stamping the open time.
         thread.updatedAt = Math.max(thread.updatedAt, resumed.updatedAt);
       } else thread = resumed;
+      // Resuming in chat consumes a ready handoff just like resuming in a terminal.
+      if (body.sourceSessionId) await getHandoffService().markResumed(body.sourceSessionId);
     }
     store().save(thread);
     return c.json(thread);

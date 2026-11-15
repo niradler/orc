@@ -514,7 +514,7 @@ function Ledger({
               )}
               {nodeRun.gateway_session_id && (
                 <Link
-                  to={`/sessions/${nodeRun.gateway_session_id}`}
+                  to={`/chat?sessionView=${nodeRun.gateway_session_id}`}
                   onClick={(e) => e.stopPropagation()}
                   className="font-mono text-xs text-primary hover:underline mt-1 inline-block"
                   data-testid="flow-ledger-session-link"

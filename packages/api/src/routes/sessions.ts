@@ -239,6 +239,21 @@ const liveSyncRoute = createRoute({
   },
 });
 
+const liveGetRoute = createRoute({
+  method: "get",
+  path: "/sessions/live/{id}",
+  tags: ["Sessions"],
+  summary: "Read one discovered session",
+  request: { params: z.object({ id: z.string().min(1).max(200) }) },
+  responses: {
+    200: {
+      description: "Session",
+      content: { "application/json": { schema: LiveSessionSchema } },
+    },
+    404: { description: "Session not found" },
+  },
+});
+
 const liveUpdateRoute = createRoute({
   method: "patch",
   path: "/sessions/live/{id}",
@@ -450,6 +465,19 @@ app.openapi(liveSearchRoute, async (c) => {
     },
     200,
   );
+});
+
+// Registered after the static /sessions/live/search route: Hono matches in
+// registration order, so {id} would otherwise swallow "search".
+app.openapi(liveGetRoute, async (c) => {
+  const { id } = c.req.valid("param");
+  const row = await getDb().query.gateway_sessions.findFirst({
+    where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
+  });
+  if (!row) throw new NotFoundError("Session", id);
+  const [session] = await toLiveDtos([row]);
+  if (!session) throw new NotFoundError("Session", id);
+  return c.json(session, 200);
 });
 
 app.openapi(

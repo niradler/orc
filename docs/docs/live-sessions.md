@@ -1,6 +1,6 @@
 # Live agent sessions
 
-The Sessions view uses the same working, waiting and ended states, task links, search and conversation viewer for all agents. Waiting sessions stay in the active view; inactivity alone does not end a registered session.
+The chat page's session list and viewer use the same working, waiting and ended states, task links, search and conversation viewer for all agents. Waiting sessions stay in the active view; inactivity alone does not end a registered session.
 
 Opening a linked task keeps you on that task even while a session search is updating.
 
@@ -12,16 +12,17 @@ folder path. Codex uses the first prompt when its native title is only the folde
 
 ## Rename, hide and fork
 
-A session's own menu, **Rename**, stores your name on the ORC row. The agent's
+A session's viewer, **Rename**, stores your name on the ORC row. The agent's
 title still updates underneath, and **Use agent title** in the rename dialog drops
 the override, so a re-sync never resurrects a name you removed. **Hide** keeps the
-session and its transcript and only removes it from the default list; **Show
-hidden** in the filters brings hidden rows back with a **Hidden** label, and
-**Show** in the same menu restores one. Both survive a restart and a session
+session and its transcript and only removes it from the default list; the
+**hidden** toggle above the list brings hidden rows back with a **Hidden** label,
+and **Show in list** in the viewer restores one. Both survive a restart and a session
 re-sync. Hiding does not mute notifications, tasks or terminals that already point
 at the session.
 
-**Fork in terminal** starts a new native session from the session's history when
+**Fork in terminal** (in the resume actions on Activity, terminal sessions and task
+session rows) starts a new native session from the session's history when
 the agent CLI supports it: Claude runs `claude --resume <id> --fork-session` and Pi
 runs `pi --fork <id>`. The fork is a new terminal and a new session row, and the
 original conversation is not touched. Codex, Cursor, Gemini, OpenCode and agents
@@ -46,8 +47,8 @@ sessions appear without waiting for another agent's activity.
 
 ![Compact Activity session rows with demo data](/screens/activity-session-rows.png)
 
-Open a Codex or Claude session to see its last reported cached-input percentage.
-Expand that compact row for input, cached reads, cache writes when reported, and
+Open a Codex or Claude session's viewer to see its last reported cached-input percentage.
+Expand the cache indicator for input, cached reads, cache writes when reported, and
 recorded session totals. Cached input is a share of **input** tokens, not output
 or total billed cost. Claude input includes uncached input plus cache reads and
 writes; Codex reports input with its cache reads already included. Claude totals
@@ -67,13 +68,13 @@ are open; opening an ended session reads its recorded data once.
 
 Codex uses its native writer locks and latest turn status. A held lock identifies an open session; a completed turn is waiting, and a turn in progress is working. A released lock ends the session. Older Codex versions without a writer-lock directory retain the legacy activity fallback.
 
-Cursor IDE history, Cursor CLI (`agent` / `cursor-agent`) history and Gemini conversations are discovered separately. CLI and IDE Cursor histories are separate stores: only Cursor CLI records offer a CLI resume command. Gemini and Cursor CLI support Resume in a terminal, Copy resume command, and Copy terminal link alongside Claude and Codex.
+Cursor IDE history, Cursor CLI (`agent` / `cursor-agent`) history and Gemini conversations are discovered separately. CLI and IDE Cursor histories are separate stores: neither can continue in chat, and only Cursor CLI records offer a CLI resume command. Their viewer stays read-only and says so. Gemini keeps **Continue in chat**, and **Copy resume command** appears in the viewer for Claude, Codex, Gemini, OpenCode, Pi and Cursor CLI.
 
-OpenCode sessions are read from its SQLite store (`~/.local/share/opencode/opencode.db`) on the local machine or the selected SSH host. Top-level sessions appear with their folder, title and token count; the conversation viewer shows messages, reasoning and tool calls with their output. OpenCode has no lifecycle hooks, so its sessions are listed as ended. Resume opens `opencode --session <id>` in a terminal, and ended OpenCode sessions also appear in the chat history list, where opening one imports its transcript and continues the same session in chat.
+OpenCode sessions are read from its SQLite store (`~/.local/share/opencode/opencode.db`) on the local machine or the selected SSH host. Top-level sessions appear with their folder, title and token count; the conversation viewer shows messages, reasoning and tool calls with their output. OpenCode has no lifecycle hooks, so its sessions are listed as ended. **Continue in chat** imports its transcript and continues the same session in chat; **Copy resume command** offers `opencode --session <id>` for a terminal.
 
 Pi 1.5.2+ sessions are discovered from the native `~/.pi/agent/sessions` JSONL store on the selected execution host. Absolute `PI_CODING_AGENT_DIR` paths in Pi provider environment settings (and the local server environment) are also scanned under their `sessions` directory. The viewer follows the active branch and context edits and shows text, reasoning, tool calls/results and image placeholders. Native names and recorded token totals are retained. External Pi sessions appear as ended because Pi has no lifecycle hook registration. Close the native Pi conversation before resuming it in ORC to avoid concurrent writers.
 
-Resume in chat imports the visible history and continues the original Pi UUID in its original folder and execution host. It uses the enabled default Pi provider, the enabled built-in Pi provider, or the sole enabled Pi provider, in that order. If several named Pi providers are enabled, choose the intended one as the default first. Native history is not replayed as a new prompt. Terminal resume uses `pi --session <uuid>`. Custom `--session-dir` stores outside these directories, older session formats, cross-host handoff and embedding/archive ingestion are not supported for Pi.
+Resume in chat imports the visible history and continues the original Pi UUID in its original folder and execution host. It uses the enabled default Pi provider, the enabled built-in Pi provider, or the sole enabled Pi provider, in that order. If several named Pi providers are enabled, choose the intended one as the default first. Native history is not replayed as a new prompt. The viewer's copied resume command uses `pi --session <uuid>`. Custom `--session-dir` stores outside these directories, older session formats, cross-host handoff and embedding/archive ingestion are not supported for Pi.
 
 A Claude permission prompt, Claude question, or Gemini tool-permission prompt sets that session to **Waiting for you** within a few seconds of the hook firing. ORC sends one browser push on the attention topic for that transition. Answering the prompt, or the turn ending, clears the flag. A session that stays waiting does not send another push. Codex questions continue to come from its transcript. OpenCode chat questions use the same question card and waiting state even though discovered OpenCode sessions still show as ended. Cursor's installed hooks do not include a permission event, so Cursor waits are unchanged.
 

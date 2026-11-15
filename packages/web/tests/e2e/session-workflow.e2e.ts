@@ -64,21 +64,19 @@ for (const width of [1440, 390]) {
       expect(session).toBeDefined();
       await page.setViewportSize({ width, height: 950 });
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-      await gotoView(page, "activity");
-      await page.goto(`/activity?project=${project.id}`);
-      await page
-        .locator(`[data-testid="activity-session-link"][data-session-id="${session?.id}"]`)
-        .click();
-      await expect(page).toHaveURL(new RegExp(`session=${session?.id}.*project=${project.id}`));
-      const detail = page.getByTestId("live-session-detail");
+      await gotoView(page, "sessions");
+      await page.goto(`/chat?project=${project.id}&sessionList=show`);
+      const row = page.locator(
+        `[data-testid="chat-history-row"][data-history-id="native:${session?.id}"]`,
+      );
+      await expect(row).toBeVisible();
+      await row.getByTestId("chat-session-view").click();
+      const detail = page.getByTestId("session-view");
       await expect(detail.getByTestId("transcript-turn")).toContainText(
         "Inspect the terminal workflow",
       );
-      await expect(detail.getByTestId("open-chat-resume")).toHaveText("Resume");
-      await expect(page.getByTestId("copy-resume")).toHaveCount(0);
-      await detail.getByTestId("resume-actions-menu").press("Enter");
-      await page.getByTestId("copy-resume").click();
-      await expect(page.getByTestId("resume-actions-dropdown")).toHaveCount(0);
+      await expect(detail.getByTestId("open-chat-resume")).toHaveText("Continue in chat");
+      await detail.getByTestId("copy-resume").click();
       await expect(detail.getByTestId("resume-feedback")).toBeVisible();
       expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
         `codex resume ${externalId}`,
@@ -91,7 +89,8 @@ for (const width of [1440, 390]) {
       await expect(detail.getByTestId("detail-open-task")).toHaveText(task.title);
       await expect(detail).toContainText("Blocked");
       await page.keyboard.press("Escape");
-      const row = page.locator(`[data-testid="live-session-row"][data-session-id="${externalId}"]`);
+      await expect(detail).toBeHidden();
+
       let releaseTasks = () => {};
       const taskModule = new Promise<void>((resolve) => {
         releaseTasks = resolve;
@@ -104,10 +103,11 @@ for (const width of [1440, 390]) {
       });
       await pauseBrowserClock(page);
       try {
-        await page.getByTestId("session-search").fill(title);
+        await page.getByTestId("chat-session-search").fill(title);
         await expect(row).toHaveCount(1);
-        await expect(row.locator("select[data-testid='link-task']")).toHaveCount(0);
-        await row.getByTestId("open-task").click();
+        await expect(row.locator('select[data-testid="link-task"]')).toHaveCount(0);
+        await row.getByTestId("chat-session-view").click();
+        await detail.getByTestId("detail-open-task").click();
         await expect(page).toHaveURL(new RegExp(`/tasks/${task.id}.*project=${project.id}`));
         await expect.poll(() => taskModuleRequests).toBe(1);
         // Let the pending search debounce expire while the real destination module is loading.
@@ -120,37 +120,33 @@ for (const width of [1440, 390]) {
       const taskSession = page.getByTestId("task-session-row").filter({ hasText: title });
       await expect(taskSession).toBeVisible();
       await taskSession.getByTestId("task-session-link").click();
-      await expect(page).toHaveURL(new RegExp(`session=${session?.id}.*project=${project.id}`));
+      await expect(page).toHaveURL(new RegExp(`sessionView=${session?.id}.*project=${project.id}`));
       await expect(detail.getByTestId("transcript-turn")).toContainText(
         "Inspect the terminal workflow",
       );
-      await page.keyboard.press("Escape");
-      await row.getByTestId("link-task").click();
+      await detail.getByTestId("link-task").click();
       await picker.getByTestId("session-task-unlink").click();
       await expect(picker).toBeHidden();
-      await expect(row.getByTestId("open-task")).toHaveCount(0);
+      await expect(detail.getByTestId("detail-open-task")).toHaveCount(0);
+      // Keep the viewer open: the URL names it, and Escape would clear that.
       await page.reload();
-      await expect(row.getByTestId("open-task")).toHaveCount(0);
-      await row.getByTestId("resume-actions-menu").click();
-      await expect(page.getByTestId("copy-resume")).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(row.getByTestId("resume-actions-menu")).toBeFocused();
+      await expect(detail.getByTestId("detail-open-task")).toHaveCount(0);
+      await expect(detail.getByTestId("copy-resume")).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath(`session-workflow-${width}.png`),
         fullPage: true,
       });
+      await page.keyboard.press("Escape");
+      await page.goto(`/chat?project=${project.id}&sessionList=show`);
       writeRegistration({ ...registration, status: "stopped", updatedAt: Date.now() });
       await apiPost(request, "/sessions/live/sync", {});
-      await expect(page.getByTestId("show-ended")).toBeChecked();
+      await page.getByTestId("session-list-refresh").click();
       await expect(row).toBeVisible();
-      if (width < 1024) await page.getByTestId("view-filters-toggle").click();
-      await page.getByTestId("show-ended").click();
-      await expect(row).toHaveCount(0);
-      await page.getByTestId("show-ended").click();
-      await expect(page.getByTestId("show-ended")).toBeChecked();
-      await expect(row).toBeVisible();
-      await row.getByTestId("resume-actions-menu").click();
-      await expect(page.getByTestId("copy-resume")).toBeVisible();
+      await row.getByTestId("chat-session-view").click();
+      // An ended session keeps its stored conversation readable.
+      await expect(detail.getByTestId("transcript-turn")).toContainText(
+        "Inspect the terminal workflow",
+      );
     } finally {
       try {
         if (taskId) await apiDelete(request, `/tasks/${taskId}`);

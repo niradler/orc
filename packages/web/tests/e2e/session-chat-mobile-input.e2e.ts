@@ -138,6 +138,7 @@ for (const width of [1440, 390]) {
     );
     let reject = true;
     await page.route("**/api/chat/threads", (route) => {
+      if (route.request().method() !== "POST") return route.continue();
       expect(route.request().postDataJSON()).toEqual({ sourceSessionId: session.id });
       if (reject) {
         reject = false;
@@ -146,29 +147,24 @@ for (const width of [1440, 390]) {
       return route.fulfill({ json: thread });
     });
     await gotoView(page, "sessions");
-    await expect(page.getByTestId("open-chat-resume")).toHaveText("Resume");
-    await expect(page.getByTestId("open-terminal-resume")).toHaveCount(0);
-    await page.getByTestId("resume-actions-menu").click();
-    await expect(page.getByTestId("open-terminal-resume")).toHaveText("Terminal");
-    await page.keyboard.press("Escape");
-    await page.getByTestId("open-chat-resume").click();
-    await expect(page.getByRole("alert")).toContainText("Session is still active");
-    await page.goto(`/sessions?project=all&session=${session.id}`);
-    const detail = page.getByTestId("live-session-detail");
-    await expect(detail).toBeVisible();
-    await detail.getByTestId("open-chat-resume").click();
-    await expect(detail).toBeHidden();
+    const row = page.locator(
+      '[data-testid="chat-history-row"][data-history-id="native:resume-chat-fixture"]',
+    );
+    await row.getByTestId("chat-resume-live").click();
+    await expect(page.getByTestId("chat-session-error")).toContainText("Session is still active");
+    await expect(page.getByTestId("chat-open-terminal")).toHaveCount(0);
+    await row.getByTestId("chat-resume-live").click();
     await expect(page.getByTestId("chat-panel").filter({ visible: true })).toBeVisible();
     await expect(page.getByTestId("chat-message-content").filter({ visible: true })).toContainText(
       "Native history restored",
     );
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
-    await expect(page).toHaveURL(width < 1280 ? /\/chat\?/ : /chat=open/);
+    await expect(page).toHaveURL(/\/chat/);
     await page.screenshot({ path: testInfo.outputPath(`chat-resume-${width}.png`) });
   });
 }
 
-test("stale status does not disable supported native agents and Cursor IDE is explained", async ({
+test("stale status does not disable supported native agents and Cursor is read-only", async ({
   page,
 }) => {
   const sessions = ["codex", "claude", "gemini", "cursor-agent", "cursor"].map((agent, index) => ({
@@ -183,16 +179,24 @@ test("stale status does not disable supported native agents and Cursor IDE is ex
     tokens_used: null,
   }));
   await page.route("**/api/sessions/live?**", (route) => route.fulfill({ json: { sessions } }));
-  await gotoView(page, "sessions");
-  const buttons = page.getByTestId("open-chat-resume");
-  await expect(buttons).toHaveCount(4);
-  for (const button of (await buttons.all()).slice(0, 3)) {
-    await expect(button).toHaveText("Resume");
-    await expect(button).toBeEnabled();
-  }
-  await expect(buttons.nth(3)).toBeDisabled();
-  await expect(page.getByTestId("chat-resume-unavailable")).toContainText(
-    "separate session stores",
+  await page.route("**/api/sessions/live/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    const match = sessions.find((session) => session.id === id);
+    return match ? route.fulfill({ json: match }) : route.fallback();
+  });
+  await page.route("**/api/sessions/live/*/transcript?**", (route) =>
+    route.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
   );
-  await expect(page.getByTestId("resume-unavailable")).toContainText("Cursor IDE");
+  await gotoView(page, "sessions");
+  for (const agent of ["codex", "claude", "gemini"]) {
+    const row = page.locator(`[data-testid="chat-history-row"][data-history-id="native:${agent}"]`);
+    await expect(row.getByTestId("chat-resume-live")).toBeEnabled();
+  }
+  const cursor = page.locator(
+    '[data-testid="chat-history-row"][data-history-id="native:cursor-agent"]',
+  );
+  await cursor.getByTestId("chat-session-view").click();
+  const view = page.getByTestId("session-view");
+  await expect(view.getByTestId("session-view-read-only")).toContainText("separate session stores");
+  await expect(view.getByTestId("open-chat-resume")).toHaveCount(0);
 });

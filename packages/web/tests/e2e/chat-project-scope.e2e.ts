@@ -276,8 +276,10 @@ test("opening a session from All projects adopts its project", async ({ page }) 
   await expect(row).toBeVisible();
   await row.getByTestId("chat-resume-thread").click();
   await waitHistoryClosed(page);
-  await expect(page.getByTestId("sidebar-project-select").filter({ visible: true })).toContainText(
-    "Project one",
-  );
+  // The open conversation collapses the sidebar to its icon rail, which keeps
+  // the project only in the accessible name.
+  await expect(
+    page.getByTestId("sidebar-project-select").filter({ visible: true }),
+  ).toHaveAttribute("aria-label", "Switch project: Project one");
   await expect(page).toHaveURL(/project=p1/);
 });

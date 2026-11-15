@@ -18,6 +18,7 @@ import {
   STATE_FILTER_COMMANDS,
   searchHitPath,
 } from "@/lib/command-palette";
+import { applySessionFilter, parseFilter } from "@/lib/session-filter";
 import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { TERMINAL_PALETTE_EVENT, type TerminalPaletteRequest } from "@/lib/terminal-palette";
 import { terminalStatus } from "@/lib/terminal-presentation";
@@ -373,7 +374,10 @@ export function CommandPalette({
       command.title,
       "Filter agent sessions by state",
       "Sessions",
-      () => go(command.path),
+      () => {
+        applySessionFilter(parseFilter(command.filter));
+        go(command.path);
+      },
       "filter state needs you working done",
     );
   for (const section of WORKSPACE_SECTIONS)
@@ -436,7 +440,7 @@ export function CommandPalette({
         group: "Sessions",
         run: () =>
           go(
-            `/sessions?session=${encodeURIComponent(session.id)}`,
+            `/chat?sessionView=${encodeURIComponent(session.id)}`,
             session.project_id ?? "unassigned",
           ),
       });

@@ -101,7 +101,7 @@ The dashboard builds this snippet for Claude Code, Codex and other clients under
 
 Then ask the agent to call ORC's `context` tool for `my-app`. It should return your task and memory.
 
-Claude Code and Codex sessions appear under **Sessions** without further setup.
+Claude Code and Codex sessions appear in the chat page's session list without further setup.
 
 Full instructions per agent: [Connect agents](./connect-agents.md).
 

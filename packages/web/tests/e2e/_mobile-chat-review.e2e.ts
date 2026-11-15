@@ -129,6 +129,8 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.getByTestId("chat-sessions-button").click();
     await expect(page.getByTestId("chat-sessions-dialog")).toBeVisible();
+    // The Recents tab lists every session flat; Projects groups them.
+    await page.getByTestId("session-navigation-recents").click();
     await expect(
       page
         .getByTestId("chat-sessions-dialog")

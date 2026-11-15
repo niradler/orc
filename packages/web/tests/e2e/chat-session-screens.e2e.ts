@@ -122,7 +122,11 @@ for (const width of [1440, 390]) {
     };
     await page.setViewportSize({ width, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.addInitScript(() => localStorage.setItem("orc_theme", "dark"));
+    await page.addInitScript(() => {
+      localStorage.setItem("orc_theme", "dark");
+      // A little more room than the default shows full session titles in docs shots.
+      localStorage.setItem("orc_chat_history_width", "320");
+    });
     await mockSessionHome(page, now);
     await page.route(`**/api/chat/threads/${HOME.chatA}`, (route) =>
       route.fulfill({ json: thread }),
@@ -292,5 +296,28 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-analytics-turns")).toContainText("2");
     if (width === 1440) await shot("chat-session-settings-analytics");
     await page.keyboard.press("Escape");
+
+    // The session list now lives on the chat page; Recents shows every session flat.
+    await page.goto("/chat?project=all&sessionList=show");
+    await page.getByTestId("session-navigation-recents").click();
+    await expect(
+      page.getByTestId("chat-session-list").locator("[data-history-id]").first(),
+    ).toBeVisible();
+    await shot(width === 1440 ? "session-recents" : "session-list");
+
+    if (width === 1440) {
+      // The read-only viewer carries the session cache details.
+      await page.goto("/chat?project=all&sessionView=live-demo-claude");
+      const view = page.getByTestId("session-view");
+      await expect(view).toBeVisible();
+      await page.getByTestId("session-cache-indicator").click();
+      const cache = page.getByTestId("session-cache");
+      await expect(cache).toContainText("Session total");
+      if (CAPTURE)
+        await cache.screenshot({
+          path: `${repoRoot()}/docs/public/screens/session-cache.png`,
+          animations: "disabled",
+        });
+    }
   });
 }

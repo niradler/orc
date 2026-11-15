@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { showSessionSection } from "./_chat-ui";
 import { HOME, mockSessionHome } from "./_session-home-demo";
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -153,6 +154,7 @@ test("swipe left opens the Sessions page, swipe right closes it, Back restores i
   const sessions = page.getByTestId("chat-sessions-dialog");
   await expect(sessions).toBeVisible();
   await expect(page).toHaveURL(/sessionList=show/);
+  await showSessionSection(page, "recents");
   await expect(sessions.getByTestId("chat-session-list").locator("[data-history-id]")).toHaveCount(
     4,
   );
