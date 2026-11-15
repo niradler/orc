@@ -435,6 +435,89 @@ describe("codex adapter", () => {
   });
 });
 
+describe("claude adapter: missing transcript", () => {
+  test("settles a registry session with no transcript and keeps its lifetime total", async () => {
+    const dir = join(root, "registry-without-transcript");
+    mkdirSync(dir);
+    const id = "0f0f0f0f-1111-4222-8333-444444444444";
+    writeFileSync(
+      join(dir, "987654.json"),
+      JSON.stringify({
+        pid: DEAD_PID,
+        sessionId: id,
+        cwd: "/tmp/some-repo",
+        status: "stopped",
+        startedAt: 1_790_000_000_000,
+        updatedAt: 1_790_000_100_000,
+      }),
+    );
+    const adapter = claudeAdapter({ registry: dir, desktop: null, projects: null });
+    const [fresh] = await adapter.list(new Map());
+    if (!fresh) throw new Error("claude record missing");
+    expect(fresh.usageVersion).toBe(USAGE_EVENT_VERSION);
+    expect(await fresh.usage?.()).toEqual({ events: [], tokens: 0, model: null });
+
+    const [known] = await adapter.list(
+      new Map([
+        [
+          id,
+          {
+            lastActivityMs: 1_790_000_100_000,
+            tokensUsed: 321,
+            usageVersion: 0,
+            session: fresh,
+          },
+        ],
+      ]),
+    );
+    const usage = await known?.usage?.();
+    expect(usage?.tokens).toBe(321);
+    expect(usage?.events).toEqual([
+      {
+        key: "session",
+        ts: 1_790_000_100_000,
+        model: null,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        otherTokens: 321,
+        estimated: true,
+      },
+    ]);
+  });
+
+  test("settles a known session whose registry entry and transcript are both gone", async () => {
+    const dir = join(root, "registry-empty");
+    mkdirSync(dir);
+    const id = "0f0f0f0f-1111-4222-8333-555555555555";
+    const lastActivityAt = new Date(1_790_000_100_000);
+    const [record] = await claudeAdapter({ registry: dir, desktop: null, projects: null }).list(
+      new Map([
+        [
+          id,
+          {
+            lastActivityMs: lastActivityAt.getTime(),
+            tokensUsed: 99,
+            usageVersion: 0,
+            session: {
+              backend: "claude",
+              externalId: id,
+              title: "New session",
+              status: "stopped" as const,
+              createdAt: new Date(1_790_000_000_000),
+              lastActivityAt,
+            },
+          },
+        ],
+      ]),
+    );
+    expect(record?.usageVersion).toBe(USAGE_EVENT_VERSION);
+    expect(await record?.usage?.()).toMatchObject({ tokens: 99 });
+  });
+});
+
 describe("usage indexing backlog", () => {
   test("drains more than one queue batch through follow-up syncs", async () => {
     const total = 45;
