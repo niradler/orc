@@ -425,6 +425,8 @@ app.openapi(
 );
 
 const STEER_LIMIT = 32;
+/** The message may already be in the conversation, so a client must not resend it. */
+const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
 
 function steerable(
   run: ChatRun | undefined,
@@ -440,7 +442,10 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
   const previous = run.steering.get(requestId);
   if (previous) {
     if (previous.input !== input)
-      throw new ConflictError("This steering request ID already has different content.");
+      throw new ConflictError(
+        "This steering request ID already has different content.",
+        STEER_UNCONFIRMED,
+      );
     return previous.result;
   }
   if (run.steering.size >= STEER_LIMIT)
@@ -448,7 +453,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       "This response has reached its steering limit. Queue a message instead.",
     );
   if (run.thread.messages.some((message) => message.id === requestId))
-    throw new ConflictError("This message ID is already in use.");
+    throw new ConflictError("This message ID is already in use.", STEER_UNCONFIRMED);
   const steer = run.session.steer.bind(run.session);
   let dispatched = false;
   const deliver = async (): Promise<ChatThread> => {
@@ -497,7 +502,8 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       ];
       saveDelivery();
       throw new ConflictError(
-        "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
+        "Steering delivery could not be confirmed. Check the response before sending another message; this text may already be in the conversation.",
+        STEER_UNCONFIRMED,
       );
     }
     delete message.activity;
@@ -1051,7 +1057,8 @@ app.openapi(
       thread.config.agentOptions = body.agentOptions;
     }
     if (body.sendWhileRunning !== undefined) thread.config.sendWhileRunning = body.sendWhileRunning;
-    thread.updatedAt = Date.now();
+    // A send preference is not conversation activity, so it does not reorder recents.
+    if (body.agentOptions !== undefined) thread.updatedAt = Date.now();
     store().save(thread);
     return c.json(thread);
   },

@@ -216,6 +216,8 @@ export function ChatPanel({
     send,
     deliver,
     steer,
+    canSteerLive,
+    steerAvailable,
     cancel,
     projectId,
     openThread,
@@ -321,13 +323,7 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
-  // Steering carries text only, so an attachment takes the queue path either way.
-  const steersNow =
-    streaming &&
-    config.sendWhileRunning === "steer" &&
-    !files.length &&
-    thread?.capabilities?.steering === true;
-  const sendLabel = !streaming ? "Send message" : steersNow ? "Send now" : "Queue message";
+  const sendLabel = !streaming ? "Send message" : canSteerLive ? "Send now" : "Queue message";
   const submit = () => {
     if (!ready || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
@@ -1190,7 +1186,7 @@ export function ChatPanel({
                     <ChatPermissionChip />
                   </div>
                   <div className="flex items-center gap-1">
-                    {streaming && steersNow && (
+                    {streaming && canSteerLive && (
                       <ActionHelp
                         label="Queue message"
                         description="Hold this message until the current response finishes"
@@ -1212,7 +1208,7 @@ export function ChatPanel({
                         </button>
                       </ActionHelp>
                     )}
-                    {streaming && thread?.capabilities?.steering && !steersNow && (
+                    {streaming && steerAvailable && !canSteerLive && (
                       <ActionHelp
                         label="Send now"
                         description="Send this message into the active response; ordinary Send queues it for later"
@@ -1221,7 +1217,9 @@ export function ChatPanel({
                           type="button"
                           data-testid="chat-steer-button"
                           onClick={() => void steer()}
-                          disabled={!draft.trim() || !!files.length || responding}
+                          disabled={
+                            !draft.trim() || !!files.length || responding || !steerAvailable
+                          }
                           aria-label="Send now"
                           className={iconButton}
                         >

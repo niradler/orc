@@ -464,13 +464,17 @@ process. Pending approvals and questions are cancelled either way.
 returns the updated conversation once the message is dispatched into the active
 native turn. The web chat calls it by default when a steering-capable backend is
 responding; the conversation's `config.sendWhileRunning` (`"steer"` by default or
-`"queue"`) decides what Enter/Send does, and `PATCH /chat/threads/{id}/config`
-accepts `{ "sendWhileRunning": "queue" }` while a turn is running. Codex and Pi
+`"queue"`) decides what Enter/Send does. `PATCH /chat/threads/{id}/config` takes at
+least one of `agentOptions` or `sendWhileRunning`; `sendWhileRunning` applies while
+a turn is running, while `agentOptions` waits for it to finish. Codex, Claude and Pi
 confirm native acceptance before returning; OpenCode
 over direct ACP has no steer acknowledgment, so a later refusal is reported as a
 status message and steering is turned off for that turn. It
-requires a live steering-capable session (Codex, Pi and OpenCode over direct ACP);
-stale and unsupported runs return `409`.
+requires a live steering-capable session (Codex, Claude, Pi and OpenCode over direct
+ACP); stale and unsupported runs return `409`. A `409` with the code
+`STEER_UNCONFIRMED` means the text may already be in the conversation, so the
+client must not send it again as a new turn; a plain `CONFLICT` means nothing was
+delivered and the message can be queued instead.
 It keeps the original native thread and turn. Empty input is invalid. These routes
 use the same authentication as the rest of the API. The SDK exposes
 `client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.

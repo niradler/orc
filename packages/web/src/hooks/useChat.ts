@@ -205,6 +205,34 @@ function waitingConflict(cause: unknown): boolean {
   return cause instanceof ApiError && cause.status === 409 && BUSY_CONFLICTS.has(cause.message);
 }
 
+/** The server marks a steer whose text may already be in the conversation. */
+const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
+
+/** The turn is live and the backend accepted steering, whatever the send preference. */
+function canSteer(tab: { streaming: boolean; runId: string; thread: ChatThread | null }): boolean {
+  return tab.streaming && !!tab.runId && tab.thread?.capabilities?.steering === true;
+}
+
+/**
+ * One predicate for the composer label and the send path: the turn is live, the
+ * conversation steers, nothing is attached, and the backend accepted steering.
+ */
+function steersLive(tab: {
+  config: ChatConfig;
+  streaming: boolean;
+  runId: string;
+  files: File[];
+  thread: ChatThread | null;
+}): boolean {
+  return (
+    tab.config.sendWhileRunning === "steer" &&
+    tab.streaming &&
+    !!tab.runId &&
+    tab.files.length === 0 &&
+    tab.thread?.capabilities?.steering === true
+  );
+}
+
 function useChatController() {
   const [params] = useSearchParams();
   const selectedProject = params.get("project") ?? readStorage("orc_selected_project");
@@ -1096,9 +1124,10 @@ function useChatController() {
     }
   }, [tabs, ready, sendQueued]);
 
-  const send = useCallback(
-    async (input: string) => {
-      const key = activeRef.current;
+  // Keyed so an awaited steer can queue into the conversation that asked for it,
+  // even if another tab became active meanwhile.
+  const queueFor = useCallback(
+    async (key: string, input: string) => {
       const current = find(key);
       if (!ready || !current || (!input.trim() && !current.files.length)) return;
       const entry: ChatMessage = {
@@ -1118,6 +1147,7 @@ function useChatController() {
     },
     [ready, find, update],
   );
+  const send = useCallback((input: string) => queueFor(activeRef.current, input), [queueFor]);
 
   const stop = useCallback(
     (key: string) => {
@@ -1261,16 +1291,25 @@ function useChatController() {
           content: input,
           timestamp: Date.now(),
         };
-        update(key, (tab) => ({
-          thread,
-          draft: tab.draft === input ? "" : tab.draft,
-          messages: tab.messages.some((message) => message.id === requestId)
-            ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
-            : [...tab.messages, delivered],
-        }));
+        update(key, (tab) =>
+          tab.thread?.id === thread.id
+            ? {
+                thread,
+                error: null,
+                draft: tab.draft === input ? "" : tab.draft,
+                messages: tab.messages.some((message) => message.id === requestId)
+                  ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
+                  : [...tab.messages, delivered],
+              }
+            : { error: null, draft: tab.draft === input ? "" : tab.draft },
+        );
         return "steered";
       } catch (cause) {
-        if (cause instanceof ApiError && cause.status === 409) return "unavailable";
+        // A plain conflict means the turn cannot take the message: queueing is safe.
+        // An unconfirmed steer may already be in the conversation, so resending it
+        // would duplicate both the text and the turn.
+        if (cause instanceof ApiError && cause.status === 409 && cause.code !== STEER_UNCONFIRMED)
+          return "unavailable";
         update(key, () => ({
           error: message(cause, "The message could not be sent into the active response."),
         }));
@@ -1286,21 +1325,15 @@ function useChatController() {
     async (input: string): Promise<"steered" | "queued" | "failed"> => {
       const key = activeRef.current;
       const current = find(key);
-      if (!current) return "failed";
-      const steers =
-        current.config.sendWhileRunning === "steer" &&
-        current.streaming &&
-        !!current.runId &&
-        !current.files.length &&
-        current.thread?.capabilities?.steering === true;
-      if (steers) {
+      if (!ready || !current) return "failed";
+      if (steersLive(current)) {
         const outcome = await steerInput(key, input);
         if (outcome !== "unavailable") return outcome;
       }
-      await send(input);
+      await queueFor(key, input);
       return "queued";
     },
-    [find, send, steerInput],
+    [find, queueFor, ready, steerInput],
   );
   /** The explicit steer control; queues the message when the turn cannot take it. */
   const steer = useCallback(async () => {
@@ -1316,10 +1349,10 @@ function useChatController() {
       return;
     const input = current.draft;
     const outcome = await steerInput(key, input);
-    if (outcome === "unavailable") await send(input);
+    if (outcome === "unavailable") await queueFor(key, input);
     if (outcome !== "failed")
       update(key, (tab) => ({ draft: tab.draft === input ? "" : tab.draft }));
-  }, [find, responding, send, steerInput, update]);
+  }, [find, queueFor, responding, steerInput, update]);
 
   const respondPermission = useCallback(
     async (decision: "approved" | "denied") => {
@@ -1395,12 +1428,15 @@ function useChatController() {
       const key = activeRef.current;
       const current = find(key);
       if (!current) return;
+      const previous = current.config;
       setConfig({ ...current.config, sendWhileRunning });
       if (!current.thread) return;
       try {
         const updated = await api.chat.configure(current.thread.id, { sendWhileRunning });
         update(key, (tab) => (tab.thread?.id === updated.id ? { thread: updated } : {}));
       } catch (cause) {
+        // Keep the composer on what the conversation actually stored.
+        setConfig(previous);
         update(key, () => ({
           error: message(cause, "The send preference could not be saved."),
         }));
@@ -1490,6 +1526,8 @@ function useChatController() {
     setConfig,
     changePermissions,
     changeSendMode,
+    canSteerLive: steersLive(tab),
+    steerAvailable: canSteer(tab),
     applyAgentOptions,
     ready,
     thread: tab.thread,

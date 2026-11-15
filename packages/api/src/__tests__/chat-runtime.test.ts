@@ -2068,14 +2068,14 @@ test("steering enters the active native session and persists the message without
       ).status,
     ).toBe(409);
     steeringFailure = false;
-    expect(
-      (
-        await request(`/chat/runs/${started.runId}/steer`, {
-          input: "uncertain steering",
-          requestId: uncertainId,
-        })
-      ).status,
-    ).toBe(409);
+    const retried = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "uncertain steering",
+      requestId: uncertainId,
+    });
+    expect(retried.status).toBe(409);
+    // The text may already be in the conversation, so clients must not resend it
+    // as a new turn; only a plain conflict is safe to queue.
+    expect(((await retried.json()) as { code: string }).code).toBe("STEER_UNCONFIRMED");
     expect(nativeSteers.filter((input) => input === "uncertain steering")).toHaveLength(1);
     const saved = ChatThreadSchema.parse(
       await (await request(`/chat/threads/${started.thread.id}`)).json(),

@@ -21,7 +21,7 @@ export function ChatSendModeSelect({
   return (
     <div className="space-y-2 text-sm">
       <div className="flex items-center gap-1">
-        <label htmlFor="chat-send-mode">While responding</label>
+        <span>While responding</span>
         <HelpPopover label="While responding" testId="chat-send-mode-help">
           Send now delivers the message into the running response so the agent sees it before its
           next step. Queue holds it until the response finishes. Attachments always queue.
@@ -31,8 +31,8 @@ export function ChatSendModeSelect({
         </HelpPopover>
       </div>
       <select
-        id="chat-send-mode"
         data-testid="chat-send-mode"
+        aria-label="While responding"
         disabled={disabled}
         value={config.sendWhileRunning}
         onChange={(event) =>

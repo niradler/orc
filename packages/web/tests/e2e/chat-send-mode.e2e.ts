@@ -18,7 +18,7 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 for (const width of [390, 1440]) {
-  test(`While responding defaults to steering and saves the choice on the conversation at ${width}px`, async ({
+  test(`While responding saves the send choice per conversation at ${width}px`, async ({
     page,
     request,
   }, testInfo) => {
@@ -35,6 +35,7 @@ for (const width of [390, 1440]) {
     } finally {
       await release();
     }
+    await expect(panel).toHaveAttribute("data-streaming", "false");
     const threadId = new URL(page.url()).searchParams.get("chatThread");
     expect(threadId).toBeTruthy();
 
