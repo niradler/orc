@@ -14,7 +14,13 @@
             return options.includes(value) ? value : fallback;
           };
           const sizes = ["small", "default", "large", "x-large"];
-          const size = read(phone ? "orc_font_size_phone" : "orc_font_size", sizes, "default");
+          const size = read(
+            phone && localStorage.getItem("orc_font_size_phone") !== null
+              ? "orc_font_size_phone"
+              : "orc_font_size",
+            sizes,
+            "default",
+          );
           if (size !== "default") root.dataset.fontSize = size;
           root.dataset.font = read("orc_font", ["inter", "geist"], "system");
           root.dataset.chatFont = read("orc_chat_font", ["system", "inter", "geist", "serif"], "interface");

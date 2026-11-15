@@ -158,6 +158,32 @@ test("chat defaults to the system font, wide and large on desktop, and each chat
   await expect(html).toHaveAttribute("data-font", "system");
 });
 
+test("another open tab follows an appearance change, and a phone keeps an older shared size", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoView(page, "settings");
+  await settingsSection(page, "appearance");
+  const other = await context.newPage();
+  await other.setViewportSize({ width: 1280, height: 800 });
+  await gotoView(other, "tasks");
+  await expect(other.locator("html")).toHaveAttribute("data-chat-width", "wide");
+  await page.getByTestId("settings-chatWidth-full").click();
+  await expect(other.locator("html")).toHaveAttribute("data-chat-width", "full");
+  await page.getByTestId("settings-chatWidth-wide").click();
+  await other.close();
+
+  await page.evaluate(() => {
+    localStorage.removeItem("orc_font_size_phone");
+    localStorage.setItem("orc_font_size", "large");
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-font-size", "large");
+  await page.evaluate(() => localStorage.removeItem("orc_font_size"));
+});
+
 test("appearance is reachable and usable on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.request.patch("/api/settings", {

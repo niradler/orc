@@ -7,7 +7,7 @@ import { SourceCodeEditor } from "@/components/SourceCodeEditor";
 import { Button } from "@/components/ui/button";
 import { staysInApi } from "@/lib/api-path";
 import { withOrcKit } from "@/lib/orc-kit";
-import { useTheme } from "@/lib/theme";
+import { useAppearance, useTheme } from "@/lib/theme";
 import { useViewParam } from "@/lib/view-params";
 import { ModeButton, PadSaveBar } from "./PadSaveBar";
 import { usePadDraft } from "./usePadDraft";
@@ -124,13 +124,14 @@ export function HtmlPreview({
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const { theme } = useTheme();
+  const { darkBackground } = useAppearance();
   // biome-ignore lint/correctness/useExhaustiveDependencies: each new document gets a new nonce
   const nonce = useMemo(() => (trusted ? newNonce() : ""), [trusted, html]);
   // The kit makes the pad read as a native view; a theme flip rebuilds the document it follows.
   const srcDoc = useMemo(() => {
-    const kitted = withOrcKit(html, theme);
+    const kitted = withOrcKit(html, theme, darkBackground);
     return nonce ? withBridge(kitted, nonce) : kitted;
-  }, [html, theme, nonce]);
+  }, [html, theme, darkBackground, nonce]);
   useEffect(() => {
     if (!nonce) return;
     const onMessage = (event: MessageEvent) => {

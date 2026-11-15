@@ -145,7 +145,11 @@ function pick<T extends string>(value: string | null, options: { value: T }[], f
 function readAppearance(): Appearance {
   return {
     desktop: pick(stored(APPEARANCE_KEYS.desktop), FONT_SIZES, "default"),
-    phone: pick(stored(APPEARANCE_KEYS.phone), FONT_SIZES, "default"),
+    phone: pick(
+      stored(APPEARANCE_KEYS.phone) ?? stored(APPEARANCE_KEYS.desktop),
+      FONT_SIZES,
+      "default",
+    ),
     font: pick(stored(APPEARANCE_KEYS.font), UI_FONTS, "system"),
     chatFont: pick(stored(APPEARANCE_KEYS.chatFont), CHAT_FONTS, "interface"),
     chatDesktop: pick(stored(APPEARANCE_KEYS.chatDesktop), FONT_SIZES, "large"),
@@ -156,7 +160,11 @@ function readAppearance(): Appearance {
 }
 
 let snapshot = readAppearance();
+const appearanceKeys = new Set<string>(Object.values(APPEARANCE_KEYS));
 window.matchMedia(PHONE_QUERY).addEventListener("change", applyAppearance);
+window.addEventListener("storage", (event) => {
+  if (event.key === null || appearanceKeys.has(event.key)) applyAppearance();
+});
 
 function applyAppearance() {
   snapshot = readAppearance();
@@ -184,16 +192,8 @@ export function setAppearance(patch: Partial<Appearance>) {
 }
 
 function subscribeAppearance(listener: () => void) {
-  const keys = new Set(Object.values(APPEARANCE_KEYS));
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === null || keys.has(event.key)) applyAppearance();
-  };
   window.addEventListener(APPEARANCE_EVENT, listener);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(APPEARANCE_EVENT, listener);
-    window.removeEventListener("storage", onStorage);
-  };
+  return () => window.removeEventListener(APPEARANCE_EVENT, listener);
 }
 
 export function useAppearance(): Appearance {
