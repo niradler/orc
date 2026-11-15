@@ -95,6 +95,9 @@ export const ChatSettingsSchema = z
     system: z.string().max(20000).default(CHAT_SYSTEM_PROMPT),
     autoApprove: z.boolean().default(false),
     permissionMode: ChatPermissionModeSchema.optional(),
+    // What Enter/Send does while a response is running: join the live turn where the
+    // backend accepts steering, or hold the message for the next turn.
+    sendWhileRunning: z.enum(["steer", "queue"]).default("steer"),
     agentOptions: ChatAgentOptionsMapSchema.default({}),
     mcp: z.enum(["orc", "native"]).default("orc"),
   })

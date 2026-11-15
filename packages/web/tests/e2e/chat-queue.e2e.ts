@@ -7,7 +7,10 @@ import { API_SECRET, leavePhoneChatViaNav } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
 test.beforeEach(async ({ page, request }) => {
-  await request.patch("/api/settings", { headers, data: { chat: ChatSettingsSchema.parse({}) } });
+  await request.patch("/api/settings", {
+    headers,
+    data: { chat: ChatSettingsSchema.parse({ sendWhileRunning: "queue" }) },
+  });
   await page.addInitScript((secret) => {
     localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
   }, API_SECRET);
@@ -360,6 +363,11 @@ for (const width of [390, 1440]) {
     await expect(queue).toHaveAttribute("open");
     const rows = panel.getByTestId("chat-queued-message");
     await expect(rows.first().getByTestId("chat-queued-edit")).toBeVisible();
+    // Force send stops the turn, so it must not read as another move-up arrow.
+    await expect(rows.first().getByTestId("chat-queued-force")).toHaveAttribute(
+      "aria-label",
+      "Send now, stopping this response",
+    );
     expect((await rows.first().boundingBox())?.height).toBeLessThanOrEqual(46);
     expect(await queue.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,

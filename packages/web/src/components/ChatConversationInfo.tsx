@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react";
 import { agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { ChatSendModeSelect } from "@/components/ChatSendModeSelect";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,7 +20,7 @@ export function ChatConversationInfo({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { config, changePermissions, thread } = useChat();
+  const { config, changePermissions, changeSendMode, thread } = useChat();
   const preview = useDesktopPreview();
   const capabilities = useAgentCapabilities(config.agent, thread);
   return (
@@ -149,6 +150,11 @@ export function ChatConversationInfo({
             <ChatPermissionSelect
               config={config}
               onChange={(next) => void changePermissions(next)}
+            />
+            <ChatSendModeSelect
+              config={config}
+              thread={thread}
+              onChange={(next) => void changeSendMode(next.sendWhileRunning)}
             />
             <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
             <div className="text-sm">

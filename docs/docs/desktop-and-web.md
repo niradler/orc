@@ -558,10 +558,20 @@ applies so a stuck agent cannot hold a chat worker indefinitely.
 
 The composer groups folder, branch, agent/model and permissions into compact
 controls. Phones and narrow desktop panels use icons; wide composers show labels.
-Send queues the next message while a reply is running. If this session is already
-responding, or every chat worker is busy, that message stays queued and sends when
-the turn ends, without an error. Open the pending list to edit a message, move it
-up or down, remove it, or send it ahead of the current reply.
+While a reply is running, **Send** joins that turn when the backend accepts
+steering (Codex, Claude, Pi and OpenCode), so the agent reads the message before
+its next step. **While responding** in Session settings → Customize switches the
+conversation to **Queue for the next turn**; new chats take that default from
+Settings → Chat. The companion control beside Stop performs the other action
+either way, so both stay one press away. Attachments always queue, because
+steering carries text only.
+When the turn cannot take the message — the reply is still starting, the backend
+answers one message at a time, or every chat worker is busy — the message stays
+queued and sends when the turn ends, without an error. A steer whose delivery the
+agent never confirmed is not resent: chat keeps the text and asks you to check
+the conversation first, because the message may already be there.
+Open the pending list to edit a message, move it up or down, remove it, or send
+it ahead of the current reply.
 An expanded pending list stays open across busy-worker retries. After it drains,
 the next list starts collapsed.
 If a first send loses its connection, chat looks for the original message and
@@ -600,7 +610,8 @@ in agent options. The permissions chip shows the open session's mode — includi
 activity, tools connection and capabilities, plus the identifiers: the ORC chat
 ID, the agent's native session ID used for resume, and the discovered session ID
 this chat continues when it was resumed. Each identifier can be copied.
-**Customize** holds permissions, agent launch options, session instructions and
+**Customize** holds permissions, while-responding behaviour, agent launch options,
+session instructions and
 agent browser control. Context, cache and turn figures live in the transcript and
 the header strip instead of a separate analytics tab. Explanations sit behind the
 info icon beside each label; new-chat defaults remain in Settings → Agents → Chat.

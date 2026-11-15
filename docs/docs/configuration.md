@@ -125,7 +125,7 @@ scoped to the ORC session. ORC owns transport, session identity, working folder
 and its permission bridge; arbitrary Pi command-line arguments are not accepted.
 
 Pi supports streamed text/thinking and tool results, images on compatible models,
-native session resume, **Send now** steering, cooperative Stop, extension questions,
+native session resume, mid-response steering, cooperative Stop, extension questions,
 permission prompts, live permission changes and `/compact`. Default permissions ask
 before each tool; **Accept edits** allows Pi's edit/write tools, and bypass permits
 all tools. An approval for the session applies to that tool name. This gates Pi's

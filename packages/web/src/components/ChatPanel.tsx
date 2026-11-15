@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   History,
+  ListPlus,
   LoaderCircle,
   Maximize2,
   MoreHorizontal,
@@ -15,6 +16,7 @@ import {
   Pencil,
   RefreshCw,
   Settings2,
+  SkipForward,
   Square,
   SquarePen,
   Trash2,
@@ -216,7 +218,10 @@ export function ChatPanel({
     moveQueued,
     forceQueued,
     send,
+    deliver,
     steer,
+    canSteerLive,
+    steerAvailable,
     cancel,
     projectId,
     openThread,
@@ -363,11 +368,17 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
+  const sendLabel = !streaming ? "Send message" : canSteerLive ? "Send now" : "Queue message";
   const submit = () => {
     if (!ready || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
-    void send(draft);
+    const text = draft;
     setDraft("");
+    // A failed steer keeps the text so the user can retry; a queued or steered
+    // message already left the composer.
+    void deliver(text).then((outcome) => {
+      if (outcome === "failed") setDraft((current) => (current === "" ? text : current));
+    });
   };
   const compactDisabled =
     !thread?.runtimeId ||
@@ -1254,7 +1265,29 @@ export function ChatPanel({
                     <ChatPermissionChip />
                   </div>
                   <div className="flex items-center gap-1">
-                    {streaming && thread?.capabilities?.steering && (
+                    {streaming && canSteerLive && (
+                      <ActionHelp
+                        label="Queue message"
+                        description="Hold this message until the current response finishes"
+                      >
+                        <button
+                          type="button"
+                          data-testid="chat-queue-button"
+                          onClick={() => {
+                            if (!draft.trim() && !files.length) return;
+                            const text = draft;
+                            setDraft("");
+                            void send(text);
+                          }}
+                          disabled={!draft.trim() && !files.length}
+                          aria-label="Queue message"
+                          className={iconButton}
+                        >
+                          <ListPlus size={17} />
+                        </button>
+                      </ActionHelp>
+                    )}
+                    {streaming && steerAvailable && !canSteerLive && (
                       <ActionHelp
                         label="Send now"
                         description="Send this message into the active response; ordinary Send queues it for later"
@@ -1263,7 +1296,9 @@ export function ChatPanel({
                           type="button"
                           data-testid="chat-steer-button"
                           onClick={() => void steer()}
-                          disabled={!draft.trim() || !!files.length || responding}
+                          disabled={
+                            !draft.trim() || !!files.length || responding || !steerAvailable
+                          }
                           aria-label="Send now"
                           className={iconButton}
                         >
@@ -1284,12 +1319,12 @@ export function ChatPanel({
                         </button>
                       </ActionHelp>
                     )}
-                    <ActionHelp label={streaming ? "Queue message" : "Send message"}>
+                    <ActionHelp label={sendLabel}>
                       <button
                         type="submit"
                         disabled={!ready || (!draft.trim() && !files.length)}
                         data-testid="chat-send-button"
-                        aria-label={streaming ? "Queue message" : "Send message"}
+                        aria-label={sendLabel}
                         className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
                       >
                         <ArrowUp size={18} />
@@ -1441,18 +1476,18 @@ function QueuedMessage({
             </button>
           </ActionHelp>
           <ActionHelp
-            label="Force send pending message"
-            description="Stop the current response and send this message next"
+            label="Send now, stopping this response"
+            description="Stops the current response, then sends this message ahead of the rest of the queue"
           >
             <button
               type="button"
               data-testid="chat-queued-force"
               disabled={forceDisabled}
-              aria-label="Force send pending message"
+              aria-label="Send now, stopping this response"
               onClick={onForce}
               className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
             >
-              <ArrowUp size={14} />
+              <SkipForward size={14} />
             </button>
           </ActionHelp>
           {removeButton}
