@@ -1,5 +1,4 @@
 import {
-  BookOpen,
   ChevronRight,
   Eye,
   EyeOff,
@@ -22,7 +21,6 @@ import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { Highlight } from "@/components/Highlight";
-import { SessionArchiveView } from "@/components/SessionArchiveView";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -76,8 +74,8 @@ export function ChatSessionPicker({
     listError,
     section,
     chooseSection,
-    expandedProject,
-    setExpandedProject,
+    expandedProjects,
+    toggleProject,
     refreshingSessions,
     refreshSessions,
     filter,
@@ -93,11 +91,8 @@ export function ChatSessionPicker({
     projectFromFolder,
     loading,
     selectEntry,
-    openSessionView,
     newProjectSession,
     selectedArchive,
-    archiveView,
-    setArchiveView,
     deep,
     setDeep,
     deepSearching,
@@ -122,7 +117,6 @@ export function ChatSessionPicker({
       terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
       query={search}
       onSelect={() => selectEntry(entry)}
-      onView={() => openSessionView(entry)}
       nested={entry.children?.map(renderRow)}
     />
   );
@@ -350,10 +344,8 @@ export function ChatSessionPicker({
                     name={project.name}
                     icon={<Folder size={14} className="shrink-0" aria-hidden />}
                     count={rows.length}
-                    expanded={expandedProject === project.id}
-                    onToggle={() =>
-                      setExpandedProject(expandedProject === project.id ? null : project.id)
-                    }
+                    expanded={expandedProjects.includes(project.id)}
+                    onToggle={() => toggleProject(project.id)}
                     onNew={() => newProjectSession(project)}
                   >
                     {rows.slice(0, visibleCount).map((entry) => renderRow(entry))}
@@ -382,10 +374,8 @@ export function ChatSessionPicker({
                         )
                       }
                       count={folder.rows.length}
-                      expanded={expandedProject === folder.key}
-                      onToggle={() =>
-                        setExpandedProject(expandedProject === folder.key ? null : folder.key)
-                      }
+                      expanded={expandedProjects.includes(folder.key)}
+                      onToggle={() => toggleProject(folder.key)}
                       onAdopt={
                         folder.cwd ? () => projectFromFolder(folder.cwd as string) : undefined
                       }
@@ -469,7 +459,6 @@ export function ChatSessionPicker({
           </Button>
         </div>
       )}
-      <SessionArchiveView session={archiveView} onClose={() => setArchiveView(null)} />
     </SessionHistoryFrame>
   );
 }
@@ -800,7 +789,6 @@ export function HistoryRow({
   terminal,
   query = "",
   onSelect,
-  onView,
   nested,
 }: {
   entry: ChatHistoryEntry;
@@ -810,7 +798,6 @@ export function HistoryRow({
   terminal: boolean;
   query?: string;
   onSelect: () => void;
-  onView?: () => void;
   nested?: ReactNode[] | undefined;
 }) {
   const chat = useChat();
@@ -902,23 +889,7 @@ export function HistoryRow({
             )}
           </button>
         </ActionHelp>
-        {(entry.kind === "native" || entry.kind === "archive") && onView && (
-          <ActionHelp
-            label="View conversation"
-            description="Read the native transcript here without resuming the session"
-          >
-            <button
-              type="button"
-              data-testid="chat-session-view"
-              aria-label={`View ${entry.title}`}
-              onClick={onView}
-              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-surface-highest hover:text-on-surface group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
-            >
-              <BookOpen size={13} />
-            </button>
-          </ActionHelp>
-        )}
-        {!((entry.kind === "native" || entry.kind === "archive") && onView) && !(open && tab) && (
+        {!(open && tab) && (
           <span aria-hidden className="size-8 shrink-0 max-sm:size-11 pointer-coarse:size-11" />
         )}
         {open && tab && (

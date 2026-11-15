@@ -195,8 +195,9 @@ test("stale status does not disable supported native agents and Cursor is read-o
   const cursor = page.locator(
     '[data-testid="chat-history-row"][data-history-id="native:cursor-agent"]',
   );
-  await cursor.getByTestId("chat-session-view").click();
+  await cursor.getByTestId("chat-resume-live").click();
   const view = page.getByTestId("session-view");
   await expect(view.getByTestId("session-view-read-only")).toContainText("separate session stores");
   await expect(view.getByTestId("open-chat-resume")).toHaveCount(0);
+  await expect(page.getByTestId("chat-input").filter({ visible: true })).toHaveCount(0);
 });

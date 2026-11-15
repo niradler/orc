@@ -49,7 +49,7 @@ import {
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
-import { ChatSessionStrip, useChatContextUsage } from "@/components/ChatSessionStrip";
+import { useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider, chatDividers } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
@@ -64,6 +64,7 @@ import {
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionView } from "@/components/SessionView";
+import { StateBadge } from "@/components/StateBadge";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
@@ -352,6 +353,7 @@ export function ChatPanel({
   const rail = fullscreen && desktop && home.listHidden;
   const context = useSessionContext(home.terminalId);
   const terminalCenter = !!home.terminalId;
+  const viewId = fullscreen && !terminalCenter ? home.viewId : null;
   // The drawer can take the conversation's space; collapsing or closing it
   // returns the column to the chat instead of leaving a half-empty screen.
   const [drawerExpanded, setDrawerExpanded] = useState(false);
@@ -402,9 +404,6 @@ export function ChatPanel({
     latestUsageAt >= lastAssistant.turn.startedAt
       ? latestUsage
       : null;
-  // Changing models applies to the next turn, so the header names the selected
-  // model; it falls back to the model the last turn recorded.
-  const stripModel = config.model || lastAssistant?.model;
   const projects = useProjects();
   const owner = terminalCenter
     ? context.session?.project_id
@@ -734,15 +733,16 @@ export function ChatPanel({
                   </Popover>
                 </div>
                 <div className="chat-header-controls flex items-center justify-end gap-0.5">
-                  <ChatSessionStrip
-                    compact
-                    agent={config.agent}
-                    model={stripModel}
-                    state={sessionState}
-                    latest={latestUsage ?? undefined}
-                    compactions={contextUsage.data?.compactions?.length ?? 0}
-                    className="mr-auto min-w-0"
-                  />
+                  {sessionState ? (
+                    <StateBadge
+                      state={sessionState}
+                      compact
+                      testId="chat-header-state"
+                      className="mr-auto shrink-0"
+                    />
+                  ) : (
+                    <span className="mr-auto" />
+                  )}
                   <SessionHomeToggles home={home} gestures />
                   {!terminalCenter && (
                     <div
@@ -795,15 +795,12 @@ export function ChatPanel({
             {!phone && Boolean(title || fullscreen) && (
               <span aria-hidden="true" className="h-3 w-px shrink-0 bg-outline-variant" />
             )}
-            {!phone && (
-              <ChatSessionStrip
-                agent={config.agent}
-                model={stripModel}
+            {!phone && sessionState && (
+              <StateBadge
                 state={sessionState}
-                latest={latestUsage ?? undefined}
-                compactions={contextUsage.data?.compactions?.length ?? 0}
                 compact={!headerWide}
-                className="min-w-0 shrink"
+                testId="chat-header-state"
+                className="shrink-0"
               />
             )}
             {/* Session facts sit beside the title; actions stay at the right edge. */}
@@ -894,23 +891,19 @@ export function ChatPanel({
             </p>
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}
+          {viewId && (
+            <SessionView
+              sessionId={viewId}
+              onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
+            />
+          )}
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col",
-              (terminalCenter || drawerExpanded) && "hidden",
+              (terminalCenter || drawerExpanded || viewId) && "hidden",
             )}
           >
             <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
-            {/* The session viewer belongs to the full-screen chat page. The side
-                panel stays mounted while hidden, and its sheet would be portaled
-                out of that hidden wrapper into a second copy. */}
-            {fullscreen && (
-              <SessionView
-                sessionId={home.viewId}
-                onClose={() => home.go({ viewId: null })}
-                onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
-              />
-            )}
             {reconnecting && (
               <p
                 role="status"

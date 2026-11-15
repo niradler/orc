@@ -60,7 +60,10 @@ export function patchSessionHome(
   patch: Partial<SessionHomeState>,
 ): URLSearchParams {
   const next = new URLSearchParams(params);
-  if ("terminalId" in patch) put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
+  if ("terminalId" in patch) {
+    put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
+    if (!("viewId" in patch)) next.delete(SESSION_VIEW_PARAM);
+  }
   if ("liveId" in patch) put(next, SESSION_LIVE_PARAM, patch.liveId ?? null);
   if ("viewId" in patch) put(next, SESSION_VIEW_PARAM, patch.viewId ?? null);
   if ("listHidden" in patch) put(next, SESSION_LIST_PARAM, patch.listHidden ? "hide" : null);

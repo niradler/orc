@@ -376,14 +376,9 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-workspace-folder")).toBeVisible();
     await expect(page.getByTestId("chat-workspace-branch")).toBeVisible();
     await expect(page.getByTestId("chat-permission-chip")).toBeVisible();
-    // The header strip names the agent, model, cached context share and state.
-    await expect(page.getByTestId("chat-session-strip")).toBeVisible();
-    if (width === 1440) {
-      await expect(page.getByTestId("chat-session-strip-agent")).toContainText("Claude Code");
-      await expect(page.getByTestId("chat-session-strip-model")).toHaveText("claude-opus-4-1");
-      await expect(page.getByTestId("chat-session-strip-context")).toContainText("85% cached");
-    }
-    await expect(page.getByTestId("chat-session-strip-state")).toHaveAttribute(
+    // The header carries only the state; agent, model and cache live on the turn.
+    await expect(page.getByTestId("chat-session-strip")).toHaveCount(0);
+    await expect(page.getByTestId("chat-header-state").filter({ visible: true })).toHaveAttribute(
       "data-state",
       "idle",
     );

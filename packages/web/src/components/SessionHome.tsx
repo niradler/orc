@@ -37,6 +37,7 @@ export interface SessionContext {
   cwd: string | null;
   host: string | null;
   session?: LiveSession;
+  sourceId: string | null;
   /** The checkout Git acts on: a running terminal in the folder, or the chat
    *  session's own folder when no terminal is running. */
   gitCheckout?: Terminal;
@@ -80,6 +81,7 @@ export function useSessionContext(terminalId: string | null): SessionContext {
     cwd,
     host,
     session,
+    sourceId: liveId,
     gitCheckout:
       (terminal?.status === "running"
         ? terminal
@@ -114,19 +116,19 @@ export function useSessionLiveLink(home: SessionHomeNav, enabled: boolean) {
     api.sessions
       .liveOne(liveId)
       .then(async (session) => {
-        // A provider whose CLI store chat cannot continue opens the read-only session view.
         if (!nativeChatAgent(session.agent)) {
           go({ viewId: session.id, terminalId: null, liveId: null }, { replace: true });
           return;
         }
         openThread(await api.chat.resume(liveId));
+        go({ terminalId: null, liveId: null }, { replace: true });
       })
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : "Session could not be opened."),
-      )
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Session could not be opened.");
+        go({ terminalId: null, liveId: null }, { replace: true });
+      })
       .finally(() => {
         opening.current = null;
-        go({ terminalId: null, liveId: null }, { replace: true });
       });
   }, [enabled, liveId, isLoading, terminals, go, openThread]);
   return error;

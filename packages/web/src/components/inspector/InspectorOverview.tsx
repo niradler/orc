@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { CiStatus, prStateLabel, prStateTone } from "@/components/GithubPullStatus";
+import { SessionActions } from "@/components/SessionActions";
 import type { SessionContext } from "@/components/SessionHome";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +77,33 @@ export function InspectorOverview({
   context: SessionContext;
   home: SessionHomeNav;
 }) {
+  return (
+    <>
+      {context.sourceId && <InspectorSession sessionId={context.sourceId} />}
+      <OverviewBody context={context} home={home} />
+    </>
+  );
+}
+
+function InspectorSession({ sessionId }: { sessionId: string }) {
+  const { data: session } = useQuery({
+    queryKey: ["sessions", "live-one", sessionId],
+    queryFn: () => api.sessions.liveOne(sessionId),
+    retry: false,
+  });
+  if (!session) return null;
+  return (
+    <section
+      data-testid="session-inspector-session"
+      aria-label="Session"
+      className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-3 text-xs"
+    >
+      <SessionActions session={session} />
+    </section>
+  );
+}
+
+function OverviewBody({ context, home }: { context: SessionContext; home: SessionHomeNav }) {
   const git = context.gitCheckout;
   const [, setParams] = useSearchParams();
   const { status, github, branch, pr } = useInspectorGit(git);

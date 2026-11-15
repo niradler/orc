@@ -64,7 +64,7 @@ test("registered agents share idle visibility, transcripts, task links and sessi
     );
     await expect(row).toBeVisible();
     await expect(row.getByTestId("chat-session-status")).toHaveAttribute("data-state", "idle");
-    await row.getByTestId("chat-session-view").click();
+    await page.goto(`/chat?project=all&sessionView=${liveId(backend)}`);
     const view = page.getByTestId("session-view");
     await expect(view).toBeVisible();
     await expect(view.getByTestId("transcript-turn")).toContainText(`Hello from ${backend}`);
@@ -73,10 +73,7 @@ test("registered agents share idle visibility, transcripts, task links and sessi
     await picker.locator(`[data-testid="session-task-option"][data-task-id="${task.id}"]`).click();
     await expect(picker).toBeHidden();
     await expect(view.getByTestId("detail-open-task")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(view).toBeHidden();
-    await expect(row.getByTestId("chat-session-status")).toHaveAttribute("data-state", "idle");
-    await expect(page).not.toHaveURL(/sessionView=/);
+    await gotoView(page, "sessions");
   }
   // The bug was a 30-second cutoff: an owned idle session must survive it.
   await page.waitForTimeout(31_000);
@@ -105,10 +102,7 @@ test("registered agents share idle visibility, transcripts, task links and sessi
       `[data-testid="chat-history-row"][data-history-id="native:${liveId(backend)}"]`,
     );
     await expect(row.getByTestId("chat-session-status")).toHaveAttribute("data-state", "done");
-    await row.getByTestId("chat-session-view").click();
-    await expect(page.getByTestId("transcript-unavailable")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("session-view")).toBeHidden();
+    await row.getByTestId("chat-resume-live").click();
     await expect(row.getByTestId("chat-session-status")).toHaveAttribute("data-state", "ended");
   }
 });
@@ -147,7 +141,7 @@ test("renames and hides a session and keeps both across a re-sync and reload", a
   await expect(row).toBeVisible();
   await expect(row).toContainText("native housekeeping title");
 
-  await row.getByTestId("chat-session-view").click();
+  await page.goto(`/chat?project=all&sessionView=${liveId}`);
   const view = page.getByTestId("session-view");
   await view.getByTestId("rename-session").click();
   await page.getByTestId("session-rename-input").fill("Readable session name");
@@ -155,14 +149,17 @@ test("renames and hides a session and keeps both across a re-sync and reload", a
   await expect(view).toContainText("Readable session name");
 
   // A re-sync rewrites the agent title, so the rename must live on its own column.
-  await page.keyboard.press("Escape");
+  await gotoView(page, "sessions");
+  await page.getByTestId("chat-session-agent").selectOption("claude");
   await expect(row).toContainText("Readable session name");
   await page.getByTestId("session-list-refresh").click();
   await expect(row).toContainText("Readable session name");
 
-  await row.getByTestId("chat-session-view").click();
+  await page.goto(`/chat?project=all&sessionView=${liveId}`);
   await view.getByTestId("hide-session").click();
-  await page.keyboard.press("Escape");
+  await expect(view.getByTestId("detail-session-hidden")).toBeVisible();
+  await gotoView(page, "sessions");
+  await page.getByTestId("chat-session-agent").selectOption("claude");
   await expect(row).toHaveCount(0);
 
   const showHidden = page.getByTestId("chat-session-hidden");
@@ -181,7 +178,7 @@ test("renames and hides a session and keeps both across a re-sync and reload", a
   await expect(reloaded).toContainText("Readable session name");
   await expect(reloaded.getByTestId("chat-session-hidden-badge")).toBeVisible();
 
-  await reloaded.getByTestId("chat-session-view").click();
+  await page.goto(`/chat?project=all&sessionView=${liveId}`);
   await page.getByTestId("unhide-session").click();
-  await expect(page.getByTestId("chat-session-hidden-badge")).toHaveCount(0);
+  await expect(page.getByTestId("detail-session-hidden")).toHaveCount(0);
 });
