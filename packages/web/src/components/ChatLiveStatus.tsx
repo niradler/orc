@@ -37,7 +37,12 @@ function activityTrail(activity: ChatActivity[]): TrailEntry[] {
       return [
         {
           id: item.id,
-          label: item.type === "thinking" ? "Thinking" : toolLabel(item.name),
+          label:
+            item.type === "thinking"
+              ? "Thinking"
+              : item.type === "plan"
+                ? (item.title ?? "Plan")
+                : toolLabel(item.name),
           Icon: activityIcon(item),
         },
       ];

@@ -105,6 +105,25 @@ export const ChatModelsSchema = z.object({
   warning: z.string().nullable(),
 });
 export type ChatModels = z.infer<typeof ChatModelsSchema>;
+export const ChatPlanEntryStatusSchema = z.enum(["pending", "in_progress", "completed", "failed"]);
+export type ChatPlanEntryStatus = z.infer<typeof ChatPlanEntryStatusSchema>;
+/** Providers re-send the whole plan on every update; keep the transcript bounded. */
+export const CHAT_PLAN_MAX_ENTRIES = 50;
+export const ChatPlanEntrySchema = z.object({
+  id: z.string().min(1).max(200),
+  status: ChatPlanEntryStatusSchema,
+  content: z.string().max(2000),
+});
+export type ChatPlanEntry = z.infer<typeof ChatPlanEntrySchema>;
+const ChatPlanPayloadSchema = z.object({
+  id: z.string().min(1).max(200),
+  title: z.string().max(200).optional(),
+  entries: z.array(ChatPlanEntrySchema).max(CHAT_PLAN_MAX_ENTRIES),
+});
+export type ChatPlanPayload = z.infer<typeof ChatPlanPayloadSchema>;
+export const ChatPlanSchema = ChatPlanPayloadSchema.extend({ type: z.literal("plan") });
+export type ChatPlan = z.infer<typeof ChatPlanSchema>;
+
 export const ChatActivitySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("thinking"), id: z.string(), text: z.string() }),
   z.object({
@@ -116,8 +135,62 @@ export const ChatActivitySchema = z.discriminatedUnion("type", [
     isError: z.boolean().optional(),
   }),
   z.object({ type: z.literal("status"), id: z.string(), text: z.string() }),
+  ChatPlanSchema,
 ]);
 export type ChatActivity = z.infer<typeof ChatActivitySchema>;
+
+/**
+ * An activity kind this build does not know, kept verbatim so an older client
+ * saving a newer session's transcript does not drop the agent's data.
+ */
+export const ChatProviderActivitySchema = z.object({
+  id: z.string(),
+  kind: z.string().min(1).max(64),
+  data: z.record(z.string(), z.unknown()).optional(),
+});
+export type ChatProviderActivity = z.infer<typeof ChatProviderActivitySchema>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Splits stored activity into the kinds this build renders and the rest, without throwing. */
+export function readChatActivity(value: unknown): {
+  activity: ChatActivity[];
+  provider: ChatProviderActivity[];
+} {
+  const activity: ChatActivity[] = [];
+  const provider: ChatProviderActivity[] = [];
+  for (const item of Array.isArray(value) ? value : []) {
+    const known = ChatActivitySchema.safeParse(item);
+    if (known.success) {
+      activity.push(known.data);
+      continue;
+    }
+    const raw = isRecord(item) ? item : {};
+    provider.push({
+      id: typeof raw.id === "string" ? raw.id : crypto.randomUUID(),
+      kind: typeof raw.type === "string" && raw.type ? raw.type.slice(0, 64) : "unknown",
+      ...(Object.keys(raw).length ? { data: raw } : {}),
+    });
+  }
+  return { activity: activity.slice(-200), provider: provider.slice(-200) };
+}
+
+/** Normalized transcript item: identity and nesting now, paging in wave 3. */
+export type ChatItemKind = ChatActivity["type"] | "provider";
+export type ChatItem = {
+  id: string;
+  ordinal: number;
+  parentId?: string | undefined;
+  status?: ChatPlanEntryStatus | undefined;
+} & (
+  | { kind: "thinking"; text: string }
+  | { kind: "status"; text: string }
+  | { kind: "tool"; name: string; input: string; result?: string; isError?: boolean }
+  | { kind: "plan"; title?: string; entries: ChatPlanEntry[] }
+  | { kind: "provider"; provider: string; data?: Record<string, unknown> }
+);
 export const ChatTurnSchema = z.object({
   startedAt: z.number().finite().nonnegative(),
   finishedAt: z.number().finite().nonnegative().optional(),
@@ -133,7 +206,10 @@ export const ChatMessageSchema = z.object({
   timestamp: z.number(),
   turn: ChatTurnSchema.optional(),
   agent: z.string().optional(),
+  /** The model that produced this turn, when the session records one. */
+  model: ChatModelSchema.optional(),
   activity: z.array(ChatActivitySchema).optional(),
+  providerActivity: z.array(ChatProviderActivitySchema).max(200).optional(),
   attachments: z.array(SessionFileSchema).max(10).optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
@@ -265,6 +341,27 @@ export const ChatThreadSchema = z.object({
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;
+
+/**
+ * Reads a stored thread without failing on an activity kind this build does not
+ * know: those items move to `providerActivity` and survive the next save.
+ */
+export function parseChatThread(value: unknown): ChatThread {
+  if (!isRecord(value) || !Array.isArray(value.messages)) return ChatThreadSchema.parse(value);
+  return ChatThreadSchema.parse({
+    ...value,
+    messages: value.messages.map((message) => {
+      if (!isRecord(message) || !Array.isArray(message.activity)) return message;
+      const { activity, provider } = readChatActivity(message.activity);
+      const existing = Array.isArray(message.providerActivity) ? message.providerActivity : [];
+      return {
+        ...message,
+        activity,
+        ...(provider.length ? { providerActivity: [...existing, ...provider].slice(-200) } : {}),
+      };
+    }),
+  });
+}
 export const ChatEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn"), turn: ChatTurnSchema }),
   z.object({ type: z.literal("narration"), text: z.string() }),
@@ -272,6 +369,7 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({ type: z.literal("thinking"), text: z.string() }),
   z.object({ type: z.literal("system_status"), text: z.string() }),
+  z.object({ type: z.literal("plan"), data: ChatPlanPayloadSchema }),
   z.object({
     type: z.literal("tool_use"),
     data: z.object({ id: z.string(), name: z.string(), input: z.string() }),
@@ -296,6 +394,54 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type ChatEvent = z.infer<typeof ChatEventSchema> | { type: "done" };
+
+/**
+ * Plans arrive as whole snapshots that change in place: entries keep their id,
+ * so a repeated identical update is a no-op and status flapping never appends a
+ * second row. A different plan id starts a new plan block in the same turn.
+ */
+function mergeChatPlan(activity: ChatActivity[], incoming: ChatPlanPayload): ChatActivity[] {
+  const entries = incoming.entries.slice(0, CHAT_PLAN_MAX_ENTRIES);
+  let at = -1;
+  for (let index = activity.length - 1; index >= 0; index--) {
+    const item = activity[index];
+    if (item?.type === "plan" && item.id === incoming.id) {
+      at = index;
+      break;
+    }
+  }
+  if (at === -1)
+    return [
+      ...activity,
+      {
+        type: "plan",
+        id: incoming.id,
+        ...(incoming.title ? { title: incoming.title } : {}),
+        entries,
+      },
+    ].slice(-200) as ChatActivity[];
+  const current = activity[at] as ChatPlan;
+  const merged = current.entries.map((entry) => ({ ...entry }));
+  let changed = false;
+  for (const entry of entries) {
+    const found = merged.findIndex((item) => item.id === entry.id);
+    if (found === -1) {
+      if (merged.length >= CHAT_PLAN_MAX_ENTRIES) continue;
+      merged.push({ ...entry });
+      changed = true;
+      continue;
+    }
+    const previous = merged[found] as ChatPlanEntry;
+    if (previous.status === entry.status && previous.content === entry.content) continue;
+    merged[found] = { ...entry };
+    changed = true;
+  }
+  const title = incoming.title ?? current.title;
+  if (!changed && title === current.title) return activity;
+  const next = [...activity];
+  next[at] = { type: "plan", id: current.id, ...(title ? { title } : {}), entries: merged };
+  return next;
+}
 
 export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): ChatActivity[] {
   if (event.type === "thinking") {
@@ -332,5 +478,6 @@ export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): 
     return [...activity, { type: "status", id: crypto.randomUUID(), text: event.text }].slice(
       -200,
     ) as ChatActivity[];
+  if (event.type === "plan") return mergeChatPlan(activity, event.data);
   return activity;
 }

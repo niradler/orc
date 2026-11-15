@@ -208,7 +208,13 @@ test("native image inputs, plans and token usage survive protocol normalization"
     { data: new Uint8Array([1, 2, 3]), mimeType: "image/png" },
   ]);
   const events = await collect(session);
-  expect(events).toContainEqual({ type: "system_status", data: "completed: Verify files" });
+  expect(events).toContainEqual({
+    type: "plan",
+    data: {
+      id: "plan",
+      entries: [{ id: "0", status: "completed", content: "Verify files" }],
+    },
+  });
   expect(events).toContainEqual({
     type: "result",
     data: {

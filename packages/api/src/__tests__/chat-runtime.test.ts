@@ -57,6 +57,8 @@ let failedTurn = false;
 let resultIdentity: string | undefined;
 let resultDurationMs: number | undefined;
 let narrateBeforeTool = false;
+let planUpdate: { status: "pending" | "in_progress" | "completed" | "failed"; content: string }[] =
+  [];
 let noResumable = false;
 let closed = 0;
 let interrupted = 0;
@@ -125,6 +127,15 @@ function session(call: (typeof calls)[number]): AgentSession {
         return;
       }
       yield { type: "thinking", data: "Visible provider reasoning summary" };
+      if (planUpdate.length)
+        yield {
+          type: "plan",
+          data: {
+            id: "plan",
+            title: "Checklist",
+            entries: planUpdate.map((entry, index) => ({ id: String(index), ...entry })),
+          },
+        };
       if (narrateBeforeTool) yield { type: "text", data: "First I will inspect the workspace." };
       yield {
         type: "tool_use",
@@ -592,6 +603,44 @@ describe("native chat runtime", () => {
       ((await (await request(`/chat/threads/${stored.id}`)).json()) as ChatThread).messages,
     ).toHaveLength(4);
     expect(closed).toBeGreaterThanOrEqual(2);
+  });
+  test("records the turn's model and keeps an agent plan as structured activity", async () => {
+    planUpdate = [
+      { status: "in_progress", content: "Map the adapters" },
+      { status: "pending", content: "Ship the card" },
+    ];
+    try {
+      const result = await turn({
+        messages: [{ role: "user", content: "plan it" }],
+        agent: "codex",
+        model: "fixture-plan",
+      });
+      expect(result.response.status).toBe(200);
+      expect(result.events.map((event) => event.type)).toContain("plan");
+      const opened = result.events[0];
+      if (opened?.type !== "thread") throw new Error("No conversation identity");
+      const stored = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(stored.messages[1]?.model).toBe("fixture-plan");
+      expect(stored.messages[1]?.activity).toContainEqual({
+        type: "plan",
+        id: "plan",
+        title: "Checklist",
+        entries: [
+          { id: "0", status: "in_progress", content: "Map the adapters" },
+          { id: "1", status: "pending", content: "Ship the card" },
+        ],
+      });
+      // A plan is not a status blob: no joined "status: content" line is stored.
+      expect(
+        stored.messages[1]?.activity?.some(
+          (item) => item.type === "status" && item.text.includes("Map the adapters"),
+        ),
+      ).toBe(false);
+    } finally {
+      planUpdate = [];
+    }
   });
   test("web chat context reaches the agent but is not stored in the conversation", async () => {
     const result = await turn({
