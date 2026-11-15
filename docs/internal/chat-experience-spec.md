@@ -169,17 +169,22 @@ survive a re-save and are visible; no existing e2e selector changes meaning.
   trigger leave it null rather than guessing.
 - The timeline divider reads `Context compacted automatically · 182k → 24k
   tokens`, `manually`, or plainly when the trigger is unknown.
-- A composer hint appears from 85% context: what the percent is, whether the
-  agent compacts on its own, and — only for adapters with manual compaction —
-  the Compact action. Below 85%, or without usage, nothing is shown.
+- A small capability map in core (`compactionPolicy(agent)`) states, per
+  adapter, whether ORC can request manual compaction and where automatic
+  compaction is configured. It is surfaced where compaction is explained; ORC
+  never invents a policy the adapter does not expose.
+- A composer hint appears when the latest request carried at least 150k tokens
+  (the point where agents commonly start compacting): the size, whether the
+  agent compacts on its own, and the Compact action only when the adapter
+  supports it. ORC does not claim a percentage of a window it does not know;
+  no usage or a smaller context shows nothing.
 - Auto-compaction stays an agent/provider capability (Codex
   `model_auto_compact_token_limit`, Pi's own settings, Claude's internal
-  behaviour); ORC reports the policy instead of inventing a parallel one, and
-  the chat docs say where each adapter's setting lives.
+  behaviour); the chat docs say where each adapter's setting lives.
 
 Acceptance: the divider states trigger and drop when recorded; the hint appears
-only near the limit and never claims control ORC does not have; analytics and
-the session strip still agree with the divider.
+only when the context is genuinely large and never claims control ORC does not
+have; analytics and the session strip still agree with the divider.
 
 ### W3c — selection toolbar (#355)
 
