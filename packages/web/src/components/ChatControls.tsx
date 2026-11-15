@@ -4,6 +4,8 @@ import {
   Eye,
   EyeOff,
   Folder,
+  FolderOpen,
+  FolderPlus,
   History,
   Inbox,
   PanelLeftClose,
@@ -87,6 +89,8 @@ export function ChatSessionPicker({
     shown,
     projectGroups,
     unassignedRows,
+    unassignedFolders,
+    projectFromFolder,
     loading,
     selectEntry,
     openSessionView,
@@ -360,34 +364,48 @@ export function ChatSessionPicker({
                     )}
                   </ProjectGroup>
                 ))}
-                {unassignedRows.length > 0 && (
-                  <ProjectGroup
-                    testId="session-project-unassigned"
-                    name="Unassigned"
-                    icon={<Inbox size={14} className="shrink-0" aria-hidden />}
-                    count={unassignedRows.length}
-                    expanded={expandedProject === "__unassigned__"}
-                    onToggle={() =>
-                      setExpandedProject(
-                        expandedProject === "__unassigned__" ? null : "__unassigned__",
-                      )
-                    }
-                  >
-                    {unassignedRows.slice(0, visibleCount).map((entry) => (
-                      <HistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                        query={search}
-                        onSelect={() => selectEntry(entry)}
-                        onView={() => openSessionView(entry)}
-                      />
-                    ))}
-                  </ProjectGroup>
-                )}
+                {unassignedFolders.map((folder) => {
+                  const name = folder.cwd
+                    ? (folder.cwd.split(/[\\/]/).filter(Boolean).pop() ?? folder.cwd)
+                    : "Unassigned";
+                  return (
+                    <ProjectGroup
+                      key={folder.key}
+                      testId={folder.cwd ? "session-folder-group" : "session-project-unassigned"}
+                      name={name}
+                      title={folder.cwd ?? undefined}
+                      icon={
+                        folder.cwd ? (
+                          <FolderOpen size={14} className="shrink-0" aria-hidden />
+                        ) : (
+                          <Inbox size={14} className="shrink-0" aria-hidden />
+                        )
+                      }
+                      count={folder.rows.length}
+                      expanded={expandedProject === folder.key}
+                      onToggle={() =>
+                        setExpandedProject(expandedProject === folder.key ? null : folder.key)
+                      }
+                      onAdopt={
+                        folder.cwd ? () => projectFromFolder(folder.cwd as string) : undefined
+                      }
+                    >
+                      {folder.rows.slice(0, visibleCount).map((entry) => (
+                        <HistoryRow
+                          key={entry.id}
+                          entry={entry}
+                          state={stateOf(entry)}
+                          pending={pending}
+                          selected={isSelected(entry)}
+                          terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                          query={search}
+                          onSelect={() => selectEntry(entry)}
+                          onView={() => openSessionView(entry)}
+                        />
+                      ))}
+                    </ProjectGroup>
+                  );
+                })}
                 {!loading && !projectGroups.length && !unassignedRows.length && (
                   <p className="px-2 text-sm text-muted-foreground">
                     No projects yet. Create a project to group its sessions here.
@@ -741,6 +759,8 @@ export function ProjectGroup({
   expanded,
   onToggle,
   onNew,
+  onAdopt,
+  title,
   testId,
   children,
 }: {
@@ -750,6 +770,8 @@ export function ProjectGroup({
   expanded: boolean;
   onToggle: () => void;
   onNew?: () => void;
+  onAdopt?: () => void;
+  title?: string;
   testId: string;
   children: ReactNode;
 }) {
@@ -761,6 +783,7 @@ export function ProjectGroup({
           className="min-w-0 flex-1 justify-start gap-1.5 px-2"
           aria-expanded={expanded}
           data-testid="session-project-toggle"
+          title={title}
           onClick={onToggle}
         >
           <ChevronRight
@@ -784,6 +807,19 @@ export function ProjectGroup({
             onClick={onNew}
           >
             <Plus size={15} />
+          </Button>
+        )}
+        {onAdopt && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Make project from ${name}`}
+            title={`Make project from ${name}`}
+            data-testid="session-folder-adopt"
+            className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100"
+            onClick={onAdopt}
+          >
+            <FolderPlus size={15} />
           </Button>
         )}
       </div>

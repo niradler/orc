@@ -1538,7 +1538,14 @@ function useChatController() {
     },
     setWorkspace: (workspace: ChatWorkspace) =>
       update(activeRef.current, (current) =>
-        current.thread || current.streaming ? {} : { workspace },
+        current.thread || current.streaming
+          ? {}
+          : {
+              workspace,
+              ...(workspace.cwd
+                ? { projectId: workspace.host ? null : projectForCwd(workspace.cwd) }
+                : {}),
+            },
       ),
     config: tab.config,
     setConfig,

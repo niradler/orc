@@ -608,7 +608,7 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
         title="Delete server"
         description={`Remove ${deleting?.label ?? "this server"} from this browser? Its token and headers are deleted too.${
           deleting && active(deleting)
-            ? " This dashboard goes back to This ORC server, and that server needs its own sign-in or token."
+            ? " This dashboard goes back to the local ORC server, and that server needs its own sign-in or token."
             : ""
         }`}
         onCancel={() => setDeleting(null)}

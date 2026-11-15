@@ -466,7 +466,7 @@ Most knowledge settings are also editable under **Settings → Knowledge**.
 
 In JSON configuration, `"terminals": { "shell": ["pwsh", "-NoLogo", "-NoProfile"] }` launches PowerShell without personal profiles. The first array entry must be a nonempty executable; up to 64 entries are supported. Arguments are passed literally, without shell parsing. Existing executable strings remain supported, including `ORC_TERMINALS_SHELL`; that environment variable accepts an executable, not a command line or JSON array. An unset shell keeps the platform default, including its usual profile loading.
 
-Pick the execution host from the SSH row under **Settings → Hosts**: **Change**, then choose **This ORC server** or an alias. Switching applies to new actions. When `ORC_SSH_HOST` is set, the selection is fixed.
+Pick the execution host from the SSH row under **Settings → Hosts**: **Change**, then choose **Local** or an alias. Switching applies to new actions. When `ORC_SSH_HOST` is set, the selection is fixed.
 
 ### `rules`, `mcp`, `github`
 

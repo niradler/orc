@@ -248,15 +248,7 @@ export function chatHistoryList(
   }
   for (const entry of entries) {
     if (entry.projectId) continue;
-    const cwd =
-      entry.kind === "local"
-        ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
-        : entry.kind === "native"
-          ? entry.session.cwd
-          : entry.kind === "terminal"
-            ? entry.terminal.cwd
-            : null;
-    entry.projectId = projectForFolder(cwd, projectFolders)?.id ?? entry.projectId;
+    entry.projectId = projectForFolder(entryCwd(entry), projectFolders)?.id ?? entry.projectId;
   }
   return entries
     .filter(
@@ -312,4 +304,16 @@ export function historyEntryState(
   const state = entry.observedState ? moreUrgent(own, entry.observedState) : own;
   if (selected || entry.kind === "terminal" || entry.id.startsWith("draft:")) return state;
   return unseenState(state, entry.updatedAt, lastSeen(seen, entry.seenKeys));
+}
+
+export function entryCwd(entry: ChatHistoryEntry): string | null {
+  const cwd =
+    entry.kind === "local"
+      ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
+      : entry.kind === "native"
+        ? entry.session.cwd
+        : entry.kind === "terminal"
+          ? entry.terminal.cwd
+          : null;
+  return cwd?.trim() || null;
 }
