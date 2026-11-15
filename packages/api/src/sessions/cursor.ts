@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
@@ -67,13 +67,18 @@ function firstQueryFromText(content: string): string | null {
 }
 
 async function resolveSlugPathOnHost(slug: string, runtime: HostRuntime): Promise<string | null> {
-  const walk = async (current: string, parts: string[]): Promise<string | null> => {
+  let deepest = { path: "", depth: 0 };
+  const walk = async (current: string, parts: string[], depth: number): Promise<string | null> => {
     if (parts.length === 0) return current;
+    if (depth > deepest.depth) deepest = { path: current, depth };
     for (let take = 1; take <= parts.length; take++) {
-      const next = join(current, parts.slice(0, take).join("-"));
-      if (await runtime.isDirectory(next)) {
-        const found = await walk(next, parts.slice(take));
-        if (found) return found;
+      const name = parts.slice(0, take).join("-");
+      for (const candidate of [name, `.${name}`]) {
+        const next = join(current, candidate);
+        if (await runtime.isDirectory(next)) {
+          const found = await walk(next, parts.slice(take), depth + 1);
+          if (found) return found;
+        }
       }
     }
     return null;
@@ -83,13 +88,60 @@ async function resolveSlugPathOnHost(slug: string, runtime: HostRuntime): Promis
     slug,
     runtime.host.kind === "local" && process.platform === "win32",
   );
-  return walk(root, parts);
+  const found = await walk(root, parts, 0);
+  if (found) return found;
+  const home = await runtime.home();
+  return deepest.path.length > home.length && deepest.path.startsWith(home) ? deepest.path : null;
+}
+
+function folderFromUri(uri: unknown): string | null {
+  if (typeof uri !== "string" || !uri.startsWith("file://")) return null;
+  try {
+    return decodeURIComponent(new URL(uri).pathname);
+  } catch {
+    return null;
+  }
 }
 
 export function cursorAdapter(
   opts: { projects?: string | null; stateDb?: string | null; runtime?: HostRuntime } = {},
 ): SessionAdapter {
   const runtime = opts.runtime ?? hostRuntime(LOCAL_HOST);
+  const workspaceCache = new Map<string, { mtime: number; folder: string | null; ids: string[] }>();
+  const workspaceFolders = async (stateDb: string): Promise<Map<string, string>> => {
+    const storage = join(dirname(dirname(stateDb)), "workspaceStorage");
+    const folders = new Map<string, string>();
+    for (const file of await runtime.listFiles(storage)) {
+      if (!file.path.endsWith("state.vscdb")) continue;
+      let cached = workspaceCache.get(file.path);
+      if (cached?.mtime !== file.mtimeMs) {
+        let folder: string | null = null;
+        let ids: string[] = [];
+        try {
+          folder = folderFromUri(
+            JSON.parse(
+              new TextDecoder().decode(
+                await runtime.readFile(join(dirname(file.path), "workspace.json"), 64 * 1024),
+              ),
+            )?.folder,
+          );
+          if (folder)
+            ids = (
+              await runtime.sqliteQuery<{ id: string | null }>(
+                file.path,
+                `SELECT json_extract(c.value, '$.composerId') AS id
+                 FROM ItemTable, json_each(ItemTable.value, '$.allComposers') AS c
+                 WHERE ItemTable.key = 'composer.composerData'`,
+              )
+            ).flatMap((row) => (row.id ? [row.id] : []));
+        } catch {}
+        cached = { mtime: file.mtimeMs, folder, ids };
+        workspaceCache.set(file.path, cached);
+      }
+      if (cached.folder) for (const id of cached.ids) folders.set(id, cached.folder);
+    }
+    return folders;
+  };
   return {
     backend: "cursor",
     minIntervalMs: 30_000,
@@ -110,6 +162,7 @@ export function cursorAdapter(
             ).find((path): path is string => path !== null) ?? null)
           : opts.stateDb;
       if (stateDb && (await runtime.isFile(stateDb))) {
+        const folders = await workspaceFolders(stateDb);
         const rows = await runtime.sqliteQuery<{
           id: string;
           f: string | null;
@@ -118,27 +171,32 @@ export function cursorAdapter(
           `SELECT substr(key, 14) AS id,
                   json_extract(value, '$.name', '$.createdAt', '$.lastUpdatedAt',
                     '$.contextTokensUsed', '$.latestConversationSummary.summary.summary',
-                    '$.fullConversationHeadersOnly[0].grouping.textPreview') AS f
+                    '$.fullConversationHeadersOnly[0].grouping.textPreview',
+                    '$.subagentInfo.parentComposerId') AS f
            FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;'
              AND COALESCE(json_extract(value, '$.isArchived'), 0) = 0`,
         );
         for (const row of rows) {
           if (!row.f) continue;
-          const [name, created, updated, tokens, summary, preview] = JSON.parse(row.f) as [
+          const [name, created, updated, tokens, summary, preview, parent] = JSON.parse(row.f) as [
             string | null,
             number | null,
             number | null,
             number | null,
+            string | null,
             string | null,
             string | null,
           ];
           if (!name) continue;
           const last = updated ?? created ?? Date.now();
+          const folder = folders.get(row.id) ?? (parent ? folders.get(parent) : undefined);
           const text = summary || preview;
           byId.set(row.id, {
             backend: "cursor",
             externalId: row.id,
+            ...(parent ? { parentId: parent } : {}),
             title: oneLine(name, 120),
+            ...(folder ? { cwd: folder } : {}),
             summary: text ? oneLine(text, 400) : null,
             status: statusFromMtime(last),
             createdAt: new Date(created ?? last),
@@ -172,6 +230,7 @@ export function cursorAdapter(
           byId.set(r.externalId, {
             ...composer,
             ...r,
+            cwd: r.cwd ?? composer?.cwd ?? null,
             summary: composer?.summary ?? r.summary ?? null,
             tokensUsed: composer?.tokensUsed ?? r.tokensUsed ?? null,
           });

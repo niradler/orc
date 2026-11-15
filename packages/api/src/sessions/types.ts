@@ -5,6 +5,7 @@ export type SessionStatus = "running" | "idle" | "stopped";
 export type SessionRecord = {
   backend: string;
   externalId: string;
+  parentId?: string | null;
   title: string;
   summary?: string | null;
   cwd?: string | null;

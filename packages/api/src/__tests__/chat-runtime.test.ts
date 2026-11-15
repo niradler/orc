@@ -948,10 +948,10 @@ describe("native chat runtime", () => {
         },
       })}\n`,
     );
-    for (const [id, backend, status] of [
-      ["source-ended", "codex", "stopped"],
-      ["source-running", "codex", "running"],
-      ["source-other", "cursor", "stopped"],
+    for (const [id, backend, status, native] of [
+      ["source-ended", "codex", "stopped", "discovered-native"],
+      ["source-running", "codex", "running", "discovered-running"],
+      ["source-other", "cursor", "stopped", "discovered-native"],
     ] as const)
       getDb()
         .insert(gateway_sessions)
@@ -961,7 +961,7 @@ describe("native chat runtime", () => {
           mode: "direct",
           status,
           chat_id: LIVE_CHAT_ID,
-          runtime_session_id: "discovered-native",
+          runtime_session_id: native,
           cwd: home,
           transcript_path: transcript,
           title: id,

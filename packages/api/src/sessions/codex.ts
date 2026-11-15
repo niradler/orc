@@ -29,7 +29,18 @@ type ThreadRow = {
   created_at: number;
   updated_at_ms: number | null;
   updated_at: number;
+  source: string | null;
 };
+
+function codexParent(source: string | null): string | null {
+  if (!source?.startsWith("{")) return null;
+  try {
+    const parent = JSON.parse(source)?.subagent?.thread_spawn?.parent_thread_id;
+    return typeof parent === "string" && parent ? parent : null;
+  } catch {
+    return null;
+  }
+}
 
 export function codexAdapter(
   dbPath = CODEX_STATE_DB,
@@ -71,12 +82,19 @@ export function codexAdapter(
             ).map((row) => [row.thread_id, row.status]),
           );
         } catch {}
-        const rows = await runtime.sqliteQuery<ThreadRow>(
-          stateDb,
-          `SELECT id, title, name, cwd, preview, first_user_message, tokens_used, rollout_path,
-                  created_at_ms, created_at, updated_at_ms, updated_at
-           FROM threads WHERE archived = 0`,
-        );
+        const columns = `id, title, name, cwd, preview, first_user_message, tokens_used, rollout_path,
+                  created_at_ms, created_at, updated_at_ms, updated_at`;
+        const rows = await runtime
+          .sqliteQuery<ThreadRow>(
+            stateDb,
+            `SELECT ${columns}, source FROM threads WHERE archived = 0`,
+          )
+          .catch(() =>
+            runtime.sqliteQuery<ThreadRow>(
+              stateDb,
+              `SELECT ${columns}, NULL AS source FROM threads WHERE archived = 0`,
+            ),
+          );
         const lockDirectory = joinHost(home, "thread-writer-locks");
         const hasLockDirectory = await runtime.isDirectory(lockDirectory);
         const remoteOwnership =
@@ -120,6 +138,7 @@ export function codexAdapter(
             const record: SessionRecord = {
               backend: "codex",
               externalId: r.id,
+              ...(codexParent(r.source) ? { parentId: codexParent(r.source) } : {}),
               title: oneLine(
                 r.name ||
                   (displayPath(r.title) !== displayPath(r.cwd) ? r.title : "") ||

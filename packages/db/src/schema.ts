@@ -314,6 +314,7 @@ export const gateway_sessions = sqliteTable(
     backend: text("backend").notNull(),
     mode: text("mode").notNull(),
     runtime_session_id: text("runtime_session_id"),
+    parent_session_id: text("parent_session_id"),
     execution_host: text("execution_host"),
     cwd: text("cwd"),
     acpx_agent: text("acpx_agent"),
@@ -348,7 +349,10 @@ export const gateway_sessions = sqliteTable(
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
     updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
-  (t) => [index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at)],
+  (t) => [
+    index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at),
+    index("gateway_sessions_parent_idx").on(t.backend, t.parent_session_id),
+  ],
 );
 
 export const usage_events = sqliteTable(

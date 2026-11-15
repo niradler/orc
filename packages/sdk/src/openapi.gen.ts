@@ -18059,6 +18059,8 @@ export interface paths {
                     active?: "true" | "false";
                     /** @description Include sessions a human hid from the list */
                     include_hidden?: "true" | "false";
+                    /** @description Also return the subagent sessions of the listed sessions; limit counts top-level sessions only */
+                    include_children?: "true" | "false";
                     limit?: number;
                 };
                 header?: never;
@@ -23084,6 +23086,11 @@ export interface components {
             id: string;
             agent: string;
             session_id: string | null;
+            /**
+             * @description Live session id of the session that spawned this subagent
+             * @default null
+             */
+            parent_id: string | null;
             name: string | null;
             summary: string | null;
             tokens_used: number | null;

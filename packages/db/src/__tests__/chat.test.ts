@@ -46,6 +46,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: "source-session",
         host: "remote-a",
         projectId: null,
+        resumed: 0,
       },
       {
         id: "legacy",
@@ -56,6 +57,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
+        resumed: 0,
       },
       {
         id: "corrupt",
@@ -66,6 +68,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
+        resumed: 0,
       },
       {
         id: "wrong-types",
@@ -76,6 +79,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
+        resumed: 0,
       },
     ]);
     expect(JSON.stringify(summaries)).not.toContain("Private");
@@ -142,6 +146,7 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         sourceId: null,
         host: "host-b",
         projectId: null,
+        resumed: 0,
       },
       {
         id: "chat-host-a",
@@ -152,6 +157,7 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         sourceId: null,
         host: "host-a",
         projectId: null,
+        resumed: 0,
       },
     ]);
   } finally {
@@ -173,6 +179,7 @@ test("chat summaries expose project but not the working folder", () => {
       JSON.stringify({
         config: { agent: "codex" },
         projectId: "proj-shop",
+        resumed: 0,
         cwd: "/srv/shop",
         messages: [{ content: "Private message" }],
       }),
@@ -194,6 +201,7 @@ test("chat summaries expose project but not the working folder", () => {
         sourceId: null,
         host: null,
         projectId: "proj-shop",
+        resumed: 0,
       },
       {
         id: "unassigned",
@@ -204,6 +212,7 @@ test("chat summaries expose project but not the working folder", () => {
         sourceId: null,
         host: null,
         projectId: null,
+        resumed: 0,
       },
     ]);
     expect(JSON.stringify(summaries)).not.toContain("Private");

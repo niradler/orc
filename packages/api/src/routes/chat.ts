@@ -85,7 +85,7 @@ import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { SessionMessageStore } from "@orc/db/session-messages";
 import { SkillHistory } from "@orc/db/skill-history";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { rememberTerminalFolder } from "../git/registry.js";
@@ -103,6 +103,7 @@ import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
+import { isClaudeProcessName } from "../sessions/claude.js";
 import { projectIdFor } from "../sessions/common.js";
 import { notifySpawner, spawnChain } from "../sessions/control.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
@@ -927,12 +928,32 @@ app.openapi(
       },
     },
   }),
-  (c) =>
-    c.json({
-      threads: store()
-        .list()
-        .map((thread) => ({ ...thread, running: !!threadRun(thread.id) })),
-    }),
+  async (c) => {
+    const threads = store().list();
+    const sourceIds = [
+      ...new Set(threads.flatMap((thread) => (thread.sourceId ? [thread.sourceId] : []))),
+    ];
+    const sources = sourceIds.length
+      ? await getDb().query.gateway_sessions.findMany({
+          where: inArray(gateway_sessions.id, sourceIds),
+          columns: { id: true, title: true, display_title: true, cwd: true },
+        })
+      : [];
+    const sourceById = new Map(sources.map((row) => [row.id, row]));
+    const sourceTitle = (thread: (typeof threads)[number]) => {
+      const source = thread.sourceId ? sourceById.get(thread.sourceId) : undefined;
+      const title = source && (source.display_title ?? source.title);
+      if (!title) return null;
+      return thread.resumed || isClaudeProcessName(thread.title, source.cwd) ? title : null;
+    };
+    return c.json({
+      threads: threads.map(({ resumed, ...thread }) => ({
+        ...thread,
+        title: sourceTitle({ ...thread, resumed }) || thread.title,
+        running: !!threadRun(thread.id),
+      })),
+    });
+  },
 );
 app.openapi(
   createRoute({

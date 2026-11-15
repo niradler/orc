@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CLAUDE_TOKENS_VERSION = 1;
+export const CLAUDE_TOKENS_VERSION = 2;
 
 /** Bumped when a transcript parser gains a new request field; forces one re-index. */
 export const USAGE_EVENT_VERSION = 1;

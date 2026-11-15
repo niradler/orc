@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { changes } from "@orc/core/changes";
 import { OrcError } from "@orc/core/errors";
 import {
+  CLAUDE_TOKENS_VERSION,
   USAGE_EVENT_VERSION,
   USAGE_RAW_RETENTION_DAYS,
   UsageHistorySchema,
@@ -99,7 +100,8 @@ test("should exclude old Claude counts until they have been refreshed with cache
   expect(stale.totals.tokens).toBe(baseline.totals.tokens);
   expect(stale.totals.unknown_sessions).toBe(baseline.totals.unknown_sessions + 1);
   sqlite.run(
-    "UPDATE gateway_sessions SET tokens_used = 1500, tokens_version = 1 WHERE id = 'usage-old-claude'",
+    "UPDATE gateway_sessions SET tokens_used = 1500, tokens_version = ? WHERE id = 'usage-old-claude'",
+    [CLAUDE_TOKENS_VERSION],
   );
   const refreshed = UsageHistorySchema.parse(
     await (await app.request("/api/usage/history?days=0", { headers })).json(),
