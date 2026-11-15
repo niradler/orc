@@ -768,7 +768,7 @@ const presentationSpec = {
             "Done",
             "claude",
             "1 hour ago",
-            "Every cell keeps its full text in the title attribute",
+            "Every cell wraps and keeps its full text at every width",
           ],
         ],
       },
