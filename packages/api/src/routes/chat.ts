@@ -1807,7 +1807,10 @@ async function openChat(
       throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = body.permissionMode;
   }
-  if (body.sendWhileRunning !== undefined) thread.config.sendWhileRunning = body.sendWhileRunning;
+  // Only a new conversation adopts the composer preference; an existing one owns
+  // its setting, so another device cannot silently replace it.
+  if (!body.threadId && body.sendWhileRunning !== undefined)
+    thread.config.sendWhileRunning = body.sendWhileRunning;
   // The switch mutates the shared thread, so every check that can reject the request
   // runs first: from the busy check below to beginTurn's reservation there must be no
   // await, or concurrent sends could move the conversation under each other.

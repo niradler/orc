@@ -1019,7 +1019,9 @@ function useChatController() {
             providerId: config.providerId,
             model: config.model,
             agentOptions: config.agentOptions,
-            sendWhileRunning: config.sendWhileRunning,
+            // An open conversation keeps its stored choice; only a new one adopts
+            // the composer value.
+            ...(thread ? {} : { sendWhileRunning: config.sendWhileRunning }),
             ...(config.permissionMode && ["claude", "codex", "pi"].includes(config.agent)
               ? { permissionMode: config.permissionMode }
               : {}),
@@ -1428,21 +1430,21 @@ function useChatController() {
       const key = activeRef.current;
       const current = find(key);
       if (!current) return;
-      const previous = current.config;
-      setConfig({ ...current.config, sendWhileRunning });
+      const previous = current.config.sendWhileRunning;
+      update(key, (tab) => ({ config: { ...tab.config, sendWhileRunning } }));
       if (!current.thread) return;
       try {
         const updated = await api.chat.configure(current.thread.id, { sendWhileRunning });
         update(key, (tab) => (tab.thread?.id === updated.id ? { thread: updated } : {}));
       } catch (cause) {
         // Keep the composer on what the conversation actually stored.
-        setConfig(previous);
-        update(key, () => ({
+        update(key, (tab) => ({
+          config: { ...tab.config, sendWhileRunning: previous },
           error: message(cause, "The send preference could not be saved."),
         }));
       }
     },
-    [find, setConfig, update],
+    [find, update],
   );
   const applyAgentOptions = useCallback(
     async (agent: string, options: ChatAgentOptions) => {

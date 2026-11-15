@@ -261,11 +261,15 @@ test("a refused steer queues the message and an unconfirmed one is never resent"
   await conflict(undefined);
   await send.click();
   await expect(panel.getByTestId("chat-error")).toHaveCount(0);
-  await expect(page.locator('[data-testid="chat-message"][data-role="user"]').last()).toContainText(
-    "Unconfirmed text.",
-  );
+  // The fixture proves delivery: once this turn ends the queued message starts its
+  // own turn, so the transcript is not a stable place to read the steered text.
   const state = await page.evaluate(
-    () => Reflect.get(window, "steeringTest") as { nativeSteers: number; requests: string[] },
+    () =>
+      Reflect.get(window, "steeringTest") as {
+        nativeSteers: number;
+        requests: string[];
+        inputs: string[];
+      },
   );
   expect(state.nativeSteers).toBe(1);
   expect(state.inputs).toEqual(["Queue this one.", "Unconfirmed text.", "Unconfirmed text."]);
