@@ -28,39 +28,55 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Desktop-only server target. The remote page can read its status but not change it. */
-export function DesktopConnectionSettings() {
+/** The desktop app's current target, read from its bridge. */
+export function useDesktopConnectionState() {
   const bridge = desktopBridge()?.connection;
   const [state, setState] = useState<DesktopConnectionState | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(Boolean(bridge));
+  const [attempt, setAttempt] = useState(0);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry bumps attempt to re-read the bridge
+  useEffect(() => {
+    if (!bridge) return;
+    let active = true;
+    setLoading(true);
+    bridge
+      .state()
+      .then((next) => {
+        if (!active) return;
+        setState(next);
+        setLoadError("");
+      })
+      .catch((cause) => active && setLoadError(message(cause)))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [bridge, attempt]);
+
+  return { bridge, state, loadError, loading, retry: () => setAttempt((current) => current + 1) };
+}
+
+/** Desktop-only server target. The remote page can read its status but not change it. */
+export function DesktopConnectionSettings() {
+  const { bridge, state, loadError, loading } = useDesktopConnectionState();
   const [mode, setMode] = useState<DesktopConnectionMode>("local");
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [headers, setHeaders] = useState<DesktopHeaderPair[]>([]);
   const [clearToken, setClearToken] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"test" | "save" | null>(null);
   const [result, setResult] = useState<TestResult | null>(null);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
 
   useEffect(() => {
-    if (!bridge) return;
-    let active = true;
-    bridge
-      .state()
-      .then((next) => {
-        if (!active) return;
-        setState(next);
-        setMode(next.mode);
-        setUrl(next.url);
-        setHeaders(next.headers);
-      })
-      .catch((cause) => active && setError(message(cause)))
-      .finally(() => active && setLoading(false));
-    return () => {
-      active = false;
-    };
-  }, [bridge]);
+    if (!state) return;
+    setMode(state.mode);
+    setUrl(state.url);
+    setHeaders(state.headers);
+  }, [state]);
 
   if (!bridge) return null;
 
@@ -124,6 +140,7 @@ export function DesktopConnectionSettings() {
   };
   const setHeader = (index: number, patch: Partial<DesktopHeaderPair>) =>
     setHeaders((current) => current.map((pair, i) => (i === index ? { ...pair, ...patch } : pair)));
+  const shownError = error || loadError;
 
   return (
     <div data-testid="desktop-connection" className="space-y-6">
@@ -284,14 +301,16 @@ export function DesktopConnectionSettings() {
             : `Reached ORC ${result.version}. Sign in on the remote dashboard, or add a token above.`}
         </p>
       )}
-      {(error || feedback) && (
+      {(shownError || feedback) && (
         <p
-          role={error ? "alert" : "status"}
+          role={shownError ? "alert" : "status"}
           data-testid="desktop-connection-feedback"
-          className={error ? "flex gap-2 text-sm text-error" : "flex gap-2 text-sm text-secondary"}
+          className={
+            shownError ? "flex gap-2 text-sm text-error" : "flex gap-2 text-sm text-secondary"
+          }
         >
-          {error && <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />}
-          {error || feedback}
+          {shownError && <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />}
+          {shownError || feedback}
         </p>
       )}
     </div>

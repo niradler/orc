@@ -59,7 +59,7 @@ listing hides preview tools. Credentials remain in the Authorization header.
 All tools except `preview_request_get` take `session_id`; action/open tools also
 accept `client_id` when multiple desktops view that session. Requests target one
 desktop, never broadcast. No matching desktop or ambiguous targeting fails.
-Browser control is on by default. **Settings → Browser** can disable it globally,
+Browser control is on by default. **Settings → General → Browser** can disable it globally,
 and **Allow agent browser control** in the chat's **Session settings** can disable
 it per chat, before opening a preview.
 Both switches survive app restarts. Browser tools cannot access the ORC renderer,
@@ -208,7 +208,7 @@ tool_invoke({ name: "task_create", arguments: { title: "Fix login redirect", pro
 
 ## Prompts
 
-The server also lists MCP prompts defined in **Settings → MCP** (API: `GET`/`PATCH /api/settings/mcp`). Each prompt accepts one optional argument, `request`.
+The server also lists MCP prompts defined in **Settings → Agents → MCP** (API: `GET`/`PATCH /api/settings/mcp`). Each prompt accepts one optional argument, `request`.
 
 ## Calling tools over REST
 

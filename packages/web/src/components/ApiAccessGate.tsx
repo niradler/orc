@@ -15,6 +15,7 @@ import {
   toDateInput,
   type WorkspacePreferences,
 } from "@/lib/api-credentials";
+import { readPreviousApiUrl, restorePreviousApiHost } from "@/lib/api-hosts";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
 import { setTheme } from "@/lib/theme";
 
@@ -109,6 +110,13 @@ export function ApiAccessGate({ children }: { children: ReactNode }) {
     }
   }
 
+  const previousUrl = readPreviousApiUrl();
+  const backToPrevious = () => {
+    if (!restorePreviousApiHost()) return;
+    setState("checking");
+    setConnection({ url: getApiUrl() });
+  };
+
   if (state === "ready") return children;
   if (state !== "login")
     return (
@@ -119,12 +127,23 @@ export function ApiAccessGate({ children }: { children: ReactNode }) {
           ) : (
             <>
               <p role="alert">{error}</p>
-              <Button
-                data-testid="api-access-retry"
-                onClick={() => setConnection({ url: getApiUrl() })}
-              >
-                Retry connection
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  data-testid="api-access-retry"
+                  onClick={() => setConnection({ url: getApiUrl() })}
+                >
+                  Retry connection
+                </Button>
+                {previousUrl && (
+                  <Button
+                    variant="outline"
+                    data-testid="api-access-previous"
+                    onClick={backToPrevious}
+                  >
+                    Back to previous server
+                  </Button>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -195,6 +214,18 @@ export function ApiAccessGate({ children }: { children: ReactNode }) {
             >
               {pending ? "Signing in…" : "Sign in"}
             </Button>
+            {previousUrl && (
+              <Button
+                data-testid="api-login-previous"
+                className="w-full"
+                type="button"
+                variant="ghost"
+                disabled={pending}
+                onClick={backToPrevious}
+              >
+                Back to previous server
+              </Button>
+            )}
           </form>
         </Dialog.Content>
       </Dialog.Portal>

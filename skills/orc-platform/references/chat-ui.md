@@ -82,7 +82,7 @@ Here is the task and what else is in progress:
 
 ## MCP defaults and prompts
 
-Settings → MCP controls the server's default tool mode (`meta` or `full`) and
+Settings → Agents → MCP controls the server's default tool mode (`meta` or `full`) and
 named MCP prompts. An explicit HTTP `?mode=` or CLI `--mode` overrides the default.
 New internal chat/channel connections use the configured default too. Restart
 existing stdio clients after a settings change.

@@ -2,7 +2,7 @@
 
 Review companion for [PR #126](https://github.com/niradler/orc/pull/126). These are screenshots of the running ORC UI with fixture data, not mockups. Credentials are blank or test-only; generated project names identify isolated test data. The routing screenshots reflect the visual condition builder and explicit Otherwise fallback added after the original gallery. Other screenshots retain unchanged setup and chat behavior.
 
-## Desktop: Settings → Channels
+## Desktop: Settings → Connections → Channels
 
 Connections are managed in Settings. Editors expose provider credentials, verification and pairing; recipients, shortcuts and routes expand on demand.
 

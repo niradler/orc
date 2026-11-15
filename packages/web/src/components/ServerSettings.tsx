@@ -10,7 +10,7 @@ export function ServerSettings() {
   return (
     <section aria-labelledby="server-title">
       <h2 id="server-title" className="mb-1 text-base font-medium">
-        ORC server
+        Server maintenance
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
         Restart ORC to reload server and host information. This closes active terminals and may

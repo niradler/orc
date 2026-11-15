@@ -117,14 +117,55 @@ export async function closeChatHistory(page: Page): Promise<void> {
     await page.keyboard.press("Escape");
 }
 
+/** Old section ids still used by tests and bookmarks, mapped onto the grouped settings panels. */
+const settingsTargets: Record<
+  string,
+  { group: string; agentsTab?: string; connectionsTab?: string }
+> = {
+  connection: { group: "hosts" },
+  appearance: { group: "general" },
+  terminals: { group: "general" },
+  browser: { group: "general" },
+  execution: { group: "hosts" },
+  agents: { group: "agents" },
+  chat: { group: "agents", agentsTab: "chat" },
+  mcp: { group: "agents", agentsTab: "mcp" },
+  channels: { group: "connections", connectionsTab: "channels" },
+  integrations: { group: "connections", connectionsTab: "integrations" },
+  server: { group: "about" },
+  storage: { group: "about" },
+  attention: { group: "notifications" },
+};
+
 export async function settingsSection(page: Page, section: string): Promise<void> {
-  const mobile = page.getByRole("combobox", { name: "Settings section", exact: true });
-  await expect(
-    mobile
-      .or(page.getByTestId(`settings-section-${section}`))
-      .filter({ visible: true })
-      .first(),
-  ).toBeVisible();
-  if (await mobile.isVisible()) await mobile.selectOption(section);
-  else await page.getByTestId(`settings-section-${section}`).click();
+  const target = settingsTargets[section] ?? { group: section };
+  const back = page.getByTestId("settings-back");
+  const phoneItem = page.getByTestId(`settings-list-${target.group}`);
+  const navItem = page.getByTestId(`settings-section-${target.group}`);
+  // Wait through the sign-in check. A phone shows either the section list or an open panel.
+  await expect(phoneItem.or(navItem).or(back).filter({ visible: true }).first()).toBeVisible();
+  if (await back.isVisible()) {
+    // A panel may already be open; return to the list only to reach a different group.
+    const openGroup = await page.getByTestId("settings-detail").getAttribute("data-group");
+    if (openGroup !== target.group) {
+      await back.click();
+      await expect(phoneItem).toBeVisible();
+    }
+  }
+  if (await phoneItem.isVisible()) {
+    await phoneItem.click();
+    await expect(back).toBeVisible();
+  } else if (await navItem.isVisible()) {
+    await navItem.click();
+  }
+  if (target.agentsTab) {
+    const tab = page.getByTestId(`agents-tab-${target.agentsTab}`);
+    await expect(tab).toBeVisible();
+    await tab.click();
+  }
+  if (target.connectionsTab) {
+    const tab = page.getByTestId(`connections-tab-${target.connectionsTab}`);
+    await expect(tab).toBeVisible();
+    await tab.click();
+  }
 }

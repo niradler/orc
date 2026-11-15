@@ -608,7 +608,7 @@ export function ChatPanel({
                     <p className="truncate text-xs text-muted-foreground">
                       <span data-testid="session-project-breadcrumb">{projectName}</span>
                       {" · "}
-                      {thread?.host ?? "local"}
+                      {thread?.host ?? "this server"}
                     </p>
                   </div>
                   {streaming && (
