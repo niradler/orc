@@ -24,6 +24,7 @@ import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { ChatSendModeSelect } from "@/components/ChatSendModeSelect";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Highlight } from "@/components/Highlight";
 import { SessionArchiveView } from "@/components/SessionArchiveView";
@@ -982,7 +983,7 @@ export function ChatConversationInfo({
     last_activity_at: string | null;
   } | null;
 }) {
-  const { config, changePermissions, thread, streaming } = useChat();
+  const { config, changePermissions, changeSendMode, thread, streaming } = useChat();
   const preview = useDesktopPreview();
   const capabilities = useAgentCapabilities(config.agent, thread);
   const analytics = chatAnalytics(thread?.messages ?? []);
@@ -1067,7 +1068,7 @@ export function ChatConversationInfo({
                       capabilities.resume && "Resume",
                       capabilities.approvals && "Approvals in chat",
                       capabilities.questions && "Questions",
-                      capabilities.steering && "Send now",
+                      capabilities.steering && "Steering",
                       capabilities.interrupt && "Native stop",
                     ]
                       .filter(Boolean)
@@ -1114,6 +1115,11 @@ export function ChatConversationInfo({
             <ChatPermissionSelect
               config={config}
               onChange={(next) => void changePermissions(next)}
+            />
+            <ChatSendModeSelect
+              config={config}
+              thread={thread}
+              onChange={(next) => void changeSendMode(next.sendWhileRunning)}
             />
             <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
             <div className="text-sm">

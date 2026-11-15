@@ -861,8 +861,13 @@ export const api = {
       }>("GET", `/chat/threads/${encodeURIComponent(id)}/session`),
     refresh: (id: string) =>
       req<ChatThread>("POST", `/chat/threads/${encodeURIComponent(id)}/refresh`),
-    configure: (id: string, agentOptions: ChatThread["config"]["agentOptions"]) =>
-      req<ChatThread>("PATCH", `/chat/threads/${encodeURIComponent(id)}/config`, { agentOptions }),
+    configure: (
+      id: string,
+      patch: {
+        agentOptions?: ChatThread["config"]["agentOptions"];
+        sendWhileRunning?: ChatThread["config"]["sendWhileRunning"];
+      },
+    ) => req<ChatThread>("PATCH", `/chat/threads/${encodeURIComponent(id)}/config`, patch),
     history: (id: string, before: number) =>
       req<ChatHistoryPage>("GET", `/chat/threads/${encodeURIComponent(id)}/history`, undefined, {
         before,

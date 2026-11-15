@@ -502,6 +502,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -791,6 +796,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -1022,6 +1032,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -1256,6 +1271,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -1537,6 +1557,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -1741,7 +1766,7 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        agentOptions: {
+                        agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
                                 runtime: "pi";
@@ -1791,6 +1816,8 @@ export interface paths {
                                 args: string[];
                             };
                         };
+                        /** @enum {string} */
+                        sendWhileRunning?: "steer" | "queue";
                     };
                 };
             };
@@ -1829,6 +1856,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -2151,6 +2183,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -2439,6 +2476,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -2709,6 +2751,8 @@ export interface paths {
                         autoApprove?: boolean;
                         /** @enum {string} */
                         permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        /** @enum {string} */
+                        sendWhileRunning?: "steer" | "queue";
                         agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
@@ -7448,6 +7492,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -7561,6 +7610,11 @@ export interface paths {
                             autoApprove?: boolean;
                             /** @enum {string} */
                             permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                            /**
+                             * @default steer
+                             * @enum {string}
+                             */
+                            sendWhileRunning?: "steer" | "queue";
                             /** @default {} */
                             agentOptions?: {
                                 [key: string]: {
@@ -7664,6 +7718,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
