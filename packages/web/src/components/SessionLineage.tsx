@@ -36,7 +36,7 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
   async function openNode(node: Node): Promise<void> {
     setError(null);
     if (node.kind === "session") {
-      navigate(`/sessions?session=${encodeURIComponent(node.id)}&project=all`);
+      navigate(`/chat?sessionView=${encodeURIComponent(node.id)}&project=all`);
       return;
     }
     try {

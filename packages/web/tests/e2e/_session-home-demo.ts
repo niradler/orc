@@ -141,6 +141,14 @@ export async function mockSessionHome(page: Page, now = Date.now()) {
   await page.route("**/api/sessions/live?**", (r) =>
     r.fulfill({ json: { sessions: live, total: live.length, has_more: false } }),
   );
+  await page.route("**/api/sessions/live/*/transcript?**", (r) =>
+    r.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
+  );
+  await page.route(/\/api\/sessions\/live\/([^/?]+)$/, (r) => {
+    const id = new URL(r.request().url()).pathname.split("/").pop();
+    const match = live.find((session) => session.id === id);
+    return match ? r.fulfill({ json: match }) : r.fallback();
+  });
   await page.route("**/api/sessions/archive?**", (r) =>
     r.fulfill({ json: { sessions: [], has_more: false } }),
   );

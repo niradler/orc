@@ -103,7 +103,7 @@ export function ChatConversationInfo({
                       capabilities.resume && "Resume",
                       capabilities.approvals && "Approvals in chat",
                       capabilities.questions && "Questions",
-                      capabilities.steering && "Send now",
+                      capabilities.steering && "Steering",
                       capabilities.interrupt && "Native stop",
                     ]
                       .filter(Boolean)

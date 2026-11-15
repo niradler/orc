@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { showSessionSection } from "./_chat-ui";
 import { gotoView } from "./_helpers";
 
 test("history sidebar resizes by dragging and keyboard, persists and resets", async ({
@@ -21,6 +22,7 @@ test("history sidebar resizes by dragging and keyboard, persists and resets", as
   await gotoView(page, "tasks");
   await page.getByTestId("chat-open-button").click();
   await page.getByTestId("chat-fullscreen-button").click();
+  await showSessionSection(page, "recents");
   const handle = page.getByTestId("chat-history-resize");
   const sidebar = page.getByTestId("chat-session-sidebar");
   await expect(sidebar.getByTestId("chat-resume-thread")).toHaveCount(6);

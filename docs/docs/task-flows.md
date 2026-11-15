@@ -39,7 +39,7 @@ issue labels are copied to tags on first import. Comments are not synchronized.
 Imported and newly adopted issues have automatic agent execution disabled, including
 automatic review. You can explicitly start a workflow from task detail.
 
-Connected sessions use the same task ID and the normal **Sessions** task picker.
+Connected sessions use the same task ID and the normal session task picker in the session viewer.
 Session links, local comments, related-task links, priority, progress and workflow
 settings survive GitHub issue resync. Titles and descriptions remain managed in GitHub.
 

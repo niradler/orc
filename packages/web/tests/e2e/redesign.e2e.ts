@@ -29,8 +29,8 @@ test("themes persist, grouped navigation works, and the mobile project shortcut 
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByTestId("nav-activity").click();
-  await page.getByTestId("nav-sessions").click();
-  await expect(page).toHaveURL(/\/sessions/);
+  await page.getByTestId("nav-chat").click();
+  await expect(page).toHaveURL(/\/chat/);
   await page.getByTestId("nav-library").click();
   await page.getByTestId("nav-rules").click();
   await expect(page).toHaveURL(/\/rules/);

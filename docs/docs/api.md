@@ -248,7 +248,7 @@ setup.
 | `POST` | `/jobs/{id}/trigger` | Run now; `?sync=true` waits and returns output |
 | `GET` | `/jobs/{id}/runs` | Run history |
 | `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
-| `GET` | `/jobs/{id}/runs/{runId}/session` | Resolve this run's native conversation; returns `{ session_id }` for Sessions, or `null` if unavailable |
+| `GET` | `/jobs/{id}/runs/{runId}/session` | Resolve this run's native conversation; returns `{ session_id }` for the session viewer, or `null` if unavailable |
 | `GET` `POST` | `/webhooks` | List / create webhooks |
 | `PATCH` `DELETE` | `/webhooks/{id}` | Update / delete |
 | `POST` | `/webhooks/{token}` (no `/api`) | Receive a signed delivery |
@@ -298,6 +298,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
 | `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones |
+| `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |

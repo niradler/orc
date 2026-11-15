@@ -166,19 +166,24 @@ export async function gotoView(
       API_SECRET,
     );
   }
+  if (view === "sessions") {
+    // The chat page owns the session list now; its session view is the Recents tab.
+    await page.addInitScript(() => localStorage.setItem("orc_chat_history_section_v2", "recents"));
+  }
   const paths: Partial<Record<typeof view, string>> = {
     notifications: "activity?notifications=open",
     memories: "knowledge/memories",
     knowledge: "knowledge/base",
     agents: "packages/agents",
     scratchpads: "scratchpad",
+    sessions: "chat?sessionList=show",
   };
   const path = paths[view] ?? view;
   await page.goto(`/${path}`);
 }
 
 export async function selectProject(page: Page, id: string): Promise<void> {
-  await page.getByRole("banner").waitFor();
+  await page.getByRole("banner").first().waitFor();
   const mobile = page.getByTestId("mobile-nav-open");
   if ((await mobile.isVisible()) && !(await page.getByTestId("mobile-nav-drawer").isVisible()))
     await mobile.click();

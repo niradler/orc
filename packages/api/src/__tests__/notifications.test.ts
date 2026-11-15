@@ -214,7 +214,8 @@ test("should leave a completed turn linked to its active chat and move the next 
   recordObservedNotification({ ...event, activity: Date.now() }, () => true);
   await Bun.sleep(1100);
   expect(items()).toHaveLength(1);
-  expect(items()[0]?.path).toContain(`session=${nativeId}`);
+  // The native session now opens through the chat page's live-session link.
+  expect(items()[0]?.path).toContain(`/chat?sessionLive=${nativeId}`);
   expect(items()[0]?.read_at).toBeNull();
   expect(sqlite.query("SELECT id FROM notifications WHERE source_id=?").get(thread.id)).toBeNull();
 });
