@@ -13,7 +13,7 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useRef } from "react";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ArchiveResumeForm, ProjectGroup, SubagentList } from "@/components/ChatControls";
@@ -111,7 +111,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
     agentGroups,
   } = history;
   const renderRow = (entry: ChatHistoryEntry, project: string | null): ReactNode => (
-    <div key={entry.id}>
+    <Fragment key={entry.id}>
       <MobileHistoryRow
         entry={entry}
         state={stateOf(entry)}
@@ -127,7 +127,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
           {entry.children.map((child) => renderRow(child, null))}
         </SubagentList>
       ) : null}
-    </div>
+    </Fragment>
   );
   const root = useRef<HTMLElement>(null);
   const { ref: freezeRef, ...freezeProps } = stable.listProps;
