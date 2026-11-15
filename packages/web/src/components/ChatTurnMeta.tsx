@@ -12,7 +12,7 @@ export function ChatTurnDivider({ divider }: { divider: ChatDivider }) {
   return (
     <div
       data-testid={`chat-turn-divider-${divider.type === "model" ? "model" : "compaction"}`}
-      className="mx-auto mb-3 flex w-full max-w-3xl items-center gap-2 text-xs text-on-surface-variant"
+      className="mx-auto mb-3 flex w-full max-w-(--chat-width) items-center gap-2 text-xs text-on-surface-variant"
     >
       <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-outline-variant" />
       <span className="flex min-w-0 items-center gap-1.5">

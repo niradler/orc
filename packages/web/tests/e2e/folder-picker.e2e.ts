@@ -167,17 +167,17 @@ for (const entry of ["chat", "terminal"] as const) {
           document.documentElement.style.colorScheme = theme;
         }, theme);
         // Dialog colors transition when the theme changes; capture the settled, readable state.
-        const foreground = theme === "dark" ? "rgb(229, 229, 229)" : "rgb(37, 38, 42)";
+        const foreground = theme === "dark" ? "rgb(236, 234, 228)" : "rgb(37, 38, 42)";
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         await expect(dialog).toHaveCSS(
           "background-color",
-          theme === "dark" ? "rgb(28, 28, 28)" : "rgb(243, 243, 245)",
+          theme === "dark" ? "rgb(48, 48, 46)" : "rgb(243, 243, 245)",
         );
         await expect(dialog).toHaveCSS("color", foreground);
         await expect(application).toHaveCSS("color", foreground);
         await expect(page.getByTestId("remote-folder-browser")).toHaveCSS(
           "background-color",
-          theme === "dark" ? "rgb(0, 0, 0)" : "rgb(250, 250, 250)",
+          theme === "dark" ? "rgb(31, 31, 30)" : "rgb(250, 250, 250)",
         );
         const colors = await dialog.evaluate((element) => {
           const style = getComputedStyle(element);

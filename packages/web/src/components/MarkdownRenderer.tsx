@@ -143,11 +143,13 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   children,
   wikiLinks,
   readable = false,
+  chat = false,
   previewLinks = false,
 }: {
   children: string;
   wikiLinks?: WikiLinks;
   readable?: boolean;
+  chat?: boolean;
   previewLinks?: boolean;
 }) {
   const { theme } = useTheme();
@@ -221,7 +223,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
             // Streamdown spaces its blocks with space-y, whose sibling selector outranks plain
             // descendant rules, so block spacing here is marked important.
             "text-base leading-[1.65] text-on-surface *:my-4! [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:text-sm [&_:is(h1,h2,h3,h4,h5,h6)]:mb-2! [&_:is(h1,h2,h3,h4,h5,h6)]:font-medium [&_:is(h1,h2,h3,h4,h5,h6)]:leading-snug [&_h1]:mt-10! [&_h1]:text-2xl [&_h2]:mt-8! [&_h2]:text-xl [&_h3]:mt-6! [&_h3]:text-lg [&_:is(h4,h5,h6)]:mt-5! [&_:is(h4,h5,h6)]:text-base [&>:is(ul,ol)]:my-3! [&_:is(ul,ol)]:list-outside [&_:is(ul,ol)]:pl-6 [&_li]:py-0.5 [&_li>:is(ul,ol)]:my-1 [&_img]:max-w-full [&_table]:text-sm [&>*:first-child]:mt-0! [&>*:last-child]:mb-0!"
-          : "text-sm leading-relaxed text-on-surface [&_p]:my-2 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:text-xs [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_ul]:my-2 [&_ol]:my-2",
+          : chat
+            ? "text-on-surface [&_p]:my-3 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:text-[0.8125em] [&_:is(h1,h2,h3,h4)]:mt-6 [&_:is(h1,h2,h3,h4)]:mb-2 [&_:is(h1,h2,h3,h4)]:font-semibold [&_:is(h1,h2,h3,h4)]:leading-snug [&_h1]:text-[1.375em] [&_h2]:text-[1.25em] [&_h3]:text-[1.125em] [&_h4]:text-[1em] [&_:is(ul,ol)]:my-3 [&_li]:py-0.5 [&_table]:text-[0.875em] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+            : "text-sm leading-relaxed text-on-surface [&_p]:my-2 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:text-xs [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_ul]:my-2 [&_ol]:my-2",
       )}
     >
       {children}

@@ -38,6 +38,29 @@ theme command in the command palette:
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
 
+### Appearance
+
+**Settings → General → Appearance** sets how ORC reads on each device. Theme is saved on
+the server; everything else is saved in this browser, so a phone and a desktop keep their
+own choices.
+
+| Setting | Options | Default |
+|---|---|---|
+| Dark background | Charcoal, Black | Charcoal |
+| Interface font | System, Inter, Geist | System (SF Pro on macOS, Segoe UI on Windows) |
+| Interface text on desktop / on phone | Small, Default, Large, Extra large | Default |
+| Chat message font | Same as interface, System, Inter, Geist, Serif | Same as interface |
+| Chat text on desktop / on phone | Small (15px), Default (16px), Large (18px), Extra large (20px) | Large on desktop, Default on phone |
+| Chat width | Comfortable, Wide, Full | Wide |
+
+Phone sizes apply below 768px wide, so resizing a desktop window switches between them.
+Chat text, its 1.65 line height and slight letter spacing apply to chat answers and to the
+read-only session viewer; terminals keep their own font.
+
+![Chat reading on desktop](/screens/chat-reading-desktop.png)
+
+![Appearance settings](/screens/settings-appearance-desktop.png)
+
 ## Chat page
 
 **Chat** in the sidebar opens the chat page at `/chat`. It is a
@@ -526,7 +549,7 @@ does not change the saved HTML. Custom CSS and JavaScript still work.
 Pin the kit stylesheet in your HTML head to keep its version as the kit evolves:
 
 ```html
-<meta name="orc-kit" content="1">
+<meta name="orc-kit" content="2">
 ```
 
 Bundled older versions remain available. A missing or unknown version uses the
@@ -557,7 +580,7 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 
 | Section       | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| General       | Theme (dark or light, saved on the server), interface font size — default, large or extra large — saved in this browser, terminal font for new terminals, and the desktop preview browser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| General       | Theme (dark or light, saved on the server); dark background, interface and chat fonts, interface and chat text sizes for desktop and phone, and chat width, saved in this browser (see [Appearance](#appearance)); terminal font for new terminals; and the desktop preview browser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Hosts         | One list of hosts with **API** and **SSH** type badges. **API** rows are ORC servers this client can talk to: in a browser, save several server addresses with optional access tokens and proxy headers, then switch between them; the desktop app keeps its local/remote choice, token and headers in its data folder. The **SSH** row is where that server runs agents, terminals and git: **Local**'s own machine, which carries both badges because it also serves the dashboard, or an alias from its `~/.ssh/config`.                                                                                                                                                                                                                                                                                     |
 | Agents        | **Providers** chooses which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. **Chat** sets default models, instructions, tools and permission mode. **MCP** builds the MCP config snippet for your agent; see [Connect agents](./connect-agents.md). |
 | Connections   | **Channels** connects Telegram and Slack. **Integrations** manages APIs and MCP servers in the `spec` CLI registry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |

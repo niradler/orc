@@ -1195,7 +1195,7 @@ export function ChatPanel({
                   {messages.length === 0 && !streaming && (
                     <div
                       className={cn(
-                        "chat-empty-state mx-auto flex w-full max-w-3xl flex-col gap-2",
+                        "chat-empty-state mx-auto flex w-full max-w-(--chat-width) flex-col gap-2",
                         hero ? "px-4 pt-2" : "flex-1 justify-center",
                       )}
                     >
@@ -1229,7 +1229,7 @@ export function ChatPanel({
                             data-testid="chat-message"
                             data-role={message.role}
                             data-message-id={message.id}
-                            className="group/message mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
+                            className="group/message mx-auto mb-3 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
                               className={
@@ -1430,7 +1430,7 @@ export function ChatPanel({
                 }
                 data-testid="chat-message-queue"
                 aria-label="Pending messages"
-                className="group mx-auto w-full max-w-[calc(48rem+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
+                className="group mx-auto w-full max-w-[calc(var(--chat-width)+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
               >
                 <summary
                   data-testid="chat-queue-toggle"
@@ -1487,7 +1487,7 @@ export function ChatPanel({
               )}
             >
               {agentRunning && (
-                <div className="mx-auto mb-1.5 w-full max-w-3xl px-2">
+                <div className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2">
                   <p
                     data-testid="chat-agent-running"
                     role="status"
@@ -1510,7 +1510,7 @@ export function ChatPanel({
               {contextHint && (
                 <div
                   data-testid="chat-context-hint"
-                  className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-1 px-2 text-xs text-on-surface-variant"
+                  className="mx-auto mb-1.5 flex w-full max-w-(--chat-width) items-center gap-1 px-2 text-xs text-on-surface-variant"
                 >
                   <p className="min-w-0 flex-1">{contextHint.text}</p>
                   <HelpPopover label="large context" testId="chat-context-hint-help">
@@ -1523,7 +1523,7 @@ export function ChatPanel({
                 <p
                   role="status"
                   data-testid="chat-selection-saved"
-                  className="mx-auto mb-1.5 w-full max-w-3xl px-2 text-xs text-on-surface-variant"
+                  className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
                 >
                   Saved to{" "}
                   <Link
@@ -1552,7 +1552,7 @@ export function ChatPanel({
                     addFiles(Array.from(event.dataTransfer.files));
                   }
                 }}
-                className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+                className="chat-composer-box mx-auto w-full max-w-(--chat-width) rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
               >
                 {files.length > 0 && (
                   <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">
