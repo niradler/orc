@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatThread } from "@orc/core/chat";
@@ -11,7 +11,7 @@ import { z } from "zod";
 import { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
-const root = mkdtempSync(join(tmpdir(), "orc-rules-api-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-rules-api-")));
 let app: ReturnType<typeof createApp>;
 beforeAll(() => {
   app = setupTestApp();

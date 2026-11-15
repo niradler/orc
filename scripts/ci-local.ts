@@ -2,7 +2,7 @@
  * Local replacement for the GitHub Actions gates.
  *
  *   bun run ci           # lint, format, typecheck, every package's unit tests
- *   bun run ci:changed   # the same, limited to packages changed since master
+ *   bun run ci:changed   # the same, limited to changed packages and the dependent tests they reach
  *   bun run ci:pr        # changed packages plus the @sanity browser flows
  *   bun run ci:full      # every unit test plus the full browser suite
  *
@@ -20,7 +20,7 @@ import {
   readPackageDomains,
   selectDomains,
 } from "./ci-domains.js";
-import { packageTestSteps, type Step } from "./ci-plan.js";
+import { packageTestSteps, type Step, typecheckSteps } from "./ci-plan.js";
 
 const args = process.argv.slice(2);
 const changedFlag = args.indexOf("--changed");
@@ -33,7 +33,6 @@ const wantsSanity = args.includes("--sanity");
 const steps: Step[] = [
   ["Lint", ["bun", "run", "lint"]],
   ["Biome check", ["bun", "x", "biome", "check", "./packages", "./scripts"]],
-  ["Typecheck", ["bun", "run", "typecheck"]],
   ["Domain ownership", ["bun", "test", "scripts/ci-domains.test.ts"]],
   ["Push hook tests", ["bun", "test", "scripts/pre-push.test.ts"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],
@@ -54,6 +53,7 @@ if (wantsChangeScope) {
   if (selection.reasons.length === 0) console.log("- nothing");
   for (const reason of selection.reasons) console.log(`- ${reason}`);
 }
+steps.splice(2, 0, ...typecheckSteps(selection));
 steps.push(...packageTestSteps(repoRoot, selection, { e2e: wantsE2e, sanity: wantsSanity }));
 if (args.includes("--plan")) {
   for (const [name, command] of steps) console.log(`${name}: ${command.join(" ")}`);
