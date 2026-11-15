@@ -256,7 +256,8 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
   const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
   const timeline: NonNullable<SessionCacheUsage["timeline"]> = [];
   let codexTotal: number | null = null;
-  if (backend === "claude") result.compactions = compactions;
+  result.compactions = compactions;
+  const codexCompactedAt: number[] = [];
   const seen = new Set<string>();
   for (const line of new TextDecoder().decode(bytes).split("\n")) {
     let row: Record<string, unknown>;
@@ -329,6 +330,15 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
         output_tokens: value.output_tokens ?? null,
       });
     } else {
+      if (row.type === "compacted") {
+        compactions.push({
+          recorded_at: recordedAt,
+          pre_tokens: timeline.at(-1)?.context_tokens ?? null,
+          post_tokens: null,
+        });
+        codexCompactedAt.push(timeline.length);
+        continue;
+      }
       const payload = object(row.payload);
       if (row.type !== "event_msg" || payload.type !== "token_count") continue;
       const info = object(payload.info);
@@ -361,6 +371,10 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       }
     }
   }
+  codexCompactedAt.forEach((at, index) => {
+    const compaction = compactions[index];
+    if (compaction) compaction.post_tokens = timeline[at]?.context_tokens ?? null;
+  });
   if (timeline.length) result.timeline = downsample(timeline);
   return result;
 }

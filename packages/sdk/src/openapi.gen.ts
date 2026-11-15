@@ -1643,6 +1643,10 @@ export interface paths {
                                 failures: number;
                             }[];
                             toolTotal: number;
+                            skills: {
+                                name: string;
+                                loads: number;
+                            }[];
                             turnTimeline: {
                                 index: number;
                                 startedAt: number;
@@ -18362,6 +18366,10 @@ export interface paths {
                                 failures: number;
                             }[];
                             toolTotal: number;
+                            skills: {
+                                name: string;
+                                loads: number;
+                            }[];
                             turnTimeline: {
                                 index: number;
                                 startedAt: number;

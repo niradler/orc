@@ -77,6 +77,38 @@ test("should count Claude compactions with their before and after context size",
   expect(result.timeline?.map((point) => point.context_tokens)).toEqual([100, 55]);
 });
 
+test("should count Codex compactions with the context before and after them", () => {
+  const usage = (timestamp: string, input: number, total: number) => ({
+    type: "event_msg",
+    timestamp,
+    payload: {
+      type: "token_count",
+      info: {
+        last_token_usage: { input_tokens: input, cached_input_tokens: 0 },
+        total_token_usage: { input_tokens: total, cached_input_tokens: 0, output_tokens: 1 },
+      },
+    },
+  });
+  const result = readSessionCacheUsage(
+    "codex",
+    bytes([
+      usage("2026-11-06T12:00:00Z", 180_000, 180_000),
+      { type: "compacted", timestamp: "2026-11-06T12:05:00Z", payload: { message: "summary" } },
+      {
+        type: "event_msg",
+        timestamp: "2026-11-06T12:05:00Z",
+        payload: { type: "context_compacted" },
+      },
+      usage("2026-11-06T12:06:00Z", 22_000, 202_000),
+      { type: "compacted", timestamp: "2026-11-06T12:30:00Z", payload: { message: "again" } },
+    ]),
+  );
+  expect(result.compactions).toEqual([
+    { recorded_at: "2026-11-06T12:05:00.000Z", pre_tokens: 180_000, post_tokens: 22_000 },
+    { recorded_at: "2026-11-06T12:30:00.000Z", pre_tokens: 22_000, post_tokens: null },
+  ]);
+});
+
 test("should downsample a long timeline to its per-bucket context peaks", () => {
   const rows = Array.from({ length: 1000 }, (_, index) => claude(`r${index}`, index, 0));
   const timeline = readSessionCacheUsage("claude", bytes(rows)).timeline ?? [];
@@ -119,7 +151,7 @@ test("should use Codex reported cumulative counters without adding duplicate sna
     cache_write_tokens: 100,
   });
   expect(result.output_tokens).toBe(300);
-  expect(result.compactions).toBeNull();
+  expect(result.compactions).toEqual([]);
   expect(result.timeline).toHaveLength(1);
   const invalid = {
     ...row,
