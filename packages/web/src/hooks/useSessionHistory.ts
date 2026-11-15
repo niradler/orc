@@ -2,7 +2,7 @@ import { nativeChatAgent } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { useChat } from "@/hooks/useChat";
 import { useCreateProject, useProjects } from "@/hooks/useProjects";
@@ -30,6 +30,7 @@ import {
   SESSION_FILTER_KEY,
   type SessionFilter,
 } from "@/lib/session-filter";
+import { sessionHomeSearch } from "@/lib/session-home";
 import { markSeen } from "@/lib/session-seen";
 import { terminalPath } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
@@ -134,6 +135,7 @@ export function useSessionHistory({
 }) {
   const chat = useChat();
   const navigate = useNavigate();
+  const location = useLocation();
   const { terminals } = useTerminals();
   const projectScope = chat.projectScope;
   const navigation = useSessionHome();
@@ -426,7 +428,7 @@ export function useSessionHistory({
       unassignedFolders.map((other) => other.cwd),
       projectGroups.map((other) => other.project.name),
     );
-  const expandedRows = expandedProjects.flatMap((id) =>
+  const expandedGroups = expandedProjects.map((id) =>
     id.startsWith(UNASSIGNED_SECTION)
       ? (folderGroups.get(id)?.rows ?? [])
       : (projectGroups.find((group) => group.project.id === id)?.rows ?? []),
@@ -456,7 +458,6 @@ export function useSessionHistory({
     autoExpanded.current = signature;
     setExpandedProjects((ids) => (ids.includes(group) ? ids : [...ids, group]));
   }, [open, section, activeRow, activeAssigned, projectGroups, unassignedRows]);
-  const visibleEntries = section === "projects" ? expandedRows : stable.items;
   const active = entries.find(
     (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
   );
@@ -486,6 +487,10 @@ export function useSessionHistory({
       } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
     } else if (entry.kind === "native") {
       if (!nativeChatAgent(entry.session.agent)) {
+        if (!home) {
+          navigate(`/chat${sessionHomeSearch(location.search, { viewId: entry.session.id })}`);
+          return;
+        }
         navigation.go({
           viewId: entry.session.id,
           terminalId: null,
@@ -558,7 +563,10 @@ export function useSessionHistory({
     },
     visibleCount,
     loadMore: () => setVisibleCount((count) => count + 50),
-    hasMore: visibleEntries.length > visibleCount,
+    hasMore:
+      section === "projects"
+        ? expandedGroups.some((rows) => rows.length > visibleCount)
+        : stable.items.length > visibleCount,
     pending,
     error,
     setError,
@@ -581,7 +589,6 @@ export function useSessionHistory({
     chooseSection,
     expandedProjects,
     toggleProject: (id: string) => {
-      setVisibleCount(50);
       setExpandedProjects((ids) =>
         ids.includes(id) ? ids.filter((other) => other !== id) : [...ids, id],
       );
@@ -606,8 +613,6 @@ export function useSessionHistory({
     unassignedRows,
     unassignedFolders,
     projectFromFolder,
-    expandedRows,
-    visibleEntries,
     loading,
     selectEntry,
     select,

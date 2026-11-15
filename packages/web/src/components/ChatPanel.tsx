@@ -910,11 +910,13 @@ export function ChatPanel({
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}
           {viewId && (
-            <SessionView
-              key={viewId}
-              sessionId={viewId}
-              onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
-            />
+            <div className={cn("flex min-h-0 flex-1 flex-col", drawerExpanded && "hidden")}>
+              <SessionView
+                key={viewId}
+                sessionId={viewId}
+                onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
+              />
+            </div>
           )}
           <div
             className={cn(

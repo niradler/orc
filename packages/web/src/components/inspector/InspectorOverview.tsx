@@ -140,7 +140,9 @@ function OverviewBody({ context, home }: { context: SessionContext; home: Sessio
             <p data-testid="session-inspector-git-empty" className="text-sm text-muted-foreground">
               {terminals.isLoading
                 ? "Loading session details…"
-                : "No folder is available for this session."}
+                : context.cwd
+                  ? "No terminal is running in this folder."
+                  : "No folder is available for this session."}
             </p>
             <button
               type="button"

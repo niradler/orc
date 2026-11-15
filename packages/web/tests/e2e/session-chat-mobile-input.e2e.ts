@@ -1,6 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect } from "@playwright/test";
+import { openChatHistory } from "./_chat-ui";
 import { API_SECRET, apiPost, gotoView } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
@@ -230,3 +231,37 @@ for (const width of [1280, 390])
       .click();
     expect((await hidden).postDataJSON()).toEqual({ hidden: true });
   });
+
+test("the side chat opens a Cursor session read-only on the chat page", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const cursor = {
+    id: "cursor-agent",
+    agent: "cursor-agent",
+    session_id: "native-cursor-agent",
+    name: "cursor side panel",
+    cwd: "/fixture",
+    status: "idle",
+    project_id: null,
+    last_activity_at: Date.now(),
+    tokens_used: null,
+  };
+  await page.route("**/api/sessions/live?**", (route) =>
+    route.fulfill({ json: { sessions: [cursor] } }),
+  );
+  await page.route("**/api/sessions/live/cursor-agent", (route) => route.fulfill({ json: cursor }));
+  await page.route("**/api/sessions/live/*/transcript?**", (route) =>
+    route.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
+  );
+  await gotoView(page, "tasks");
+  const url = new URL(page.url());
+  url.searchParams.set("chat", "open");
+  await page.goto(url.toString());
+  await openChatHistory(page);
+  await page
+    .locator('[data-testid="chat-history-row"][data-history-id="native:cursor-agent"]')
+    .getByTestId("chat-resume-live")
+    .click();
+  await expect(page).toHaveURL(/\/chat\?(.*&)?sessionView=cursor-agent/);
+  await expect(page.getByTestId("session-view")).toBeVisible();
+  await expect(page.getByTestId("chat-input").filter({ visible: true })).toHaveCount(0);
+});
