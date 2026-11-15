@@ -717,10 +717,21 @@ The desktop app is an Electron shell around the same dashboard. On top of the br
 | Installs the CLI                           | `~/.orc/bin/orc`, added to your shell `PATH`                                                                                                               |
 | Tray icon                                  | **Open orc**, **Start at login** toggle, **Quit orc**                                                                                                      |
 | Start at login                             | On by default, starts hidden in the tray                                                                                                                   |
-| Keeps running when closed                  | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits.                            |
+| Keeps running when closed                  | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the File menu, the tray (or **Cmd+Q** on macOS) quits.             |
 | Recovers from startup failures and crashes | Waits briefly for a starting daemon, then offers **Retry** or **Quit** if it cannot connect                                                                |
 | Remembers the window                       | Size, position and maximized state                                                                                                                         |
 | Updates                                    | Installed macOS, Windows and Linux apps check GitHub Releases at startup and every four hours, download in the background, and offer **Restart to update** |
+
+Menu commands that change the page act on the window itself. **Reload**, **Zoom In**,
+**Zoom Out** and **Actual Size** never reach the page open in the inspector's
+**Browser** tab. **Toggle Developer Tools** appears only when the app runs from
+source.
+
+**File** holds **Connection…**, **Browser and files**, **Start at login** and, on
+Windows and Linux, **Quit orc**. **Help** opens this documentation and the issue
+tracker, plus **About orc** outside macOS. Right-clicking offers **Cut**, **Copy**,
+**Paste** and **Select all** on any text, **Copy link address** on a link, and
+**Copy image** in the inspector's **Browser** tab.
 
 Quitting the app (**Quit orc**) stops the daemon only if the app started it.
 
