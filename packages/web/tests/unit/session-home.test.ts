@@ -49,6 +49,16 @@ test("a patch changes only the keys it names and keeps unrelated params", () => 
   expect(base.toString()).toBe("project=p&chat=full&chatThread=c1&inspector=overview");
 });
 
+test("switching the chat or terminal closes the read-only session view", () => {
+  const viewing = new URLSearchParams("chat=full&sessionView=v1");
+  expect(patchSessionHome(viewing, { terminalId: null }).get("sessionView")).toBeNull();
+  expect(patchSessionHome(viewing, { terminalId: "t1" }).get("sessionView")).toBeNull();
+  expect(patchSessionHome(viewing, { viewId: "v2", terminalId: null }).get("sessionView")).toBe(
+    "v2",
+  );
+  expect(patchSessionHome(viewing, { inspector: "diff" }).get("sessionView")).toBe("v1");
+});
+
 test("clearing removes every session view param and nothing else", () => {
   const params = new URLSearchParams(
     "project=p&chat=full&sessionTerminal=t&sessionLive=l&sessionView=v&sessionList=hide&inspector=diff&drawer=terminal&q=x",
@@ -59,6 +69,7 @@ test("clearing removes every session view param and nothing else", () => {
 test("links from other pages keep only the project scope and prefer the terminal target", () => {
   expect(sessionHomeSearch("?project=p&session=old&q=x")).toBe("?project=p");
   expect(sessionHomeSearch("", { liveId: "l1" })).toBe("?sessionLive=l1");
+  expect(sessionHomeSearch("?project=p", { viewId: "v1" })).toBe("?project=p&sessionView=v1");
   expect(sessionHomeSearch("?project=p", { terminalId: "t1", liveId: "l1" })).toBe(
     "?project=p&sessionTerminal=t1",
   );

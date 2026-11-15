@@ -1279,10 +1279,6 @@ export const api = {
       req<{ indexed: number; failed: number; skipped: number }>("POST", "/sessions/archive/index", {
         project_id,
       }),
-    archiveTranscript: (
-      id: string,
-      params?: { revision?: number; offset?: number; limit?: number },
-    ) => req<TranscriptPage>("GET", `/sessions/archive/${id}/transcript`, undefined, params),
     archiveResume: (
       id: string,
       input: {

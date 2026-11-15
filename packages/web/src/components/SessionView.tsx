@@ -1,33 +1,19 @@
 import { nativeChatAgent, nativeChatResumeUnavailableReason } from "@orc/core/chat";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowDown,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  Eye,
-  EyeOff,
-  Pencil,
-  RefreshCw,
-  Search,
-} from "lucide-react";
+import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type LiveSession, type TranscriptPage } from "@/api/client";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { Markdown } from "@/components/Markdown";
-import { RenameSession } from "@/components/RenameSession";
+import { SessionActions } from "@/components/SessionActions";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
-import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { StateBadge } from "@/components/StateBadge";
-import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
-import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChat } from "@/hooks/useChat";
-import { useTranscript, useUpdateLiveSession } from "@/hooks/useSessions";
+import { useTranscript } from "@/hooks/useSessions";
 import { liveSessionState } from "@/lib/agent-state";
 import { formatTokens, formatWhen, resumeCommand } from "@/lib/live-sessions";
 
@@ -220,22 +206,17 @@ function SessionAnalyticsDetails({ sessionId, live }: { sessionId: string; live:
 export function SessionView({
   sessionId,
   initialQuery = "",
-  onClose,
   onResumed,
 }: {
-  sessionId: string | null;
+  sessionId: string;
   initialQuery?: string;
-  onClose: () => void;
-  onResumed?: () => void;
+  onResumed: () => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [cursor, setCursor] = useState(0);
-  const [renaming, setRenaming] = useState(false);
-  const update = useUpdateLiveSession();
   const sessionQuery = useQuery({
     queryKey: ["sessions", "live-one", sessionId],
-    queryFn: () => api.sessions.liveOne(sessionId as string),
-    enabled: Boolean(sessionId),
+    queryFn: () => api.sessions.liveOne(sessionId),
     retry: false,
   });
   const session: LiveSession | undefined = sessionQuery.data;
@@ -302,10 +283,7 @@ export function SessionView({
     setResumeError("");
     try {
       chat.openThread(await api.chat.resume(session.id));
-      // A phone list sits over the conversation; resuming must reveal the chat.
-      // Replace the transient viewer entry so Back leaves the chat, not a stale sheet.
-      if (onResumed) onResumed();
-      else onClose();
+      onResumed();
     } catch (cause) {
       setResumeError(cause instanceof Error ? cause.message : "The session could not be opened.");
     } finally {
@@ -314,292 +292,240 @@ export function SessionView({
   };
 
   return (
-    <Sheet open={Boolean(sessionId)} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent
-        side="right"
-        defaultWidth={1100}
-        resizeKey="live-session"
-        data-testid="session-view"
-      >
-        <SheetHeader>
-          <SheetTitle className="normal-case tracking-normal text-sm pr-8">
-            {session?.name ?? "Session"}
-          </SheetTitle>
-          {/* One stable slot for the session header fields: the cache panel below
+    <div data-testid="session-view" className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 border-b border-surface-highest px-4 py-4 sm:px-6">
+        <h2 className="text-sm font-medium">{session?.name ?? "Session"}</h2>
+        {/* One stable slot for the session header fields: the cache panel below
               renders before this data arrives, and shifting its position would
               remount it. */}
-          <div className="contents">
-            {session && (
-              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
-                <span className="font-medium text-primary">{session.agent}</span>
-                <StateBadge state={liveSessionState(session)} />
-                <span>
-                  <span className="text-on-surface-variant">tokens </span>
-                  {formatTokens(session)}
-                </span>
-                <span>
-                  <span className="text-on-surface-variant">started </span>
-                  {formatWhen(session.created_at)}
-                </span>
-                <span>
-                  <span className="text-on-surface-variant">active </span>
-                  {formatWhen(session.last_activity_at)}
-                </span>
-                <SessionTaskLink session={session} linkTestId="detail-open-task" />
-                <button
-                  type="button"
-                  data-testid="rename-session"
-                  disabled={update.isPending}
-                  onClick={() => setRenaming(true)}
-                  className={ACTION}
-                >
-                  <Pencil size={13} aria-hidden />
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  data-testid={session.hidden ? "unhide-session" : "hide-session"}
-                  disabled={update.isPending}
-                  title={
-                    session.hidden
-                      ? "Show this session in the list again"
-                      : "Keep this session but leave it out of the list"
-                  }
-                  onClick={() => update.mutate({ id: session.id, hidden: !session.hidden })}
-                  className={ACTION}
-                >
-                  {session.hidden ? (
-                    <Eye size={13} aria-hidden />
-                  ) : (
-                    <EyeOff size={13} aria-hidden />
-                  )}
-                  {session.hidden ? "Show in list" : "Hide from list"}
-                </button>
-                {session.hidden && (
-                  <span data-testid="detail-session-hidden" className="text-outline">
-                    Hidden from list
-                  </span>
-                )}
-                {resumable && (
-                  <button
-                    type="button"
-                    data-testid="open-chat-resume"
-                    disabled={resuming}
-                    onClick={() => void resume()}
-                    className={ACTION}
-                  >
-                    {resuming ? "Opening…" : "Continue in chat"}
-                  </button>
-                )}
-                {command && (
-                  <button
-                    type="button"
-                    data-testid="copy-resume"
-                    title={command}
-                    onClick={() => void copyCommand()}
-                    className={ACTION}
-                  >
-                    {copied ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
-                    Copy resume command
-                  </button>
-                )}
-                {copied && (
-                  <span data-testid="resume-feedback" className="text-secondary">
-                    Resume command copied
-                  </span>
-                )}
-                <SessionScratchpads session={session} />
-                <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
-              </div>
-            )}
-            {session && !resumable && continueReason && (
-              <p data-testid="session-view-read-only" className="mt-2 text-xs text-outline">
-                {continueReason}
-              </p>
-            )}
-            {resumeError && (
-              <p role="alert" className="mt-2 text-xs text-error">
-                {resumeError}
-              </p>
-            )}
-          </div>
-          {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
-          {sessionId && (
-            <SessionAnalyticsDetails
-              key={`analytics-${sessionId}`}
-              sessionId={sessionId}
-              live={live}
-            />
-          )}
-          {session && <SessionLineage sessionId={session.id} />}
-          {session && <SessionMessageInbox key={session.id} session={session} live={live} />}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[150px] flex-1">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-outline" />
-              <input
-                data-testid="transcript-search"
-                aria-label="Search this session"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setCursor(0);
-                }}
-                placeholder="Search this session"
-                className="w-full bg-background border border-control-border rounded-lg min-h-11 pl-7 pr-2 py-2 font-body text-xs text-on-surface"
-              />
-            </div>
-            {search && (
-              <span
-                data-testid="transcript-match-count"
-                className="font-label text-xs font-medium text-outline"
-              >
-                {matches.length === 0 ? "no matches" : `${cursor + 1} / ${matches.length}`}
+        <div className="contents">
+          {session && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
+              <span className="font-medium text-primary">{session.agent}</span>
+              <StateBadge state={liveSessionState(session)} />
+              <span>
+                <span className="text-on-surface-variant">tokens </span>
+                {formatTokens(session)}
               </span>
-            )}
-            <button
-              type="button"
-              aria-label="Previous match"
-              onClick={() => go(-1)}
-              className="min-h-11 min-w-11 p-2 text-outline hover:text-on-surface"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next match"
-              onClick={() => go(1)}
-              className="min-h-11 min-w-11 p-2 text-outline hover:text-on-surface"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              data-testid="transcript-refresh"
-              onClick={() => {
-                stick.current = true;
-                refetch();
-              }}
-              className="min-h-11 px-2 inline-flex items-center gap-1 font-label text-xs font-medium text-primary hover:text-on-surface"
-            >
-              <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-          {data && (
-            <div
-              data-testid="transcript-status"
-              className="mt-2 font-body text-xs text-on-surface-variant tabular-nums"
-            >
-              {data.total} turns
-              {live ? ` · live, updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
-            </div>
-          )}
-        </SheetHeader>
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          <SheetBody
-            ref={bodyRef}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              const near = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-              stick.current = near;
-              setAtBottom(near);
-            }}
-          >
-            {sessionQuery.error ? (
-              <div
-                data-testid="session-view-unavailable"
-                className="font-body text-xs text-outline py-12 text-center"
-              >
-                Could not load this session: {sessionQuery.error.message}
-              </div>
-            ) : isLoading ? (
-              <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
-                  <Skeleton key={i} className="h-16 w-full bg-surface-highest" />
-                ))}
-              </div>
-            ) : error || !data ? (
-              <div
-                data-testid="transcript-unavailable"
-                className="font-body text-xs text-outline py-12 text-center"
-              >
-                {error
-                  ? `Could not load the conversation: ${error.message}`
-                  : "No conversation was recorded for this session."}
-                <p className="mt-2">
-                  {resumable
-                    ? "Open it from the session list to continue it in chat."
-                    : "This provider keeps its CLI history separate, so it cannot continue in chat."}
-                </p>
+              <span>
+                <span className="text-on-surface-variant">started </span>
+                {formatWhen(session.created_at)}
+              </span>
+              <span>
+                <span className="text-on-surface-variant">active </span>
+                {formatWhen(session.last_activity_at)}
+              </span>
+              <SessionActions session={session} />
+              {resumable && (
                 <button
                   type="button"
-                  className="mt-3 min-h-11 text-primary hover:underline"
-                  onClick={() => refetch()}
+                  data-testid="open-chat-resume"
+                  disabled={resuming}
+                  onClick={() => void resume()}
+                  className={ACTION}
                 >
-                  Retry conversation
+                  {resuming ? "Opening…" : "Continue in chat"}
                 </button>
-              </div>
-            ) : (
-              <div ref={turnsRef} className="space-y-3">
-                {data.turns.map((turn) => {
-                  const matched = matches.includes(turn.index);
-                  const blocks = turn.blocks.map((block, i) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
-                    <Block key={i} block={block} matched={matched} />
-                  ));
-                  return (
-                    <div
-                      key={turn.index}
-                      id={`turn-${turn.index}`}
-                      data-testid="transcript-turn"
-                      data-role={turn.role}
-                      style={{
-                        contentVisibility: "auto",
-                        containIntrinsicSize: "auto 120px",
-                      }}
-                      className={`border-b px-4 py-3 text-on-surface space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
-                    >
-                      <div className="font-label text-xs font-medium text-outline">
-                        {turn.role}
-                        {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
-                      </div>
-                      {turn.role === "system" ? (
-                        <details open={matched || undefined}>
-                          <summary className="cursor-pointer font-label text-xs font-medium text-outline hover:text-on-surface">
-                            injected context
-                          </summary>
-                          <div className="mt-2 space-y-2">{blocks}</div>
-                        </details>
-                      ) : (
-                        blocks
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </SheetBody>
-          {data && !atBottom && (
-            <button
-              type="button"
-              data-testid="jump-to-latest"
-              onClick={() => {
-                stick.current = true;
-                scrollToEnd();
-              }}
-              className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
-            >
-              <ArrowDown className="h-3.5 w-3.5" />
-              Jump to latest
-              {data.total > seenTotal.current && ` · ${data.total - seenTotal.current} new`}
-            </button>
+              )}
+              {command && (
+                <button
+                  type="button"
+                  data-testid="copy-resume"
+                  title={command}
+                  onClick={() => void copyCommand()}
+                  className={ACTION}
+                >
+                  {copied ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+                  Copy resume command
+                </button>
+              )}
+              {copied && (
+                <span data-testid="resume-feedback" className="text-secondary">
+                  Resume command copied
+                </span>
+              )}
+              <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
+            </div>
+          )}
+          {session && !resumable && continueReason && (
+            <p data-testid="session-view-read-only" className="mt-2 text-xs text-outline">
+              {continueReason}
+            </p>
+          )}
+          {resumeError && (
+            <p role="alert" className="mt-2 text-xs text-error">
+              {resumeError}
+            </p>
           )}
         </div>
-        {session && (
-          <RenameSession session={session} open={renaming} onClose={() => setRenaming(false)} />
+        <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />
+        <SessionAnalyticsDetails key={`analytics-${sessionId}`} sessionId={sessionId} live={live} />
+        {session && <SessionLineage sessionId={session.id} />}
+        {session && <SessionMessageInbox key={session.id} session={session} live={live} />}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[150px] flex-1">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-outline" />
+            <input
+              data-testid="transcript-search"
+              aria-label="Search this session"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setCursor(0);
+              }}
+              placeholder="Search this session"
+              className="w-full bg-background border border-control-border rounded-lg min-h-11 pl-7 pr-2 py-2 font-body text-xs text-on-surface"
+            />
+          </div>
+          {search && (
+            <span
+              data-testid="transcript-match-count"
+              className="font-label text-xs font-medium text-outline"
+            >
+              {matches.length === 0 ? "no matches" : `${cursor + 1} / ${matches.length}`}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label="Previous match"
+            onClick={() => go(-1)}
+            className="min-h-11 min-w-11 p-2 text-outline hover:text-on-surface"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Next match"
+            onClick={() => go(1)}
+            className="min-h-11 min-w-11 p-2 text-outline hover:text-on-surface"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            data-testid="transcript-refresh"
+            onClick={() => {
+              stick.current = true;
+              refetch();
+            }}
+            className="min-h-11 px-2 inline-flex items-center gap-1 font-label text-xs font-medium text-primary hover:text-on-surface"
+          >
+            <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+        {data && (
+          <div
+            data-testid="transcript-status"
+            className="mt-2 font-body text-xs text-on-surface-variant tabular-nums"
+          >
+            {data.total} turns
+            {live ? ` · live, updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
+          </div>
         )}
-      </SheetContent>
-    </Sheet>
+      </div>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={bodyRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            const near = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+            stick.current = near;
+            setAtBottom(near);
+          }}
+        >
+          {sessionQuery.error ? (
+            <div
+              data-testid="session-view-unavailable"
+              className="font-body text-xs text-outline py-12 text-center"
+            >
+              Could not load this session: {sessionQuery.error.message}
+            </div>
+          ) : isLoading ? (
+            <div className="space-y-4">
+              {[...Array(5)].map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+                <Skeleton key={i} className="h-16 w-full bg-surface-highest" />
+              ))}
+            </div>
+          ) : error || !data ? (
+            <div
+              data-testid="transcript-unavailable"
+              className="font-body text-xs text-outline py-12 text-center"
+            >
+              {error
+                ? `Could not load the conversation: ${error.message}`
+                : "No conversation was recorded for this session."}
+              <p className="mt-2">
+                {resumable
+                  ? "Open it from the session list to continue it in chat."
+                  : "This provider keeps its CLI history separate, so it cannot continue in chat."}
+              </p>
+              <button
+                type="button"
+                className="mt-3 min-h-11 text-primary hover:underline"
+                onClick={() => refetch()}
+              >
+                Retry conversation
+              </button>
+            </div>
+          ) : (
+            <div ref={turnsRef} className="space-y-3">
+              {data.turns.map((turn) => {
+                const matched = matches.includes(turn.index);
+                const blocks = turn.blocks.map((block, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
+                  <Block key={i} block={block} matched={matched} />
+                ));
+                return (
+                  <div
+                    key={turn.index}
+                    id={`turn-${turn.index}`}
+                    data-testid="transcript-turn"
+                    data-role={turn.role}
+                    style={{
+                      contentVisibility: "auto",
+                      containIntrinsicSize: "auto 120px",
+                    }}
+                    className={`border-b px-4 py-3 text-on-surface space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
+                  >
+                    <div className="font-label text-xs font-medium text-outline">
+                      {turn.role}
+                      {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
+                    </div>
+                    {turn.role === "system" ? (
+                      <details open={matched || undefined}>
+                        <summary className="cursor-pointer font-label text-xs font-medium text-outline hover:text-on-surface">
+                          injected context
+                        </summary>
+                        <div className="mt-2 space-y-2">{blocks}</div>
+                      </details>
+                    ) : (
+                      blocks
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {data && !atBottom && (
+          <button
+            type="button"
+            data-testid="jump-to-latest"
+            onClick={() => {
+              stick.current = true;
+              scrollToEnd();
+            }}
+            className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+            Jump to latest
+            {data.total > seenTotal.current && ` · ${data.total - seenTotal.current} new`}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

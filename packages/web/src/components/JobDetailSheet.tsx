@@ -241,7 +241,7 @@ function RunItem({
       const result = await api.jobs.nativeSession(jobId, run.id);
 
       if (result.session_id)
-        navigate(`/chat?project=all&sessionView=${encodeURIComponent(result.session_id)}`);
+        navigate(`/chat?project=all&sessionLive=${encodeURIComponent(result.session_id)}`);
       else
         setSessionError(
           "The native conversation is not available yet. The saved result is still available below.",

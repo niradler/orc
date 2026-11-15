@@ -346,7 +346,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
                     className="w-full text-left"
                     data-testid="activity-session-link"
                     data-session-id={session.id}
-                    onClick={() => navigate(`/chat?sessionView=${encodeURIComponent(session.id)}`)}
+                    onClick={() => navigate(`/chat?sessionLive=${encodeURIComponent(session.id)}`)}
                   >
                     <span className="activity-row-heading">
                       <span>{session.name ?? session.agent}</span>

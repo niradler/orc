@@ -67,37 +67,37 @@ for (const width of [1440, 390])
       page,
       request,
     }) => {
-      await setup(page, request);
+      const { events } = await setup(page, request);
       await page.goto(sessionUrl);
       await expect(
         page.getByTestId("chat-session-list").getByTestId("chat-history-row"),
       ).toHaveCount(10);
-      const detail = page.getByTestId("session-view");
-      for (const expected of [0, 1, 4, 3, 6]) {
-        await page.keyboard.press("Alt+KeyJ");
-        await expect(page).toHaveURL(new RegExp(`sessionView=demo-live-${expected}(&|$)`));
-        await expect(detail).toBeVisible();
-        await page.keyboard.press("Escape");
-        await expect(detail).toBeHidden();
-      }
-      await page.getByTestId("chat-session-search").fill("x");
-      await page.keyboard.press("Alt+KeyJ");
-      await expect(page).not.toHaveURL(/sessionView=demo-live/);
-
-      await page.getByTestId("chat-session-search").fill("");
       await page.keyboard.press("Control+k");
       await page.getByTestId("command-palette-input").fill("next session that needs you");
       const command = page.locator('[data-command-id="next-needs-you"]');
       await expect(command).toContainText("Alt J");
       await page.keyboard.press("Enter");
-      await expect(page).toHaveURL(/sessionView=demo-live-0(&|$)/);
+      await expect.poll(() => events.resumed).toEqual(["demo-live-0"]);
+      const order = [0, 1, 4, 3, 6];
+      for (const index of order.keys()) {
+        if (!index) continue;
+        await page.keyboard.press("Alt+KeyJ");
+        await expect
+          .poll(() => events.resumed.slice(0, index + 1))
+          .toEqual(order.slice(0, index + 1).map((id) => `demo-live-${id}`));
+        await expect(page).not.toHaveURL(/sessionLive=/);
+      }
+      await page.goto(sessionUrl);
+      await page.getByTestId("chat-session-search").fill("x");
+      await page.keyboard.press("Alt+KeyJ");
+      await expect(page).not.toHaveURL(/sessionLive=demo-live/);
     });
 
     test("keeps a finished, unopened session Done across reloads until it is opened", async ({
       page,
       request,
     }) => {
-      await setup(page, request);
+      const { events } = await setup(page, request);
       await page.goto(sessionUrl);
       const row = page.locator(
         '[data-testid="chat-history-row"][data-history-id="native:demo-live-3"]',
@@ -110,12 +110,9 @@ for (const width of [1440, 390])
       await expect(row).toHaveAttribute("data-state", "done");
       await expect(row.getByTestId("chat-session-status")).toHaveAttribute("aria-label", /Done/);
 
-      await row.getByTestId("chat-session-view").click();
-      const detail = page.getByTestId("session-view");
-      await expect(detail).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(row).toHaveAttribute("data-state", "idle");
-      await page.reload();
+      await row.getByTestId("chat-resume-live").click();
+      await expect.poll(() => events.resumed).toEqual(["demo-live-3"]);
+      await page.goto(sessionUrl);
       await expect(row).toHaveAttribute("data-state", "idle");
     });
 
@@ -159,24 +156,28 @@ for (const width of [1440, 390])
       page,
       request,
     }) => {
-      const { projects } = await setup(page, request);
+      const { projects, sessions } = await setup(page, request);
       await page.addInitScript(() =>
         localStorage.setItem("orc_chat_history_section_v2", "projects"),
       );
-      await page.goto("/chat?project=all&sessionView=demo-live-7&sessionList=show");
-      await expect(page.getByTestId("session-view")).toBeVisible();
+      await page.goto("/chat?project=all&sessionLive=demo-live-7&sessionList=show");
+      await expect(page).not.toHaveURL(/sessionLive=/);
       const group = page.getByTestId(`session-project-${projects[2]}`);
       await expect(group.getByTestId("session-project-toggle")).toHaveAttribute(
         "aria-expanded",
         "true",
       );
-      await expect(group.locator('[data-history-id="native:demo-live-7"]')).toHaveAttribute(
-        "data-active",
+      await expect(group.locator('[data-active="true"]')).toContainText(sessions[7]?.name ?? "");
+      const other = page
+        .getByTestId(`session-project-${projects[0]}`)
+        .getByTestId("session-project-toggle");
+      await expect(other).toHaveAttribute("aria-expanded", "false");
+      await other.click();
+      await expect(other).toHaveAttribute("aria-expanded", "true");
+      await expect(group.getByTestId("session-project-toggle")).toHaveAttribute(
+        "aria-expanded",
         "true",
       );
-      await expect(
-        page.getByTestId(`session-project-${projects[0]}`).getByTestId("session-project-toggle"),
-      ).toHaveAttribute("aria-expanded", "false");
     });
 
     test("spins the working icon and settles it when the agent stops", async ({

@@ -199,10 +199,8 @@ for (const width of [1440, 390])
       await page
         .locator(`[data-testid="activity-session-link"][data-session-id="${HOME.codexLive}"]`)
         .click();
-      await expect(page).toHaveURL(/sessionView=/);
-      await expect(page.getByTestId("session-view")).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(page.getByTestId("session-view")).toBeHidden();
+      await expect(page.getByText("Resumed.").first()).toBeVisible();
+      await expect(page.getByTestId("session-view")).toHaveCount(0);
 
       const list = await sessionList(page, narrow);
       await row(list, `chat:${HOME.chatA}`).locator("button").first().click();
@@ -359,12 +357,13 @@ test("Exit full screen returns to its source after Back and Forward", async ({ p
   await page
     .locator(`[data-testid="activity-session-link"][data-session-id="${HOME.codexLive}"]`)
     .click();
-  const view = page.getByTestId("session-view");
-  await expect(view).toBeVisible();
-  await view.getByTestId("open-chat-resume").click();
   await expect(page.getByText("Resumed.").first()).toBeVisible();
-  await expect(view).toBeHidden();
+  await expect(page.getByTestId("session-view")).toHaveCount(0);
   await page.getByTestId("session-inspector-toggle").click();
+  const actions = page.getByTestId("session-inspector-session");
+  await expect(actions.getByTestId("rename-session")).toBeVisible();
+  await expect(actions.getByTestId("hide-session")).toBeVisible();
+  await expect(actions.getByTestId("link-task")).toBeVisible();
   // Resume can replace its own history entry, so walk back to the source instead
   // of assuming a fixed number of entries.
   for (let i = 0; i < 6 && !/\/activity\?project=all$/.test(page.url()); i++) await page.goBack();

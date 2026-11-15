@@ -60,7 +60,10 @@ export function patchSessionHome(
   patch: Partial<SessionHomeState>,
 ): URLSearchParams {
   const next = new URLSearchParams(params);
-  if ("terminalId" in patch) put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
+  if ("terminalId" in patch) {
+    put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
+    if (!("viewId" in patch)) next.delete(SESSION_VIEW_PARAM);
+  }
   if ("liveId" in patch) put(next, SESSION_LIVE_PARAM, patch.liveId ?? null);
   if ("viewId" in patch) put(next, SESSION_VIEW_PARAM, patch.viewId ?? null);
   if ("listHidden" in patch) put(next, SESSION_LIST_PARAM, patch.listHidden ? "hide" : null);
@@ -82,7 +85,7 @@ export function clearSessionHome(params: URLSearchParams): URLSearchParams {
 /** A link into the Chat page from another page, keeping the project scope. */
 export function sessionHomeSearch(
   search: string,
-  target: { terminalId?: string; liveId?: string } = {},
+  target: { terminalId?: string; liveId?: string; viewId?: string } = {},
 ): string {
   const current = new URLSearchParams(search);
   const next = new URLSearchParams();
@@ -90,6 +93,7 @@ export function sessionHomeSearch(
   if (project) next.set("project", project);
   if (target.terminalId) next.set(SESSION_TERMINAL_PARAM, target.terminalId);
   else if (target.liveId) next.set(SESSION_LIVE_PARAM, target.liveId);
+  else if (target.viewId) next.set(SESSION_VIEW_PARAM, target.viewId);
   return `?${next.toString()}`;
 }
 

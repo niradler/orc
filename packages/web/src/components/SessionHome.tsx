@@ -37,6 +37,7 @@ export interface SessionContext {
   cwd: string | null;
   host: string | null;
   session?: LiveSession;
+  sourceId: string | null;
   /** The checkout Git acts on: a running terminal in the folder, or the chat
    *  session's own folder when no terminal is running. */
   gitCheckout?: Terminal;
@@ -65,28 +66,48 @@ function sessionCheckout(thread: ChatThread | null): Terminal | undefined {
   };
 }
 
-export function useSessionContext(terminalId: string | null): SessionContext {
+export function useSessionContext(
+  terminalId: string | null,
+  view?: { id: string; session: LiveSession | undefined },
+): SessionContext {
   const chat = useChat();
   const { terminals } = useTerminals();
   const live = useActiveLiveSessions();
   const terminal = terminalId ? terminals.find((item) => item.id === terminalId) : undefined;
-  const cwd = terminal ? terminal.cwd : (chat.thread?.cwd ?? null);
-  const host = terminal ? terminal.host : (chat.thread?.host ?? null);
-  const liveId = terminal ? terminal.live_session_id : (chat.thread?.sourceId ?? null);
-  const session = liveId ? live.data?.find((item) => item.id === liveId) : undefined;
+  const cwd = terminal
+    ? terminal.cwd
+    : view
+      ? (view.session?.cwd ?? null)
+      : (chat.thread?.cwd ?? null);
+  const host = terminal
+    ? terminal.host
+    : view
+      ? (view.session?.host ?? null)
+      : (chat.thread?.host ?? null);
+  const liveId = terminal
+    ? terminal.live_session_id
+    : view
+      ? view.id
+      : (chat.thread?.sourceId ?? null);
+  const session = view
+    ? view.session
+    : liveId
+      ? live.data?.find((item) => item.id === liveId)
+      : undefined;
   const sameFolder = (item: Terminal) => terminalInFolder(item, cwd, host);
   return {
     terminal,
     cwd,
     host,
     session,
+    sourceId: liveId,
     gitCheckout:
       (terminal?.status === "running"
         ? terminal
         : runningTerminalForFolder(terminals, cwd, host)) ??
       // Only a chat-only page can borrow the thread's folder; a terminal page
       // must never show Git for a different checkout than its Overview.
-      (terminalId ? undefined : sessionCheckout(chat.thread)),
+      (terminalId || view ? undefined : sessionCheckout(chat.thread)),
     shell: terminals.find(
       (item) => sameFolder(item) && item.kind === "shell" && item.id !== terminal?.id,
     ),
@@ -114,19 +135,19 @@ export function useSessionLiveLink(home: SessionHomeNav, enabled: boolean) {
     api.sessions
       .liveOne(liveId)
       .then(async (session) => {
-        // A provider whose CLI store chat cannot continue opens the read-only session view.
         if (!nativeChatAgent(session.agent)) {
           go({ viewId: session.id, terminalId: null, liveId: null }, { replace: true });
           return;
         }
         openThread(await api.chat.resume(liveId));
+        go({ terminalId: null, liveId: null }, { replace: true });
       })
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : "Session could not be opened."),
-      )
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Session could not be opened.");
+        go({ terminalId: null, liveId: null }, { replace: true });
+      })
       .finally(() => {
         opening.current = null;
-        go({ terminalId: null, liveId: null }, { replace: true });
       });
   }, [enabled, liveId, isLoading, terminals, go, openThread]);
   return error;

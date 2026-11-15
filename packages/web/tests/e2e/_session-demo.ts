@@ -1,3 +1,4 @@
+import { ChatSettingsSchema } from "@orc/core/chat";
 import type { APIRequestContext, Page, Route } from "@playwright/test";
 import { API_SECRET, apiPost, tid } from "./_helpers";
 
@@ -137,7 +138,30 @@ export async function mockDemo(
   await page.route("**/api/chat/models?**", (r) =>
     r.fulfill({ json: { models: [], warning: null } }),
   );
-  await page.route("**/api/chat/threads", (r) => r.fulfill({ json: { threads: [] } }));
+  const resumed: string[] = [];
+  await page.route("**/api/chat/threads", (r) => {
+    if (r.request().method() !== "POST") return r.fulfill({ json: { threads: [] } });
+    const { sourceSessionId } = r.request().postDataJSON() as { sourceSessionId: string };
+    resumed.push(sourceSessionId);
+    const index = sessions.findIndex((item) => item.id === sourceSessionId);
+    const session = sessions[index];
+    return r.fulfill({
+      json: {
+        id: `70000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        title: session?.name ?? sourceSessionId,
+        config: ChatSettingsSchema.parse({ agent: session?.agent ?? "claude", model: "" }),
+        cwd: session?.cwd ?? "/fixture",
+        host: null,
+        runtimeId: session?.session_id ?? null,
+        sourceId: sourceSessionId,
+        backend: session?.agent === "codex" ? "codex" : "claude-code",
+        projectId: session?.project_id ?? undefined,
+        updatedAt: Date.now(),
+        messages: [],
+      },
+    });
+  });
+  await page.route("**/api/chat/threads/*/live", (r) => r.fulfill({ status: 204 }));
   await page.route("**/api/sessions/live?**", (r) =>
     r.fulfill({ json: { sessions, total: sessions.length, has_more: false } }),
   );
@@ -157,6 +181,7 @@ export async function mockDemo(
     waiting.push(route);
   });
   return {
+    resumed,
     async push() {
       for (let i = 0; i < 100 && !waiting.length; i++) await page.waitForTimeout(100);
       const route = waiting.pop();

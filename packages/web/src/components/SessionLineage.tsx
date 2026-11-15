@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
 import { useChat } from "@/hooks/useChat";
+import { useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionLineage } from "@/hooks/useSessions";
 
 type Node = NonNullable<Lineage["parent"]>;
@@ -27,6 +28,7 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
   const { data } = useSessionLineage(sessionId);
   const chat = useChat();
   const navigate = useNavigate();
+  const home = useSessionHome();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const parent = data?.parent ?? null;
@@ -36,11 +38,12 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
   async function openNode(node: Node): Promise<void> {
     setError(null);
     if (node.kind === "session") {
-      navigate(`/chat?sessionView=${encodeURIComponent(node.id)}&project=all`);
+      navigate(`/chat?sessionLive=${encodeURIComponent(node.id)}&project=all`);
       return;
     }
     try {
       chat.openThread(await api.chat.get(node.id));
+      if (home.viewId) home.go({ viewId: null }, { replace: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The session could not be opened.");
     }

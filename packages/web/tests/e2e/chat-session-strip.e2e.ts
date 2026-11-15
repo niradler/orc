@@ -3,9 +3,9 @@ import { expect, test } from "@playwright/test";
 import { HOME, mockSessionHome } from "./_session-home-demo";
 
 // A chat that was never resumed from an agent session has no usage record: the
-// header keeps the session facts it knows and omits the context figure entirely.
+// header shows only the state, and the turn footer omits the figures it lacks.
 for (const width of [1440, 390]) {
-  test(`chat session strip omits unknown usage at ${width}px`, async ({ page }, testInfo) => {
+  test(`chat header omits unknown usage at ${width}px`, async ({ page }, testInfo) => {
     const now = Date.now();
     const thread: ChatThread = {
       id: HOME.chatA,
@@ -49,17 +49,11 @@ for (const width of [1440, 390]) {
     await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
     await expect(page.getByTestId("chat-message-content").last()).toContainText("money boundary");
 
-    const strip = page.getByTestId("chat-session-strip");
-    await expect(strip).toBeVisible();
-    if (width === 1440)
-      await expect(page.getByTestId("chat-session-strip-agent")).toContainText("Claude Code");
-    await expect(page.getByTestId("chat-session-strip-state")).toHaveAttribute(
+    await expect(page.getByTestId("chat-header-state").filter({ visible: true })).toHaveAttribute(
       "data-state",
       "idle",
     );
-    await expect(page.getByTestId("chat-session-strip-context")).toHaveCount(0);
-    await expect(page.getByTestId("chat-session-strip-model")).toHaveCount(0);
-    await expect(page.getByTestId("chat-context-help")).toHaveCount(0);
+    await expect(page.getByTestId("chat-session-strip")).toHaveCount(0);
 
     // No recorded model and no recorded request: absent fields stay absent.
     await expect(page.getByTestId("chat-turn-meta")).toHaveCount(1);
@@ -80,7 +74,7 @@ for (const width of [1440, 390]) {
   });
 }
 
-test("chat session strip stays inside a 320px phone", async ({ page }, testInfo) => {
+test("chat header state stays inside a 320px phone", async ({ page }, testInfo) => {
   const now = Date.now();
   const thread: ChatThread = {
     id: HOME.chatA,
@@ -133,16 +127,16 @@ test("chat session strip stays inside a 320px phone", async ({ page }, testInfo)
   );
 
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
-  const strip = page.getByTestId("chat-session-strip");
-  await expect(strip).toBeVisible();
-  await expect(page.getByTestId("chat-session-strip-context")).toContainText("cached");
+  const state = page.getByTestId("chat-header-state").filter({ visible: true });
+  await expect(state).toBeVisible();
+  await expect(page.getByTestId("chat-turn-cache")).toContainText("cached");
   await expect(page.getByTestId("chat-message-duration")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
-  const box = await strip.boundingBox();
+  const box = await state.boundingBox();
   expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(320);
   await page.screenshot({
-    path: testInfo.outputPath("chat-session-strip-320.png"),
+    path: testInfo.outputPath("chat-header-state-320.png"),
     animations: "disabled",
   });
 });

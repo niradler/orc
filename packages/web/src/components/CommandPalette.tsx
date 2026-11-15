@@ -440,7 +440,7 @@ export function CommandPalette({
         group: "Sessions",
         run: () =>
           go(
-            `/chat?sessionView=${encodeURIComponent(session.id)}`,
+            `/chat?sessionLive=${encodeURIComponent(session.id)}`,
             session.project_id ?? "unassigned",
           ),
       });

@@ -1,5 +1,4 @@
 import {
-  BookOpen,
   ChevronLeft,
   Eye,
   EyeOff,
@@ -18,7 +17,6 @@ import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ArchiveResumeForm, ProjectGroup, SubagentList } from "@/components/ChatControls";
 import { Highlight } from "@/components/Highlight";
-import { SessionArchiveView } from "@/components/SessionArchiveView";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
@@ -72,8 +70,8 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
     listError,
     section,
     chooseSection,
-    expandedProject,
-    setExpandedProject,
+    expandedProjects,
+    toggleProject,
     projects,
     refreshingSessions,
     refreshSessions,
@@ -90,12 +88,9 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
     projectFromFolder,
     loading,
     selectEntry,
-    openSessionView,
     newProjectSession,
     newSession,
     selectedArchive,
-    archiveView,
-    setArchiveView,
     deep,
     setDeep,
     deepSearching,
@@ -120,7 +115,6 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
         project={project}
         query={search}
         onSelect={() => selectEntry(entry)}
-        onView={() => openSessionView(entry)}
       />
       {entry.children?.length ? (
         <SubagentList count={entry.children.length}>
@@ -343,10 +337,8 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                     name={project.name}
                     icon={<Folder size={14} className="shrink-0" aria-hidden />}
                     count={rows.length}
-                    expanded={expandedProject === project.id}
-                    onToggle={() =>
-                      setExpandedProject(expandedProject === project.id ? null : project.id)
-                    }
+                    expanded={expandedProjects.includes(project.id)}
+                    onToggle={() => toggleProject(project.id)}
                     onNew={() => newProjectSession(project)}
                   >
                     {rows
@@ -377,10 +369,8 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                         )
                       }
                       count={folder.rows.length}
-                      expanded={expandedProject === folder.key}
-                      onToggle={() =>
-                        setExpandedProject(expandedProject === folder.key ? null : folder.key)
-                      }
+                      expanded={expandedProjects.includes(folder.key)}
+                      onToggle={() => toggleProject(folder.key)}
                       onAdopt={
                         folder.cwd ? () => projectFromFolder(folder.cwd as string) : undefined
                       }
@@ -474,7 +464,6 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
           </div>
         </>
       )}
-      <SessionArchiveView session={archiveView} onClose={() => setArchiveView(null)} />
     </section>
   );
 }
@@ -487,7 +476,6 @@ function MobileHistoryRow({
   project,
   query = "",
   onSelect,
-  onView,
 }: {
   entry: ChatHistoryEntry;
   state: AgentState;
@@ -496,7 +484,6 @@ function MobileHistoryRow({
   project: string | null;
   query?: string;
   onSelect: () => void;
-  onView?: () => void;
 }) {
   const tab = entry.kind === "local" ? entry.tab : null;
   const open = !!tab && !tab.hidden;
@@ -594,25 +581,7 @@ function MobileHistoryRow({
           </span>
         )}
       </button>
-      {(entry.kind === "native" || entry.kind === "archive") && onView && (
-        <ActionHelp
-          label="View conversation"
-          description="Read the native transcript here without resuming the session"
-        >
-          <button
-            type="button"
-            data-testid="chat-session-view"
-            aria-label={`View ${entry.title}`}
-            onClick={onView}
-            className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface hover:text-on-surface"
-          >
-            <BookOpen size={15} />
-          </button>
-        </ActionHelp>
-      )}
-      {!((entry.kind === "native" || entry.kind === "archive") && onView) && !(open && tab) && (
-        <span aria-hidden className="size-11 shrink-0" />
-      )}
+      {!(open && tab) && <span aria-hidden className="size-11 shrink-0" />}
       {open && tab && (
         <ActionHelp
           label={`Close ${entry.title} from open sessions`}

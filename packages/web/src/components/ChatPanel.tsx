@@ -49,7 +49,7 @@ import {
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
-import { ChatSessionStrip, useChatContextUsage } from "@/components/ChatSessionStrip";
+import { useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider, chatDividers } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
@@ -64,6 +64,7 @@ import {
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionView } from "@/components/SessionView";
+import { StateBadge } from "@/components/StateBadge";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
@@ -74,7 +75,7 @@ import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
 import { useSendSessionMessage, useSessionChildren } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
-import type { AgentState } from "@/lib/agent-state";
+import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
@@ -350,8 +351,18 @@ export function ChatPanel({
   const compactViewport = useCompactViewport();
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
-  const context = useSessionContext(home.terminalId);
   const terminalCenter = !!home.terminalId;
+  const viewId = fullscreen && !terminalCenter ? home.viewId : null;
+  const viewed = useQuery({
+    queryKey: ["sessions", "live-one", viewId],
+    queryFn: () => api.sessions.liveOne(viewId as string),
+    enabled: !!viewId,
+    retry: false,
+  }).data;
+  const context = useSessionContext(
+    home.terminalId,
+    viewId ? { id: viewId, session: viewed } : undefined,
+  );
   // The drawer can take the conversation's space; collapsing or closing it
   // returns the column to the chat instead of leaving a half-empty screen.
   const [drawerExpanded, setDrawerExpanded] = useState(false);
@@ -375,7 +386,12 @@ export function ChatPanel({
     );
   };
   const linkError = useSessionLiveLink(home, fullscreen);
-  const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
+  const title = terminalCenter
+    ? (context.terminal?.name ?? "Terminal")
+    : viewId
+      ? (viewed?.name ?? "Session")
+      : thread?.title;
+  const headerState = viewId ? (viewed ? liveSessionState(viewed) : null) : sessionState;
   const dividers = useMemo(
     () => chatDividers(messages, contextUsage.data?.compactions ?? []),
     [messages, contextUsage.data?.compactions],
@@ -402,13 +418,12 @@ export function ChatPanel({
     latestUsageAt >= lastAssistant.turn.startedAt
       ? latestUsage
       : null;
-  // Changing models applies to the next turn, so the header names the selected
-  // model; it falls back to the model the last turn recorded.
-  const stripModel = config.model || lastAssistant?.model;
   const projects = useProjects();
   const owner = terminalCenter
     ? context.session?.project_id
-    : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
+    : viewId
+      ? viewed?.project_id
+      : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
   const projectName =
     owner === null
       ? "Unassigned"
@@ -695,56 +710,59 @@ export function ChatPanel({
                     <p className="truncate text-xs text-muted-foreground">
                       <span data-testid="session-project-breadcrumb">{projectName}</span>
                       {" · "}
-                      {thread?.host ?? THIS_SERVER}
+                      {(viewId ? viewed?.host : thread?.host) ?? THIS_SERVER}
                     </p>
                   </div>
-                  {streaming && (
+                  {streaming && !viewId && (
                     <LoaderCircle
                       size={14}
                       aria-hidden="true"
                       className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
                     />
                   )}
-                  <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
+                  {!viewId && (
+                    <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Session actions"
+                          data-testid="chat-options-button"
+                          className={cn(
+                            iconButton,
+                            "min-h-11 min-w-11",
+                            sessionChanged && "text-warning",
+                          )}
+                        >
+                          <MoreHorizontal size={17} />
+                        </button>
+                      </PopoverTrigger>
+                      {/* Anchor below the whole two-line header so the menu never
+                          covers the Terminal/Inspector/Refresh/Compact controls. */}
+                      <PopoverAnchor virtualRef={header} />
+                      <PopoverContent
+                        data-testid="chat-actions-menu"
                         aria-label="Session actions"
-                        data-testid="chat-options-button"
-                        className={cn(
-                          iconButton,
-                          "min-h-11 min-w-11",
-                          sessionChanged && "text-warning",
-                        )}
+                        align="end"
+                        className="flex w-56 flex-col gap-1 p-1"
                       >
-                        <MoreHorizontal size={17} />
-                      </button>
-                    </PopoverTrigger>
-                    {/* Anchor below the whole two-line header so the menu never
-                        covers the Terminal/Inspector/Refresh/Compact controls. */}
-                    <PopoverAnchor virtualRef={header} />
-                    <PopoverContent
-                      data-testid="chat-actions-menu"
-                      aria-label="Session actions"
-                      align="end"
-                      className="flex w-56 flex-col gap-1 p-1"
-                    >
-                      {actionMenuRows(compactViewport)}
-                    </PopoverContent>
-                  </Popover>
+                        {actionMenuRows(compactViewport)}
+                      </PopoverContent>
+                    </Popover>
+                  )}
                 </div>
                 <div className="chat-header-controls flex items-center justify-end gap-0.5">
-                  <ChatSessionStrip
-                    compact
-                    agent={config.agent}
-                    model={stripModel}
-                    state={sessionState}
-                    latest={latestUsage ?? undefined}
-                    compactions={contextUsage.data?.compactions?.length ?? 0}
-                    className="mr-auto min-w-0"
-                  />
+                  {headerState ? (
+                    <StateBadge
+                      state={headerState}
+                      compact
+                      testId="chat-header-state"
+                      className="mr-auto shrink-0"
+                    />
+                  ) : (
+                    <span className="mr-auto" />
+                  )}
                   <SessionHomeToggles home={home} gestures />
-                  {!terminalCenter && (
+                  {!terminalCenter && !viewId && (
                     <div
                       data-testid="chat-header-actions"
                       className="flex shrink-0 items-center gap-0.5"
@@ -795,21 +813,18 @@ export function ChatPanel({
             {!phone && Boolean(title || fullscreen) && (
               <span aria-hidden="true" className="h-3 w-px shrink-0 bg-outline-variant" />
             )}
-            {!phone && (
-              <ChatSessionStrip
-                agent={config.agent}
-                model={stripModel}
-                state={sessionState}
-                latest={latestUsage ?? undefined}
-                compactions={contextUsage.data?.compactions?.length ?? 0}
+            {!phone && headerState && (
+              <StateBadge
+                state={headerState}
                 compact={!headerWide}
-                className="min-w-0 shrink"
+                testId="chat-header-state"
+                className="shrink-0"
               />
             )}
             {/* Session facts sit beside the title; actions stay at the right edge. */}
             {!phone && <div className="min-w-0 flex-1" aria-hidden="true" />}
             {!phone &&
-              (terminalCenter ? null : headerWide ? (
+              (terminalCenter || viewId ? null : headerWide ? (
                 <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
                   <ChatRefreshAction
                     stale={sessionChanged}
@@ -894,23 +909,22 @@ export function ChatPanel({
             </p>
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}
+          {viewId && (
+            <div className={cn("flex min-h-0 flex-1 flex-col", drawerExpanded && "hidden")}>
+              <SessionView
+                key={viewId}
+                sessionId={viewId}
+                onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
+              />
+            </div>
+          )}
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col",
-              (terminalCenter || drawerExpanded) && "hidden",
+              (terminalCenter || drawerExpanded || viewId) && "hidden",
             )}
           >
             <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
-            {/* The session viewer belongs to the full-screen chat page. The side
-                panel stays mounted while hidden, and its sheet would be portaled
-                out of that hidden wrapper into a second copy. */}
-            {fullscreen && (
-              <SessionView
-                sessionId={home.viewId}
-                onClose={() => home.go({ viewId: null })}
-                onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
-              />
-            )}
             {reconnecting && (
               <p
                 role="status"
