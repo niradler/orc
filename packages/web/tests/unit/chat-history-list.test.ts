@@ -3,6 +3,7 @@ import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "../../src/api/client";
 import {
   chatHistoryList,
+  folderLabel,
   folderProjectName,
   historyEntryState,
 } from "../../src/lib/chat-history-list";
@@ -297,4 +298,46 @@ test("a folder's project name is a valid, unused slug", () => {
   expect(folderProjectName("C:\\Users\\Nir\\My Repo (old)\\", [])).toBe("My-Repo-old");
   expect(folderProjectName("/", [])).toBe("project");
   expect(folderProjectName(`/x/${"a".repeat(300)}`, [])).toHaveLength(90);
+});
+
+test("subagent sessions nest under their parent and lift its state and recency", () => {
+  const parent = {
+    ...live,
+    id: "parent",
+    session_id: "p",
+    name: "Review the PR",
+    project_id: null,
+  };
+  const child = {
+    ...live,
+    id: "child",
+    session_id: "c",
+    parent_id: "parent",
+    name: "Find callers",
+    status: "running" as const,
+    project_id: null,
+    last_activity_at: "2026-10-31T00:00:00Z",
+  };
+  const orphan = { ...live, id: "orphan", session_id: "o", parent_id: "gone", project_id: null };
+  const entries = chatHistoryList([], [], [child, parent, orphan], []);
+  expect(entries.map((entry) => entry.id)).toEqual(["native:parent", "native:orphan"]);
+  const [top] = entries;
+  expect(top?.children?.map((entry) => entry.id)).toEqual(["native:child"]);
+  expect(top?.observedState).toBe("working");
+  expect(top?.updatedAt).toBe(Date.parse("2026-10-31T00:00:00Z"));
+  expect(top?.seenKeys).toContain("native:child");
+  expect(chatHistoryList([], [], [child, parent], [], "callers").map((e) => e.id)).toEqual([
+    "native:parent",
+  ]);
+});
+
+test("folder groups with the same name show enough of the path to tell them apart", () => {
+  const folders = ["/tmp/a/e330/repo", "/tmp/a/e330b/repo", "/Users/nir/orc", null];
+  expect(folders.map((cwd) => folderLabel(cwd, folders))).toEqual([
+    "e330/repo",
+    "e330b/repo",
+    "orc",
+    "Unassigned",
+  ]);
+  expect(folderLabel("/work/agentops", ["/work/agentops"], ["agentops"])).toBe("work/agentops");
 });

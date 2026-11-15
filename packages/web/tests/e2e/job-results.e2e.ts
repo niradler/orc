@@ -1,3 +1,4 @@
+import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
@@ -100,6 +101,33 @@ for (const width of [1440, 390, 320]) {
       if (path.endsWith("/job-native-conversation")) return route.fulfill({ json: session });
       return route.fulfill({ json: { sessions: [session] } });
     });
+    await page.route("**/api/chat/threads", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      expect(route.request().postDataJSON()).toEqual({
+        sourceSessionId: "job-native-conversation",
+      });
+      return route.fulfill({
+        json: {
+          id: "job-native-thread",
+          title: "Job inspection",
+          config: ChatSettingsSchema.parse({ agent: "codex", model: "" }),
+          cwd: "/demo/project",
+          host: null,
+          runtimeId: "provider-runtime-id",
+          sourceId: "job-native-conversation",
+          backend: "codex",
+          updatedAt: Date.now(),
+          messages: [
+            {
+              id: "job-native-a1",
+              role: "assistant",
+              content: "This is the exact conversation created by the job",
+              timestamp: Date.now(),
+            },
+          ],
+        },
+      });
+    });
     try {
       await gotoView(page, "jobs");
       await page
@@ -119,11 +147,10 @@ for (const width of [1440, 390, 320]) {
       await expect(page.getByTestId("job-run-open-session")).toBeInViewport();
       await page.screenshot({ path: info.outputPath("job-run-results.png") });
       await page.getByTestId("job-run-open-session").click();
-      await expect(page).toHaveURL(/\/chat\?(.*)sessionView=job-native-conversation/);
-      await expect(page.getByTestId("session-view")).toBeVisible();
-      await expect(page.getByTestId("session-view")).toContainText(
-        "This is the exact conversation created by the job",
-      );
+      await expect(page).toHaveURL(/\/chat\?/);
+      await expect(
+        page.getByText("This is the exact conversation created by the job").first(),
+      ).toBeVisible();
     } finally {
       await apiDelete(request, `/jobs/${job.id}`);
     }

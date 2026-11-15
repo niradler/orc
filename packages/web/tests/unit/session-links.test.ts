@@ -8,10 +8,10 @@ describe("session notification paths", () => {
     expect(sessionPath("/tasks/42")).toBe("/tasks/42");
   });
 
-  test("should move a stored /sessions link to the chat viewer", () => {
-    expect(sessionPath("/sessions?session=demo-live-3")).toBe("/chat?sessionView=demo-live-3");
+  test("should move a stored /sessions link into the chat", () => {
+    expect(sessionPath("/sessions?session=demo-live-3")).toBe("/chat?sessionLive=demo-live-3");
     expect(sessionPath("/sessions?project=acme&session=demo-live-3")).toBe(
-      "/chat?project=acme&sessionView=demo-live-3",
+      "/chat?project=acme&sessionLive=demo-live-3",
     );
   });
 

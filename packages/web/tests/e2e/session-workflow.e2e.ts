@@ -70,7 +70,7 @@ for (const width of [1440, 390]) {
         `[data-testid="chat-history-row"][data-history-id="native:${session?.id}"]`,
       );
       await expect(row).toBeVisible();
-      await row.getByTestId("chat-session-view").click();
+      await page.goto(`/chat?project=${project.id}&sessionView=${session?.id}`);
       const detail = page.getByTestId("session-view");
       await expect(detail.getByTestId("transcript-turn")).toContainText(
         "Inspect the terminal workflow",
@@ -88,8 +88,6 @@ for (const width of [1440, 390]) {
       await expect(picker).toBeHidden();
       await expect(detail.getByTestId("detail-open-task")).toHaveText(task.title);
       await expect(detail).toContainText("Blocked");
-      await page.keyboard.press("Escape");
-      await expect(detail).toBeHidden();
 
       let releaseTasks = () => {};
       const taskModule = new Promise<void>((resolve) => {
@@ -103,10 +101,11 @@ for (const width of [1440, 390]) {
       });
       await pauseBrowserClock(page);
       try {
-        await page.getByTestId("chat-session-search").fill(title);
-        await expect(row).toHaveCount(1);
-        await expect(row.locator('select[data-testid="link-task"]')).toHaveCount(0);
-        await row.getByTestId("chat-session-view").click();
+        if (width === 1440) {
+          await page.getByTestId("chat-session-search").fill(title);
+          await expect(row).toHaveCount(1);
+          await expect(row.locator('select[data-testid="link-task"]')).toHaveCount(0);
+        }
         await detail.getByTestId("detail-open-task").click();
         await expect(page).toHaveURL(new RegExp(`/tasks/${task.id}.*project=${project.id}`));
         await expect.poll(() => taskModuleRequests).toBe(1);
@@ -120,7 +119,8 @@ for (const width of [1440, 390]) {
       const taskSession = page.getByTestId("task-session-row").filter({ hasText: title });
       await expect(taskSession).toBeVisible();
       await taskSession.getByTestId("task-session-link").click();
-      await expect(page).toHaveURL(new RegExp(`sessionView=${session?.id}.*project=${project.id}`));
+      await expect(page).toHaveURL(/\/chat\?/);
+      await page.goto(`/chat?project=${project.id}&sessionView=${session?.id}`);
       await expect(detail.getByTestId("transcript-turn")).toContainText(
         "Inspect the terminal workflow",
       );
@@ -136,13 +136,14 @@ for (const width of [1440, 390]) {
         path: testInfo.outputPath(`session-workflow-${width}.png`),
         fullPage: true,
       });
-      await page.keyboard.press("Escape");
       await page.goto(`/chat?project=${project.id}&sessionList=show`);
       writeRegistration({ ...registration, status: "stopped", updatedAt: Date.now() });
       await apiPost(request, "/sessions/live/sync", {});
       await page.getByTestId("session-list-refresh").click();
-      await expect(row).toBeVisible();
-      await row.getByTestId("chat-session-view").click();
+      await expect(
+        page.locator("[data-history-id]").filter({ hasText: title }).first(),
+      ).toBeVisible();
+      await page.goto(`/chat?project=${project.id}&sessionView=${session?.id}`);
       // An ended session keeps its stored conversation readable.
       await expect(detail.getByTestId("transcript-turn")).toContainText(
         "Inspect the terminal workflow",

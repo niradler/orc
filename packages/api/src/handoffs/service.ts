@@ -22,7 +22,7 @@ import {
 } from "@orc/core/session-handoff";
 import { getDb } from "@orc/db/client";
 import { bridge_chats, gateway_sessions, projects, session_handoffs } from "@orc/db/schema";
-import { and, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { LIVE_CHAT_ID } from "../sessions/common.js";
 import { handoffAdapters } from "./adapters.js";
 import { prepareHandoffWorktree, validateHandoffRepo, verifyHandoffWorktree } from "./git.js";
@@ -343,11 +343,26 @@ export class HandoffService {
           })
           .onConflictDoNothing()
           .run();
+        const live =
+          tx
+            .select({ id: gateway_sessions.id })
+            .from(gateway_sessions)
+            .where(
+              and(
+                eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+                eq(gateway_sessions.backend, row.request.agent),
+                eq(gateway_sessions.runtime_session_id, row.session_id),
+                row.execution_host
+                  ? eq(gateway_sessions.execution_host, row.execution_host)
+                  : isNull(gateway_sessions.execution_host),
+              ),
+            )
+            .get()?.id ?? liveId;
         tx.update(session_handoffs)
           .set({
             status: "ready",
             cwd,
-            live_session_id: liveId,
+            live_session_id: live,
             error: null,
             updated_at: new Date(),
           })

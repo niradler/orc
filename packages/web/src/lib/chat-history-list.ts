@@ -3,7 +3,7 @@ import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
-import { type AgentState, liveSessionState, moreUrgent } from "./agent-state";
+import { type AgentState, liveSessionState, moreUrgent, rollupState } from "./agent-state";
 import { lastSeen, type SeenRecord, unseenState } from "./session-seen";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
@@ -31,6 +31,7 @@ export type ChatHistoryEntry = HistorySource & {
   seenKeys: string[];
   snippets?: string[];
   matched?: string[];
+  children?: ChatHistoryEntry[];
 };
 
 function observe(entry: ChatHistoryEntry, state: AgentState) {
@@ -183,6 +184,22 @@ export function chatHistoryList(
     if (key) identities.set(key, entry);
     liveEntries.set(session.id, entry);
   }
+  const nested = new Set<ChatHistoryEntry>();
+  for (const session of native) {
+    const child = liveEntries.get(session.id);
+    const parent = session.parent_id ? liveEntries.get(session.parent_id) : undefined;
+    if (!child || !parent || child === parent || child.kind !== "native") continue;
+    parent.children = [...(parent.children ?? []), child];
+    nested.add(child);
+  }
+  for (const entry of entries) {
+    if (!entry.children) continue;
+    entry.children.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+    const busy = rollupState(entry.children.map((child) => child.observedState));
+    if (busy) observe(entry, busy);
+    entry.updatedAt = Math.max(entry.updatedAt, ...entry.children.map((child) => child.updatedAt));
+    entry.seenKeys.push(...entry.children.flatMap((child) => child.seenKeys));
+  }
   for (const terminal of terminals) {
     if (terminal.status !== "running" || (terminal.kind === "shell" && !includeShells)) continue;
     const linked = terminal.live_session_id ? liveEntries.get(terminal.live_session_id) : undefined;
@@ -250,7 +267,14 @@ export function chatHistoryList(
     if (entry.projectId) continue;
     entry.projectId = projectForFolder(entryCwd(entry), projectFolders)?.id ?? entry.projectId;
   }
+  for (const entry of entries)
+    if (entry.children?.length)
+      keywords.set(
+        entry.id,
+        [entry, ...entry.children].map((item) => keywords.get(item.id) ?? item.title).join(" "),
+      );
   return entries
+    .filter((entry) => !nested.has(entry))
     .filter(
       (entry) =>
         projectScope === "all" ||
@@ -260,9 +284,9 @@ export function chatHistoryList(
     )
     .filter(
       (entry) =>
-        matches(keywords.get(entry.id) ?? entry.title) ||
-        archiveMatches.has(entry.id) ||
-        contentMatches.has(entry.id),
+        [entry, ...(entry.children ?? [])].some(
+          (item) => archiveMatches.has(item.id) || contentMatches.has(item.id),
+        ) || matches(keywords.get(entry.id) ?? entry.title),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
 }
@@ -330,4 +354,22 @@ export function folderProjectName(cwd: string, taken: string[]): string {
   const candidates = [base, slug(parts.slice(-2).join("-"))];
   for (let n = 2; n < 100; n++) candidates.push(`${base}-${n}`);
   return candidates.find((name) => !used.has(name.toLowerCase())) ?? `${base}-${Date.now()}`;
+}
+
+export function folderLabel(
+  cwd: string | null,
+  folders: readonly (string | null)[],
+  projects: readonly string[] = [],
+): string {
+  if (!cwd) return "Unassigned";
+  const parts = (path: string) => path.split(/[\\/]/).filter(Boolean);
+  const own = parts(cwd);
+  const others = folders.flatMap((other) => (other && other !== cwd ? [parts(other)] : []));
+  const taken = new Set(projects.map((name) => name.toLowerCase()));
+  for (let depth = 1; depth <= own.length; depth++) {
+    const tail = own.slice(-depth).join("/");
+    if (taken.has(tail.toLowerCase())) continue;
+    if (!others.some((other) => other.slice(-depth).join("/") === tail)) return tail;
+  }
+  return cwd;
 }

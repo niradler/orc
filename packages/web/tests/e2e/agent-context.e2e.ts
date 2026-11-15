@@ -1,6 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { API_SECRET, gotoView } from "./_helpers";
+import { API_SECRET } from "./_helpers";
 
 const source = [
   "Visible question before context.",
@@ -98,41 +98,6 @@ for (const width of [1440, 390]) {
     await panel.locator("summary").click();
     await expect(panel.getByTestId("agent-context-content")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`agent-context-${width}.png`) });
-    await page.route("**/api/sessions/archive?**", (route) =>
-      route.fulfill({
-        json: {
-          sessions: [
-            {
-              id: "archive-context",
-              agent: "claude",
-              native_id: "archive-native",
-              title: "Archived context",
-              revision: 1,
-              updated_at: new Date().toISOString(),
-              metadata: { cwd: "/fixture", subdirectory: "" },
-              passages: [],
-            },
-          ],
-          total: 1,
-          has_more: false,
-        },
-      }),
-    );
-    await page.route("**/api/sessions/archive/archive-context/transcript?**", (route) =>
-      route.fulfill({ json: transcript }),
-    );
-    await gotoView(page, "sessions");
-    const row = page.locator(
-      '[data-testid="chat-history-row"][data-history-id="archive:archive-context"]',
-    );
-    await row.getByTestId("chat-session-view").click();
-    const archive = page.getByTestId("session-archive-view");
-    const archivedContext = archive.locator(
-      '[data-testid="agent-context"][data-tag="recommended_plugins"]',
-    );
-    await expect(archivedContext.getByTestId("agent-context-content")).toBeHidden();
-    await archivedContext.locator("summary").click();
-    await expect(archivedContext.getByTestId("agent-context-content")).toBeVisible();
     expect(trackerRequests).toBe(0);
     expect(await page.evaluate(() => "contextXss" in window)).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

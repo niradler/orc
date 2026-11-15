@@ -155,6 +155,20 @@ test("should list OpenCode sessions from both storage generations, newest first"
       usageVersion: 1,
       usage: expect.any(Function),
     },
+    {
+      backend: "opencode",
+      externalId: "ses_child",
+      parentId: "ses_main",
+      title: "Subagent",
+      cwd: "/work/app",
+      status: "stopped",
+      createdAt: new Date(1100),
+      lastActivityAt: new Date(1200),
+      transcriptPath: dbPath,
+      tokensUsed: null,
+      usageVersion: 1,
+      usage: expect.any(Function),
+    },
   ]);
 });
 

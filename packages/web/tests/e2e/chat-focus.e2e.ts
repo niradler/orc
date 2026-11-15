@@ -29,7 +29,7 @@ async function openBlankChat(page: Page, width: number) {
   return panel;
 }
 
-test("focus chat hides the strip and queue while keeping the composer, Stop and errors", async ({
+test("focus chat hides the header state and queue while keeping the composer, Stop and errors", async ({
   page,
 }) => {
   const panel = await openBlankChat(page, 1440);
@@ -41,13 +41,15 @@ test("focus chat hides the strip and queue while keeping the composer, Stop and 
     await panel.getByTestId("chat-input").fill("Reply with exactly: SECOND.");
     await panel.getByTestId("chat-send-button").click();
     await expect(panel.getByTestId("chat-message-queue")).toHaveCount(1);
+    // The header's session state is the detail focus mode removes.
+    await expect(panel.getByTestId("chat-header-state")).toBeVisible();
 
     await expect(panel.getByTestId("chat-focus-toggle")).toHaveAttribute("aria-pressed", "false");
     await panel.getByTestId("chat-focus-toggle").click();
     await expect(panel).toHaveAttribute("data-focus", "true");
     await expect(panel.getByTestId("chat-focus-toggle")).toHaveAttribute("aria-pressed", "true");
     // Focus hides the chrome a reader does not need mid-conversation.
-    await expect(panel.getByTestId("chat-session-strip")).toHaveCount(0);
+    await expect(panel.getByTestId("chat-header-state")).toHaveCount(0);
     await expect(panel.getByTestId("chat-message-queue")).toHaveCount(0);
     // But never the working controls or the transcript.
     await expect(panel.getByTestId("chat-composer-box")).toBeVisible();
@@ -60,17 +62,17 @@ test("focus chat hides the strip and queue while keeping the composer, Stop and 
   await expect(panel).toHaveAttribute("data-streaming", "false");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("SECOND");
 
-  // Escape leaves focus, and the strip comes back.
+  // Escape leaves focus, and the header state comes back.
   await page.keyboard.press("Escape");
   await expect(panel).toHaveAttribute("data-focus", "false");
-  await expect(panel.getByTestId("chat-session-strip")).toHaveCount(1);
+  await expect(panel.getByTestId("chat-header-state")).toBeVisible();
 
   // The session actions menu reaches the same toggle, and keeps Escape for itself.
   await openChatActions(page);
   await expect(page.getByTestId("chat-focus-menu")).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("chat-focus-menu").click();
   await expect(panel).toHaveAttribute("data-focus", "true");
-  await expect(panel.getByTestId("chat-session-strip")).toHaveCount(0);
+  await expect(panel.getByTestId("chat-header-state")).toHaveCount(0);
   await openChatActions(page);
   await expect(page.getByTestId("chat-actions-menu")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -101,9 +103,11 @@ test("focus chat hides the strip and queue while keeping the composer, Stop and 
 
 test("focus chat keeps the phone composer reachable without overflow", async ({ page }) => {
   const panel = await openBlankChat(page, 390);
+  // The phone title's project · host line is the detail focus removes.
+  await expect(panel.getByTestId("session-project-breadcrumb")).toBeVisible();
   await panel.getByTestId("chat-focus-toggle").click();
   await expect(panel).toHaveAttribute("data-focus", "true");
-  await expect(panel.getByTestId("chat-session-strip")).toHaveCount(0);
+  await expect(panel.getByTestId("session-project-breadcrumb")).toHaveCount(0);
   await expect(panel.getByTestId("chat-composer-box")).toBeVisible();
 
   const input = await panel.getByTestId("chat-input").boundingBox();

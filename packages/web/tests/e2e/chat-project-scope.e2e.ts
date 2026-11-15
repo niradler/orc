@@ -187,7 +187,7 @@ test("session history scopes assigned sources and local drafts without inventing
       expect(observed).toContainEqual({ kind, scope });
 });
 
-test("opening a session from All projects adopts its project", async ({ page }) => {
+test("opening a session from All projects keeps All projects selected", async ({ page }) => {
   const now = Date.now();
   const threadId = "90000000-0000-4000-8000-000000000011";
   await page.addInitScript((secret) => {
@@ -280,6 +280,6 @@ test("opening a session from All projects adopts its project", async ({ page }) 
   // the project only in the accessible name.
   await expect(
     page.getByTestId("sidebar-project-select").filter({ visible: true }),
-  ).toHaveAttribute("aria-label", "Switch project: Project one");
-  await expect(page).toHaveURL(/project=p1/);
+  ).toHaveAttribute("aria-label", "Switch project: All projects");
+  await expect(page).toHaveURL(/project=all/);
 });

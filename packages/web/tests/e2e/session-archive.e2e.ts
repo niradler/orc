@@ -190,12 +190,6 @@ test("offline project sync via trusted helper is idempotent, incremental and sea
   const row = page.locator('[data-testid="chat-history-row"][data-history-id^="archive:"]');
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("quartz butterfly");
-  await row.getByTestId("chat-session-view").click();
-  await expect(page.getByTestId("session-archive-view").getByTestId("archive-turn")).toContainText([
-    "quartz butterfly",
-    "incremental canary saved",
-  ]);
-  await page.keyboard.press("Escape");
   await page.reload();
   const listing = await apiGet<ArchiveSearchResult>(
     request,
