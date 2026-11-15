@@ -8,6 +8,12 @@ export const ChatToolStatSchema = z.object({
 });
 export type ChatToolStat = z.infer<typeof ChatToolStatSchema>;
 
+export const ChatSkillStatSchema = z.object({
+  name: z.string(),
+  loads: z.number().int().positive(),
+});
+export type ChatSkillStat = z.infer<typeof ChatSkillStatSchema>;
+
 export const ChatTurnStatSchema = z.object({
   index: z.number().int().positive(),
   startedAt: z.number().finite().nonnegative(),
@@ -53,6 +59,7 @@ export const ChatAnalyticsSchema = z.object({
   tools: z.array(ChatToolStatSchema),
   /** Distinct tools used, before the payload keeps only the most-used ones. */
   toolTotal: z.number().int().nonnegative(),
+  skills: z.array(ChatSkillStatSchema),
   turnTimeline: z.array(ChatTurnStatSchema),
   turnTimelineTruncated: z.boolean(),
   context: ChatContextAnalyticsSchema.nullable(),

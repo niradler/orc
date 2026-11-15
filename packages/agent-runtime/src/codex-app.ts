@@ -356,7 +356,7 @@ export class CodexAppSession implements AgentSession {
       this.push({ type: "thinking", data: String(params.delta ?? "") });
     } else if (method === "item/started" || method === "item/completed") {
       const item = object(params.item);
-      if (item.type === "contextCompaction" && method === "item/started")
+      if (item.type === "contextCompaction" && method === "item/started" && !this.compacting)
         this.push({
           type: "system_status",
           data: "Compacting context…",
