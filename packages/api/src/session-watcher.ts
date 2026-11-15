@@ -126,10 +126,13 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     r.cwd !== undefined
       ? await projectIdFor(r.cwd, hostRuntime(execHostFor(executionHost)))
       : undefined;
+  // The column keeps whole seconds; storing the truncated value avoids a rewrite on
+  // every sync for an activity timestamp that only differs below a second.
+  const lastActivityAt = new Date(Math.floor(r.lastActivityAt.getTime() / 1000) * 1000);
   const fields = {
     title: r.title,
     status: r.status,
-    last_activity_at: r.lastActivityAt,
+    last_activity_at: lastActivityAt,
     updated_at: new Date(),
     ...(r.cwd !== undefined && { cwd: r.cwd }),
     ...(r.summary !== undefined && { summary: r.summary }),
@@ -272,6 +275,15 @@ function queueTokens(id: string, compute: () => Promise<number | null>, version 
 }
 
 const USAGE_QUEUE_LIMIT = 40;
+/** A failing session yields the queue to older ones instead of retrying every sync. */
+const USAGE_RETRY_COOLDOWN_MS = 10 * 60_000;
+const usageFailures = new Map<string, number>();
+let requestUsageFollowUp: (() => void) | undefined;
+
+function usageCoolingDown(id: string, now = Date.now()): boolean {
+  const failedAt = usageFailures.get(id);
+  return failedAt !== undefined && now - failedAt < USAGE_RETRY_COOLDOWN_MS;
+}
 
 function queueUsage(
   id: string,
@@ -281,8 +293,14 @@ function queueUsage(
 ): void {
   usageChain = usageChain
     .then(async () => {
-      const usage = await compute();
-      writeSessionUsage(id, agent, usage, version);
+      try {
+        const usage = await compute();
+        writeSessionUsage(id, agent, usage, version);
+        usageFailures.delete(id);
+      } catch (err) {
+        usageFailures.set(id, Date.now());
+        throw err;
+      }
     })
     .catch((err) => logger.error("usage index failed", err));
 }
@@ -320,13 +338,23 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
         pendingChanged = true;
       }
     }
-    usageJobs.sort((a, b) => b.activity - a.activity);
-    for (const job of usageJobs.slice(0, USAGE_QUEUE_LIMIT))
+    const now = Date.now();
+    // Recently failed sessions wait out their cooldown so one broken transcript cannot
+    // occupy the batch and hide every older session.
+    const readyUsage = usageJobs.filter((job) => !usageCoolingDown(job.id, now));
+    readyUsage.sort((a, b) => b.activity - a.activity);
+    for (const job of readyUsage.slice(0, USAGE_QUEUE_LIMIT))
       queueUsage(job.id, adapter.backend, job.usage, job.version);
-    if (usageJobs.length) {
+    if (readyUsage.length) {
       // One event after the queued ledger writes drain, not one per request.
       const indexPending = usageChain;
-      void indexPending.then(() => changes.publish("usage"));
+      // A backlog larger than one batch continues on the normal sync path, after the
+      // writes above land, so the next pass sees the updated usage versions.
+      const backlog = readyUsage.length > USAGE_QUEUE_LIMIT;
+      void indexPending.then(() => {
+        changes.publish("usage");
+        if (backlog) requestUsageFollowUp?.();
+      });
     }
     const seen = records.map((r) => r.externalId);
     for (const id of pending)
@@ -670,6 +698,7 @@ export function startSessionWatcher(
     schedule();
   };
   refreshWatchers = attach;
+  requestUsageFollowUp = schedule;
   const unsubscribe = changes.subscribe(({ resources }) => {
     if (
       (!opts.adapters && resources.includes("settings")) ||
@@ -688,6 +717,7 @@ export function startSessionWatcher(
     for (const stop of processes.values()) stop();
     synchronized = undefined;
     refreshWatchers = undefined;
+    requestUsageFollowUp = undefined;
     liveRegistryDir = null;
   };
 }

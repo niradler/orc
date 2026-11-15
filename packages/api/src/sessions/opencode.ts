@@ -1,7 +1,7 @@
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { oneLine } from "./common.js";
+import { activityAdvanced, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { parseOpenCodeUsage } from "./usage-parsers.js";
 
@@ -127,7 +127,7 @@ export function opencodeAdapter(
         const before = known.get(row.id);
         if (
           !before ||
-          row.time_updated > before.lastActivityMs ||
+          activityAdvanced(row.time_updated, before.lastActivityMs) ||
           before?.usageVersion !== USAGE_EVENT_VERSION
         ) {
           record.usage = async () => {

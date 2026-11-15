@@ -2767,6 +2767,7 @@ export function chatStatus(id: string): SessionStatus {
       .map((child) => child.id),
     project_id: thread.projectId ?? null,
     cwd: thread.cwd,
+    started_at: thread.spawnedBy?.at ?? null,
     updated_at: thread.updatedAt,
   };
 }

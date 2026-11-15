@@ -108,6 +108,35 @@ export const ChatModelsSchema = z.object({
   warning: z.string().nullable(),
 });
 export type ChatModels = z.infer<typeof ChatModelsSchema>;
+/**
+ * What a tool call leaves running after it returns: a shell command the agent detached
+ * (a dev server, a test run) or a subagent it delegated to. A backend sets
+ * `run_in_background`; the tool result then arrives at once and the work continues.
+ */
+export const CHAT_BACKGROUND_KINDS = ["command", "subagent"] as const;
+export type ChatBackgroundKind = (typeof CHAT_BACKGROUND_KINDS)[number];
+
+const BACKGROUND_FLAGS = ["run_in_background", "runInBackground", "background", "detached"];
+const SUBAGENT_TOOL_NAME = /task|agent|subagent|delegate|spawn/i;
+
+/**
+ * Reads a tool call's declared background work. Every common backend that can detach a
+ * command or a subagent marks it in the call input, so this reads the input rather than
+ * naming each backend's tool.
+ */
+export function chatBackgroundKind(name: string, input: string): ChatBackgroundKind | null {
+  let parsed: unknown;
+  try {
+    parsed = input.trim() ? JSON.parse(input) : null;
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  if (!BACKGROUND_FLAGS.some((flag) => record[flag] === true)) return null;
+  return SUBAGENT_TOOL_NAME.test(name) ? "subagent" : "command";
+}
+
 export const ChatActivitySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("thinking"), id: z.string(), text: z.string() }),
   z.object({
@@ -117,6 +146,10 @@ export const ChatActivitySchema = z.discriminatedUnion("type", [
     input: z.string(),
     result: z.string().optional(),
     isError: z.boolean().optional(),
+    /** When the call was announced, so a long-running call can show its elapsed time. */
+    startedAt: z.number().finite().nonnegative().optional(),
+    /** Work the call left running; it can outlive the turn that started it. */
+    background: z.enum(CHAT_BACKGROUND_KINDS).optional(),
   }),
   z.object({ type: z.literal("status"), id: z.string(), text: z.string() }),
 ]);
@@ -314,7 +347,16 @@ export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): 
       return activity.map((item) =>
         item.type === "tool" && item.id === event.data.id ? { ...item, ...event.data } : item,
       );
-    return [...activity, { type: "tool", ...event.data }].slice(-200) as ChatActivity[];
+    const background = chatBackgroundKind(event.data.name, event.data.input);
+    return [
+      ...activity,
+      {
+        type: "tool",
+        ...event.data,
+        startedAt: Date.now(),
+        ...(background ? { background } : {}),
+      },
+    ].slice(-200) as ChatActivity[];
   }
   if (event.type === "tool_result") {
     const existing = activity.some(
@@ -322,7 +364,16 @@ export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): 
     );
     const items = existing
       ? activity
-      : [...activity, { type: "tool" as const, id: event.data.toolUseId, name: "Tool", input: "" }];
+      : [
+          ...activity,
+          {
+            type: "tool" as const,
+            id: event.data.toolUseId,
+            name: "Tool",
+            input: "",
+            startedAt: Date.now(),
+          },
+        ];
     return items
       .map((item) =>
         item.type === "tool" && item.id === event.data.toolUseId

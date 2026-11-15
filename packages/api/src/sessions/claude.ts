@@ -5,7 +5,7 @@ import { pathLabel } from "@orc/core/display-path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { isAlive, oneLine } from "./common.js";
+import { activityAdvanced, isAlive, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
 
@@ -224,7 +224,7 @@ export function claudeAdapter(
         const before = known.get(record.externalId);
         const mtime = transcript.mtimeMs;
         record.lastActivityAt = new Date(Math.max(record.lastActivityAt.getTime(), mtime));
-        const changed = !before || mtime - before.lastActivityMs >= 1000;
+        const changed = !before || activityAdvanced(mtime, before.lastActivityMs);
         let parsed: ParsedUsage | null = null;
         if (
           changed ||
