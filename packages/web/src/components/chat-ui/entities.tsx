@@ -1,5 +1,6 @@
 import type { Job, Task } from "@orc/sdk/types";
 import { useQuery } from "@tanstack/react-query";
+import { StickyNote } from "lucide-react";
 import { api, type TaskStatus } from "@/api/client";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StateBadge } from "@/components/StateBadge";
@@ -300,26 +301,39 @@ export function ScratchpadCard({ id }: { id: string }) {
       testId="chat-ui-scratchpad"
       title={pad.title}
       heading={
-        <UiLink href={scratchpadPath(pad.id)} className={cn(titleLink, "break-words")}>
-          {pad.title}
-        </UiLink>
+        <div className="flex min-w-0 items-center gap-2">
+          <UiLink
+            href={scratchpadPath(pad.id)}
+            className={cn(titleLink, "min-w-0 gap-1.5 break-words")}
+          >
+            <StickyNote aria-hidden="true" size={14} className="shrink-0 text-on-surface-variant" />
+            <span className="sr-only">Scratchpad: </span>
+            <span className="min-w-0 break-words">{pad.title}</span>
+          </UiLink>
+          <span className="shrink-0 text-[10px] font-normal uppercase tracking-wide text-on-surface-variant">
+            Scratchpad
+          </span>
+        </div>
       }
       canExpand={pad.kind !== "doc" || hasLongContent(pad.content)}
     >
-      {(expanded) => (
-        <div className="space-y-1.5">
-          <div data-testid="chat-ui-scratchpad-content">
-            <ScratchpadArtifact pad={pad} expanded={expanded} />
+      {(expanded, fullscreen) => {
+        const fill = fullscreen && pad.kind !== "doc";
+        return (
+          <div className={cn("space-y-1.5", fill && "flex min-h-0 flex-1 flex-col")}>
+            <div data-testid="chat-ui-scratchpad-content" className={cn(fill && "min-h-0 flex-1")}>
+              <ScratchpadArtifact pad={pad} expanded={expanded} fullscreen={fullscreen} />
+            </div>
+            <Meta>
+              <span>{label(pad.kind)}</span>
+              {pad.tags.map((tag) => (
+                <span key={tag}>#{tag}</span>
+              ))}
+              <span>Updated {when(pad.updated_at)}</span>
+            </Meta>
           </div>
-          <Meta>
-            <span>{label(pad.kind)}</span>
-            {pad.tags.map((tag) => (
-              <span key={tag}>#{tag}</span>
-            ))}
-            <span>Updated {when(pad.updated_at)}</span>
-          </Meta>
-        </div>
-      )}
+        );
+      }}
     </ExpandablePanel>
   );
 }

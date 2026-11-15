@@ -127,7 +127,24 @@ for (const width of [1440, 390])
         await expect(page).toHaveURL(/drawer=terminal/);
         await expect(page.getByTestId("session-drawer")).toBeVisible();
         await expect(page.getByTestId("session-drawer-open")).toBeVisible();
+        await expect(page.getByTestId("session-terminal-header")).toBeVisible();
+        await expect(page.getByTestId("session-terminal-title")).toContainText(
+          "Claude: cart rounding",
+        );
+        await expect(page.getByTestId("session-terminal-location")).toContainText(
+          "/home/demo/acme-shop",
+        );
         await expect(drawerToggle).toHaveAttribute("aria-pressed", "true");
+
+        // Closing from the drawer header hides it and returns focus to the toggle.
+        const drawer = page.getByTestId("session-drawer");
+        await page.getByTestId("session-drawer-close").click();
+        await expect(drawer).toHaveCount(0);
+        await expect(page).not.toHaveURL(/drawer=terminal/);
+        await expect(drawerToggle).toHaveAttribute("aria-pressed", "false");
+        await expect(drawerToggle).toBeFocused();
+        await drawerToggle.click();
+        await expect(drawer).toBeVisible();
 
         await page.reload();
         await expect(page.getByTestId("session-terminal")).toBeVisible();
@@ -148,10 +165,32 @@ for (const width of [1440, 390])
       await page.getByTestId("session-drawer-toggle").filter({ visible: true }).click();
       await expect(page).toHaveURL(/drawer=terminal/);
       await expect(page.getByTestId("session-drawer")).toBeVisible();
+      await expect(page.getByTestId("session-terminal-header")).toBeVisible();
       await page.reload();
       await expect(page.getByTestId("session-drawer")).toBeVisible();
       await page.goBack();
       await expect(page.getByTestId("session-drawer")).toHaveCount(0);
+    });
+
+    test("expands the terminal drawer over the conversation and restores it", async ({ page }) => {
+      test.skip(width < 1280, "below md the terminal is a full page, not a drawer");
+      await mockSessionHome(page);
+      await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+      const messages = page.getByTestId("chat-messages");
+      await expect(messages).toBeVisible();
+      await page.getByTestId("session-drawer-toggle").click();
+      const drawer = page.getByTestId("session-drawer");
+      await expect(drawer).toBeVisible();
+      const collapsed = (await drawer.boundingBox())?.height ?? 0;
+      await page.getByTestId("session-drawer-expand").click();
+      await expect(drawer).toHaveAttribute("data-expanded", "true");
+      await expect(messages).toBeHidden();
+      await expect
+        .poll(async () => (await drawer.boundingBox())?.height ?? 0)
+        .toBeGreaterThan(collapsed);
+      await page.getByTestId("session-drawer-expand").click();
+      await expect(drawer).toHaveAttribute("data-expanded", "false");
+      await expect(messages).toBeVisible();
     });
 
     test("opens from Activity Sessions and leaving returns to that page", async ({ page }) => {

@@ -6,10 +6,12 @@ export default function ScratchpadDiagramPreview({
   content,
   title,
   expanded,
+  fullscreen = false,
 }: {
   content: string;
   title: string;
   expanded: boolean;
+  fullscreen?: boolean;
 }) {
   const [image, setImage] = useState<string>();
   const [error, setError] = useState<string>();
@@ -44,7 +46,9 @@ export default function ScratchpadDiagramPreview({
       data-testid="chat-ui-scratchpad-diagram"
       src={image}
       alt={title}
-      className={`w-full object-contain ${expanded ? "max-h-[75vh]" : "max-h-72"}`}
+      className={`w-full object-contain ${
+        fullscreen ? "h-full min-h-0 max-h-full" : expanded ? "max-h-[75vh]" : "max-h-72"
+      }`}
     />
   );
 }

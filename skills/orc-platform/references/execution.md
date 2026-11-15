@@ -129,8 +129,8 @@ for remote loopback port 0, captures/reuses the assigned port and propagates the
 central API/MCP callback. Explicit port is an override; diagnose collisions/forwarding
 policy before forcing it. Test central callback reachability from the remote host,
 then a harmless intended command/session in the remote project. Existing terminals
-keep their host; new work uses the new selection. Selecting local clears the SSH
-host through the supported settings/API, not by editing live DB rows.
+keep their host; new work uses the new selection. Selecting **This ORC server**
+clears the SSH host through the supported settings/API, not by editing live DB rows.
 
 ## Ask the user to answer, approve or run something
 

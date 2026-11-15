@@ -5,7 +5,7 @@ import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { readCodexQuestionPending } from "./codex-attention.js";
-import { oneLine, statusFromMtime } from "./common.js";
+import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
 import { hasWriter, remoteWriters } from "./ownership.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { parseCodexUsage } from "./usage-parsers.js";
@@ -140,7 +140,7 @@ export function codexAdapter(
             if (
               live !== null &&
               (!before ||
-                lastActivityAt.getTime() > before.lastActivityMs ||
+                activityAdvanced(lastActivityAt, before.lastActivityMs) ||
                 before?.usageVersion !== USAGE_EVENT_VERSION)
             ) {
               record.usage = async () => {

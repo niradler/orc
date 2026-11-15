@@ -35,6 +35,7 @@ import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
+import { activeApiHeaders } from "@/lib/api-hosts";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
 import { getResourceConnection, subscribeResourceConnection } from "@/lib/resource-events";
@@ -625,6 +626,7 @@ function useChatController() {
               retried = true;
               connect = (signal) =>
                 fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(adopted.id)}/live`, {
+                  headers: activeApiHeaders(),
                   credentials: "include",
                   signal,
                 });
@@ -637,6 +639,7 @@ function useChatController() {
             // Never repeat POST /chat/stream: it may already have started a turn.
             connect = (signal) =>
               fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(threadId)}/live`, {
+                headers: activeApiHeaders(),
                 credentials: "include",
                 signal,
               });
@@ -686,6 +689,7 @@ function useChatController() {
         key,
         (signal) =>
           fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(threadId)}/live`, {
+            headers: activeApiHeaders(),
             credentials: "include",
             signal,
           }),
@@ -1019,6 +1023,7 @@ function useChatController() {
             method: "POST",
             headers: {
               "X-Orc-Source": "ui",
+              ...activeApiHeaders(),
               ...(!form ? { "Content-Type": "application/json" } : {}),
             },
             credentials: "include",

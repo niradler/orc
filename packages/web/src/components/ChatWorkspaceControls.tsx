@@ -35,6 +35,7 @@ import {
   pathName,
 } from "@/lib/composer-chips";
 import { folderHistory, rememberFolder, useFolderHistory } from "@/lib/folder-history";
+import { orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
 import { cn } from "@/lib/utils";
 
 export function ChatWorkspaceControls() {
@@ -126,18 +127,22 @@ export function ChatWorkspaceControls() {
     };
   }, []);
   useEffect(() => {
+    // No host: a new chat follows the server-wide execution host until the user pins one.
     if (ssh && !workspace && !thread && !streaming)
-      setWorkspace({ host: ssh.host, cwd: folderHistory(ssh.host).last, worktree: false });
+      setWorkspace({ cwd: folderHistory(ssh.host).last, worktree: false });
   }, [ssh, workspace, thread, streaming, setWorkspace]);
   // A running conversation keeps its execution folder; show where it runs and
   // the checkout's branch instead of the new-chat pickers.
   if (thread) return <SessionWorkspace thread={thread} />;
 
   const hosts = [null, ...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])];
+  // A locked or unsupported server refuses another execution host, so do not offer one.
+  const hostChoices = ssh?.locked || ssh?.supported === false ? [] : hosts;
+  const serverAddress = orcServerAddress();
   const listing = git.data;
   const folderName = cwd ? folderChipLabel(cwd, listing) : pathName(displayPath) || "Home";
   const folderLabel = host ? `${host} · ${folderName}` : folderName;
-  const location = `${host ?? "Local"}: ${displayPath}`;
+  const location = `${host ?? THIS_SERVER}: ${displayPath}`;
   const branch = branchName(currentWorktree(listing, gitPath));
   const showBranch = worktree || !!listing?.root || git.isError;
   const base = worktree ? (workspace?.base ?? null) : null;
@@ -146,7 +151,7 @@ export function ChatWorkspaceControls() {
   const customBase = base && base !== currentBranch && base !== defaultBase ? base : null;
   const runFrom = (next: { worktree: boolean; base?: string | null }) => {
     setWorkspace({
-      host,
+      host: workspace?.host,
       cwd,
       worktree: next.worktree,
       ...(next.worktree && next.base ? { base: next.base } : {}),
@@ -173,7 +178,7 @@ export function ChatWorkspaceControls() {
   }));
 
   const choose = (path: string) => {
-    setWorkspace({ host, cwd: path, worktree: worktree && !!path.trim() });
+    setWorkspace({ host: workspace?.host, cwd: path, worktree: worktree && !!path.trim() });
     rememberFolder(host, path);
     setPathDraft(null);
     setError("");
@@ -307,10 +312,10 @@ export function ChatWorkspaceControls() {
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
             </div>
-            {hosts.length > 1 && (
+            {hostChoices.length > 1 && (
               <div role="menu" aria-label="Workspace host">
                 <p className={chipHeading}>Host</p>
-                {hosts.map((alias) => (
+                {hostChoices.map((alias) => (
                   <button
                     type="button"
                     key={alias ?? "local"}
@@ -336,7 +341,14 @@ export function ChatWorkspaceControls() {
                     ) : (
                       <Folder size={14} aria-hidden="true" />
                     )}
-                    <span className="min-w-0 flex-1 truncate">{alias ?? "Local"}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{alias ?? THIS_SERVER}</span>
+                      {!alias && serverAddress && (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {serverAddress}
+                        </span>
+                      )}
+                    </span>
                     {host === alias && <Check size={14} aria-hidden="true" />}
                   </button>
                 ))}
@@ -702,7 +714,7 @@ function SessionWorkspace({ thread }: { thread: ChatThread }) {
   const listing = git.data;
   const folderName = folderChipLabel(cwd, listing);
   const folderLabel = host ? `${host} · ${folderName}` : folderName;
-  const location = `${host ?? "Local"}: ${cwd}`;
+  const location = `${host ?? THIS_SERVER}: ${cwd}`;
   const branch = branchName(currentWorktree(listing, cwd));
   const showBranch = !!listing?.root;
   const copyPath = async () => {

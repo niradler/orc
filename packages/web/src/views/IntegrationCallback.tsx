@@ -3,7 +3,8 @@ import { useEffect, useRef } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useFinishAuthorization } from "@/hooks/useIntegrations";
 
-const connectionsPath = "/settings?settingsSection=integrations&integrationsTab=connections";
+const connectionsPath =
+  "/settings?settingsSection=connections&connectionsTab=integrations&integrationsTab=connections";
 
 /** The OAuth provider returns the browser here; the code is handed to spec-cli via the API. */
 export default function IntegrationCallback() {

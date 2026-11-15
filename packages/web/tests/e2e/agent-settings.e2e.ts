@@ -356,7 +356,7 @@ for (const width of [1440, 390])
         ).toBe(true);
         await page.setViewportSize({ width, height: 1000 });
         if (width === 390) await page.getByTestId("provider-advanced").locator("summary").click();
-        await page.getByRole("heading", { name: "Settings", exact: true }).evaluate((element) => {
+        await page.getByTestId("settings-shell").evaluate((element) => {
           for (let parent = element.parentElement; parent; parent = parent.parentElement)
             parent.scrollTop = 0;
         });
@@ -434,8 +434,15 @@ test.describe("provider help", () => {
         await expect(content).toBeVisible();
         await page.keyboard.press("Escape");
         await expect(content).toBeHidden();
-        await page.getByTestId("provider-name").focus();
-        await trigger.focus();
+        // The provider form re-renders while binary details settle. Focus again until the
+        // trigger keeps its open state so this checks keyboard focus, not render timing.
+        await expect
+          .poll(async () => {
+            await page.getByTestId("provider-name").focus();
+            await trigger.focus();
+            return content.isVisible();
+          })
+          .toBe(true);
         await expect(content).toBeVisible();
         await page.keyboard.press("Escape");
         await expect(content).toBeHidden();

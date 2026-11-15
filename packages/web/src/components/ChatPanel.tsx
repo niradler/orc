@@ -1,6 +1,6 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { supportsManualCompaction } from "@orc/core/coding-agents";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
@@ -27,6 +27,7 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
+import { ChatBackgroundWork } from "@/components/ChatBackgroundWork";
 import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
@@ -61,7 +62,9 @@ import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
+import { useSessionChildren } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
+import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
@@ -238,6 +241,35 @@ export function ChatPanel({
     await refresh(sessionChanged);
     void session.refetch();
   };
+  const children = useSessionChildren(thread?.id ?? null);
+  const lastMessage = messages[messages.length - 1];
+  const background = chatBackgroundWork(
+    streaming ? activity : lastMessage?.role === "assistant" ? (lastMessage.activity ?? []) : [],
+    children.data ?? [],
+  );
+  const queryClient = useQueryClient();
+  const [backgroundError, setBackgroundError] = useState<string | null>(null);
+  const openBackground = async (sessionId: string) => {
+    setBackgroundError(null);
+    try {
+      openThread(await api.chat.get(sessionId));
+    } catch (cause) {
+      setBackgroundError(
+        cause instanceof Error ? cause.message : "That session could not be opened.",
+      );
+    }
+  };
+  const stopBackground = async (sessionId: string) => {
+    setBackgroundError(null);
+    try {
+      await api.sessions.stop(sessionId);
+      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    } catch (cause) {
+      setBackgroundError(
+        cause instanceof Error ? cause.message : "That session could not be stopped.",
+      );
+    }
+  };
   const home = useSessionHome();
   const terminalControl = useChatContinueInTerminal({
     inChat: true,
@@ -250,6 +282,28 @@ export function ChatPanel({
   const rail = fullscreen && desktop && home.listHidden;
   const context = useSessionContext(home.terminalId);
   const terminalCenter = !!home.terminalId;
+  // The drawer can take the conversation's space; collapsing or closing it
+  // returns the column to the chat instead of leaving a half-empty screen.
+  const [drawerExpanded, setDrawerExpanded] = useState(false);
+  useEffect(() => {
+    if (!home.drawer) setDrawerExpanded(false);
+  }, [home.drawer]);
+  // A session switch starts the drawer at its normal height again.
+  const drawerSessionKey = useRef(activeKey);
+  useEffect(() => {
+    if (drawerSessionKey.current === activeKey) return;
+    drawerSessionKey.current = activeKey;
+    setDrawerExpanded(false);
+  }, [activeKey]);
+  const closeDrawer = () => {
+    setDrawerExpanded(false);
+    home.go({ drawer: false });
+    requestAnimationFrame(() =>
+      document
+        .querySelector<HTMLElement>('[data-testid="session-drawer-toggle"]')
+        ?.focus({ preventScroll: true }),
+    );
+  };
   const linkError = useSessionLiveLink(home, fullscreen);
   const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
   const projects = useProjects();
@@ -510,14 +564,14 @@ export function ChatPanel({
                     <p className="truncate text-xs text-muted-foreground">
                       <span data-testid="session-project-breadcrumb">{projectName}</span>
                       {" · "}
-                      {thread?.host ?? "local"}
+                      {thread?.host ?? "this server"}
                     </p>
                   </div>
                   {streaming && (
                     <LoaderCircle
                       size={14}
                       aria-hidden="true"
-                      className="chat-compact-activity shrink-0 text-progress"
+                      className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
                     />
                   )}
                   <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
@@ -599,7 +653,7 @@ export function ChatPanel({
               <LoaderCircle
                 size={14}
                 aria-hidden="true"
-                className="chat-compact-activity shrink-0 text-progress"
+                className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
               />
             )}
             {!phone &&
@@ -687,7 +741,12 @@ export function ChatPanel({
             </p>
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}
-          <div className={cn("flex min-h-0 flex-1 flex-col", terminalCenter && "hidden")}>
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col",
+              (terminalCenter || drawerExpanded) && "hidden",
+            )}
+          >
             <ChatConversationInfo
               open={settingsOpen}
               onOpenChange={setSettingsOpen}
@@ -840,6 +899,12 @@ export function ChatPanel({
                 activity={activity}
               />
             )}
+            <ChatBackgroundWork
+              items={background}
+              error={backgroundError}
+              onOpen={(sessionId) => void openBackground(sessionId)}
+              onStop={(sessionId) => void stopBackground(sessionId)}
+            />
             <ChatLiveAnnouncer
               streaming={streaming}
               agent={streamingAgent}
@@ -1171,7 +1236,14 @@ export function ChatPanel({
               </form>
             </div>
           </div>
-          {fullscreen && home.drawer && !phone && <SessionDrawer context={context} />}
+          {fullscreen && home.drawer && !phone && (
+            <SessionDrawer
+              context={context}
+              expanded={drawerExpanded}
+              onToggleExpanded={() => setDrawerExpanded((value) => !value)}
+              onClose={closeDrawer}
+            />
+          )}
         </div>
       </MobileChatShell>
       {fullscreen && !phone && <SessionInspector context={context} home={home} narrow={!desktop} />}

@@ -20,7 +20,7 @@ import { useViewParam } from "@/lib/view-params";
 
 const tabs = ["mcp", "connections"] as const;
 type Tab = (typeof tabs)[number];
-const tabLabels: Record<Tab, string> = { mcp: "MCP server", connections: "Connections" };
+const tabLabels: Record<Tab, string> = { mcp: "MCP server", connections: "APIs & MCP" };
 
 export function IntegrationsSettings({ active }: { active: boolean }) {
   const [tab, setTab] = useViewParam<Tab>("integrationsTab", "mcp", tabs);

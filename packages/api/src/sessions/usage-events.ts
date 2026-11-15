@@ -1,4 +1,3 @@
-import { ulid } from "@orc/core/ids";
 import { USAGE_EVENT_VERSION, USAGE_RAW_RETENTION_DAYS } from "@orc/core/usage";
 import { getSqlite } from "@orc/db/client";
 import type { ParsedUsage, UsageEventInput } from "./usage-parsers.js";
@@ -161,7 +160,9 @@ function replaceSessionRows(
   );
   for (const event of events) {
     insert.run(
-      ulid(),
+      // Keys are unique per session and the session rows are replaced together, so a
+      // composite id keeps high-volume rewrites free of short-id collisions.
+      `${sessionId}:${event.key}`,
       sessionId,
       event.key.slice(0, 300),
       agent,

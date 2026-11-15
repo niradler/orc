@@ -1,6 +1,8 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   CLAUDE_TOKENS_VERSION,
+  USAGE_EVENT_VERSION,
+  USAGE_SOURCE_BACKENDS,
   UsageHistorySchema,
   UsageQuotasSchema,
   UsageReportSchema,
@@ -11,6 +13,8 @@ import { LIVE_CHAT_ID } from "../sessions/common.js";
 import { readUsageQuotas } from "../usage-quotas.js";
 
 const app = createRouter();
+const supportedBackendParams = USAGE_SOURCE_BACKENDS.map(() => "?").join(", ");
+const supportedBackends = [...USAGE_SOURCE_BACKENDS];
 
 type UsageNumberRow = {
   agent?: string;
@@ -231,25 +235,47 @@ app.openapi(
       .query<
         {
           unindexed_sessions: number;
+          unsupported_sessions: number;
           unknown_sessions: number;
           unindexed_tokens: number;
           estimated_sessions: number;
         },
         (string | number | null)[]
       >(
-        `SELECT count(*) AS unindexed_sessions,
-           coalesce(sum(CASE WHEN gs.tokens_used IS NULL THEN 1 ELSE 0 END), 0) AS unknown_sessions,
-           coalesce(sum(coalesce(gs.tokens_used, 0)), 0) AS unindexed_tokens,
-           coalesce(sum(CASE WHEN gs.backend = 'cursor' AND gs.tokens_used IS NOT NULL THEN 1 ELSE 0 END), 0) AS estimated_sessions
+        `WITH usage AS (
+           SELECT session_id, count(*) AS requests FROM usage_events
+           WHERE (? IS NULL OR ts >= ?)
+           GROUP BY session_id
+         )
+         SELECT
+           coalesce(sum(CASE WHEN gs.backend IN (${supportedBackendParams}) AND usage.session_id IS NULL
+             AND gs.usage_version < ? THEN 1 ELSE 0 END), 0) AS unindexed_sessions,
+           coalesce(sum(CASE WHEN gs.backend NOT IN (${supportedBackendParams})
+             THEN 1 ELSE 0 END), 0) AS unsupported_sessions,
+           coalesce(sum(CASE WHEN gs.backend IN (${supportedBackendParams}) AND usage.session_id IS NULL
+             AND gs.usage_version < ? THEN coalesce(gs.tokens_used, 0) ELSE 0 END), 0) AS unindexed_tokens,
+           coalesce(sum(CASE WHEN gs.backend IN (${supportedBackendParams})
+             AND gs.tokens_used IS NULL THEN 1 ELSE 0 END), 0) AS unknown_sessions,
+           coalesce(sum(CASE WHEN gs.backend = 'cursor' AND gs.tokens_used IS NOT NULL
+             THEN 1 ELSE 0 END), 0) AS estimated_sessions
          FROM gateway_sessions gs
+         LEFT JOIN usage ON usage.session_id = gs.id
          WHERE gs.chat_id = ?
-           AND (? IS NULL OR gs.created_at >= ?)
-           AND NOT EXISTS (
-             SELECT 1 FROM usage_events e
-             WHERE e.session_id = gs.id AND (? IS NULL OR e.ts >= ?)
-           )`,
+           AND (? IS NULL OR gs.created_at >= ?)`,
       )
-      .get(LIVE_CHAT_ID, sinceSeconds, sinceSeconds, sinceMs, sinceMs);
+      .get(
+        sinceMs,
+        sinceMs,
+        ...supportedBackends,
+        USAGE_EVENT_VERSION,
+        ...supportedBackends,
+        USAGE_EVENT_VERSION,
+        ...supportedBackends,
+        ...supportedBackends,
+        LIVE_CHAT_ID,
+        sinceSeconds,
+        sinceSeconds,
+      );
     const indexed = getSqlite()
       .query<{ sessions: number }, (number | null)[]>(
         "SELECT count(DISTINCT session_id) AS sessions FROM usage_events WHERE (? IS NULL OR ts >= ?)",
@@ -287,6 +313,7 @@ app.openapi(
         unindexed_sessions: coverage?.unindexed_sessions ?? 0,
         unindexed_tokens: coverage?.unindexed_tokens ?? 0,
         unknown_sessions: coverage?.unknown_sessions ?? 0,
+        unsupported_sessions: coverage?.unsupported_sessions ?? 0,
         estimated_sessions: coverage?.estimated_sessions ?? 0,
       },
     });

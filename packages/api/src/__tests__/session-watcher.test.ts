@@ -4,13 +4,14 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hostRuntime, LOCAL_HOST, SshError } from "@orc/core/exec-host";
-import { CLAUDE_TOKENS_VERSION } from "@orc/core/usage";
+import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { runSync, startSessionWatcher, tokensSettled } from "../session-watcher.js";
 import { claudeAdapter, registryRecord } from "../sessions/claude.js";
 import { codexAdapter } from "../sessions/codex.js";
 import { cursorAdapter, cursorStateDbPath, resolveSlugPath } from "../sessions/cursor.js";
+import type { SessionAdapter } from "../sessions/types.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 type Row = {
@@ -379,6 +380,121 @@ describe("codex adapter", () => {
       tokens_estimated: false,
     });
   });
+
+  test("should not re-index a session whose activity only differs inside the stored second", async () => {
+    const dbPath = join(root, "codex-activity.sqlite");
+    const rollout = join(root, "rollout-activity.jsonl");
+    writeFileSync(rollout, "");
+    const activityMs = Math.floor(Date.now() / 1000) * 1000 + 999;
+    utimesSync(rollout, activityMs / 1000, activityMs / 1000);
+    const db = new Database(dbPath);
+    db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT,
+      preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT,
+      created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER,
+      archived INTEGER)`);
+    db.prepare("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
+      "cx-activity",
+      "activity",
+      null,
+      "/tmp/cx",
+      "",
+      "",
+      10,
+      rollout,
+      activityMs,
+      Math.floor(activityMs / 1000),
+      activityMs,
+      Math.floor(activityMs / 1000),
+      0,
+    );
+    db.close();
+
+    const adapter = codexAdapter(dbPath, { writer: () => false });
+    const [first] = await adapter.list(new Map());
+    expect(first?.usage).toBeFunction();
+    if (!first) throw new Error("codex record missing");
+    const known = new Map([
+      [
+        "cx-activity",
+        {
+          // The ledger keeps whole seconds; the millisecond remainder is not new work.
+          lastActivityMs: Math.floor(activityMs / 1000) * 1000,
+          tokensUsed: null,
+          tokensVersion: 0,
+          usageVersion: USAGE_EVENT_VERSION,
+          session: first,
+        },
+      ],
+    ]);
+    const [second] = await adapter.list(known);
+    expect(second?.usage).toBeUndefined();
+  });
+});
+
+describe("usage indexing backlog", () => {
+  test("drains more than one queue batch through follow-up syncs", async () => {
+    const total = 45;
+    const base = Math.floor(Date.now() / 1000) * 1000;
+    const adapter: SessionAdapter = {
+      backend: "pi",
+      minIntervalMs: 1,
+      list: async (known) =>
+        Array.from({ length: total }, (_, index) => {
+          const externalId = `backlog-${index}`;
+          const before = known.get(externalId);
+          const activity = base - (total - index) * 1000;
+          return {
+            backend: "pi",
+            externalId,
+            title: `backlog ${index}`,
+            status: "stopped" as const,
+            createdAt: new Date(base),
+            lastActivityAt: new Date(activity),
+            ...(before?.usageVersion === USAGE_EVENT_VERSION
+              ? {}
+              : {
+                  usageVersion: USAGE_EVENT_VERSION,
+                  usage: async () => ({
+                    tokens: 3,
+                    model: "backlog-model",
+                    events: [
+                      {
+                        key: "request",
+                        ts: activity,
+                        model: "backlog-model",
+                        inputTokens: 3,
+                        outputTokens: 0,
+                        cacheReadTokens: 0,
+                        cacheWriteTokens: 0,
+                        reasoningTokens: 0,
+                        otherTokens: 0,
+                        estimated: false,
+                      },
+                    ],
+                  }),
+                }),
+          };
+        }),
+    };
+    const stop = startSessionWatcher({ adapters: [adapter], registryDir: null });
+    let indexed = 0;
+    try {
+      for (let attempt = 0; attempt < 100 && indexed < total; attempt++) {
+        await Bun.sleep(100);
+        indexed =
+          getSqlite()
+            .query<{ n: number }, []>(
+              `SELECT count(DISTINCT s.id) AS n FROM usage_events e
+               JOIN gateway_sessions s ON s.id = e.session_id
+               WHERE s.runtime_session_id LIKE 'backlog-%'`,
+            )
+            .get()?.n ?? 0;
+      }
+    } finally {
+      stop();
+    }
+    expect(indexed).toBe(total);
+  }, 15_000);
 });
 
 describe("cursor adapter", () => {

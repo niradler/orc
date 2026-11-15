@@ -22,7 +22,7 @@ test("401 prompts, rejects wrong secrets, and signs in with an HttpOnly cookie",
   await expect(page.getByTestId("api-login-error")).toBeVisible();
   await page.getByTestId("api-login-secret").fill(API_SECRET);
   await page.getByTestId("api-login-submit").click();
-  await expect(page.getByTestId("settings-save")).toBeVisible();
+  await expect(page.getByTestId("settings-shell")).toBeVisible();
   await expect(page.locator("#settings-api-secret")).toHaveCount(0);
   expect(
     await page.evaluate(() =>
@@ -33,7 +33,7 @@ test("401 prompts, rejects wrong secrets, and signs in with an HttpOnly cookie",
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.value).not.toContain(API_SECRET);
   await page.reload();
-  await expect(page.getByTestId("settings-save")).toBeVisible();
+  await expect(page.getByTestId("settings-shell")).toBeVisible();
   await expect(page.getByTestId("api-login")).toHaveCount(0);
 });
 
@@ -44,7 +44,7 @@ test("the chosen valid-until date sets the session expiry", async ({ page, conte
   await page.getByTestId("api-login-secret").fill(API_SECRET);
   await page.getByTestId("api-login-valid-until").fill(value);
   await page.getByTestId("api-login-submit").click();
-  await expect(page.getByTestId("settings-save")).toBeVisible();
+  await expect(page.getByTestId("settings-shell")).toBeVisible();
   const cookie = (await context.cookies()).find((entry) => entry.name === "orc_session");
   const endOfDay = new Date(`${value}T23:59:59`).getTime() / 1000;
   expect(Math.abs((cookie?.expires ?? 0) - endOfDay)).toBeLessThan(5);
@@ -118,7 +118,7 @@ test("a stale secret from an older build prompts again and a runtime 401 reopens
   await expect(page.getByTestId("api-login")).toBeVisible();
   await page.getByTestId("api-login-secret").fill(API_SECRET);
   await page.getByTestId("api-login-submit").click();
-  await expect(page.getByTestId("settings-save")).toBeVisible();
+  await expect(page.getByTestId("settings-shell")).toBeVisible();
   await page.route("**/api/settings", (route) =>
     route.fulfill({ status: 401, json: { error: "Unauthorized" } }),
   );
@@ -130,7 +130,7 @@ test("a stale secret from an older build prompts again and a runtime 401 reopens
 test("open API loads without prompting and connection failures offer retry", async ({ page }) => {
   await page.route("**/api/settings", (route) => route.fulfill({ json: {} }));
   await page.goto("/settings");
-  await expect(page.getByTestId("settings-save")).toBeVisible();
+  await expect(page.getByTestId("settings-shell")).toBeVisible();
   await expect(page.getByTestId("api-login")).toHaveCount(0);
   await page.route("**/api/settings", (route) => route.fulfill({ status: 503, json: {} }));
   await page.reload();
@@ -146,13 +146,16 @@ test("changing the API address does not forward credentials from the previous se
   await page.goto("/settings");
   await page.getByTestId("api-login-secret").fill(API_SECRET);
   await page.getByTestId("api-login-submit").click();
+  await settingsSection(page, "hosts");
   let forwardedSecret: string | undefined;
   await page.route("**/other-api/settings", (route) => {
     forwardedSecret = route.request().headers().authorization;
     return route.fulfill({ status: 401, json: { error: "Unauthorized" } });
   });
-  await page.getByTestId("settings-api-url").fill("/other-api");
-  await page.getByTestId("settings-save").click();
+  await page.getByTestId("api-host-add").click();
+  await page.getByTestId("api-host-name").fill("Other server");
+  await page.getByTestId("api-host-url").fill("/other-api");
+  await page.getByTestId("api-host-save").click();
   await expect(page.getByTestId("api-login")).toBeVisible();
   expect(forwardedSecret).toBeUndefined();
 });

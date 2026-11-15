@@ -1,5 +1,6 @@
 import type { ChatSettings } from "@orc/core/chat";
 import type { ProviderPaths } from "@orc/core/coding-agents";
+import { activeApiHeaders } from "./api-hosts";
 
 export const API_ACCESS_CHANGED = "orc-api-access-changed";
 const LEGACY_SECRET_PREFIX = "orc_api_secret";
@@ -32,6 +33,7 @@ export async function readBrowserSession(
   const response = await fetch(endpoint(apiUrl, "/auth/session"), {
     credentials: "include",
     cache: "no-store",
+    headers: activeApiHeaders(),
     signal: signal ?? AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error("Could not connect to the ORC API. Try again.");
@@ -43,7 +45,7 @@ export async function signIn(apiUrl: string, secret: string, expiresAt?: number)
   const response = await fetch(endpoint(apiUrl, "/auth/session"), {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...activeApiHeaders() },
     body: JSON.stringify({ secret, ...(expiresAt ? { expires_at: expiresAt } : {}) }),
   });
   if (response.status === 401) return false;
@@ -55,7 +57,11 @@ export async function signIn(apiUrl: string, secret: string, expiresAt?: number)
 }
 
 export async function signOut(apiUrl: string): Promise<void> {
-  await fetch(endpoint(apiUrl, "/auth/session"), { method: "DELETE", credentials: "include" });
+  await fetch(endpoint(apiUrl, "/auth/session"), {
+    method: "DELETE",
+    credentials: "include",
+    headers: activeApiHeaders(),
+  });
   window.dispatchEvent(new Event(API_ACCESS_CHANGED));
 }
 
@@ -83,6 +89,7 @@ export async function checkApiAccess(
   const response = await fetch(endpoint(apiUrl, "/settings"), {
     credentials: "include",
     cache: "no-store",
+    headers: activeApiHeaders(),
     signal: signal ?? AbortSignal.timeout(10_000),
   });
   if (response.status === 401) return null;
@@ -117,7 +124,7 @@ export async function createAccessToken(
 ): Promise<{ token: string; expires_at: number }> {
   const response = await fetch(endpoint(apiUrl, "/auth/token"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...activeApiHeaders() },
     body: JSON.stringify({ secret, expires_at: expiresAt }),
   });
   const body = (await response.json().catch(() => null)) as {

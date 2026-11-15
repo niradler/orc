@@ -41,7 +41,7 @@ export function WorkspaceHeader({
     }
   }, [pathname]);
   const { data: projects } = useProjects({ status: "active" });
-  // Theme lives in Settings → Appearance (and the command palette); the header
+  // Theme lives in Settings → General → Appearance (and the command palette); the header
   // only surfaces a failed theme save.
   const { error: themeError } = useTheme();
   const section = workspaceSection(pathname);

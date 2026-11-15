@@ -60,6 +60,7 @@ import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { formatDuration } from "@/lib/chat-activity";
 import { type ChatHistoryEntry, entryAgent } from "@/lib/chat-history-list";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
+import { THIS_SERVER } from "@/lib/host-labels";
 import { formatTokenCount } from "@/lib/live-sessions";
 import { cn } from "@/lib/utils";
 
@@ -1004,7 +1005,7 @@ export function ChatConversationInfo({
           <HelpPopover label="Session settings">
             These settings belong to this conversation. Loosening permissions applies right away,
             including to a pending approval; stricter permissions apply to your next message. New
-            chat defaults live in Settings → Chat.
+            chat defaults live in Settings → Agents → Chat.
           </HelpPopover>
         </div>
         <DialogDescription className="sr-only">
@@ -1042,7 +1043,7 @@ export function ChatConversationInfo({
               </SettingsRow>
               <SettingsRow label="Execution">
                 {thread
-                  ? `${thread.host || "Local"} · ${thread.cwd}`
+                  ? `${thread.host || THIS_SERVER} · ${thread.cwd}`
                   : "Starts with your first message"}
                 {thread?.cwd && (
                   <span className="block font-mono text-xs break-all">{thread.cwd}</span>
@@ -1106,7 +1107,7 @@ export function ChatConversationInfo({
           <TabsContent value="customize" className="space-y-5">
             {thread && (
               <p className="text-sm text-muted-foreground wrap-break-word">
-                Runs in {thread.host || "Local"} ·{" "}
+                Runs in {thread.host || THIS_SERVER} ·{" "}
                 <span className="font-mono text-xs">{thread.cwd}</span>
               </p>
             )}
@@ -1144,7 +1145,7 @@ export function ChatConversationInfo({
                     <HelpPopover label="Agent browser control" testId="chat-browser-help">
                       {preview.browserControl.globallyEnabled
                         ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
-                        : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
+                        : "Disabled globally in Settings → General → Browser. Enable global access there to allow browser control for this chat."}
                     </HelpPopover>
                   </div>
                   <input

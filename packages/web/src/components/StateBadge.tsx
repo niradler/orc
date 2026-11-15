@@ -14,15 +14,14 @@ export function StateBadge({
   testId?: string;
   className?: string;
 }) {
-  const { label, help, Icon, tone } = AGENT_STATES[state];
+  const { label, help, Icon, tone, spin } = AGENT_STATES[state];
   const name = context ? `${context} · ${label}` : label;
   const icon = (
     <Icon
       aria-hidden="true"
       size={14}
       strokeWidth={2.25}
-      // A working agent keeps its loader moving; reduce-motion users get the static mark.
-      className={cn("shrink-0", tone, state === "working" && "motion-safe:animate-spin")}
+      className={cn("shrink-0", tone, spin && "motion-safe:animate-spin")}
     />
   );
   if (compact)
