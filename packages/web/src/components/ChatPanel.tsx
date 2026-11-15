@@ -57,7 +57,6 @@ import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
-import { HelpPopover } from "@/components/HelpPopover";
 import {
   SessionDrawer,
   SessionHomeToggles,
@@ -103,7 +102,6 @@ import {
 } from "@/lib/composer-handoff";
 import { THIS_SERVER } from "@/lib/host-labels";
 import { scratchpadPath } from "@/lib/scratchpad-routes";
-import { chatContextHint } from "@/lib/session-cache";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -498,9 +496,6 @@ export function ChatPanel({
   // was recorded after that turn started; otherwise the figure belongs elsewhere.
   const latestUsage = contextUsage.data?.latest ?? null;
   const latestUsageAt = latestUsage?.recorded_at ? Date.parse(latestUsage.recorded_at) : Number.NaN;
-  // Only a genuinely large recorded request earns the hint; the copy comes from
-  // the agent's own compaction capability map.
-  const contextHint = chatContextHint(latestUsage, config.agent);
   const turnUsage =
     latestUsage &&
     Number.isFinite(latestUsageAt) &&
@@ -1505,18 +1500,6 @@ export function ChatPanel({
                   {agentInbox && (
                     <SessionMessageInbox session={agentInbox} live={false} compose={false} />
                   )}
-                </div>
-              )}
-              {contextHint && (
-                <div
-                  data-testid="chat-context-hint"
-                  className="mx-auto mb-1.5 flex w-full max-w-(--chat-width) items-center gap-1 px-2 text-xs text-on-surface-variant"
-                >
-                  <p className="min-w-0 flex-1">{contextHint.text}</p>
-                  <HelpPopover label="large context" testId="chat-context-hint-help">
-                    <p>{contextHint.explanation}</p>
-                    <p className="mt-2">{contextHint.note}</p>
-                  </HelpPopover>
                 </div>
               )}
               {savedPad && (

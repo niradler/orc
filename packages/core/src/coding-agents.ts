@@ -25,31 +25,8 @@ export function supportsManualCompaction(agent: string): boolean {
 }
 
 /**
- * Where compaction is controlled for an adapter. ORC only states what the
- * adapter exposes: a manual request ORC can send, and whether automatic
- * compaction runs on the agent's own schedule or through a setting ORC can
- * name. Agents behind a generic ACP runtime keep both answers unknown.
+ * Agents whose model catalog ORC can discover without starting a conversation turn.
  */
-export type CompactionPolicy = {
-  manual: boolean;
-  automatic: "agent" | "configurable" | "unknown";
-  /** The ORC agent option that controls automatic compaction, when one exists. */
-  setting?: string;
-};
-
-export function compactionPolicy(agent: string): CompactionPolicy {
-  const manual = supportsManualCompaction(agent);
-  if (agent === "codex")
-    return { manual, automatic: "configurable", setting: "model_auto_compact_token_limit" };
-  if (agent === "pi") return { manual, automatic: "configurable", setting: "autoCompaction" };
-  // These adapters compact internally on a schedule ORC can observe but not set.
-  if (agent === "claude" || agent === "opencode") return { manual, automatic: "agent" };
-  // A generic ACP adapter may or may not compact; reporting "unknown" keeps ORC
-  // from claiming a policy the adapter never exposed.
-  return { manual, automatic: "unknown" };
-}
-
-/** Agents whose model catalog ORC can discover without starting a conversation turn. */
 export function supportsModelDiscovery(agent: string): boolean {
   return agent === "claude" || agent === "codex" || agent === "pi" || agent === "opencode";
 }
