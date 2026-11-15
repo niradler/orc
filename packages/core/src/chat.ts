@@ -228,6 +228,89 @@ export type ChatItem = {
   | { kind: "plan"; title?: string; entries: ChatPlanEntry[] }
   | { kind: "provider"; provider: string; data?: Record<string, unknown> }
 );
+/** How many items an expanded turn renders before offering the rest. */
+export const CHAT_ITEM_WINDOW = 80;
+
+/**
+ * The parent a provider activity's data names, under the field names adapters use:
+ * an explicit parent, or the tool call the activity belongs to. Anything else is
+ * left un-nested rather than guessed.
+ */
+function providerParentId(data: Record<string, unknown> | undefined): string | undefined {
+  if (!data) return undefined;
+  for (const key of [
+    "parentId",
+    "parent_id",
+    "parentToolUseId",
+    "parent_tool_use_id",
+    "toolUseId",
+    "tool_use_id",
+  ]) {
+    const value = data[key];
+    if (typeof value === "string" && value) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Builds one turn's normalized items: one per known activity in stored order, then
+ * one `provider` item per kind this build does not know. The provider items are
+ * appended because wave 1 moved those kinds into a separate list, so their original
+ * position among the known activities is no longer recoverable.
+ */
+export function buildChatItems(message: {
+  activity?: readonly ChatActivity[] | undefined;
+  providerActivity?: readonly ChatProviderActivity[] | undefined;
+}): ChatItem[] {
+  const activity = Array.isArray(message.activity) ? message.activity : [];
+  const providerActivity = Array.isArray(message.providerActivity) ? message.providerActivity : [];
+  const toolIds = new Set(activity.flatMap((item) => (item.type === "tool" ? [item.id] : [])));
+  const items: ChatItem[] = [];
+  for (const item of activity) {
+    const ordinal = items.length;
+    if (item.type === "thinking") {
+      items.push({ id: item.id, ordinal, kind: "thinking", text: item.text });
+      continue;
+    }
+    if (item.type === "status") {
+      items.push({ id: item.id, ordinal, kind: "status", text: item.text });
+      continue;
+    }
+    if (item.type === "plan") {
+      items.push({
+        id: item.id,
+        ordinal,
+        kind: "plan",
+        ...(item.title === undefined ? {} : { title: item.title }),
+        entries: item.entries,
+      });
+      continue;
+    }
+    items.push({
+      id: item.id,
+      ordinal,
+      kind: "tool",
+      name: item.name,
+      input: item.input,
+      ...(item.result === undefined ? {} : { result: item.result }),
+      ...(item.isError === undefined ? {} : { isError: item.isError }),
+      ...(item.isError ? { status: "failed" as const } : {}),
+    });
+  }
+  for (const item of providerActivity) {
+    const parentId = providerParentId(item.data);
+    items.push({
+      id: item.id,
+      ordinal: items.length,
+      kind: "provider",
+      provider: item.kind,
+      ...(parentId && toolIds.has(parentId) ? { parentId } : {}),
+      ...(item.data === undefined ? {} : { data: item.data }),
+    });
+  }
+  return items;
+}
+
 export const ChatTurnSchema = z.object({
   startedAt: z.number().finite().nonnegative(),
   finishedAt: z.number().finite().nonnegative().optional(),

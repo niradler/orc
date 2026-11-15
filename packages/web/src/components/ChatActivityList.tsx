@@ -1,4 +1,9 @@
-import { ChatActivitySchema, ChatTurnSchema } from "@orc/core/chat";
+import {
+  buildChatItems,
+  ChatProviderActivitySchema,
+  ChatTurnSchema,
+  readChatActivity,
+} from "@orc/core/chat";
 import { ChevronRight, CircleAlert, EyeOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ActivityRow } from "@/components/chat-ui/tool-renderers";
@@ -15,6 +20,7 @@ import {
   foldSummary,
   foldTurn,
   parseActivityPrefs,
+  windowChatItems,
 } from "@/lib/chat-activity";
 import { cn } from "@/lib/utils";
 
@@ -79,8 +85,8 @@ function ActivityFilters({
         Hide successful
       </button>
       <HelpPopover label="activity filters" testId="chat-activity-help">
-        Filters narrow this turn's tool calls. Thinking, plans and status messages stay visible, and
-        the collapsed summary always counts every failure.
+        Filters narrow this turn's tool calls. Thinking, plans, status messages and unrecognized
+        activities stay visible, and the collapsed summary always counts every failure.
       </HelpPopover>
     </div>
   );
@@ -88,23 +94,30 @@ function ActivityFilters({
 
 export function ChatActivityList({
   value,
+  providerActivity,
   turn,
   live = false,
 }: {
   value: unknown;
+  providerActivity?: unknown;
   turn?: unknown;
   live?: boolean;
 }) {
-  const items = useMemo(
-    () =>
-      Array.isArray(value)
-        ? value.flatMap((item) => {
-            const parsed = ChatActivitySchema.safeParse(item);
-            return parsed.success ? [parsed.data] : [];
-          })
-        : [],
-    [value],
-  );
+  const items = useMemo(() => {
+    // The tolerant reader splits kinds this build knows from the ones it keeps
+    // verbatim, so raw stored activity and already-split activity both work.
+    const stored = readChatActivity(value);
+    const provider = Array.isArray(providerActivity)
+      ? providerActivity.flatMap((item) => {
+          const parsed = ChatProviderActivitySchema.safeParse(item);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
+    return buildChatItems({
+      activity: stored.activity,
+      providerActivity: [...stored.provider, ...provider],
+    });
+  }, [value, providerActivity]);
   const [prefs, setPrefs] = useState<ActivityPrefs>(readPrefs);
   const timing = ChatTurnSchema.safeParse(turn);
   const start = timing.success ? timing.data.startedAt : undefined;
@@ -122,6 +135,9 @@ export function ChatActivityList({
   );
   const counts = useMemo(() => activityCounts(items), [items]);
   const visible = useMemo(() => filterActivity(items, prefs), [items, prefs]);
+  // The window belongs to this turn only: the fold instance is the message's.
+  const [showAll, setShowAll] = useState(false);
+  const windowed = windowChatItems(visible, showAll);
   if (!items.length && outcome !== "stopped" && outcome !== "failed") return null;
   const summary = foldSummary(fold, live, outcome);
   const update = (next: ActivityPrefs) => {
@@ -160,10 +176,20 @@ export function ChatActivityList({
         className="mt-1 ml-2 max-h-[min(28rem,60dvh)] overflow-y-auto border-l border-outline-variant pl-1"
       >
         {fold.tools > 0 && <ActivityFilters prefs={prefs} counts={counts} onChange={update} />}
-        {visible.map((item) => (
-          <ActivityRow key={item.id} item={item} live={live} />
+        {windowed.hidden > 0 && (
+          <button
+            type="button"
+            data-testid="chat-items-show-all"
+            onClick={() => setShowAll(true)}
+            className="mb-1 min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
+          >
+            Show all {visible.length} activities
+          </button>
+        )}
+        {windowed.shown.map((item) => (
+          <ActivityRow key={`${item.ordinal}-${item.id}`} item={item} live={live} />
         ))}
-        {fold.tools > 0 && visible.every((item) => item.type !== "tool") && (
+        {fold.tools > 0 && visible.every((item) => item.kind !== "tool") && (
           <p
             data-testid="chat-activity-empty"
             className="flex flex-wrap items-center gap-2 px-1.5 py-1"

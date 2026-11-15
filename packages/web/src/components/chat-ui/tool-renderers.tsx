@@ -1,4 +1,4 @@
-import type { ChatActivity } from "@orc/core/chat";
+import type { ChatActivity, ChatItem } from "@orc/core/chat";
 import {
   Brain,
   ChevronRight,
@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DiffLines } from "@/components/terminals/FileDiffCard";
+import { chatItemActivity } from "@/lib/chat-activity";
 import {
   type ChatTool,
   pullRequestLinks,
@@ -498,24 +499,62 @@ export function ToolRow({ tool, live = false }: { tool: ChatTool; live?: boolean
   );
 }
 
-export function ActivityRow({ item, live = false }: { item: ChatActivity; live?: boolean }) {
-  if (item.type === "tool") return <ToolRow tool={item} live={live} />;
-  if (item.type === "plan") return <PlanCard plan={item} />;
-  if (item.type === "status")
-    return <p className="px-1.5 py-1 wrap-break-word text-on-surface-variant">{item.text}</p>;
+/** Stored JSON, rendered as text only; a provider value never reaches the DOM as markup. */
+function providerData(data: Record<string, unknown> | undefined): string {
+  if (!data) return "{}";
+  try {
+    return JSON.stringify(data, null, 2);
+  } catch {
+    return "";
+  }
+}
+
+/** A kind this build does not know: quiet, collapsed, and bounded when opened. */
+function ProviderRow({ item }: { item: Extract<ChatItem, { kind: "provider" }> }) {
   return (
-    <details data-testid="chat-thinking" className="group/tool">
+    <details data-testid="chat-provider-activity" data-kind={item.provider} className="group/tool">
       <summary className={rowSummary}>
-        <Brain aria-hidden="true" size={14} className="shrink-0" />
-        <span className="shrink-0 text-on-surface">Thinking</span>
-        <span className="min-w-0 flex-1 truncate">{item.text.trim().split("\n")[0]}</span>
+        <Plug aria-hidden="true" size={14} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate font-mono" title={item.provider}>
+          {item.provider}
+        </span>
+        <span className="shrink-0 text-on-surface-variant">Unrecognized</span>
         <ChevronRight
           aria-hidden="true"
           size={14}
           className="shrink-0 group-open/tool:rotate-90 motion-safe:transition-transform"
         />
       </summary>
-      <div className={`${bodyClass} whitespace-pre-wrap wrap-break-word`}>{item.text}</div>
+      <div className={bodyClass}>
+        <pre data-testid="chat-provider-data" className={`${preClass} text-xs`}>
+          {providerData(item.data)}
+        </pre>
+      </div>
+    </details>
+  );
+}
+
+export function ActivityRow({ item, live = false }: { item: ChatItem; live?: boolean }) {
+  if (item.kind === "provider") return <ProviderRow item={item} />;
+  const activity = chatItemActivity(item);
+  if (!activity) return null;
+  if (activity.type === "tool") return <ToolRow tool={activity} live={live} />;
+  if (activity.type === "plan") return <PlanCard plan={activity} />;
+  if (activity.type === "status")
+    return <p className="px-1.5 py-1 wrap-break-word text-on-surface-variant">{activity.text}</p>;
+  return (
+    <details data-testid="chat-thinking" className="group/tool">
+      <summary className={rowSummary}>
+        <Brain aria-hidden="true" size={14} className="shrink-0" />
+        <span className="shrink-0 text-on-surface">Thinking</span>
+        <span className="min-w-0 flex-1 truncate">{activity.text.trim().split("\n")[0]}</span>
+        <ChevronRight
+          aria-hidden="true"
+          size={14}
+          className="shrink-0 group-open/tool:rotate-90 motion-safe:transition-transform"
+        />
+      </summary>
+      <div className={`${bodyClass} whitespace-pre-wrap wrap-break-word`}>{activity.text}</div>
     </details>
   );
 }

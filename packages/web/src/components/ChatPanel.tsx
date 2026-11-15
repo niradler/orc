@@ -987,6 +987,7 @@ export function ChatPanel({
                               >
                                 <ChatActivityList
                                   value={custom.activity}
+                                  providerActivity={custom.providerActivity}
                                   turn={custom.turn}
                                   live={live}
                                 />

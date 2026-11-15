@@ -588,6 +588,12 @@ Finished turns fold tool calls and intermediate narration into one expandable li
 your message and the final reply remain visible. Expand it to inspect file diffs,
 commands and output, reads, and searches. Failed tools stay marked.
 
+A turn with more than 80 activities expands to its newest 80 and offers
+**Show all N activities**; the folded line still counts every item, failures
+beyond that window included. An activity kind this build does not know appears
+as a quiet collapsed row with its label and bounded raw data, so newer agents'
+steps stay visible instead of disappearing.
+
 During a response, a quiet status line shows elapsed time and the current tool.
 Scrolling up pauses automatic following; **Jump to latest** returns to the bottom.
 Stop remains beside Send. Working indicators are static.

@@ -98,8 +98,21 @@ function longTurnActivity(): ChatActivity[] {
   return activity;
 }
 
+function saveThread(thread: unknown) {
+  const seed = spawnSync(
+    "bun",
+    [
+      "-e",
+      'import {getSqlite} from "./packages/db/src/client.ts";import {ChatStore} from "./packages/db/src/chat.ts";new ChatStore(getSqlite()).save(JSON.parse(process.argv[1]));',
+      JSON.stringify(thread),
+    ],
+    { cwd: repoRoot(), env: process.env, encoding: "utf8", timeout: 10000 },
+  );
+  expect(seed.status, seed.stderr).toBe(0);
+}
+
 function seedThread(id: string, started: number) {
-  const thread = {
+  saveThread({
     id,
     title: "Long refactor turn",
     config: defaults,
@@ -125,17 +138,7 @@ function seedThread(id: string, started: number) {
         activity: longTurnActivity(),
       },
     ],
-  };
-  const seed = spawnSync(
-    "bun",
-    [
-      "-e",
-      'import {getSqlite} from "./packages/db/src/client.ts";import {ChatStore} from "./packages/db/src/chat.ts";new ChatStore(getSqlite()).save(JSON.parse(process.argv[1]));',
-      JSON.stringify(thread),
-    ],
-    { cwd: repoRoot(), env: process.env, encoding: "utf8", timeout: 10000 },
-  );
-  expect(seed.status, seed.stderr).toBe(0);
+  });
 }
 
 for (const width of [1440, 390]) {
@@ -210,6 +213,105 @@ for (const width of [1440, 390]) {
       true,
     );
     await page.evaluate(() => localStorage.removeItem("orc_chat_activity_prefs"));
+  });
+}
+
+/** 91 known tool calls plus one kind this build does not know; the failure is the oldest item. */
+function windowedTurnActivity(): unknown[] {
+  const activity: unknown[] = [
+    {
+      type: "tool",
+      id: "old-failure",
+      name: "Bash",
+      input: JSON.stringify({ command: "bun x tsc --noEmit" }),
+      result: "error TS2550: Property 'findLast' does not exist",
+      isError: true,
+    },
+  ];
+  for (let index = 0; index < 90; index++) {
+    activity.push({
+      type: "tool",
+      id: `read-${index}`,
+      name: "Read",
+      input: JSON.stringify({ file_path: `src/module-${index}.ts` }),
+      result: `export const value${index} = ${index};`,
+    });
+  }
+  activity.push({ type: "checkpoint", id: "checkpoint-1", state: "saved" });
+  return activity;
+}
+
+function seedWindowedThread(id: string, started: number) {
+  saveThread({
+    id,
+    title: "Windowed turn",
+    config: defaults,
+    cwd: "/tmp",
+    host: null,
+    runtimeId: null,
+    backend: "codex-cli",
+    sourceId: null,
+    updatedAt: started + 42_000,
+    messages: [
+      { id: "user", role: "user", content: "Check every module", timestamp: started },
+      {
+        id: "assistant",
+        role: "assistant",
+        content: "Every module checked.",
+        timestamp: started + 90_000,
+        turn: {
+          startedAt: started,
+          finishedAt: started + 90_000,
+          durationMs: 42_000,
+          outcome: "completed",
+        },
+        activity: windowedTurnActivity(),
+      },
+    ],
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`a turn past the window expands to its newest items at ${width}px`, async ({ page }) => {
+    const id = crypto.randomUUID();
+    seedWindowedThread(id, Date.now() - 120_000);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=open&chatThread=${id}`);
+    const fold = page.getByTestId("chat-turn-fold");
+    await expect(fold).toHaveCount(1);
+    await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(
+      "Worked for 42s · 91 tools · 1 unrecognized activity",
+    );
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText(
+      "1 unrecognized activity",
+    );
+
+    await page.getByTestId("chat-turn-fold-summary").click();
+    await expect(fold.getByTestId("chat-tool")).toHaveCount(79);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="run"]')).toHaveCount(0);
+    const provider = fold.getByTestId("chat-provider-activity");
+    await expect(provider).toHaveCount(1);
+    await expect(provider).toContainText("checkpoint");
+    await provider.locator("summary").click();
+    await expect(provider.getByTestId("chat-provider-data")).toContainText('"state": "saved"');
+    const showAll = page.getByTestId("chat-items-show-all");
+    await expect(showAll).toHaveText("Show all 92 activities");
+
+    await showAll.click();
+    await expect(showAll).toBeHidden();
+    await expect(fold.getByTestId("chat-tool")).toHaveCount(91);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="run"]')).toContainText(
+      "Failed",
+    );
+
+    await page.reload();
+    await page.getByTestId("chat-turn-fold-summary").click();
+    await expect(fold.getByTestId("chat-tool")).toHaveCount(79);
+    await expect(page.getByTestId("chat-items-show-all")).toHaveText("Show all 92 activities");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
   });
 }
 
