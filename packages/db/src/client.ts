@@ -521,6 +521,8 @@ function setupDb(sqlite: Database): void {
 }
 
 const LIVE_SESSION_REFERENCES = [
+  "UPDATE OR IGNORE usage_events SET session_id=$keep WHERE session_id=$drop",
+  "DELETE FROM usage_events WHERE session_id=$drop",
   "UPDATE bridge_messages SET gateway_session_id=$keep WHERE gateway_session_id=$drop",
   "UPDATE bridge_permissions SET gateway_session_id=$keep WHERE gateway_session_id=$drop",
   "UPDATE flow_node_runs SET gateway_session_id=$keep WHERE gateway_session_id=$drop",
@@ -536,6 +538,12 @@ const LIVE_SESSION_REFERENCES = [
 ];
 
 export function mergeDuplicateLiveSessions(sqlite: Database): number {
+  if (
+    sqlite
+      .query("SELECT 1 FROM sqlite_master WHERE name = 'gateway_sessions_live_native_idx'")
+      .get()
+  )
+    return 0;
   const twins = sqlite
     .query<{ keepId: string; dropId: string }, []>(
       `SELECT keep.id AS keepId, twin.id AS dropId FROM gateway_sessions twin

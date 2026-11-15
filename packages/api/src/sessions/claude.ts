@@ -364,6 +364,12 @@ export function claudeAdapter(
             storedTitle(record.title, record.cwd) ||
             "New session";
           if (meta.firstAt) record.createdAt = new Date(meta.firstAt);
+        } else {
+          record.title =
+            chosenNames.get(record.externalId) ||
+            desktopTitles.get(record.externalId) ||
+            storedTitle(before?.session?.title, record.cwd) ||
+            record.title;
         }
         record.lastActivityAt = new Date(
           Math.max(

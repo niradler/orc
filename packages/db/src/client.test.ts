@@ -208,6 +208,9 @@ describe("schema", () => {
         { id: "fresh", display_title: "My name" },
         { id: "other-host", display_title: null },
       ]);
+      expect(reopened.query("SELECT session_id FROM usage_events").all()).toEqual([
+        { session_id: "fresh" },
+      ]);
       expect(reopened.query("SELECT live_session_id FROM session_handoffs").get()).toEqual({
         live_session_id: "fresh",
       });

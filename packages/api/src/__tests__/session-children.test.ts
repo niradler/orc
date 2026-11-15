@@ -53,7 +53,7 @@ describe("claude sessions after /clear", () => {
   test("each conversation keeps its own title, start and last message time", async () => {
     mkdirSync(registry, { recursive: true });
     mkdirSync(join(projects, first, "subagents"), { recursive: true });
-    const register = (sessionId: string) =>
+    const register = (sessionId: string, updatedAt = "2026-11-12T12:09:49Z") =>
       writeFileSync(
         join(registry, "21355.json"),
         JSON.stringify({
@@ -63,7 +63,7 @@ describe("claude sessions after /clear", () => {
           name: "orc-70",
           nameSource: "derived",
           startedAt: Date.parse("2026-11-12T12:09:49Z"),
-          updatedAt: Date.parse("2026-11-12T12:09:49Z"),
+          updatedAt: Date.parse(updatedAt),
         }),
       );
     writeFileSync(
@@ -125,6 +125,21 @@ describe("claude sessions after /clear", () => {
     expect(byNative.get(first)?.last_activity_at).toBe("2026-11-12T18:31:37.000Z");
     expect(rows.some((row) => row.name === "orc-70")).toBe(false);
     expect(byNative.has("agent-a1b2c3")).toBe(false);
+
+    const usage = await (await req(app, "GET", "/usage/history?days=0")).json();
+    expect(usage.totals.sessions).toBe(rows.length);
+
+    register(first, "2026-11-14T00:00:00Z");
+    await runSync([adapter], { force: true });
+    const restarted = claudeAdapter({
+      registry,
+      desktop: null,
+      projects: join(root, "claude-projects"),
+    });
+    await runSync([restarted], { force: true });
+    expect((await live("&agent=claude")).find((row) => row.session_id === first)?.name).toBe(
+      "Remove fullscreen button from chat page",
+    );
 
     const nested = await live("&agent=claude&include_children=true");
     const child = nested.find((row) => row.session_id === "agent-a1b2c3");

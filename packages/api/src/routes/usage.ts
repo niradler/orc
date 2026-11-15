@@ -94,6 +94,7 @@ app.openapi(
       SELECT backend, created_at,
         CASE WHEN backend = 'claude' AND tokens_version < ? THEN NULL ELSE tokens_used END AS tokens_used
       FROM gateway_sessions WHERE chat_id = ? AND created_at >= ?
+        AND NOT (backend = 'claude' AND parent_session_id IS NOT NULL)
     )
     SELECT backend AS agent, date(created_at, 'unixepoch') AS date,
       count(*) AS sessions, coalesce(sum(max(coalesce(tokens_used, 0), 0)), 0) AS tokens,
@@ -261,6 +262,7 @@ app.openapi(
          FROM gateway_sessions gs
          LEFT JOIN usage ON usage.session_id = gs.id
          WHERE gs.chat_id = ?
+           AND NOT (gs.backend = 'claude' AND gs.parent_session_id IS NOT NULL)
            AND (? IS NULL OR gs.created_at >= ?)`,
       )
       .get(
