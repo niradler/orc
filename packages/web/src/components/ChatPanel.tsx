@@ -76,6 +76,7 @@ import type { AgentState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
+import { THIS_SERVER } from "@/lib/host-labels";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -264,7 +265,10 @@ export function ChatPanel({
   });
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
-  const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  const agentRunning =
+    session.data?.live?.status === "running" && session.data.live.agent !== "codex" && !streaming;
+  const runElsewhere = !!session.data?.running && !streaming && !refreshing;
+  const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
   // The usage API only knows sessions it discovered from an agent or terminal.
   const contextUsage = useChatContextUsage(thread?.sourceId, streaming);
   const sessionState: AgentState | null =
@@ -281,13 +285,20 @@ export function ChatPanel({
     streaming || refreshing || reconnecting || turnElsewhere
       ? "Wait for the current response to finish before forking."
       : undefined;
+  const followedChange = useRef(0);
+  useEffect(() => {
+    if (!sessionChanged || !thread || error) return;
+    if (followedChange.current === session.dataUpdatedAt) return;
+    followedChange.current = session.dataUpdatedAt;
+    void refresh(true).finally(() => session.refetch());
+  }, [sessionChanged, thread, error, refresh, session.dataUpdatedAt, session.refetch]);
   const followedSession = useRef<string | null>(null);
   useEffect(() => {
     if (!session.data?.running) followedSession.current = null;
-    if (!turnElsewhere || !thread || followedSession.current === thread.id) return;
+    if (!runElsewhere || !thread || followedSession.current === thread.id) return;
     followedSession.current = thread.id;
     void refresh().finally(() => session.refetch());
-  }, [turnElsewhere, refresh, thread, session.data?.running, session.refetch]);
+  }, [runElsewhere, refresh, thread, session.data?.running, session.refetch]);
   const reload = async () => {
     await refresh(sessionChanged);
     void session.refetch();
@@ -399,9 +410,15 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
-  const sendLabel = !streaming ? "Send message" : canSteerLive ? "Send now" : "Queue message";
+  const sendLabel = agentRunning
+    ? "Running in its own agent; send when it finishes"
+    : !streaming
+      ? "Send message"
+      : canSteerLive
+        ? "Send now"
+        : "Queue message";
   const submit = () => {
-    if (!ready || (!draft.trim() && !files.length)) return;
+    if (!ready || agentRunning || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
     const text = draft;
     setDraft("");
@@ -659,7 +676,7 @@ export function ChatPanel({
                     <p className="truncate text-xs text-muted-foreground">
                       <span data-testid="session-project-breadcrumb">{projectName}</span>
                       {" · "}
-                      {thread?.host ?? "this server"}
+                      {thread?.host ?? THIS_SERVER}
                     </p>
                   </div>
                   {streaming && (
@@ -1171,6 +1188,15 @@ export function ChatPanel({
               </details>
             )}
             <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
+              {agentRunning && (
+                <p
+                  data-testid="chat-agent-running"
+                  role="status"
+                  className="mx-auto mb-1.5 w-full max-w-3xl px-2 text-xs text-on-surface-variant"
+                >
+                  Running in its own agent. Sending unlocks when it finishes.
+                </p>
+              )}
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -1245,7 +1271,11 @@ export function ChatPanel({
                     aria-activedescendant={
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
-                    placeholder="Ask anything. / for prompts and skills"
+                    placeholder={
+                      agentRunning
+                        ? "Running in its own agent. Sending unlocks when it finishes."
+                        : "Ask anything. / for prompts and skills"
+                    }
                     disabled={!ready}
                     value={draft}
                     onChange={(event) => {
@@ -1378,7 +1408,7 @@ export function ChatPanel({
                     <ActionHelp label={sendLabel}>
                       <button
                         type="submit"
-                        disabled={!ready || (!draft.trim() && !files.length)}
+                        disabled={!ready || agentRunning || (!draft.trim() && !files.length)}
                         data-testid="chat-send-button"
                         aria-label={sendLabel}
                         className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
