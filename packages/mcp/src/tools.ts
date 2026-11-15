@@ -871,6 +871,13 @@ export const toolDefinitions = [
         )
         .optional()
         .describe("Optional repository remote, e.g. https://github.com/acme/shop.git"),
+      scope: z
+        .string()
+        .trim()
+        .min(1)
+        .max(4096)
+        .optional()
+        .describe("Folder the project's work runs in; sessions in it map to this project"),
     }),
   },
   {
@@ -1160,6 +1167,7 @@ export type ToolOptions = {
   previewScope?: PreviewScope;
   projectScopes?: readonly McpProject[];
   publicApiBaseUrl?: string;
+  projectsChanged?: () => void;
   skillDownload?: (name: string, ref: string, projectId: string | null) => SkillDownload;
   /** Mints a scratchpad content URL in-process; stdio MCP asks the API, which holds the key. */
   padContentUrl?: (
@@ -2636,12 +2644,13 @@ export async function executeTool(
         throw new ValidationError(
           "project_create needs an unscoped connection: this MCP connection is limited to selected projects. Reconnect without project scopes to create projects.",
         );
-      const { name, description, status, tags, git_remote_url } = args as {
+      const { name, description, status, tags, git_remote_url, scope } = args as {
         name: string;
         description?: string;
         status?: "active" | "archived" | "paused";
         tags?: string[];
         git_remote_url?: string;
+        scope?: string;
       };
       const duplicate = () => {
         const row = getSqlite()
@@ -2670,6 +2679,7 @@ export async function executeTool(
                 description: description ?? null,
                 status: status ?? "active",
                 git_remote_url: git_remote_url?.trim() || null,
+                scope: scope ?? null,
                 tags: tags ?? null,
                 created_at: now,
                 updated_at: now,
@@ -2683,6 +2693,7 @@ export async function executeTool(
         if (raced) throw raced;
         throw error;
       }
+      if (scope) options.projectsChanged?.();
       const link = new URL(
         `/tasks?project=${encodeURIComponent(name)}`,
         options.publicApiBaseUrl ?? orcApiBase(),

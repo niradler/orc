@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSkill, type SkillRefContent } from "@orc/core/skill-service";
-import { getSqlite } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { MemoryStore } from "@orc/db/memories";
+import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import { SkillHistory } from "@orc/db/skill-history";
 import { closeKnowledgeService, getKnowledgeService } from "@orc/knowledge";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
@@ -267,5 +268,46 @@ describe("connection-wide MCP project defaults", () => {
     const invalid = await rpc("", "project_create", { name: "has space" });
     expect(invalid.error).toBe(true);
     expect(invalid.text).toContain("Invalid args");
+  });
+
+  test("project_create stores its folder and maps existing sessions in it", async () => {
+    const folder = join(root, "scoped-folder");
+    mkdirSync(join(folder, "child"), { recursive: true });
+    const now = new Date();
+    await getDb()
+      .insert(bridge_chats)
+      .values({ id: "__live-sessions__", platform: "telegram", chat_id: "__live-sessions__" })
+      .onConflictDoNothing();
+    await getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "mcp-scope-session",
+        chat_id: "__live-sessions__",
+        backend: "mapping-agent",
+        mode: "direct",
+        runtime_session_id: "mcp-scope-native",
+        project_id: null,
+        cwd: join(folder, "child"),
+        status: "stopped",
+        title: "Scope fixture",
+        created_at: now,
+        last_activity_at: now,
+      });
+    const created = await rpc("", "project_create", { name: "scoped-folder", scope: folder });
+    expect(created.error).not.toBe(true);
+    const project = getSqlite()
+      .query<{ id: string; scope: string | null }, []>(
+        "SELECT id, scope FROM projects WHERE name = 'scoped-folder'",
+      )
+      .get();
+    expect(project?.scope).toBe(folder);
+    const mapped = () =>
+      getSqlite()
+        .query<{ project_id: string | null }, []>(
+          "SELECT project_id FROM gateway_sessions WHERE id = 'mcp-scope-session'",
+        )
+        .get()?.project_id;
+    for (let i = 0; i < 50 && mapped() !== project?.id; i++) await Bun.sleep(20);
+    expect(mapped()).toBe(project?.id ?? "missing");
   });
 });
