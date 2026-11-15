@@ -38,6 +38,36 @@ export const CURRENT_HOST: ApiHost = {
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
 
+/**
+ * Request headers the client owns. A saved proxy header must not replace them, or every write
+ * loses its JSON content type and streams lose their `Accept`. Desktop blocks the same set.
+ */
+const BLOCKED_HEADERS = new Set([
+  "accept",
+  "authorization",
+  "connection",
+  "content-length",
+  "content-type",
+  "cookie",
+  "expect",
+  "host",
+  "origin",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "referer",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+/** `crypto.randomUUID` needs a secure context; self-hosted dashboards on plain http do not have one. */
+function newHostId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 const baseUrl = (): string =>
   typeof window === "undefined" ? "http://localhost/" : window.location.href;
 
@@ -45,10 +75,15 @@ const baseUrl = (): string =>
 export function normalizeApiUrl(url: string): string {
   const trimmed = url.trim() || DEFAULT_API_URL;
   try {
-    return new URL(trimmed, baseUrl()).href.replace(/\/$/, "");
+    return new URL(trimmed, baseUrl()).href.replace(/\/+$/, "");
   } catch {
-    return trimmed.replace(/\/$/, "");
+    return trimmed.replace(/\/+$/, "");
   }
+}
+
+/** Stored form of an address: no trailing slash, so `${url}${path}` never doubles the separator. */
+function canonicalApiUrl(url: string): string {
+  return (url.trim() || DEFAULT_API_URL).replace(/\/+$/, "");
 }
 
 export function isDesktopShell(): boolean {
@@ -61,7 +96,7 @@ export function isDesktopShell(): boolean {
 export function readApiUrl(): string {
   if (typeof window === "undefined" || isDesktopShell()) return DEFAULT_API_URL;
   try {
-    return localStorage.getItem(API_URL_KEY) ?? DEFAULT_API_URL;
+    return canonicalApiUrl(localStorage.getItem(API_URL_KEY) ?? DEFAULT_API_URL);
   } catch {
     return DEFAULT_API_URL;
   }
@@ -69,7 +104,7 @@ export function readApiUrl(): string {
 
 export function writeApiUrl(url: string): void {
   if (typeof window === "undefined" || isDesktopShell()) return;
-  const target = url.trim() || DEFAULT_API_URL;
+  const target = canonicalApiUrl(url);
   try {
     localStorage.setItem(API_URL_KEY, target);
   } catch {
@@ -196,43 +231,60 @@ export function listApiHosts(): ApiHost[] {
   return [CURRENT_HOST, ...readApiHosts()];
 }
 
-function persist(hosts: ApiHost[]): void {
+function persist(hosts: ApiHost[]): boolean {
   try {
     localStorage.setItem(API_HOSTS_KEY, JSON.stringify(hosts));
+    return true;
   } catch {
-    // Ignore quota or privacy-mode failures; the in-memory settings still work.
+    return false;
   }
 }
 
 /** Creates or replaces a host. Returns the stored copy with its final id. */
 export function saveApiHost(draft: ApiHostDraft): ApiHost {
   const host: ApiHost = {
-    id: draft.id?.trim() || crypto.randomUUID(),
-    label: draft.label.trim() || draft.url.trim(),
-    url: draft.url.trim(),
+    id: draft.id?.trim() || newHostId(),
+    label: draft.label.trim() || canonicalApiUrl(draft.url),
+    url: canonicalApiUrl(draft.url),
     token: draft.token.trim(),
     headers: uniqueHeaders(
       draft.headers
         .map((header) => ({ name: header.name.trim(), value: header.value }))
-        .filter((header) => header.name),
+        .filter((header) => header.name && header.value),
     ),
   };
   const hosts = readApiHosts();
   const index = hosts.findIndex((item) => item.id === host.id);
   if (index === -1) hosts.push(host);
   else hosts[index] = host;
-  persist(hosts);
+  if (!persist(hosts)) throw new Error("The host list could not be written to this browser.");
   return host;
 }
 
-export function deleteApiHost(id: string): void {
-  persist(readApiHosts().filter((host) => host.id !== id));
+/** Removes a saved host. Returns false when the browser refused the write. */
+export function deleteApiHost(id: string): boolean {
+  if (!persist(readApiHosts().filter((host) => host.id !== id))) return false;
   if (readActiveHostId() === id) writeActiveHostId(null);
+  // A stale previous server would offer a target that no longer exists.
+  try {
+    if (localStorage.getItem(API_PREVIOUS_HOST_KEY) === id) {
+      localStorage.removeItem(API_PREVIOUS_HOST_KEY);
+      localStorage.removeItem(API_PREVIOUS_URL_KEY);
+    }
+  } catch {
+    // Storage can be blocked; the fallback simply stays unavailable.
+  }
+  return true;
+}
+
+/** Addresses match after normalisation, which is how a saved row is found for the active URL. */
+export function sameApiUrl(left: string, right: string): boolean {
+  return normalizeApiUrl(left) === normalizeApiUrl(right);
 }
 
 export function findApiHost(url: string, hosts: ApiHost[] = listApiHosts()): ApiHost | undefined {
   const target = normalizeApiUrl(url);
-  return hosts.find((host) => normalizeApiUrl(host.url) === target);
+  return hosts.find((host) => sameApiUrl(host.url, target));
 }
 
 /** The selected saved host, or a host at the active address for older links. */
@@ -241,7 +293,7 @@ export function activeApiHost(hosts: ApiHost[] = listApiHosts()): ApiHost | unde
   const id = readActiveHostId();
   if (id) {
     const selected = hosts.find((host) => host.id === id);
-    if (selected && normalizeApiUrl(selected.url) === normalizeApiUrl(url)) return selected;
+    if (selected && sameApiUrl(selected.url, url)) return selected;
   }
   return findApiHost(url, hosts);
 }
@@ -251,7 +303,7 @@ export function hostHeaders(host: ApiHost): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const header of host.headers) {
     const name = header.name.trim();
-    if (!name || !header.value) continue;
+    if (!name || !header.value || BLOCKED_HEADERS.has(name.toLowerCase())) continue;
     headers[name] = header.value;
   }
   const token = host.token.trim();
@@ -259,10 +311,27 @@ export function hostHeaders(host: ApiHost): Record<string, string> {
   return headers;
 }
 
-export function activeApiHeaders(): Record<string, string> {
-  if (isDesktopShell()) return {};
+/**
+ * Saved headers for `url`, which defaults to the active server. A host's token and proxy headers
+ * are only released to the address they were saved for.
+ */
+export function activeApiHeaders(url: string = readApiUrl()): Record<string, string> {
+  if (isDesktopShell() || !sameApiUrl(url, readApiUrl())) return {};
   const host = activeApiHost();
   return host ? hostHeaders(host) : {};
+}
+
+/** A plain-http remote address sends the token and proxy headers over the network in clear text. */
+export function apiHostWarning(draft: Pick<ApiHost, "url">): string | null {
+  const url = draft.url.trim();
+  if (!/^http:\/\//i.test(url)) return null;
+  try {
+    const { hostname } = new URL(url);
+    if (["localhost", "127.0.0.1", "[::1]", "::1"].includes(hostname)) return null;
+  } catch {
+    return null;
+  }
+  return "This address is not HTTPS, so its token and headers travel unencrypted.";
 }
 
 export function apiHostError(draft: Pick<ApiHost, "url" | "headers">): string | null {
@@ -270,17 +339,27 @@ export function apiHostError(draft: Pick<ApiHost, "url" | "headers">): string | 
   if (!url) return "Enter the server URL.";
   if (!url.startsWith("/") && !/^https?:\/\//i.test(url))
     return "Use a relative API path or an http(s) server URL.";
+  if (url === "/") return "Enter the API path, for example /api.";
   try {
-    new URL(url, baseUrl());
+    const parsed = new URL(url, baseUrl());
+    if (parsed.search || parsed.hash)
+      return "The server URL cannot include a query string or fragment.";
+    if (url.startsWith("/") && !parsed.pathname.replace(/\/+$/, ""))
+      return "Enter the API path, for example /api.";
   } catch {
     return "Enter a valid server URL.";
   }
+  const seen = new Set<string>();
   for (const header of draft.headers) {
     const name = header.name.trim();
     if (!name) return "Each header needs a name.";
     if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name))
       return `“${name}” is not a valid header name.`;
-    if (/[\r\n]/.test(header.value)) return `The ${name} header value cannot contain a line break.`;
+    const key = name.toLowerCase();
+    if (BLOCKED_HEADERS.has(key)) return `The ${name} header is managed by this dashboard.`;
+    if (seen.has(key)) return `The ${name} header is listed twice.`;
+    seen.add(key);
+    if (/[\r\n]/.test(header.value)) return `The ${name} header value cannot have line breaks.`;
   }
   return null;
 }

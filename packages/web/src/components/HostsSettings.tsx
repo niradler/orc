@@ -1,5 +1,5 @@
-import { CheckCircle, Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   DesktopConnectionSettings,
@@ -18,22 +18,23 @@ import {
   type ApiHostDraft,
   type ApiHostHeader,
   apiHostError,
+  apiHostWarning,
   CURRENT_HOST,
   CURRENT_HOST_ID,
   deleteApiHost,
   hostHeaders,
   listApiHosts,
-  normalizeApiUrl,
   readActiveHostId,
   readApiUrl,
   rememberApiHostSwitch,
+  sameApiUrl,
   saveApiHost,
   writeActiveHostId,
   writeApiUrl,
 } from "@/lib/api-hosts";
 import { isSecretKey } from "@/lib/connection-source";
 import { desktopBridge } from "@/lib/desktop-bridge";
-import { orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
+import { defaultServerAddress, orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
 import { cn } from "@/lib/utils";
 
 const inputClass = "bg-surface-highest border-outline-variant text-on-surface font-body text-sm";
@@ -52,19 +53,25 @@ export function HostsSettings({
   expandConnection?: boolean;
 }) {
   const desktop = desktopBridge()?.connection;
-  const execution = <ExecutionHostRow defaultOpen={expandExecution} />;
+  const execution = <ExecutionHostRow openOn={expandExecution} />;
   return (
     <section aria-labelledby="hosts-title" data-testid="hosts-settings">
       <h2 id="hosts-title" className="mb-1 hidden text-base font-medium md:block">
         Hosts
       </h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Choose the ORC server this dashboard talks to, and where its work runs. Chats, terminals and
-        jobs run on that server or on a host from its{" "}
-        <code className="text-primary">~/.ssh/config</code>.
-      </p>
+      <div className="mb-4 flex items-start gap-1">
+        <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+          The ORC server this dashboard talks to, and where its work runs.
+        </p>
+        <HelpPopover label="hosts" testId="hosts-help">
+          The API rows are the ORC servers this dashboard can talk to. The SSH row is where the
+          connected server runs chats, terminals and jobs: its own machine, or a host from its{" "}
+          <code className="text-primary">~/.ssh/config</code>. Tokens and headers are stored in this
+          browser and only sent to the address they were saved for.
+        </HelpPopover>
+      </div>
       {desktop ? (
-        <DesktopHosts execution={execution} defaultOpen={expandConnection} />
+        <DesktopHosts execution={execution} openOn={expandConnection} />
       ) : (
         <BrowserHosts execution={execution} />
       )}
@@ -86,9 +93,13 @@ function HostBadge({ kind }: { kind: "api" | "ssh" }) {
 }
 
 /** The connected server's own machine and its SSH aliases: the hosts work can actually run on. */
-function ExecutionHostRow({ defaultOpen = false }: { defaultOpen?: boolean }) {
+function ExecutionHostRow({ openOn = false }: { openOn?: boolean }) {
   const { data: ssh, error } = useSsh();
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(openOn);
+  // Panels stay mounted, so a later legacy deep link still has to open the editor.
+  useEffect(() => {
+    if (openOn) setOpen(true);
+  }, [openOn]);
   const alias = ssh?.host ?? null;
   const address = orcServerAddress();
   const title = alias ?? THIS_SERVER;
@@ -118,35 +129,30 @@ function ExecutionHostRow({ defaultOpen = false }: { defaultOpen?: boolean }) {
           size="sm"
           data-testid="ssh-host-change"
           aria-expanded={open}
+          aria-controls="execution-host-editor"
           onClick={() => setOpen((current) => !current)}
         >
           {open ? "Close" : "Change"}
         </Button>
       </div>
       {open && (
-        <div className="mt-3">
-          <SshHostSettings embedded />
+        <div id="execution-host-editor" className="mt-3">
+          <SshHostSettings />
         </div>
       )}
     </li>
   );
 }
 
-function sameUrl(left: string, right: string): boolean {
-  return normalizeApiUrl(left) === normalizeApiUrl(right);
-}
-
-function DesktopHosts({
-  execution,
-  defaultOpen = false,
-}: {
-  execution: ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const { state, loadError, loading } = useDesktopConnectionState();
-  const [editing, setEditing] = useState(defaultOpen);
+function DesktopHosts({ execution, openOn = false }: { execution: ReactNode; openOn?: boolean }) {
+  const { state, loadError, loading, retry } = useDesktopConnectionState();
+  const [editing, setEditing] = useState(openOn);
+  useEffect(() => {
+    if (openOn) setEditing(true);
+  }, [openOn]);
   const readOnly = state?.editable === false;
-  const showEditor = editing || readOnly;
+  // A failed status read must not hide the only control that can repair the target.
+  const showEditor = editing || readOnly || (!loading && !state);
   const remote = state?.mode === "remote";
   const title = loading ? "Loading server…" : remote ? "Remote ORC server" : THIS_SERVER;
   const subtitle = loadError
@@ -171,12 +177,23 @@ function DesktopHosts({
               {subtitle}
             </div>
           </div>
-          {state?.editable && (
+          {loadError && (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="desktop-connection-retry"
+              onClick={retry}
+            >
+              Retry
+            </Button>
+          )}
+          {(state?.editable || loadError) && (
             <Button
               variant="ghost"
               size="sm"
               data-testid="desktop-connection-change"
               aria-expanded={editing}
+              aria-controls="desktop-connection-editor"
               onClick={() => setEditing((current) => !current)}
             >
               {editing ? "Close" : "Change"}
@@ -186,7 +203,7 @@ function DesktopHosts({
         {execution}
       </ul>
       {showEditor && (
-        <div className="mt-4 rounded-md border border-border p-4">
+        <div id="desktop-connection-editor" className="mt-4 rounded-md border border-border p-4">
           <DesktopConnectionSettings />
         </div>
       )}
@@ -200,7 +217,8 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
   const [activeId, setActiveId] = useState<string | null>(readActiveHostId);
   const [draft, setDraft] = useState<ApiHostDraft | null>(null);
   const [deleting, setDeleting] = useState<ApiHost | null>(null);
-  const [pending, setPending] = useState<"test" | "save" | null>(null);
+  const [testing, setTesting] = useState(false);
+  const testAttempt = useRef(0);
   const [tested, setTested] = useState("");
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -219,10 +237,10 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
 
   const activeHost =
     hosts.find((host) => host.id === activeId) ??
-    hosts.find((host) => sameUrl(host.url, activeUrl));
-  const unsaved = !activeHost && !sameUrl(activeUrl, CURRENT_HOST.url);
+    hosts.find((host) => sameApiUrl(host.url, activeUrl));
+  const unsaved = !activeHost && !sameApiUrl(activeUrl, CURRENT_HOST.url);
   const active = (host: ApiHost) =>
-    activeHost ? host.id === activeHost.id : sameUrl(host.url, activeUrl);
+    activeHost ? host.id === activeHost.id : sameApiUrl(host.url, activeUrl);
 
   function switchToHost(host: ApiHost): void {
     rememberApiHostSwitch();
@@ -230,7 +248,6 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
     writeActiveHostId(host.id);
     setActiveUrl(host.url);
     setActiveId(host.id);
-    setFeedback(`Using ${host.label}.`);
     window.dispatchEvent(new Event(API_ACCESS_CHANGED));
   }
 
@@ -240,20 +257,32 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
       setError(invalid);
       return;
     }
-    setPending("test");
+    const attempt = ++testAttempt.current;
+    const stillEditing = () => attempt === testAttempt.current;
+    setTesting(true);
     setError("");
     setTested("");
     try {
       const url = candidate.url.trim().replace(/\/+$/, "");
+      // A stored token belongs to the saved address, so a changed address is tested without it.
+      const saved = candidate.id ? hosts.find((host) => host.id === candidate.id) : undefined;
+      const addressChanged = saved ? !sameApiUrl(saved.url, candidate.url) : false;
       const response = await fetch(`${url}/settings`, {
         credentials: "include",
         cache: "no-store",
-        headers: hostHeaders({ ...candidate, id: candidate.id ?? "draft" }),
+        headers: hostHeaders({
+          ...candidate,
+          id: candidate.id ?? "draft",
+          token: addressChanged ? "" : candidate.token,
+        }),
         signal: AbortSignal.timeout(10_000),
       });
+      if (!stillEditing()) return;
       if (response.status === 401) {
         setTested(
-          "Reached the server. Add a valid access token, or sign in on its dashboard and test again.",
+          addressChanged
+            ? "Reached the server. Save the new address to send its token there, or add one."
+            : "Reached the server. Add a valid access token, or sign in on its dashboard and test again.",
         );
       } else if (!response.ok) {
         setTested(`The server answered HTTP ${response.status}.`);
@@ -261,9 +290,10 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
         setTested("Connected. This server accepts requests.");
       }
     } catch {
-      setError("Could not reach that server. Check the URL, the network and allowed origins.");
+      if (stillEditing())
+        setError("Could not reach that server. Check the URL, the network and allowed origins.");
     } finally {
-      setPending(null);
+      if (stillEditing()) setTesting(false);
     }
   }
 
@@ -274,10 +304,11 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
       setError(invalid);
       return;
     }
-    setPending("save");
     try {
       const saved = saveApiHost(draft);
       const wasNew = !draft.id;
+      const wasActive = !wasNew && activeHost?.id === saved.id;
+      const urlChanged = wasActive && activeHost ? !sameApiUrl(activeHost.url, saved.url) : false;
       setDraft(null);
       refresh();
       resetMessages();
@@ -285,38 +316,44 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
         switchToHost(saved);
         return;
       }
-      setFeedback("Server saved.");
-      if (activeHost?.id === saved.id) {
-        // Headers, token or address may have changed for the server in use.
-        writeApiUrl(saved.url);
-        setActiveUrl(saved.url);
-        window.dispatchEvent(new Event(API_ACCESS_CHANGED));
+      if (wasActive) {
+        // Only a new address needs the gate to re-check; new credentials reach the next request.
+        if (urlChanged) {
+          rememberApiHostSwitch();
+          writeApiUrl(saved.url);
+          setActiveUrl(saved.url);
+          window.dispatchEvent(new Event(API_ACCESS_CHANGED));
+        }
+        return;
       }
+      setFeedback("Server saved.");
     } catch {
       setError("The server could not be saved in this browser.");
-    } finally {
-      setPending(null);
     }
   }
 
   function removeHost(host: ApiHost): void {
     const wasActive = active(host);
-    deleteApiHost(host.id);
     setDeleting(null);
-    if (wasActive) {
-      writeApiUrl(CURRENT_HOST.url);
-      writeActiveHostId(CURRENT_HOST_ID);
-      setActiveUrl(CURRENT_HOST.url);
-      setActiveId(CURRENT_HOST_ID);
-      window.dispatchEvent(new Event(API_ACCESS_CHANGED));
+    if (!deleteApiHost(host.id)) {
+      setError("The server could not be removed from this browser.");
+      return;
     }
     refresh();
     resetMessages();
+    if (wasActive) {
+      writeApiUrl(CURRENT_HOST.url);
+      writeActiveHostId(CURRENT_HOST_ID);
+      window.dispatchEvent(new Event(API_ACCESS_CHANGED));
+      return;
+    }
     setFeedback(`${host.label} was removed.`);
   }
 
   const edit = (host?: ApiHost) => {
     resetMessages();
+    testAttempt.current += 1;
+    setTesting(false);
     setDraft(
       host
         ? { ...host, headers: host.headers.map((header) => ({ ...header })) }
@@ -343,6 +380,8 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
             <Button
               variant="ghost"
               size="sm"
+              data-testid="api-host-save-current"
+              className="min-h-11 md:min-h-8"
               onClick={() =>
                 edit({ ...CURRENT_HOST, id: "", label: "Saved server", url: activeUrl })
               }
@@ -353,7 +392,8 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
         )}
         {hosts.map((host) => {
           const isActive = active(host);
-          const address = host.id === CURRENT_HOST_ID ? (orcServerAddress() ?? host.url) : host.url;
+          const address =
+            host.id === CURRENT_HOST_ID ? (defaultServerAddress() ?? host.url) : host.url;
           return (
             <li
               key={host.id}
@@ -379,6 +419,7 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                   variant="ghost"
                   size="sm"
                   data-testid={`api-host-use-${host.id}`}
+                  className="min-h-11 md:min-h-8"
                   onClick={() => switchToHost(host)}
                 >
                   Use
@@ -390,6 +431,7 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                     variant="ghost"
                     size="sm"
                     data-testid={`api-host-edit-${host.id}`}
+                    className="min-h-11 md:min-h-8"
                     onClick={() => edit(host)}
                   >
                     Edit
@@ -399,6 +441,7 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                     size="icon"
                     aria-label={`Delete ${host.label}`}
                     data-testid={`api-host-delete-${host.id}`}
+                    className="size-11 md:size-8"
                     onClick={() => setDeleting(host)}
                   >
                     <Trash2 className="size-4" />
@@ -410,7 +453,12 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
         })}
         {execution}
         <li className="py-2">
-          <Button variant="outline" data-testid="api-host-add" onClick={() => edit()}>
+          <Button
+            variant="outline"
+            data-testid="api-host-add"
+            disabled={draft !== null}
+            onClick={() => edit()}
+          >
             <Plus className="size-4" />
             Add server
           </Button>
@@ -424,7 +472,10 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                   variant="ghost"
                   size="icon"
                   aria-label="Close server editor"
+                  className="size-11 md:size-8"
                   onClick={() => {
+                    testAttempt.current += 1;
+                    setTesting(false);
                     setDraft(null);
                     resetMessages();
                   }}
@@ -446,7 +497,14 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="api-host-url">Server URL</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="api-host-url">Server URL</Label>
+                  <HelpPopover label="server URL" testId="api-host-url-help">
+                    <code>/api</code> follows this dashboard. A remote server needs HTTPS and this
+                    dashboard's origin in its Security allowed origins. Its token and headers go
+                    only to this address, so a mistyped address cannot receive them before you save.
+                  </HelpPopover>
+                </div>
                 <Input
                   id="api-host-url"
                   data-testid="api-host-url"
@@ -458,10 +516,11 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                     resetMessages();
                   }}
                 />
-                <p className="text-xs text-muted-foreground">
-                  <code>/api</code> follows this dashboard. A remote server needs HTTPS and this
-                  dashboard's origin in its Security allowed origins.
-                </p>
+                {apiHostWarning(draft) && (
+                  <p data-testid="api-host-warning" className="text-xs text-tertiary">
+                    {apiHostWarning(draft)}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-1">
@@ -488,7 +547,9 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                   <HelpPopover label="server headers" testId="api-host-headers-help">
                     Extra request headers for a reverse proxy, for example Cloudflare Access. They
                     are sent only to this server's address and stored in this browser. Values for
-                    names like token, key or secret are masked in this form.
+                    names like token, key or secret are masked in this form. Headers this dashboard
+                    sets itself (such as Authorization, Content-Type, Accept or Cookie) are
+                    rejected: use the token field for a bearer token.
                   </HelpPopover>
                 </div>
                 <HeaderFields
@@ -503,14 +564,14 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
                 <Button
                   variant="outline"
                   data-testid="api-host-test"
-                  disabled={!!pending}
+                  disabled={testing}
                   onClick={() => void testHost(draft)}
                 >
-                  {pending === "test" ? "Testing…" : "Test connection"}
+                  {testing ? "Testing…" : "Test connection"}
                 </Button>
-                <Button data-testid="api-host-save" disabled={!!pending} onClick={saveDraft}>
-                  {feedback ? <CheckCircle className="size-4" /> : <Save className="size-4" />}
-                  {pending === "save" ? "Saving…" : draft.id ? "Save changes" : "Save and use"}
+                <Button data-testid="api-host-save" disabled={testing} onClick={saveDraft}>
+                  <Save className="size-4" />
+                  {draft.id ? "Save changes" : "Save and use"}
                 </Button>
               </div>
               {tested && (
@@ -545,7 +606,11 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
       <ConfirmDialog
         open={deleting !== null}
         title="Delete server"
-        description={`Remove ${deleting?.label ?? "this server"} from this browser? Its token and headers are deleted too.`}
+        description={`Remove ${deleting?.label ?? "this server"} from this browser? Its token and headers are deleted too.${
+          deleting && active(deleting)
+            ? " This dashboard goes back to This ORC server, and that server needs its own sign-in or token."
+            : ""
+        }`}
         onCancel={() => setDeleting(null)}
         onConfirm={() => deleting && removeHost(deleting)}
       />

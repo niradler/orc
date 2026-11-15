@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { useBackends } from "@/hooks/useBackends";
 import { useSelectSshHost, useSsh, useTestSshHost } from "@/hooks/useSsh";
 import { orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
@@ -23,11 +22,8 @@ function errorText(error: unknown): string | null {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * The execution host of the connected ORC server. `embedded` drops the section heading when the
- * form sits inside the Hosts list row.
- */
-export function SshHostSettings({ embedded = false }: { embedded?: boolean }) {
+/** The execution host of the connected ORC server, shown inside the Hosts list row. */
+export function SshHostSettings() {
   const { data: ssh, error: loadError, refetch } = useSsh();
   const { data: backends } = useBackends();
   const select = useSelectSshHost();
@@ -44,7 +40,6 @@ export function SshHostSettings({ embedded = false }: { embedded?: boolean }) {
   if (loadError)
     return (
       <div data-testid="ssh-settings">
-        {!embedded && <h2 className="mb-3 text-base font-semibold">Execution host</h2>}
         <ErrorState message={loadError.message} onRetry={() => void refetch()} />
       </div>
     );
@@ -68,6 +63,10 @@ export function SshHostSettings({ embedded = false }: { embedded?: boolean }) {
   const body = (
     <>
       <div className="space-y-4">
+        <p className="font-body text-sm text-muted-foreground">
+          Server-wide: applies to new chats, terminals and jobs for everyone using this ORC server.
+          Open ones keep their host.
+        </p>
         {ssh.locked && (
           <p data-testid="ssh-locked" className="font-body text-sm text-tertiary">
             Fixed by ORC_SSH_HOST in orc's environment.
@@ -213,21 +212,5 @@ export function SshHostSettings({ embedded = false }: { embedded?: boolean }) {
     </>
   );
 
-  if (embedded) return <div data-testid="ssh-settings">{body}</div>;
-
-  return (
-    <section data-testid="ssh-settings">
-      <h2 className="font-headline font-semibold text-base  text-on-surface mb-1">
-        Execution host
-      </h2>
-      <p className="font-body text-sm text-muted-foreground mb-4">
-        Run every agent, terminal, git and file action on this ORC server or on a host from{" "}
-        <code className="text-primary">~/.ssh/config</code>. This applies to everyone using this ORC
-        server. Agents there reach orc through a reverse tunnel on the remote port. Terminals
-        already open keep their host.
-      </p>
-      <Separator className="bg-surface-highest mb-4" />
-      {body}
-    </section>
-  );
+  return <div data-testid="ssh-settings">{body}</div>;
 }

@@ -127,14 +127,17 @@ export function ChatWorkspaceControls() {
     };
   }, []);
   useEffect(() => {
+    // No host: a new chat follows the server-wide execution host until the user pins one.
     if (ssh && !workspace && !thread && !streaming)
-      setWorkspace({ host: ssh.host, cwd: folderHistory(ssh.host).last, worktree: false });
+      setWorkspace({ cwd: folderHistory(ssh.host).last, worktree: false });
   }, [ssh, workspace, thread, streaming, setWorkspace]);
   // A running conversation keeps its execution folder; show where it runs and
   // the checkout's branch instead of the new-chat pickers.
   if (thread) return <SessionWorkspace thread={thread} />;
 
   const hosts = [null, ...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])];
+  // A locked or unsupported server refuses another execution host, so do not offer one.
+  const hostChoices = ssh?.locked || ssh?.supported === false ? [] : hosts;
   const serverAddress = orcServerAddress();
   const listing = git.data;
   const folderName = cwd ? folderChipLabel(cwd, listing) : pathName(displayPath) || "Home";
@@ -148,7 +151,7 @@ export function ChatWorkspaceControls() {
   const customBase = base && base !== currentBranch && base !== defaultBase ? base : null;
   const runFrom = (next: { worktree: boolean; base?: string | null }) => {
     setWorkspace({
-      host,
+      host: workspace?.host,
       cwd,
       worktree: next.worktree,
       ...(next.worktree && next.base ? { base: next.base } : {}),
@@ -175,7 +178,7 @@ export function ChatWorkspaceControls() {
   }));
 
   const choose = (path: string) => {
-    setWorkspace({ host, cwd: path, worktree: worktree && !!path.trim() });
+    setWorkspace({ host: workspace?.host, cwd: path, worktree: worktree && !!path.trim() });
     rememberFolder(host, path);
     setPathDraft(null);
     setError("");
@@ -309,10 +312,10 @@ export function ChatWorkspaceControls() {
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
             </div>
-            {hosts.length > 1 && (
+            {hostChoices.length > 1 && (
               <div role="menu" aria-label="Workspace host">
                 <p className={chipHeading}>Host</p>
-                {hosts.map((alias) => (
+                {hostChoices.map((alias) => (
                   <button
                     type="button"
                     key={alias ?? "local"}

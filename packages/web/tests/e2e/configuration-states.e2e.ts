@@ -81,9 +81,14 @@ for (const scenario of pages) {
       await page.screenshot({ path: testInfo.outputPath(`${scenario.view}-failed.png`) });
       state = "empty";
       await page.reload();
-      if (scenario.view === "settings")
+      if (scenario.view === "settings") {
         await expect(page.getByTestId("hosts-settings")).toBeVisible();
-      else await expect(empty.first()).toBeVisible();
+        await expect(page.getByTestId("ssh-settings")).toBeHidden();
+        await page.getByTestId("ssh-host-change").click();
+        const ssh = page.getByTestId("ssh-settings");
+        await expect(ssh.getByTestId("ssh-host-picker")).toBeVisible();
+        await expect(ssh.getByTestId("page-empty")).toContainText("No Host entries");
+      } else await expect(empty.first()).toBeVisible();
       await expect(failed).toHaveCount(0);
       await expect(loading).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath(`${scenario.view}-empty.png`) });

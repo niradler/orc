@@ -43,7 +43,7 @@ test("saved ORC servers keep their token and headers, switch, and come back", as
   expect(stored).toContain("Lab");
   expect(stored).toContain("lab-jwt-token");
 
-  const row = page.getByTestId(/^api-host-/).filter({ hasText: "Lab" });
+  const row = page.locator("li").filter({ hasText: "Lab" });
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "Edit" }).click();
   await expect(page.getByTestId("api-host-token")).toHaveAttribute("type", "password");
@@ -53,7 +53,30 @@ test("saved ORC servers keep their token and headers, switch, and come back", as
 
   await page.reload();
   await page.goto("/settings?settingsSection=hosts");
-  await expect(page.getByTestId(/^api-host-/).filter({ hasText: "Lab" })).toBeVisible();
+  await expect(page.locator("li").filter({ hasText: "Lab" })).toBeVisible();
+});
+
+test("saved addresses are canonical and managed headers are refused", async ({ page }) => {
+  await gotoView(page, "settings");
+  await page.goto("/settings?settingsSection=hosts");
+  await page.getByTestId("api-host-add").click();
+  await page.getByTestId("api-host-name").fill("Trailing");
+  await page.getByTestId("api-host-url").fill("/other-api///");
+
+  await page.getByTestId("api-host-header-add").click();
+  await page.getByTestId("api-host-header-name-0").fill("Content-Type");
+  await page.getByTestId("api-host-header-value-0").fill("text/plain");
+  await page.getByTestId("api-host-save").click();
+  await expect(page.getByTestId("api-host-error")).toContainText("managed by this dashboard");
+
+  await page.getByTestId("api-host-header-name-0").fill("CF-Access-Client-Id");
+  await page.getByTestId("api-host-save").click();
+  // Saving a new server switches to it, so the list is replaced by the sign-in gate.
+  await expect
+    .poll(() =>
+      page.evaluate(() => JSON.parse(localStorage.getItem("orc_api_hosts") ?? "[]")[0]?.url),
+    )
+    .toBe("/other-api");
 });
 
 test("deleting the active saved server falls back to this server", async ({ page }) => {
@@ -76,9 +99,7 @@ test("deleting the active saved server falls back to this server", async ({ page
     API_SECRET,
   );
   expect(await page.evaluate(() => localStorage.getItem("orc_api_url"))).toBe("/api");
-  expect(await page.evaluate(() => localStorage.getItem("orc_api_active_host"))).toBe(
-    "__current__",
-  );
+  await expect(page.getByTestId("api-host-__current__").getByText("Active")).toBeVisible();
 });
 
 test("phone settings opens a list, then a section with back to the list", async ({ page }) => {

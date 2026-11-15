@@ -165,8 +165,8 @@ The server ORC can run agents, terminals, Git and jobs on another machine over S
 
 1. Mount `~/.ssh` (the Compose file does) with a `Host` alias for the machine.
 2. Set `ORC_API_SECRET`. Without it the reverse tunnel exposes an unauthenticated API on the SSH host's loopback.
-3. Select the host: `ORC_SSH_HOST=<alias>` in the environment (fixed), or **Settings → Hosts → Execution host** / `PUT /api/ssh`.
-4. Check it with the connection test in **Settings → Hosts → Execution host** or `POST /api/ssh/test`. It reports OS, shell, installed agent CLIs and Claude login.
+3. Select the host: `ORC_SSH_HOST=<alias>` in the environment (fixed), or the SSH row under **Settings → Hosts** → **Change** / `PUT /api/ssh`.
+4. Check it with the connection test in the SSH row's editor under **Settings → Hosts** or `POST /api/ssh/test`. It reports OS, shell, installed agent CLIs and Claude login.
 
 ORC opens a multiplexed SSH connection with a reverse port forward, so agents on that host reach ORC at `http://127.0.0.1:<port>` and get `ORC_API_BASE` and `ORC_API_SECRET` in their environment. The SSH key must allow remote forwarding, or set `ssh.remote_port` to a port where the API is already reachable. Windows OpenSSH has no connection sharing, so native Windows ORC keeps one `ssh -N -R` tunnel per host for the callback and opens a separate connection for each command.
 
@@ -230,7 +230,7 @@ Open each ORC's dashboard in its own browser tab: `http://127.0.0.1:7700` and `h
 
 The desktop app keeps its local daemon and can also load a remote server:
 
-1. Open **File → Connection…** (or the tray's **Connection…**). This opens the local dashboard's **Settings → Hosts → ORC server**.
+1. Open **File → Connection…** (or the tray's **Connection…**). This opens the local dashboard's **Settings → Hosts** with the ORC server editor open.
 2. Choose **Remote server**, enter `https://orc.example.com`, and optionally an access token and reverse-proxy headers.
 3. Choose **Test connection**, then **Save and reconnect**.
 

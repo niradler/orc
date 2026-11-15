@@ -57,6 +57,7 @@ export function SettingsList({ onSelect }: Pick<SettingsNavProps, "onSelect">) {
               <li key={group.id}>
                 <button
                   type="button"
+                  id={`settings-list-${group.id}`}
                   data-testid={`settings-list-${group.id}`}
                   onClick={() => onSelect(group.id)}
                   className="flex min-h-16 w-full items-center gap-3 px-1 py-3 text-left hover:bg-surface-highest focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus"

@@ -60,7 +60,8 @@ const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
 const QUIT_FLAG = "--quit";
 const CONNECTION_CHANNEL = "orc:connection";
-const CONNECTION_SECTION = "/settings?settingsSection=hosts";
+// The legacy section id still maps to the Hosts group and opens its connection editor.
+const CONNECTION_SECTION = "/settings?settingsSection=connection";
 
 type WindowTarget = { url: string; origin: string };
 

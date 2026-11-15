@@ -34,21 +34,28 @@ export function useDesktopConnectionState() {
   const [state, setState] = useState<DesktopConnectionState | null>(null);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(Boolean(bridge));
+  const [attempt, setAttempt] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry bumps attempt to re-read the bridge
   useEffect(() => {
     if (!bridge) return;
     let active = true;
+    setLoading(true);
     bridge
       .state()
-      .then((next) => active && setState(next))
+      .then((next) => {
+        if (!active) return;
+        setState(next);
+        setLoadError("");
+      })
       .catch((cause) => active && setLoadError(message(cause)))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [bridge]);
+  }, [bridge, attempt]);
 
-  return { bridge, state, loadError, loading };
+  return { bridge, state, loadError, loading, retry: () => setAttempt((current) => current + 1) };
 }
 
 /** Desktop-only server target. The remote page can read its status but not change it. */

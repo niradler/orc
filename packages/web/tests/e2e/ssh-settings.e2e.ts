@@ -4,8 +4,8 @@ import { gotoView } from "./_helpers";
 
 /** The execution host editor sits in a collapsed Hosts row until changed. */
 async function openExecutionHost(page: Page): Promise<void> {
-  if (!(await page.getByTestId("ssh-host-picker").isVisible()))
-    await page.getByTestId("ssh-host-change").click();
+  await expect(page.getByTestId("ssh-settings")).toBeHidden();
+  await page.getByTestId("ssh-host-change").click();
   await expect(page.getByTestId("ssh-host-picker")).toBeVisible();
 }
 

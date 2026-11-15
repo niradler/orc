@@ -94,6 +94,7 @@ export default function Settings() {
   const [error, setError] = useState("");
   const qc = useQueryClient();
   const rootRef = useRef<HTMLDivElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: moving between the phone list and a panel resets its scroll
   useEffect(() => {
@@ -115,12 +116,18 @@ export default function Settings() {
     setSection(value);
     setError("");
     setFeedback("");
+    // The list is display:none on phone once a panel opens; move focus into the panel.
+    requestAnimationFrame(() => detailRef.current?.focus());
   }
 
   function backToList() {
+    const previous = activeGroup;
     setSection("", { replace: true });
     setError("");
     setFeedback("");
+    requestAnimationFrame(() =>
+      previous ? document.getElementById(`settings-list-${previous}`)?.focus() : undefined,
+    );
   }
 
   async function saveTerminal(reset = false) {
@@ -176,9 +183,11 @@ export default function Settings() {
           >
             {phone && activeGroup && (
               <div
+                ref={detailRef}
+                tabIndex={-1}
                 data-testid="settings-detail"
                 data-group={activeGroup}
-                className="mb-4 flex min-h-11 items-center gap-1 md:hidden"
+                className="mb-4 flex min-h-11 items-center gap-1 outline-none md:hidden"
               >
                 <Button
                   variant="ghost"
