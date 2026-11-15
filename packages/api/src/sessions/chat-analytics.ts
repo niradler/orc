@@ -2,6 +2,7 @@ import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
 import type {
   ChatAnalytics,
   ChatContextAnalytics,
+  ChatSkillStat,
   ChatToolStat,
   ChatTurnStat,
 } from "@orc/core/chat-analytics";
@@ -63,12 +64,42 @@ type ChatNativeSource = {
   runtime_session_id: string | null;
 };
 
+const SKILL_FILE = /\bskills\/([\w.:-]+)\/SKILL\.md\b/;
+const SKILL_FILE_READ =
+  /\b(?:cat|head|tail|less|bat|sed)\b[^|;&\n]*?\bskills\/([\w.:-]+)\/SKILL\.md\b/;
+
+function parsed(input: string): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(input);
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function skillLoaded(name: string, input: string): string | null {
+  const args = parsed(input);
+  if (name === "Skill") return text(args.skill);
+  if (name === "skill_read" || name.endsWith("__skill_read")) return text(args.name);
+  if (name === "tool_invoke" || name.endsWith("__tool_invoke")) {
+    const call = args.arguments && typeof args.arguments === "object" ? args.arguments : {};
+    return args.name === "skill_read" ? text((call as Record<string, unknown>).name) : null;
+  }
+  if (name === "Read") return SKILL_FILE.exec(text(args.file_path) ?? "")?.[1] ?? null;
+  return SKILL_FILE_READ.exec(input)?.[1] ?? null;
+}
+
 /**
  * Counts what the chat itself recorded: every coding agent produces these events,
  * even when its transcript cannot report token context.
  */
 export function readChatAnalytics(thread: ChatThread): Omit<ChatAnalytics, "context"> {
   const tools = new Map<string, ChatToolStat>();
+  const skills = new Map<string, ChatSkillStat>();
   const turnStats: ChatTurnStat[] = [];
   const durations: number[] = [];
   const outcomes = { completed: 0, stopped: 0, failed: 0, running: 0 };
@@ -98,6 +129,12 @@ export function readChatAnalytics(thread: ChatThread): Omit<ChatAnalytics, "cont
       stat.calls += 1;
       if (failed) stat.failures += 1;
       tools.set(activity.name, stat);
+      const skill = skillLoaded(activity.name, activity.input);
+      if (skill) {
+        const loaded = skills.get(skill) ?? { name: skill, loads: 0 };
+        loaded.loads += 1;
+        skills.set(skill, loaded);
+      }
     }
 
     const turn = message.turn;
@@ -141,6 +178,9 @@ export function readChatAnalytics(thread: ChatThread): Omit<ChatAnalytics, "cont
       .sort((left, right) => right.calls - left.calls || left.name.localeCompare(right.name))
       .slice(0, TOOL_ROWS),
     toolTotal: tools.size,
+    skills: [...skills.values()].sort(
+      (left, right) => right.loads - left.loads || left.name.localeCompare(right.name),
+    ),
     turnTimeline,
     turnTimelineTruncated: turnStats.length > turnTimeline.length,
   };

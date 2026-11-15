@@ -7,7 +7,7 @@ import { ChatThreadSchema } from "@orc/core/chat";
 import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
-import { readChatAnalytics, readChatContext } from "../sessions/chat-analytics";
+import { readChatAnalytics, readChatContext, skillLoaded } from "../sessions/chat-analytics";
 import { LIVE_CHAT_ID } from "../sessions/common";
 import { req, setupTestApp, teardownTestApp } from "./helpers";
 
@@ -83,6 +83,57 @@ test("should summarize chat turns and tool activity for every agent", () => {
   expect(analytics.turnTimeline.map((turn) => [turn.index, turn.toolCalls])).toEqual([
     [1, 3],
     [2, 1],
+  ]);
+});
+
+test("should recognize a skill load from each agent's own tool call", () => {
+  expect(skillLoaded("Skill", '{"skill":"nir-collab"}')).toBe("nir-collab");
+  expect(skillLoaded("mcp__orc__skill_read", '{"name":"orc-sdlc"}')).toBe("orc-sdlc");
+  expect(
+    skillLoaded("mcp__orc__tool_invoke", '{"name":"skill_read","arguments":{"name":"orc-tasks"}}'),
+  ).toBe("orc-tasks");
+  expect(skillLoaded("tool_invoke", '{"name":"task_list","arguments":{"name":"x"}}')).toBeNull();
+  expect(skillLoaded("Read", '{"file_path":"/Users/n/.claude/skills/orc-track/SKILL.md"}')).toBe(
+    "orc-track",
+  );
+  expect(
+    skillLoaded(
+      "exec",
+      'text(await tools.exec_command({cmd:"cat /Users/n/.agents/skills/nir-collab/SKILL.md"}))',
+    ),
+  ).toBe("nir-collab");
+  expect(skillLoaded("Bash", '{"command":"sed -n 1,80p skills/orc-release/SKILL.md"}')).toBe(
+    "orc-release",
+  );
+  expect(skillLoaded("Bash", '{"command":"git add skills/orc-release/SKILL.md"}')).toBeNull();
+  expect(skillLoaded("Edit", '{"file_path":"skills/orc-release/SKILL.md"}')).toBeNull();
+  expect(skillLoaded("Skill", "not json")).toBeNull();
+});
+
+test("should count skill loads per skill, most used first", () => {
+  const tool = (id: string, name: string, input: string) => ({ type: "tool", id, name, input });
+  const analytics = readChatAnalytics(
+    ChatThreadSchema.parse({
+      ...thread,
+      messages: [
+        {
+          id: "a",
+          role: "assistant",
+          content: "done",
+          timestamp: now,
+          activity: [
+            tool("1", "Skill", '{"skill":"orc-track"}'),
+            tool("2", "Skill", '{"skill":"nir-collab"}'),
+            tool("3", "Skill", '{"skill":"nir-collab"}'),
+            tool("4", "Bash", '{"command":"ls"}'),
+          ],
+        },
+      ],
+    }),
+  );
+  expect(analytics.skills).toEqual([
+    { name: "nir-collab", loads: 2 },
+    { name: "orc-track", loads: 1 },
   ]);
 });
 
