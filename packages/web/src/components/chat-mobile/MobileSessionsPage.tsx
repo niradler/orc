@@ -4,6 +4,7 @@ import {
   Eye,
   EyeOff,
   Folder,
+  FolderOpen,
   Inbox,
   Plus,
   RefreshCw,
@@ -33,6 +34,7 @@ import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import type { ChatHistoryEntry } from "@/lib/chat-history-list";
 import { entryAgent } from "@/lib/chat-history-list";
+import { pathName } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 function activityWhen(ms: number): string {
@@ -85,6 +87,8 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
     shown,
     projectGroups,
     unassignedRows,
+    unassignedFolders,
+    projectFromFolder,
     loading,
     selectEntry,
     openSessionView,
@@ -349,33 +353,45 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                     )}
                   </ProjectGroup>
                 ))}
-                {unassignedRows.length > 0 && (
-                  <ProjectGroup
-                    testId="session-project-unassigned"
-                    name="Unassigned"
-                    icon={<Inbox size={14} className="shrink-0" aria-hidden />}
-                    count={unassignedRows.length}
-                    expanded={expandedProject === "__unassigned__"}
-                    onToggle={() =>
-                      setExpandedProject(
-                        expandedProject === "__unassigned__" ? null : "__unassigned__",
-                      )
-                    }
-                  >
-                    {unassignedRows.slice(0, visibleCount).map((entry) => (
-                      <MobileHistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        project={null}
-                        onSelect={() => selectEntry(entry)}
-                        onView={() => openSessionView(entry)}
-                      />
-                    ))}
-                  </ProjectGroup>
-                )}
+                {unassignedFolders.map((folder) => {
+                  const name = folder.cwd ? pathName(folder.cwd) : "Unassigned";
+                  return (
+                    <ProjectGroup
+                      key={folder.key}
+                      testId={folder.cwd ? "session-folder-group" : "session-project-unassigned"}
+                      name={name}
+                      title={folder.cwd ?? undefined}
+                      icon={
+                        folder.cwd ? (
+                          <FolderOpen size={14} className="shrink-0" aria-hidden />
+                        ) : (
+                          <Inbox size={14} className="shrink-0" aria-hidden />
+                        )
+                      }
+                      count={folder.rows.length}
+                      expanded={expandedProject === folder.key}
+                      onToggle={() =>
+                        setExpandedProject(expandedProject === folder.key ? null : folder.key)
+                      }
+                      onAdopt={
+                        folder.cwd ? () => projectFromFolder(folder.cwd as string) : undefined
+                      }
+                    >
+                      {folder.rows.slice(0, visibleCount).map((entry) => (
+                        <MobileHistoryRow
+                          key={entry.id}
+                          entry={entry}
+                          state={stateOf(entry)}
+                          pending={pending}
+                          selected={isSelected(entry)}
+                          project={null}
+                          onSelect={() => selectEntry(entry)}
+                          onView={() => openSessionView(entry)}
+                        />
+                      ))}
+                    </ProjectGroup>
+                  );
+                })}
                 {!loading && !projectGroups.length && !unassignedRows.length && (
                   <p className="px-2 py-4 text-sm text-muted-foreground">
                     No projects yet. Create a project to group its sessions here.

@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "../../src/api/client";
-import { chatHistoryList, historyEntryState } from "../../src/lib/chat-history-list";
+import {
+  chatHistoryList,
+  folderProjectName,
+  historyEntryState,
+} from "../../src/lib/chat-history-list";
 
 const saved = {
   id: "90000000-0000-4000-8000-000000000001",
@@ -282,4 +286,15 @@ test("saved chats keep their recorded project after reload", () => {
   ).toEqual(["shop"]);
   expect(chatHistoryList([], [assigned], [], [], "", "unassigned")).toHaveLength(0);
   expect(chatHistoryList([], [assigned], [], [], "", "all")).toHaveLength(1);
+});
+
+test("a folder's project name is a valid, unused slug", () => {
+  expect(folderProjectName("/Users/nir/projects/nebius-ai-cloud-sft", [])).toBe(
+    "nebius-ai-cloud-sft",
+  );
+  expect(folderProjectName("/srv/shop/api", ["API"])).toBe("shop-api");
+  expect(folderProjectName("/srv/shop/api", ["api", "shop-api"])).toBe("api-2");
+  expect(folderProjectName("C:\\Users\\Nir\\My Repo (old)\\", [])).toBe("My-Repo-old");
+  expect(folderProjectName("/", [])).toBe("project");
+  expect(folderProjectName(`/x/${"a".repeat(300)}`, [])).toHaveLength(90);
 });

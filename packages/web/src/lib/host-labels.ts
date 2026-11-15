@@ -1,7 +1,7 @@
 import { DEFAULT_API_URL, readApiUrl } from "@/lib/api-hosts";
 
 /** The machine running the connected ORC server, which can differ from the browser's machine. */
-export const THIS_SERVER = "This ORC server";
+export const THIS_SERVER = "Local";
 
 function addressOf(url: string): string | null {
   if (typeof window === "undefined") return null;
@@ -18,7 +18,7 @@ export function orcServerAddress(): string | null {
 }
 
 /**
- * Address of the dashboard's own origin, which is where the built-in "This ORC server" row points
+ * Address of the dashboard's own origin, which is where the built-in "Local" row points
  * even while a saved remote server is the active target.
  */
 export function defaultServerAddress(): string | null {

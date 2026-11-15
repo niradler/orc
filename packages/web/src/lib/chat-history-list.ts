@@ -248,15 +248,7 @@ export function chatHistoryList(
   }
   for (const entry of entries) {
     if (entry.projectId) continue;
-    const cwd =
-      entry.kind === "local"
-        ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
-        : entry.kind === "native"
-          ? entry.session.cwd
-          : entry.kind === "terminal"
-            ? entry.terminal.cwd
-            : null;
-    entry.projectId = projectForFolder(cwd, projectFolders)?.id ?? entry.projectId;
+    entry.projectId = projectForFolder(entryCwd(entry), projectFolders)?.id ?? entry.projectId;
   }
   return entries
     .filter(
@@ -312,4 +304,30 @@ export function historyEntryState(
   const state = entry.observedState ? moreUrgent(own, entry.observedState) : own;
   if (selected || entry.kind === "terminal" || entry.id.startsWith("draft:")) return state;
   return unseenState(state, entry.updatedAt, lastSeen(seen, entry.seenKeys));
+}
+
+export function entryCwd(entry: ChatHistoryEntry): string | null {
+  const cwd =
+    entry.kind === "local"
+      ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
+      : entry.kind === "native"
+        ? entry.session.cwd
+        : entry.kind === "terminal"
+          ? entry.terminal.cwd
+          : null;
+  return cwd?.trim() || null;
+}
+
+export function folderProjectName(cwd: string, taken: string[]): string {
+  const used = new Set(taken.map((name) => name.toLowerCase()));
+  const slug = (value: string) =>
+    value
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 90) || "project";
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  const base = slug(parts[parts.length - 1] ?? "");
+  const candidates = [base, slug(parts.slice(-2).join("-"))];
+  for (let n = 2; n < 100; n++) candidates.push(`${base}-${n}`);
+  return candidates.find((name) => !used.has(name.toLowerCase())) ?? `${base}-${Date.now()}`;
 }

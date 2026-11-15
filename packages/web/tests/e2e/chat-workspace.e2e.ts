@@ -86,7 +86,7 @@ for (const width of [1440, 390]) {
     const fullPath = "/local/projects/a-long-project-name/packages/application";
     await expect(chip).toBeVisible();
     await expect(chip).toHaveText("application");
-    await expect(chip).toHaveAttribute("title", `This ORC server: ${fullPath}`);
+    await expect(chip).toHaveAttribute("title", `Local: ${fullPath}`);
     await expect(chip).toHaveAccessibleName(new RegExp(fullPath));
     const chipBounds = await chip.boundingBox();
     expect(chipBounds && chipBounds.x >= 0 && chipBounds.x + chipBounds.width <= width).toBe(true);
@@ -117,6 +117,50 @@ for (const width of [1440, 390]) {
   });
 }
 
+test("the chosen folder decides a new chat's project, not the header selection", async ({
+  page,
+}) => {
+  await workspaceFixture(page);
+  await page.route(/\/api\/projects(\?.*)?$/, (route) =>
+    route.fulfill({
+      json: {
+        projects: [
+          {
+            id: "proj-app",
+            name: "app",
+            scope: "/local/projects/a-long-project-name",
+            status: "active",
+          },
+          { id: "proj-other", name: "other", scope: "/local/other", status: "active" },
+        ],
+        total: 2,
+      },
+    }),
+  );
+  const launches: Record<string, unknown>[] = [];
+  await page.route("**/api/chat/stream", (route) => {
+    launches.push(route.request().postDataJSON());
+    return route.fulfill({ status: 400, json: { error: "Captured project launch" } });
+  });
+  await page.goto("/?chat=open&project=proj-other");
+  await expect(page.getByTestId("chat-input")).toBeEnabled();
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveText("application");
+  await page.getByTestId("chat-input").fill("Mapped folder");
+  await page.getByTestId("chat-send-button").click();
+  await expect.poll(() => launches[0]?.projectId).toBe("proj-app");
+
+  await page.getByTestId("chat-input").fill("Unmapped folder");
+  await openWorkspaceFolder(page);
+  await page
+    .getByTestId("chat-workspace-recent-option")
+    .filter({ hasText: "/local/older" })
+    .click();
+  await page.getByTestId("chat-send-button").click();
+  await expect.poll(() => launches.length).toBe(2);
+  expect(launches[1]).toMatchObject({ workspace: { cwd: "/local/older" } });
+  expect(launches[1]).not.toHaveProperty("projectId");
+});
+
 test("an unset workspace shows and copies the resolved default folder", async ({ page }) => {
   await page.route("**/api/ssh", (route) =>
     route.fulfill({ json: { host: null, hosts: [], supported: true } }),
@@ -131,7 +175,7 @@ test("an unset workspace shows and copies the resolved default folder", async ({
   await expect(page.getByTestId("chat-workspace-folder")).toHaveText("Nir");
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
-    "This ORC server: C:\\Users\\Nir",
+    "Local: C:\\Users\\Nir",
   );
   await page.getByTestId("chat-workspace-folder").click();
   await expect(page.getByTestId("chat-workspace-full-path")).toHaveText("C:\\Users\\Nir");
@@ -187,10 +231,10 @@ test("workspace chips stay inside the composer and preserve draft and host-scope
     await recent.filter({ hasText: "/remote/older" }).click();
     await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
     await expect(folder).toHaveAttribute("title", "lab: /remote/older");
-    await chooseWorkspaceHost(page, "This ORC server");
+    await chooseWorkspaceHost(page, "Local");
     await expect(folder).toHaveAttribute(
       "title",
-      "This ORC server: /local/projects/a-long-project-name/packages/application",
+      "Local: /local/projects/a-long-project-name/packages/application",
     );
     await expect(branch).toHaveAttribute("data-worktree", "true");
     await expect(page.getByTestId("chat-input")).toHaveValue(
@@ -206,7 +250,7 @@ test("workspace chips stay inside the composer and preserve draft and host-scope
   await page.keyboard.press("Escape");
   await expect(folder).toHaveAttribute(
     "title",
-    "This ORC server: /local/projects/a-long-project-name/packages/application",
+    "Local: /local/projects/a-long-project-name/packages/application",
   );
   await openWorkspaceFolder(page);
   await expect(page.getByTestId("chat-workspace-cwd")).toHaveValue("/local/not-applied-yet");
@@ -298,7 +342,7 @@ test("native folder choice preserves cancellation and surfaces genuine picker er
   await expect(folder).toBeEnabled();
   await expect(folder).toHaveAttribute(
     "title",
-    "This ORC server: /local/projects/a-long-project-name/packages/application",
+    "Local: /local/projects/a-long-project-name/packages/application",
   );
   await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
   result = "error";
@@ -309,11 +353,11 @@ test("native folder choice preserves cancellation and surfaces genuine picker er
   await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
   await expect(folder).toHaveAttribute(
     "title",
-    "This ORC server: /local/projects/a-long-project-name/packages/application",
+    "Local: /local/projects/a-long-project-name/packages/application",
   );
   result = "chosen";
   await browseWorkspace(page);
-  await expect(folder).toHaveAttribute("title", "This ORC server: /local/chosen");
+  await expect(folder).toHaveAttribute("title", "Local: /local/chosen");
   await expect(page.getByTestId("chat-workspace-error")).toBeHidden();
   await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the draft");
 });
@@ -348,7 +392,7 @@ test("a delayed native folder result cannot change a newly selected conversation
   await expect(page.getByTestId("chat-workspace-folder")).toBeEnabled();
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
-    "This ORC server: /local/projects/a-long-project-name/packages/application",
+    "Local: /local/projects/a-long-project-name/packages/application",
   );
   await expect(page.getByTestId("chat-input")).toHaveValue("Second conversation draft");
 });
@@ -389,7 +433,7 @@ test("headless local browsing falls back safely and remote browsing stays on its
   await page.getByTestId("remote-folder-browser").getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
-    "This ORC server: /local/projects/a-long-project-name/packages/application",
+    "Local: /local/projects/a-long-project-name/packages/application",
   );
   await chooseWorkspaceHost(page, "lab");
   await browseWorkspace(page);
