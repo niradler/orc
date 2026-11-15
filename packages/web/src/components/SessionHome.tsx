@@ -1,4 +1,9 @@
-import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
+import {
+  type ChatThread,
+  type ChatWorkspace,
+  draftCheckoutId,
+  nativeChatAgent,
+} from "@orc/core/chat";
 import { Maximize2, Minimize2, PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -66,6 +71,27 @@ function sessionCheckout(thread: ChatThread | null): Terminal | undefined {
   };
 }
 
+function draftCheckout(workspace: ChatWorkspace | undefined): Terminal | undefined {
+  const id = workspace ? draftCheckoutId(workspace) : null;
+  if (!id || !workspace?.cwd) return undefined;
+  return {
+    id,
+    name: workspace.cwd,
+    kind: "shell",
+    cwd: workspace.cwd,
+    status: "running",
+    exit_code: null,
+    pid: null,
+    live_session_id: null,
+    host: workspace.host ?? null,
+    project_id: null,
+    worktree_path: null,
+    dev: false,
+    preview_url: null,
+    created_at: new Date().toISOString(),
+  };
+}
+
 export function useSessionContext(
   terminalId: string | null,
   view?: { id: string; session: LiveSession | undefined },
@@ -78,12 +104,12 @@ export function useSessionContext(
     ? terminal.cwd
     : view
       ? (view.session?.cwd ?? null)
-      : (chat.thread?.cwd ?? null);
+      : (chat.thread?.cwd ?? chat.workspace?.cwd ?? null);
   const host = terminal
     ? terminal.host
     : view
       ? (view.session?.host ?? null)
-      : (chat.thread?.host ?? null);
+      : (chat.thread?.host ?? chat.workspace?.host ?? null);
   const liveId = terminal
     ? terminal.live_session_id
     : view
@@ -107,7 +133,9 @@ export function useSessionContext(
         : runningTerminalForFolder(terminals, cwd, host)) ??
       // Only a chat-only page can borrow the thread's folder; a terminal page
       // must never show Git for a different checkout than its Overview.
-      (terminalId || view ? undefined : sessionCheckout(chat.thread)),
+      (terminalId || view
+        ? undefined
+        : (sessionCheckout(chat.thread) ?? draftCheckout(chat.workspace))),
     shell: terminals.find(
       (item) => sameFolder(item) && item.kind === "shell" && item.id !== terminal?.id,
     ),

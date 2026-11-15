@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ChatThreadSchema } from "@orc/core/chat";
+import { ChatThreadSchema, draftCheckoutId } from "@orc/core/chat";
 import { resetConfig } from "@orc/core/config";
 import { LOCAL_HOST } from "@orc/core/exec-host";
 import { runGit } from "@orc/core/session-dir";
@@ -98,6 +98,20 @@ describe("terminal git panel", () => {
       delete process.env.ORC_TERMINALS_ENABLED;
       resetConfig();
     }
+  });
+  test("should read Git from a folder picked for a new chat before any thread exists", async () => {
+    const id = draftCheckoutId({ host: null, cwd: repo });
+    expect(id).not.toBeNull();
+    const status = await req(
+      app,
+      "GET",
+      `/terminals/${encodeURIComponent(id as string)}/git/status`,
+    );
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({ branch: "main" });
+    expect(
+      (await req(app, "GET", `/terminals/${encodeURIComponent(id as string)}/files`)).status,
+    ).toBe(200);
   });
   test("should distinguish a checkout without a GitHub remote from missing authentication", async () => {
     const response = await req(app, "GET", `/terminals/${terminalId}/git/github`);
