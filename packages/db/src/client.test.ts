@@ -177,4 +177,51 @@ describe("schema", () => {
     expect(schema.jobs).toBeDefined();
     expect(schema.sessions).toBeDefined();
   });
+
+  test("merges twin live session rows into one and rejects a new twin", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "orc-live-twins-")), "twins.db");
+    const legacy = getSqlite(createDb(path));
+    legacy.exec(`
+      DROP INDEX gateway_sessions_live_native_idx;
+      INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, title, display_title, status, updated_at, created_at)
+        VALUES ('stale', '__live-sessions__', 'claude', 'direct', 'native-1', 'nir-2c', 'My name', 'stopped', 100, 100),
+               ('fresh', '__live-sessions__', 'claude', 'direct', 'native-1', 'Counting', NULL, 'stopped', 200, 100),
+               ('other-host', '__live-sessions__', 'claude', 'direct', 'native-1', 'Remote', NULL, 'stopped', 100, 100);
+      UPDATE gateway_sessions SET execution_host = 'box' WHERE id = 'other-host';
+      INSERT INTO usage_events (id, session_id, event_key, agent, ts) VALUES ('u1', 'stale', 'k', 'claude', 1);
+      INSERT INTO session_handoffs (id, request, session_id, repo_root, expires_at, status, live_session_id)
+        VALUES ('h1', '{}', 'native-1', '/r', 1, 'ready', 'stale');
+      INSERT INTO chat_threads (id, title, updated_at, data) VALUES ('t1', 'x', 1, '{"sourceId":"stale"}');
+    `);
+    stopChangeTracking(legacy);
+    legacy.close();
+
+    const reopened = getSqlite(createDb(path));
+    try {
+      expect(
+        reopened
+          .query(
+            "SELECT id, display_title FROM gateway_sessions WHERE runtime_session_id='native-1' ORDER BY id",
+          )
+          .all(),
+      ).toEqual([
+        { id: "fresh", display_title: "My name" },
+        { id: "other-host", display_title: null },
+      ]);
+      expect(reopened.query("SELECT live_session_id FROM session_handoffs").get()).toEqual({
+        live_session_id: "fresh",
+      });
+      expect(
+        reopened.query("SELECT json_extract(data, '$.sourceId') AS source FROM chat_threads").get(),
+      ).toEqual({ source: "fresh" });
+      expect(() =>
+        reopened.exec(
+          "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, status) VALUES ('again', '__live-sessions__', 'claude', 'direct', 'native-1', 'stopped')",
+        ),
+      ).toThrow(/UNIQUE/);
+    } finally {
+      stopChangeTracking(reopened);
+      reopened.close();
+    }
+  });
 });

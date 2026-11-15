@@ -165,16 +165,6 @@ test("a session that never wrote a transcript drops its process name", async () 
   expect(records.find((record) => record.externalId === id)?.title).toBe("New session");
 });
 
-test("a twin row for the same native session is listed once, the freshest copy", async () => {
-  const insert = getSqlite().prepare(
-    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, title, status, last_activity_at, updated_at, created_at) VALUES (?, '__live-sessions__', 'claude', 'direct', 'twin-native', ?, 'stopped', 1790000000, ?, 1790000000)",
-  );
-  insert.run("twinold", "nir-2c", 1_790_000_000);
-  insert.run("twinnew", "Counting from 1 to 60", 1_790_000_500);
-  const rows = (await live("&agent=claude")).filter((row) => row.session_id === "twin-native");
-  expect(rows.map((row) => row.name)).toEqual(["Counting from 1 to 60"]);
-});
-
 test("a chat thread named after the Claude process shows its session's real title", async () => {
   const sqlite = getSqlite();
   sqlite

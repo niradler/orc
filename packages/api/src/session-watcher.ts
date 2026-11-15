@@ -193,17 +193,22 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
   }
   const id = ulid();
   const projectId = mappedProject ?? null;
-  await db.insert(gateway_sessions).values({
-    id,
-    chat_id: LIVE_CHAT_ID,
-    backend: r.backend,
-    mode: "direct",
-    runtime_session_id: r.externalId,
-    execution_host: executionHost,
-    project_id: projectId,
-    created_at: r.createdAt,
-    ...fields,
-  });
+  const inserted = await db
+    .insert(gateway_sessions)
+    .values({
+      id,
+      chat_id: LIVE_CHAT_ID,
+      backend: r.backend,
+      mode: "direct",
+      runtime_session_id: r.externalId,
+      execution_host: executionHost,
+      project_id: projectId,
+      created_at: r.createdAt,
+      ...fields,
+    })
+    .onConflictDoNothing()
+    .returning({ id: gateway_sessions.id });
+  if (!inserted.length) return upsertRecord(r, executionHost);
   // A new session with no requests yet still changes the report's coverage counts.
   changes.publish("usage");
   if (!r.parentId)

@@ -478,18 +478,13 @@ app.openapi(liveListRoute, async (c) => {
           )
         : undefined,
     ),
-    orderBy: [desc(gateway_sessions.last_activity_at), desc(gateway_sessions.updated_at)],
+    orderBy: [desc(gateway_sessions.last_activity_at)],
     limit,
   });
-  const listed = new Set<string>();
-  const unique = rows.filter((row) => {
-    if (!row.runtime_session_id) return true;
-    const key = nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id);
-    if (listed.has(key)) return false;
-    listed.add(key);
-    return true;
-  });
-  const parentIds = [...new Set(unique.flatMap((row) => row.runtime_session_id ?? []))];
+  const listed = new Set(
+    rows.map((row) => nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id)),
+  );
+  const parentIds = [...new Set(rows.flatMap((row) => row.runtime_session_id ?? []))];
   const children =
     include_children && parentIds.length
       ? (
@@ -505,7 +500,7 @@ app.openapi(liveListRoute, async (c) => {
           listed.has(nativeKey(row.backend, row.execution_host ?? null, row.parent_session_id)),
         )
       : [];
-  return c.json({ sessions: await toLiveDtos([...unique, ...children]) });
+  return c.json({ sessions: await toLiveDtos([...rows, ...children]) });
 });
 
 app.openapi(liveSearchRoute, async (c) => {
