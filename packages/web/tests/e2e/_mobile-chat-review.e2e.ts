@@ -179,7 +179,7 @@ for (const theme of ["dark", "light"] as const) {
     // Appearance (theme + font size) now lives in Settings.
     await page.goto("/settings?settingsSection=appearance");
     await expect(page.getByTestId("settings-theme-dark")).toBeVisible();
-    await expect(page.getByTestId("settings-font-size-default")).toBeVisible();
+    await expect(page.getByTestId("settings-phone-default")).toBeVisible();
     await shot("settings-appearance");
   });
 }

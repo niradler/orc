@@ -315,7 +315,7 @@
 .pr-diff-comment-row {
   position: sticky;
   left: 0;
-  font-family: "IBM Plex Sans", sans-serif;
+  font-family: var(--font-body);
   font-size: 13px;
   line-height: normal;
   color: rgb(var(--foreground));

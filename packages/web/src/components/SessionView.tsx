@@ -170,7 +170,11 @@ function ToolBox({
 
 function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
   if (block.type === "text")
-    return <AgentMessageText revealContext={matched}>{block.text}</AgentMessageText>;
+    return (
+      <div className="chat-message">
+        <AgentMessageText revealContext={matched}>{block.text}</AgentMessageText>
+      </div>
+    );
   if (block.type === "tool_use") return <ToolBox block={block} open={matched} />;
   const label = block.type === "thinking" ? "thinking" : "result";
   return (

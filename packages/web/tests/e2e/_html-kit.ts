@@ -52,7 +52,7 @@ export async function checkHtmlKitElements(
     await expect(frame.locator("orc-stat .orc-stat-value")).toHaveText("12");
     await expect(frame.locator("orc-stat")).toHaveCSS(
       "color",
-      theme === "light" ? "rgb(37, 38, 42)" : "rgb(229, 229, 229)",
+      theme === "light" ? "rgb(37, 38, 42)" : "rgb(236, 234, 228)",
     );
     await expect(frame.locator("orc-badge")).toHaveCSS(
       "color",
@@ -150,10 +150,10 @@ export async function checkHtmlKit(page: Page, frameTestId: string, info: TestIn
     await expect(frame.getByTestId("kit-fallback-disabled")).toHaveAttribute("tabindex", "-1");
 
     const theme = await page.evaluate(() => document.documentElement.dataset.theme);
-    const background = theme === "light" ? "rgb(250, 250, 250)" : "rgb(0, 0, 0)";
+    const background = theme === "light" ? "rgb(250, 250, 250)" : "rgb(31, 31, 30)";
     await expect(panelNow).toHaveCSS(
       "color",
-      theme === "light" ? "rgb(37, 38, 42)" : "rgb(229, 229, 229)",
+      theme === "light" ? "rgb(37, 38, 42)" : "rgb(236, 234, 228)",
     );
     const contentFrame = await (await iframe.elementHandle())?.contentFrame();
     if (!contentFrame) throw new Error("Kit iframe missing");
@@ -167,7 +167,7 @@ export async function checkHtmlKit(page: Page, frameTestId: string, info: TestIn
       await contentFrame.evaluate(() =>
         document.querySelector("style#orc-kit")?.getAttribute("data-orc-kit-version"),
       ),
-    ).toBe("1");
+    ).toBe("2");
     expect(
       await contentFrame.evaluate(() => {
         let parentBlocked = false;

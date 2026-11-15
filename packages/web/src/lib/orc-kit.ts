@@ -12,7 +12,7 @@ import { ORC_KIT_ELEMENTS_JS } from "./orc-kit-elements";
 import type { Theme } from "./theme";
 
 export const ORC_KIT_META_NAME = "orc-kit";
-export const ORC_KIT_VERSION = 1;
+export const ORC_KIT_VERSION = 2;
 
 const ORC_KIT_1_CSS = `
 :root {
@@ -199,8 +199,35 @@ label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 `;
 
 /** Each bundled kit version. A retired version keeps its exact CSS so pinned pads never shift. */
+const ORC_KIT_2_CSS = ORC_KIT_1_CSS.replace(
+  `:root.dark {
+  --background: 0 0 0;
+  --surface: 20 20 20;
+  --surface-low: 0 0 0;
+  --surface-high: 28 28 28;
+  --surface-highest: 36 36 36;
+  --surface-bright: 82 82 82;
+  --foreground: 229 229 229;
+  --muted-foreground: 163 163 163;
+  --border: 38 38 38;`,
+  `:root.dark {
+  --background: 31 31 30;
+  --surface: 40 40 38;
+  --surface-low: 31 31 30;
+  --surface-high: 48 48 46;
+  --surface-highest: 58 58 55;
+  --surface-bright: 92 92 88;
+  --foreground: 236 234 228;
+  --muted-foreground: 168 166 160;
+  --border: 56 56 53;`,
+).replace(
+  `font: 14px/1.5 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;`,
+  `font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;`,
+);
+
 export const ORC_KIT_STYLESHEETS: Readonly<Record<number, string>> = {
   1: ORC_KIT_1_CSS,
+  2: ORC_KIT_2_CSS,
 };
 
 /** Selects tabs by pointer or keyboard; initialization waits for the head-injected markup. */

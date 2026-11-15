@@ -947,7 +947,7 @@ export function ChatPanel({
                     </button>
                   )}
                   {messages.length === 0 && !streaming && (
-                    <div className="chat-empty-state mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-2">
+                    <div className="chat-empty-state mx-auto flex w-full max-w-(--chat-width) flex-1 flex-col justify-center gap-2">
                       <h3 className="text-lg font-medium">What are you working on?</h3>
                       <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
                         Ask about your tasks, review agent activity, or work through a coding
@@ -977,7 +977,7 @@ export function ChatPanel({
                             }}
                             data-testid="chat-message"
                             data-role={message.role}
-                            className="group/message mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
+                            className="group/message mx-auto mb-3 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
                               className={
@@ -1159,7 +1159,7 @@ export function ChatPanel({
                 }
                 data-testid="chat-message-queue"
                 aria-label="Pending messages"
-                className="group mx-auto w-full max-w-[calc(48rem+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
+                className="group mx-auto w-full max-w-[calc(var(--chat-width)+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
               >
                 <summary
                   data-testid="chat-queue-toggle"
@@ -1208,7 +1208,7 @@ export function ChatPanel({
             )}
             <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
               {agentRunning && (
-                <div className="mx-auto mb-1.5 w-full max-w-3xl px-2">
+                <div className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2">
                   <p
                     data-testid="chat-agent-running"
                     role="status"
@@ -1244,7 +1244,7 @@ export function ChatPanel({
                     addFiles(Array.from(event.dataTransfer.files));
                   }
                 }}
-                className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+                className="chat-composer-box mx-auto w-full max-w-(--chat-width) rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
               >
                 {files.length > 0 && (
                   <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">

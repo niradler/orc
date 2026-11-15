@@ -147,7 +147,7 @@ export function ChatBackgroundWork({
       <section
         data-testid="chat-background-work"
         aria-label="Background work"
-        className="mx-auto w-full max-w-3xl min-w-0 rounded-xl border border-outline-variant bg-surface/60 px-3 py-1.5 text-xs text-on-surface-variant"
+        className="mx-auto w-full max-w-(--chat-width) min-w-0 rounded-xl border border-outline-variant bg-surface/60 px-3 py-1.5 text-xs text-on-surface-variant"
       >
         {only ? (
           <div className="flex min-w-0 items-center gap-2">

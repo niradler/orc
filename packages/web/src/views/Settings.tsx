@@ -37,7 +37,17 @@ import {
   type SettingsGroupId,
 } from "@/lib/settings-navigation";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
-import { FONT_SIZES, setFontSize, setTheme, useFontSize, useTheme } from "@/lib/theme";
+import {
+  CHAT_FONTS,
+  CHAT_WIDTHS,
+  DARK_BACKGROUNDS,
+  FONT_SIZES,
+  setAppearance,
+  setTheme,
+  UI_FONTS,
+  useAppearance,
+  useTheme,
+} from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { useViewParam } from "@/lib/view-params";
 
@@ -85,7 +95,7 @@ export default function Settings() {
   const mounted = (id: SettingsGroupId) => visited.has(id) || id === activeGroup;
 
   const { theme } = useTheme();
-  const fontSize = useFontSize();
+  const appearance = useAppearance();
   const [terminalFont, setTerminalFont] = useState(
     () => localStorage.getItem(TERMINAL_FONT_KEY) ?? "",
   );
@@ -228,26 +238,43 @@ export default function Settings() {
                         ))}
                       </fieldset>
                     </div>
-                    <div>
-                      <h3 className="mb-2 text-sm font-medium">Font size</h3>
-                      <fieldset aria-label="Font size" className="flex flex-wrap gap-2">
-                        {FONT_SIZES.map(({ value, label, hint }) => (
-                          <Button
-                            key={value}
-                            variant={fontSize === value ? "secondary" : "outline"}
-                            aria-pressed={fontSize === value}
-                            data-testid={`settings-font-size-${value}`}
-                            title={hint}
-                            onClick={() => setFontSize(value)}
-                          >
-                            {label}
-                          </Button>
-                        ))}
-                      </fieldset>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Scales interface text in this browser; terminals keep their own font.
-                      </p>
-                    </div>
+                    {(
+                      [
+                        {
+                          key: "darkBackground",
+                          title: "Dark background",
+                          options: DARK_BACKGROUNDS,
+                        },
+                        { key: "font", title: "Interface font", options: UI_FONTS },
+                        { key: "desktop", title: "Interface text on desktop", options: FONT_SIZES },
+                        { key: "phone", title: "Interface text on phone", options: FONT_SIZES },
+                        { key: "chatFont", title: "Chat message font", options: CHAT_FONTS },
+                        { key: "chatDesktop", title: "Chat text on desktop", options: FONT_SIZES },
+                        { key: "chatPhone", title: "Chat text on phone", options: FONT_SIZES },
+                        { key: "chatWidth", title: "Chat width", options: CHAT_WIDTHS },
+                      ] as const
+                    ).map(({ key, title, options }) => (
+                      <div key={key}>
+                        <h3 className="mb-2 text-sm font-medium">{title}</h3>
+                        <fieldset aria-label={title} className="flex flex-wrap gap-2">
+                          {options.map(({ value, label, hint }) => (
+                            <Button
+                              key={value}
+                              variant={appearance[key] === value ? "secondary" : "outline"}
+                              aria-pressed={appearance[key] === value}
+                              data-testid={`settings-${key}-${value}`}
+                              title={hint}
+                              onClick={() => setAppearance({ [key]: value })}
+                            >
+                              {label}
+                            </Button>
+                          ))}
+                        </fieldset>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground">
+                      Saved in this browser. Terminals keep their own font.
+                    </p>
                   </div>
                 </section>
                 <section aria-label="Terminal settings" className="border-t border-border pt-8">

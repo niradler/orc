@@ -19,7 +19,7 @@ pad, needs no network fetch, and costs the page zero bytes.
 Every kit pad starts with a pin so old pads keep their look when the kit evolves:
 
 ```html
-<meta name="orc-kit" content="1">
+<meta name="orc-kit" content="2">
 ```
 
 The dashboard bundles every retired version and renders a pad with exactly the version
@@ -46,7 +46,7 @@ Bump the `content` only when you intentionally re-style an old pad.
 <!doctype html>
 <html>
 <head>
-  <meta name="orc-kit" content="1">
+  <meta name="orc-kit" content="2">
   <title>Release status</title>
 </head>
 <body>
@@ -95,7 +95,7 @@ so your CSS and scripts can inspect them.
 
 ```html
 <!doctype html>
-<html><head><meta name="orc-kit" content="1"><title>Release status</title></head>
+<html><head><meta name="orc-kit" content="2"><title>Release status</title></head>
 <body>
   <orc-page>
     <h1>Release status</h1>

@@ -62,7 +62,7 @@ export function ChatLiveStatus({
     <div className="chat-activity-status shrink-0 px-4 pt-1 pb-1.5 sm:px-6">
       <div
         data-testid="chat-activity-status"
-        className="mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-outline-variant bg-surface/60 px-3 py-1.5 text-xs text-on-surface-variant"
+        className="mx-auto flex w-full max-w-(--chat-width) min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-outline-variant bg-surface/60 px-3 py-1.5 text-xs text-on-surface-variant"
       >
         <Icon
           aria-hidden="true"
