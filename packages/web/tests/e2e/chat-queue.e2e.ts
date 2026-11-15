@@ -363,6 +363,11 @@ for (const width of [390, 1440]) {
     await expect(queue).toHaveAttribute("open");
     const rows = panel.getByTestId("chat-queued-message");
     await expect(rows.first().getByTestId("chat-queued-edit")).toBeVisible();
+    // Force send stops the turn, so it must not read as another move-up arrow.
+    await expect(rows.first().getByTestId("chat-queued-force")).toHaveAttribute(
+      "aria-label",
+      "Send now, stopping this response",
+    );
     expect((await rows.first().boundingBox())?.height).toBeLessThanOrEqual(46);
     expect(await queue.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,

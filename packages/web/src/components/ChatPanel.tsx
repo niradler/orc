@@ -16,6 +16,7 @@ import {
   Pencil,
   RefreshCw,
   Settings2,
+  SkipForward,
   Square,
   SquarePen,
   Trash2,
@@ -1398,18 +1399,18 @@ function QueuedMessage({
             </button>
           </ActionHelp>
           <ActionHelp
-            label="Force send pending message"
-            description="Stop the current response and send this message next"
+            label="Send now, stopping this response"
+            description="Stops the current response, then sends this message ahead of the rest of the queue"
           >
             <button
               type="button"
               data-testid="chat-queued-force"
               disabled={forceDisabled}
-              aria-label="Force send pending message"
+              aria-label="Send now, stopping this response"
               onClick={onForce}
               className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
             >
-              <ArrowUp size={14} />
+              <SkipForward size={14} />
             </button>
           </ActionHelp>
           {removeButton}
