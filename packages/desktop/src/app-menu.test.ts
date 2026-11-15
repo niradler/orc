@@ -131,6 +131,12 @@ describe("desktop application menu", () => {
     expect(DOCUMENTATION_URL.startsWith("https://")).toBe(true);
     expect(ISSUES_URL.startsWith("https://")).toBe(true);
   });
+
+  test("should leave About to the macOS app menu", () => {
+    const mac = submenu(appMenuTemplate(state("darwin"), actions({ showAbout: () => {} })), "help");
+    expect(mac.some((entry) => entry.label === "About orc")).toBe(false);
+    expect(mac.some((entry) => entry.label === "Documentation")).toBe(true);
+  });
 });
 
 describe("desktop zoom steps", () => {

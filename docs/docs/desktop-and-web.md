@@ -730,10 +730,10 @@ Menu commands that change the page act on the window itself. **Reload**, **Zoom 
 source.
 
 **File** holds **Connection…**, **Browser and files**, **Start at login** and, on
-Windows and Linux, **Quit orc**. **Help** opens this documentation, the issue tracker
-and **About orc**. Right-clicking offers **Cut**, **Copy**, **Paste** and **Select all**
-on any text, **Copy link address** on a link, and **Copy image** in the inspector's
-**Browser** tab.
+Windows and Linux, **Quit orc**. **Help** opens this documentation and the issue
+tracker, plus **About orc** outside macOS. Right-clicking offers **Cut**, **Copy**,
+**Paste** and **Select all** on any text, **Copy link address** on a link, and
+**Copy image** in the inspector's **Browser** tab.
 
 Quitting the app (**Quit orc**) stops the daemon only if the app started it.
 

@@ -108,8 +108,13 @@ export function appMenuTemplate(
       submenu: [
         { label: "Documentation", click: () => actions.openDocumentation() },
         { label: "Report an issue", click: () => actions.reportIssue() },
-        { type: "separator" },
-        { label: "About orc", click: () => actions.showAbout() },
+        // The macOS app menu already carries About.
+        ...(mac
+          ? []
+          : [
+              { type: "separator" as const },
+              { label: "About orc", click: () => actions.showAbout() },
+            ]),
       ],
     },
   );
