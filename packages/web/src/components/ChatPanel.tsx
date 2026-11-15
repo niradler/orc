@@ -1,5 +1,6 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { supportsManualCompaction } from "@orc/core/coding-agents";
+import { sessionMessageHookSupported } from "@orc/core/session-messages";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -61,6 +62,7 @@ import {
   useSessionLiveLink,
 } from "@/components/SessionHome";
 import { SessionLineage } from "@/components/SessionLineage";
+import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionView } from "@/components/SessionView";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -70,7 +72,7 @@ import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
-import { useSessionChildren } from "@/hooks/useSessions";
+import { useSendSessionMessage, useSessionChildren } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
 import type { AgentState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
@@ -267,6 +269,12 @@ export function ChatPanel({
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
   const agentRunning =
     session.data?.live?.status === "running" && session.data.live.agent !== "codex" && !streaming;
+  const agentInbox =
+    agentRunning && session.data?.live && sessionMessageHookSupported(session.data.live.agent)
+      ? session.data.live
+      : null;
+  const agentBlocked = agentRunning && !agentInbox;
+  const queueToAgent = useSendSessionMessage(agentInbox?.id ?? null);
   const runElsewhere = !!session.data?.running && !streaming && !refreshing;
   const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
   // The usage API only knows sessions it discovered from an agent or terminal.
@@ -410,15 +418,26 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
-  const sendLabel = agentRunning
-    ? "Running in its own agent; send when it finishes"
-    : !streaming
-      ? "Send message"
-      : canSteerLive
-        ? "Send now"
-        : "Queue message";
+  const sendLabel = agentInbox
+    ? "Queue for its next safe point"
+    : agentBlocked
+      ? "Running in its own agent; send when it finishes"
+      : !streaming
+        ? "Send message"
+        : canSteerLive
+          ? "Send now"
+          : "Queue message";
   const submit = () => {
-    if (!ready || agentRunning || (!draft.trim() && !files.length)) return;
+    if (agentInbox) {
+      const body = draft.trim();
+      if (!body || files.length || queueToAgent.isPending) return;
+      setDraft("");
+      queueToAgent.mutate(body, {
+        onError: () => setDraft((current) => (current === "" ? body : current)),
+      });
+      return;
+    }
+    if (!ready || agentBlocked || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
     const text = draft;
     setDraft("");
@@ -1189,13 +1208,25 @@ export function ChatPanel({
             )}
             <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
               {agentRunning && (
-                <p
-                  data-testid="chat-agent-running"
-                  role="status"
-                  className="mx-auto mb-1.5 w-full max-w-3xl px-2 text-xs text-on-surface-variant"
-                >
-                  Running in its own agent. Sending unlocks when it finishes.
-                </p>
+                <div className="mx-auto mb-1.5 w-full max-w-3xl px-2">
+                  <p
+                    data-testid="chat-agent-running"
+                    role="status"
+                    className="text-xs text-on-surface-variant"
+                  >
+                    {agentInbox
+                      ? "Running in its own agent. Send queues your message for its next safe point."
+                      : "Running in its own agent. Sending unlocks when it finishes."}
+                  </p>
+                  {queueToAgent.error && (
+                    <p role="alert" className="text-xs text-error">
+                      {queueToAgent.error.message}
+                    </p>
+                  )}
+                  {agentInbox && (
+                    <SessionMessageInbox session={agentInbox} live={false} compose={false} />
+                  )}
+                </div>
               )}
               <form
                 onSubmit={(event) => {
@@ -1272,9 +1303,11 @@ export function ChatPanel({
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
                     placeholder={
-                      agentRunning
-                        ? "Running in its own agent. Sending unlocks when it finishes."
-                        : "Ask anything. / for prompts and skills"
+                      agentInbox
+                        ? "Running in its own agent. Messages queue for its next safe point."
+                        : agentBlocked
+                          ? "Running in its own agent. Sending unlocks when it finishes."
+                          : "Ask anything. / for prompts and skills"
                     }
                     disabled={!ready}
                     value={draft}
@@ -1408,7 +1441,11 @@ export function ChatPanel({
                     <ActionHelp label={sendLabel}>
                       <button
                         type="submit"
-                        disabled={!ready || agentRunning || (!draft.trim() && !files.length)}
+                        disabled={
+                          agentInbox
+                            ? !draft.trim() || !!files.length || queueToAgent.isPending
+                            : !ready || agentBlocked || (!draft.trim() && !files.length)
+                        }
                         data-testid="chat-send-button"
                         aria-label={sendLabel}
                         className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
