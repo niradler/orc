@@ -343,7 +343,7 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       if (row.type !== "event_msg" || payload.type !== "token_count") continue;
       const info = object(payload.info);
       const latest = CodexUsage.safeParse(info.last_token_usage);
-      if (!latest.success) continue;
+      if (!latest.success || latest.data.input_tokens === 0) continue;
       const totals = CodexUsage.safeParse(info.total_token_usage);
       const total = totals.success ? totals.data.input_tokens : null;
       if (total === null || total !== codexTotal)
