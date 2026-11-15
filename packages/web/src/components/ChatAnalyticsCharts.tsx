@@ -57,16 +57,18 @@ export function ChatContextChart({ context }: { context: ChatContextAnalytics })
     fresh: Math.max(0, point.context_tokens - point.cached_input_tokens),
   }));
   const compactions = context.usage.compactions ?? [];
-  const markers = compactions.flatMap((compaction) => {
+  // Several compactions can land on one request; the chart needs one marker.
+  const markers: { request: number; drop: string | null }[] = [];
+  for (const compaction of compactions) {
     const at = compaction.recorded_at;
     const after = at && timeline.find((point) => point.recorded_at && point.recorded_at >= at);
-    if (!after) return [];
+    if (!after || markers.some((marker) => marker.request === after.request)) continue;
     const drop =
       compaction.pre_tokens !== null && compaction.post_tokens !== null
         ? `${formatTokenCount(compaction.pre_tokens, false)} → ${formatTokenCount(compaction.post_tokens, false)}`
         : null;
-    return [{ request: after.request, drop }];
-  });
+    markers.push({ request: after.request, drop });
+  }
   return (
     <figure data-testid="chat-context-chart" className="w-full">
       <figcaption className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">

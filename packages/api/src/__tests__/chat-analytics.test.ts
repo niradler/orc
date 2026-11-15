@@ -79,6 +79,7 @@ test("should summarize chat turns and tool activity for every agent", () => {
     { name: "Edit", calls: 1, failures: 0 },
     { name: "Read", calls: 1, failures: 0 },
   ]);
+  expect(analytics.toolTotal).toBe(3);
   expect(analytics.turnTimeline.map((turn) => [turn.index, turn.toolCalls])).toEqual([
     [1, 3],
     [2, 1],
@@ -102,6 +103,49 @@ test("should explain an unsupported native context source without failing the ch
     reason: expect.stringContaining("Gemini"),
   });
   expect(context?.usage.latest).toBeNull();
+});
+
+test("should reuse a parsed transcript until the file changes", async () => {
+  const path = join(root, "reused-transcript.jsonl");
+  writeFileSync(
+    path,
+    `${JSON.stringify({
+      type: "assistant",
+      timestamp: new Date(now - 60_000).toISOString(),
+      message: {
+        id: "usage-cache",
+        usage: {
+          input_tokens: 100,
+          output_tokens: 10,
+          cache_read_input_tokens: 40,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    })}\n`,
+  );
+  let reads = 0;
+  let size = 1;
+  const runtime = {
+    isFile: async () => true,
+    readFile: async () => {
+      reads += 1;
+      return new Uint8Array(await Bun.file(path).arrayBuffer());
+    },
+    stat: async () => ({ size, mtimeMs: size, isDirectory: false }),
+  };
+  const source = {
+    backend: "claude",
+    model: null,
+    transcript_path: path,
+    runtime_session_id: "native-reuse-1",
+  };
+  const first = await readChatContext(runtime, thread, source);
+  const second = await readChatContext(runtime, thread, source);
+  expect(reads).toBe(1);
+  expect(second?.usage.latest?.input_tokens).toBe(first?.usage.latest?.input_tokens);
+  size = 2;
+  await readChatContext(runtime, thread, source);
+  expect(reads).toBe(2);
 });
 
 let app: ReturnType<typeof setupTestApp>;

@@ -83,7 +83,10 @@ export function useSessionContext(terminalId: string | null): SessionContext {
     gitCheckout:
       (terminal?.status === "running"
         ? terminal
-        : runningTerminalForFolder(terminals, cwd, host)) ?? sessionCheckout(chat.thread),
+        : runningTerminalForFolder(terminals, cwd, host)) ??
+      // Only a chat-only page can borrow the thread's folder; a terminal page
+      // must never show Git for a different checkout than its Overview.
+      (terminalId ? undefined : sessionCheckout(chat.thread)),
     shell: terminals.find(
       (item) => sameFolder(item) && item.kind === "shell" && item.id !== terminal?.id,
     ),

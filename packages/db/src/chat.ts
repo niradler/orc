@@ -91,6 +91,17 @@ export class ChatStore {
       .get(messageId);
     return row ? this.get(row.id) : null;
   }
+  /** Records a source session without rewriting the whole row, so a read path
+   *  cannot clobber a turn that saved concurrently. */
+  setSourceId(id: string, sourceId: string): void {
+    this.db
+      .query(
+        `UPDATE chat_threads SET data = json_set(data, '$.sourceId', ?)
+          WHERE id = ? AND json_valid(data)
+            AND coalesce(json_extract(data, '$.sourceId'), '') = ''`,
+      )
+      .run(sourceId, id);
+  }
   save(thread: ChatThread): void {
     this.db
       .query(

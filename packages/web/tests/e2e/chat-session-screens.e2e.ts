@@ -194,10 +194,11 @@ for (const width of [1440, 390]) {
           outcomes: { completed: 2, stopped: 0, failed: 0, running: 0 },
           durations: {
             averageMs: 171_000,
-            medianMs: 224_000,
+            medianMs: 171_000,
             p95Ms: 224_000,
             totalMs: 342_000,
           },
+          toolTotal: 3,
           tools: [
             { name: "Bash", calls: 3, failures: 1 },
             { name: "Read", calls: 1, failures: 0 },

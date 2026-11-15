@@ -1,12 +1,26 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { createApp } from "../server.js";
 
 const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
+const originalOrcHome = process.env.ORC_HOME;
+let testHome: string | null = null;
+
+// A test run must never read or write the real ~/.orc: ORC_HOME is inherited
+// from the parent shell, and provider or chat settings written there survive
+// the test as fixture data. Point it at a per-file temporary home instead.
+function isolateHome() {
+  if (!testHome) testHome = mkdtempSync(join(tmpdir(), "orc-api-test-"));
+  process.env.ORC_HOME = testHome;
+}
 
 // loadConfig() caches per process, and `bun test` at the root runs every package's files in one
 // process; without a reset the app keeps a secret cached by an earlier file and answers 401.
 export function setupTestApp() {
+  isolateHome();
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
   process.env.ORC_ACTIVE_PROJECT = "";
@@ -21,6 +35,10 @@ export function teardownTestApp() {
   delete process.env.ORC_DB_PATH;
   if (originalActiveProject === undefined) delete process.env.ORC_ACTIVE_PROJECT;
   else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
+  if (originalOrcHome === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = originalOrcHome;
+  if (testHome) rmSync(testHome, { recursive: true, force: true });
+  testHome = null;
   resetConfig();
 }
 

@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
-import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import type { ExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { prepareSessionDirectory } from "@orc/core/session-dir";
@@ -31,14 +31,15 @@ const app = createRouter();
 const params = z.object({ id: z.string().min(1) });
 // A chat session's folder is a checkout too: Git must work before (or without)
 // a terminal, so an id that is not a terminal falls back to its chat session.
+// Terminals may be disabled entirely; that only rules out terminal ids.
 async function folder(id: string): Promise<{ host: ExecHost; cwd: string }> {
-  requireTerminals(loadConfig());
   let host: ExecHost;
   let cwd: string | null;
   try {
+    requireTerminals(loadConfig());
     ({ host, cwd } = terminalHost(id));
   } catch (error) {
-    if (!(error instanceof NotFoundError)) throw error;
+    if (!(error instanceof NotFoundError || error instanceof ForbiddenError)) throw error;
     ({ host, cwd } = await previewSession(id));
   }
   if (!cwd) throw new ValidationError("This checkout has no working directory");

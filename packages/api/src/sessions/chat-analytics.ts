@@ -1,11 +1,13 @@
-import type { ChatThread } from "@orc/core/chat";
+import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
 import type {
   ChatAnalytics,
   ChatContextAnalytics,
   ChatToolStat,
   ChatTurnStat,
 } from "@orc/core/chat-analytics";
+import { agentLabel, codingAgent } from "@orc/core/coding-agents";
 import type { HostRuntime } from "@orc/core/exec-host";
+import type { SessionCacheUsage } from "@orc/core/usage";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "./cache-usage.js";
 
 const TURN_POINTS = 80;
@@ -21,9 +23,40 @@ const UNSUPPORTED_CONTEXT: Record<string, string> = {
 };
 
 type CacheRuntime = Pick<HostRuntime, "isFile" | "readFile"> &
-  Partial<Pick<HostRuntime, "sqliteQuery">>;
+  Partial<Pick<HostRuntime, "sqliteQuery" | "stat">>;
 
-export type ChatNativeSource = {
+const USAGE_CACHE_ENTRIES = 64;
+/** Keyed by the transcript's own size and mtime, so an append or rewrite is a
+ *  miss. Polling tabs therefore stop re-parsing the whole file every 15 s. */
+const usageCache = new Map<string, SessionCacheUsage>();
+
+function rememberUsage(key: string, value: SessionCacheUsage): SessionCacheUsage {
+  if (usageCache.size >= USAGE_CACHE_ENTRIES) {
+    const oldest = usageCache.keys().next().value;
+    if (oldest !== undefined) usageCache.delete(oldest);
+  }
+  usageCache.set(key, value);
+  return value;
+}
+
+async function cachedUsage(
+  runtime: CacheRuntime,
+  backend: string,
+  path: string,
+  runtimeSessionId: string | null,
+): Promise<SessionCacheUsage> {
+  // OpenCode answers from its own indexed database, so there is nothing to cache.
+  const info = backend === "opencode" ? null : await runtime.stat?.(path).catch(() => null);
+  const key = info
+    ? `${backend}\0${path}\0${runtimeSessionId ?? ""}\0${info.size}\0${info.mtimeMs}`
+    : null;
+  const cached = key ? usageCache.get(key) : undefined;
+  if (cached) return cached;
+  const value = await loadSessionCacheUsage(runtime, backend, path, runtimeSessionId);
+  return key ? rememberUsage(key, value) : value;
+}
+
+type ChatNativeSource = {
   backend: string;
   model: string | null;
   transcript_path: string | null;
@@ -107,6 +140,7 @@ export function readChatAnalytics(thread: ChatThread): Omit<ChatAnalytics, "cont
     tools: [...tools.values()]
       .sort((left, right) => right.calls - left.calls || left.name.localeCompare(right.name))
       .slice(0, TOOL_ROWS),
+    toolTotal: tools.size,
     turnTimeline,
     turnTimelineTruncated: turnStats.length > turnTimeline.length,
   };
@@ -130,12 +164,20 @@ export async function readChatContext(
 ): Promise<ChatContextAnalytics | null> {
   if (!thread.runtimeId) return null;
   const model = source?.model || thread.config.model || null;
-  if (!source)
+  if (!source) {
+    // Only agents with a discoverable session store can ever appear here; the
+    // others would wait for an index that never happens.
+    const discoverable =
+      nativeChatAgent(thread.config.agent) !== null &&
+      (codingAgent(thread.config.agent)?.sessionBackends.length ?? 0) > 0;
     return unsupported(
       thread.backend,
       model,
-      "ORC has not discovered this agent session yet. Context usage appears after the session is indexed.",
+      discoverable
+        ? "ORC has not discovered this agent session yet. Context usage appears after the session is indexed."
+        : `ORC cannot read ${agentLabel(thread.config.agent)} sessions for this chat, so context and cache usage are unavailable.`,
     );
+  }
   const reason = UNSUPPORTED_CONTEXT[source.backend];
   if (reason) return unsupported(source.backend, model, reason);
   if (!source.transcript_path)
@@ -150,7 +192,7 @@ export async function readChatContext(
       model,
       supported: true,
       reason: null,
-      usage: await loadSessionCacheUsage(
+      usage: await cachedUsage(
         runtime,
         source.backend,
         source.transcript_path,

@@ -1522,6 +1522,7 @@ export interface paths {
                                 calls: number;
                                 failures: number;
                             }[];
+                            toolTotal: number;
                             turnTimeline: {
                                 index: number;
                                 startedAt: number;

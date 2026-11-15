@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatThreadSchema } from "@orc/core/chat";
+import { resetConfig } from "@orc/core/config";
 import { LOCAL_HOST } from "@orc/core/exec-host";
 import { runGit } from "@orc/core/session-dir";
 import { ChatStore } from "@orc/db/chat";
@@ -69,6 +70,34 @@ describe("terminal git panel", () => {
     expect(await response.json()).toMatchObject({ branch: "main", files: [] });
     expect((await req(app, "GET", `/terminals/${session}/files`)).status).toBe(200);
     expect((await req(app, "GET", "/terminals/missing/git/status")).status).toBe(404);
+  });
+  test("should read a chat session's folder when terminals are disabled", async () => {
+    const session = crypto.randomUUID();
+    new ChatStore(getSqlite()).save(
+      ChatThreadSchema.parse({
+        id: session,
+        title: "Terminals off",
+        config: { agent: "claude" },
+        cwd: repo,
+        host: null,
+        runtimeId: null,
+        backend: "claude-code",
+        sourceId: null,
+        messages: [],
+        updatedAt: Date.now(),
+      }),
+    );
+    process.env.ORC_TERMINALS_ENABLED = "0";
+    resetConfig();
+    try {
+      const status = await req(app, "GET", `/terminals/${session}/git/status`);
+      expect(status.status).toBe(200);
+      expect(await status.json()).toMatchObject({ branch: "main" });
+      expect((await req(app, "GET", `/terminals/${session}/files`)).status).toBe(200);
+    } finally {
+      delete process.env.ORC_TERMINALS_ENABLED;
+      resetConfig();
+    }
   });
   test("should distinguish a checkout without a GitHub remote from missing authentication", async () => {
     const response = await req(app, "GET", `/terminals/${terminalId}/git/github`);

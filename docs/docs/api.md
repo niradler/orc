@@ -68,10 +68,12 @@ base64 for a browser upload. Artifact and recording bodies are capped at 16 MB.
 See [MCP preview tools](./mcp.md#desktop-preview-tools) for browser commands and
 permission behavior.
 
-`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence from a
-stored native session transcript: `latest` (including optional recorded time and
-a conservative `may_be_cold_after` hint) and `totals`. Missing or unsupported
-evidence is `null`. No prompt text, credentials or transcript paths are returned.
+`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence recorded by
+the agent: `latest` (including optional recorded time and a conservative
+`may_be_cold_after` hint) and `totals`. Claude, Codex and Pi are read from the
+stored native transcript; OpenCode is read from its own session database on the
+execution host. Missing or unsupported evidence is `null`. No prompt text,
+credentials or transcript paths are returned.
 The route uses normal API authentication and the session's stored execution host;
 clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
 

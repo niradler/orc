@@ -5,13 +5,17 @@ import { agentDisplayName } from "@/components/AgentIcon";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useAgentBackend } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 
 export function ChatAgentOptionsEditor() {
   const { config, applyAgentOptions, thread, streaming } = useChat();
   const inputId = useId();
   const runtime = chatRuntime(config.agent);
-  const directAcp = thread?.backend === "acp" || chatRuntimeFor(config.agent) === "opencode";
+  // The server may resolve an agent to direct ACP through agent_loop.acp_commands
+  // even when the static table says ACPX, so ask it for the real adapter.
+  const backend = useAgentBackend(config.agent, thread);
+  const directAcp = ["acp", "opencode"].includes(backend ?? chatRuntimeFor(config.agent));
   const saved = config.agentOptions[config.agent];
   const legacyArgs = directAcp && saved?.runtime === "acpx" ? saved.args : [];
   const initial = JSON.stringify(

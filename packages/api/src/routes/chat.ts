@@ -670,8 +670,9 @@ async function linkNativeSource(thread: ChatThread): Promise<ChatThread> {
   if (thread.sourceId || !thread.runtimeId) return thread;
   const source = await nativeSource(thread);
   if (!source) return thread;
+  // A targeted update, not save(): readers can race a running turn's save.
+  store().setSourceId(thread.id, source.id);
   thread.sourceId = source.id;
-  store().save(thread);
   return thread;
 }
 

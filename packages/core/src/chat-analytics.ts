@@ -51,6 +51,8 @@ export const ChatAnalyticsSchema = z.object({
     totalMs: z.number().finite().nonnegative().nullable(),
   }),
   tools: z.array(ChatToolStatSchema),
+  /** Distinct tools used, before the payload keeps only the most-used ones. */
+  toolTotal: z.number().int().nonnegative(),
   turnTimeline: z.array(ChatTurnStatSchema),
   turnTimelineTruncated: z.boolean(),
   context: ChatContextAnalyticsSchema.nullable(),

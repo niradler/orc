@@ -211,9 +211,12 @@ export function ChatSessionAnalytics({
               <ToolChart tools={data.tools} />
             </Suspense>
             <ToolTable tools={data.tools} />
-            {data.tools.length > 8 && (
+            {data.toolTotal > 8 && (
               <p className="text-xs text-muted-foreground">
-                + {count.format(data.tools.length - 8)} more tools with fewer calls.
+                + {count.format(data.toolTotal - 8)} more tools with fewer calls
+                {data.toolTotal > data.tools.length
+                  ? `; showing the ${count.format(data.tools.length)} most used.`
+                  : "."}
               </p>
             )}
           </>
