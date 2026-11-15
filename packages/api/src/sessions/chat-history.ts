@@ -2,7 +2,7 @@ import { appendChatActivity, type ChatMessage } from "@orc/core/chat";
 import type { TranscriptTurn } from "./transcript.js";
 
 /** Display the imported transcript without replaying it as a new prompt. */
-export function chatHistory(turns: TranscriptTurn[], agent: string): ChatMessage[] {
+export function chatHistory(turns: TranscriptTurn[], agent: string, model?: string): ChatMessage[] {
   const messages: ChatMessage[] = [];
   for (const turn of turns) {
     if (turn.role === "system") continue;
@@ -17,6 +17,7 @@ export function chatHistory(turns: TranscriptTurn[], agent: string): ChatMessage
       content,
       timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
       agent,
+      ...(model ? { model } : {}),
       activity: [],
     };
     for (const block of turn.blocks) {

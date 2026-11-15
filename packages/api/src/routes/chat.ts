@@ -702,7 +702,7 @@ async function importTranscript(thread: ChatThread, source: NativeSource): Promi
       offset: transcript.total - CHAT_HISTORY_PAGE_SIZE,
       limit: CHAT_HISTORY_PAGE_SIZE,
     });
-  thread.messages = chatHistory(transcript.turns, source.backend);
+  thread.messages = chatHistory(transcript.turns, source.backend, thread.config.model);
   thread.importedMessages = thread.messages.length;
   thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
   if (mark) thread.transcriptMark = mark;
@@ -1142,7 +1142,7 @@ app.openapi(
         "The native transcript changed. Reopen the session to load its history.",
       );
     return c.json({
-      messages: chatHistory(page.turns, source.backend),
+      messages: chatHistory(page.turns, source.backend, thread.config.model),
       before: offset > 0 ? offset : null,
     });
   },
@@ -1324,7 +1324,7 @@ async function forkPrefix(
       start = from;
     }
     return {
-      messages: [...chatHistory(turns, thread.config.agent), ...loaded],
+      messages: [...chatHistory(turns, thread.config.agent, thread.config.model), ...loaded],
       partial: start > 0,
     };
   } catch (error) {
@@ -2056,6 +2056,7 @@ async function beginTurn(
     content: "",
     timestamp: Date.now(),
     agent: thread.config.agent,
+    ...(thread.config.model ? { model: thread.config.model } : {}),
     activity: [],
     turn: { startedAt },
   };
@@ -2332,6 +2333,7 @@ async function beginTurn(
           }
           if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
             await emit({ type: event.type, text: event.data });
+          else if (event.type === "plan") await emit({ type: "plan", data: event.data });
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");

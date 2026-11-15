@@ -1,6 +1,16 @@
 import { expect, test } from "bun:test";
 import { chatHistory } from "../sessions/chat-history";
 
+test("imported chat history retains the session's model when one is known", () => {
+  const history = chatHistory(
+    [{ index: 0, role: "assistant", time: null, blocks: [{ type: "text", text: "Answer" }] }],
+    "codex",
+    "gpt-5.1-codex",
+  );
+  expect(history[0]?.model).toBe("gpt-5.1-codex");
+  expect(chatHistory([], "codex")[0]).toBeUndefined();
+});
+
 test("imported chat history retains thinking and tool results without blank user messages", () => {
   const history = chatHistory(
     [

@@ -7,6 +7,7 @@ import { buildCodexEnv, codexCommand, hasConfiguredOrcMcp } from "./codex.js";
 import { elicitationForm } from "./elicitation.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
+import { planEvent } from "./plan.js";
 import { codexLimitEvent } from "./provider-limits.js";
 import {
   type AgentEvent,
@@ -336,15 +337,14 @@ export class CodexAppSession implements AgentSession {
       this.usage = params.tokenUsage;
     } else if (method === "turn/plan/updated") {
       const plan = Array.isArray(params.plan) ? params.plan : [];
-      this.push({
-        type: "system_status",
-        data: plan
-          .map((entry) => {
-            const step = object(entry);
-            return `${String(step.status ?? "pending")}: ${String(step.step ?? "")}`;
-          })
-          .join("\n"),
-      });
+      const event = planEvent(
+        "plan",
+        plan.map((entry) => {
+          const step = object(entry);
+          return { status: step.status, content: step.step };
+        }),
+      );
+      if (event) this.push(event);
     } else if (method === "serverRequest/resolved") {
       for (const [id, request] of this.pending)
         if (request.wireId === params.requestId) this.resolved(id);

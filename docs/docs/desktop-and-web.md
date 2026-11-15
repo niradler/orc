@@ -64,7 +64,10 @@ opens the chat page instead.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation. Its header names the terminal, its live state and the folder/host. **Expand** gives the terminal the conversation's space and **Close** hides it, leaving the shell running. On a touch screen, swipe inside the terminal to scroll; a tap still opens the keyboard, and a swipe does not.
 - **Continue in terminal**: when the response has finished and the session is idle, **Continue in terminal** in the session actions menu resumes that origin session in its native agent. This works for every native chat agent (Claude Code, Codex, Gemini CLI, OpenCode and Pi), including sessions you have hidden from the session list. The terminal opens as the chat view's main pane, leaving the conversation mounted behind it; the back arrow returns to the chat without losing the terminal or your draft. An already running terminal for that session is reused instead of started twice; if it has exited, a new one resumes the session. A link to an exited or deleted terminal says it is no longer running and the back arrow still returns to the chat.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
-- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
+- **Tool calls and plans**: a finished turn folds its tool calls and pre-tool narration into one summary line with duration, tool count, files changed with their added and removed lines, a command count when nothing changed, and failures. Expand the line to read each call: reads and searches stay one line, edits and writes show compact diffs, and commands show the command with its output tail. MCP, browser, todo, plan and question calls have their own view, and a tool ORC does not recognise keeps its raw input and result. An image a tool returned is shown inline when it is embedded in the result (never fetched from a remote URL), loads lazily, stays within a bounded size and expands on request. A file path opens in the inspector's file preview, and a Git command's branch, changed files and pull request link appear only when its output contains them.
+  Inside the expanded turn, **All**, **Changes**, **Commands** and **Failed** narrow the tool calls, and **Hide successful** leaves only running or failed ones; the choice is remembered for the next turn. Thinking, plans and status messages stay visible under every filter, and the collapsed summary always counts every failure. Agents that publish a checklist (ACP agents, Codex, Claude and OpenCode todos) show it as a plan card with each step's status — pending, in progress, completed or failed — in a bounded, scrollable list; the steps come from the agent, and providers that publish no plan show none. A turn's assistant message records the model that produced it when the session has one selected.
+- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and read the turn's meta: the model that produced it, its duration, a stopped or failed outcome, and — on the newest response — the latest request's context tokens and cached share when the session records usage. Missing fields are left out instead of filled with zeros. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
+- **Model and compaction dividers**: the conversation marks a model change between consecutive turns, and each recorded context compaction, in the transcript where it happened. Sessions that record no model or no compaction show no divider.
 - The page keeps the workspace header and its single notification bell. On desktop **Close chat** returns to the page you came from; on a phone the chat is a regular page, so you leave it with Back or the navigation drawer.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents
@@ -72,12 +75,22 @@ opens the chat page instead.
   while project ownership is unavailable. The Activity session list uses the same
   compact row design, retaining search, filters, task links and resume actions.
 
+The header carries one quiet strip: the agent, the selected model (or the model
+the last turn recorded when none is selected), the cached share of the session's
+latest request, and the session state. The info icon beside the context figure
+explains the number and names the session's compactions; the figure is omitted
+entirely when the session has no recorded usage, so nothing reads as zero. The
+strip stays on one line and never displaces Send or Stop. On a phone, and in
+narrow chat panels, it keeps the context figure and state while the composer
+already names the agent and model.
+
 On a phone (below 768px) the chat is a touch-first surface. The header keeps the
 session title, **Sessions**, **New** and the actions menu on one line, with the
-**Terminal**, **Inspector**, **Refresh** and **Compact** controls on a second line
-(right-aligned; it collapses when the viewport gets very short, such as with the
-software keyboard on a small screen, and the same actions stay available in the
-**⋯** menu). **Sessions**, the
+session strip on the left of a second line and the **Terminal**, **Inspector**,
+**Refresh** and **Compact** controls right-aligned beside it. That row collapses
+when the viewport gets very short, such as with the software keyboard on a small
+screen, and the same actions stay available in the
+**⋯** menu. **Sessions**, the
 **Inspector** and the **Terminal** open as full pages over the conversation,
 which stays mounted underneath so streams and drafts survive. They follow your
 finger:
@@ -603,14 +616,11 @@ ID, the agent's native session ID used for resume, and the discovered session ID
 this chat continues when it was resumed. Each identifier can be copied.
 **Customize** holds permissions, while-responding behaviour, agent launch options,
 session instructions and
-agent browser control. **Analytics** counts messages, turns, tool calls and
-failures from the transcript, shows start, last-activity and turn timings, and
-reports context and cache usage when the session records it. Explanations sit
-behind the info icon beside each label; new-chat defaults remain in Settings →
-Agents → Chat.
+agent browser control. Context, cache and turn figures live in the transcript and
+the header strip instead of a separate analytics tab. Explanations sit behind the
+info icon beside each label; new-chat defaults remain in Settings → Agents → Chat.
 
 ![Session settings overview with the ORC, agent and resume identifiers](/screens/chat-session-settings-overview-desktop.png)
-![Session analytics with counts, turn timings and cache reuse](/screens/chat-session-settings-analytics-desktop.png)
 
 <img src="/screens/chat-session-settings-customize-phone.png" alt="Session settings customization on a phone" width="260">
 

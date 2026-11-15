@@ -326,6 +326,16 @@ elapsed time. Replay includes the original start; legacy messages may omit `turn
 Before a tool call, a `narration` event moves accumulated prose out of the current
 reply and into its folded activity. Its `text` preserves that prose for expansion.
 
+Assistant messages record the `model` that produced the turn when the session has
+one selected; it is additive, so older transcripts simply omit it. Agents that
+publish a checklist emit `plan` events with an `id`, an optional `title` and
+`entries` (`id`, `status` — `pending`, `in_progress`, `completed` or `failed` —
+and `content`). Providers re-send the whole plan, so a repeated identical update
+changes nothing and an entry keeps one row as its status advances. A provider
+without a plan signal emits no `plan` event. Stored activity kinds this build
+does not know are kept as a `providerActivity` passthrough instead of being
+dropped or failing the transcript.
+
 A turn opens with a `thread` event carrying the conversation metadata and only
 that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
 `POST /chat/stream` accepts an optional `clientMessageId` (UUID) and stores it as

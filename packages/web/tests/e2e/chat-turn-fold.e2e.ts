@@ -149,7 +149,7 @@ for (const width of [1440, 390]) {
     const fold = page.getByTestId("chat-turn-fold");
     await expect(fold).toHaveCount(1);
     await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(
-      "Worked for 42s · 45 tools · 3 files changed",
+      "Worked for 42s · 45 tools · 3 files changed (+6 −3)",
     );
     await expect(fold).toHaveAttribute("data-failed", "true");
     await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
@@ -173,16 +173,43 @@ for (const width of [1440, 390]) {
     await expect(diff.getByTestId("git-diff-add")).toContainText("usePinnedScroll(options)");
     await expect(diff.getByTestId("git-diff-remove").first()).toContainText("useRef(null)");
 
-    const command = fold.locator('[data-testid="chat-tool"][data-kind="command"]').first();
+    const command = fold.locator('[data-testid="chat-tool"][data-kind="run"]').first();
     await expect(command).toContainText("bun test tests/unit/case-2.test.ts");
     await command.locator("summary").click();
     await expect(command.getByTestId("chat-tool-output")).toContainText("line 20");
     await expect(command.getByTestId("chat-tool-output")).not.toContainText("line 8\n");
     await expect(command.getByRole("button", { name: "Show 8 earlier lines" })).toBeVisible();
-    await expect(fold.locator('[data-testid="chat-tool"][data-kind="lookup"]')).toHaveCount(28);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="read"]')).toHaveCount(14);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="search"]')).toHaveCount(14);
+
+    await page.getByTestId("chat-activity-filter-changes").click();
+    await expect(page.getByTestId("chat-activity-filter-changes")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="edit"]')).toHaveCount(2);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="read"]')).toHaveCount(0);
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
+
+    await page.getByTestId("chat-activity-filter-all").click();
+    await page.getByTestId("chat-activity-hide-successful").click();
+    await expect(fold.locator('[data-testid="chat-tool"]')).toHaveCount(1);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="run"]')).toContainText(
+      "Failed",
+    );
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
+
+    await page.reload();
+    await page.getByTestId("chat-turn-fold-summary").click();
+    await expect(page.getByTestId("chat-activity-hide-successful")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator('[data-testid="chat-tool"][data-kind="run"]')).toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
+    await page.evaluate(() => localStorage.removeItem("orc_chat_activity_prefs"));
   });
 }
 

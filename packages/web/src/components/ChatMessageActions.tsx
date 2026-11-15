@@ -1,8 +1,8 @@
-import { type ChatThread, ChatTurnSchema } from "@orc/core/chat";
+import type { ChatThread } from "@orc/core/chat";
 import { Check, Copy, GitFork, LoaderCircle } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { api } from "@/api/client";
-import { foldTurn, formatDuration } from "@/lib/chat-activity";
+import { ChatTurnMeta } from "@/components/ChatTurnMeta";
 import { cn } from "@/lib/utils";
 
 const button =
@@ -17,6 +17,9 @@ export const ChatMessageActions = memo(function ChatMessageActions({
   role,
   content,
   turn,
+  model,
+  tokens,
+  cachedTokens,
   forkDisabledReason,
   onForked,
 }: {
@@ -25,6 +28,9 @@ export const ChatMessageActions = memo(function ChatMessageActions({
   role: "user" | "assistant";
   content: string;
   turn: unknown;
+  model?: string | undefined;
+  tokens?: number | undefined;
+  cachedTokens?: number | undefined;
   forkDisabledReason?: string | undefined;
   onForked: (thread: ChatThread) => void;
 }) {
@@ -36,21 +42,6 @@ export const ChatMessageActions = memo(function ChatMessageActions({
     const timer = window.setTimeout(() => setCopied(false), 2000);
     return () => window.clearTimeout(timer);
   }, [copied]);
-
-  const timing = ChatTurnSchema.safeParse(turn);
-  const duration = timing.success ? foldTurn([], timing.data).durationMs : null;
-  const outcome = timing.success ? timing.data.outcome : undefined;
-  const finishedAt = timing.success ? timing.data.finishedAt : undefined;
-  const ended = finishedAt
-    ? new Date(finishedAt).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
-  const durationVerb =
-    outcome === "stopped" ? "Stopped after" : outcome === "failed" ? "Failed after" : "Worked for";
-  const durationText = duration === null ? null : `${durationVerb} ${formatDuration(duration)}`;
-  const durationLabel = ended ? `${durationText}, ended ${ended}` : durationText;
 
   async function copy(): Promise<void> {
     try {
@@ -95,26 +86,8 @@ export const ChatMessageActions = memo(function ChatMessageActions({
         role === "user" && "justify-end",
       )}
     >
-      {duration !== null && (
-        <time
-          data-testid="chat-message-duration"
-          dateTime={finishedAt ? new Date(finishedAt).toISOString() : undefined}
-          title={durationLabel ?? undefined}
-          className="tabular-nums"
-        >
-          <span className="sr-only">{durationVerb} </span>
-          {formatDuration(duration)}
-        </time>
-      )}
-      {ended && finishedAt && (
-        <time
-          data-testid="chat-message-ended"
-          dateTime={new Date(finishedAt).toISOString()}
-          title={new Date(finishedAt).toLocaleString()}
-          className="tabular-nums text-outline"
-        >
-          {ended}
-        </time>
+      {role === "assistant" && (
+        <ChatTurnMeta turn={turn} model={model} tokens={tokens} cachedTokens={cachedTokens} />
       )}
       <div data-testid="chat-message-actions" className={cn("flex items-center gap-0.5", reveal)}>
         {content.trim() && (
