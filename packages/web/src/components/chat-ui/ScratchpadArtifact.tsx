@@ -2,7 +2,7 @@ import type { Scratchpad } from "@orc/core/scratchpad";
 import { lazy, Suspense } from "react";
 import { Markdown } from "@/components/Markdown";
 import { withOrcKit } from "@/lib/orc-kit";
-import { useTheme } from "@/lib/theme";
+import { useAppearance, useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { isolatedHtml } from "./sandboxed-html";
 
@@ -18,6 +18,7 @@ export function ScratchpadArtifact({
   fullscreen?: boolean;
 }) {
   const { theme } = useTheme();
+  const { darkBackground } = useAppearance();
   if (pad.kind === "html") {
     return (
       <iframe
@@ -25,7 +26,7 @@ export function ScratchpadArtifact({
         title={`${pad.title} preview`}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
-        srcDoc={isolatedHtml(withOrcKit(pad.content, theme))}
+        srcDoc={isolatedHtml(withOrcKit(pad.content, theme, darkBackground))}
         className={cn(
           "w-full border border-outline-variant bg-white",
           fullscreen ? "h-full min-h-0" : expanded ? "h-[70vh] min-h-80" : "h-72",

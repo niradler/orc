@@ -5,16 +5,34 @@
     <script>
       (() => {
         let theme = "dark";
-        let fontSize = "default";
+        const root = document.documentElement;
         try {
           if (localStorage.getItem("orc_theme") === "light") theme = "light";
-          const size = localStorage.getItem("orc_font_size");
-          if (size === "large" || size === "x-large") fontSize = size;
+          const phone = matchMedia("(max-width: 767px)").matches;
+          const read = (key, options, fallback) => {
+            const value = localStorage.getItem(key);
+            return options.includes(value) ? value : fallback;
+          };
+          const sizes = ["small", "default", "large", "x-large"];
+          const size = read(
+            phone && localStorage.getItem("orc_font_size_phone") !== null
+              ? "orc_font_size_phone"
+              : "orc_font_size",
+            sizes,
+            "default",
+          );
+          if (size !== "default") root.dataset.fontSize = size;
+          root.dataset.font = read("orc_font", ["inter", "geist"], "system");
+          root.dataset.chatFont = read("orc_chat_font", ["system", "inter", "geist", "serif"], "interface");
+          root.dataset.chatText = phone
+            ? read("orc_chat_text_phone", sizes, "default")
+            : read("orc_chat_text", sizes, "large");
+          root.dataset.chatWidth = read("orc_chat_width", ["comfortable", "full"], "wide");
+          root.dataset.darkBackground = read("orc_dark_background", ["black"], "charcoal");
         } catch {}
-        document.documentElement.classList.toggle("dark", theme === "dark");
-        document.documentElement.dataset.theme = theme;
-        document.documentElement.style.colorScheme = theme;
-        if (fontSize !== "default") document.documentElement.dataset.fontSize = fontSize;
+        root.classList.toggle("dark", theme === "dark");
+        root.dataset.theme = theme;
+        root.style.colorScheme = theme;
       })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
@@ -22,7 +40,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#1f1f1e" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="ORC" />

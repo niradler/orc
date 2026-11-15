@@ -56,6 +56,21 @@ describe("kit tokens track the dashboard", () => {
   });
 });
 
+describe("dark background", () => {
+  test("should mark the pad for the chosen dark background and keep black in the current kit", () => {
+    expect(withOrcKit("<p>x</p>", "dark", "black")).toContain(
+      'document.documentElement.dataset.darkBackground="black"',
+    );
+    expect(withOrcKit("<p>x</p>", "light", "black")).not.toContain("darkBackground");
+    expect(
+      tokens(
+        ORC_KIT_STYLESHEETS[ORC_KIT_VERSION] ?? "",
+        ':root\\.dark\\[data-dark-background="black"\\]',
+      ).get("--background"),
+    ).toBe("0 0 0");
+  });
+});
+
 describe("kit version pinning", () => {
   test("should use the current version when the pad pins nothing", () => {
     expect(requestedKitVersion("<!doctype html><title>x</title>")).toEqual({

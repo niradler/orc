@@ -52,7 +52,7 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
   return (
     <section
       data-testid="session-lineage"
-      className="mx-auto mb-2 flex w-full min-w-0 max-w-3xl flex-wrap items-center gap-x-2 text-xs text-on-surface-variant"
+      className="mx-auto mb-2 flex w-full min-w-0 max-w-(--chat-width) flex-wrap items-center gap-x-2 text-xs text-on-surface-variant"
     >
       <GitBranch aria-hidden="true" size={14} className="shrink-0" />
       {parent && (

@@ -32,7 +32,7 @@ for (const theme of ["dark", "light"] as const) {
       });
       expect(colours).toEqual(
         theme === "dark"
-          ? { background: "rgb(28, 28, 28)", text: "rgb(229, 229, 229)" }
+          ? { background: "rgb(48, 48, 46)", text: "rgb(236, 234, 228)" }
           : { background: "rgb(243, 243, 245)", text: "rgb(37, 38, 42)" },
       );
       const bounds = await list.boundingBox();

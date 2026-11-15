@@ -214,7 +214,7 @@ function openWindow(url: string): void {
     minWidth: 900,
     minHeight: 600,
     title: "orc",
-    backgroundColor: "#0a0d19",
+    backgroundColor: "#1f1f1e",
     show: false,
     ...(app.isPackaged ? {} : { icon: iconPath }),
     webPreferences: {

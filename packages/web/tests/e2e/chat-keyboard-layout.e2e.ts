@@ -95,7 +95,7 @@ test.describe("phone keyboard composer", () => {
               .getByTestId("chat-panel")
               .evaluate((element) => getComputedStyle(element).backgroundColor),
           )
-          .toBe(theme === "dark" ? "rgb(0, 0, 0)" : "rgb(250, 250, 250)");
+          .toBe(theme === "dark" ? "rgb(31, 31, 30)" : "rgb(250, 250, 250)");
         await sheet.screenshot({
           path: join(artifacts, `phone-${width}-${theme}-keyboard-closed.png`),
         });
