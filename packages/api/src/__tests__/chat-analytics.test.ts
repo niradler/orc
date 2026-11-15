@@ -106,6 +106,8 @@ test("should recognize a skill load from each agent's own tool call", () => {
     "orc-release",
   );
   expect(skillLoaded("Bash", '{"command":"git add skills/orc-release/SKILL.md"}')).toBeNull();
+  expect(skillLoaded("Bash", '{"command":"sed -i \'\' s/a/b/ skills/x/SKILL.md"}')).toBeNull();
+  expect(skillLoaded("Bash", '{"command":"cat > skills/x/SKILL.md <<EOF"}')).toBeNull();
   expect(skillLoaded("Edit", '{"file_path":"skills/orc-release/SKILL.md"}')).toBeNull();
   expect(skillLoaded("Skill", "not json")).toBeNull();
 });

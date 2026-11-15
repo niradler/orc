@@ -90,6 +90,7 @@ export function skillLoaded(name: string, input: string): string | null {
     return args.name === "skill_read" ? text((call as Record<string, unknown>).name) : null;
   }
   if (name === "Read") return SKILL_FILE.exec(text(args.file_path) ?? "")?.[1] ?? null;
+  if (/\bsed\s+(?:-[a-zA-Z]*\s+)*-i|>\s*\S*SKILL\.md/.test(input)) return null;
   return SKILL_FILE_READ.exec(input)?.[1] ?? null;
 }
 
