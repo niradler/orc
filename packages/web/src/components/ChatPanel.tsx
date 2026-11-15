@@ -977,14 +977,17 @@ export function ChatPanel({
             {!phone && !focusChat && Boolean(title || fullscreen) && (
               <span aria-hidden="true" className="h-3 w-px shrink-0 bg-outline-variant" />
             )}
-            {!phone && !focusChat && headerState && (
-              <StateBadge
-                state={headerState}
-                compact={!headerWide}
-                testId="chat-header-state"
-                className="shrink-0"
-              />
-            )}
+            {!phone &&
+              !focusChat &&
+              headerState &&
+              !(headerState === "working" && headerWide && !terminalCenter && !viewId) && (
+                <StateBadge
+                  state={headerState}
+                  compact={!headerWide}
+                  testId="chat-header-state"
+                  className="shrink-0"
+                />
+              )}
             {/* Session facts sit beside the title; actions stay at the right edge. */}
             {!phone && <div className="min-w-0 flex-1" aria-hidden="true" />}
             {!phone &&
@@ -992,7 +995,7 @@ export function ChatPanel({
                 <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
                   <ChatRefreshAction
                     stale={sessionChanged}
-                    busy={refreshing || reconnecting}
+                    busy={refreshing || reconnecting || headerState === "working"}
                     disabled={!thread || refreshing}
                     onRefresh={() => void reload()}
                   />
