@@ -405,7 +405,7 @@ for (const width of [1440, 390]) {
     );
     const analyticsButton = page.getByTestId("chat-analytics-button").filter({ visible: true });
     if (!(await analyticsButton.count()))
-      await page.getByTestId("chat-actions-menu").filter({ visible: true }).click();
+      await page.getByTestId("chat-options-button").filter({ visible: true }).click();
     await analyticsButton.first().click();
     const analytics = page.getByTestId("chat-analytics-dialog");
     await expect(analytics).toBeVisible();

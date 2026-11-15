@@ -79,7 +79,10 @@ export function ActionHelp({
   });
   return (
     <TooltipProvider delayDuration={200}>
-      <Tooltip open={open} onOpenChange={setOpen}>
+      <Tooltip
+        open={open}
+        onOpenChange={(next) => setOpen(next && !window.matchMedia("(pointer: coarse)").matches)}
+      >
         <TooltipTrigger asChild>{trigger}</TooltipTrigger>
         <Portal>
           <TooltipContent

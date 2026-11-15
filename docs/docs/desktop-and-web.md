@@ -111,19 +111,17 @@ strip stays on one line and never displaces Send or Stop. On a phone, and in
 narrow chat panels, it keeps the context figure and state while the composer
 already names the agent and model.
 
-On a phone (below 768px) the chat is a touch-first surface. The header keeps the
-session title, **Sessions**, **New** and the actions menu on one line, with the
-session strip on the left of a second line and the **Terminal**, **Inspector**,
-**Refresh** and **Compact** controls right-aligned beside it. That row collapses
-when the viewport gets very short, such as with the software keyboard on a small
-screen, and the same actions stay available in the
-**⋯** menu. **Sessions**, the
+On a phone (below 768px) the chat is a touch-first surface with one header row:
+**Sessions**, **New**, the session title with its state, project and host, then
+**Terminal**, **Inspector** and the **⋯** menu, which holds session settings,
+focus chat, **Refresh**, analytics and **Compact**. Icon help appears on a long
+press only, so closing a page or menu never leaves a tooltip behind. **Sessions**, the
 **Inspector** and the **Terminal** open as full pages over the conversation,
 which stays mounted underneath so streams and drafts survive. They follow your
 finger:
 
-- Swipe left from the right edge to open **Sessions**; swipe right to close it.
-- Swipe right from the left edge to open the **Inspector**; swipe left to close it.
+- Swipe right from the left edge to open **Sessions**; swipe left to close it.
+- Swipe left from the right edge to open the **Inspector**; swipe right to close it.
 - Pull down on the chat header (or tap **Terminal**) to open the terminal page;
   it shows the same name, state and folder header, and swipe up on that header,
   tap the close button or press Escape to close it.

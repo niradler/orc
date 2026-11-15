@@ -480,6 +480,7 @@ export function CommandPalette({
         size="sm"
         aria-label="Search and run commands"
         aria-keyshortcuts="Control+k Meta+k"
+        className="max-lg:border-transparent"
         onClick={() => changeOpen(true)}
       >
         <Search className="size-4" />

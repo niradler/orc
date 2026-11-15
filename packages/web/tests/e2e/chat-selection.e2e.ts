@@ -242,13 +242,13 @@ test.describe("touch", () => {
     await expect(page.getByTestId("chat-input")).toHaveValue(/^> SELECTION-SOURCE/);
   });
 
-  test("the focus control, queue disclosure and send stay touch-sized on a phone", async ({
+  test("the session actions, queue disclosure and send stay touch-sized on a phone", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openChatWithReply(page);
     const panel = page.getByTestId("chat-panel").filter({ visible: true });
-    for (const id of ["chat-focus-toggle", "chat-send-button", "chat-attach-button"]) {
+    for (const id of ["chat-options-button", "chat-send-button", "chat-attach-button"]) {
       const box = await panel.getByTestId(id).boundingBox();
       // Touch emulation scales the layout viewport, so a 44px target measures
       // 43.98; round before comparing against the minimum.

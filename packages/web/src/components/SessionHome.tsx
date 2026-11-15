@@ -182,7 +182,7 @@ export function SessionHomeToggles({
         label={home.inspector ? "Hide inspector" : "Show inspector"}
         description={
           gestures
-            ? "Git, changes, pull requests, files and the desktop browser. Or swipe right from the left edge"
+            ? "Git, changes, pull requests, files and the desktop browser. Or swipe left from the right edge"
             : undefined
         }
       >

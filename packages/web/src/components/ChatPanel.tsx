@@ -71,7 +71,7 @@ import { SessionView } from "@/components/SessionView";
 import { StateBadge } from "@/components/StateBadge";
 import { ScratchpadFormDialog } from "@/components/scratchpad/ScratchpadFormDialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -565,7 +565,7 @@ export function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
-  const focusToggle = (large: boolean) => (
+  const focusToggle = (
     <ActionHelp label={focusChat ? "Exit focus chat (Escape)" : "Focus chat"}>
       <button
         type="button"
@@ -573,19 +573,12 @@ export function ChatPanel({
         aria-label={focusChat ? "Exit focus chat" : "Focus chat"}
         aria-pressed={focusChat}
         onClick={() => setFocusChat((value) => !value)}
-        className={cn(
-          iconButton,
-          large && "min-h-11 min-w-11",
-          "pointer-coarse:min-h-11 pointer-coarse:min-w-11",
-        )}
+        className={cn(iconButton, "pointer-coarse:min-h-11 pointer-coarse:min-w-11")}
       >
         <Focus size={17} />
       </button>
     </ActionHelp>
   );
-  // One menu vocabulary for the phone and the narrow desktop header: Settings
-  // first, then continue-in-terminal, then Refresh/Compact as labeled rows so the
-  // actions stay reachable even when the phone's second header line is collapsed.
   const actionMenuRows = (includeSessionActions: boolean) => (
     <>
       <button
@@ -863,10 +856,8 @@ export function ChatPanel({
             data-chat-gesture-header={phone ? "true" : undefined}
             className={cn(
               "chat-header shrink-0",
-              // Desktop keeps every control on one line; the phone gives the title
-              // its own line and moves the panel/session controls to a second line.
               phone
-                ? "flex flex-col gap-0.5 px-2 py-1"
+                ? "flex items-center px-1 py-0.5"
                 : "flex min-h-12 items-center gap-1 px-3 py-1",
               // Focus chat narrows the chrome: tighter padding, no strip detail
               // and a one-line phone title.
@@ -877,133 +868,97 @@ export function ChatPanel({
             {!phone && terminalBack}
             {phone ? (
               <>
-                <div className="flex items-center gap-0.5">
-                  {terminalBack}
-                  <button
-                    type="button"
-                    data-testid="chat-sessions-button"
-                    aria-label="Sessions, session history"
-                    title="Session history"
-                    className={cn(iconButton, "min-h-11 min-w-11")}
-                    onClick={() => home.go({ listOpen: true })}
+                {terminalBack}
+                <button
+                  type="button"
+                  data-testid="chat-sessions-button"
+                  aria-label="Sessions, session history"
+                  title="Session history"
+                  className={cn(iconButton, "min-h-11 min-w-11")}
+                  onClick={() => home.go({ listOpen: true })}
+                >
+                  <History size={17} />
+                </button>
+                <button
+                  type="button"
+                  data-testid="chat-clear-button"
+                  aria-label="New session"
+                  title="New session"
+                  disabled={tabs.some(
+                    (tab) =>
+                      tab.key !== activeKey &&
+                      (tab.permissions.length ||
+                        tab.questions.length ||
+                        tab.attention ||
+                        tab.error),
+                  )}
+                  className={cn(iconButton, "min-h-11 min-w-11")}
+                  onClick={() => {
+                    newTab();
+                    home.go({ terminalId: null });
+                  }}
+                >
+                  <SquarePen size={17} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <h2
+                    className="truncate text-sm font-medium"
+                    title={`${projectName} / ${title ?? "New session"}`}
                   >
-                    <History size={17} />
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="chat-clear-button"
-                    aria-label="New session"
-                    title="New session"
-                    disabled={tabs.some(
-                      (tab) =>
-                        tab.key !== activeKey &&
-                        (tab.permissions.length ||
-                          tab.questions.length ||
-                          tab.attention ||
-                          tab.error),
-                    )}
-                    className={cn(iconButton, "min-h-11 min-w-11")}
-                    onClick={() => {
-                      newTab();
-                      home.go({ terminalId: null });
-                    }}
-                  >
-                    <SquarePen size={17} />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <h2
-                      className="truncate text-sm font-medium"
-                      title={`${projectName} / ${title ?? "New session"}`}
-                    >
-                      {title ?? "New session"}
-                    </h2>
-                    {!focusChat && (
-                      <p className="truncate text-xs text-muted-foreground">
+                    {title ?? "New session"}
+                  </h2>
+                  {!focusChat && (
+                    <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                      {headerState && (
+                        <StateBadge
+                          state={headerState}
+                          compact
+                          testId="chat-header-state"
+                          className="shrink-0"
+                        />
+                      )}
+                      <span className="truncate">
                         <span data-testid="session-project-breadcrumb">{projectName}</span>
                         {" · "}
                         {(viewId ? viewed?.host : thread?.host) ?? THIS_SERVER}
-                      </p>
-                    )}
-                  </div>
-                  {streaming && !viewId && (
-                    <LoaderCircle
-                      size={14}
-                      aria-hidden="true"
-                      className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
-                    />
-                  )}
-                  {!viewId && (
-                    <>
-                      {focusToggle(true)}
-                      <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label="Session actions"
-                            data-testid="chat-options-button"
-                            className={cn(
-                              iconButton,
-                              "min-h-11 min-w-11",
-                              sessionChanged && "text-warning",
-                            )}
-                          >
-                            <MoreHorizontal size={17} />
-                          </button>
-                        </PopoverTrigger>
-                        {/* Anchor below the whole two-line header so the menu never
-                            covers the Terminal/Inspector/Refresh/Compact controls. */}
-                        <PopoverAnchor virtualRef={header} />
-                        <PopoverContent
-                          data-testid="chat-actions-menu"
-                          aria-label="Session actions"
-                          align="end"
-                          className="flex w-56 flex-col gap-1 p-1"
-                        >
-                          {actionMenuRows(compactViewport)}
-                        </PopoverContent>
-                      </Popover>
-                    </>
+                      </span>
+                    </p>
                   )}
                 </div>
-                <div className="chat-header-controls flex items-center justify-end gap-0.5">
-                  {!focusChat &&
-                    (headerState ? (
-                      <StateBadge
-                        state={headerState}
-                        compact
-                        testId="chat-header-state"
-                        className="mr-auto shrink-0"
-                      />
-                    ) : (
-                      <span className="mr-auto" />
-                    ))}
-                  <SessionHomeToggles home={home} gestures />
-                  {!terminalCenter && !viewId && (
-                    <div
-                      data-testid="chat-header-actions"
-                      className="flex shrink-0 items-center gap-0.5"
+                {streaming && !viewId && (
+                  <LoaderCircle
+                    size={14}
+                    aria-hidden="true"
+                    className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
+                  />
+                )}
+                <SessionHomeToggles home={home} gestures />
+                {!viewId && (
+                  <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Session actions"
+                        data-testid="chat-options-button"
+                        className={cn(
+                          iconButton,
+                          "min-h-11 min-w-11",
+                          sessionChanged && "text-warning",
+                        )}
+                      >
+                        <MoreHorizontal size={17} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      data-testid="chat-actions-menu"
+                      aria-label="Session actions"
+                      align="end"
+                      className="flex w-56 flex-col gap-1 p-1"
                     >
-                      <ChatRefreshAction
-                        large
-                        stale={sessionChanged}
-                        busy={refreshing || reconnecting}
-                        disabled={!thread || refreshing}
-                        onRefresh={() => void reload()}
-                      />
-                      <ChatAnalyticsAction
-                        large
-                        disabled={!thread}
-                        onOpen={() => setAnalyticsOpen(true)}
-                      />
-                      <ChatCompactAction
-                        large
-                        agent={config.agent}
-                        disabled={compactDisabled}
-                        onCompact={() => void send("/compact")}
-                      />
-                    </div>
-                  )}
-                </div>
+                      {actionMenuRows(!terminalCenter)}
+                    </PopoverContent>
+                  </Popover>
+                )}
               </>
             ) : title || fullscreen ? (
               <h2
@@ -1090,7 +1045,7 @@ export function ChatPanel({
                 </Popover>
               ))}
             {fullscreen && !phone && <SessionHomeToggles home={home} />}
-            {!phone && focusToggle(false)}
+            {!phone && focusToggle}
             {onToggleFullscreen && (
               <ActionHelp label="Full screen chat">
                 <button
