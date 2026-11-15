@@ -33,7 +33,15 @@ const STATE_STYLE: Record<SessionMessage["state"], string> = {
   failed: "text-error",
 };
 
-export function SessionMessageInbox({ session, live }: { session: LiveSession; live: boolean }) {
+export function SessionMessageInbox({
+  session,
+  live,
+  compose = true,
+}: {
+  session: Pick<LiveSession, "id" | "agent" | "status">;
+  live: boolean;
+  compose?: boolean;
+}) {
   const { data: messages = [], error } = useSessionMessages(session.id, live);
   const send = useSendSessionMessage(session.id);
   const cancel = useCancelSessionMessage(session.id);
@@ -89,19 +97,21 @@ export function SessionMessageInbox({ session, live }: { session: LiveSession; l
           call, or when an ended session is resumed. It is not approval, and the agent cannot use it
           to change configuration.
         </HelpPopover>
-        <button
-          type="button"
-          data-testid="session-message-compose"
-          disabled={!supported}
-          onClick={() => {
-            setComposing(true);
-            setOpen(true);
-          }}
-          className="ml-auto inline-flex min-h-11 items-center gap-1.5 px-2 font-label text-xs font-medium text-primary hover:text-on-surface disabled:text-outline"
-        >
-          <Send className="h-3.5 w-3.5" aria-hidden />
-          Send message
-        </button>
+        {compose && (
+          <button
+            type="button"
+            data-testid="session-message-compose"
+            disabled={!supported}
+            onClick={() => {
+              setComposing(true);
+              setOpen(true);
+            }}
+            className="ml-auto inline-flex min-h-11 items-center gap-1.5 px-2 font-label text-xs font-medium text-primary hover:text-on-surface disabled:text-outline"
+          >
+            <Send className="h-3.5 w-3.5" aria-hidden />
+            Send message
+          </button>
+        )}
       </div>
 
       {!supported && (
