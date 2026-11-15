@@ -59,6 +59,37 @@ function finish(events: UsageEventInput[], fallbackModel: string | null): Parsed
   };
 }
 
+/**
+ * A whole-session total as one estimated request, for sources that only expose a
+ * lifetime count. Sessions keep reporting usage instead of staying unindexable.
+ */
+export function lifetimeUsage(
+  tokens: number,
+  ts: number,
+  model: string | null = null,
+): ParsedUsage {
+  const total = count(tokens);
+  if (total <= 0) return { events: [], tokens: 0, model };
+  return {
+    events: [
+      {
+        key: "session",
+        ts,
+        model,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        otherTokens: total,
+        estimated: true,
+      },
+    ],
+    tokens: total,
+    model,
+  };
+}
+
 function emptyEvent(key: string, ts: number): UsageEventInput {
   return {
     key,

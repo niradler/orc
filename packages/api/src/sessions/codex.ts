@@ -1,20 +1,55 @@
 import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 import { displayPath, pathLabel } from "@orc/core/display-path";
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { type HostFileInfo, type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { readCodexQuestionPending } from "./codex-attention.js";
 import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
 import { hasWriter, remoteWriters } from "./ownership.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
-import { parseCodexUsage } from "./usage-parsers.js";
+import { lifetimeUsage, parseCodexUsage } from "./usage-parsers.js";
 
 export const CODEX_STATE_DB = join(homedir(), ".codex", "state_5.sqlite");
 const logger = createLogger("api:codex-attention");
 
 /** Rollouts above this cap cannot be read whole; they keep an estimated lifetime total. */
 const CODEX_ROLLOUT_READ_LIMIT = 32 * 1024 * 1024;
+
+/** Codex rotates closed rollouts in place as `<rollout>.jsonl.zst`. */
+const ROTATED_ROLLOUT_SUFFIX = ".zst";
+
+type Rollout = {
+  /** Path that can be read now; rotated rollouts end in `.zst`. */
+  path: string;
+  info: HostFileInfo;
+  compressed: boolean;
+};
+
+/**
+ * Finds the rollout Codex still keeps. Rotation replaces the JSONL file, so a
+ * missing plain path is not a missing transcript.
+ */
+async function findRollout(runtime: HostRuntime, path: string): Promise<Rollout | null> {
+  const plain = await runtime.stat(path);
+  if (plain) return { path, info: plain, compressed: false };
+  const rotated = `${path}${ROTATED_ROLLOUT_SUFFIX}`;
+  const compressed = await runtime.stat(rotated);
+  return compressed ? { path: rotated, info: compressed, compressed: true } : null;
+}
+
+/** Decompresses a rotated rollout, or null when its text exceeds the read cap. */
+function decodeRollout(bytes: Uint8Array, compressed: boolean): string | null {
+  if (!compressed) return new TextDecoder().decode(bytes);
+  try {
+    return new TextDecoder().decode(
+      zstdDecompressSync(bytes, { maxOutputLength: CODEX_ROLLOUT_READ_LIMIT }),
+    );
+  } catch {
+    return null;
+  }
+}
 
 type ThreadRow = {
   id: string;
@@ -108,8 +143,8 @@ export function codexAdapter(
         return Promise.all(
           rows.map(async (r): Promise<SessionRecord> => {
             const updated = r.updated_at_ms ?? r.updated_at * 1000;
-            const rolloutStat = await runtime.stat(r.rollout_path);
-            const live = rolloutStat?.mtimeMs ?? null;
+            const rollout = await findRollout(runtime, r.rollout_path);
+            const live = rollout?.info.mtimeMs ?? null;
             const owned =
               runtime.host.kind === "local"
                 ? (options.writer ?? hasWriter)(join(lockDirectory, `${r.id}.lock`))
@@ -126,13 +161,12 @@ export function codexAdapter(
                   : "stopped";
             let pendingHuman: boolean | undefined;
             if (status === "stopped") pendingHuman = false;
-            else if (live !== null) {
+            else if (rollout)
               try {
-                pendingHuman = await readCodexQuestionPending(runtime, r.rollout_path);
+                pendingHuman = await readCodexQuestionPending(runtime, rollout.path);
               } catch (error) {
                 logger.warn("Cannot inspect Codex session for a pending question", { error });
               }
-            }
             const lastActivityAt = new Date(Math.max(updated, live ?? 0));
             const before = known.get(r.id);
             const record: SessionRecord = {
@@ -156,45 +190,33 @@ export function codexAdapter(
               transcriptPath: r.rollout_path,
               tokensUsed: r.tokens_used > 0 ? r.tokens_used : null,
             };
+            const expected = r.tokens_used > 0 ? r.tokens_used : null;
             if (
-              live !== null &&
+              rollout &&
               (!before ||
                 activityAdvanced(lastActivityAt, before.lastActivityMs) ||
                 before?.usageVersion !== USAGE_EVENT_VERSION)
             ) {
               record.usage = async () => {
-                const expected = r.tokens_used > 0 ? r.tokens_used : null;
-                // An oversized rollout cannot be read whole. Keep the lifetime total as a
-                // single estimated request instead of throwing (and re-throwing every sync),
-                // so the session still reports usage and is not left permanently unindexed.
-                if (rolloutStat && rolloutStat.size > CODEX_ROLLOUT_READ_LIMIT) {
-                  const total = expected ?? 0;
-                  return {
-                    tokens: total,
-                    model: null,
-                    events: total
-                      ? [
-                          {
-                            key: "session",
-                            ts: lastActivityAt.getTime(),
-                            model: null,
-                            inputTokens: 0,
-                            outputTokens: 0,
-                            cacheReadTokens: 0,
-                            cacheWriteTokens: 0,
-                            reasoningTokens: 0,
-                            otherTokens: total,
-                            estimated: true,
-                          },
-                        ]
-                      : [],
-                  };
+                // An oversized or unreadable rollout cannot be read whole. Keep the
+                // lifetime total as a single estimated request instead of throwing
+                // (and re-throwing every sync), so the session still reports usage
+                // and is not left permanently unindexed.
+                if (rollout.info.size > CODEX_ROLLOUT_READ_LIMIT) {
+                  return lifetimeUsage(expected ?? 0, lastActivityAt.getTime());
                 }
-                const content = new TextDecoder().decode(
-                  await runtime.readFile(r.rollout_path, CODEX_ROLLOUT_READ_LIMIT),
+                const content = decodeRollout(
+                  await runtime.readFile(rollout.path, CODEX_ROLLOUT_READ_LIMIT),
+                  rollout.compressed,
                 );
+                if (content === null) return lifetimeUsage(expected ?? 0, lastActivityAt.getTime());
                 return parseCodexUsage(content, expected, lastActivityAt.getTime());
               };
+              record.usageVersion = USAGE_EVENT_VERSION;
+            } else if (before?.usageVersion !== USAGE_EVENT_VERSION) {
+              // Codex no longer keeps this rollout at all; the lifetime total is the only
+              // usage left. Settle it once so Coverage stops reporting it as pending.
+              record.usage = async () => lifetimeUsage(expected ?? 0, lastActivityAt.getTime());
               record.usageVersion = USAGE_EVENT_VERSION;
             }
             return record;

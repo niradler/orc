@@ -7,7 +7,7 @@ import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { activityAdvanced, isAlive, oneLine, statusFromMtime } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
-import { type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
+import { lifetimeUsage, type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
 
 export const CLAUDE_REGISTRY_DIR = join(homedir(), ".claude", "sessions");
 export const CLAUDE_DESKTOP_DIR = join(
@@ -321,6 +321,20 @@ export function claudeAdapter(
           !records.has(id) &&
           before.session &&
           !transcripts.has(id) &&
+          before.usageVersion !== USAGE_EVENT_VERSION
+        ) {
+          // No transcript is left to index. Report the known session once so the settle
+          // loop below writes its lifetime total instead of leaving it pending forever.
+          const title =
+            before.session.title !== "New session" &&
+            !storedTitle(before.session.title, before.session.cwd)
+              ? "New session"
+              : before.session.title;
+          records.set(id, { ...before.session, title });
+        } else if (
+          !records.has(id) &&
+          before.session &&
+          !transcripts.has(id) &&
           before.session.title !== "New session" &&
           !storedTitle(before.session.title, before.session.cwd)
         ) {
@@ -388,6 +402,17 @@ export function claudeAdapter(
           };
           record.usageVersion = USAGE_EVENT_VERSION;
         }
+      }
+      // A registry or desktop entry without a transcript has nothing left to index.
+      // Settle it once so Coverage stops reporting it as pending; if a transcript
+      // appears later, the normal activity check indexes it then.
+      for (const record of records.values()) {
+        if (transcripts.has(record.externalId)) continue;
+        const before = known.get(record.externalId);
+        if (before?.usageVersion === USAGE_EVENT_VERSION) continue;
+        const lifetime = before?.tokensUsed ?? 0;
+        record.usage = async () => lifetimeUsage(lifetime, record.lastActivityAt.getTime());
+        record.usageVersion = USAGE_EVENT_VERSION;
       }
       const parents = new Map<string, { cwd: string | null; live: boolean }>();
       for (const [id, before] of known)
