@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { parseDraftCheckoutId } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import type { ExecHost } from "@orc/core/exec-host";
@@ -19,6 +20,7 @@ import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
 import { createRouter } from "../lib/router.js";
 import { observeCheckout } from "../realtime/sources.js";
+import { selectedTerminalHost } from "../terminals/host.js";
 import {
   launchDeps,
   requireTerminals,
@@ -33,6 +35,12 @@ const params = z.object({ id: z.string().min(1) });
 // a terminal, so an id that is not a terminal falls back to its chat session.
 // Terminals may be disabled entirely; that only rules out terminal ids.
 async function folder(id: string): Promise<{ host: ExecHost; cwd: string }> {
+  const draft = parseDraftCheckoutId(id);
+  if (draft) {
+    const host = selectedTerminalHost(loadConfig(), draft.host);
+    observeCheckout(host, draft.cwd);
+    return { host, cwd: draft.cwd };
+  }
   let host: ExecHost;
   let cwd: string | null;
   try {
