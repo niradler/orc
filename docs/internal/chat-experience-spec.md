@@ -139,6 +139,10 @@ six: Stack, Button, Task, TaskList, Job, SessionList, Scratchpad — all frozen)
 Delivered as one branch (`feat/chat-items-windowing`) in four stacked commits,
 tracked by #367.
 
+Queue visibility was already delivered by the pending-message disclosure above
+the composer (count, paused state, edit/move/force/remove, documented in
+`docs/docs/desktop-and-web.md`); wave 3 verified it and adds no second surface.
+
 ### W3a — `ChatItem` producer and windowing
 
 `buildChatItems(message)` in `packages/core/src/chat.ts` is the single producer:
