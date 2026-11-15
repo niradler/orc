@@ -206,11 +206,10 @@ for (const width of [1440, 390])
       await row(list, `chat:${HOME.chatA}`).locator("button").first().click();
       await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
 
-      // The phone chat page has no close button: Back walks out through its
+      // The chat page has no close button: Back walks out through its
       // history (thread switches push entries) to the page that opened it.
-      if (narrow) {
-        for (let i = 0; i < 6 && new URL(page.url()).pathname === "/chat"; i++) await page.goBack();
-      } else await page.getByTestId("chat-close-button").click();
+      await expect(page.getByTestId("chat-close-button")).toHaveCount(0);
+      for (let i = 0; i < 6 && new URL(page.url()).pathname === "/chat"; i++) await page.goBack();
       await expect(page).toHaveURL(/\/activity\?project=all$/);
       await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
     });
@@ -249,7 +248,7 @@ test.describe("session home on desktop", () => {
       new RegExp(`/chat\\?project=all&sessionTerminal=${HOME.terminal}`),
     );
     await expect(page.getByTestId("session-terminal")).toBeVisible();
-    await page.getByTestId("chat-close-button").click();
+    await page.goBack();
     await expect(page).toHaveURL(new RegExp(`/terminals/${HOME.terminal}\\?project=all$`));
   });
 });
@@ -370,7 +369,7 @@ test("Exit full screen returns to its source after Back and Forward", async ({ p
   await expect(page).toHaveURL(/\/activity\?project=all$/);
   await page.goForward();
   await expect(page.getByTestId("session-home")).toBeVisible();
-  await page.getByTestId("chat-close-button").filter({ visible: true }).click();
+  await page.goBack();
   await expect(page).toHaveURL(/\/activity\?project=all$/);
 });
 

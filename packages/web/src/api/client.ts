@@ -905,6 +905,7 @@ export const api = {
       granularity: "day" | "hour";
       agent?: string;
       model?: string;
+      project_id?: string;
     }) => req<UsageReport>("GET", "/usage/report", undefined, params),
     usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {

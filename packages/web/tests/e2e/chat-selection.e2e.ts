@@ -113,7 +113,7 @@ test("copies the selection as Markdown with its source", async ({ page }) => {
   const { reply, title } = await openChatWithReply(page);
   await page.evaluate(() => navigator.clipboard.writeText(""));
   await selectReply(reply);
-  await page.getByTestId("chat-selection-copy").click();
+  await page.getByTestId("chat-selection-copy-md").click();
 
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -126,6 +126,11 @@ test("copies the selection as Markdown with its source", async ({ page }) => {
   expect(copied).toContain(`Source: ${title} · Codex · `);
   // The source line carries a locale time after the agent label.
   expect((copied.split("Source: ")[1] ?? "").split(" · ").length).toBe(3);
+  await selectReply(reply);
+  await page.getByTestId("chat-selection-copy").click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toMatch(/^SELECTION-SOURCE\s*$/);
   // Escape still dismisses after copying, whether or not the toolbar stayed up.
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("chat-selection-toolbar")).toBeHidden();
@@ -227,6 +232,7 @@ test.describe("touch", () => {
       "chat-selection-task",
       "chat-selection-save",
       "chat-selection-copy",
+      "chat-selection-copy-md",
     ]) {
       const box = await toolbar.getByTestId(id).boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);

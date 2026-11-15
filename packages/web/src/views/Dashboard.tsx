@@ -1,10 +1,15 @@
 import "./ActivityPreview.css";
+import type { UsageReport } from "@orc/core/usage";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { Bar, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { api, type LiveSession, type Project } from "@/api/client";
 import { ErrorState } from "@/components/ErrorState";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { ResumeActions } from "@/components/ResumeActions";
 import { StateBadge } from "@/components/StateBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { type ChartPoint, chartPoints } from "@/components/UsageSettings";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -18,21 +23,48 @@ import {
 import { ViewHeader } from "@/components/ViewHeader";
 import { useJobs } from "@/hooks/useJobs";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
-import { useMemories } from "@/hooks/useMemories";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 import { useLiveSessions } from "@/hooks/useSessions";
 import { useTasks } from "@/hooks/useTasks";
 import { liveSessionState } from "@/lib/agent-state";
-import { formatWhen } from "@/lib/live-sessions";
-import { MEMORIES_PATH } from "@/lib/memory-routes";
+import { compactNumber } from "@/lib/chat-ui-chart";
+import { formatTokens, formatWhen } from "@/lib/live-sessions";
 
 interface DashboardProps {
   projectId: string;
 }
 
-function displayedCount(query: { isLoading: boolean; error: unknown }, value: number) {
-  return query.isLoading ? "…" : query.error ? "-" : value;
+interface SessionGroup {
+  key: string;
+  name: string;
+  detail: string | null;
+  projectId: string | null;
+  sessions: LiveSession[];
+}
+
+function groupSessions(sessions: LiveSession[], projects: Project[]): SessionGroup[] {
+  const groups = new Map<string, SessionGroup>();
+  for (const session of sessions) {
+    const project = projects.find((p) => p.id === session.project_id);
+    const key = project ? project.id : `cwd:${session.cwd ?? ""}`;
+    const group = groups.get(key) ?? {
+      key,
+      name: project?.name ?? session.cwd?.split(/[\\/]/).filter(Boolean).pop() ?? "No folder",
+      detail: project
+        ? (project.git_remote_url
+            ?.replace(/\.git$/, "")
+            .split(/[:/]/)
+            .slice(-2)
+            .join("/") ?? null)
+        : session.cwd,
+      projectId: project?.id ?? null,
+      sessions: [],
+    };
+    group.sessions.push(session);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }
 
 export default function Dashboard({ projectId: savedProjectId }: DashboardProps) {
@@ -49,19 +81,23 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
   const { data: tasks, isLoading: tasksLoading } = tasksQuery;
   const jobsQuery = useJobs(scopeParams);
   const { data: jobs } = jobsQuery;
-  // Memories always belong to a project, so the unassigned scope has none.
-  const memoriesQuery = useMemories(
-    { project_id: scopeParams?.project_id, limit: 1 },
-    { enabled: projectId !== "unassigned" },
-  );
-  const memoryCount = projectId === "unassigned" ? 0 : (memoriesQuery.data?.total ?? 0);
   const { data: projects } = useProjects();
-  const sessionsQuery = useLiveSessions(true, scopeParams?.project_id);
-  const sessions = (sessionsQuery.data ?? []).filter(
+  const sessionsQuery = useLiveSessions(false, scopeParams?.project_id);
+  const usageQuery = useQuery({
+    queryKey: ["usage-report", "30", "day", "", "", projectId],
+    queryFn: () =>
+      api.settings.usageReport({ days: "30", granularity: "day", ...(scopeParams ?? {}) }),
+    staleTime: 30_000,
+  });
+  const scopedSessions = (sessionsQuery.data ?? []).filter(
     (session) =>
       projectId === "all" ||
       (projectId === "unassigned" ? session.project_id === null : session.project_id === projectId),
   );
+  const sessionGroups = groupSessions(
+    scopedSessions.filter((session, index) => index < 20 || session.status !== "stopped"),
+    projects ?? [],
+  ).map((group) => ({ ...group, sessions: group.sessions.slice(0, 5) }));
   const scopedJobs =
     projectId === "unassigned"
       ? (jobs ?? []).filter((job) => job.project_id === null)
@@ -69,14 +105,6 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
 
   const filteredTasks =
     projectId === "unassigned" ? (tasks ?? []).filter((t) => t.project_id === null) : (tasks ?? []);
-
-  const byStatus = filteredTasks.reduce(
-    (acc, t) => {
-      acc[t.status] = (acc[t.status] ?? 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>,
-  );
 
   const recent = [...filteredTasks]
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
@@ -91,59 +119,6 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
         ? "Unassigned"
         : (projects?.find((p) => p.id === projectId)?.name ?? "");
 
-  const taskMetrics = [
-    {
-      label: "Doing",
-      value: displayedCount(tasksQuery, byStatus.doing ?? 0),
-      sub: "in progress",
-      path: "/tasks?view=table&status=doing",
-    },
-    {
-      label: "Review",
-      value: displayedCount(tasksQuery, byStatus.review ?? 0),
-      sub: "awaiting review",
-      path: "/tasks?view=table&status=review",
-    },
-    {
-      label: "Blocked",
-      value: displayedCount(tasksQuery, byStatus.blocked ?? 0),
-      sub: "needs attention",
-      path: "/tasks?view=table&status=blocked",
-    },
-    {
-      label: "Todo",
-      value: displayedCount(tasksQuery, (byStatus.todo ?? 0) + (byStatus.queued ?? 0)),
-      sub: "pending",
-      path: "/tasks?view=board",
-    },
-    {
-      label: "Done",
-      value: displayedCount(tasksQuery, byStatus.done ?? 0),
-      sub: "completed",
-      path: "/tasks?view=table&status=done",
-    },
-  ];
-  const resourceMetrics = [
-    {
-      label: "Active jobs",
-      value: displayedCount(jobsQuery, activeJobs.length),
-      sub: `of ${scopedJobs.length} total`,
-      path: "/jobs",
-    },
-    {
-      label: "Memories",
-      value: displayedCount(memoriesQuery, memoryCount),
-      sub: "in this scope",
-      path: MEMORIES_PATH,
-    },
-    {
-      label: "Projects",
-      value: (projects ?? []).filter((project) => project.status === "active").length,
-      sub: "active across workspace",
-      path: "/projects",
-    },
-  ];
-
   return (
     <div data-activity-preview data-testid="activity-preview" className="activity-preview">
       <ViewHeader
@@ -152,16 +127,11 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
         action={<Button onClick={() => navigate("/tasks")}>View tasks</Button>}
       />
 
-      {[tasksQuery, jobsQuery, memoriesQuery, sessionsQuery].some((query) => query.isLoading) && (
-        <p role="status" className="activity-muted mb-4">
-          Loading activity…
-        </p>
-      )}
       {[
+        { name: "Sessions", query: sessionsQuery },
+        { name: "Usage", query: usageQuery },
         { name: "Tasks", query: tasksQuery },
         { name: "Jobs", query: jobsQuery },
-        { name: "Memories", query: memoriesQuery },
-        { name: "Sessions", query: sessionsQuery },
       ]
         .filter(({ query }) => query.error)
         .map(({ name, query }) => (
@@ -172,41 +142,13 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
           />
         ))}
 
-      <section className="activity-metrics" aria-label="Task summary">
-        {taskMetrics.map((metric) => (
-          <button
-            key={metric.label}
-            type="button"
-            data-testid="stat-card"
-            data-stat-label={metric.label}
-            className="activity-metric"
-            onClick={() => navigate(metric.path)}
-          >
-            <span className="activity-metric-label">{metric.label}</span>
-            <span data-testid="stat-card-value" className="activity-metric-value">
-              {metric.value}
-            </span>
-            <span className="activity-metric-sub">{metric.sub}</span>
-          </button>
-        ))}
-      </section>
-      <section className="activity-resources" aria-label="Workspace summary">
-        {resourceMetrics.map((metric) => (
-          <button
-            key={metric.label}
-            type="button"
-            data-testid="stat-card"
-            data-stat-label={metric.label}
-            onClick={() => navigate(metric.path)}
-          >
-            <span>{metric.label}</span>
-            <span data-testid="stat-card-value" className="activity-resource-value">
-              {metric.value}
-            </span>
-            <span className="activity-resource-sub">{metric.sub}</span>
-          </button>
-        ))}
-      </section>
+      <ActivityCharts report={usageQuery.data} />
+
+      <ActivitySessions
+        groups={sessionGroups}
+        loading={sessionsQuery.isLoading}
+        onNavigate={navigate}
+      />
 
       <section className="activity-section">
         <div className="activity-section-heading">
@@ -326,77 +268,189 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
             </div>
           </section>
         )}
-        {sessions.length > 0 && (
-          <section className="activity-section">
-            <div className="activity-section-heading">
-              <h2>Agent sessions</h2>
-              <button
-                type="button"
-                className="activity-text-action"
-                onClick={() => navigate("/chat?sessionList=show")}
-              >
-                View all
-              </button>
-            </div>
-            <div className="activity-row-list">
-              {sessions.slice(0, 5).map((session) => (
-                <div key={session.id} className="activity-row">
-                  <button
-                    type="button"
-                    className="w-full text-left"
-                    data-testid="activity-session-link"
-                    data-session-id={session.id}
-                    onClick={() => navigate(`/chat?sessionLive=${encodeURIComponent(session.id)}`)}
-                  >
-                    <span className="activity-row-heading">
-                      <span>{session.name ?? session.agent}</span>
-                      <span className="activity-muted">{formatWhen(session.last_activity_at)}</span>
-                    </span>
-                    <span className="activity-row-description inline-flex items-center gap-2">
-                      <StateBadge state={liveSessionState(session)} />· {session.agent}
-                      {session.task ? ` · ${session.task.title}` : ""}
-                    </span>
-                  </button>
-                  <ResumeActions session={session} />
-                </div>
-              ))}
-            </div>
-          </section>
+      </div>
+    </div>
+  );
+}
+
+function ActivityCharts({ report }: { report: UsageReport | undefined }) {
+  const points = chartPoints(report);
+  const total = points.reduce((sum, point) => sum + point.total_tokens, 0);
+  return (
+    <figure className="activity-chart" data-testid="activity-chart">
+      <figcaption>
+        <span className="activity-chart-legend">
+          <span>
+            <i style={{ background: "var(--color-series-1)" }} />
+            Tokens
+          </span>
+          <span>
+            <i style={{ background: "var(--color-series-2)" }} />
+            Sessions
+          </span>
+        </span>
+        <span className="activity-muted">{compactNumber(total)} tokens in 30 days</span>
+      </figcaption>
+      <div className="activity-chart-plot">
+        {points.length === 0 ? (
+          <p className="activity-empty">No usage recorded</p>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={points} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <XAxis
+                dataKey="label"
+                tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
+                tickLine={false}
+                axisLine={{ stroke: "var(--color-border)" }}
+                minTickGap={24}
+              />
+              <YAxis yAxisId="tokens" hide />
+              <YAxis yAxisId="sessions" orientation="right" hide />
+              <Tooltip
+                cursor={{ fill: "var(--color-border)", opacity: 0.4 }}
+                content={({ active, payload }) => {
+                  const point = active
+                    ? (payload?.[0]?.payload as ChartPoint | undefined)
+                    : undefined;
+                  if (!point) return null;
+                  return (
+                    <div className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs tabular-nums shadow-sm">
+                      <p className="font-medium">{point.label}</p>
+                      <p>{compactNumber(point.total_tokens)} tokens</p>
+                      <p>{point.sessions} sessions</p>
+                    </div>
+                  );
+                }}
+              />
+              <Bar
+                yAxisId="tokens"
+                dataKey="total_tokens"
+                fill="var(--color-series-1)"
+                radius={[2, 2, 0, 0]}
+                isAnimationActive={false}
+              />
+              <Line
+                yAxisId="sessions"
+                dataKey="sessions"
+                type="monotone"
+                stroke="var(--color-series-2)"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
         )}
       </div>
+    </figure>
+  );
+}
 
-      {projectId === "all" && (projects ?? []).length > 0 && (
-        <section className="activity-section">
-          <div className="activity-section-heading">
-            <h2>Projects</h2>
-            <button
-              type="button"
-              className="activity-text-action"
-              onClick={() => navigate("/projects")}
-            >
-              View all
-            </button>
-          </div>
-          <div className="activity-projects">
-            {(projects ?? [])
-              .filter((project) => project.status === "active")
-              .slice(0, 6)
-              .map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  className="activity-row"
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                >
-                  <span className="activity-row-heading">{project.name}</span>
-                  {project.description && (
-                    <span className="activity-row-description">{project.description}</span>
-                  )}
-                </button>
-              ))}
-          </div>
-        </section>
+function ActivitySessions({
+  groups,
+  loading,
+  onNavigate,
+}: {
+  groups: SessionGroup[];
+  loading: boolean;
+  onNavigate: (path: string) => void;
+}) {
+  return (
+    <section className="activity-section" aria-label="Recent sessions">
+      <div className="activity-section-heading">
+        <h2>Sessions</h2>
+        <button
+          type="button"
+          className="activity-text-action"
+          onClick={() => onNavigate("/chat?sessionList=show")}
+        >
+          View all
+        </button>
+      </div>
+      {loading ? (
+        <div className="space-y-2">
+          {[0, 1, 2].map((key) => (
+            <Skeleton key={key} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : groups.length === 0 ? (
+        <p className="activity-empty">No sessions yet</p>
+      ) : (
+        <div className="activity-session-groups">
+          {groups.map((group) => {
+            const live = group.sessions.filter((session) => session.status !== "stopped").length;
+            const tokens = group.sessions.reduce(
+              (sum, session) => sum + (session.tokens_used ?? 0),
+              0,
+            );
+            return (
+              <div
+                key={group.key}
+                className="activity-session-group"
+                data-testid="activity-session-group"
+              >
+                <div className="activity-session-group-heading">
+                  <span className="min-w-0 truncate">
+                    {group.projectId ? (
+                      <button
+                        type="button"
+                        className="activity-group-name"
+                        onClick={() => onNavigate(`/projects/${group.projectId}`)}
+                      >
+                        {group.name}
+                      </button>
+                    ) : (
+                      <span className="activity-group-name">{group.name}</span>
+                    )}
+                    {group.detail && (
+                      <span className="activity-group-detail" title={group.detail}>
+                        {group.detail}
+                      </span>
+                    )}
+                  </span>
+                  <span className="activity-muted shrink-0 tabular-nums">
+                    {live > 0 ? `${live} live · ` : ""}
+                    {compactNumber(tokens)} tokens
+                  </span>
+                </div>
+                {group.sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className="activity-session"
+                    data-stopped={session.status === "stopped" || undefined}
+                  >
+                    <button
+                      type="button"
+                      className="activity-session-main"
+                      data-testid="activity-session-link"
+                      data-session-id={session.id}
+                      onClick={() =>
+                        onNavigate(`/chat?sessionLive=${encodeURIComponent(session.id)}`)
+                      }
+                    >
+                      <StateBadge state={liveSessionState(session)} compact />
+                      <span className="activity-session-title">
+                        {session.name ?? session.summary ?? session.agent}
+                      </span>
+                      <span className="activity-session-meta">
+                        <span>{session.agent}</span>
+                        <span className="tabular-nums">{formatTokens(session)}</span>
+                        <span>{formatWhen(session.last_activity_at)}</span>
+                        {session.task && (
+                          <span className="activity-session-task" title={session.task.title}>
+                            {session.task.title}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <ResumeActions session={session} />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
       )}
-    </div>
+    </section>
   );
 }

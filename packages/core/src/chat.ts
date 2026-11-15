@@ -380,6 +380,38 @@ export const ChatWorkspaceSchema = z
   );
 export type ChatWorkspace = z.infer<typeof ChatWorkspaceSchema>;
 
+const DRAFT_CHECKOUT_PREFIX = "draft:";
+
+function encodeDraftPayload(payload: { host: string | null; cwd: string }): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeDraftPayload(encoded: string): { host: string | null; cwd: string } | null {
+  try {
+    const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    if (!parsed || typeof parsed.cwd !== "string" || !parsed.cwd) return null;
+    return { host: typeof parsed.host === "string" ? parsed.host : null, cwd: parsed.cwd };
+  } catch {
+    return null;
+  }
+}
+
+export function draftCheckoutId(workspace: Pick<ChatWorkspace, "host" | "cwd">): string | null {
+  const cwd = workspace.cwd?.trim();
+  if (!cwd) return null;
+  return DRAFT_CHECKOUT_PREFIX + encodeDraftPayload({ host: workspace.host ?? null, cwd });
+}
+
+export function parseDraftCheckoutId(id: string): { host: string | null; cwd: string } | null {
+  if (!id.startsWith(DRAFT_CHECKOUT_PREFIX)) return null;
+  return decodeDraftPayload(id.slice(DRAFT_CHECKOUT_PREFIX.length));
+}
+
 /** How a fork continues the source conversation. */
 export const ChatForkModeSchema = z.enum(["native", "context"]);
 export type ChatForkMode = z.infer<typeof ChatForkModeSchema>;

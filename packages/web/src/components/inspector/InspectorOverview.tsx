@@ -137,24 +137,13 @@ function OverviewBody({ context, home }: { context: SessionContext; home: Sessio
             </Button>
           </>
         ) : (
-          <>
-            <p data-testid="session-inspector-git-empty" className="text-sm text-muted-foreground">
-              {terminals.isLoading
-                ? "Loading session details…"
-                : context.cwd
-                  ? "No terminal is running in this folder."
-                  : "No folder is available for this session."}
-            </p>
-            <button
-              type="button"
-              data-testid="session-inspector-open-terminal"
-              onClick={() => home.go({ drawer: true })}
-              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-control-border px-4 text-sm hover:bg-surface"
-            >
-              <SquareTerminal size={15} />
-              Open terminal
-            </button>
-          </>
+          <p data-testid="session-inspector-git-empty" className="text-sm text-muted-foreground">
+            {terminals.isLoading
+              ? "Loading session details…"
+              : context.cwd
+                ? "No terminal is running in this folder."
+                : "No folder is available for this session."}
+          </p>
         )}
         <dl className="mt-4 w-full space-y-3 text-left text-sm">
           <OverviewRow label="Host" testId="session-inspector-host">

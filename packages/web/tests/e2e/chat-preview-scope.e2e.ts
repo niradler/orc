@@ -113,16 +113,16 @@ test.describe("side chat scope", () => {
   test("opening the inspector on the chat page does not follow the side chat", async ({ page }) => {
     await mockSessionHome(page);
     await mockPreviewBridge(page);
-    // Enter the chat page from a real page so Close chat has somewhere to return to.
+    // Enter the chat page from a real page so Back has somewhere to return to.
     await page.goto("/activity?project=all");
     await page.goto(CHAT_PAGE);
     await openInspector(page);
     await page.getByTestId("session-inspector-tab-browser").click();
     await expect(page.getByTestId("desktop-preview-browser-surface")).toBeVisible();
 
-    // Close chat returns to the page it came from; the header reopens the side chat there,
+    // Back returns to the page it came from; the header reopens the side chat there,
     // which has no inspector and no Browser entry point.
-    await page.getByTestId("chat-close-button").click();
+    for (let i = 0; i < 6 && new URL(page.url()).pathname === "/chat"; i++) await page.goBack();
     await expect(page).toHaveURL(/\/activity\?project=all$/);
     await page.getByTestId("chat-open-button").click();
     await expect(page.getByTestId("chat-panel")).toBeVisible();
