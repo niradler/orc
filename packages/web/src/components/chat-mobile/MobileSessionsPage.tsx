@@ -34,6 +34,7 @@ import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import type { ChatHistoryEntry } from "@/lib/chat-history-list";
 import { entryAgent } from "@/lib/chat-history-list";
+import { pathName } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 function activityWhen(ms: number): string {
@@ -353,9 +354,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                   </ProjectGroup>
                 ))}
                 {unassignedFolders.map((folder) => {
-                  const name = folder.cwd
-                    ? (folder.cwd.split(/[\\/]/).filter(Boolean).pop() ?? folder.cwd)
-                    : "Unassigned";
+                  const name = folder.cwd ? pathName(folder.cwd) : "Unassigned";
                   return (
                     <ProjectGroup
                       key={folder.key}

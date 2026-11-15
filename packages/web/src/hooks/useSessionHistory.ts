@@ -17,6 +17,7 @@ import {
   chatHistoryList,
   entryAgent,
   entryCwd,
+  folderProjectName,
   historyEntryState,
 } from "@/lib/chat-history-list";
 import { resolveAgentId } from "@/lib/composer-chips";
@@ -529,10 +530,11 @@ export function useSessionHistory({
     setOpen(false);
   };
   const projectFromFolder = async (cwd: string) => {
+    if (createProject.isPending) return;
     try {
-      const name = (cwd.split(/[\\/]/).filter(Boolean).pop() ?? "project").replace(
-        /[^a-zA-Z0-9_-]+/g,
-        "-",
+      const name = folderProjectName(
+        cwd,
+        (projects ?? []).map((project) => project.name),
       );
       const project = await createProject.mutateAsync({ name, scope: cwd });
       setExpandedProject(project.id);

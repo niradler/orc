@@ -317,3 +317,17 @@ export function entryCwd(entry: ChatHistoryEntry): string | null {
           : null;
   return cwd?.trim() || null;
 }
+
+export function folderProjectName(cwd: string, taken: string[]): string {
+  const used = new Set(taken.map((name) => name.toLowerCase()));
+  const slug = (value: string) =>
+    value
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 90) || "project";
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  const base = slug(parts.at(-1) ?? "");
+  const candidates = [base, slug(parts.slice(-2).join("-"))];
+  for (let n = 2; n < 100; n++) candidates.push(`${base}-${n}`);
+  return candidates.find((name) => !used.has(name.toLowerCase())) ?? `${base}-${Date.now()}`;
+}

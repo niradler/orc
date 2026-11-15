@@ -45,6 +45,7 @@ import {
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, entryAgent } from "@/lib/chat-history-list";
+import { pathName } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 export function ChatSessionPicker({
@@ -365,9 +366,7 @@ export function ChatSessionPicker({
                   </ProjectGroup>
                 ))}
                 {unassignedFolders.map((folder) => {
-                  const name = folder.cwd
-                    ? (folder.cwd.split(/[\\/]/).filter(Boolean).pop() ?? folder.cwd)
-                    : "Unassigned";
+                  const name = folder.cwd ? pathName(folder.cwd) : "Unassigned";
                   return (
                     <ProjectGroup
                       key={folder.key}
