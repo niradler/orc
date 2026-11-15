@@ -72,7 +72,7 @@ export async function openChatActions(page: Page): Promise<void> {
 
 export async function openChatSettings(
   page: Page,
-  tab: "overview" | "customize" | "analytics" = "overview",
+  tab: "overview" | "customize" = "overview",
 ): Promise<void> {
   await openChatActions(page);
   await page.getByTestId("chat-config-button").click();

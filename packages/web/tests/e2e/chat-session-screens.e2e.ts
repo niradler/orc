@@ -25,7 +25,7 @@ for (const width of [1440, 390]) {
       title: "Round cart totals to cents",
       config: ChatSettingsSchema.parse({
         agent: "claude",
-        model: "claude-sonnet-4-5",
+        model: "claude-opus-4-1",
         permissionMode: "acceptEdits",
       }),
       cwd: "/home/demo/acme-shop",
@@ -64,6 +64,7 @@ for (const width of [1440, 390]) {
           content:
             "I found the rounding in `src/cart/total.ts`. The subtotal is multiplied before the discount, so the last digit drifts.\n\nI will round once at the money boundary and add a regression test.",
           timestamp: now - 28 * 60_000,
+          model: "claude-sonnet-4-5",
           turn: {
             startedAt: now - 30 * 60_000,
             finishedAt: now - 28 * 60_000,
@@ -93,6 +94,7 @@ for (const width of [1440, 390]) {
           content:
             "The cart suite passes with the rounding change. Two snapshots needed updating for the new cent formatting.",
           timestamp: now - 12 * 60_000,
+          model: "claude-opus-4-1",
           turn: {
             startedAt: now - 16 * 60_000,
             finishedAt: now - 12 * 60_000,
@@ -174,7 +176,13 @@ for (const width of [1440, 390]) {
           },
           output_tokens: 18_760,
           requests: 12,
-          compactions: [],
+          compactions: [
+            {
+              recorded_at: new Date(now - 20 * 60_000).toISOString(),
+              pre_tokens: 88_400,
+              post_tokens: 12_200,
+            },
+          ],
           timeline: null,
         },
       }),
@@ -281,16 +289,33 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-workspace-folder")).toBeVisible();
     await expect(page.getByTestId("chat-workspace-branch")).toBeVisible();
     await expect(page.getByTestId("chat-permission-chip")).toBeVisible();
+    // The header strip names the agent, model, cached context share and state.
+    await expect(page.getByTestId("chat-session-strip")).toBeVisible();
+    if (width === 1440) {
+      await expect(page.getByTestId("chat-session-strip-agent")).toContainText("Claude Code");
+      await expect(page.getByTestId("chat-session-strip-model")).toHaveText("claude-opus-4-1");
+      await expect(page.getByTestId("chat-session-strip-context")).toContainText("85% cached");
+    }
+    await expect(page.getByTestId("chat-session-strip-state")).toHaveAttribute(
+      "data-state",
+      "idle",
+    );
+    // The turn records its own model, usage on the newest turn, and both dividers.
+    await expect(page.getByTestId("chat-turn-model")).toHaveCount(2);
+    await expect(page.getByTestId("chat-turn-divider-model")).toContainText("claude-opus-4-1");
+    await expect(page.getByTestId("chat-turn-divider-compaction")).toContainText(
+      "88k → 12k tokens",
+    );
+    await expect(page.getByTestId("chat-turn-tokens")).toContainText("48k tokens");
+    await expect(page.getByTestId("chat-turn-cache")).toContainText("85% cached");
     await shot("chat-session-composer");
 
     await openChatSettings(page);
     await expect(page.getByTestId("chat-session-id-agent")).toContainText("6c1f0d8e");
+    await expect(page.getByTestId("chat-settings-tab-analytics")).toHaveCount(0);
     if (width === 1440) await shot("chat-session-settings-overview");
     await page.getByTestId("chat-settings-tab-customize").click();
     if (width === 390) await shot("chat-session-settings-customize");
-    await page.getByTestId("chat-settings-tab-analytics").click();
-    await expect(page.getByTestId("chat-analytics-turns")).toContainText("2");
-    if (width === 1440) await shot("chat-session-settings-analytics");
     await page.keyboard.press("Escape");
   });
 }
