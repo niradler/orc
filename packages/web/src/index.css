@@ -601,7 +601,8 @@ html[data-chat-font="serif"] {
       inset: 6px;
     }
 
-    html:root a[href] {
+    html:root a[href],
+    html:root input.form-control-single {
       min-height: 44px;
     }
 

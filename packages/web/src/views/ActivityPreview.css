@@ -321,3 +321,10 @@
     gap: 0;
   }
 }
+
+@media (max-width: 767px), (any-pointer: coarse) {
+  .activity-resources button,
+  .activity-task-title {
+    min-height: 44px;
+  }
+}

@@ -166,7 +166,7 @@ export function WorktreeManager({
         className={cn("min-h-11 sm:min-h-8 gap-1.5", className)}
       >
         <GitBranch size={14} />
-        Worktrees
+        <span className="pointer-coarse:sr-only">Worktrees</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent

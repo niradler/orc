@@ -7,8 +7,8 @@ import { type MobilePanelTarget, useMobilePanelGestures } from "@/hooks/useMobil
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 
 const OFFSCREEN: Record<MobilePanelTarget, string> = {
-  sessions: "translateX(100%)",
-  inspector: "translateX(-100%)",
+  sessions: "translateX(-100%)",
+  inspector: "translateX(100%)",
   terminal: "translateY(-100%)",
 };
 

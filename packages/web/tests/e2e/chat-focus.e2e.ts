@@ -105,7 +105,8 @@ test("focus chat keeps the phone composer reachable without overflow", async ({ 
   const panel = await openBlankChat(page, 390);
   // The phone title's project · host line is the detail focus removes.
   await expect(panel.getByTestId("session-project-breadcrumb")).toBeVisible();
-  await panel.getByTestId("chat-focus-toggle").click();
+  await panel.getByTestId("chat-options-button").click();
+  await page.getByTestId("chat-focus-menu").click();
   await expect(panel).toHaveAttribute("data-focus", "true");
   await expect(panel.getByTestId("session-project-breadcrumb")).toHaveCount(0);
   await expect(panel.getByTestId("chat-composer-box")).toBeVisible();
@@ -116,7 +117,7 @@ test("focus chat keeps the phone composer reachable without overflow", async ({ 
   expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
   // Every phone control keeps its 44px target.
-  for (const id of ["chat-focus-toggle", "chat-send-button", "chat-attach-button"]) {
+  for (const id of ["chat-options-button", "chat-send-button", "chat-attach-button"]) {
     const box = await panel.getByTestId(id).boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
@@ -133,7 +134,8 @@ test("focus chat keeps the phone composer reachable without overflow", async ({ 
   await expect(panel).toHaveAttribute("data-focus", "false");
 
   // Focus belongs to this chat: starting another chat leaves focus.
-  await panel.getByTestId("chat-focus-toggle").click();
+  await panel.getByTestId("chat-options-button").click();
+  await page.getByTestId("chat-focus-menu").click();
   await expect(panel).toHaveAttribute("data-focus", "true");
   await panel.getByTestId("chat-clear-button").click();
   await expect(panel).toHaveAttribute("data-focus", "false");

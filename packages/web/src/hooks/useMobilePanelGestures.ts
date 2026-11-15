@@ -74,8 +74,9 @@ interface ActiveGesture {
 }
 
 /**
- * Phone chat navigation: swipe left opens Sessions, swipe right opens the
- * Inspector, pulling down on the chat header opens the Terminal. Open panels
+ * Phone chat navigation: swipe right from the left edge opens Sessions, swipe
+ * left from the right edge opens the Inspector, pulling down on the chat header
+ * opens the Terminal. Open panels
  * close with the reverse swipe. Panels follow the finger; only the settled
  * target is published to the URL.
  */
@@ -111,9 +112,9 @@ export function useMobilePanelGestures({ enabled, openPanel, onOpen, onClose }: 
     const shift = mode === "open" ? offset : 100 - offset;
     const transform =
       target === "sessions"
-        ? `translateX(${shift}%)`
+        ? `translateX(${-shift}%)`
         : target === "inspector"
-          ? `translateX(${-shift}%)`
+          ? `translateX(${shift}%)`
           : `translateY(${-shift}%)`;
     panel.style.transform = shift === 0 ? "" : transform;
   };
@@ -209,7 +210,7 @@ export function useMobilePanelGestures({ enabled, openPanel, onOpen, onClose }: 
                 target: settled,
                 mode: "close",
                 axis: "horizontal",
-                direction: 1,
+                direction: -1,
                 startX: x,
                 startY: y,
                 startTime: event.timeStamp,
@@ -219,7 +220,7 @@ export function useMobilePanelGestures({ enabled, openPanel, onOpen, onClose }: 
                   target: settled,
                   mode: "close",
                   axis: "horizontal",
-                  direction: -1,
+                  direction: 1,
                   startX: x,
                   startY: y,
                   startTime: event.timeStamp,
@@ -247,7 +248,7 @@ export function useMobilePanelGestures({ enabled, openPanel, onOpen, onClose }: 
           };
         } else if (x >= rect.width - PANEL_OPEN_EDGE_WIDTH) {
           candidate = {
-            target: "sessions",
+            target: "inspector",
             mode: "open",
             axis: "horizontal",
             direction: -1,
@@ -257,7 +258,7 @@ export function useMobilePanelGestures({ enabled, openPanel, onOpen, onClose }: 
           };
         } else if (x <= PANEL_OPEN_EDGE_WIDTH) {
           candidate = {
-            target: "inspector",
+            target: "sessions",
             mode: "open",
             axis: "horizontal",
             direction: 1,

@@ -23,7 +23,7 @@ export function SessionHomeLink({
       data-testid={testId}
       aria-label={label}
       title={label}
-      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface lg:min-h-8 lg:min-w-8"
+      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface lg:pointer-fine:min-h-8 lg:pointer-fine:min-w-8"
     >
       <Maximize2 size={14} aria-hidden />
     </Link>

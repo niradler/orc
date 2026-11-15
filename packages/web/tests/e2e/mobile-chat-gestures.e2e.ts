@@ -144,13 +144,13 @@ async function mockInspectorData(page: Page) {
   );
 }
 
-test("swipe left opens the Sessions page, swipe right closes it, Back restores it", async ({
+test("swipe right from the left edge opens the Sessions page, swipe left closes it, Back restores it", async ({
   page,
 }) => {
   await mockSessionHome(page);
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
-  await swipe(page, { x: 382, y: 420 }, { x: 90, y: 420 });
+  await swipe(page, { x: 8, y: 420 }, { x: 320, y: 420 });
   const sessions = page.getByTestId("chat-sessions-dialog");
   await expect(sessions).toBeVisible();
   await expect(page).toHaveURL(/sessionList=show/);
@@ -161,7 +161,7 @@ test("swipe left opens the Sessions page, swipe right closes it, Back restores i
   // Let the slide-in settle so the close swipe starts on a resting page.
   await page.waitForTimeout(250);
   // The conversation stays mounted underneath.
-  await swipe(page, { x: 60, y: 420 }, { x: 340, y: 420 });
+  await swipe(page, { x: 330, y: 420 }, { x: 60, y: 420 });
   await expect(sessions).toBeHidden();
   await expect(page).not.toHaveURL(/sessionList=show/);
   await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
@@ -169,13 +169,13 @@ test("swipe left opens the Sessions page, swipe right closes it, Back restores i
   await expect(sessions).toBeVisible();
 });
 
-test("swipe right from the left edge opens the Inspector and swipe left closes it", async ({
+test("swipe left from the right edge opens the Inspector and swipe right closes it", async ({
   page,
 }) => {
   await mockSessionHome(page);
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
-  await swipe(page, { x: 8, y: 420 }, { x: 320, y: 420 });
+  await swipe(page, { x: 382, y: 420 }, { x: 90, y: 420 });
   const inspector = page.getByTestId("session-inspector");
   await expect(inspector).toBeVisible();
   await expect(page).toHaveURL(/inspector=overview/);
@@ -184,7 +184,7 @@ test("swipe right from the left edge opens the Inspector and swipe left closes i
   );
   await expect(inspector.getByTestId("session-inspector-pull-request")).toContainText("#418");
   await page.waitForTimeout(250);
-  await swipe(page, { x: 330, y: 420 }, { x: 60, y: 420 });
+  await swipe(page, { x: 60, y: 420 }, { x: 340, y: 420 });
   await expect(inspector).toBeHidden();
   await expect(page).not.toHaveURL(/inspector=/);
 });
