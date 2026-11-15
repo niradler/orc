@@ -86,7 +86,7 @@ for (const width of [1440, 390]) {
     const fullPath = "/local/projects/a-long-project-name/packages/application";
     await expect(chip).toBeVisible();
     await expect(chip).toHaveText("application");
-    await expect(chip).toHaveAttribute("title", `Local: ${fullPath}`);
+    await expect(chip).toHaveAttribute("title", `This ORC server: ${fullPath}`);
     await expect(chip).toHaveAccessibleName(new RegExp(fullPath));
     const chipBounds = await chip.boundingBox();
     expect(chipBounds && chipBounds.x >= 0 && chipBounds.x + chipBounds.width <= width).toBe(true);
@@ -131,7 +131,7 @@ test("an unset workspace shows and copies the resolved default folder", async ({
   await expect(page.getByTestId("chat-workspace-folder")).toHaveText("Nir");
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
-    "Local: C:\\Users\\Nir",
+    "This ORC server: C:\\Users\\Nir",
   );
   await page.getByTestId("chat-workspace-folder").click();
   await expect(page.getByTestId("chat-workspace-full-path")).toHaveText("C:\\Users\\Nir");
@@ -187,10 +187,10 @@ test("workspace chips stay inside the composer and preserve draft and host-scope
     await recent.filter({ hasText: "/remote/older" }).click();
     await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
     await expect(folder).toHaveAttribute("title", "lab: /remote/older");
-    await chooseWorkspaceHost(page, "Local");
+    await chooseWorkspaceHost(page, "This ORC server");
     await expect(folder).toHaveAttribute(
       "title",
-      "Local: /local/projects/a-long-project-name/packages/application",
+      "This ORC server: /local/projects/a-long-project-name/packages/application",
     );
     await expect(branch).toHaveAttribute("data-worktree", "true");
     await expect(page.getByTestId("chat-input")).toHaveValue(
@@ -206,7 +206,7 @@ test("workspace chips stay inside the composer and preserve draft and host-scope
   await page.keyboard.press("Escape");
   await expect(folder).toHaveAttribute(
     "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
+    "This ORC server: /local/projects/a-long-project-name/packages/application",
   );
   await openWorkspaceFolder(page);
   await expect(page.getByTestId("chat-workspace-cwd")).toHaveValue("/local/not-applied-yet");
@@ -298,7 +298,7 @@ test("native folder choice preserves cancellation and surfaces genuine picker er
   await expect(folder).toBeEnabled();
   await expect(folder).toHaveAttribute(
     "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
+    "This ORC server: /local/projects/a-long-project-name/packages/application",
   );
   await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
   result = "error";
@@ -309,11 +309,11 @@ test("native folder choice preserves cancellation and surfaces genuine picker er
   await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
   await expect(folder).toHaveAttribute(
     "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
+    "This ORC server: /local/projects/a-long-project-name/packages/application",
   );
   result = "chosen";
   await browseWorkspace(page);
-  await expect(folder).toHaveAttribute("title", "Local: /local/chosen");
+  await expect(folder).toHaveAttribute("title", "This ORC server: /local/chosen");
   await expect(page.getByTestId("chat-workspace-error")).toBeHidden();
   await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the draft");
 });
@@ -348,7 +348,7 @@ test("a delayed native folder result cannot change a newly selected conversation
   await expect(page.getByTestId("chat-workspace-folder")).toBeEnabled();
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
+    "This ORC server: /local/projects/a-long-project-name/packages/application",
   );
   await expect(page.getByTestId("chat-input")).toHaveValue("Second conversation draft");
 });
@@ -389,7 +389,7 @@ test("headless local browsing falls back safely and remote browsing stays on its
   await page.getByTestId("remote-folder-browser").getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
+    "This ORC server: /local/projects/a-long-project-name/packages/application",
   );
   await chooseWorkspaceHost(page, "lab");
   await browseWorkspace(page);

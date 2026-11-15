@@ -1,6 +1,5 @@
 import { PUSH_TOPICS, type PushDevice, type PushTopic } from "@orc/core/push";
 import { Bell, BellOff, Send, Trash2, Volume2 } from "lucide-react";
-import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useProjects } from "@/hooks/useProjects";
@@ -175,12 +174,6 @@ export function NotificationSettings() {
       <p className="mb-4 text-sm text-muted-foreground">
         Choose alerts and sounds. Push stays quiet while ORC is focused.
       </p>
-      <Link
-        to="/settings?settingsSection=storage"
-        className="mb-4 inline-block text-sm underline underline-offset-2"
-      >
-        Notification and audit cleanup settings
-      </Link>
       <Separator className="mb-4" />
       {support !== "supported" ? (
         <p data-testid="push-unsupported" className="text-sm text-muted-foreground">

@@ -1,6 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
 import { gotoView } from "./_helpers";
+
+/** The execution host editor sits in a collapsed Hosts row until changed. */
+async function openExecutionHost(page: Page): Promise<void> {
+  await expect(page.getByTestId("ssh-settings")).toBeHidden();
+  await page.getByTestId("ssh-host-change").click();
+  await expect(page.getByTestId("ssh-host-picker")).toBeVisible();
+}
 
 test("SSH uses automatic port by default and permits a persistent override", async ({ page }) => {
   let state = {
@@ -21,6 +28,7 @@ test("SSH uses automatic port by default and permits a persistent override", asy
   });
   await gotoView(page, "settings");
   await settingsSection(page, "execution");
+  await openExecutionHost(page);
   const port = page.getByTestId("ssh-remote-port");
   await expect(port).toHaveValue("");
   await expect(port).toHaveAttribute("placeholder", "Automatic");
@@ -30,10 +38,12 @@ test("SSH uses automatic port by default and permits a persistent override", asy
   await page.getByTestId("ssh-save").click();
   await expect.poll(() => state.remote_port).toBe(45871);
   await page.reload();
+  await openExecutionHost(page);
   await expect(port).toHaveValue("45871");
   await port.fill("");
   await page.getByTestId("ssh-save").click();
   await expect.poll(() => state.remote_port).toBeNull();
   await page.reload();
+  await openExecutionHost(page);
   await expect(port).toHaveValue("");
 });

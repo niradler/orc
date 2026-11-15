@@ -25,7 +25,7 @@ export function RetentionSettings() {
     },
   });
   return (
-    <section className="mt-6 space-y-3" aria-labelledby="retention-title">
+    <section className="space-y-3" aria-labelledby="retention-title">
       <h3 id="retention-title" className="text-sm font-medium">
         Automatic cleanup
       </h3>

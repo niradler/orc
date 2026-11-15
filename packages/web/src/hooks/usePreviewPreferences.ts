@@ -21,7 +21,9 @@ export function usePreviewPreferences() {
       })
       .catch(() => {
         if (active)
-          setError("Browser preferences could not be loaded. Reset them in Settings → Browser.");
+          setError(
+            "Browser preferences could not be loaded. Reset them in Settings → General → Browser.",
+          );
       });
     return () => {
       active = false;

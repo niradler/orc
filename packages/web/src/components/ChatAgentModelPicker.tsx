@@ -10,8 +10,10 @@ import { agentEffort, agentModelLabel } from "@/lib/composer-chips";
 
 export function ChatAgentModelPicker() {
   const chat = useChat();
-  const { config, setConfig, streaming, thread, ready } = chat;
+  const { config, setConfig, streaming, thread, ready, workspace } = chat;
   const { data: ssh } = useSsh();
+  // A new chat asks the server for models on the host it will actually run on.
+  const host = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
   const agents = Array.from(new Set([...useEnabledAgents(), config.agent]));
   const providerSettings = useProviders();
   const providers =
@@ -27,10 +29,16 @@ export function ChatAgentModelPicker() {
       config.agent,
       config.providerId,
       thread?.id,
-      thread ? thread.host : ssh?.host,
+      thread ? thread.host : host,
     ],
     queryFn: () =>
-      api.chat.models(config.agent, thread?.id, undefined, undefined, config.providerId),
+      api.chat.models(
+        config.agent,
+        thread?.id,
+        thread ? undefined : host,
+        undefined,
+        config.providerId,
+      ),
     enabled: ready,
     staleTime: 120_000,
     retry: false,
