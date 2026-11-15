@@ -253,7 +253,7 @@ function openWindow(url: string): void {
   });
   win.on("page-title-updated", (_event, title) => showNeedsYou(title));
   win.on("focus", closeNotifications);
-  win.webContents.setUserAgent(withAppVersion(win.webContents.getUserAgent(), app.getVersion()));
+  win.webContents.setUserAgent(withAppVersion(win.webContents.getUserAgent(), displayVersion));
   win.once("ready-to-show", () => win?.show());
   win.on("session-end", () => {
     quitting = true;
@@ -675,10 +675,8 @@ async function start(): Promise<void> {
 app.setName("orc");
 app.enableSandbox();
 if (process.platform === "win32") app.setAppUserModelId("dev.orc.desktop");
-app.setAboutPanelOptions({
-  applicationName: "orc",
-  applicationVersion: [app.getVersion(), process.env.ORC_BUILD_TAG].filter(Boolean).join("-"),
-});
+const displayVersion = [app.getVersion(), process.env.ORC_BUILD_TAG].filter(Boolean).join("-");
+app.setAboutPanelOptions({ applicationName: "orc", applicationVersion: displayVersion });
 
 if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   app.quit();
