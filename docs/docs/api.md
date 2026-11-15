@@ -68,12 +68,19 @@ base64 for a browser upload. Artifact and recording bodies are capped at 16 MB.
 See [MCP preview tools](./mcp.md#desktop-preview-tools) for browser commands and
 permission behavior.
 
-`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence from a
-stored native session transcript: `latest` (including optional recorded time and
-a conservative `may_be_cold_after` hint) and `totals`. Missing or unsupported
-evidence is `null`. No prompt text, credentials or transcript paths are returned.
+`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence recorded by
+the agent: `latest` (including optional recorded time and a conservative
+`may_be_cold_after` hint) and `totals`. Claude, Codex and Pi are read from the
+stored native transcript; OpenCode is read from its own session database on the
+execution host. Missing or unsupported evidence is `null`. No prompt text,
+credentials or transcript paths are returned.
 The route uses normal API authentication and the session's stored execution host;
 clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
+
+`GET /api/sessions/live/{id}/analytics` returns the same analytics as the chat
+route for the chat that owns this native session. It resolves the chat by the
+session's source link, then by its native session id, and answers `404` when no
+chat owns the session. The SDK exposes `orc.sessions.analytics(id)`.
 
 `GET /api/usage/report` returns request-level usage for the selected period:
 totals, per-agent and per-model distributions, UTC day or hour buckets, and
@@ -301,6 +308,8 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
+| `GET` | `/sessions/live/{id}/analytics` | Analytics for the chat that owns this session |
+| `GET` | `/sessions/live/{id}/cache` | Recorded prompt-cache usage |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
 | `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
 | `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |
@@ -311,10 +320,11 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` `POST` | `/chat/threads` | Chat threads |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
 | `POST` | `/chat/threads/{id}/fork` | Fork a chat at an assistant response |
+| `GET` | `/chat/threads/{id}/analytics` | Chat, tool, turn, context and compaction analytics |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
-| `GET` | `/terminals/{id}/git/status` | Git status of a terminal checkout |
+| `GET` | `/terminals/{id}/git/status` | Git status of a terminal or chat-session checkout |
 | `GET` | `/git/worktrees` | Checkouts of a repo |
 | `GET` | `/git/branches` | Local, remote and default branches of a repo |
 
@@ -338,6 +348,11 @@ dropped or failing the transcript.
 
 A turn opens with a `thread` event carrying the conversation metadata and only
 that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
+`GET /chat/threads/{id}/analytics` counts messages, turns, tool calls and failures
+from the stored chat transcript for every coding agent. When the agent's native
+session records token usage, it adds context growth, cache reuse and compaction
+markers. Agents without readable usage return `context.supported: false` with a
+reason instead of failing the request.
 `POST /chat/stream` accepts an optional `clientMessageId` (UUID) and stores it as
 the user message id, rejecting a repeat with `409`. If a first send's response is
 lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the

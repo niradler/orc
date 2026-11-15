@@ -61,15 +61,19 @@ beforeAll(() => {
   app = setupTestApp();
 });
 
-afterAll(() => {
+afterAll(async () => {
   teardownTestApp();
   // Windows keeps a just-closed fs.watch handle on the directory for a moment.
-  rmSync(root, {
-    recursive: true,
-    force: true,
-    maxRetries: 10,
-    retryDelay: 100,
-  });
+  // Bun ignores rmSync's retry options, so retry the busy ones ourselves.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 50) throw error;
+      await Bun.sleep(100);
+    }
+  }
 });
 
 describe("claude adapter: live registry", () => {

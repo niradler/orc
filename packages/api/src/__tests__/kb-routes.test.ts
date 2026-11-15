@@ -329,7 +329,7 @@ describe("/api/kb", () => {
     expect((await call("PATCH", "/kb/settings", { parser: "nonexistent" })).status).toBe(400);
 
     // Guard: never touch the developer's real config.
-    expect(globalConfigPath().startsWith(home)).toBe(true);
+    expect(globalConfigPath().startsWith(tmpdir())).toBe(true);
     const patched = await call("PATCH", "/kb/settings", { parser_timeout_secs: 90 });
     expect(patched.status).toBe(200);
     expect((await patched.json()).parser_timeout_secs).toBe(90);

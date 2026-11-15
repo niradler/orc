@@ -61,6 +61,15 @@ export class ChatStore {
       .all(runtimeId, backend, host ?? "")
       .flatMap((row) => this.get(row.id) ?? []);
   }
+  bySource(sourceId: string): ChatThread | null {
+    const row = this.db
+      .query<{ id: string }, [string]>(
+        `SELECT id FROM chat_threads WHERE json_valid(data)
+          AND json_extract(data, '$.sourceId')=? ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(sourceId);
+    return row ? this.get(row.id) : null;
+  }
   children(sessionIds: string[]): ChatThread[] {
     if (!sessionIds.length) return [];
     return this.db
@@ -90,6 +99,17 @@ export class ChatStore {
       )
       .get(messageId);
     return row ? this.get(row.id) : null;
+  }
+  /** Records a source session without rewriting the whole row, so a read path
+   *  cannot clobber a turn that saved concurrently. */
+  setSourceId(id: string, sourceId: string): void {
+    this.db
+      .query(
+        `UPDATE chat_threads SET data = json_set(data, '$.sourceId', ?)
+          WHERE id = ? AND json_valid(data)
+            AND coalesce(json_extract(data, '$.sourceId'), '') = ''`,
+      )
+      .run(sourceId, id);
   }
   save(thread: ChatThread): void {
     this.db

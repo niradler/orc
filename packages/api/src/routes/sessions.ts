@@ -2,10 +2,12 @@ import type { Database } from "bun:sqlite";
 import { realpath } from "node:fs/promises";
 import { posix, relative } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
+import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { SessionCacheUsageSchema } from "@orc/core/usage";
-import { getDb } from "@orc/db/client";
+import { ChatStore } from "@orc/db/chat";
+import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { previewSession } from "../desktop-preview/session.js";
@@ -14,6 +16,7 @@ import { gitStatus } from "../git/panel.js";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
+import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
@@ -504,10 +507,60 @@ app.openapi(
     });
     if (!row) throw new NotFoundError("Session", id);
     c.header("Cache-Control", "no-store");
-    if (!row.transcript_path || (row.backend !== "claude" && row.backend !== "codex"))
+    if (!row.transcript_path || !["claude", "codex", "pi", "opencode"].includes(row.backend))
       return c.json(emptySessionCacheUsage(), 200);
     const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
-    return c.json(await loadSessionCacheUsage(runtime, row.backend, row.transcript_path), 200);
+    return c.json(
+      await loadSessionCacheUsage(
+        runtime,
+        row.backend,
+        row.transcript_path,
+        row.runtime_session_id ?? null,
+      ),
+      200,
+    );
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/sessions/live/{id}/analytics",
+    tags: ["Sessions"],
+    summary: "Read chat, turn, tool, context and cache analytics for a native session",
+    request: { params: z.object({ id: z.string().min(1).max(200) }) },
+    responses: {
+      200: {
+        description: "Analytics for the chat that owns this native session",
+        content: { "application/json": { schema: ChatAnalyticsSchema } },
+      },
+      404: { description: "Session, or its chat, not found" },
+    },
+  }),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    const row = await getDb().query.gateway_sessions.findFirst({
+      where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
+    });
+    if (!row) throw new NotFoundError("Session", id);
+    const threads = new ChatStore(getSqlite());
+    const thread =
+      threads.bySource(id) ??
+      (row.runtime_session_id
+        ? (threads.byRuntime(row.backend, row.execution_host ?? null, row.runtime_session_id)[0] ??
+          null)
+        : null);
+    if (!thread) throw new NotFoundError("Chat for session", id);
+    c.header("Cache-Control", "no-store");
+    return c.json(
+      await chatAnalyticsFor(thread, {
+        backend: row.backend,
+        model: row.model ?? null,
+        transcript_path: row.transcript_path ?? null,
+        runtime_session_id: row.runtime_session_id ?? null,
+      }),
+      200,
+    );
   },
 );
 

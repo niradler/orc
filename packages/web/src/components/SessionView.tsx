@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type LiveSession, type TranscriptPage } from "@/api/client";
 import { AgentMessageText } from "@/components/AgentMessageText";
+import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { Markdown } from "@/components/Markdown";
 import { RenameSession } from "@/components/RenameSession";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
@@ -196,6 +197,26 @@ function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
  * the reader for providers whose store chat cannot continue and for reading without
  * importing the conversation.
  */
+/** Analytics stay collapsed: the transcript is the page, and the charts are
+ *  worth loading only when someone asks for them. */
+function SessionAnalyticsDetails({ sessionId, live }: { sessionId: string; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      data-testid="session-analytics"
+      className="mt-2 rounded-md border border-border"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer px-3 py-2 text-xs font-medium">Analytics</summary>
+      {open && (
+        <div className="max-h-[60vh] overflow-y-auto border-t border-border p-3">
+          <ChatSessionAnalytics sessionId={sessionId} streaming={live} hideOnError />
+        </div>
+      )}
+    </details>
+  );
+}
+
 export function SessionView({
   sessionId,
   initialQuery = "",
@@ -403,6 +424,13 @@ export function SessionView({
             )}
           </div>
           {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
+          {sessionId && (
+            <SessionAnalyticsDetails
+              key={`analytics-${sessionId}`}
+              sessionId={sessionId}
+              live={live}
+            />
+          )}
           {session && <SessionLineage sessionId={session.id} />}
           {session && <SessionMessageInbox key={session.id} session={session} live={live} />}
           <div className="mt-3 flex flex-wrap items-center gap-2">
