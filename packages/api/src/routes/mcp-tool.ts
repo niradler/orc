@@ -7,6 +7,7 @@ import { clientOrigin } from "../lib/client-origin.js";
 import { createRouter } from "../lib/router.js";
 import { scratchpadContentUrls } from "../scratchpad-content.js";
 import { skillDownloads } from "../skill-downloads.js";
+import { reassignSessions } from "./projects.js";
 
 const app = createRouter();
 
@@ -52,6 +53,7 @@ app.openapi(mcpToolRoute, async (c) => {
 
   const result = await executeTool(name as Parameters<typeof executeTool>[0], parsed.data, {
     publicApiBaseUrl: clientOrigin(c.req.raw),
+    projectsChanged: reassignSessions,
     skillDownload: (skill, ref, projectId) =>
       skillDownloads.mint(skill, ref, projectId, clientOrigin(c.req.raw)),
     padContentUrl: (id, mode, author, ifRevision) =>

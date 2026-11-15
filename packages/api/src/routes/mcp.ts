@@ -11,6 +11,7 @@ import { clientOrigin } from "../lib/client-origin.js";
 import { bearerAuth } from "../middleware/auth.js";
 import { scratchpadContentUrls } from "../scratchpad-content.js";
 import { skillDownloads } from "../skill-downloads.js";
+import { reassignSessions } from "./projects.js";
 
 const logger = createLogger("api:mcp");
 
@@ -48,6 +49,7 @@ app.all("/mcp", async (c) => {
   const agentSessionId = z.string().min(1).max(200).optional().parse(c.req.query("session"));
   const server = createMcpServer({
     publicApiBaseUrl: origin,
+    projectsChanged: reassignSessions,
     mode,
     ...(agentSessionId ? { agentSessionId } : {}),
     ...(preview.sessionId
