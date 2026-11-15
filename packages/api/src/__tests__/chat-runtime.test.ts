@@ -787,12 +787,19 @@ describe("native chat runtime", () => {
       (await (await request(`/chat/threads/${thread.id}/session`)).json()) as {
         changed: boolean;
         running: boolean;
+        live: { id: string; agent: string; status: string } | null;
         queued: unknown[];
       };
     expect((await request(`/chat/threads/${thread.id}/session`, undefined, false)).status).toBe(
       401,
     );
-    expect(await state()).toEqual({ changed: false, running: false, queued: [] });
+    expect(await state()).toMatchObject({ changed: false, running: false, queued: [] });
+    // The chat sync names the native session it is attached to.
+    expect((await state()).live).toMatchObject({
+      id: "source-changed",
+      agent: "codex",
+      status: "stopped",
+    });
     const synced = await turn({
       threadId: thread.id,
       messages: [{ role: "user", content: "a turn from this chat" }],

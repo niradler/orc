@@ -333,7 +333,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
               <button
                 type="button"
                 className="activity-text-action"
-                onClick={() => navigate("/sessions")}
+                onClick={() => navigate("/chat?sessionList=show")}
               >
                 View all
               </button>
@@ -346,7 +346,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
                     className="w-full text-left"
                     data-testid="activity-session-link"
                     data-session-id={session.id}
-                    onClick={() => navigate(`/sessions?session=${encodeURIComponent(session.id)}`)}
+                    onClick={() => navigate(`/chat?sessionView=${encodeURIComponent(session.id)}`)}
                   >
                     <span className="activity-row-heading">
                       <span>{session.name ?? session.agent}</span>

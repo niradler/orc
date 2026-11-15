@@ -1,3 +1,4 @@
+import { nativeChatAgent } from "@orc/core/chat";
 import { PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -80,9 +81,16 @@ export function useSessionLiveLink(home: SessionHomeNav, enabled: boolean) {
       opening.current = null;
       return;
     }
-    api.chat
-      .resume(liveId)
-      .then((thread) => openThread(thread))
+    api.sessions
+      .liveOne(liveId)
+      .then(async (session) => {
+        // A provider whose CLI store chat cannot continue opens the read-only session view.
+        if (!nativeChatAgent(session.agent)) {
+          go({ viewId: session.id, terminalId: null, liveId: null }, { replace: true });
+          return;
+        }
+        openThread(await api.chat.resume(liveId));
+      })
       .catch((cause) =>
         setError(cause instanceof Error ? cause.message : "Session could not be opened."),
       )

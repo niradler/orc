@@ -127,6 +127,16 @@ export interface ChatTab {
   attention: boolean;
 }
 
+/**
+ * A fresh read returns only the recent window. Keep older pages the user already
+ * loaded, matching them through the oldest message the window and tab share.
+ */
+function mergeLoadedHistory(loaded: ChatMessage[], fresh: ChatMessage[]): ChatMessage[] {
+  if (!fresh.length) return loaded;
+  const first = loaded.findIndex((message) => message.id === fresh[0].id);
+  return first > 0 ? [...loaded.slice(0, first), ...fresh] : fresh;
+}
+
 function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
   return {
     key: crypto.randomUUID(),
@@ -461,7 +471,7 @@ function useChatController() {
           ? {}
           : {
               thread: fresh,
-              messages: fresh.messages,
+              messages: mergeLoadedHistory(tab.messages, fresh.messages),
               historyBefore: fresh.historyBefore ?? null,
             },
       );
@@ -506,11 +516,12 @@ function useChatController() {
                 threadId &&
                 (retried || tab?.messages[tab.messages.length - 1]?.role === "user")
               ) {
+                const loaded = find(key)?.messages ?? [];
                 const fresh = await api.chat.get(threadId);
                 if (current())
                   update(key, () => ({
                     thread: fresh,
-                    messages: fresh.messages,
+                    messages: mergeLoadedHistory(loaded, fresh.messages),
                     historyBefore: fresh.historyBefore ?? null,
                     streamText: "",
                     activity: [],

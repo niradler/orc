@@ -156,13 +156,14 @@ for (const width of [1440, 390])
 
     test("opens from Activity Sessions and leaving returns to that page", async ({ page }) => {
       await mockSessionHome(page);
-      await page.goto("/sessions?project=all");
-      const liveRow = page
-        .getByTestId("live-session-row")
-        .filter({ hasText: "Upgrade the payments SDK" });
-      await liveRow.getByTestId("live-session-open-home").click();
-      await expect(page.getByText("Resumed.").first()).toBeVisible();
-      await expect(page).not.toHaveURL(/sessionLive=/);
+      await page.goto("/activity?project=all");
+      await page
+        .locator(`[data-testid="activity-session-link"][data-session-id="${HOME.codexLive}"]`)
+        .click();
+      await expect(page).toHaveURL(/sessionView=/);
+      await expect(page.getByTestId("session-view")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("session-view")).toBeHidden();
 
       const list = await sessionList(page, narrow);
       await row(list, `chat:${HOME.chatA}`).locator("button").first().click();
@@ -173,8 +174,8 @@ for (const width of [1440, 390])
       if (narrow) {
         for (let i = 0; i < 6 && new URL(page.url()).pathname === "/chat"; i++) await page.goBack();
       } else await page.getByTestId("chat-close-button").click();
-      await expect(page).toHaveURL(/\/sessions\?project=all$/);
-      await expect(page.getByTestId("live-sessions")).toBeVisible();
+      await expect(page).toHaveURL(/\/activity\?project=all$/);
+      await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
     });
   });
 
@@ -233,16 +234,18 @@ for (const width of [1440, 390])
       await page.route(/\/api\/projects(\?.*)?$/, (route) =>
         route.fulfill({ json: { projects: [{ id: "home-project", name: "Shop" }], total: 1 } }),
       );
-      await page.goto("/sessions?project=all");
-      await expect(page.getByTestId("live-session-list")).toBeVisible();
-      await expect(page.getByTestId("live-session-row")).toHaveCount(2);
+      await page.goto("/chat?project=all&sessionList=show");
+      await showSessionSection(page, "recents");
+      await expect(page.getByTestId("chat-session-list")).toBeVisible();
+      await expect(
+        page.locator('[data-testid="chat-history-row"][data-history-id="native:home-codex"]'),
+      ).toHaveCount(1);
       await page.screenshot({
         path: test.info().outputPath(`activity-sessions-${theme}-${width}.png`),
       });
       await page
-        .getByTestId("live-session-row")
-        .filter({ hasText: "Upgrade the payments SDK" })
-        .getByTestId("live-session-open-home")
+        .locator('[data-testid="chat-history-row"][data-history-id="native:home-codex"]')
+        .getByTestId("chat-resume-live")
         .click();
       await expect(page.getByText("Resumed.").first()).toBeVisible();
       const list = await sessionList(page, width < 1280);
@@ -313,21 +316,24 @@ test("phone session list is full screen and URL, reload, Back and Escape preserv
 test("Exit full screen returns to its source after Back and Forward", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockSessionHome(page);
-  await page.goto("/sessions?project=all");
+  await page.goto("/activity?project=all");
   await page
-    .getByTestId("live-session-row")
-    .filter({ hasText: "Upgrade the payments SDK" })
-    .getByTestId("live-session-open-home")
+    .locator(`[data-testid="activity-session-link"][data-session-id="${HOME.codexLive}"]`)
     .click();
+  const view = page.getByTestId("session-view");
+  await expect(view).toBeVisible();
+  await view.getByTestId("open-chat-resume").click();
   await expect(page.getByText("Resumed.").first()).toBeVisible();
+  await expect(view).toBeHidden();
   await page.getByTestId("session-inspector-toggle").click();
-  await page.goBack();
-  await page.goBack();
-  await expect(page).toHaveURL(/\/sessions\?project=all$/);
+  // Resume can replace its own history entry, so walk back to the source instead
+  // of assuming a fixed number of entries.
+  for (let i = 0; i < 6 && !/\/activity\?project=all$/.test(page.url()); i++) await page.goBack();
+  await expect(page).toHaveURL(/\/activity\?project=all$/);
   await page.goForward();
   await expect(page.getByTestId("session-home")).toBeVisible();
   await page.getByTestId("chat-close-button").filter({ visible: true }).click();
-  await expect(page).toHaveURL(/\/sessions\?project=all$/);
+  await expect(page).toHaveURL(/\/activity\?project=all$/);
 });
 
 test("leaving the phone chat page with Back keeps history as it was before opening it", async ({
@@ -376,6 +382,7 @@ test("breadcrumb uses recorded project ownership and unlinked terminal state sta
     }),
   );
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await showSessionSection(page, "recents");
   await expect(page.getByTestId("session-project-breadcrumb").filter({ visible: true })).toHaveText(
     "Shop",
   );

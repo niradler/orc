@@ -12,6 +12,7 @@ test("reads the full-width session view state from the URL and ignores unknown v
   expect(readSessionHome(new URLSearchParams("chat=full"))).toEqual({
     terminalId: null,
     liveId: null,
+    viewId: null,
     listHidden: false,
     listOpen: false,
     inspector: null,
@@ -20,12 +21,13 @@ test("reads the full-width session view state from the URL and ignores unknown v
   expect(
     readSessionHome(
       new URLSearchParams(
-        "sessionTerminal=t1&sessionLive=l1&sessionList=hide&inspector=diff&drawer=terminal",
+        "sessionTerminal=t1&sessionLive=l1&sessionView=v1&sessionList=hide&inspector=diff&drawer=terminal",
       ),
     ),
   ).toEqual({
     terminalId: "t1",
     liveId: "l1",
+    viewId: "v1",
     listHidden: true,
     listOpen: false,
     inspector: "diff",
@@ -49,7 +51,7 @@ test("a patch changes only the keys it names and keeps unrelated params", () => 
 
 test("clearing removes every session view param and nothing else", () => {
   const params = new URLSearchParams(
-    "project=p&chat=full&sessionTerminal=t&sessionLive=l&sessionList=hide&inspector=diff&drawer=terminal&q=x",
+    "project=p&chat=full&sessionTerminal=t&sessionLive=l&sessionView=v&sessionList=hide&inspector=diff&drawer=terminal&q=x",
   );
   expect(clearSessionHome(params).toString()).toBe("project=p&chat=full&q=x");
 });

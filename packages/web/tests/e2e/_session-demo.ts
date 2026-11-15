@@ -141,6 +141,14 @@ export async function mockDemo(
   await page.route("**/api/sessions/live?**", (r) =>
     r.fulfill({ json: { sessions, total: sessions.length, has_more: false } }),
   );
+  await page.route(/\/api\/sessions\/live\/([^/?]+)$/, (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").pop();
+    const session = sessions.find((item) => item.id === id);
+    return session ? route.fulfill({ json: session }) : route.fallback();
+  });
+  await page.route("**/api/sessions/live/*/transcript?**", (r) =>
+    r.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
+  );
   await page.route("**/api/sessions/archive?**", (r) =>
     r.fulfill({ json: { sessions: [], has_more: false } }),
   );

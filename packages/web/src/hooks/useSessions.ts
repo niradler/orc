@@ -44,20 +44,15 @@ export function useLiveSessions(active: boolean, projectId?: string, includeHidd
   });
 }
 
-export function useSyncSessions() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.sessions.sync(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
-  });
-}
-
 export function useLinkSessionTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, taskId }: { id: string; taskId: string | null }) =>
       api.sessions.linkTask(id, taskId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["chat-resume-sessions"] });
+    },
   });
 }
 
@@ -72,7 +67,10 @@ export function useUpdateLiveSession() {
       display_title?: string | null;
       hidden?: boolean;
     }) => api.sessions.update(id, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["chat-resume-sessions"] });
+    },
   });
 }
 
@@ -94,6 +92,7 @@ export function useSessionSearch(
       }),
     enabled: q.trim().length >= 2,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 

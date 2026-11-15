@@ -106,6 +106,16 @@ export const ChatMessageActions = memo(function ChatMessageActions({
           {formatDuration(duration)}
         </time>
       )}
+      {ended && finishedAt && (
+        <time
+          data-testid="chat-message-ended"
+          dateTime={new Date(finishedAt).toISOString()}
+          title={new Date(finishedAt).toLocaleString()}
+          className="tabular-nums text-outline"
+        >
+          {ended}
+        </time>
+      )}
       <div data-testid="chat-message-actions" className={cn("flex items-center gap-0.5", reveal)}>
         {content.trim() && (
           <button

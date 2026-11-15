@@ -4,6 +4,7 @@ import {
   chatCompletion,
   liveSession,
   mockChatThread,
+  mockResumedChat,
   NOTIFY_CHAT_THREAD,
   notificationScenario,
   poll,
@@ -68,9 +69,11 @@ test("Needs you: no toast or chime for the session already in view", async ({ pa
     sessions: [liveSession(0, "running")],
     requests: [],
   });
+  await mockResumedChat(page, "notify-live-0");
   const loaded = sourcesLoaded(page);
-  await page.goto("/sessions?session=notify-live-0");
+  await page.goto("/chat?sessionLive=notify-live-0");
   await loaded;
+  await expect(page.getByText("Resumed.").first()).toBeVisible();
   await page.keyboard.press("Shift");
 
   scenario.state.sessions = [liveSession(0, "running", true)];
@@ -142,7 +145,7 @@ test("Done: sessions finishing together collapse into one toast", async ({ page 
   await toast.getByTestId("agent-toast-open").click();
   await expect(page.getByTestId("notification-menu")).toBeVisible();
   await page.getByTestId("notification-menu").getByTestId("notification-open").first().click();
-  await expect(page).toHaveURL(/\/sessions\?.*session=notify-live-1/);
+  await expect(page).toHaveURL(/\/chat\?.*sessionLive=notify-live-1/);
 });
 
 test("Done: the open chat clears its completion without a toast", async ({ page }) => {
@@ -176,6 +179,7 @@ test("phone notifications stay closed during chat and open over the chat page", 
     sessions: [liveSession(0, "running"), liveSession(1, "running")],
     requests: [],
   });
+  await mockResumedChat(page, "notify-live-1");
   const loaded = sourcesLoaded(page);
   await page.goto("/chat?project=all");
   await loaded;
@@ -210,8 +214,10 @@ test("phone notifications stay closed during chat and open over the chat page", 
     animations: "disabled",
   });
   await menu.getByTestId("notification-open").filter({ visible: true }).click();
-  await expect(page).toHaveURL(/\/sessions\?session=notify-live-1&project=all$/);
-  await expect(chat).toHaveCount(0);
+  // The notification stays on the chat page and reveals the resumed conversation.
+  await expect(page).toHaveURL(/\/chat\?.*project=all/);
+  await expect(page.getByText("Resumed.").first()).toBeVisible();
+  await expect(chat).toBeVisible();
 });
 
 test("review uses the current approval version after source changes", async ({ page }) => {
@@ -266,7 +272,7 @@ test("an unfocused desktop still receives updates for its selected session", asy
     Object.defineProperty(document, "hasFocus", { value: () => false });
   });
   const loaded = sourcesLoaded(page);
-  await page.goto("/sessions?session=notify-live-0");
+  await page.goto("/chat?sessionLive=notify-live-0");
   await loaded;
   scenario.state.sessions = [liveSession(0, "running", true)];
   scenario.state.requests = [approvalRequest(0)];
@@ -306,6 +312,7 @@ test("opening a Done update from full screen phone chat reveals the finished ses
     sessions: [liveSession(1, "running")],
     requests: [],
   });
+  await mockResumedChat(page, "notify-live-1");
   const loaded = sourcesLoaded(page);
   await page.goto("/tasks?project=all&chat=full");
   await loaded;
@@ -314,6 +321,8 @@ test("opening a Done update from full screen phone chat reveals the finished ses
   await page.clock.runFor(1500);
   await page.getByTestId("notification-bell").click();
   await notificationInbox(page).getByTestId("notification-open").click();
-  await expect(page).toHaveURL(/\/sessions\?session=notify-live-1&project=all$/);
-  await expect(page.getByTestId("session-home")).toHaveCount(0);
+  // The finished session opens as a conversation on the chat page.
+  await expect(page).toHaveURL(/\/chat\?.*project=all/);
+  await expect(page.getByText("Resumed.").first()).toBeVisible();
+  await expect(page.getByTestId("session-home")).toBeVisible();
 });

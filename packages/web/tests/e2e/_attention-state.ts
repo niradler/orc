@@ -34,7 +34,7 @@ export async function attentionState(page: Page, initial = attentionRequests()) 
         source_id: item.id,
         title: item.name,
         body: "Reply in the original session.",
-        path: `/sessions?session=${item.id}`,
+        path: `/chat?sessionLive=${item.id}`,
         requires_action: true,
         level: "needs-you" as const,
       })),

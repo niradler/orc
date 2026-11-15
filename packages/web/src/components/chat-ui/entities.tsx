@@ -242,7 +242,7 @@ export function SessionList({
                   <li key={session.id} className="flex min-w-0 flex-col gap-1 py-2">
                     <div className="flex min-w-0 items-center justify-between gap-3">
                       <UiLink
-                        href={`/sessions?session=${encodeURIComponent(session.id)}`}
+                        href={`/chat?sessionView=${encodeURIComponent(session.id)}`}
                         className="min-w-0 text-sm no-underline hover:underline"
                       >
                         <span className={expanded ? "break-words" : "truncate"}>

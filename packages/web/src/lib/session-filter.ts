@@ -34,3 +34,25 @@ export function filterCounts(states: Iterable<AgentState>): Record<SessionFilter
 export function parseFilter(value: string | null | undefined): SessionFilter {
   return SESSION_FILTERS.find((filter) => filter === value) ?? "all";
 }
+
+export const SESSION_FILTER_KEY = "orc_chat_history_filter";
+const SESSION_FILTER_EVENT = "orc:session-filter";
+
+/**
+ * Store the filter and tell an already-mounted session list to apply it: the
+ * command palette can run from the chat page, where navigating to /chat again
+ * does not remount the list.
+ */
+export function applySessionFilter(filter: SessionFilter) {
+  try {
+    localStorage.setItem(SESSION_FILTER_KEY, filter);
+  } catch {}
+  window.dispatchEvent(new CustomEvent<SessionFilter>(SESSION_FILTER_EVENT, { detail: filter }));
+}
+
+export function onSessionFilterChange(handler: (filter: SessionFilter) => void) {
+  const listener = (event: Event) =>
+    handler(parseFilter((event as CustomEvent<string | undefined>).detail));
+  window.addEventListener(SESSION_FILTER_EVENT, listener);
+  return () => window.removeEventListener(SESSION_FILTER_EVENT, listener);
+}

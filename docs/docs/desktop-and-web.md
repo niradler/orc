@@ -23,7 +23,7 @@ Pages are grouped in the sidebar:
 
 | Group     | Pages                                        |
 | --------- | -------------------------------------------- |
-| Activity  | Activity, Sessions, Jobs, Webhooks, Audit    |
+| Activity  | Activity, Jobs, Webhooks, Audit               |
 | Chat      | Chat                                         |
 | Tasks     | Tasks                                        |
 | Knowledge | Knowledge base, Memories                     |
@@ -40,21 +40,25 @@ theme command in the command palette:
 
 ## Chat page
 
-**Chat** in the sidebar, under Activity, opens the chat page at `/chat`. It is a
+**Chat** in the sidebar opens the chat page at `/chat`. It is a
 regular page: the workspace header keeps your navigation and notifications, and
 **Chat** shows as the active page. The sidebar collapses to its icon rail while a
 conversation is open, including the side chat, to give the conversation the width;
 leaving chat restores the width you had, and expanding it during chat keeps your
 choice.
-The chat panel's full-screen button, and the full-screen button on **Sessions**
-(on the page or on a row) or in the **Terminals** session list, open the same
-page.
+The chat panel's full-screen button in the **Terminals** session list opens the
+same page.
 
 Below 1280px wide, the chat has no side panel: starting a chat from any page
 opens the chat page instead.
 
-- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
-  - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
+- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from every coding agent, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Every list has the same search, state filters, agent filter, sort order, hidden-session toggle and stable ordering.
+  - **Search** matches titles and summaries; the sparkle toggle also searches inside transcripts (ripgrep) and archived conversations (embeddings when configured). The result snippet shows the matching passage.
+  - **Agent** filters by coding agent, merging Cursor IDE and Cursor CLI into one choice. **Sort** offers newest/oldest last activity or agent groups (newest first inside each agent); the choice is remembered.
+  - Providers whose native store chat cannot resume (Cursor) open the read-only session view instead of resuming.
+  - A session can be hidden from the list and shown again with the **hidden** toggle; both survive reloads.
+  - Collapse the list to a rail of icons with its state marks; expand it again from the rail.
+  - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); the project of the session you are viewing opens and marks that session, expand any other project to see its sessions, and use a project's **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
 - **Inspector**: the panel button in the header opens one panel with **Overview**, **Changes** and **Files** on desktop and phone. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its state, CI state and GitHub link; a checkout on a detached HEAD says so instead of reporting missing GitHub authentication. When a terminal is running in that folder, **Changes** combines the working-tree review (staging and commit) with the branch's PR review (diff, comments and an **Open on GitHub** link) behind Local / PR modes, and **Files** browses and edits the checkout. In the Electron desktop app the same panel adds a desktop-only **Browser** tab. On a phone the inspector is a full page.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation.
@@ -103,7 +107,7 @@ any other page.
 ![Session home with its inspector and demo data](/screens/session-home-desktop.png)
 
 <img src="/screens/session-home-phone.png" alt="Phone conversation with the Terminal and Inspector header buttons" width="260">
-<img src="/screens/session-list-phone.png" alt="Full-screen Sessions page on a phone" width="260">
+<img src="/screens/session-list-phone.png" alt="Full-screen session list on a phone" width="260">
 
 The phone inspector: branch and pull-request summary, the combined Changes tab
 (working-tree and PR review) and the file editor.
@@ -148,15 +152,15 @@ Open a task to see its body, status, comments, linked sessions and Git links, an
 
 ![Task flow](/screens/task-flow.png)
 
-## Sessions
+## Session history and viewer
 
-![Sessions](/screens/sessions.png)
+![Session list and conversation](/screens/session-recents-desktop.png)
 
-Live and archived sessions from Claude Code, Codex, Cursor, Gemini CLI and OpenCode on this machine or the selected host. Working sessions update live; waiting sessions stay available to resume in a terminal or in chat. Search across archived conversations. See [Live sessions](./live-sessions.md).
+Live and ended sessions from Claude Code, Codex, Cursor, Gemini CLI, OpenCode and Pi appear in the chat page's session list on this machine or the selected host. Working sessions update live; a session that finished after you last opened it shows **Done** until you open it, and this browser remembers what you have seen. Ended sessions stay listed by default. See [Live sessions](./live-sessions.md).
 
-Filter the list by state with **All**, **Needs you**, **Working** and **Done**. Each filter shows its count, and failed sessions count as Needs you. A session that finished after you last opened it shows **Done** until you open it. This browser remembers what you have seen. The chat session history has the same filters.
+Filter with **All**, **Needs you**, **Working** and **Done**; each filter shows its count, and failed sessions count as Needs you. While your pointer is over the list, or a row has keyboard focus, rows stay where they are and an **N updated** pill applies the new order when you choose it.
 
-While your pointer is over the list, or a row has keyboard focus, rows stay where they are. States still update in place. When the order would change, an **N updated** button appears. Click it, or move away from the list, to apply the new order.
+The **view** button on a session row opens the read-only viewer: transcript search with match navigation, tokens and start/end timing, task link, rename, hide, scratchpads, cache usage, lineage and the queued-message inbox. Resumable sessions also offer **Continue in chat** and a copyable CLI resume command. Cursor sessions stay readable here because chat cannot resume Cursor's separate CLI store. Archived sessions open the same viewer for their stored transcript and offer resume into chat from a pushed commit.
 
 ## Terminals
 
@@ -366,7 +370,7 @@ database: saved secrets cannot be decrypted without that machine key.
 To see a result, open the job and select **View result** under **Recent runs**.
 This shows the saved output and errors. **Session summary** opens the audit record.
 For an agent run with a native session ID, **Open agent session** opens the actual
-conversation in Sessions, where the existing transcript/resume controls apply.
+conversation in the chat page's session viewer, where the transcript/resume controls apply.
 ORC discovers that conversation on the run's own host without changing the globally
 selected host. If the provider has not retained a conversation yet, the saved result
 remains available and the interface explains that the native conversation is missing.
@@ -426,8 +430,8 @@ page, so a report carries the real message and stack.
 
 Lifecycle and knowledge events with filters and expandable details. Recorded
 session summaries remain in collapsed history. Audit retention defaults to 90
-days and is configurable in Settings → Storage. Use Sessions to read full
-conversations or resume an agent.
+days and is configurable in Settings → Storage. Use the chat page's session list and
+viewer to read full conversations or resume an agent.
 
 ## Skills
 

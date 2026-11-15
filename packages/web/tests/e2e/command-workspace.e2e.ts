@@ -179,7 +179,8 @@ test("should share recent folders and last selection between chat and terminal, 
   expect(thread.cwd.startsWith(join(cwd, ".orc", "worktrees"))).toBe(true);
   expect(thread.host).toBeNull();
   await page.reload();
-  await expect(page.getByTestId("chat-workspace")).toHaveCount(0);
+  // A saved conversation shows its own workspace instead of the draft picker.
+  await expect(page.getByTestId("chat-workspace")).toHaveAttribute("data-session", "true");
 });
 
 test("should fold a turn's tools while retaining their input, results and separators", async ({

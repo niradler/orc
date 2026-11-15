@@ -1,6 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { gotoView } from "./_helpers";
+import { API_SECRET, gotoView } from "./_helpers";
 
 const source = [
   "Visible question before context.",
@@ -18,6 +18,11 @@ for (const width of [1440, 390]) {
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(
+      (secret) =>
+        localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+      API_SECRET,
+    );
     const session = {
       id: "context-fixture",
       session_id: "native-context",
@@ -53,6 +58,9 @@ for (const width of [1440, 390]) {
     await page.route("**/api/sessions/live?**", (route) =>
       route.fulfill({ json: { sessions: [session] } }),
     );
+    await page.route("**/api/sessions/live/context-fixture", (route) =>
+      route.fulfill({ json: session }),
+    );
     await page.route("**/api/sessions/live/context-fixture/transcript?**", (route) =>
       route.fulfill({
         json: {
@@ -62,9 +70,8 @@ for (const width of [1440, 390]) {
       }),
     );
     await page.route("**/api/chat/threads", (route) => route.fulfill({ json: thread }));
-    await gotoView(page, "sessions");
-    await page.goto("/sessions?project=all&session=context-fixture");
-    const detail = page.getByTestId("live-session-detail");
+    await page.goto("/chat?project=all&sessionView=context-fixture");
+    const detail = page.getByTestId("session-view");
     const context = detail.locator('[data-testid="agent-context"][data-tag="recommended_plugins"]');
     await expect(context).toBeVisible();
     await expect(context.getByTestId("agent-context-content")).toBeHidden();
@@ -115,9 +122,11 @@ for (const width of [1440, 390]) {
       route.fulfill({ json: transcript }),
     );
     await gotoView(page, "sessions");
-    await page.getByTestId("archive-disclosure").locator("summary").click();
-    await page.getByTestId("archive-session-row").click();
-    const archive = page.getByTestId("archive-detail");
+    const row = page.locator(
+      '[data-testid="chat-history-row"][data-history-id="archive:archive-context"]',
+    );
+    await row.getByTestId("chat-session-view").click();
+    const archive = page.getByTestId("session-archive-view");
     const archivedContext = archive.locator(
       '[data-testid="agent-context"][data-tag="recommended_plugins"]',
     );

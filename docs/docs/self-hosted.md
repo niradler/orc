@@ -222,7 +222,7 @@ Do not point stdio `orc mcp` at a remote server. Stdio MCP reads and writes the 
 
 ### Hooks and live sessions
 
-Session lifecycle hooks and the live-session registry (`~/.orc/live-sessions/`) are local to the machine. Sessions you run on the laptop appear in the laptop ORC's Sessions view only. To get their history onto the server, sync or hand them off (below).
+Session lifecycle hooks and the live-session registry (`~/.orc/live-sessions/`) are local to the machine. Sessions you run on the laptop appear in the laptop ORC's chat session list only. To get their history onto the server, sync or hand them off (below).
 
 ### Dashboard and desktop app
 
@@ -264,7 +264,7 @@ Steps, from the laptop session, with `orc-cloud` connected over MCP:
      --upload-url '<upload_url>'
    ```
 
-4. On the server dashboard, **Sessions** shows the session as **Ready**. Choose **Resume → Terminal**.
+4. On the server dashboard, the chat session list shows the session as **Ready to resume**. Click it to continue in chat, or copy its resume command from the session viewer.
 
 The worktree is `<repo>/.orc/worktrees/<handoff-id>` on branch `orc/handoff/<handoff-id>`. Only Git-tracked state and the native transcript move. Ignored files, dependencies, environment variables and running processes do not. The agent can run the whole sequence when asked to hand off; the `orc-platform` skill documents it. Details: [Session handoff](./session-handoff.md).
 
@@ -284,7 +284,7 @@ To make laptop history searchable on the server without running anything, sync i
 
    Alternatively pass `--url https://orc.example.com` with `ORC_API_SECRET` in the environment. HTTPS is required except on loopback.
 
-Synced sessions appear under **Sessions → Archived sessions** and in `session_search`. Re-running uploads only changed sessions; diverged histories are kept as conflicts and never overwrite. An archived session can later be resumed from its **Continue on ORC** section with **Resume → Terminal**, which runs the same handoff checks (`POST /api/sessions/archive/{id}/resume`).
+Synced sessions appear as archived rows in the chat session list and in `session_search`. Re-running uploads only changed sessions; diverged histories are kept as conflicts and never overwrite. An archived session can later be opened in the read-only viewer or resumed into chat from its prepare form, which runs the same handoff checks (`POST /api/sessions/archive/{id}/resume`).
 
 ### Run tasks on the server runner
 

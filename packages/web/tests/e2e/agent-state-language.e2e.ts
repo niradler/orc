@@ -1,6 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { openChatHistory } from "./_chat-ui";
-import { API_SECRET } from "./_helpers";
+import { API_SECRET, gotoView } from "./_helpers";
 
 const now = Date.now();
 const demo = [
@@ -48,7 +47,7 @@ const needsYou = {
   body: "claude · local. Reply in the original session.",
   level: "needs-you",
   project_id: null,
-  path: `/sessions?session=${sessions[0].id}&project=all`,
+  path: `/chat?sessionLive=${sessions[0].id}&project=all`,
   requires_action: true,
   created_at: now - 60_000,
   expires_at: now + 86_400_000,
@@ -57,9 +56,11 @@ const needsYou = {
 };
 
 async function mockSessions(page: Page, backend = "claude") {
-  await page.addInitScript((secret) => {
-    localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
-  }, API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.route("**/api/chat/models?**", (r) =>
     r.fulfill({ json: { models: [], warning: null } }),
   );
@@ -92,40 +93,20 @@ test("Watch: every session surface speaks the same state word and icon, and the 
   page,
 }) => {
   await mockSessions(page);
-  await page.goto("/sessions");
+  await gotoView(page, "sessions");
   await expect(page).toHaveTitle("(1) Notifications · ORC");
 
   const icons = new Map<string, string>();
-  for (const s of demo) {
-    const row = page.locator(
-      `[data-testid="live-session-row"][data-session-id="${sessions[demo.indexOf(s)].session_id}"]`,
-    );
-    const badge = row.getByTestId("live-status");
-    await expect(badge).toHaveAttribute("data-state", s.state);
-    await expect(badge).toHaveText(s.label);
-    icons.set(s.state, (await badge.locator("svg").getAttribute("class")) ?? "");
-  }
-  const shapes = [...icons.values()].map((c) => c.match(/lucide-[a-z-]+/g)?.at(-1));
-  expect(new Set(shapes).size).toBe(demo.length);
-
-  await page.goto("/tasks?chat=full");
-  await openChatHistory(page);
   const list = page.getByTestId("chat-session-list");
   for (const s of demo) {
     const row = list.getByTestId("chat-history-row").filter({ hasText: s.name });
     const badge = row.getByTestId("chat-session-status");
     await expect(badge).toHaveAttribute("data-state", s.state);
     await expect(badge).toHaveAttribute("aria-label", `claude · ${s.label}`);
-    const shape = (await badge.locator("svg").getAttribute("class"))
-      ?.match(/lucide-[a-z-]+/g)
-      ?.at(-1);
-    expect(shape).toBe(
-      icons
-        .get(s.state)
-        ?.match(/lucide-[a-z-]+/g)
-        ?.at(-1),
-    );
+    icons.set(s.state, (await badge.locator("svg").getAttribute("class")) ?? "");
   }
+  const shapes = [...icons.values()].map((c) => c.match(/lucide-[a-z-]+/g)?.at(-1));
+  expect(new Set(shapes).size).toBe(demo.length);
   await expect(page).toHaveTitle("(1) Notifications · ORC");
 });
 
@@ -134,15 +115,16 @@ for (const backend of ["claude", "gemini"]) {
     test(`${backend} waiting status remains visible at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       await mockSessions(page, backend);
-      await page.goto("/sessions");
+      await gotoView(page, "sessions");
       const row = page.locator(
-        `[data-testid="live-session-row"][data-session-id="${sessions[0].session_id}"]`,
+        `[data-testid="chat-history-row"][data-history-id="native:state-live-0"]`,
       );
       await expect(row).toBeVisible();
       await expect(row).toContainText("Approve database migration");
-      await expect(row.getByTestId("live-status")).toHaveAttribute("data-state", "needs-you");
-      await expect(row.getByTestId("live-status")).toHaveText("Needs you");
-      await expect(row.getByTestId("live-status")).toBeVisible();
+      const badge = row.getByTestId("chat-session-status");
+      await expect(badge).toHaveAttribute("data-state", "needs-you");
+      await expect(badge).toHaveAttribute("aria-label", `${backend} · Needs you`);
+      await expect(badge).toBeVisible();
       await expect(page).toHaveTitle("(1) Notifications · ORC");
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         width,

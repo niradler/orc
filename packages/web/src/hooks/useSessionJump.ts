@@ -61,14 +61,17 @@ export function useSessionJump({
       id: `native:${session.id}`,
       state: unseenState(liveSessionState(session), at, lastSeen(seen, [`native:${session.id}`])),
       at,
-      open: () =>
+      open: () => {
+        // A phone list stays under the transcript so Escape returns to it.
+        const list = new URLSearchParams(search).get("sessionList");
         navigate(
           workspaceDestination(
-            `/sessions?session=${encodeURIComponent(session.id)}`,
+            `/chat?sessionView=${encodeURIComponent(session.id)}${list ? `&sessionList=${encodeURIComponent(list)}` : ""}`,
             projectId,
             search,
           ),
-        ),
+        );
+      },
     });
   }
   const jump = (kind: JumpKind = "any") => {

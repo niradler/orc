@@ -52,14 +52,14 @@ for (const width of [1440, 390]) {
     expect(source).toBeDefined();
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "sessions");
-    await page.goto(`/sessions?project=all&session=${source?.id}`);
+    await page.goto(`/chat?project=all&sessionView=${source?.id}`);
     const prepared = page.waitForResponse(
       (response) =>
         response.url().endsWith("/api/chat/threads") && response.request().method() === "POST",
       { timeout: 30_000 },
     );
     await page
-      .getByTestId("live-session-detail")
+      .getByTestId("session-view")
       .getByTestId("open-chat-resume")
       .click({ timeout: 30_000 });
     const thread = await (await prepared).json();
@@ -92,7 +92,8 @@ for (const width of [1440, 390]) {
     const saved = await apiGet<{ messages: unknown[] }>(request, `/chat/threads/${thread.id}`);
     expect(saved.messages).toHaveLength(502);
     await page.reload();
-    await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
+    if (width === 390)
+      await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
     await showSessionSection(page, "recents");
     await page
       .getByTestId("chat-session-select")

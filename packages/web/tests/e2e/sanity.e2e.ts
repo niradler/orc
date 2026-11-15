@@ -40,7 +40,7 @@ test.describe("@sanity critical flows", () => {
     await gotoView(page, "projects");
     await expect(page.getByTestId("view-title")).toHaveText(/projects/i);
     await gotoView(page, "sessions");
-    await expect(page.getByTestId("live-sessions")).toBeVisible();
+    await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
   });
 
   test("a chat message streams an assistant reply", async ({ page }) => {
@@ -72,9 +72,11 @@ test.describe("@sanity critical flows", () => {
     const agent = tid("sanity-session");
     const sessionId = await seedSession(request, agent, `Sanity session ${agent}`);
     await gotoView(page, "sessions");
-    await expect(page.getByTestId("live-sessions")).toBeVisible();
-    await page.getByTestId("nav-audit").click();
-    await page.getByTestId("audit-session-history").locator("summary").click();
+    await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
+    // The old sessions page carried the Audit tab; the audit page now owns it.
+    await page.goto(`/audit?project=all&agent=${agent}`);
+    // Linking straight to the agent opens the logged session history.
+    await expect(page.getByTestId("audit-session-history")).toHaveAttribute("open", "");
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`);
     await expect(row).toBeVisible();
     await row.click();
