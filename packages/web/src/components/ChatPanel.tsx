@@ -1,5 +1,5 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
-import { supportsManualCompaction } from "@orc/core/coding-agents";
+import { agentLabel, supportsManualCompaction } from "@orc/core/coding-agents";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -23,7 +23,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
@@ -47,10 +48,12 @@ import {
   useChatPromptMenu,
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
+import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { ChatSessionStrip, useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
+import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
 import { HelpPopover } from "@/components/HelpPopover";
 import {
@@ -63,6 +66,7 @@ import {
 } from "@/components/SessionHome";
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionView } from "@/components/SessionView";
+import { ScratchpadFormDialog } from "@/components/scratchpad/ScratchpadFormDialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
@@ -77,8 +81,19 @@ import type { AgentState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
+import {
+  appendDraftQuote,
+  boundedText,
+  type ChatSelectionAction,
+  quoteDraft,
+  SELECTION_CAPTURE_LIMIT,
+  type SelectionSource,
+  selectionTitle,
+  taskBody,
+} from "@/lib/chat-selection";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { THIS_SERVER } from "@/lib/host-labels";
+import { scratchpadPath } from "@/lib/scratchpad-routes";
 import { chatContextHint } from "@/lib/session-cache";
 import { cn } from "@/lib/utils";
 
@@ -379,6 +394,17 @@ export function ChatPanel({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  // What an attribution line needs from a message the user selected text in.
+  const messageSources = useMemo(
+    () =>
+      new Map(
+        messages.map((message) => [
+          message.id,
+          { agent: message.agent, timestamp: message.timestamp },
+        ]),
+      ),
+    [messages],
+  );
   const lastAssistant = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index--) {
       const message = messages[index];
@@ -519,6 +545,64 @@ export function ChatPanel({
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const inputBackdrop = useRef<HTMLDivElement>(null);
   const plainPaste = useRef(false);
+  const [taskFromSelection, setTaskFromSelection] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+  const [padFromSelection, setPadFromSelection] = useState<{
+    title: string;
+    content: string;
+  } | null>(null);
+  const [savedPad, setSavedPad] = useState<{ id: string; title: string } | null>(null);
+  const lastActiveKey = useRef(activeKey);
+  useEffect(() => {
+    if (lastActiveKey.current === activeKey) return;
+    lastActiveKey.current = activeKey;
+    setSavedPad(null);
+  }, [activeKey]);
+  // Selection actions insert into the active tab's draft, so they survive a
+  // tab switch like text the user typed there.
+  const actOnSelection = useCallback(
+    (action: ChatSelectionAction, text: string, source: SelectionSource) => {
+      const bounded = boundedText(text, SELECTION_CAPTURE_LIMIT);
+      if (!bounded) return;
+      setSavedPad(null);
+      if (action === "ask") {
+        setDraft((current) => appendDraftQuote(current, quoteDraft(bounded, source)));
+        window.requestAnimationFrame(() => {
+          const field = input.current;
+          if (!field) return;
+          field.focus();
+          field.setSelectionRange(field.value.length, field.value.length);
+        });
+        return;
+      }
+      if (action === "task") {
+        setTaskFromSelection({
+          title: selectionTitle(bounded),
+          body: taskBody(bounded, source),
+        });
+        return;
+      }
+      setPadFromSelection({
+        title: selectionTitle(bounded),
+        content: quoteDraft(bounded, source),
+      });
+    },
+    [setDraft],
+  );
+  const resolveSelectionSource = useCallback(
+    (messageId: string): SelectionSource => {
+      const entry = messageSources.get(messageId);
+      return {
+        threadId: thread?.id,
+        title: thread?.title ?? "New chat",
+        agent: agentLabel(entry?.agent ?? config.agent),
+        timestamp: entry?.timestamp ?? Date.now(),
+      };
+    },
+    [config.agent, messageSources, thread?.id, thread?.title],
+  );
   const draftSegments = useMemo(
     () => commandSegments(draft, promptMenu.commandNames),
     [draft, promptMenu.commandNames],
@@ -908,6 +992,11 @@ export function ChatPanel({
               </p>
             )}
             <div className="relative flex min-h-0 flex-1 flex-col">
+              <ChatSelectionToolbar
+                resetKey={thread?.id}
+                resolveSource={resolveSelectionSource}
+                onAction={actOnSelection}
+              />
               <ThreadPrimitive.Viewport
                 ref={scroll.viewportRef}
                 autoScroll={false}
@@ -964,6 +1053,7 @@ export function ChatPanel({
                             }}
                             data-testid="chat-message"
                             data-role={message.role}
+                            data-message-id={message.id}
                             className="group/message mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
                           >
                             <div
@@ -1013,6 +1103,12 @@ export function ChatPanel({
                                 cachedTokens={usage?.cached_input_tokens}
                                 forkDisabledReason={forkDisabledReason}
                                 onForked={openThread}
+                                threadTitle={thread?.title ?? "New chat"}
+                                agent={agentLabel(
+                                  typeof custom.agent === "string" ? custom.agent : config.agent,
+                                )}
+                                timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                onSelectionAction={actOnSelection}
                               />
                             )}
                           </MessagePrimitive.Root>
@@ -1215,6 +1311,22 @@ export function ChatPanel({
                     <p className="mt-2">{contextHint.note}</p>
                   </HelpPopover>
                 </div>
+              )}
+              {savedPad && (
+                <p
+                  role="status"
+                  data-testid="chat-selection-saved"
+                  className="mx-auto mb-1.5 w-full max-w-3xl px-2 text-xs text-on-surface-variant"
+                >
+                  Saved to{" "}
+                  <Link
+                    to={scratchpadPath(savedPad.id)}
+                    data-testid="chat-selection-saved-link"
+                    className="text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                  >
+                    {savedPad.title}
+                  </Link>
+                </p>
               )}
               <form
                 onSubmit={(event) => {
@@ -1451,6 +1563,28 @@ export function ChatPanel({
         </div>
       </MobileChatShell>
       {fullscreen && !phone && <SessionInspector context={context} home={home} narrow={!desktop} />}
+      {taskFromSelection && (
+        <CreateTaskDialog
+          open
+          defaultProjectId={thread?.projectId}
+          defaultTitle={taskFromSelection.title}
+          defaultBody={taskFromSelection.body}
+          onClose={() => setTaskFromSelection(null)}
+        />
+      )}
+      {padFromSelection && (
+        <ScratchpadFormDialog
+          defaultProjectId={thread?.projectId ?? ""}
+          defaultSessionId={thread?.sourceId ?? undefined}
+          defaultTitle={padFromSelection.title}
+          defaultContent={padFromSelection.content}
+          onClose={() => setPadFromSelection(null)}
+          onSaved={(pad) => {
+            setPadFromSelection(null);
+            setSavedPad({ id: pad.id, title: pad.title });
+          }}
+        />
+      )}
       <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
         <DialogContent
           data-testid="chat-analytics-dialog"
