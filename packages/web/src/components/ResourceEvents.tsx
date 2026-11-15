@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { getApiUrl } from "@/api/client";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
+import { activeApiHeaders } from "@/lib/api-hosts";
 import {
   consumeResourceEvents,
   invalidateResources,
@@ -37,7 +38,7 @@ export function ResourceEvents(): null {
       try {
         keepAlive();
         const response = await fetch(`${getApiUrl().replace(/\/+$/, "")}/events`, {
-          headers: { Accept: "text/event-stream" },
+          headers: { Accept: "text/event-stream", ...activeApiHeaders() },
           credentials: "include",
           signal: attemptController.signal,
           cache: "no-store",

@@ -502,6 +502,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -597,6 +602,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -610,12 +616,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -788,6 +815,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -883,6 +915,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -896,12 +929,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1016,6 +1070,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -1111,6 +1170,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -1124,12 +1184,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1247,6 +1328,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -1342,6 +1428,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -1355,12 +1442,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1453,6 +1561,18 @@ export interface paths {
                         "application/json": {
                             changed: boolean;
                             running: boolean;
+                            live: {
+                                id: string;
+                                agent: string;
+                                tokens_used: number | null;
+                                tokens_estimated: boolean;
+                                /** @enum {string} */
+                                status: "idle" | "running" | "stopped" | "error";
+                                /** Format: date-time */
+                                created_at: string;
+                                /** Format: date-time */
+                                last_activity_at: string | null;
+                            } | null;
                             queued: {
                                 id: string;
                                 title: string;
@@ -1647,6 +1767,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -1742,6 +1867,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -1755,12 +1881,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1848,7 +1995,7 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        agentOptions: {
+                        agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
                                 runtime: "pi";
@@ -1898,6 +2045,8 @@ export interface paths {
                                 args: string[];
                             };
                         };
+                        /** @enum {string} */
+                        sendWhileRunning?: "steer" | "queue";
                     };
                 };
             };
@@ -1936,6 +2085,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -2031,6 +2185,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -2044,12 +2199,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -2149,6 +2325,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -2162,12 +2339,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -2252,6 +2450,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -2347,6 +2550,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -2360,12 +2564,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -2537,6 +2762,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -2632,6 +2862,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -2645,12 +2876,33 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -2804,6 +3056,8 @@ export interface paths {
                         autoApprove?: boolean;
                         /** @enum {string} */
                         permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        /** @enum {string} */
+                        sendWhileRunning?: "steer" | "queue";
                         agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
@@ -7543,6 +7797,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -7656,6 +7915,11 @@ export interface paths {
                             autoApprove?: boolean;
                             /** @enum {string} */
                             permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                            /**
+                             * @default steer
+                             * @enum {string}
+                             */
+                            sendWhileRunning?: "steer" | "queue";
                             /** @default {} */
                             agentOptions?: {
                                 [key: string]: {
@@ -7759,6 +8023,11 @@ export interface paths {
                                 autoApprove: boolean;
                                 /** @enum {string} */
                                 permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /**
+                                 * @default steer
+                                 * @enum {string}
+                                 */
+                                sendWhileRunning: "steer" | "queue";
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
@@ -7985,6 +8254,7 @@ export interface paths {
                                 unindexed_sessions: number;
                                 unindexed_tokens: number;
                                 unknown_sessions: number;
+                                unsupported_sessions: number;
                                 estimated_sessions: number;
                             };
                         };
@@ -17869,6 +18139,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one discovered session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveSession"];
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename, hide or link a live session
+         * @description Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        task_id?: string | null;
+                        display_title?: string | null;
+                        hidden?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveSession"];
+                    };
+                };
+                /** @description Session or task not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/sessions/live/{id}/cache": {
         parameters: {
             query?: never;
@@ -17937,6 +18292,128 @@ export interface paths {
                 };
                 /** @description Cache data could not be read */
                 503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read chat, turn, tool, context and cache analytics for a native session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Analytics for the chat that owns this native session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            messages: number;
+                            userMessages: number;
+                            assistantMessages: number;
+                            turns: number;
+                            toolCalls: number;
+                            toolFailures: number;
+                            attachments: number;
+                            startedAt: number | null;
+                            lastActivityAt: number | null;
+                            outcomes: {
+                                completed: number;
+                                stopped: number;
+                                failed: number;
+                                running: number;
+                            };
+                            durations: {
+                                averageMs: number | null;
+                                medianMs: number | null;
+                                p95Ms: number | null;
+                                totalMs: number | null;
+                            };
+                            tools: {
+                                name: string;
+                                calls: number;
+                                failures: number;
+                            }[];
+                            toolTotal: number;
+                            turnTimeline: {
+                                index: number;
+                                startedAt: number;
+                                durationMs: number | null;
+                                /** @enum {string} */
+                                outcome: "completed" | "stopped" | "failed" | "running";
+                                toolCalls: number;
+                                toolFailures: number;
+                                responseChars: number;
+                            }[];
+                            turnTimelineTruncated: boolean;
+                            context: {
+                                backend: string;
+                                model: string | null;
+                                supported: boolean;
+                                reason: string | null;
+                                usage: {
+                                    latest: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        /** Format: date-time */
+                                        may_be_cold_after: string | null;
+                                    } | null;
+                                    totals: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                    } | null;
+                                    output_tokens: number | null;
+                                    requests: number | null;
+                                    compactions: {
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        pre_tokens: number | null;
+                                        post_tokens: number | null;
+                                    }[] | null;
+                                    timeline: {
+                                        request: number;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        context_tokens: number;
+                                        cached_input_tokens: number;
+                                        output_tokens: number | null;
+                                    }[] | null;
+                                };
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Session, or its chat, not found */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -18073,62 +18550,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/sessions/live/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Rename, hide or link a live session
-         * @description Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        task_id?: string | null;
-                        display_title?: string | null;
-                        hidden?: boolean;
-                    };
-                };
-            };
-            responses: {
-                /** @description Updated session */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["LiveSession"];
-                    };
-                };
-                /** @description Session or task not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
         trace?: never;
     };
     "/api/sessions": {
@@ -19008,6 +19429,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                         };
                     };
@@ -19085,6 +19507,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                         };
                     };
@@ -19151,6 +19574,7 @@ export interface paths {
                                 children: string[];
                                 project_id: string | null;
                                 cwd: string;
+                                started_at: number | null;
                                 updated_at: number;
                             }[];
                         };
@@ -19279,6 +19703,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                             timed_out: boolean;
                         };
@@ -19362,6 +19787,7 @@ export interface paths {
                                 children: string[];
                                 project_id: string | null;
                                 cwd: string;
+                                started_at: number | null;
                                 updated_at: number;
                             }[];
                             timed_out: boolean;
@@ -19431,6 +19857,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                         };
                     };

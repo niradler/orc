@@ -1,7 +1,8 @@
 import {
-  Check,
+  BookOpen,
   ChevronRight,
-  Copy,
+  Eye,
+  EyeOff,
   Folder,
   History,
   Inbox,
@@ -9,6 +10,7 @@ import {
   PanelLeftOpen,
   Plus,
   RefreshCw,
+  Sparkles,
   SquarePen,
   SquareTerminal,
   X,
@@ -17,10 +19,8 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
-import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
-import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
-import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
-import { HelpPopover } from "@/components/HelpPopover";
+import { Highlight } from "@/components/Highlight";
+import { SessionArchiveView } from "@/components/SessionArchiveView";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -29,23 +29,20 @@ import {
 } from "@/components/SessionRowContent";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import { type SessionHistory, useSessionHistory } from "@/hooks/useSessionHistory";
+import {
+  SESSION_SORT_LABELS,
+  SESSION_SORTS,
+  type SessionHistory,
+  type SessionSort,
+  useSessionHistory,
+} from "@/hooks/useSessionHistory";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
-import type { ChatHistoryEntry } from "@/lib/chat-history-list";
-import { useDesktopPreview } from "@/lib/desktop-preview-context";
+import { type ChatHistoryEntry, entryAgent } from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
 export function ChatSessionPicker({
@@ -92,8 +89,24 @@ export function ChatSessionPicker({
     unassignedRows,
     loading,
     selectEntry,
+    openSessionView,
     newProjectSession,
     selectedArchive,
+    archiveView,
+    setArchiveView,
+    deep,
+    setDeep,
+    deepSearching,
+    searchMeta,
+    archive,
+    agentFilter,
+    setAgentFilter,
+    agentOptions,
+    sort,
+    setSort,
+    includeHidden,
+    setIncludeHidden,
+    agentGroups,
   } = history;
   if (rail)
     return (
@@ -175,7 +188,7 @@ export function ChatSessionPicker({
       {selectedArchive ? (
         <ArchiveResumeForm history={history} />
       ) : (
-        <>
+        <div className="min-w-0 space-y-4" {...stable.listProps}>
           <div className="flex items-center gap-1">
             <div
               role="tablist"
@@ -198,6 +211,7 @@ export function ChatSessionPicker({
                 </Button>
               ))}
             </div>
+            <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             <ActionHelp
               label="Refresh sessions"
               description="Re-import agent sessions, then refresh threads, live sessions and archive."
@@ -215,17 +229,93 @@ export function ChatSessionPicker({
               </Button>
             </ActionHelp>
           </div>
-          <Input
-            data-testid="chat-session-search"
-            aria-label="Search sessions"
-            placeholder="Search sessions…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <div className="min-w-0 space-y-2" {...stable.listProps}>
-            <SessionStateFilters value={filter} counts={counts} onChange={setFilter}>
-              <StableOrderPill pending={stable.pending} onApply={stable.apply} />
-            </SessionStateFilters>
+          <div className="flex items-center gap-1">
+            <Input
+              data-testid="chat-session-search"
+              aria-label="Search sessions"
+              placeholder="Search sessions…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="min-w-0 flex-1"
+            />
+            <ActionHelp
+              label="Search inside conversations"
+              description="Also match words inside transcripts (ripgrep) and archived sessions. Requires ripgrep for live content; archived search uses embeddings when configured."
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Search inside conversations"
+                aria-pressed={deep}
+                data-testid="chat-session-deep-search"
+                onClick={() => setDeep(!deep)}
+                className={cn(deep && "bg-surface-highest text-on-surface")}
+              >
+                <Sparkles />
+              </Button>
+            </ActionHelp>
+          </div>
+          <div className="flex items-center gap-1">
+            <select
+              data-testid="chat-session-agent"
+              aria-label="Filter sessions by agent"
+              value={agentFilter}
+              onChange={(event) => setAgentFilter(event.target.value)}
+              className="h-8 min-w-0 flex-1 rounded-md border border-control-border bg-background px-2 text-xs text-on-surface"
+            >
+              <option value="">All agents</option>
+              {agentOptions.map((agent) => (
+                <option key={agent} value={agent}>
+                  {agentDisplayName(agent)}
+                </option>
+              ))}
+            </select>
+            <select
+              data-testid="chat-session-sort"
+              aria-label="Sort sessions"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as SessionSort)}
+              className="h-8 min-w-0 flex-1 rounded-md border border-control-border bg-background px-2 text-xs text-on-surface"
+            >
+              {SESSION_SORTS.map((value) => (
+                <option key={value} value={value}>
+                  {SESSION_SORT_LABELS[value]}
+                </option>
+              ))}
+            </select>
+            <ActionHelp
+              label="Show hidden sessions"
+              description="Hidden sessions stay out of the list until you show and restore them."
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Show hidden sessions"
+                aria-pressed={includeHidden}
+                data-testid="chat-session-hidden"
+                onClick={() => setIncludeHidden(!includeHidden)}
+                className={cn(includeHidden && "bg-surface-highest text-on-surface")}
+              >
+                {includeHidden ? <Eye /> : <EyeOff />}
+              </Button>
+            </ActionHelp>
+          </div>
+          {deepSearching && searchMeta && (
+            <p data-testid="chat-session-search-meta" className="text-[11px] text-muted-foreground">
+              {searchMeta.rg
+                ? `Searched conversation content in ${(searchMeta.ms / 1000).toFixed(1)}s`
+                : "Titles and summaries only. Install ripgrep to search conversation content."}
+            </p>
+          )}
+          {archive.data?.degraded && (
+            <p data-testid="chat-session-degraded" className="text-[11px] text-outline">
+              {archive.data.degraded}
+            </p>
+          )}
+          <div className="min-w-0 space-y-2">
+            <SessionStateFilters value={filter} counts={counts} onChange={setFilter} />
             {section === "projects" && (
               <section
                 role="tabpanel"
@@ -256,7 +346,9 @@ export function ChatSessionPicker({
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        query={search}
                         onSelect={() => selectEntry(entry)}
+                        onView={() => openSessionView(entry)}
                       />
                     ))}
                     {!rows.length && !loading && (
@@ -289,7 +381,9 @@ export function ChatSessionPicker({
                         pending={pending}
                         selected={isSelected(entry)}
                         terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        query={search}
                         onSelect={() => selectEntry(entry)}
+                        onView={() => openSessionView(entry)}
                       />
                     ))}
                   </ProjectGroup>
@@ -301,26 +395,60 @@ export function ChatSessionPicker({
                 )}
               </section>
             )}
-            <div
-              role="tabpanel"
-              id="session-panel-recents"
-              aria-labelledby="session-tab-recents"
-              data-testid="chat-session-list"
-              hidden={section !== "recents"}
-              className="min-w-0 space-y-1"
-            >
-              {shown.map((entry) => (
-                <HistoryRow
-                  key={entry.id}
-                  entry={entry}
-                  state={stateOf(entry)}
-                  pending={pending}
-                  selected={isSelected(entry)}
-                  terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                  onSelect={() => selectEntry(entry)}
-                />
-              ))}
-            </div>
+            {section === "recents" && (
+              <div
+                role="tabpanel"
+                id="session-panel-recents"
+                aria-labelledby="session-tab-recents"
+                data-testid="chat-session-list"
+                className="min-w-0 space-y-1"
+              >
+                {sort === "agent"
+                  ? agentGroups.map((group) => (
+                      <div
+                        key={group.agent}
+                        data-testid={`chat-session-agent-group-${group.agent}`}
+                        className="min-w-0"
+                      >
+                        <p className="flex min-w-0 items-center gap-1.5 px-2 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-outline">
+                          <AgentIcon
+                            agent={group.agent}
+                            title={agentDisplayName(group.agent)}
+                            className="size-3.5"
+                          />
+                          <span className="min-w-0 truncate">{agentDisplayName(group.agent)}</span>
+                          <span className="tabular-nums">{group.rows.length}</span>
+                        </p>
+                        {group.rows.map((entry) => (
+                          <HistoryRow
+                            key={entry.id}
+                            entry={entry}
+                            state={stateOf(entry)}
+                            pending={pending}
+                            selected={isSelected(entry)}
+                            terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                            query={search}
+                            onSelect={() => selectEntry(entry)}
+                            onView={() => openSessionView(entry)}
+                          />
+                        ))}
+                      </div>
+                    ))
+                  : shown.map((entry) => (
+                      <HistoryRow
+                        key={entry.id}
+                        entry={entry}
+                        state={stateOf(entry)}
+                        pending={pending}
+                        selected={isSelected(entry)}
+                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+                        query={search}
+                        onSelect={() => selectEntry(entry)}
+                        onView={() => openSessionView(entry)}
+                      />
+                    ))}
+              </div>
+            )}
           </div>
           {loading && (
             <p role="status" className="px-2 text-xs text-muted-foreground">
@@ -337,13 +465,29 @@ export function ChatSessionPicker({
               Load older sessions
             </Button>
           )}
-        </>
+        </div>
       )}
       {listError && (
-        <p role="alert" className="text-sm text-error wrap-break-word">
-          {listError}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p
+            role="alert"
+            data-testid="chat-session-error"
+            className="text-sm text-error wrap-break-word"
+          >
+            {listError}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void refreshSessions()}
+            disabled={refreshingSessions}
+          >
+            Retry
+          </Button>
+        </div>
       )}
+      <SessionArchiveView session={archiveView} onClose={() => setArchiveView(null)} />
     </SessionHistoryFrame>
   );
 }
@@ -578,13 +722,6 @@ function SessionHistoryFrame({
   );
 }
 
-export function entryAgent(entry: ChatHistoryEntry): string {
-  if (entry.kind === "local") return entry.tab.config.agent;
-  if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
-  if (entry.kind === "terminal") return entry.terminal.kind;
-  return entry.session.agent;
-}
-
 function ProviderMark({ agent }: { agent: string }) {
   return (
     <AgentIcon
@@ -661,20 +798,25 @@ export function HistoryRow({
   pending,
   selected,
   terminal,
+  query = "",
   onSelect,
+  onView,
 }: {
   entry: ChatHistoryEntry;
   state: AgentState;
   pending: boolean;
   selected: boolean;
   terminal: boolean;
+  query?: string;
   onSelect: () => void;
+  onView?: () => void;
 }) {
   const chat = useChat();
   const tab = entry.kind === "local" ? entry.tab : null;
   const open = !!tab && !tab.hidden;
   const agent = entryAgent(entry);
   const status = AGENT_STATES[state].label;
+  const hidden = entry.kind === "native" && !!entry.session.hidden;
   const testId = terminal
     ? "chat-open-terminal"
     : entry.kind === "local"
@@ -693,329 +835,113 @@ export function HistoryRow({
       data-history-open={open ? "true" : "false"}
       data-active={selected ? "true" : "false"}
       data-state={state}
-      className={`${sessionRowClass} ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+      className={cn(
+        "group min-w-0 rounded-md",
+        selected ? "bg-surface-highest" : "hover:bg-surface",
+      )}
     >
-      <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
-        <button
-          type="button"
-          data-testid={testId}
-          aria-current={selected ? "true" : undefined}
-          disabled={pending}
-          onClick={onSelect}
-          className={sessionRowButtonClass}
-        >
-          <SessionRowContent
-            agent={agent}
-            title={entry.title}
-            state={state}
-            stateTestId="chat-session-status"
-            marker={
-              terminal && (
-                <SquareTerminal
-                  size={13}
-                  aria-hidden="true"
-                  className="shrink-0 text-muted-foreground"
-                />
-              )
-            }
-          />
-          <span className="sr-only">
-            {agent ? ` · ${agent}` : ""}
-            {terminal ? " · Terminal" : ""}
-            {tab?.draft ? " · Draft" : ""}
-            {entry.kind === "archive" ? " · Import and resume" : ""}
-          </span>
-          {entry.kind === "saved" && entry.thread.running && (
-            <span data-testid="chat-thread-running" className="sr-only">
-              Running
-            </span>
-          )}
-        </button>
-      </ActionHelp>
-      {open && tab && (
-        <ActionHelp
-          label={`Close ${entry.title} from open sessions`}
-          description="Close from open sessions; history and background work are kept"
-        >
+      <div className={sessionRowClass}>
+        <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
           <button
             type="button"
-            data-testid="chat-tab-close"
-            aria-label={`Close ${entry.title} from open sessions`}
-            onClick={() => chat.closeTab(tab.key)}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            data-testid={testId}
+            aria-current={selected ? "true" : undefined}
+            disabled={pending}
+            onClick={onSelect}
+            className={sessionRowButtonClass}
           >
-            <X size={13} />
+            <SessionRowContent
+              agent={agent}
+              title={
+                query.trim().length >= 2 ? (
+                  <Highlight text={entry.title} query={query} />
+                ) : (
+                  entry.title
+                )
+              }
+              state={state}
+              stateTestId="chat-session-status"
+              marker={
+                <>
+                  {entry.kind === "native" && entry.session.handoff?.status === "ready" && (
+                    <span data-testid="handoff-ready" className="shrink-0 text-[10px] text-primary">
+                      Ready to resume
+                    </span>
+                  )}
+                  {hidden && (
+                    <span
+                      data-testid="chat-session-hidden-badge"
+                      className="shrink-0 text-[10px] text-outline"
+                    >
+                      Hidden
+                    </span>
+                  )}
+                  {terminal && (
+                    <SquareTerminal
+                      size={13}
+                      aria-hidden="true"
+                      className="shrink-0 text-muted-foreground"
+                    />
+                  )}
+                </>
+              }
+            />
+            <span className="sr-only">
+              {agent ? ` · ${agent}` : ""}
+              {terminal ? " · Terminal" : ""}
+              {hidden ? " · Hidden" : ""}
+              {tab?.draft ? " · Draft" : ""}
+              {entry.kind === "archive" ? " · Import and resume" : ""}
+            </span>
+            {entry.kind === "saved" && entry.thread.running && (
+              <span data-testid="chat-thread-running" className="sr-only">
+                Running
+              </span>
+            )}
           </button>
         </ActionHelp>
-      )}
-    </div>
-  );
-}
-
-export function ChatConversationInfo({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { config, changePermissions, thread, streaming } = useChat();
-  const preview = useDesktopPreview();
-  const capabilities = useAgentCapabilities(config.agent, thread);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-testid="chat-config-dialog"
-        tabIndex={-1}
-        onOpenAutoFocus={(event) => {
-          // Do not focus a help trigger: its tooltip would become the top layer
-          // and swallow the Escape that closes the dialog.
-          event.preventDefault();
-          const content = event.currentTarget as HTMLElement | null;
-          content?.focus();
-        }}
-        className="w-[calc(100%-1rem)] min-w-0 grid-cols-[minmax(0,1fr)] sm:max-w-3xl"
-      >
-        <div className="flex min-w-0 items-center gap-1 pr-8">
-          <DialogTitle className="min-w-0 flex-1">Session settings</DialogTitle>
-          <HelpPopover label="Session settings">
-            These settings belong to this conversation. Loosening permissions applies right away,
-            including to a pending approval; stricter permissions apply to your next message. New
-            chat defaults live in Settings → Chat.
-          </HelpPopover>
-        </div>
-        <DialogDescription className="sr-only">
-          Information, customization and analytics for this chat session.
-        </DialogDescription>
-        <Tabs defaultValue="overview" className="min-w-0">
-          <TabsList aria-label="Session settings sections" className="grid w-full grid-cols-3 p-0">
-            {(
-              [
-                ["overview", "Overview"],
-                ["customize", "Customize"],
-                ["analytics", "Analytics"],
-              ] as const
-            ).map(([value, label]) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                data-testid={`chat-settings-tab-${value}`}
-                className="bg-surface hover:bg-surface-high"
-              >
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <TabsContent value="overview" className="space-y-4">
-            <dl data-testid="chat-session-info" className="space-y-3 text-sm wrap-break-word">
-              <SettingsRow label="Agent">
-                <span data-testid="chat-settings-agent">{agentDisplayName(config.agent)}</span>
-                {config.model && (
-                  <span data-testid="chat-settings-model" className="text-muted-foreground">
-                    {" "}
-                    · {config.model}
-                  </span>
-                )}
-              </SettingsRow>
-              <SettingsRow label="Execution">
-                {thread
-                  ? `${thread.host || "Local"} · ${thread.cwd}`
-                  : "Starts with your first message"}
-                {thread?.cwd && (
-                  <span className="block font-mono text-xs break-all">{thread.cwd}</span>
-                )}
-              </SettingsRow>
-              {thread?.backend && (
-                <SettingsRow label="Backend">
-                  <span className="font-mono text-xs">{thread.backend}</span>
-                </SettingsRow>
-              )}
-              {thread && <SettingsRow label="Last activity">{when(thread.updatedAt)}</SettingsRow>}
-              <SettingsRow label="Tools">
-                {config.mcp === "orc"
-                  ? "ORC MCP connection plus agent host configuration"
-                  : "Agent host configuration"}
-              </SettingsRow>
-              {capabilities && (
-                <SettingsRow label="Capabilities">
-                  <span data-testid="chat-capabilities">
-                    {[
-                      capabilities.resume && "Resume",
-                      capabilities.approvals && "Approvals in chat",
-                      capabilities.questions && "Questions",
-                      capabilities.steering && "Send now",
-                      capabilities.interrupt && "Native stop",
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "Basic text conversation"}
-                  </span>
-                </SettingsRow>
-              )}
-            </dl>
-            <section aria-labelledby="chat-session-ids-heading" className="space-y-2">
-              <div className="flex items-center gap-1">
-                <h3 id="chat-session-ids-heading" className="text-sm font-medium">
-                  Identifiers
-                </h3>
-                <HelpPopover label="Session identifiers" testId="chat-session-ids-help">
-                  ORC chat ID names this conversation in ORC. The agent session ID is the coding
-                  agent's native session, used to resume it outside ORC. The resume session ID is
-                  the discovered ORC session this chat continues, when ORC can match one.
-                </HelpPopover>
-              </div>
-              <dl className="space-y-2" data-testid="chat-session-ids">
-                <IdRow id="orc" label="ORC chat ID" value={thread?.id} empty="Not saved yet" />
-                <IdRow
-                  id="agent"
-                  label="Agent session ID"
-                  value={thread?.runtimeId}
-                  empty="No native session yet"
-                />
-                <IdRow
-                  id="resume"
-                  label="Resume session ID"
-                  value={thread?.sourceId}
-                  empty="Not resumed from a session"
-                />
-              </dl>
-            </section>
-          </TabsContent>
-          <TabsContent value="customize" className="space-y-5">
-            {thread && (
-              <p className="text-sm text-muted-foreground wrap-break-word">
-                Runs in {thread.host || "Local"} ·{" "}
-                <span className="font-mono text-xs">{thread.cwd}</span>
-              </p>
-            )}
-            <ChatPermissionSelect
-              config={config}
-              onChange={(next) => void changePermissions(next)}
-            />
-            <div className="text-sm">
-              <div className="flex items-center gap-1">
-                <label htmlFor="chat-session-instructions" className="text-sm font-medium">
-                  Session instructions
-                </label>
-                <HelpPopover label="Session instructions" testId="chat-instructions-help">
-                  {config.agent === "claude"
-                    ? "Appended to Claude’s coding system prompt."
-                    : "Sent as turn instructions to the agent."}{" "}
-                  Agent and workspace instructions may also apply.
-                </HelpPopover>
-              </div>
-              <pre
-                id="chat-session-instructions"
-                className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 text-xs wrap-break-word"
-              >
-                {config.system || "No additional instructions"}
-              </pre>
-            </div>
-            {preview && (
-              <div className="border-t border-border pt-4">
-                <div className="flex items-start justify-between gap-6">
-                  <div className="flex min-w-0 items-center gap-1">
-                    <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
-                      Allow agent browser control
-                    </label>
-                    <HelpPopover label="Agent browser control" testId="chat-browser-help">
-                      {preview.browserControl.globallyEnabled
-                        ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
-                        : "Disabled globally in Settings → Browser. Enable global access there to allow browser control for this chat."}
-                    </HelpPopover>
-                  </div>
-                  <input
-                    type="checkbox"
-                    id="chat-browser-agent-access"
-                    data-testid="chat-browser-agent-access"
-                    className="mt-1 h-4 w-4 shrink-0"
-                    checked={preview.browserControl.enabled}
-                    disabled={
-                      preview.browserControl.pending || !preview.browserControl.globallyEnabled
-                    }
-                    onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
-                  />
-                </div>
-                {preview.browserControl.error && (
-                  <p
-                    role="alert"
-                    data-testid="chat-browser-preferences-error"
-                    className="mt-2 text-xs text-error"
-                  >
-                    {preview.browserControl.error}
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="border-t border-border pt-1">
-              <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
-            </div>
-          </TabsContent>
-          <TabsContent value="analytics" className="space-y-4">
-            <ChatSessionAnalytics threadId={thread?.id} streaming={streaming} />
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SettingsRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
-function IdRow({
-  id,
-  label,
-  value,
-  empty,
-}: {
-  id: string;
-  label: string;
-  value: string | null | undefined;
-  empty: string;
-}) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex min-w-0 items-start gap-2">
-      <div className="min-w-0 flex-1">
-        <dt className="text-xs text-muted-foreground">{label}</dt>
-        <dd
-          data-testid={`chat-session-id-${id}`}
-          className="font-mono text-xs break-all text-on-surface-variant"
-        >
-          {value ?? empty}
-        </dd>
+        {(entry.kind === "native" || entry.kind === "archive") && onView && (
+          <ActionHelp
+            label="View conversation"
+            description="Read the native transcript here without resuming the session"
+          >
+            <button
+              type="button"
+              data-testid="chat-session-view"
+              aria-label={`View ${entry.title}`}
+              onClick={onView}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-surface-highest hover:text-on-surface group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            >
+              <BookOpen size={13} />
+            </button>
+          </ActionHelp>
+        )}
+        {open && tab && (
+          <ActionHelp
+            label={`Close ${entry.title} from open sessions`}
+            description="Close from open sessions; history and background work are kept"
+          >
+            <button
+              type="button"
+              data-testid="chat-tab-close"
+              aria-label={`Close ${entry.title} from open sessions`}
+              onClick={() => chat.closeTab(tab.key)}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-surface-highest hover:text-on-surface group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            >
+              <X size={13} />
+            </button>
+          </ActionHelp>
+        )}
       </div>
-      {value && (
-        <button
-          type="button"
-          data-testid={`chat-session-id-copy-${id}`}
-          aria-label={copied ? `${label} copied` : `Copy ${label}`}
-          title={copied ? `${label} copied` : `Copy ${label}`}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(value);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            } catch {
-              /* The value stays visible for manual copying. */
-            }
-          }}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11"
+      {entry.snippets?.[0] && (
+        <p
+          data-testid="chat-session-snippet"
+          className="truncate pl-8 pr-2 pb-1 text-[11px] text-muted-foreground"
+          title={entry.snippets[0]}
         >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-        </button>
+          <Highlight text={entry.snippets[0]} query={query} />
+        </p>
       )}
     </div>
   );
-}
-
-function when(value: number | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
 }

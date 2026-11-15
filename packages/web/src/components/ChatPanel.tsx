@@ -1,6 +1,6 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { supportsManualCompaction } from "@orc/core/coding-agents";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   History,
+  ListPlus,
   LoaderCircle,
   Maximize2,
   MoreHorizontal,
@@ -15,6 +16,7 @@ import {
   Pencil,
   RefreshCw,
   Settings2,
+  SkipForward,
   Square,
   SquarePen,
   Trash2,
@@ -27,11 +29,13 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
+import { ChatBackgroundWork } from "@/components/ChatBackgroundWork";
 import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
 } from "@/components/ChatContinueInTerminal";
-import { ChatConversationInfo, ChatSessionPicker } from "@/components/ChatControls";
+import { ChatSessionPicker } from "@/components/ChatControls";
+import { ChatConversationInfo } from "@/components/ChatConversationInfo";
 import { ChatForkNotice } from "@/components/ChatForkNotice";
 import { ChatLiveAnnouncer, ChatLiveStatus } from "@/components/ChatLiveStatus";
 import { ChatMessageActions } from "@/components/ChatMessageActions";
@@ -42,6 +46,8 @@ import {
   useChatPromptMenu,
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
+import { ChatSessionStrip, useChatContextUsage } from "@/components/ChatSessionStrip";
+import { ChatTurnDivider, chatDividers } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
 import {
@@ -53,6 +59,7 @@ import {
   useSessionLiveLink,
 } from "@/components/SessionHome";
 import { SessionLineage } from "@/components/SessionLineage";
+import { SessionView } from "@/components/SessionView";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -60,7 +67,10 @@ import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
+import { useSessionChildren } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
+import type { AgentState } from "@/lib/agent-state";
+import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
@@ -209,7 +219,10 @@ export function ChatPanel({
     moveQueued,
     forceQueued,
     send,
+    deliver,
     steer,
+    canSteerLive,
+    steerAvailable,
     cancel,
     projectId,
     openThread,
@@ -222,6 +235,18 @@ export function ChatPanel({
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
   const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  // The usage API only knows sessions it discovered from an agent or terminal.
+  const contextUsage = useChatContextUsage(thread?.sourceId, streaming);
+  const sessionState: AgentState | null =
+    permission || question
+      ? "needs-you"
+      : error
+        ? "failed"
+        : streaming || reconnecting || refreshing || turnElsewhere
+          ? "working"
+          : thread
+            ? "idle"
+            : null;
   const forkDisabledReason =
     streaming || refreshing || reconnecting || turnElsewhere
       ? "Wait for the current response to finish before forking."
@@ -236,6 +261,35 @@ export function ChatPanel({
   const reload = async () => {
     await refresh(sessionChanged);
     void session.refetch();
+  };
+  const children = useSessionChildren(thread?.id ?? null);
+  const lastMessage = messages[messages.length - 1];
+  const background = chatBackgroundWork(
+    streaming ? activity : lastMessage?.role === "assistant" ? (lastMessage.activity ?? []) : [],
+    children.data ?? [],
+  );
+  const queryClient = useQueryClient();
+  const [backgroundError, setBackgroundError] = useState<string | null>(null);
+  const openBackground = async (sessionId: string) => {
+    setBackgroundError(null);
+    try {
+      openThread(await api.chat.get(sessionId));
+    } catch (cause) {
+      setBackgroundError(
+        cause instanceof Error ? cause.message : "That session could not be opened.",
+      );
+    }
+  };
+  const stopBackground = async (sessionId: string) => {
+    setBackgroundError(null);
+    try {
+      await api.sessions.stop(sessionId);
+      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    } catch (cause) {
+      setBackgroundError(
+        cause instanceof Error ? cause.message : "That session could not be stopped.",
+      );
+    }
   };
   const home = useSessionHome();
   const terminalControl = useChatContinueInTerminal({
@@ -273,6 +327,35 @@ export function ChatPanel({
   };
   const linkError = useSessionLiveLink(home, fullscreen);
   const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
+  const dividers = useMemo(
+    () => chatDividers(messages, contextUsage.data?.compactions ?? []),
+    [messages, contextUsage.data?.compactions],
+  );
+  const storedMessages = useMemo(
+    () => new Map(messages.map((message) => [message.id, message])),
+    [messages],
+  );
+  const lastAssistant = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (message?.role === "assistant") return message;
+    }
+    return undefined;
+  }, [messages]);
+  // The latest recorded request belongs to the newest assistant turn only when it
+  // was recorded after that turn started; otherwise the figure belongs elsewhere.
+  const latestUsage = contextUsage.data?.latest ?? null;
+  const latestUsageAt = latestUsage?.recorded_at ? Date.parse(latestUsage.recorded_at) : Number.NaN;
+  const turnUsage =
+    latestUsage &&
+    Number.isFinite(latestUsageAt) &&
+    lastAssistant?.turn &&
+    latestUsageAt >= lastAssistant.turn.startedAt
+      ? latestUsage
+      : null;
+  // Changing models applies to the next turn, so the header names the selected
+  // model; it falls back to the model the last turn recorded.
+  const stripModel = config.model || lastAssistant?.model;
   const projects = useProjects();
   const owner = terminalCenter
     ? context.session?.project_id
@@ -286,11 +369,17 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
+  const sendLabel = !streaming ? "Send message" : canSteerLive ? "Send now" : "Queue message";
   const submit = () => {
     if (!ready || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
-    void send(draft);
+    const text = draft;
     setDraft("");
+    // A failed steer keeps the text so the user can retry; a queued or steered
+    // message already left the composer.
+    void deliver(text).then((outcome) => {
+      if (outcome === "failed") setDraft((current) => (current === "" ? text : current));
+    });
   };
   const compactDisabled =
     !thread?.runtimeId ||
@@ -531,7 +620,7 @@ export function ChatPanel({
                     <p className="truncate text-xs text-muted-foreground">
                       <span data-testid="session-project-breadcrumb">{projectName}</span>
                       {" · "}
-                      {thread?.host ?? "local"}
+                      {thread?.host ?? "this server"}
                     </p>
                   </div>
                   {streaming && (
@@ -570,6 +659,15 @@ export function ChatPanel({
                   </Popover>
                 </div>
                 <div className="chat-header-controls flex items-center justify-end gap-0.5">
+                  <ChatSessionStrip
+                    compact
+                    agent={config.agent}
+                    model={stripModel}
+                    state={sessionState}
+                    latest={latestUsage ?? undefined}
+                    compactions={contextUsage.data?.compactions?.length ?? 0}
+                    className="mr-auto min-w-0"
+                  />
                   <SessionHomeToggles home={home} gestures />
                   {!terminalCenter && (
                     <div
@@ -595,7 +693,7 @@ export function ChatPanel({
               </>
             ) : title || fullscreen ? (
               <h2
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
+                className="flex min-w-0 shrink items-center gap-1.5 text-sm font-medium"
                 title={fullscreen ? `${projectName} / ${title ?? "New session"}` : title}
               >
                 {fullscreen && (
@@ -613,16 +711,23 @@ export function ChatPanel({
                 )}
                 <span className="min-w-0 truncate">{title ?? "New session"}</span>
               </h2>
-            ) : (
-              <div className="min-w-0 flex-1" aria-hidden="true" />
+            ) : null}
+            {!phone && Boolean(title || fullscreen) && (
+              <span aria-hidden="true" className="h-3 w-px shrink-0 bg-outline-variant" />
             )}
-            {!phone && streaming && (
-              <LoaderCircle
-                size={14}
-                aria-hidden="true"
-                className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
+            {!phone && (
+              <ChatSessionStrip
+                agent={config.agent}
+                model={stripModel}
+                state={sessionState}
+                latest={latestUsage ?? undefined}
+                compactions={contextUsage.data?.compactions?.length ?? 0}
+                compact={!headerWide}
+                className="min-w-0 shrink"
               />
             )}
+            {/* Session facts sit beside the title; actions stay at the right edge. */}
+            {!phone && <div className="min-w-0 flex-1" aria-hidden="true" />}
             {!phone &&
               (terminalCenter ? null : headerWide ? (
                 <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
@@ -715,6 +820,16 @@ export function ChatPanel({
             )}
           >
             <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
+            {/* The session viewer belongs to the full-screen chat page. The side
+                panel stays mounted while hidden, and its sheet would be portaled
+                out of that hidden wrapper into a second copy. */}
+            {fullscreen && (
+              <SessionView
+                sessionId={home.viewId}
+                onClose={() => home.go({ viewId: null })}
+                onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
+              />
+            )}
             {reconnecting && (
               <p
                 role="status"
@@ -766,62 +881,80 @@ export function ChatPanel({
                       const custom = message.metadata.custom;
                       const live = custom.live === true;
                       const content = typeof custom.content === "string" ? custom.content : "";
+                      const stored = storedMessages.get(message.id);
+                      const usage = message.id === lastAssistant?.id ? turnUsage : null;
                       return (
-                        <MessagePrimitive.Root
-                          style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
-                          data-testid="chat-message"
-                          data-role={message.role}
-                          className="group/message mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
-                        >
-                          <div
-                            className={
-                              message.role === "user"
-                                ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
-                                : undefined
-                            }
+                        <>
+                          {dividers.byMessage.get(message.id)?.map((divider, index) => (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                            <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                          ))}
+                          <MessagePrimitive.Root
+                            style={{
+                              contentVisibility: "auto",
+                              containIntrinsicSize: "auto 120px",
+                            }}
+                            data-testid="chat-message"
+                            data-role={message.role}
+                            className="group/message mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
                           >
                             <div
-                              data-testid="chat-message-agent"
                               className={
                                 message.role === "user"
-                                  ? "sr-only"
-                                  : "mb-1 text-xs font-medium text-on-surface-variant"
+                                  ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
+                                  : undefined
                               }
                             >
-                              {message.role === "user"
-                                ? "You"
-                                : typeof custom.agent === "string"
-                                  ? custom.agent
-                                  : "Assistant"}
+                              <div
+                                data-testid="chat-message-agent"
+                                className={
+                                  message.role === "user"
+                                    ? "sr-only"
+                                    : "mb-1 text-xs font-medium text-on-surface-variant"
+                                }
+                              >
+                                {message.role === "user"
+                                  ? "You"
+                                  : typeof custom.agent === "string"
+                                    ? custom.agent
+                                    : "Assistant"}
+                              </div>
+                              <div
+                                data-testid="chat-message-content"
+                                className="min-w-0 wrap-break-word"
+                              >
+                                <ChatActivityList
+                                  value={custom.activity}
+                                  turn={custom.turn}
+                                  live={live}
+                                />
+                                <ChatAttachments value={custom.attachments} />
+                                <MessagePrimitive.Parts components={textParts} />
+                              </div>
                             </div>
-                            <div
-                              data-testid="chat-message-content"
-                              className="min-w-0 wrap-break-word"
-                            >
-                              <ChatActivityList
-                                value={custom.activity}
+                            {!live && (
+                              <ChatMessageActions
+                                threadId={thread?.id}
+                                messageId={message.id}
+                                role={message.role === "user" ? "user" : "assistant"}
+                                content={content}
                                 turn={custom.turn}
-                                live={live}
+                                model={stored?.model}
+                                tokens={usage?.input_tokens}
+                                cachedTokens={usage?.cached_input_tokens}
+                                forkDisabledReason={forkDisabledReason}
+                                onForked={openThread}
                               />
-                              <ChatAttachments value={custom.attachments} />
-                              <MessagePrimitive.Parts components={textParts} />
-                            </div>
-                          </div>
-                          {!live && (
-                            <ChatMessageActions
-                              threadId={thread?.id}
-                              messageId={message.id}
-                              role={message.role === "user" ? "user" : "assistant"}
-                              content={content}
-                              turn={custom.turn}
-                              forkDisabledReason={forkDisabledReason}
-                              onForked={openThread}
-                            />
-                          )}
-                        </MessagePrimitive.Root>
+                            )}
+                          </MessagePrimitive.Root>
+                        </>
                       );
                     }}
                   </ThreadPrimitive.Messages>
+                  {dividers.trailing.map((divider, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                    <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                  ))}
                 </div>
               </ThreadPrimitive.Viewport>
               {!scroll.pinned && messages.length > 0 && (
@@ -852,6 +985,12 @@ export function ChatPanel({
                 activity={activity}
               />
             )}
+            <ChatBackgroundWork
+              items={background}
+              error={backgroundError}
+              onOpen={(sessionId) => void openBackground(sessionId)}
+              onStop={(sessionId) => void stopBackground(sessionId)}
+            />
             <ChatLiveAnnouncer
               streaming={streaming}
               agent={streamingAgent}
@@ -1137,7 +1276,29 @@ export function ChatPanel({
                     <ChatPermissionChip />
                   </div>
                   <div className="flex items-center gap-1">
-                    {streaming && thread?.capabilities?.steering && (
+                    {streaming && canSteerLive && (
+                      <ActionHelp
+                        label="Queue message"
+                        description="Hold this message until the current response finishes"
+                      >
+                        <button
+                          type="button"
+                          data-testid="chat-queue-button"
+                          onClick={() => {
+                            if (!draft.trim() && !files.length) return;
+                            const text = draft;
+                            setDraft("");
+                            void send(text);
+                          }}
+                          disabled={!draft.trim() && !files.length}
+                          aria-label="Queue message"
+                          className={iconButton}
+                        >
+                          <ListPlus size={17} />
+                        </button>
+                      </ActionHelp>
+                    )}
+                    {streaming && steerAvailable && !canSteerLive && (
                       <ActionHelp
                         label="Send now"
                         description="Send this message into the active response; ordinary Send queues it for later"
@@ -1146,7 +1307,9 @@ export function ChatPanel({
                           type="button"
                           data-testid="chat-steer-button"
                           onClick={() => void steer()}
-                          disabled={!draft.trim() || !!files.length || responding}
+                          disabled={
+                            !draft.trim() || !!files.length || responding || !steerAvailable
+                          }
                           aria-label="Send now"
                           className={iconButton}
                         >
@@ -1167,12 +1330,12 @@ export function ChatPanel({
                         </button>
                       </ActionHelp>
                     )}
-                    <ActionHelp label={streaming ? "Queue message" : "Send message"}>
+                    <ActionHelp label={sendLabel}>
                       <button
                         type="submit"
                         disabled={!ready || (!draft.trim() && !files.length)}
                         data-testid="chat-send-button"
-                        aria-label={streaming ? "Queue message" : "Send message"}
+                        aria-label={sendLabel}
                         className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
                       >
                         <ArrowUp size={18} />
@@ -1324,18 +1487,18 @@ function QueuedMessage({
             </button>
           </ActionHelp>
           <ActionHelp
-            label="Force send pending message"
-            description="Stop the current response and send this message next"
+            label="Send now, stopping this response"
+            description="Stops the current response, then sends this message ahead of the rest of the queue"
           >
             <button
               type="button"
               data-testid="chat-queued-force"
               disabled={forceDisabled}
-              aria-label="Force send pending message"
+              aria-label="Send now, stopping this response"
               onClick={onForce}
               className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
             >
-              <ArrowUp size={14} />
+              <SkipForward size={14} />
             </button>
           </ActionHelp>
           {removeButton}

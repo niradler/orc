@@ -1,5 +1,6 @@
 export const SESSION_TERMINAL_PARAM = "sessionTerminal";
 export const SESSION_LIVE_PARAM = "sessionLive";
+export const SESSION_VIEW_PARAM = "sessionView";
 export const SESSION_LIST_PARAM = "sessionList";
 export const INSPECTOR_PARAM = "inspector";
 export const DRAWER_PARAM = "drawer";
@@ -14,6 +15,7 @@ export const INSPECTOR_TABS: InspectorTab[] = ["overview", "diff", "files", "bro
 export interface SessionHomeState {
   terminalId: string | null;
   liveId: string | null;
+  viewId: string | null;
   listHidden: boolean;
   listOpen: boolean;
   inspector: InspectorTab | null;
@@ -23,6 +25,7 @@ export interface SessionHomeState {
 const HOME_PARAMS = [
   SESSION_TERMINAL_PARAM,
   SESSION_LIVE_PARAM,
+  SESSION_VIEW_PARAM,
   SESSION_LIST_PARAM,
   INSPECTOR_PARAM,
   DRAWER_PARAM,
@@ -33,6 +36,7 @@ export function readSessionHome(params: URLSearchParams): SessionHomeState {
   return {
     terminalId: params.get(SESSION_TERMINAL_PARAM) || null,
     liveId: params.get(SESSION_LIVE_PARAM) || null,
+    viewId: params.get(SESSION_VIEW_PARAM) || null,
     listHidden: params.get(SESSION_LIST_PARAM) === "hide",
     listOpen: params.get(SESSION_LIST_PARAM) === "show",
     // `pr` links predate the combined Changes tab; PR review lives inside it.
@@ -58,6 +62,7 @@ export function patchSessionHome(
   const next = new URLSearchParams(params);
   if ("terminalId" in patch) put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
   if ("liveId" in patch) put(next, SESSION_LIVE_PARAM, patch.liveId ?? null);
+  if ("viewId" in patch) put(next, SESSION_VIEW_PARAM, patch.viewId ?? null);
   if ("listHidden" in patch) put(next, SESSION_LIST_PARAM, patch.listHidden ? "hide" : null);
   if ("listOpen" in patch) {
     if (patch.listOpen) next.set(SESSION_LIST_PARAM, "show");

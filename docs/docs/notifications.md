@@ -68,7 +68,7 @@ extensible strings; unknown types use the same common menu and source link.
 
 ## Expiry and audit history
 
-Every notification has an expiry date. **Settings → Storage → Automatic cleanup** sets
+Every notification has an expiry date. **Settings → Notifications → Automatic cleanup** sets
 notification retention (default **30 days**) and audit retention (default
 **90 days**), each from 1 to 3650 days. These are server-wide preferences.
 All notifications expire, including unresolved ones. The underlying request has
@@ -103,7 +103,7 @@ sends failed runs, `always` also sends successful runs, and `never` sends nothin
 
 ### Forward notifications to Telegram or Slack
 
-In **Settings → Channels → Notification forwarding**, enter the ORC origin reachable
+In **Settings → Connections → Channels → Notification forwarding**, enter the ORC origin reachable
 from your channel client (for example `https://orc.example.com`), enable forwarding
 and save. The URL must have no credentials, path, query or fragment. Links open the
 existing authenticated ORC app; forwarding supplies no login or approval authority.

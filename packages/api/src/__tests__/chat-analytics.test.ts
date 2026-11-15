@@ -203,3 +203,12 @@ test("should serve chat analytics with native context and cache usage", async ()
   expect(analytics.context?.usage.latest?.cached_input_tokens).toBe(400);
   expect(analytics.context?.usage.requests).toBe(1);
 });
+
+test("should serve the same analytics from the session page", async () => {
+  const response = await req(app, "GET", "/sessions/live/live-analytics/analytics");
+  expect(response.status).toBe(200);
+  const analytics = ChatAnalyticsSchema.parse(await response.json());
+  expect(analytics.toolCalls).toBe(4);
+  expect(analytics.context?.backend).toBe("claude");
+  expect((await req(app, "GET", "/sessions/live/unknown-session/analytics")).status).toBe(404);
+});

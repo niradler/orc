@@ -220,32 +220,35 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await gotoView(page, "settings");
     const originalAddress = await page.evaluate(() => localStorage.getItem("orc_api_url"));
-    await page.getByTestId("settings-api-url").fill("/api/pending-draft");
+    const originalHosts = await page.evaluate(() => localStorage.getItem("orc_api_hosts"));
+    await settingsSection(page, "hosts");
+    await page.getByTestId("api-host-add").click();
+    await page.getByTestId("api-host-url").fill("/api/pending-draft");
     await settingsSection(page, "terminals");
     await page.locator("#settings-terminal-font").fill("Draft Mono");
-    await settingsSection(page, "connection");
-    await expect(page.getByTestId("settings-api-url")).toHaveValue("/api/pending-draft");
-    await page.getByTestId("settings-api-url").fill("/api");
-    await page.getByTestId("settings-save").click();
-    await expect(page.getByRole("status")).toContainText("Connection saved");
+    await settingsSection(page, "hosts");
+    await expect(page.getByTestId("api-host-url")).toHaveValue("/api/pending-draft");
+    await page.getByRole("button", { name: "Close server editor" }).click();
+    await settingsSection(page, "terminals");
+    await expect(page.locator("#settings-terminal-font")).toHaveValue("Draft Mono");
     expect(
       (await apiGet<{ terminal_font?: string }>(request, "/settings")).terminal_font ?? "",
     ).toBe("");
-    await page.getByTestId("settings-api-url").fill("/api/another-draft");
-    await settingsSection(page, "terminals");
-    await expect(page.locator("#settings-terminal-font")).toHaveValue("Draft Mono");
     await page.getByTestId("settings-terminal-save").click();
     await expect(page.getByRole("status")).toContainText("Terminal font saved");
     expect((await apiGet<{ terminal_font?: string }>(request, "/settings")).terminal_font).toBe(
       "Draft Mono",
     );
+    await settingsSection(page, "hosts");
+    await expect(page.getByTestId("api-host-url")).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem("orc_api_url"))).toBe(
-      originalAddress ?? "/api",
+      originalAddress ?? null,
     );
-    await settingsSection(page, "connection");
-    await expect(page.getByTestId("settings-api-url")).toHaveValue("/api/another-draft");
+    expect(await page.evaluate(() => localStorage.getItem("orc_api_hosts"))).toBe(originalHosts);
     await page.reload();
-    await expect(page.getByTestId("settings-api-url")).toHaveValue("/api");
+    expect(await page.evaluate(() => localStorage.getItem("orc_api_url"))).toBe(
+      originalAddress ?? null,
+    );
   });
 
   test(`session history retains a closed conversation draft and model at ${width}px`, async ({

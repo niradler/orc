@@ -1,9 +1,23 @@
-import { ArrowDown, ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
+import { nativeChatAgent, nativeChatResumeUnavailableReason } from "@orc/core/chat";
+import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowDown,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Eye,
+  EyeOff,
+  Pencil,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LiveSession, TranscriptPage } from "@/api/client";
+import { api, type LiveSession, type TranscriptPage } from "@/api/client";
 import { AgentMessageText } from "@/components/AgentMessageText";
+import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { Markdown } from "@/components/Markdown";
-import { ResumeActions } from "@/components/ResumeActions";
+import { RenameSession } from "@/components/RenameSession";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
@@ -12,9 +26,10 @@ import { StateBadge } from "@/components/StateBadge";
 import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLiveSessions, useTranscript } from "@/hooks/useSessions";
+import { useChat } from "@/hooks/useChat";
+import { useTranscript, useUpdateLiveSession } from "@/hooks/useSessions";
 import { liveSessionState } from "@/lib/agent-state";
-import { formatTokens, formatWhen } from "@/lib/live-sessions";
+import { formatTokens, formatWhen, resumeCommand } from "@/lib/live-sessions";
 
 type Turn = TranscriptPage["turns"][number];
 type TurnBlock = Turn["blocks"][number];
@@ -38,6 +53,9 @@ const PREVIEW_KEYS = [
   "url",
   "description",
 ];
+
+const ACTION =
+  "inline-flex min-h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border px-2 py-1 text-xs text-primary hover:bg-surface-highest disabled:opacity-50";
 
 function inputPreview(input: string): string {
   try {
@@ -173,19 +191,54 @@ function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
   );
 }
 
-export function LiveSessionDetail({
+/**
+ * The read-only view of a discovered session: its transcript, cache usage, lineage,
+ * scratchpads and message queue. Resumable providers open in chat instead; this stays
+ * the reader for providers whose store chat cannot continue and for reading without
+ * importing the conversation.
+ */
+/** Analytics stay collapsed: the transcript is the page, and the charts are
+ *  worth loading only when someone asks for them. */
+function SessionAnalyticsDetails({ sessionId, live }: { sessionId: string; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      data-testid="session-analytics"
+      className="mt-2 rounded-md border border-border"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer px-3 py-2 text-xs font-medium">Analytics</summary>
+      {open && (
+        <div className="max-h-[60vh] overflow-y-auto border-t border-border p-3">
+          <ChatSessionAnalytics sessionId={sessionId} streaming={live} hideOnError />
+        </div>
+      )}
+    </details>
+  );
+}
+
+export function SessionView({
   sessionId,
-  initialQuery,
+  initialQuery = "",
   onClose,
+  onResumed,
 }: {
   sessionId: string | null;
-  initialQuery: string;
+  initialQuery?: string;
   onClose: () => void;
+  onResumed?: () => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [cursor, setCursor] = useState(0);
-  const { data: all } = useLiveSessions(false, undefined, true);
-  const session: LiveSession | undefined = all?.find((s) => s.id === sessionId);
+  const [renaming, setRenaming] = useState(false);
+  const update = useUpdateLiveSession();
+  const sessionQuery = useQuery({
+    queryKey: ["sessions", "live-one", sessionId],
+    queryFn: () => api.sessions.liveOne(sessionId as string),
+    enabled: Boolean(sessionId),
+    retry: false,
+  });
+  const session: LiveSession | undefined = sessionQuery.data;
   const live = session !== undefined && session.status !== "stopped";
   const search = query.trim().length >= 2 ? query.trim() : "";
   const { data, isLoading, isFetching, error, refetch, dataUpdatedAt } = useTranscript(
@@ -226,6 +279,39 @@ export function LiveSessionDetail({
   const go = (step: number) => {
     if (matches.length > 0) setCursor((c) => (c + step + matches.length) % matches.length);
   };
+  const continueReason = session ? nativeChatResumeUnavailableReason(session.agent) : null;
+  const resumable = session ? Boolean(nativeChatAgent(session.agent)) : false;
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const command = session ? (resumeCommand(session) ?? "") : "";
+  const chat = useChat();
+  const copyCommand = async () => {
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setResumeError("Clipboard access failed. Allow clipboard access and try again.");
+    }
+  };
+  const resume = async () => {
+    if (!session || resuming) return;
+    setResuming(true);
+    setResumeError("");
+    try {
+      chat.openThread(await api.chat.resume(session.id));
+      // A phone list sits over the conversation; resuming must reveal the chat.
+      // Replace the transient viewer entry so Back leaves the chat, not a stale sheet.
+      if (onResumed) onResumed();
+      else onClose();
+    } catch (cause) {
+      setResumeError(cause instanceof Error ? cause.message : "The session could not be opened.");
+    } finally {
+      setResuming(false);
+    }
+  };
 
   return (
     <Sheet open={Boolean(sessionId)} onOpenChange={(v) => !v && onClose()}>
@@ -233,36 +319,118 @@ export function LiveSessionDetail({
         side="right"
         defaultWidth={1100}
         resizeKey="live-session"
-        data-testid="live-session-detail"
+        data-testid="session-view"
       >
         <SheetHeader>
           <SheetTitle className="normal-case tracking-normal text-sm pr-8">
             {session?.name ?? "Session"}
           </SheetTitle>
-          {session && (
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
-              <span className="font-medium text-primary">{session.agent}</span>
-              <StateBadge state={liveSessionState(session)} />
-              <span>
-                <span className="text-on-surface-variant">tokens </span>
-                {formatTokens(session)}
-              </span>
-              <span>
-                <span className="text-on-surface-variant">active </span>
-                {formatWhen(session.last_activity_at)}
-              </span>
-              <SessionTaskLink session={session} linkTestId="detail-open-task" />
-              <ResumeActions session={session} />
-              {session.hidden && (
-                <span data-testid="detail-session-hidden" className="text-outline">
-                  Hidden from list
+          {/* One stable slot for the session header fields: the cache panel below
+              renders before this data arrives, and shifting its position would
+              remount it. */}
+          <div className="contents">
+            {session && (
+              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
+                <span className="font-medium text-primary">{session.agent}</span>
+                <StateBadge state={liveSessionState(session)} />
+                <span>
+                  <span className="text-on-surface-variant">tokens </span>
+                  {formatTokens(session)}
                 </span>
-              )}
-              <SessionScratchpads session={session} />
-              <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
-            </div>
-          )}
+                <span>
+                  <span className="text-on-surface-variant">started </span>
+                  {formatWhen(session.created_at)}
+                </span>
+                <span>
+                  <span className="text-on-surface-variant">active </span>
+                  {formatWhen(session.last_activity_at)}
+                </span>
+                <SessionTaskLink session={session} linkTestId="detail-open-task" />
+                <button
+                  type="button"
+                  data-testid="rename-session"
+                  disabled={update.isPending}
+                  onClick={() => setRenaming(true)}
+                  className={ACTION}
+                >
+                  <Pencil size={13} aria-hidden />
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  data-testid={session.hidden ? "unhide-session" : "hide-session"}
+                  disabled={update.isPending}
+                  title={
+                    session.hidden
+                      ? "Show this session in the list again"
+                      : "Keep this session but leave it out of the list"
+                  }
+                  onClick={() => update.mutate({ id: session.id, hidden: !session.hidden })}
+                  className={ACTION}
+                >
+                  {session.hidden ? (
+                    <Eye size={13} aria-hidden />
+                  ) : (
+                    <EyeOff size={13} aria-hidden />
+                  )}
+                  {session.hidden ? "Show in list" : "Hide from list"}
+                </button>
+                {session.hidden && (
+                  <span data-testid="detail-session-hidden" className="text-outline">
+                    Hidden from list
+                  </span>
+                )}
+                {resumable && (
+                  <button
+                    type="button"
+                    data-testid="open-chat-resume"
+                    disabled={resuming}
+                    onClick={() => void resume()}
+                    className={ACTION}
+                  >
+                    {resuming ? "Opening…" : "Continue in chat"}
+                  </button>
+                )}
+                {command && (
+                  <button
+                    type="button"
+                    data-testid="copy-resume"
+                    title={command}
+                    onClick={() => void copyCommand()}
+                    className={ACTION}
+                  >
+                    {copied ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+                    Copy resume command
+                  </button>
+                )}
+                {copied && (
+                  <span data-testid="resume-feedback" className="text-secondary">
+                    Resume command copied
+                  </span>
+                )}
+                <SessionScratchpads session={session} />
+                <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
+              </div>
+            )}
+            {session && !resumable && continueReason && (
+              <p data-testid="session-view-read-only" className="mt-2 text-xs text-outline">
+                {continueReason}
+              </p>
+            )}
+            {resumeError && (
+              <p role="alert" className="mt-2 text-xs text-error">
+                {resumeError}
+              </p>
+            )}
+          </div>
           {sessionId && <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />}
+          {sessionId && (
+            <SessionAnalyticsDetails
+              key={`analytics-${sessionId}`}
+              sessionId={sessionId}
+              live={live}
+            />
+          )}
           {session && <SessionLineage sessionId={session.id} />}
           {session && <SessionMessageInbox key={session.id} session={session} live={live} />}
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -337,7 +505,14 @@ export function LiveSessionDetail({
               setAtBottom(near);
             }}
           >
-            {isLoading ? (
+            {sessionQuery.error ? (
+              <div
+                data-testid="session-view-unavailable"
+                className="font-body text-xs text-outline py-12 text-center"
+              >
+                Could not load this session: {sessionQuery.error.message}
+              </div>
+            ) : isLoading ? (
               <div className="space-y-4">
                 {[...Array(5)].map((_, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
@@ -353,7 +528,9 @@ export function LiveSessionDetail({
                   ? `Could not load the conversation: ${error.message}`
                   : "No conversation was recorded for this session."}
                 <p className="mt-2">
-                  Resume actions remain available when the native agent session exists.
+                  {resumable
+                    ? "Open it from the session list to continue it in chat."
+                    : "This provider keeps its CLI history separate, so it cannot continue in chat."}
                 </p>
                 <button
                   type="button"
@@ -419,6 +596,9 @@ export function LiveSessionDetail({
             </button>
           )}
         </div>
+        {session && (
+          <RenameSession session={session} open={renaming} onClose={() => setRenaming(false)} />
+        )}
       </SheetContent>
     </Sheet>
   );

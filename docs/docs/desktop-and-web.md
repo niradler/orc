@@ -23,7 +23,7 @@ Pages are grouped in the sidebar:
 
 | Group     | Pages                                        |
 | --------- | -------------------------------------------- |
-| Activity  | Activity, Sessions, Jobs, Webhooks, Audit    |
+| Activity  | Activity, Jobs, Webhooks, Audit              |
 | Chat      | Chat                                         |
 | Tasks     | Tasks                                        |
 | Knowledge | Knowledge base, Memories                     |
@@ -33,34 +33,41 @@ Pages are grouped in the sidebar:
 
 Projects has its own page at `/projects`. Every page has a shareable URL.
 
-Switch between the dark and light themes in **Settings → Appearance**, or with the
+Switch between the dark and light themes in **Settings → General → Appearance**, or with the
 theme command in the command palette:
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
 
 ## Chat page
 
-**Chat** in the sidebar, under Activity, opens the chat page at `/chat`. It is a
+**Chat** in the sidebar opens the chat page at `/chat`. It is a
 regular page: the workspace header keeps your navigation and notifications, and
 **Chat** shows as the active page. The sidebar collapses to its icon rail while a
 conversation is open, including the side chat, to give the conversation the width;
 leaving chat restores the width you had, and expanding it during chat keeps your
 choice.
-The chat panel's full-screen button, and the full-screen button on **Sessions**
-(on the page or on a row) or in the **Terminals** session list, open the same
-page.
+The chat panel's full-screen button in the **Terminals** session list opens the
+same page.
 
 Below 1280px wide, the chat has no side panel: starting a chat from any page
 opens the chat page instead.
 
-- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
-  - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
+- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from every coding agent, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Every list has the same search, state filters, agent filter, sort order, hidden-session toggle and stable ordering.
+  - **Search** matches titles and summaries; the sparkle toggle also searches inside transcripts (ripgrep) and archived conversations (embeddings when configured). The result snippet shows the matching passage.
+  - **Agent** filters by coding agent, merging Cursor IDE and Cursor CLI into one choice. **Sort** offers newest/oldest last activity or agent groups (newest first inside each agent); the choice is remembered.
+  - Providers whose native store chat cannot resume (Cursor) open the read-only session view instead of resuming.
+  - A session can be hidden from the list and shown again with the **hidden** toggle; both survive reloads.
+  - Collapse the list to a rail of icons with its state marks; expand it again from the rail.
+  - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); the project of the session you are viewing opens and marks that session, expand any other project to see its sessions, and use a project's **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
-- **Inspector**: the panel button in the header opens one panel with **Overview**, **Changes** and **Files** on desktop and phone. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its state, CI state and GitHub link; a checkout on a detached HEAD says so instead of reporting missing GitHub authentication. **Changes** reads the session's folder directly — no terminal has to be running — and combines the working-tree review (staging and commit) with the branch's PR review (diff, comments and an **Open on GitHub** link) behind Local / PR modes, while **Files** browses and edits the checkout. In the Electron desktop app the same panel adds a desktop-only **Browser** tab. On a phone the inspector is a full page.
+- **Inspector**: the panel button in the header opens one panel with **Overview**, **Changes** and **Files** on desktop and phone. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its state, CI state and GitHub link; a checkout on a detached HEAD says so instead of reporting missing GitHub authentication. When a terminal is running in that folder, **Changes** combines the working-tree review (staging and commit) with the branch's PR review (diff, comments and an **Open on GitHub** link) behind Local / PR modes, and **Files** browses and edits the checkout. In the Electron desktop app the same panel adds a desktop-only **Browser** tab. On a phone the inspector is a full page.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation. Its header names the terminal, its live state and the folder/host. **Expand** gives the terminal the conversation's space and **Close** hides it, leaving the shell running. On a touch screen, swipe inside the terminal to scroll; a tap still opens the keyboard, and a swipe does not.
 - **Continue in terminal**: when the response has finished and the session is idle, **Continue in terminal** in the session actions menu resumes that origin session in its native agent. This works for every native chat agent (Claude Code, Codex, Gemini CLI, OpenCode and Pi), including sessions you have hidden from the session list. The terminal opens as the chat view's main pane, leaving the conversation mounted behind it; the back arrow returns to the chat without losing the terminal or your draft. An already running terminal for that session is reused instead of started twice; if it has exited, a new one resumes the session. A link to an exited or deleted terminal says it is no longer running and the back arrow still returns to the chat.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
-- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
+- **Tool calls and plans**: a finished turn folds its tool calls and pre-tool narration into one summary line with duration, tool count, files changed with their added and removed lines, a command count when nothing changed, and failures. Expand the line to read each call: reads and searches stay one line, edits and writes show compact diffs, and commands show the command with its output tail. MCP, browser, todo, plan and question calls have their own view, and a tool ORC does not recognise keeps its raw input and result. An image a tool returned is shown inline when it is embedded in the result (never fetched from a remote URL), loads lazily, stays within a bounded size and expands on request. A file path opens in the inspector's file preview, and a Git command's branch, changed files and pull request link appear only when its output contains them.
+  Inside the expanded turn, **All**, **Changes**, **Commands** and **Failed** narrow the tool calls, and **Hide successful** leaves only running or failed ones; the choice is remembered for the next turn. Thinking, plans and status messages stay visible under every filter, and the collapsed summary always counts every failure. Agents that publish a checklist (ACP agents, Codex, Claude and OpenCode todos) show it as a plan card with each step's status — pending, in progress, completed or failed — in a bounded, scrollable list; the steps come from the agent, and providers that publish no plan show none. A turn's assistant message records the model that produced it when the session has one selected.
+- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and read the turn's meta: the model that produced it, its duration, a stopped or failed outcome, and — on the newest response — the latest request's context tokens and cached share when the session records usage. Missing fields are left out instead of filled with zeros. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
+- **Model and compaction dividers**: the conversation marks a model change between consecutive turns, and each recorded context compaction, in the transcript where it happened. Sessions that record no model or no compaction show no divider.
 - The page keeps the workspace header and its single notification bell. On desktop **Close chat** returns to the page you came from; on a phone the chat is a regular page, so you leave it with Back or the navigation drawer.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents
@@ -68,12 +75,22 @@ opens the chat page instead.
   while project ownership is unavailable. The Activity session list uses the same
   compact row design, retaining search, filters, task links and resume actions.
 
+The header carries one quiet strip: the agent, the selected model (or the model
+the last turn recorded when none is selected), the cached share of the session's
+latest request, and the session state. The info icon beside the context figure
+explains the number and names the session's compactions; the figure is omitted
+entirely when the session has no recorded usage, so nothing reads as zero. The
+strip stays on one line and never displaces Send or Stop. On a phone, and in
+narrow chat panels, it keeps the context figure and state while the composer
+already names the agent and model.
+
 On a phone (below 768px) the chat is a touch-first surface. The header keeps the
 session title, **Sessions**, **New** and the actions menu on one line, with the
-**Terminal**, **Inspector**, **Refresh** and **Compact** controls on a second line
-(right-aligned; it collapses when the viewport gets very short, such as with the
-software keyboard on a small screen, and the same actions stay available in the
-**⋯** menu). **Sessions**, the
+session strip on the left of a second line and the **Terminal**, **Inspector**,
+**Refresh** and **Compact** controls right-aligned beside it. That row collapses
+when the viewport gets very short, such as with the software keyboard on a small
+screen, and the same actions stay available in the
+**⋯** menu. **Sessions**, the
 **Inspector** and the **Terminal** open as full pages over the conversation,
 which stays mounted underneath so streams and drafts survive. They follow your
 finger:
@@ -104,7 +121,7 @@ any other page.
 ![Session home with its inspector and demo data](/screens/session-home-desktop.png)
 
 <img src="/screens/session-home-phone.png" alt="Phone conversation with the Terminal and Inspector header buttons" width="260">
-<img src="/screens/session-list-phone.png" alt="Full-screen Sessions page on a phone" width="260">
+<img src="/screens/session-list-phone.png" alt="Full-screen session list on a phone" width="260">
 
 The phone inspector: branch and pull-request summary, the combined Changes tab
 (working-tree and PR review) and the file editor.
@@ -149,15 +166,18 @@ Open a task to see its body, status, comments, linked sessions and Git links, an
 
 ![Task flow](/screens/task-flow.png)
 
-## Sessions
+## Session history and viewer
 
-![Sessions](/screens/sessions.png)
+![Session list and conversation](/screens/session-recents-desktop.png)
 
-Live and archived sessions from Claude Code, Codex, Cursor, Gemini CLI and OpenCode on this machine or the selected host. Working sessions update live; waiting sessions stay available to resume in a terminal or in chat. Search across archived conversations. See [Live sessions](./live-sessions.md).
+Live and ended sessions from Claude Code, Codex, Cursor, Gemini CLI, OpenCode and Pi appear in the chat page's session list on this machine or the selected host. Working sessions update live; a session that finished after you last opened it shows **Done** until you open it, and this browser remembers what you have seen. Ended sessions stay listed by default. See [Live sessions](./live-sessions.md).
 
-Filter the list by state with **All**, **Needs you**, **Working** and **Done**. Each filter shows its count, and failed sessions count as Needs you. A session that finished after you last opened it shows **Done** until you open it. This browser remembers what you have seen. The chat session history has the same filters.
+Filter with **All**, **Needs you**, **Working** and **Done**; each filter shows its count, and failed sessions count as Needs you. While your pointer is over the list, or a row has keyboard focus, rows stay where they are and an **N updated** pill applies the new order when you choose it.
 
-While your pointer is over the list, or a row has keyboard focus, rows stay where they are. States still update in place. When the order would change, an **N updated** button appears. Click it, or move away from the list, to apply the new order.
+The **view** button on a session row opens the read-only viewer: transcript search with match navigation, tokens and start/end timing, task link, rename, hide, scratchpads, cache usage, lineage and the queued-message inbox. **Analytics** opens from that page and shows message, turn and tool counts for the chat behind the session, plus context growth with cache reuse and compaction markers, per-tool call and failure bars, and turn-duration bars when the agent records usage. Agents without readable usage still show the chat-derived counts with an explanation. Resumable sessions also offer **Continue in chat** and a copyable CLI resume command. Cursor sessions stay readable here because chat cannot resume Cursor's separate CLI store. Archived sessions open the same viewer for their stored transcript and offer resume into chat from a pushed commit.
+
+![Session analytics on the session page with context growth, cache reuse and compaction](/screens/chat-session-analytics-desktop.png)
+![Session analytics tool usage, failures and turn durations on the session page](/screens/chat-session-analytics-tools-desktop.png)
 
 ## Terminals
 
@@ -180,13 +200,13 @@ browser, file or agent-control entry points.
 Each conversation keeps its own browser and file tabs within the Browser tab. The
 inspector stays docked beside the conversation and opens when you ask for it, follow
 a link or an agent preview arrives; drag the divider (or use arrow keys on it) to
-resize. The **Files** tab browses the session's checkout, whether or not a
-terminal is running, and opens a file in an editor tab. Closing the panel keeps tabs
+resize. The **Files** tab browses the checkout of a running terminal in the
+session's folder and opens a file in an editor tab. Closing the panel keeps tabs
 and drafts in memory; closing a modified file asks before discarding it. Reloading
 or quitting discards these previews after the unsaved-change warning.
 
-The **Changes** tab shows the session folder's working-tree changes, reusing the
-terminal workspace's Git panel: the changed-file
+The **Changes** tab shows the working-tree changes of the terminal running in the
+session's folder, reusing the terminal workspace's Git panel: the changed-file
 list, unified or side-by-side diffs, staging and commit, and a GitHub link for the
 branch's PR. **Open file** opens a changed file in the inspector's Files tab; the
 copy icon copies the changed file's path to the clipboard. The commit draft,
@@ -219,7 +239,7 @@ are blocked. Browser downloads are staged privately (16 MB each, four across the
 app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
 as saved. Each chat starts with a temporary cookie/storage profile.
-**Settings → Browser → Saved browser profiles** creates named profiles; select one
+**Settings → General → Browser → Saved browser profiles** creates named profiles; select one
 under **Browser profile, display & recording** in the Browser tab to remember site logins. Selecting the same profile in another
 chat explicitly shares that profile's site storage. Temporary chats stay isolated.
 Profile choices and saved cookies survive app restart; session-only cookies follow
@@ -284,7 +304,7 @@ File drafts are preserved. An evaluation timeout can require the same recovery.
 
 ![Browser access in a demo chat's Session settings](/screens/desktop-chat-browser-control.png)
 
-**Settings → Browser** controls agent browser access for the whole desktop and
+**Settings → General → Browser** controls agent browser access for the whole desktop and
 whether chat web links open in ORC or your system browser. Settings are stored in
 `browser-preferences.json` in Electron's user-data folder and survive restarts.
 Per-chat permissions use `browser-chat-permissions.json`; named profile metadata
@@ -367,7 +387,7 @@ database: saved secrets cannot be decrypted without that machine key.
 To see a result, open the job and select **View result** under **Recent runs**.
 This shows the saved output and errors. **Session summary** opens the audit record.
 For an agent run with a native session ID, **Open agent session** opens the actual
-conversation in Sessions, where the existing transcript/resume controls apply.
+conversation in the chat page's session viewer, where the transcript/resume controls apply.
 ORC discovers that conversation on the run's own host without changing the globally
 selected host. If the provider has not retained a conversation yet, the saved result
 remains available and the interface explains that the native conversation is missing.
@@ -397,7 +417,7 @@ notification center from the chat, like the system shade.
 On all screens, the bell in the workspace header shows an unread count, including
 while the chat is open. New notifications never open the panel automatically. Tap the bell to read or
 dismiss them. History remains until dismissed or expired (30 days by default).
-Configure notification and audit retention in Settings → Storage.
+Configure notification and audit retention in Settings → Notifications → Automatic cleanup.
 See [Notifications](./notifications.md) and [Human requests](./human-requests.md).
 
 **Settings → Notifications → Sound** controls the browser chime, volume and
@@ -427,8 +447,8 @@ page, so a report carries the real message and stack.
 
 Lifecycle and knowledge events with filters and expandable details. Recorded
 session summaries remain in collapsed history. Audit retention defaults to 90
-days and is configurable in Settings → Storage. Use Sessions to read full
-conversations or resume an agent.
+days and is configurable in Settings → Notifications → Automatic cleanup. Use the chat
+page's session list and viewer to read full conversations or resume an agent.
 
 ## Skills
 
@@ -487,29 +507,31 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 
 ![Settings](/screens/settings.png)
 
-| Section        | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Connection     | In a browser, the API URL for this browser. In the desktop app, the local or remote server, optional access token and proxy headers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Security       | Sign-in status and sign-out, default sign-in lifetime, allowed web origins, access tokens (minted by entering the secret)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Appearance     | Theme (dark or light, saved on the server) and interface font size — default, large or extra large — saved in this browser                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Execution host | Run agents, terminals and git locally or on an SSH host from `~/.ssh/config`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Server         | **Restart ORC server** (closes terminals, keeps settings, reconnects)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Notifications  | In-app updates, browser chime/volume/project mute, and opt-in browser/PWA push for background approvals, questions, chat replies and job results. Push needs HTTPS.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Agents         | Which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. |
-| Channels       | Telegram and Slack connections                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Chat           | Default models, instructions, tools and permission mode for chat                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| MCP            | Build the MCP config snippet for your agent. See [Connect agents](./connect-agents.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Integrations   | APIs and MCP servers in the `spec` CLI registry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Knowledge      | Parser, embeddings and knowledge defaults                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Terminals      | Terminal font for new terminals                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Storage        | Where settings are stored                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| About          | Server, desktop and Electron versions, platform, runtime, data folder, uptime, project links, and desktop update channel                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Section       | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General       | Theme (dark or light, saved on the server), interface font size — default, large or extra large — saved in this browser, terminal font for new terminals, and the desktop preview browser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Hosts         | One list of hosts with **API** and **SSH** type badges. **API** rows are ORC servers this client can talk to: in a browser, save several server addresses with optional access tokens and proxy headers, then switch between them; the desktop app keeps its local/remote choice, token and headers in its data folder. The **SSH** row is where that server runs agents, terminals and git: **This ORC server**'s own machine, which carries both badges because it also serves the dashboard, or an alias from its `~/.ssh/config`.                                                                                                                                                                                                                                                                           |
+| Agents        | **Providers** chooses which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. **Chat** sets default models, instructions, tools and permission mode. **MCP** builds the MCP config snippet for your agent; see [Connect agents](./connect-agents.md). |
+| Connections   | **Channels** connects Telegram and Slack. **Integrations** manages APIs and MCP servers in the `spec` CLI registry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Knowledge     | Parser, embeddings and knowledge defaults                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Notifications | In-app updates, browser chime/volume/project mute, opt-in browser/PWA push for background approvals, questions, chat replies and job results, the question and approval dismissal period, and notification/audit cleanup. Push needs HTTPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Usage         | Request-level token usage and provider quotas                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Security      | Sign-in status and sign-out, default sign-in lifetime, allowed web origins, access tokens (minted by entering the secret)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| About         | **Restart ORC server** (closes terminals, keeps settings, reconnects), data locations, and server, desktop and Electron versions, platform, runtime, data folder, uptime, project links, and desktop update channel                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+On a phone, Settings opens a grouped list of sections; tapping one opens its panel, and the back arrow returns to the list. On desktop, the same groups appear in the sidebar.
+
+In a browser, **Hosts → Add server** saves another ORC address with an optional access token and proxy headers, so you can switch installations and come back. The token is sent as a Bearer token, and header names that look secret (token, key, secret, password, cookie) are masked in the form. Values are stored in this browser. Switching records the previous server, so the sign-in screen can return you there if the new one needs different credentials. A remote server has to list this dashboard's origin under **Security**, and should use HTTPS: a plain-http address sends its token and headers over the network unencrypted. Prefer a revocable access token to the API secret: saved values are readable by scripts on this dashboard's origin.
+
+**This ORC server** always means the machine running the connected ORC installation, never the browser's machine. **Change** on the SSH row picks that server's own machine or an SSH alias from its `~/.ssh/config`. The choice stays server-wide: it affects every client using that ORC installation, and open terminals and conversations keep the host they started on. A new chat can pin one of those execution hosts in its workspace chip without changing the default: the list offers the connected server itself — the remote machine, running work directly without SSH — followed by its SSH aliases.
+
+![Chat host list on a remote server: This ORC server (orc.example.com) above its SSH aliases](/screens/chat-hosts-picker.png)
 
 The desktop app stores its selected server, token and headers in `connection.json` in the app's data folder. This is a client-side target, separate from the server's `~/.orc/config.json`; switching servers does not repoint the CLI or stdio MCP. The integrated preview browser, local file picker, update controls and native notifications are available only in the local dashboard, so a remote window does not show them.
 
-![Desktop Connection settings with a remote server and proxy headers](/screens/desktop-connection.png)
+![Desktop Hosts settings with a remote server and proxy headers](/screens/desktop-connection.png)
 
-<img src="/screens/desktop-connection-phone.png" alt="Desktop Connection settings on a phone" width="260">
+<img src="/screens/desktop-connection-phone.png" alt="Hosts settings on a phone" width="260">
 
 ![Coding agents settings](/screens/settings-agents.png)
 
@@ -543,10 +565,20 @@ applies so a stuck agent cannot hold a chat worker indefinitely.
 
 The composer groups folder, branch, agent/model and permissions into compact
 controls. Phones and narrow desktop panels use icons; wide composers show labels.
-Send queues the next message while a reply is running. If this session is already
-responding, or every chat worker is busy, that message stays queued and sends when
-the turn ends, without an error. Open the pending list to edit a message, move it
-up or down, remove it, or send it ahead of the current reply.
+While a reply is running, **Send** joins that turn when the backend accepts
+steering (Codex, Claude, Pi and OpenCode), so the agent reads the message before
+its next step. **While responding** in Session settings → Customize switches the
+conversation to **Queue for the next turn**; new chats take that default from
+Settings → Chat. The companion control beside Stop performs the other action
+either way, so both stay one press away. Attachments always queue, because
+steering carries text only.
+When the turn cannot take the message — the reply is still starting, the backend
+answers one message at a time, or every chat worker is busy — the message stays
+queued and sends when the turn ends, without an error. A steer whose delivery the
+agent never confirmed is not resent: chat keeps the text and asks you to check
+the conversation first, because the message may already be there.
+Open the pending list to edit a message, move it up or down, remove it, or send
+it ahead of the current reply.
 An expanded pending list stays open across busy-worker retries. After it drains,
 the next list starts collapsed.
 If a first send loses its connection, chat looks for the original message and
@@ -585,24 +617,13 @@ in agent options. The permissions chip shows the open session's mode — includi
 activity, tools connection and capabilities, plus the identifiers: the ORC chat
 ID, the agent's native session ID used for resume, and the discovered session ID
 this chat continues when it was resumed. Each identifier can be copied.
-**Customize** holds permissions, session instructions, agent browser control and,
-at the end, advanced launch options. **Analytics** counts messages, turns, tool
-calls and failures from the transcript for every coding agent. When the agent
-records usage, it adds context growth with cache reuse and compaction markers,
-per-tool call and failure bars, and turn-duration bars. Agents that do not expose
-usage still show chat-derived analytics with an explanation for the missing
-context data. Explanations sit behind the info icon beside each label; new-chat
-defaults remain in Settings → Chat.
-
-Advanced launch options use the selected agent's own format: Claude SDK options,
-Pi options, Codex App Server arguments, or ACPX arguments for agents launched
-through ACPX. Direct ACP agents such as OpenCode take their command from ORC
-configuration. Environment variables, executable paths and secrets belong to the
-agent's provider profile in Settings → Providers.
+**Customize** holds permissions, while-responding behaviour, agent launch options,
+session instructions and
+agent browser control. Context, cache and turn figures live in the transcript and
+the header strip instead of a separate analytics tab. Explanations sit behind the
+info icon beside each label; new-chat defaults remain in Settings → Agents → Chat.
 
 ![Session settings overview with the ORC, agent and resume identifiers](/screens/chat-session-settings-overview-desktop.png)
-![Session analytics with counts, tool usage, context growth, cache reuse and compaction](/screens/chat-session-settings-analytics-desktop.png)
-![Session analytics tool usage, failures and turn durations](/screens/chat-session-settings-analytics-tools-desktop.png)
 
 <img src="/screens/chat-session-settings-customize-phone.png" alt="Session settings customization on a phone" width="260">
 

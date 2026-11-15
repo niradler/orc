@@ -32,7 +32,7 @@ async function git(...args: string[]): Promise<string> {
 }
 
 for (const agent of ["claude", "codex"] as const) {
-  test(`should upload ${agent} history, show Ready and open a resumed terminal in the pinned worktree`, async ({
+  test(`should upload ${agent} history, show Ready and continue in chat`, async ({
     page,
     request,
   }) => {
@@ -158,25 +158,16 @@ for (const agent of ["claude", "codex"] as const) {
     expect(ready.cwd?.replace(/\\/g, "/").endsWith(`/.orc/worktrees/${ready.id}`)).toBe(true);
     await gotoView(page, "sessions");
     const row = page.locator(
-      `[data-testid="live-session-row"][data-session-id="${ready.session_id}"]`,
+      `[data-testid="chat-history-row"][data-history-id="native:${ready.live_session_id}"]`,
     );
     await expect(row).toBeVisible();
     await expect(row.getByTestId("handoff-ready")).toHaveText("Ready to resume");
-    await row.getByTestId("resume-actions-menu").click();
-    await page.getByTestId("resume-actions-dropdown").getByTestId("open-terminal-resume").click();
-    await page.waitForURL(/\/terminals\/[^/]+$/);
-    const terminalId = new URL(page.url()).pathname.split("/").at(-1);
-    const terminal = await apiGet<{
-      cwd: string;
-      kind: string;
-      live_session_id: string;
-      host: string | null;
-    }>(request, `/terminals/${terminalId}`);
-    expect(terminal.cwd).toBe(ready.cwd);
-    expect(terminal.kind).toBe(agent);
-    expect(terminal.live_session_id).toBe(ready.live_session_id);
-    expect((await apiGet<SessionHandoff>(request, `/session-handoffs/${ready.id}`)).status).toBe(
-      "resumed",
-    );
+    await row.getByTestId("chat-resume-live").click();
+    await expect(page.getByTestId("chat-panel").filter({ visible: true })).toBeVisible();
+    await expect
+      .poll(
+        async () => (await apiGet<SessionHandoff>(request, `/session-handoffs/${ready.id}`)).status,
+      )
+      .toBe("resumed");
   });
 }

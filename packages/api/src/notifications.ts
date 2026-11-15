@@ -228,7 +228,7 @@ export function recordObservedNotification(
         requires_action: kind === "question",
         project_id: event.projectId,
         cwd: event.cwd ?? null,
-        path: `/sessions?session=${encodeURIComponent(event.id)}&project=all`,
+        path: `/chat?sessionLive=${encodeURIComponent(event.id)}&project=all`,
       });
       if (kind === "question") notify("attention", sessionWaitingMessage({ ...event, project }));
     } catch (error) {

@@ -41,6 +41,33 @@ export async function mockChatThread(page: Page, id = NOTIFY_CHAT_THREAD) {
   await page.route(`**/api/chat/threads/${id}/live`, (route) => route.fulfill({ status: 204 }));
 }
 
+/**
+ * Serves the thread `POST /chat/threads` returns when resuming a native session,
+ * so `sessionLive` links land in a conversation instead of an ownership error.
+ */
+export async function mockResumedChat(page: Page, liveId: string, id = NOTIFY_CHAT_THREAD) {
+  const thread = {
+    id,
+    title: "Migrate billing tables",
+    updatedAt: now,
+    config: ChatSettingsSchema.parse({ agent: "codex" }),
+    cwd: "/home/demo/acme-shop",
+    host: null,
+    runtimeId: null,
+    sourceId: liveId,
+    backend: "codex-cli",
+    messages: [{ id: "resumed", role: "assistant", content: "Resumed.", timestamp: now }],
+  };
+  await page.route("**/api/chat/threads", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ json: thread })
+      : route.fulfill({ json: { threads: [] } }),
+  );
+  await page.route(`**/api/chat/threads/${id}`, (route) => route.fulfill({ json: thread }));
+  await page.route(`**/api/chat/threads/${id}/live`, (route) => route.fulfill({ status: 204 }));
+  return thread;
+}
+
 export function chatCompletion(threadId = NOTIFY_CHAT_THREAD): OrcNotification {
   return {
     id: `notification-chat-${threadId}`,
@@ -153,7 +180,7 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
           body: "The agent finished its turn.",
           level: "done",
           project_id: null,
-          path: `/sessions?session=${session.id}&project=all`,
+          path: `/chat?sessionLive=${session.id}&project=all`,
           requires_action: false,
           created_at: now,
           expires_at: now + 30 * 86400000,
@@ -231,6 +258,12 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
       json: { sessions: state.sessions, total: state.sessions.length, has_more: false },
     }),
   );
+  // The resumed-session link reads one session before continuing it in chat.
+  await page.route(/\/api\/sessions\/live\/([^/?]+)$/, (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").pop();
+    const session = state.sessions.find((item) => item.id === id);
+    return session ? route.fulfill({ json: session }) : route.fallback();
+  });
   await page.route("**/api/sessions/archive?**", (route) =>
     route.fulfill({ json: { sessions: [], has_more: false } }),
   );

@@ -6,7 +6,7 @@ import type {
   ChatTurnStat,
 } from "@orc/core/chat-analytics";
 import { agentLabel, codingAgent } from "@orc/core/coding-agents";
-import type { HostRuntime } from "@orc/core/exec-host";
+import { execHostFor, type HostRuntime, hostRuntime } from "@orc/core/exec-host";
 import type { SessionCacheUsage } from "@orc/core/usage";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "./cache-usage.js";
 
@@ -216,4 +216,15 @@ function unsupported(backend: string, model: string | null, reason: string): Cha
     reason,
     usage: emptySessionCacheUsage(),
   };
+}
+
+/** The full analytics payload for one chat, shared by the chat route and the
+ *  session page so both surfaces report the same numbers. */
+export async function chatAnalyticsFor(
+  thread: ChatThread,
+  source: ChatNativeSource | null,
+  runtime = hostRuntime(execHostFor(thread.host)),
+): Promise<ChatAnalytics> {
+  const context = await readChatContext(runtime, thread, source);
+  return { ...readChatAnalytics(thread), context };
 }

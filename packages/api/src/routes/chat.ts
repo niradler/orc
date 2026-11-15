@@ -101,7 +101,7 @@ import {
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
-import { readChatAnalytics, readChatContext } from "../sessions/chat-analytics.js";
+import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { projectIdFor } from "../sessions/common.js";
 import { notifySpawner, spawnChain } from "../sessions/control.js";
@@ -427,6 +427,8 @@ app.openapi(
 );
 
 const STEER_LIMIT = 32;
+/** The message may already be in the conversation, so a client must not resend it. */
+const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
 
 function steerable(
   run: ChatRun | undefined,
@@ -442,7 +444,10 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
   const previous = run.steering.get(requestId);
   if (previous) {
     if (previous.input !== input)
-      throw new ConflictError("This steering request ID already has different content.");
+      throw new ConflictError(
+        "This steering request ID already has different content.",
+        STEER_UNCONFIRMED,
+      );
     return previous.result;
   }
   if (run.steering.size >= STEER_LIMIT)
@@ -450,7 +455,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       "This response has reached its steering limit. Queue a message instead.",
     );
   if (run.thread.messages.some((message) => message.id === requestId))
-    throw new ConflictError("This message ID is already in use.");
+    throw new ConflictError("This message ID is already in use.", STEER_UNCONFIRMED);
   const steer = run.session.steer.bind(run.session);
   let dispatched = false;
   const deliver = async (): Promise<ChatThread> => {
@@ -499,7 +504,8 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       ];
       saveDelivery();
       throw new ConflictError(
-        "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
+        "Steering delivery could not be confirmed. Check the response before sending another message; this text may already be in the conversation.",
+        STEER_UNCONFIRMED,
       );
     }
     delete message.activity;
@@ -711,7 +717,7 @@ async function importTranscript(thread: ChatThread, source: NativeSource): Promi
       offset: transcript.total - CHAT_HISTORY_PAGE_SIZE,
       limit: CHAT_HISTORY_PAGE_SIZE,
     });
-  thread.messages = chatHistory(transcript.turns, source.backend);
+  thread.messages = chatHistory(transcript.turns, source.backend, thread.config.model);
   thread.importedMessages = thread.messages.length;
   thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
   if (mark) thread.transcriptMark = mark;
@@ -971,6 +977,17 @@ app.openapi(
             schema: z.object({
               changed: z.boolean(),
               running: z.boolean(),
+              live: z
+                .object({
+                  id: z.string(),
+                  agent: z.string(),
+                  tokens_used: z.number().nullable(),
+                  tokens_estimated: z.boolean(),
+                  status: z.enum(["idle", "running", "stopped", "error"]),
+                  created_at: z.string().datetime(),
+                  last_activity_at: z.string().datetime().nullable(),
+                })
+                .nullable(),
               queued: z.array(z.object({ id: z.string(), title: z.string() })),
             }),
           },
@@ -993,9 +1010,21 @@ app.openapi(
     const queued = thread.runtimeId
       ? await queuedAnswers(turnKey(thread.host, thread.backend, thread.runtimeId))
       : [];
+    const source = await nativeSource(thread);
     return c.json({
       changed,
       running,
+      live: source
+        ? {
+            id: source.id,
+            agent: source.backend,
+            tokens_used: source.tokens_used ?? null,
+            tokens_estimated: source.backend === "cursor" && source.tokens_used != null,
+            status: source.status,
+            created_at: source.created_at.toISOString(),
+            last_activity_at: source.last_activity_at?.toISOString() ?? null,
+          }
+        : null,
       queued: queued.map((request) => ({
         id: request.id,
         title: request.input.title ?? request.input.prompt.slice(0, 120),
@@ -1022,19 +1051,19 @@ app.openapi(
   async (c) => {
     const thread = requireThread(c.req.valid("param").id);
     const source = await nativeSource(thread);
-    const context = await readChatContext(
-      hostRuntime(execHostFor(thread.host)),
-      thread,
-      source
-        ? {
-            backend: source.backend,
-            model: source.model ?? null,
-            transcript_path: source.transcript_path ?? null,
-            runtime_session_id: source.runtime_session_id ?? null,
-          }
-        : null,
+    return c.json(
+      await chatAnalyticsFor(
+        thread,
+        source
+          ? {
+              backend: source.backend,
+              model: source.model ?? null,
+              transcript_path: source.transcript_path ?? null,
+              runtime_session_id: source.runtime_session_id ?? null,
+            }
+          : null,
+      ),
     );
-    return c.json({ ...readChatAnalytics(thread), context });
   },
 );
 app.openapi(
@@ -1070,7 +1099,16 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ agentOptions: ChatAgentOptionsMapSchema }).strict(),
+            schema: z
+              .object({
+                agentOptions: ChatAgentOptionsMapSchema.optional(),
+                sendWhileRunning: z.enum(["steer", "queue"]).optional(),
+              })
+              .strict()
+              .refine(
+                (body) => body.agentOptions !== undefined || body.sendWhileRunning !== undefined,
+                "Provide agentOptions or sendWhileRunning",
+              ),
           },
         },
       },
@@ -1079,13 +1117,20 @@ app.openapi(
   }),
   (c) => {
     const thread = requireThread(c.req.valid("param").id);
-    const key = thread.runtimeId
-      ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
-      : thread.id;
-    if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
-      throw new ConflictError("Wait for the agent to finish before changing launch options.");
-    thread.config.agentOptions = c.req.valid("json").agentOptions;
-    thread.updatedAt = Date.now();
+    const body = c.req.valid("json");
+    // Launch options rebuild the next turn, so they wait for the running one. The
+    // send preference only steers the composer and applies immediately.
+    if (body.agentOptions !== undefined) {
+      const key = thread.runtimeId
+        ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
+        : thread.id;
+      if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
+        throw new ConflictError("Wait for the agent to finish before changing launch options.");
+      thread.config.agentOptions = body.agentOptions;
+    }
+    if (body.sendWhileRunning !== undefined) thread.config.sendWhileRunning = body.sendWhileRunning;
+    // A send preference is not conversation activity, so it does not reorder recents.
+    if (body.agentOptions !== undefined) thread.updatedAt = Date.now();
     store().save(thread);
     return c.json(thread);
   },
@@ -1146,7 +1191,7 @@ app.openapi(
         "The native transcript changed. Reopen the session to load its history.",
       );
     return c.json({
-      messages: chatHistory(page.turns, source.backend),
+      messages: chatHistory(page.turns, source.backend, thread.config.model),
       before: offset > 0 ? offset : null,
     });
   },
@@ -1246,6 +1291,8 @@ app.openapi(
         // Sync to real native activity without stamping the open time.
         thread.updatedAt = Math.max(thread.updatedAt, resumed.updatedAt);
       } else thread = resumed;
+      // Resuming in chat consumes a ready handoff just like resuming in a terminal.
+      if (body.sourceSessionId) await getHandoffService().markResumed(body.sourceSessionId);
     }
     store().save(thread);
     return c.json(thread);
@@ -1326,7 +1373,7 @@ async function forkPrefix(
       start = from;
     }
     return {
-      messages: [...chatHistory(turns, thread.config.agent), ...loaded],
+      messages: [...chatHistory(turns, thread.config.agent, thread.config.model), ...loaded],
       partial: start > 0,
     };
   } catch (error) {
@@ -1671,6 +1718,8 @@ const requestSchema = z
     system: z.string().max(20000).optional(),
     autoApprove: z.boolean().optional(),
     permissionMode: ChatPermissionModeSchema.optional(),
+    // The composer's send preference, so a change made before the first message sticks.
+    sendWhileRunning: z.enum(["steer", "queue"]).optional(),
     agentOptions: ChatAgentOptionsMapSchema.optional(),
     // Where the user is chatting from. Sent to the agent only; the stored message stays the user's text.
     context: ChatTurnContextSchema.optional(),
@@ -1832,6 +1881,10 @@ async function openChat(
       throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = body.permissionMode;
   }
+  // Only a new conversation adopts the composer preference; an existing one owns
+  // its setting, so another device cannot silently replace it.
+  if (!body.threadId && body.sendWhileRunning !== undefined)
+    thread.config.sendWhileRunning = body.sendWhileRunning;
   // The switch mutates the shared thread, so every check that can reject the request
   // runs first: from the busy check below to beginTurn's reservation there must be no
   // await, or concurrent sends could move the conversation under each other.
@@ -2052,6 +2105,7 @@ async function beginTurn(
     content: "",
     timestamp: Date.now(),
     agent: thread.config.agent,
+    ...(thread.config.model ? { model: thread.config.model } : {}),
     activity: [],
     turn: { startedAt },
   };
@@ -2329,6 +2383,7 @@ async function beginTurn(
           }
           if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
             await emit({ type: event.type, text: event.data });
+          else if (event.type === "plan") await emit({ type: "plan", data: event.data });
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
@@ -2799,6 +2854,7 @@ export function chatStatus(id: string): SessionStatus {
       .map((child) => child.id),
     project_id: thread.projectId ?? null,
     cwd: thread.cwd,
+    started_at: thread.spawnedBy?.at ?? null,
     updated_at: thread.updatedAt,
   };
 }

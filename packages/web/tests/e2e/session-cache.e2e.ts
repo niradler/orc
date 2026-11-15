@@ -35,6 +35,9 @@ for (const width of [1440, 390])
       await page.route("**/api/sessions/live?**", (route) =>
         route.fulfill({ json: { sessions: [session] } }),
       );
+      await page.route("**/api/sessions/live/cache-fixture", (route) =>
+        route.fulfill({ json: session }),
+      );
       await page.route("**/api/sessions/live/cache-fixture/transcript?**", (route) =>
         route.fulfill({
           json: {
@@ -82,16 +85,16 @@ for (const width of [1440, 390])
           },
         }),
       );
-      await page.goto("/sessions?project=all&session=cache-fixture");
-      const detail = page.getByTestId("live-session-detail");
-      const cache = page.getByTestId("session-cache");
-      const indicator = page.getByTestId("session-cache-indicator");
+      await page.goto("/chat?project=all&sessionView=cache-fixture");
+      const detail = page.getByTestId("session-view");
+      const cache = detail.getByTestId("session-cache");
+      const indicator = detail.getByTestId("session-cache-indicator");
       await expect(indicator).toHaveText("1k context · 1 compact · 80% cached input");
       await expect(cache).not.toHaveAttribute("open");
       await indicator.press("Enter");
       await expect(cache).toContainText("Session total 11k over 12 requests");
       await expect(cache).toContainText("Uncached input");
-      const chart = page.getByTestId("session-context-chart");
+      const chart = detail.getByTestId("session-context-chart");
       await expect(chart.locator("figcaption")).toHaveText("ContextCompacted");
       await expect(chart.locator(".recharts-area-curve")).toBeVisible();
       await expect(chart.locator(".recharts-reference-line")).toHaveCount(1);
@@ -102,6 +105,8 @@ for (const width of [1440, 390])
       await expect(cache).not.toContainText(/Last request|448,563/);
       await expect(cache).not.toContainText("unavailable");
       await page.clock.fastForward(60_001);
+      // One cache panel only: the header must not remount it when it refreshes.
+      await expect(cache).toHaveCount(1);
       await expect(indicator).toContainText("Cache may need rebuilding");
       await expect(cache).toContainText("80% last reported");
       expect(await detail.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
@@ -120,6 +125,9 @@ test("session cache omits missing timing and unsupported evidence", async ({ pag
   );
   await page.route("**/api/sessions/live?**", (route) =>
     route.fulfill({ json: { sessions: [session] } }),
+  );
+  await page.route("**/api/sessions/live/cache-fixture", (route) =>
+    route.fulfill({ json: session }),
   );
   await page.route("**/api/sessions/live/cache-fixture/transcript?**", (route) =>
     route.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
@@ -145,16 +153,17 @@ test("session cache omits missing timing and unsupported evidence", async ({ pag
       },
     }),
   );
-  await page.goto("/sessions?project=all&session=cache-fixture");
-  const cache = page.getByTestId("session-cache");
+  await page.goto("/chat?project=all&sessionView=cache-fixture");
+  const detail = page.getByTestId("session-view");
+  const cache = detail.getByTestId("session-cache");
   await expect(cache).toContainText("80% cached input");
   await cache.locator("summary").click();
   await expect(cache).not.toContainText(
     /expiry|unavailable|rebuilding|written|Session total|Compacted/,
   );
-  await expect(page.getByTestId("session-context-chart")).toHaveCount(0);
+  await expect(detail.getByTestId("session-context-chart")).toHaveCount(0);
   hasUsage = false;
   await page.reload();
-  await expect(page.getByTestId("live-session-detail")).toBeVisible();
+  await expect(detail).toBeVisible();
   await expect(cache).toHaveCount(0);
 });

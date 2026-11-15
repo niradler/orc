@@ -18,7 +18,7 @@ export function AttentionSettings() {
   });
   const value = hours ?? String(preferences.data?.attention_retention_hours ?? 72);
   return (
-    <section className="mt-6 space-y-3" aria-labelledby="attention-settings-title">
+    <section className="space-y-3" aria-labelledby="attention-settings-title">
       <h2 id="attention-settings-title" className="text-base font-medium">
         Questions and approvals
       </h2>

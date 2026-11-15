@@ -7,7 +7,7 @@ How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi, OpenCode and other MC
 | Piece                                 | Gives the agent                                                           | Setup                                                            |
 | ------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | [MCP server](#mcp)                    | ORC tools: context, tasks, memories, knowledge, jobs, skills, scratchpads | Register once per agent                                          |
-| [Session tracking](#session-tracking) | The agent's sessions in **Sessions**, with resume and search              | Automatic for Claude Code and Codex; hooks for Cursor and Gemini |
+| [Session tracking](#session-tracking) | The agent's sessions in the chat session list, with resume and search | Automatic for Claude Code and Codex; hooks for Cursor and Gemini |
 | [Rule hooks](#rule-hooks)             | ORC rules enforced inside the agent (block, approve, inject context)      | `orc rules install-hook`                                         |
 | [Skills](#skills)                     | ORC's `orc-platform` and `orc-sdlc` skills in the agent                   | `npx skills add` or `orc skill export-to`                        |
 
@@ -34,7 +34,7 @@ Scope a connection to projects with query parameters:
 Pass `project` or `projects`, not both. Unknown project names are rejected.
 
 ::: tip Generate the snippet
-**Settings → MCP** in the dashboard builds the exact config for Claude Code (`.mcp.json` or CLI), Codex (`config.toml`), the spec CLI or a bare URL, with your endpoint, mode, projects and the name of the environment variable that holds your secret. The secret itself is never shown.
+**Settings → Agents → MCP** in the dashboard builds the exact config for Claude Code (`.mcp.json` or CLI), Codex (`config.toml`), the spec CLI or a bare URL, with your endpoint, mode, projects and the name of the environment variable that holds your secret. The secret itself is never shown.
 :::
 
 The examples below assume the secret is exported as `ORC_API_SECRET`. Without a secret, drop the header or token line. To use a revocable token instead of the secret, create one under **Settings → Security** (see [Configuration](./configuration.md#authentication)).
@@ -262,20 +262,21 @@ adapter, not proof that every installed agent version supports every native feat
 
 Codex chat uses `codex app-server` over stdio. It supports native resume, approvals,
 questions, live permission changes, steering and interruption. While Codex is
-responding, **Send now** sends a text message into that active turn; ordinary **Send**
-queues it for later. Stop interrupts the active turn and keeps the native session, so
+responding, **Send** delivers a text message into that active turn; **Queue for
+the next turn** in Session settings → Customize holds it for later instead. Stop
+interrupts the active turn and keeps the native session, so
 the next message continues the same conversation. Fork and conversation rollback are
 not exposed. Non-interactive `codex-cli` callers
 continue to use execution mode, without chat's interactive controls.
 
 Claude chat uses the Claude Agent SDK in streaming-input mode. It supports native
 resume, approvals, questions, live permission changes, steering and interruption.
-While Claude is responding, **Send now** delivers a text message into the active
+While Claude is responding, **Send** delivers a text message into the active
 query; Claude picks it up within the same response. On current Claude versions the
 response completes once the steered message has been answered; if it is never
 answered, the response ends after a quiet period with a note. Delivery is confirmed
-when the SDK has written the message to the agent; ordinary **Send** queues it for
-the next turn. Stop sends
+when the SDK has written the message to the agent; **Queue for the next turn**
+holds it instead. Stop sends
 the SDK's native interrupt, releases pending approvals and questions, and keeps the
 native session, so the next message resumes the same conversation. On current Claude
 versions, a steering message delivered but not yet answered when Stop lands is
@@ -305,10 +306,11 @@ backend, which keeps steering disabled. If OpenCode moves a saved session into a
 created, ORC follows it on resume, continues in that folder and updates the
 conversation's working folder.
 
-While OpenCode is responding, **Send now** sends a second `session/prompt` into
+While OpenCode is responding, **Send** sends a second `session/prompt` into
 the running turn. OpenCode's ACP server treats that prompt as steering, so the
 text reaches the model before its next step instead of waiting for the turn to
-end. This was verified against OpenCode 1.19.5 over `opencode acp`, including
+end. **Queue for the next turn** in Session settings → Customize keeps messages
+for after the turn, and files always queue. This was verified against OpenCode 1.19.5 over `opencode acp`, including
 steering during a running tool call. The ACP handshake has no steering field, so
 ORC declares it for the OpenCode backend and keeps it on the negotiated session;
 if an OpenCode build rejects a mid-turn prompt, ORC turns the flag off for that

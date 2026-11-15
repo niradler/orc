@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { type ChatThread, ChatThreadSchema } from "@orc/core/chat";
+import { type ChatThread, parseChatThread } from "@orc/core/chat";
 
 type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   agent: string | null;
@@ -21,7 +21,7 @@ export class ChatStore {
     const row = this.db
       .query<{ data: string }, [string]>("SELECT data FROM chat_threads WHERE id = ?")
       .get(id);
-    return row ? ChatThreadSchema.parse(JSON.parse(row.data)) : null;
+    return row ? parseChatThread(JSON.parse(row.data)) : null;
   }
   list(): ChatSummary[] {
     return this.db
@@ -60,6 +60,15 @@ export class ChatStore {
       )
       .all(runtimeId, backend, host ?? "")
       .flatMap((row) => this.get(row.id) ?? []);
+  }
+  bySource(sourceId: string): ChatThread | null {
+    const row = this.db
+      .query<{ id: string }, [string]>(
+        `SELECT id FROM chat_threads WHERE json_valid(data)
+          AND json_extract(data, '$.sourceId')=? ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(sourceId);
+    return row ? this.get(row.id) : null;
   }
   children(sessionIds: string[]): ChatThread[] {
     if (!sessionIds.length) return [];

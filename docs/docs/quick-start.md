@@ -97,11 +97,11 @@ claude mcp add --transport http orc http://127.0.0.1:7700/mcp
 
 With an API secret, add `--header 'Authorization: Bearer ${ORC_API_SECRET}'` and export `ORC_API_SECRET` in the agent's environment.
 
-The dashboard builds this snippet for Claude Code, Codex and other clients under **Settings → MCP**.
+The dashboard builds this snippet for Claude Code, Codex and other clients under **Settings → Agents → MCP**.
 
 Then ask the agent to call ORC's `context` tool for `my-app`. It should return your task and memory.
 
-Claude Code and Codex sessions appear under **Sessions** without further setup.
+Claude Code and Codex sessions appear in the chat page's session list without further setup.
 
 Full instructions per agent: [Connect agents](./connect-agents.md).
 

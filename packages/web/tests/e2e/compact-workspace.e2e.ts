@@ -7,13 +7,12 @@ test("view help works with keyboard, hover and touch without permanent introduct
   page,
   browser,
 }) => {
-  await gotoView(page, "sessions");
-  await expect(page.getByTestId("archive-disclosure")).not.toHaveAttribute("open");
-  const help = page.getByTestId("live-sessions").getByTestId("view-help");
+  await gotoView(page, "scratchpads");
+  const help = page.getByTestId("view-help");
   await help.focus();
   await expect(page.getByTestId("view-help-content")).toBeVisible();
   await expect(page.getByTestId("view-help-content")).toContainText(
-    "Discovered from your coding agents",
+    "Working docs, diagrams and HTML pages",
   );
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("view-help-content")).toHaveCount(0);
@@ -48,28 +47,46 @@ test("view help works with keyboard, hover and touch without permanent introduct
   }
 });
 
-test("phone filters retain URL state and survive hide, resize and reload", async ({ page }) => {
+test("phone session filters survive resize and reload", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  // The agent filter lists agents that actually have sessions.
+  const now = new Date().toISOString();
+  await page.route("**/api/sessions/live?**", (route) =>
+    route.fulfill({
+      json: {
+        sessions: ["codex", "claude"].map((agent) => ({
+          id: `filters-${agent}`,
+          session_id: `native-filters-${agent}`,
+          agent,
+          name: `${agent} filters`,
+          status: "idle",
+          cwd: "/fixture",
+          project_id: null,
+          last_activity_at: now,
+          created_at: now,
+          tokens_used: null,
+        })),
+      },
+    }),
+  );
+  await page.route("**/api/sessions/archive?**", (route) =>
+    route.fulfill({ json: { sessions: [], has_more: false } }),
+  );
   await gotoView(page, "sessions");
-  await expect(page.getByTestId("view-filters")).toBeHidden();
-  const toggle = page.getByTestId("view-filters-toggle");
-  await toggle.click();
-  await page.getByTestId("agent-filter").selectOption("codex");
-  await page.getByTestId("session-date-sort").selectOption("asc");
-  await page.getByTestId("show-ended").click();
-  await expect(page.getByTestId("show-ended")).not.toBeChecked();
-  await expect(toggle).toHaveText("Filters (3)");
-  await toggle.click();
-  await expect(page.getByTestId("view-filters")).toBeHidden();
+  await page.getByTestId("chat-session-agent").selectOption("codex");
+  await page.getByTestId("chat-session-sort").selectOption("active-asc");
+  const hidden = page.getByTestId("chat-session-hidden");
+  await hidden.click();
+  await expect(hidden).toHaveAttribute("aria-pressed", "true");
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.getByTestId("agent-filter")).toBeVisible();
-  await expect(page.getByTestId("agent-filter")).toHaveValue("codex");
+  await expect(page.getByTestId("chat-session-agent")).toBeVisible();
+  await expect(page.getByTestId("chat-session-agent")).toHaveValue("codex");
+  await expect(page.getByTestId("chat-session-sort")).toHaveValue("active-asc");
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId("view-filters")).toBeHidden();
   await page.reload();
-  await page.getByTestId("view-filters-toggle").click();
-  await expect(page.getByTestId("session-date-sort")).toHaveValue("asc");
-  await expect(page.getByTestId("show-ended")).not.toBeChecked();
+  await expect(page.getByTestId("chat-session-agent")).toHaveValue("codex");
+  await expect(page.getByTestId("chat-session-sort")).toHaveValue("active-asc");
+  await expect(page.getByTestId("chat-session-hidden")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("scratchpad search applies without a button and retains kind and project filters", async ({
@@ -199,11 +216,14 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
     }, theme);
     for (const width of [1440, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      for (const route of ["webhooks", "sessions", "scratchpad", "jobs"]) {
+      for (const route of ["webhooks", "chat", "scratchpad", "jobs"]) {
         await page.goto(
-          `/${route}?project=${project.id}${route === "scratchpad" ? `&padProject=${project.id}` : ""}`,
+          `/${route}?project=${project.id}${route === "scratchpad" ? `&padProject=${project.id}` : ""}${route === "chat" ? "&sessionList=show" : ""}`,
         );
-        if (route === "sessions") await expect(page.getByTestId("live-session-row")).toBeVisible();
+        if (route === "chat")
+          await expect(
+            page.getByTestId("chat-session-list").getByTestId("chat-history-row"),
+          ).toBeVisible();
         if (route === "scratchpad") await expect(page.getByTestId("scratchpad-row")).toHaveCount(3);
         if (route === "jobs")
           await expect(page.locator(`[data-job-id="${previewJob.id}"]`)).toBeVisible();

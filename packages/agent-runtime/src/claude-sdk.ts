@@ -37,6 +37,7 @@ import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { elicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
+import { planFromToolInput } from "./plan.js";
 import { claudeLimitEvent } from "./provider-limits.js";
 import { registerBackend } from "./registry.js";
 import {
@@ -733,14 +734,18 @@ class ClaudeSDKSession implements AgentSession {
             } else if (block.type === "thinking" && "thinking" in block && block.thinking) {
               push({ type: "thinking", data: block.thinking as string });
             } else if (block.type === "tool_use") {
+              const input = JSON.stringify(block.input);
               push({
                 type: "tool_use",
                 data: {
                   id: block.id,
                   name: block.name,
-                  input: JSON.stringify(block.input),
+                  input,
                 },
               });
+              // TodoWrite carries the agent's checklist; the tool row stays, the plan is structured.
+              const plan = planFromToolInput(block.name, input);
+              if (plan) push(plan);
             }
           }
           if (!msg.parent_tool_use_id) streamedText = false;

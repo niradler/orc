@@ -1,6 +1,9 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type TranscriptPage } from "@/api/client";
 
+/** A child session in one of these states still owes work. */
+const CHILD_WORK_STATUS = new Set(["running", "waiting", "queued"]);
+
 export function useSessions(params?: { agent?: string; limit?: number }) {
   return useQuery({
     queryKey: ["sessions", params],
@@ -44,20 +47,15 @@ export function useLiveSessions(active: boolean, projectId?: string, includeHidd
   });
 }
 
-export function useSyncSessions() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.sessions.sync(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
-  });
-}
-
 export function useLinkSessionTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, taskId }: { id: string; taskId: string | null }) =>
       api.sessions.linkTask(id, taskId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["chat-resume-sessions"] });
+    },
   });
 }
 
@@ -72,7 +70,10 @@ export function useUpdateLiveSession() {
       display_title?: string | null;
       hidden?: boolean;
     }) => api.sessions.update(id, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["chat-resume-sessions"] });
+    },
   });
 }
 
@@ -94,6 +95,7 @@ export function useSessionSearch(
       }),
     enabled: q.trim().length >= 2,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -145,6 +147,24 @@ export function useSessionLineage(sessionId: string | null) {
     queryKey: ["sessions", "lineage", sessionId],
     queryFn: () => api.sessions.lineage(sessionId as string),
     enabled: Boolean(sessionId),
+    retry: false,
+  });
+}
+
+/**
+ * Sessions this chat started, with their live status. A child's own turn publishes `sessions`
+ * changes; the timer only covers a stream that dropped, so a quiet child cannot look finished.
+ */
+export function useSessionChildren(sessionId: string | null) {
+  return useQuery({
+    queryKey: ["sessions", "children", sessionId],
+    queryFn: () => api.sessions.children(sessionId as string),
+    select: (data) => data.sessions,
+    enabled: Boolean(sessionId),
+    refetchInterval: (query) =>
+      query.state.data?.sessions.some((session) => CHILD_WORK_STATUS.has(session.status))
+        ? 5000
+        : false,
     retry: false,
   });
 }

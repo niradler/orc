@@ -1,4 +1,4 @@
-import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
+import type { ChatThread } from "@orc/core/chat";
 import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
@@ -29,6 +29,8 @@ export type ChatHistoryEntry = HistorySource & {
   projectId?: string | null;
   terminalId?: string;
   seenKeys: string[];
+  snippets?: string[];
+  matched?: string[];
 };
 
 function observe(entry: ChatHistoryEntry, state: AgentState) {
@@ -61,6 +63,7 @@ export function chatHistoryList(
   const identities = new Map<string, ChatHistoryEntry>();
   const sources = new Map<string, ChatHistoryEntry>();
   const archiveMatches = new Set<string>();
+  const contentMatches = new Set<string>();
   const liveEntries = new Map<string, ChatHistoryEntry>();
   const chatIds = new Set(tabs.flatMap((tab) => (tab.thread ? [tab.thread.id] : [])));
   const savedDates = new Map(saved.map((thread) => [thread.id, thread.updatedAt]));
@@ -146,7 +149,6 @@ export function chatHistoryList(
     if (thread.sourceId && !sources.has(thread.sourceId)) sources.set(thread.sourceId, entry);
   }
   for (const session of native) {
-    if (!nativeChatAgent(session.agent)) continue;
     const key = session.session_id
       ? nativeKey(session.agent, session.session_id, session.host)
       : null;
@@ -168,6 +170,10 @@ export function chatHistoryList(
       entry.projectId ??
       projectForFolder(session.cwd, projectFolders)?.id ??
       session.project_id;
+    const hit = session as LiveSession & { snippets?: string[]; matched?: string[] };
+    if (hit.snippets?.length) entry.snippets = hit.snippets;
+    if (hit.matched?.length) entry.matched = hit.matched;
+    if (hit.matched?.length) contentMatches.add(entry.id);
     observe(entry, liveSessionState(session));
     entry.updatedAt = Math.max(entry.updatedAt, date);
     keywords.set(
@@ -231,6 +237,8 @@ export function chatHistoryList(
     entry.provider ??= session.agent;
     if (entry.projectId === undefined) entry.projectId = session.project_id;
     entry.updatedAt = Math.max(entry.updatedAt, date);
+    const hit = session as ArchiveSession & { passages?: { snippet: string }[] };
+    if (hit.passages?.length) entry.snippets = hit.passages.map((passage) => passage.snippet);
     // A full-text archive hit must still reveal its canonical conversation, even if the title differs.
     archiveMatches.add(entry.id);
     keywords.set(
@@ -259,9 +267,20 @@ export function chatHistoryList(
           : entry.projectId === projectScope),
     )
     .filter(
-      (entry) => matches(keywords.get(entry.id) ?? entry.title) || archiveMatches.has(entry.id),
+      (entry) =>
+        matches(keywords.get(entry.id) ?? entry.title) ||
+        archiveMatches.has(entry.id) ||
+        contentMatches.has(entry.id),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+}
+
+/** The row's provider: the live agent for discovered sessions, the tab or thread agent otherwise. */
+export function entryAgent(entry: ChatHistoryEntry): string {
+  if (entry.kind === "local") return entry.tab.config.agent;
+  if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
+  if (entry.kind === "terminal") return entry.terminal.kind;
+  return entry.session.agent;
 }
 
 /** The row's state; finished activity this client has not seen reads Done until opened. */

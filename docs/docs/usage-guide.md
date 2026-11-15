@@ -237,7 +237,7 @@ Send a note to another live session without leaving the chat:
 ```
 
 ORC delivers the note at that session's next safe point and confirms the queue
-position. Use the Sessions view to review, reorder or cancel queued notes.
+position. Use the session viewer's **Messages** section to review, reorder or cancel queued notes.
 
 ## Configuration tips
 

@@ -80,7 +80,7 @@ A session is one coding-agent conversation. ORC tracks two kinds:
 - **Managed sessions** that ORC started: task workers, job runs, chat and terminal agents. They record backend, model, execution host, cwd, transcript, tokens and linked task.
 - **Live sessions** that you started yourself in Claude Code, Codex, Cursor or Gemini. ORC discovers them from native history and lifecycle hooks and shows them as working, waiting or ended.
 
-The Sessions view lists both, with search, transcripts, **Resume → Terminal** and resume commands. Sessions can also be archived to ORC and handed off to another machine.
+The chat page's session list shows both, with search, read-only transcripts, **Continue in chat** for resumable providers and a copyable resume command. Sessions can also be archived to ORC and handed off to another machine.
 
 See [Live sessions](./live-sessions.md) and [Session handoff](./session-handoff.md).
 
@@ -145,7 +145,7 @@ A webhook source is a reusable signed endpoint that triggers jobs. Generic sourc
 
 ## Channels
 
-Channels connect ORC to Telegram and Slack. In **Settings → Channels** you add a connection, pair approved recipients, and define ordered inbound rules that route messages to agents. Agent replies return to the same conversation. Agents send on their own with `channel_send` or `POST /api/channels/messages`. Attention notifications are a separate opt-in.
+Channels connect ORC to Telegram and Slack. In **Settings → Connections → Channels** you add a connection, pair approved recipients, and define ordered inbound rules that route messages to agents. Agent replies return to the same conversation. Agents send on their own with `channel_send` or `POST /api/channels/messages`. Attention notifications are a separate opt-in.
 
 The older config-based gateway (`gateway.telegram`, `gateway.slack`) still supports `/status`, `/tasks`, `/approve`, `/reject`, `/jobs`, `/run`, `/mem` and `/agent`.
 

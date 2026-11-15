@@ -93,7 +93,7 @@ The same data sits behind every interface.
 <table>
   <tr>
     <td><img src="docs/public/screens/tasks.png" alt="Task board" /></td>
-    <td><img src="docs/public/screens/sessions.png" alt="Agent sessions" /></td>
+    <td><img src="docs/public/screens/session-recents-desktop.png" alt="Chat page session list and conversation" /></td>
   </tr>
   <tr>
     <td><img src="docs/public/screens/task-flow.png" alt="Task flow graph" /></td>

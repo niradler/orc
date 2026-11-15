@@ -57,6 +57,8 @@ let failedTurn = false;
 let resultIdentity: string | undefined;
 let resultDurationMs: number | undefined;
 let narrateBeforeTool = false;
+let planUpdate: { status: "pending" | "in_progress" | "completed" | "failed"; content: string }[] =
+  [];
 let noResumable = false;
 let closed = 0;
 let interrupted = 0;
@@ -125,6 +127,15 @@ function session(call: (typeof calls)[number]): AgentSession {
         return;
       }
       yield { type: "thinking", data: "Visible provider reasoning summary" };
+      if (planUpdate.length)
+        yield {
+          type: "plan",
+          data: {
+            id: "plan",
+            title: "Checklist",
+            entries: planUpdate.map((entry, index) => ({ id: String(index), ...entry })),
+          },
+        };
       if (narrateBeforeTool) yield { type: "text", data: "First I will inspect the workspace." };
       yield {
         type: "tool_use",
@@ -593,6 +604,44 @@ describe("native chat runtime", () => {
     ).toHaveLength(4);
     expect(closed).toBeGreaterThanOrEqual(2);
   });
+  test("records the turn's model and keeps an agent plan as structured activity", async () => {
+    planUpdate = [
+      { status: "in_progress", content: "Map the adapters" },
+      { status: "pending", content: "Ship the card" },
+    ];
+    try {
+      const result = await turn({
+        messages: [{ role: "user", content: "plan it" }],
+        agent: "codex",
+        model: "fixture-plan",
+      });
+      expect(result.response.status).toBe(200);
+      expect(result.events.map((event) => event.type)).toContain("plan");
+      const opened = result.events[0];
+      if (opened?.type !== "thread") throw new Error("No conversation identity");
+      const stored = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(stored.messages[1]?.model).toBe("fixture-plan");
+      expect(stored.messages[1]?.activity).toContainEqual({
+        type: "plan",
+        id: "plan",
+        title: "Checklist",
+        entries: [
+          { id: "0", status: "in_progress", content: "Map the adapters" },
+          { id: "1", status: "pending", content: "Ship the card" },
+        ],
+      });
+      // A plan is not a status blob: no joined "status: content" line is stored.
+      expect(
+        stored.messages[1]?.activity?.some(
+          (item) => item.type === "status" && item.text.includes("Map the adapters"),
+        ),
+      ).toBe(false);
+    } finally {
+      planUpdate = [];
+    }
+  });
   test("web chat context reaches the agent but is not stored in the conversation", async () => {
     const result = await turn({
       messages: [{ role: "user", content: "what am I looking at?" }],
@@ -648,6 +697,33 @@ describe("native chat runtime", () => {
       messages: [{ role: "user", content: "resume with saved options" }],
     });
     expect(calls.at(-1)?.opts.chatAgentOptions).toEqual(options.codex);
+  });
+
+  test("send preference defaults to steering and saves per conversation", async () => {
+    const first = await turn({ messages: [{ role: "user", content: "send while responding" }] });
+    const opened = first.events[0];
+    if (opened?.type !== "thread") throw new Error("No conversation");
+    expect(opened.thread.config.sendWhileRunning).toBe("steer");
+    const path = `/api/chat/threads/${opened.thread.id}/config`;
+    const patch = (body: unknown) =>
+      app.request(path, {
+        method: "PATCH",
+        headers: AUTH,
+        body: JSON.stringify(body),
+      });
+    expect((await patch({})).status).toBe(400);
+    expect((await patch({ sendWhileRunning: "later" })).status).toBe(400);
+    expect((await patch({ sendWhileRunning: "queue" })).status).toBe(200);
+    const saved = (await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread;
+    expect(saved.config.sendWhileRunning).toBe("queue");
+    // A composer choice made before the first message rides the turn that creates it.
+    const created = await turn({
+      messages: [{ role: "user", content: "queue from the start" }],
+      sendWhileRunning: "queue",
+    });
+    const createdEvent = created.events[0];
+    if (createdEvent?.type !== "thread") throw new Error("No conversation");
+    expect(createdEvent.thread.config.sendWhileRunning).toBe("queue");
   });
 
   test("model catalog validates auth, agent and conversation scope", async () => {
@@ -787,12 +863,19 @@ describe("native chat runtime", () => {
       (await (await request(`/chat/threads/${thread.id}/session`)).json()) as {
         changed: boolean;
         running: boolean;
+        live: { id: string; agent: string; status: string } | null;
         queued: unknown[];
       };
     expect((await request(`/chat/threads/${thread.id}/session`, undefined, false)).status).toBe(
       401,
     );
-    expect(await state()).toEqual({ changed: false, running: false, queued: [] });
+    expect(await state()).toMatchObject({ changed: false, running: false, queued: [] });
+    // The chat sync names the native session it is attached to.
+    expect((await state()).live).toMatchObject({
+      id: "source-changed",
+      agent: "codex",
+      status: "stopped",
+    });
     const synced = await turn({
       threadId: thread.id,
       messages: [{ role: "user", content: "a turn from this chat" }],
@@ -1449,6 +1532,16 @@ describe("native chat runtime", () => {
         })
       ).status,
     ).toBe(409);
+    // The send preference changes the composer only, so it applies right away.
+    expect(
+      (
+        await app.request(`/api/chat/threads/${opened.thread.id}/config`, {
+          method: "PATCH",
+          headers: AUTH,
+          body: JSON.stringify({ sendWhileRunning: "queue" }),
+        })
+      ).status,
+    ).toBe(200);
     expect(
       (
         await request(`/chat/runs/${opened.runId}/permission`, {
@@ -2031,14 +2124,14 @@ test("steering enters the active native session and persists the message without
       ).status,
     ).toBe(409);
     steeringFailure = false;
-    expect(
-      (
-        await request(`/chat/runs/${started.runId}/steer`, {
-          input: "uncertain steering",
-          requestId: uncertainId,
-        })
-      ).status,
-    ).toBe(409);
+    const retried = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "uncertain steering",
+      requestId: uncertainId,
+    });
+    expect(retried.status).toBe(409);
+    // The text may already be in the conversation, so clients must not resend it
+    // as a new turn; only a plain conflict is safe to queue.
+    expect(((await retried.json()) as { code: string }).code).toBe("STEER_UNCONFIRMED");
     expect(nativeSteers.filter((input) => input === "uncertain steering")).toHaveLength(1);
     const saved = ChatThreadSchema.parse(
       await (await request(`/chat/threads/${started.thread.id}`)).json(),

@@ -1,4 +1,4 @@
-import type { ChatAnalytics, ChatToolStat } from "@orc/core/chat-analytics";
+import type { ChatToolStat } from "@orc/core/chat-analytics";
 import { useQuery } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
 import { api } from "@/api/client";
@@ -26,27 +26,34 @@ const percent = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
 export function ChatSessionAnalytics({
   threadId,
+  sessionId,
   streaming,
+  hideOnError = false,
 }: {
-  threadId: string | null | undefined;
+  threadId?: string | null;
+  /** A live-session id resolves the chat that owns it on the server. */
+  sessionId?: string | null;
   streaming: boolean;
+  hideOnError?: boolean;
 }) {
+  const id = threadId ?? sessionId ?? null;
   const { data, isError, isFetching, refetch } = useQuery({
-    queryKey: ["chat-analytics", threadId],
-    queryFn: () => api.chat.analytics(threadId as string),
-    enabled: !!threadId,
+    queryKey: ["chat-analytics", threadId ? "thread" : "session", id],
+    queryFn: () => (threadId ? api.chat.analytics(threadId) : api.sessions.analytics(id as string)),
+    enabled: !!id,
     staleTime: 15_000,
     refetchInterval: streaming ? 15_000 : false,
     retry: 1,
   });
 
-  if (!threadId)
+  if (!id)
     return (
       <p className="text-sm text-muted-foreground">
         Analytics appear after you send the first message.
       </p>
     );
-  if (isError)
+  if (isError) {
+    if (hideOnError) return null;
     return (
       <div className="space-y-2 text-sm">
         <p className="text-muted-foreground">Session analytics could not be loaded.</p>
@@ -60,6 +67,7 @@ export function ChatSessionAnalytics({
         </button>
       </div>
     );
+  }
   if (!data) return <AnalyticsSkeleton />;
 
   const latest = data.context?.usage.latest ?? null;
@@ -169,7 +177,6 @@ export function ChatSessionAnalytics({
             <Suspense fallback={<div className="h-40" />}>
               <ContextChart context={data.context} />
             </Suspense>
-            <TokenBreakdown analytics={data} />
             {data.context.model && (
               <p className="text-xs text-muted-foreground">
                 Recorded by {data.context.backend} ·{" "}
@@ -359,81 +366,6 @@ function Outcome({ label, value }: { label: string; value: number }) {
     <span>
       <span className="tabular-nums">{count.format(value)}</span> {label.toLowerCase()}
     </span>
-  );
-}
-
-function TokenBreakdown({ analytics }: { analytics: ChatAnalytics }) {
-  const totals = analytics.context?.usage.totals;
-  if (!totals) return null;
-  const rows = [
-    {
-      label: "Read from cache",
-      value: totals.cached_input_tokens,
-      color: "var(--color-series-1)",
-    },
-    ...(totals.cache_write_tokens !== null
-      ? [
-          {
-            label: "Written to cache",
-            value: totals.cache_write_tokens,
-            color: "var(--color-series-2)",
-          },
-        ]
-      : []),
-    {
-      label: "Uncached input",
-      value: totals.input_tokens - totals.cached_input_tokens - (totals.cache_write_tokens ?? 0),
-      color: "var(--color-series-3)",
-    },
-    ...(analytics.context?.usage.output_tokens !== null &&
-    analytics.context?.usage.output_tokens !== undefined
-      ? [
-          {
-            label: "Output",
-            value: analytics.context.usage.output_tokens,
-            color: "var(--color-series-4)",
-          },
-        ]
-      : []),
-  ];
-  const total = rows.reduce((sum, row) => sum + row.value, 0);
-  return (
-    <div data-testid="chat-token-breakdown">
-      <p className="text-xs font-medium">
-        Session total {formatTokenCount(total, false)}
-        {analytics.context?.usage.requests !== null &&
-          analytics.context?.usage.requests !== undefined && (
-            <span className="font-normal text-muted-foreground">
-              {" "}
-              over {count.format(analytics.context.usage.requests)} requests
-            </span>
-          )}
-      </p>
-      <div aria-hidden="true" className="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full">
-        {rows.map((row) => (
-          <span
-            key={row.label}
-            style={{ width: `${total ? (row.value / total) * 100 : 0}%`, background: row.color }}
-          />
-        ))}
-      </div>
-      <ul className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-        {rows.map((row) => (
-          <li key={row.label} className="flex min-w-0 items-center gap-1.5">
-            <span
-              aria-hidden="true"
-              className="size-2 shrink-0 rounded-full"
-              style={{ background: row.color }}
-            />
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.label}</span>
-            <span className="tabular-nums">{count.format(row.value)}</span>
-            <span className="w-10 text-right tabular-nums text-muted-foreground">
-              {total ? `${percent.format((row.value / total) * 100)}%` : "0%"}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 

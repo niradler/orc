@@ -59,6 +59,7 @@ import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/co
 import type { SessionHandoff } from "@orc/core/session-handoff";
 import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
+import { activeApiHeaders, readApiUrl } from "../lib/api-hosts";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
 
@@ -221,6 +222,7 @@ import type {
   JobRun,
   JobRunLog,
   LiveSession,
+  LiveSessionStatus,
   PackageFull,
   PackageMeta,
   Project,
@@ -248,12 +250,7 @@ import type {
 
 export type SecuritySettings = { session_days: number; cors_origins: string[] };
 
-export const getApiUrl = (): string => {
-  // The desktop shell targets the selected server origin, so a stale browser override
-  // cannot point it at a different installation.
-  const desktop = (window as Window & { orcDesktop?: unknown }).orcDesktop;
-  return desktop ? "/api" : (localStorage.getItem("orc_api_url") ?? "/api");
-};
+export const getApiUrl = (): string => readApiUrl();
 
 export type TerminalKind = string;
 export type AgentSetup = {
@@ -575,6 +572,8 @@ export function apiFetch(path: string, init: RequestInit = {}): Promise<Response
   const headers = new Headers(init.headers);
   for (const [name, value] of Object.entries(authHeaders()))
     if (!headers.has(name)) headers.set(name, value);
+  for (const [name, value] of Object.entries(activeApiHeaders()))
+    if (!headers.has(name)) headers.set(name, value);
   return fetch(`${getApiUrl()}${path.startsWith("/") ? path : `/${path}`}`, {
     credentials: "include",
     ...init,
@@ -605,6 +604,7 @@ async function req<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...authHeaders(),
+    ...activeApiHeaders(),
     ...opts?.headers,
   };
   const res = await fetch(url, {
@@ -848,14 +848,29 @@ export const api = {
     fork: (id: string, messageId: string) =>
       req<ChatThread>("POST", `/chat/threads/${encodeURIComponent(id)}/fork`, { messageId }),
     session: (id: string) =>
-      req<{ changed: boolean; running: boolean; queued: { id: string; title: string }[] }>(
-        "GET",
-        `/chat/threads/${encodeURIComponent(id)}/session`,
-      ),
+      req<{
+        changed: boolean;
+        running: boolean;
+        live: {
+          id: string;
+          agent: string;
+          tokens_used: number | null;
+          tokens_estimated: boolean;
+          status: LiveSessionStatus;
+          created_at: string;
+          last_activity_at: string | null;
+        } | null;
+        queued: { id: string; title: string }[];
+      }>("GET", `/chat/threads/${encodeURIComponent(id)}/session`),
     refresh: (id: string) =>
       req<ChatThread>("POST", `/chat/threads/${encodeURIComponent(id)}/refresh`),
-    configure: (id: string, agentOptions: ChatThread["config"]["agentOptions"]) =>
-      req<ChatThread>("PATCH", `/chat/threads/${encodeURIComponent(id)}/config`, { agentOptions }),
+    configure: (
+      id: string,
+      patch: {
+        agentOptions?: ChatThread["config"]["agentOptions"];
+        sendWhileRunning?: ChatThread["config"]["sendWhileRunning"];
+      },
+    ) => req<ChatThread>("PATCH", `/chat/threads/${encodeURIComponent(id)}/config`, patch),
     history: (id: string, before: number) =>
       req<ChatHistoryPage>("GET", `/chat/threads/${encodeURIComponent(id)}/history`, undefined, {
         before,
@@ -1248,10 +1263,13 @@ export const api = {
   sessions: {
     cacheUsage: (id: string) =>
       req<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
+    analytics: (id: string) =>
+      req<ChatAnalytics>("GET", `/sessions/live/${encodeURIComponent(id)}/analytics`),
     archive: (params: {
       q?: string;
       project_id?: string;
       agent?: string;
+      mode?: "auto" | "lexical" | "semantic" | "hybrid";
       offset?: number;
       limit?: number;
     }) => req<ArchiveSearchResult>("GET", "/sessions/archive", undefined, params),
@@ -1325,6 +1343,7 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    liveOne: (id: string) => req<LiveSession>("GET", `/sessions/live/${encodeURIComponent(id)}`),
     update: (
       id: string,
       input: { task_id?: string | null; display_title?: string | null; hidden?: boolean },
@@ -1335,6 +1354,18 @@ export const api = {
       req<import("@orc/core/session-messages").SessionLineage>(
         "GET",
         `/sessions/live/${encodeURIComponent(id)}/lineage`,
+      ),
+    children: (id: string) =>
+      req<{ sessions: import("@orc/core/session-messages").SessionStatus[] }>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/children`,
+      ),
+    stop: (id: string, cascade = true) =>
+      req<import("@orc/core/session-messages").SessionStatus>(
+        "POST",
+        `/sessions/live/${encodeURIComponent(id)}/stop`,
+        undefined,
+        { cascade: String(cascade) },
       ),
     messages: (id: string) =>
       req<{ messages: SessionMessage[] }>(
@@ -1571,7 +1602,8 @@ export const api = {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${getApiUrl()}/kb/bases/${enc(kbId)}/upload`);
         xhr.withCredentials = true;
-        for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
+        for (const [k, v] of Object.entries({ ...authHeaders(), ...activeApiHeaders() }))
+          xhr.setRequestHeader(k, v);
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress?.(e.loaded / e.total);
         };

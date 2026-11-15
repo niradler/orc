@@ -77,9 +77,15 @@ credentials or transcript paths are returned.
 The route uses normal API authentication and the session's stored execution host;
 clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
 
+`GET /api/sessions/live/{id}/analytics` returns the same analytics as the chat
+route for the chat that owns this native session. It resolves the chat by the
+session's source link, then by its native session id, and answers `404` when no
+chat owns the session. The SDK exposes `orc.sessions.analytics(id)`.
+
 `GET /api/usage/report` returns request-level usage for the selected period:
 totals, per-agent and per-model distributions, UTC day or hour buckets, and
-coverage for sessions that are not indexed yet. Query parameters are `days`
+coverage for sessions that are not indexed yet or come from agents without
+request-level usage. Query parameters are `days`
 (`1`, `7`, `30` default, `90`, or `0` for all time), `granularity` (`day` default
 or `hour`), and optional `agent` and `model` filters. Pass `model=__unknown__` to
 select requests without a model. Each aggregate includes input, output,
@@ -249,7 +255,7 @@ setup.
 | `POST` | `/jobs/{id}/trigger` | Run now; `?sync=true` waits and returns output |
 | `GET` | `/jobs/{id}/runs` | Run history |
 | `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
-| `GET` | `/jobs/{id}/runs/{runId}/session` | Resolve this run's native conversation; returns `{ session_id }` for Sessions, or `null` if unavailable |
+| `GET` | `/jobs/{id}/runs/{runId}/session` | Resolve this run's native conversation; returns `{ session_id }` for the session viewer, or `null` if unavailable |
 | `GET` `POST` | `/webhooks` | List / create webhooks |
 | `PATCH` `DELETE` | `/webhooks/{id}` | Update / delete |
 | `POST` | `/webhooks/{token}` (no `/api`) | Receive a signed delivery |
@@ -299,8 +305,11 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
 | `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones |
+| `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
+| `GET` | `/sessions/live/{id}/analytics` | Analytics for the chat that owns this session |
+| `GET` | `/sessions/live/{id}/cache` | Recorded prompt-cache usage |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
 | `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
 | `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |
@@ -326,6 +335,16 @@ or `failed`). The same optional `turn` object is persisted on assistant messages
 elapsed time. Replay includes the original start; legacy messages may omit `turn`.
 Before a tool call, a `narration` event moves accumulated prose out of the current
 reply and into its folded activity. Its `text` preserves that prose for expansion.
+
+Assistant messages record the `model` that produced the turn when the session has
+one selected; it is additive, so older transcripts simply omit it. Agents that
+publish a checklist emit `plan` events with an `id`, an optional `title` and
+`entries` (`id`, `status` — `pending`, `in_progress`, `completed` or `failed` —
+and `content`). Providers re-send the whole plan, so a repeated identical update
+changes nothing and an entry keeps one row as its status advances. A provider
+without a plan signal emits no `plan` event. Stored activity kinds this build
+does not know are kept as a `providerActivity` passthrough instead of being
+dropped or failing the transcript.
 
 A turn opens with a `thread` event carrying the conversation metadata and only
 that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
@@ -469,11 +488,19 @@ process. Pending approvals and questions are cancelled either way.
 
 `POST /chat/runs/{id}/steer` takes `{ "requestId": "<uuid>", "input": "Focus on the failing test" }` and
 returns the updated conversation once the message is dispatched into the active
-native turn. Codex and Pi confirm native acceptance before returning; OpenCode
+native turn. The web chat calls it by default when a steering-capable backend is
+responding; the conversation's `config.sendWhileRunning` (`"steer"` by default or
+`"queue"`) decides what Enter/Send does. `PATCH /chat/threads/{id}/config` takes at
+least one of `agentOptions` or `sendWhileRunning`; `sendWhileRunning` applies while
+a turn is running, while `agentOptions` waits for it to finish. Codex, Claude and Pi
+confirm native acceptance before returning; OpenCode
 over direct ACP has no steer acknowledgment, so a later refusal is reported as a
 status message and steering is turned off for that turn. It
-requires a live steering-capable session (Codex, Pi and OpenCode over direct ACP);
-stale and unsupported runs return `409`.
+requires a live steering-capable session (Codex, Claude, Pi and OpenCode over direct
+ACP); stale and unsupported runs return `409`. A `409` with the code
+`STEER_UNCONFIRMED` means the text may already be in the conversation, so the
+client must not send it again as a new turn; a plain `CONFLICT` means nothing was
+delivered and the message can be queued instead.
 It keeps the original native thread and turn. Empty input is invalid. These routes
 use the same authentication as the rest of the API. The SDK exposes
 `client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.

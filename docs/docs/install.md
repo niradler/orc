@@ -224,7 +224,7 @@ folder must be writable by your user; move the app out of the disk image into
 developer account and does not change Gatekeeper settings. The normal first-open
 approval for an unnotarized app can still apply.
 
-From the dashboard, **Settings → Server → Restart ORC server** restarts the running server without losing settings. It closes active terminals.
+From the dashboard, **Settings → About → Restart ORC server** restarts the running server without losing settings. It closes active terminals.
 
 Check the running version:
 

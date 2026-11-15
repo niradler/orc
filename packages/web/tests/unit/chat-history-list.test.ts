@@ -58,7 +58,32 @@ test("should merge Cursor CLI aliases without merging Cursor IDE archives", () =
   );
   expect(entries).toHaveLength(2);
   expect(entries.some((entry) => entry.id === "archive:ide")).toBe(true);
+  // The saved chat keeps the row; the discovered Cursor CLI session aliases it.
   expect(entries.some((entry) => entry.id === `chat:${saved.id}`)).toBe(true);
+});
+
+test("every discovered provider appears in the chat history, including Cursor", () => {
+  for (const agent of ["claude", "codex", "gemini", "opencode", "pi", "cursor", "cursor-agent"]) {
+    const rows = chatHistoryList([], [], [{ ...live, agent }], []);
+    expect(rows.map((row) => row.id)).toEqual(["native:live-source"]);
+  }
+});
+
+test("content-search hits keep their snippets and matched fields", () => {
+  const hit = {
+    ...live,
+    snippets: ["the phrase inside the transcript"],
+    matched: ["transcript"],
+    score: 2,
+  };
+  const [entry] = chatHistoryList([], [], [hit], []);
+  expect(entry.snippets).toEqual(["the phrase inside the transcript"]);
+  expect(entry.matched).toEqual(["transcript"]);
+  // A transcript-only hit survives the keyword filter that would drop its title.
+  expect(chatHistoryList([], [], [hit], [], "phrase", "all")).toHaveLength(1);
+  expect(
+    chatHistoryList([], [], [{ ...live, snippets: [], matched: [] }], [], "phrase"),
+  ).toHaveLength(0);
 });
 
 test("archive project metadata cannot overwrite an authoritative native association", () => {

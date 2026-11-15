@@ -43,7 +43,7 @@ function SessionLinks({ liveSessionId }: { liveSessionId: string }) {
   return (
     <div className="shrink-0 flex items-center gap-3">
       <Link
-        to={`${workspaceDestination("/sessions", project, params.toString())}&session=${encodeURIComponent(liveSessionId)}`}
+        to={`${workspaceDestination("/chat", project, params.toString())}&sessionView=${encodeURIComponent(liveSessionId)}`}
         data-testid="terminal-open-session"
         className={LINK_CLASS}
       >

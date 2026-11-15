@@ -63,7 +63,7 @@ export function StableOrderPill({ pending, onApply }: { pending: number; onApply
       type="button"
       data-testid="stable-order-pill"
       onClick={onApply}
-      className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap text-primary hover:bg-surface max-lg:min-h-11 max-sm:px-1.5"
+      className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap text-primary hover:bg-surface max-sm:px-1.5"
     >
       <ArrowUp aria-hidden="true" size={12} />
       {pending}
