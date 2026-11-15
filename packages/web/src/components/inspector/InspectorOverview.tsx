@@ -4,6 +4,7 @@ import {
   ExternalLink,
   GitBranch,
   GitPullRequest,
+  RefreshCw,
   SquareTerminal,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -284,6 +285,23 @@ function OverviewBody({ context, home }: { context: SessionContext; home: Sessio
               </p>
             )}
           </div>
+          {!github.isPending && !github.error && (
+            <button
+              type="button"
+              data-testid="session-inspector-pr-refresh"
+              aria-label="Refresh pull request"
+              title="Refresh pull request"
+              disabled={github.isFetching}
+              onClick={() => void github.refetch()}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface hover:text-foreground pointer-coarse:size-11"
+            >
+              <RefreshCw
+                size={14}
+                aria-hidden="true"
+                className={github.isFetching ? "motion-safe:animate-spin" : undefined}
+              />
+            </button>
+          )}
         </div>
       </section>
       <dl className="space-y-3 px-1 text-sm">
