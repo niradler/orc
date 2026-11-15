@@ -1,8 +1,17 @@
 import { type Components, defineRegistry } from "@json-render/react";
 import { chatUiCatalog } from "@orc/core/chat-ui";
+import { lazy, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { JobCard, ScratchpadCard, SessionList, TaskCard, TaskList } from "./entities";
+import { HtmlBlock } from "./HtmlBlock";
+import { Callout, KeyValue, Metric, Progress, Table } from "./presentation";
+import { SessionUsageCard } from "./SessionUsageCard";
+
+// Recharts only loads when an answer actually charts something.
+const Chart = lazy(() => import("./Chart"));
+const Sparkline = lazy(() => import("./Chart").then((module) => ({ default: module.Sparkline })));
+const ChartFallback = () => <div className="h-56 w-full" aria-hidden="true" />;
 
 const GAP = { sm: "gap-1.5", md: "gap-3", lg: "gap-5" } as const;
 const BUTTON_VARIANT = {
@@ -43,6 +52,31 @@ const components: Components<typeof chatUiCatalog> = {
   Job: ({ props }) => <JobCard id={props.id} />,
   SessionList: ({ props }) => <SessionList projectId={props.projectId} limit={props.limit} />,
   Scratchpad: ({ props }) => <ScratchpadCard id={props.id} />,
+  Metric: ({ props }) => (
+    <Metric
+      label={props.label}
+      value={props.value}
+      unit={props.unit}
+      hint={props.hint}
+      trend={props.trend}
+    />
+  ),
+  Progress: ({ props }) => <Progress value={props.value} label={props.label} />,
+  Table: ({ props }) => <Table columns={props.columns} rows={props.rows} caption={props.caption} />,
+  Sparkline: ({ props }) => (
+    <Suspense fallback={<div className="h-12 w-40" aria-hidden="true" />}>
+      <Sparkline values={props.values} label={props.label} />
+    </Suspense>
+  ),
+  Chart: ({ props }) => (
+    <Suspense fallback={<ChartFallback />}>
+      <Chart kind={props.kind} labels={props.labels} series={props.series} title={props.title} />
+    </Suspense>
+  ),
+  KeyValue: ({ props }) => <KeyValue items={props.items} title={props.title} />,
+  Callout: ({ props }) => <Callout tone={props.tone} text={props.text} title={props.title} />,
+  Html: ({ props }) => <HtmlBlock html={props.html} title={props.title} height={props.height} />,
+  SessionUsage: ({ props }) => <SessionUsageCard sessionId={props.sessionId} />,
 };
 
 // Actions are dispatched through JSONUIProvider handlers (see ChatUiRenderer), which need

@@ -146,6 +146,44 @@ replay, and what that replay included.
 <img src="/screens/chat-fork-desktop.png" alt="Fork notice above the copied messages in a forked chat" width="320">
 <img src="/screens/chat-fork-phone.png" alt="The same fork notice on a phone" width="260">
 
+## Live components in chat
+
+In a web chat an agent can answer with an `orc-ui` block instead of Markdown: a
+small JSON layout of ORC components. Text outside the fence stays Markdown, and
+a block that fails validation shows its JSON and the validation error rather than
+hiding the answer. Live components read and act as the signed-in user; the
+buttons and status controls keep working while the reply stays on screen.
+
+Besides the live ORC components (`Task`, `TaskList`, `Job`, `SessionList`,
+`Scratchpad` and the task/job actions), an answer can present numbers it already
+has:
+
+- `Metric` — one headline number with a label, an optional unit and a trend hint.
+  The arrow is decoration; the hint carries the meaning.
+- `Progress` — a determinate 0–100 percentage with an optional label.
+- `Table` — up to six columns and fifty rows. Long cells truncate with the full
+  value in the title, and a phone scrolls the table sideways instead of
+  squeezing its columns or widening the conversation.
+- `Sparkline` — a small trend line without axes; the latest value and the range
+  stay in text beside it.
+- `Chart` — a Recharts line, bar or area chart with a tooltip and a named legend,
+  using the shared series colors in both themes. Motion is short and stopped
+  under reduced motion. A chart with no points says so instead of showing an
+  empty plot.
+- `KeyValue` — a compact definition list for up to eight labelled values.
+- `Callout` — an info, warn, error or done note. A small icon carries the tone
+  and the text stays readable.
+- `Html` — a short inline HTML snippet inside a sandboxed, opaque-origin frame.
+  It can run its own inline scripts and styles and show `data:` or `blob:`
+  images, but it cannot read ORC storage or credentials, call the ORC API, reach
+  the network or navigate the app. Use a scratchpad for HTML you want to save or
+  edit; chat HTML is not stored.
+
+`SessionUsage` shows the same figure as the header strip for a session the answer
+talks about: the latest request's input tokens and the share served from the
+provider's cache, with the same explanation. A session that records no usage yet
+says so; the figures are left out rather than shown as zero.
+
 ## Activity
 
 ![Activity](/screens/dashboard.png)

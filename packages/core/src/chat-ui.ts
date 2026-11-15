@@ -5,6 +5,8 @@ import { z } from "zod";
 /** Fence language for a json-render spec inside a chat message. */
 export const CHAT_UI_FENCE = "orc-ui";
 export const CHAT_UI_MAX_ELEMENTS = 200;
+/** Inline sandboxed HTML is a snippet beside the answer, not a saved page. */
+export const CHAT_UI_HTML_MAX_LENGTH = 20_000;
 
 const TaskStatus = z.enum([
   "todo",
@@ -24,6 +26,39 @@ const EntityId = z
   .min(1)
   .max(128)
   .regex(/^[a-zA-Z0-9_-]+$/);
+const Text = (max: number) => z.string().trim().min(1).max(max);
+const SeriesName = Text(40);
+
+const TableProps = z
+  .object({
+    columns: z.array(Text(40)).min(1).max(6),
+    rows: z.array(z.array(z.string().max(200)).max(6)).max(50),
+    caption: Text(120).optional(),
+  })
+  .refine((props) => props.rows.every((row) => row.length === props.columns.length), {
+    message: "Every row needs one cell per column",
+    path: ["rows"],
+  });
+
+const ChartProps = z
+  .object({
+    kind: z.enum(["line", "bar", "area"]).optional(),
+    labels: z.array(z.string().max(24)).max(24),
+    series: z
+      .array(z.object({ name: SeriesName, values: z.array(z.number()).max(24) }))
+      .min(1)
+      .max(4),
+    title: Text(80).optional(),
+  })
+  .refine(
+    (props) =>
+      new Set(props.series.map((series) => series.name)).size === props.series.length &&
+      props.series.every((series) => series.values.length === props.labels.length),
+    {
+      message: "Series names must be unique and every series needs one value per label",
+      path: ["series"],
+    },
+  );
 
 export const chatUiCatalog = defineCatalog(schema, {
   components: {
@@ -71,6 +106,67 @@ export const chatUiCatalog = defineCatalog(schema, {
       props: z.object({ id: EntityId }),
       description:
         "Saved HTML dashboards, Excalidraw diagrams and documents by id; inline preview, expand/fullscreen and editor. HTML must be self-contained: embed data, inline chart code/SVG; window.orc.fetch works only when the human opts in, so fall back to the embedded data.",
+    },
+    Metric: {
+      props: z.object({
+        label: Text(80),
+        value: z.union([z.number(), Text(24)]),
+        unit: Text(12).optional(),
+        hint: Text(60).optional(),
+        trend: z.enum(["up", "down", "flat"]).optional(),
+      }),
+      description:
+        "One headline number with a label, optional unit and trend hint; group several in a horizontal Stack.",
+    },
+    Progress: {
+      props: z.object({ value: z.number().int().min(0).max(100), label: Text(80).optional() }),
+      description: "Determinate progress from 0 to 100 with an optional label.",
+    },
+    Table: {
+      props: TableProps,
+      description:
+        "Static columns and rows (max 6 columns, 50 rows); long cells truncate and phones scroll the table sideways.",
+    },
+    Sparkline: {
+      props: z.object({ values: z.array(z.number()).min(2).max(60), label: Text(60).optional() }),
+      description: "Small trend series without axes; the latest value is shown beside the label.",
+    },
+    Chart: {
+      props: ChartProps,
+      description:
+        "Line, bar or area chart with tooltip and legend (max 4 series, 24 points); labels.length must equal every series length, and no labels means an empty state.",
+    },
+    KeyValue: {
+      props: z.object({
+        items: z
+          .array(z.object({ label: Text(40), value: z.string().max(200) }))
+          .min(1)
+          .max(8),
+        title: Text(60).optional(),
+      }),
+      description: "Compact definition list for a handful of labelled values (max 8).",
+    },
+    Callout: {
+      props: z.object({
+        tone: z.enum(["info", "warn", "error", "done"]),
+        text: Text(280),
+        title: Text(60).optional(),
+      }),
+      description: "One short note in an info, warn, error or done tone; keep the text brief.",
+    },
+    Html: {
+      props: z.object({
+        html: z.string().min(1).max(CHAT_UI_HTML_MAX_LENGTH),
+        title: Text(80).optional(),
+        height: z.enum(["short", "tall"]).optional(),
+      }),
+      description:
+        "Inline sandboxed HTML (max 20k characters) in a network-blocked iframe: inline styles, scripts and data/blob images only; no ORC API, storage or external requests.",
+    },
+    SessionUsage: {
+      props: z.object({ sessionId: EntityId }),
+      description:
+        "Live context usage for a session id: latest request input tokens and cached share; figures are omitted when the session records none.",
     },
   },
   actions: {
@@ -299,6 +395,7 @@ export function chatUiCatalogText(detail: "lean" | "full" = "full"): string {
 Use only when <orc-context> says source: webchat and live monitoring, direct interaction or a saved
 scratchpad artifact adds value; otherwise Markdown. Resolve real ids with ORC tools first. Reply with
 an orc-ui fence; text outside it is Markdown. Only Stack takes children; actions need a Button press.
+Metric, Progress, Table, Sparkline, Chart, KeyValue, Callout and Html only show data you pass.
 ${example}
 
 Components:
@@ -321,6 +418,8 @@ Rules:
 - root and every child key must exist; only Stack accepts children. Max ${CHAT_UI_MAX_ELEMENTS} rendered elements.
 - Button actions: "on":{"press":{"action":"task.update","params":{"id":"<id>","status":"done"}}}.
 - Actions run only on press, as the signed-in user; delete/run require confirmation.
+- Entity components are live; Metric, Progress, Table, Sparkline, Chart, KeyValue, Callout and Html only show the data in the spec.
+- Every table row needs one cell per column; every chart series needs one value per label.
 - Keep replies small. No galleries, duplicated entity fields, watchers or repeaters.
 - Invalid specs display raw JSON and an error. Channels use Markdown.
 
