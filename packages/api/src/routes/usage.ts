@@ -155,6 +155,11 @@ app.openapi(
         granularity: z.enum(["day", "hour"]).default("day"),
         agent: z.string().max(64).optional(),
         model: z.string().max(200).optional(),
+        project_id: z
+          .string()
+          .max(64)
+          .optional()
+          .openapi({ description: "Project id, or unassigned for sessions without a project" }),
       }),
     },
     responses: {
@@ -173,10 +178,18 @@ app.openapi(
     const agent = query.agent?.trim() || null;
     const model = query.model?.trim() || null;
     const granularity = query.granularity;
+    const projectId = query.project_id?.trim() || null;
+    const projectClause =
+      projectId === "unassigned"
+        ? ["session_id IN (SELECT id FROM gateway_sessions WHERE project_id IS NULL)"]
+        : projectId
+          ? ["session_id IN (SELECT id FROM gateway_sessions WHERE project_id = ?)"]
+          : [];
+    const projectBinds = projectId && projectId !== "unassigned" ? [projectId] : [];
 
     const where = (extra: string[] = [], binds: (string | number)[] = []) => {
-      const clauses = [...(sinceMs === null ? [] : ["ts >= ?"]), ...extra];
-      const values = [...(sinceMs === null ? [] : [sinceMs]), ...binds];
+      const clauses = [...(sinceMs === null ? [] : ["ts >= ?"]), ...projectClause, ...extra];
+      const values = [...(sinceMs === null ? [] : [sinceMs]), ...projectBinds, ...binds];
       return { sql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", binds: values };
     };
     const agentFilter = agent ? { sql: "agent = ?", bind: agent } : null;

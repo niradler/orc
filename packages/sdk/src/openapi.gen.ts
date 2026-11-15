@@ -8183,6 +8183,8 @@ export interface paths {
                     granularity?: "day" | "hour";
                     agent?: string;
                     model?: string;
+                    /** @description Project id, or unassigned for sessions without a project */
+                    project_id?: string;
                 };
                 header?: never;
                 path?: never;

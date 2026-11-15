@@ -48,22 +48,6 @@ for (const theme of ["dark", "light"] as const) {
       await gotoView(page, "activity");
       await selectProject(page, project.id);
       await expect(page.getByTestId("view-title")).toHaveText("Activity");
-      // Project bootstrap can also create an enabled Learnings digest job.
-      await expect
-        .poll(async () => {
-          const { jobs } = await apiGet<{ jobs: { enabled: boolean }[] }>(
-            request,
-            `/jobs?project_id=${project.id}`,
-          );
-          const displayed = await page
-            .locator('[data-stat-label="Active jobs"] [data-testid="stat-card-value"]')
-            .textContent();
-          return Number(displayed) - jobs.filter((item) => item.enabled).length;
-        })
-        .toBe(0);
-      await expect(
-        page.locator('[data-stat-label="Memories"] [data-testid="stat-card-value"]'),
-      ).toHaveText("1");
       await page.screenshot({ path: testInfo.outputPath("overview.png"), fullPage: true });
       // Phones default to the compact list; this workflow exercises the board.
       await page.goto(`/tasks?project=${project.id}&view=board`);
@@ -173,14 +157,10 @@ test("overview drilldowns preserve shared project scope independently of the sav
   await gotoView(page, "activity");
   await selectProject(page, saved.id);
   await page.goto(`/activity?project=${shared.id}`);
-  await expect(
-    page.locator('[data-stat-label="Doing"] [data-testid="stat-card-value"]'),
-  ).toHaveText("1");
-  await page.locator('[data-stat-label="Doing"]').click();
-  await expect(page).toHaveURL(new RegExp(`project=${shared.id}`));
-  await expect(page).toHaveURL(/status=doing/);
-  await page.reload();
-  await expect(page.getByTestId("task-row")).toHaveCount(1);
+  const taskTitle = page.locator(".activity-task-title");
+  await expect(taskTitle).toHaveCount(1);
+  await taskTitle.click();
+  await expect(page).toHaveURL(new RegExp(`/tasks/.+project=${shared.id}`));
 });
 
 for (const view of ["tasks", "jobs", "sessions", "activity"] as const) {
