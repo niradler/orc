@@ -28,6 +28,7 @@ import { acpElicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
+import { planEvent, planFromToolInput } from "./plan.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -295,15 +296,18 @@ export class AcpSession implements AgentSession {
           if (this.replaying || this.closed || params.sessionId !== this.runtimeId || this.done)
             return;
           const events = this.parse(JSON.stringify({ method: "session/update", params }));
-          for (const event of events) this.push(event);
-          if (params.update.sessionUpdate === "plan")
-            this.push({
-              type: "system_status",
-              data: params.update.entries
-                .map((entry) => `${entry.status}: ${entry.content}`)
-                .join("\n"),
-            });
-          else if (
+          for (const event of events) {
+            this.push(event);
+            // OpenCode and other ACP agents publish their checklist as a tool call.
+            if (event.type === "tool_use") {
+              const plan = planFromToolInput(event.data.name, event.data.input);
+              if (plan) this.push(plan);
+            }
+          }
+          if (params.update.sessionUpdate === "plan") {
+            const plan = planEvent("plan", params.update.entries ?? []);
+            if (plan) this.push(plan);
+          } else if (
             (params.update.sessionUpdate === "agent_message_chunk" ||
               params.update.sessionUpdate === "agent_thought_chunk") &&
             params.update.content.type !== "text"

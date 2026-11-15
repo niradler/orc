@@ -60,6 +60,18 @@ export function redactProviderEvent(
     return { ...event, data: redact(event.data) };
   if (event.type === "tool_result")
     return { ...event, data: { ...event.data, content: redact(event.data.content) } };
+  if (event.type === "plan")
+    return {
+      ...event,
+      data: {
+        ...event.data,
+        ...(event.data.title ? { title: redact(event.data.title) } : {}),
+        entries: event.data.entries.map((entry) => ({
+          ...entry,
+          content: redact(entry.content),
+        })),
+      },
+    };
   if (event.type === "result")
     return {
       ...event,

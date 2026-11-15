@@ -3,9 +3,14 @@ import {
   Brain,
   ChevronRight,
   CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
   Eye,
   FilePen,
   Info,
+  ListTodo,
+  LoaderCircle,
   type LucideIcon,
   Search,
   SquareTerminal,
@@ -33,7 +38,61 @@ function toolIcon(tool: ChatTool, view: ToolView): LucideIcon {
 export function activityIcon(item: ChatActivity): LucideIcon {
   if (item.type === "thinking") return Brain;
   if (item.type === "status") return Info;
+  if (item.type === "plan") return ListTodo;
   return toolIcon(item, toolView(item));
+}
+
+const PLAN_STATUS: Record<
+  Extract<ChatActivity, { type: "plan" }>["entries"][number]["status"],
+  { Icon: LucideIcon; label: string; className: string }
+> = {
+  pending: { Icon: CircleDashed, label: "Pending", className: "text-on-surface-variant" },
+  in_progress: { Icon: LoaderCircle, label: "In progress", className: "text-progress" },
+  completed: { Icon: CircleCheck, label: "Completed", className: "text-success" },
+  failed: { Icon: CircleX, label: "Failed", className: "text-error" },
+};
+
+function PlanRow({ plan }: { plan: Extract<ChatActivity, { type: "plan" }> }) {
+  const done = plan.entries.filter((entry) => entry.status === "completed").length;
+  return (
+    <details data-testid="chat-plan" className="group/tool">
+      <summary className={rowSummary}>
+        <ListTodo aria-hidden="true" size={14} className="shrink-0" />
+        <span className="shrink-0 text-on-surface">{plan.title ?? "Plan"}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {done} of {plan.entries.length} steps
+        </span>
+        <ChevronRight
+          aria-hidden="true"
+          size={14}
+          className="shrink-0 group-open/tool:rotate-90 motion-safe:transition-transform"
+        />
+      </summary>
+      <ul className={bodyClass}>
+        {plan.entries.map((entry) => {
+          const status = PLAN_STATUS[entry.status];
+          return (
+            <li
+              key={entry.id}
+              data-testid="chat-plan-entry"
+              data-status={entry.status}
+              className="flex gap-2 py-0.5"
+            >
+              <status.Icon
+                aria-hidden="true"
+                size={13}
+                className={`mt-0.5 shrink-0 ${status.className}`}
+              />
+              <span className="min-w-0 flex-1 wrap-break-word text-on-surface">
+                {entry.content}
+              </span>
+              <span className="sr-only">{status.label}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
 }
 
 export function DiffStat({ added, removed }: { added: number; removed: number }) {
@@ -181,6 +240,7 @@ export function ToolRow({ tool, live = false }: { tool: ChatTool; live?: boolean
 
 export function ActivityRow({ item, live = false }: { item: ChatActivity; live?: boolean }) {
   if (item.type === "tool") return <ToolRow tool={item} live={live} />;
+  if (item.type === "plan") return <PlanRow plan={item} />;
   if (item.type === "status")
     return <p className="px-1.5 py-1 wrap-break-word text-on-surface-variant">{item.text}</p>;
   return (
