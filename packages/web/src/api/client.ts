@@ -1335,6 +1335,7 @@ export const api = {
       project_id?: string;
       active?: boolean;
       include_hidden?: boolean;
+      include_children?: boolean;
       limit?: number;
     }) =>
       req<{ sessions: LiveSession[] }>(

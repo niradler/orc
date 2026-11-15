@@ -1,11 +1,11 @@
 import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pathLabel } from "@orc/core/display-path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { activityAdvanced, isAlive, oneLine } from "./common.js";
+import { activityAdvanced, isAlive, oneLine, statusFromMtime } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
 
@@ -24,6 +24,7 @@ const RegistryEntry = z.object({
   sessionId: z.string().min(1),
   cwd: z.string(),
   name: z.string().optional(),
+  nameSource: z.string().optional(),
   status: z.string().optional(),
   startedAt: z.number().optional(),
   updatedAt: z.number().optional(),
@@ -47,12 +48,16 @@ export function readRegistryFile(path: string): RegistryEntry | null {
   }
 }
 
+function registryName(entry: RegistryEntry): string | null {
+  return entry.nameSource === "derived" ? null : entry.name || null;
+}
+
 export function registryRecord(entry: RegistryEntry): SessionRecord {
   const now = Date.now();
   return {
     backend: "claude",
     externalId: entry.sessionId,
-    title: entry.name || pathLabel(entry.cwd) || "Claude session",
+    title: registryName(entry) || pathLabel(entry.cwd) || "Claude session",
     cwd: entry.cwd,
     pid: entry.pid,
     status: !isAlive(entry.pid) ? "stopped" : entry.status === "busy" ? "running" : "idle",
@@ -97,6 +102,79 @@ function firstPromptFromText(content: string): string | null {
   return null;
 }
 
+export type TranscriptMeta = {
+  customTitle: string | null;
+  aiTitle: string | null;
+  prompt: string | null;
+  firstAt: number | null;
+  lastAt: number | null;
+};
+
+function lineAt(content: string, index: number): string {
+  const start = content.lastIndexOf("\n", index) + 1;
+  const end = content.indexOf("\n", index);
+  return content.slice(start, end === -1 ? undefined : end);
+}
+
+function lastField(content: string, marker: string, field: string): string | null {
+  const index = content.lastIndexOf(marker);
+  if (index === -1) return null;
+  try {
+    const value = JSON.parse(lineAt(content, index))?.[field];
+    return typeof value === "string" && value.trim() ? oneLine(value, 120) : null;
+  } catch {
+    return null;
+  }
+}
+
+function lineTime(line: string): number | null {
+  if (!line.includes('"timestamp"')) return null;
+  try {
+    const value = Date.parse(JSON.parse(line)?.timestamp);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function transcriptMeta(content: string): TranscriptMeta {
+  const lines = content.split("\n");
+  let firstAt: number | null = null;
+  for (const line of lines.slice(0, 200)) {
+    firstAt = lineTime(line);
+    if (firstAt !== null) break;
+  }
+  let lastAt: number | null = null;
+  for (let index = lines.length - 1; index >= 0 && lastAt === null; index--)
+    lastAt = lineTime(lines[index] ?? "");
+  return {
+    customTitle: lastField(content, '"type":"custom-title"', "customTitle"),
+    aiTitle: lastField(content, '"type":"ai-title"', "aiTitle"),
+    prompt: firstPromptFromText(content),
+    firstAt,
+    lastAt,
+  };
+}
+
+export function isClaudeProcessName(title: string, cwd: string | null | undefined): boolean {
+  const folder = cwd ? basename(cwd) : "";
+  if (!folder) return false;
+  return (
+    title === folder ||
+    title === pathLabel(cwd ?? "") ||
+    new RegExp(`^${RegExp.escape(folder)}-[0-9a-f]{2}$`, "i").test(title)
+  );
+}
+
+function storedTitle(title: string | undefined, cwd: string | null | undefined): string | null {
+  return title && !isClaudeProcessName(title, cwd) ? title : null;
+}
+
+const SubagentMeta = z.object({
+  agentType: z.string().optional(),
+  description: z.string().optional(),
+});
+
 export function claudeAdapter(
   dirs: {
     registry?: string | string[];
@@ -106,6 +184,8 @@ export function claudeAdapter(
   runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): SessionAdapter {
   const desktopCache = new Map<string, { mtime: number; record: SessionRecord | null }>();
+  const metaCache = new Map<string, { mtime: number; meta: TranscriptMeta }>();
+  const subagentCache = new Map<string, { mtime: number; title: string | null }>();
 
   const list = (value: string | string[] | null | undefined, fallback: string): string[] => {
     if (value === null) return [];
@@ -124,8 +204,22 @@ export function claudeAdapter(
           : dirs.desktop;
       const projectsDirs = list(dirs.projects, join(home, ".claude", "projects"));
       const transcripts = new Map<string, { path: string; mtimeMs: number }>();
+      const subagents: { path: string; parentId: string; mtimeMs: number; birthtimeMs: number }[] =
+        [];
+      const subagentMeta = new Map<string, number>();
       for (const projectsDir of projectsDirs) {
         for (const file of await runtime.listFiles(projectsDir)) {
+          if (basename(dirname(file.path)) === "subagents") {
+            if (file.path.endsWith(".meta.json")) subagentMeta.set(file.path, file.mtimeMs);
+            else if (basename(file.path).startsWith("agent-") && file.path.endsWith(".jsonl"))
+              subagents.push({
+                path: file.path,
+                parentId: basename(dirname(dirname(file.path))),
+                mtimeMs: file.mtimeMs,
+                birthtimeMs: file.birthtimeMs,
+              });
+            continue;
+          }
           if (!file.path.endsWith(".jsonl")) continue;
           const id = basename(file.path, ".jsonl");
           // Copied account directories can repeat a session id; the first home
@@ -168,6 +262,12 @@ export function claudeAdapter(
       }
 
       const registrySeen = new Set<string>();
+      const chosenNames = new Map<string, string>();
+      const desktopTitles = new Map(
+        [...records.values()].flatMap((record) =>
+          record.title ? [[record.externalId, record.title] as const] : [],
+        ),
+      );
       for (const registryDir of registryDirs) {
         for (const file of await runtime.listFiles(registryDir, 10_000)) {
           if (!file.path.endsWith(".json")) continue;
@@ -182,10 +282,12 @@ export function claudeAdapter(
           if (registrySeen.has(entry.sessionId)) continue;
           registrySeen.add(entry.sessionId);
           const now = Date.now();
+          const named = registryName(entry);
+          if (named) chosenNames.set(entry.sessionId, named);
           const live: SessionRecord = {
             backend: "claude",
             externalId: entry.sessionId,
-            title: entry.name || pathLabel(entry.cwd) || "Claude session",
+            title: named || "New session",
             cwd: entry.cwd,
             pid: entry.pid,
             status: !(await runtime.processAlive(entry.pid))
@@ -200,7 +302,7 @@ export function claudeAdapter(
           records.set(entry.sessionId, {
             ...base,
             ...live,
-            title: base?.title ?? live.title,
+            title: named || base?.title || live.title,
             createdAt: base?.createdAt ?? live.createdAt,
           });
         }
@@ -215,6 +317,14 @@ export function claudeAdapter(
           transcripts.has(id)
         ) {
           records.set(id, { ...before.session });
+        } else if (
+          !records.has(id) &&
+          before.session &&
+          !transcripts.has(id) &&
+          before.session.title !== "New session" &&
+          !storedTitle(before.session.title, before.session.cwd)
+        ) {
+          records.set(id, { ...before.session, title: "New session" });
         }
       }
       for (const record of records.values()) {
@@ -223,8 +333,9 @@ export function claudeAdapter(
         record.transcriptPath = transcript.path;
         const before = known.get(record.externalId);
         const mtime = transcript.mtimeMs;
-        record.lastActivityAt = new Date(Math.max(record.lastActivityAt.getTime(), mtime));
-        const changed = !before || activityAdvanced(mtime, before.lastActivityMs);
+        const cached = metaCache.get(record.externalId);
+        const changed =
+          cached?.mtime !== mtime && (!before || activityAdvanced(mtime, before.lastActivityMs));
         let parsed: ParsedUsage | null = null;
         if (
           changed ||
@@ -237,8 +348,29 @@ export function claudeAdapter(
           parsed = parseClaudeUsage(content, mtime);
           record.tokens = async () => parsed?.tokens ?? 0;
           record.tokensVersion = CLAUDE_TOKENS_VERSION;
-          record.summary = firstPromptFromText(content);
+          const meta = transcriptMeta(content);
+          metaCache.set(record.externalId, { mtime, meta });
+          record.summary = meta.prompt;
         }
+        const meta = metaCache.get(record.externalId)?.meta;
+        if (meta) {
+          record.title =
+            meta.customTitle ||
+            chosenNames.get(record.externalId) ||
+            desktopTitles.get(record.externalId) ||
+            meta.aiTitle ||
+            storedTitle(before?.session?.title, record.cwd) ||
+            (meta.prompt ? oneLine(meta.prompt, 120) : null) ||
+            storedTitle(record.title, record.cwd) ||
+            "New session";
+          if (meta.firstAt) record.createdAt = new Date(meta.firstAt);
+        }
+        record.lastActivityAt = new Date(
+          Math.max(
+            record.lastActivityAt.getTime(),
+            meta ? (meta.lastAt ?? mtime) : (before?.lastActivityMs ?? mtime),
+          ),
+        );
         if (changed || before?.usageVersion !== USAGE_EVENT_VERSION) {
           record.usage = async () => {
             if (parsed) return parsed;
@@ -250,6 +382,43 @@ export function claudeAdapter(
           };
           record.usageVersion = USAGE_EVENT_VERSION;
         }
+      }
+      const parents = new Map<string, { cwd: string | null; live: boolean }>();
+      for (const [id, before] of known)
+        parents.set(id, { cwd: before.session?.cwd ?? null, live: false });
+      for (const record of records.values())
+        parents.set(record.externalId, {
+          cwd: record.cwd ?? null,
+          live: record.status !== "stopped",
+        });
+      for (const subagent of subagents) {
+        const parent = parents.get(subagent.parentId);
+        if (!parent) continue;
+        const metaPath = subagent.path.replace(/\.jsonl$/, ".meta.json");
+        const metaMtime = subagentMeta.get(metaPath);
+        let cached = subagentCache.get(metaPath);
+        if (metaMtime !== undefined && cached?.mtime !== metaMtime) {
+          let title: string | null = null;
+          try {
+            const meta = SubagentMeta.parse(
+              JSON.parse(new TextDecoder().decode(await runtime.readFile(metaPath, 64 * 1024))),
+            );
+            title = meta.description || meta.agentType || null;
+          } catch {}
+          cached = { mtime: metaMtime, title };
+          subagentCache.set(metaPath, cached);
+        }
+        records.set(basename(subagent.path, ".jsonl"), {
+          backend: "claude",
+          externalId: basename(subagent.path, ".jsonl"),
+          parentId: subagent.parentId,
+          title: oneLine(cached?.title || "Subagent", 120),
+          cwd: parent.cwd,
+          status: parent.live ? statusFromMtime(subagent.mtimeMs) : "stopped",
+          createdAt: new Date(subagent.birthtimeMs || subagent.mtimeMs),
+          lastActivityAt: new Date(subagent.mtimeMs),
+          transcriptPath: subagent.path,
+        });
       }
       return [...records.values()];
     },

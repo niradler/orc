@@ -45,7 +45,6 @@ import {
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import { type ChatHistoryEntry, entryAgent } from "@/lib/chat-history-list";
-import { pathName } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 export function ChatSessionPicker({
@@ -113,6 +112,20 @@ export function ChatSessionPicker({
     setIncludeHidden,
     agentGroups,
   } = history;
+  const renderRow = (entry: ChatHistoryEntry): ReactNode => (
+    <HistoryRow
+      key={entry.id}
+      entry={entry}
+      state={stateOf(entry)}
+      pending={pending}
+      selected={isSelected(entry)}
+      terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+      query={search}
+      onSelect={() => selectEntry(entry)}
+      onView={() => openSessionView(entry)}
+      nested={entry.children?.map(renderRow)}
+    />
+  );
   if (rail)
     return (
       <aside
@@ -343,19 +356,7 @@ export function ChatSessionPicker({
                     }
                     onNew={() => newProjectSession(project)}
                   >
-                    {rows.slice(0, visibleCount).map((entry) => (
-                      <HistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                        query={search}
-                        onSelect={() => selectEntry(entry)}
-                        onView={() => openSessionView(entry)}
-                      />
-                    ))}
+                    {rows.slice(0, visibleCount).map((entry) => renderRow(entry))}
                     {!rows.length && !loading && (
                       <p className="px-2 py-1.5 text-xs text-muted-foreground">
                         {search || filter !== "all"
@@ -366,7 +367,7 @@ export function ChatSessionPicker({
                   </ProjectGroup>
                 ))}
                 {unassignedFolders.map((folder) => {
-                  const name = folder.cwd ? pathName(folder.cwd) : "Unassigned";
+                  const name = folder.label;
                   return (
                     <ProjectGroup
                       key={folder.key}
@@ -389,19 +390,7 @@ export function ChatSessionPicker({
                         folder.cwd ? () => projectFromFolder(folder.cwd as string) : undefined
                       }
                     >
-                      {folder.rows.slice(0, visibleCount).map((entry) => (
-                        <HistoryRow
-                          key={entry.id}
-                          entry={entry}
-                          state={stateOf(entry)}
-                          pending={pending}
-                          selected={isSelected(entry)}
-                          terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                          query={search}
-                          onSelect={() => selectEntry(entry)}
-                          onView={() => openSessionView(entry)}
-                        />
-                      ))}
+                      {folder.rows.slice(0, visibleCount).map((entry) => renderRow(entry))}
                     </ProjectGroup>
                   );
                 })}
@@ -436,34 +425,10 @@ export function ChatSessionPicker({
                           <span className="min-w-0 truncate">{agentDisplayName(group.agent)}</span>
                           <span className="tabular-nums">{group.rows.length}</span>
                         </p>
-                        {group.rows.map((entry) => (
-                          <HistoryRow
-                            key={entry.id}
-                            entry={entry}
-                            state={stateOf(entry)}
-                            pending={pending}
-                            selected={isSelected(entry)}
-                            terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                            query={search}
-                            onSelect={() => selectEntry(entry)}
-                            onView={() => openSessionView(entry)}
-                          />
-                        ))}
+                        {group.rows.map((entry) => renderRow(entry))}
                       </div>
                     ))
-                  : shown.map((entry) => (
-                      <HistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                        query={search}
-                        onSelect={() => selectEntry(entry)}
-                        onView={() => openSessionView(entry)}
-                      />
-                    ))}
+                  : shown.map((entry) => renderRow(entry))}
               </div>
             )}
           </div>
@@ -836,6 +801,7 @@ export function HistoryRow({
   query = "",
   onSelect,
   onView,
+  nested,
 }: {
   entry: ChatHistoryEntry;
   state: AgentState;
@@ -845,6 +811,7 @@ export function HistoryRow({
   query?: string;
   onSelect: () => void;
   onView?: () => void;
+  nested?: ReactNode[] | undefined;
 }) {
   const chat = useChat();
   const tab = entry.kind === "local" ? entry.tab : null;
@@ -951,6 +918,9 @@ export function HistoryRow({
             </button>
           </ActionHelp>
         )}
+        {!((entry.kind === "native" || entry.kind === "archive") && onView) && !(open && tab) && (
+          <span aria-hidden className="size-8 shrink-0 max-sm:size-11 pointer-coarse:size-11" />
+        )}
         {open && tab && (
           <ActionHelp
             label={`Close ${entry.title} from open sessions`}
@@ -977,6 +947,32 @@ export function HistoryRow({
           <Highlight text={entry.snippets[0]} query={query} />
         </p>
       )}
+      {nested?.length ? <SubagentList count={nested.length}>{nested}</SubagentList> : null}
+    </div>
+  );
+}
+
+export function SubagentList({ count, children }: { count: number; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const label = `${count} ${count === 1 ? "subagent" : "subagents"}`;
+  return (
+    <div data-testid="chat-session-subagents" className="pb-1 pl-6">
+      <button
+        type="button"
+        data-testid="chat-session-subagents-toggle"
+        aria-expanded={open}
+        aria-label={`${open ? "Hide" : "Show"} ${label}`}
+        onClick={() => setOpen(!open)}
+        className="inline-flex min-h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-surface-highest hover:text-on-surface max-sm:min-h-11 pointer-coarse:min-h-11"
+      >
+        <ChevronRight
+          size={12}
+          aria-hidden
+          className={cn("shrink-0 motion-safe:transition-transform", open && "rotate-90")}
+        />
+        {label}
+      </button>
+      {open && <div className="space-y-0.5 border-l border-border pl-1.5">{children}</div>}
     </div>
   );
 }

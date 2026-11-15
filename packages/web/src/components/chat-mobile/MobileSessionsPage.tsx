@@ -13,10 +13,10 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
-import { ArchiveResumeForm, ProjectGroup } from "@/components/ChatControls";
+import { ArchiveResumeForm, ProjectGroup, SubagentList } from "@/components/ChatControls";
 import { Highlight } from "@/components/Highlight";
 import { SessionArchiveView } from "@/components/SessionArchiveView";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
@@ -34,7 +34,6 @@ import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import type { ChatHistoryEntry } from "@/lib/chat-history-list";
 import { entryAgent } from "@/lib/chat-history-list";
-import { pathName } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 function activityWhen(ms: number): string {
@@ -111,6 +110,25 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
     setIncludeHidden,
     agentGroups,
   } = history;
+  const renderRow = (entry: ChatHistoryEntry, project: string | null): ReactNode => (
+    <div key={entry.id}>
+      <MobileHistoryRow
+        entry={entry}
+        state={stateOf(entry)}
+        pending={pending}
+        selected={isSelected(entry)}
+        project={project}
+        query={search}
+        onSelect={() => selectEntry(entry)}
+        onView={() => openSessionView(entry)}
+      />
+      {entry.children?.length ? (
+        <SubagentList count={entry.children.length}>
+          {entry.children.map((child) => renderRow(child, null))}
+        </SubagentList>
+      ) : null}
+    </div>
+  );
   const root = useRef<HTMLElement>(null);
   const { ref: freezeRef, ...freezeProps } = stable.listProps;
   // Keep one callback identity: a fresh inline ref detaches every render and clears the freeze.
@@ -331,19 +349,9 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                     }
                     onNew={() => newProjectSession(project)}
                   >
-                    {rows.slice(0, visibleCount).map((entry) => (
-                      <MobileHistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        project={projectName(entry.projectId)}
-                        query={search}
-                        onSelect={() => selectEntry(entry)}
-                        onView={() => openSessionView(entry)}
-                      />
-                    ))}
+                    {rows
+                      .slice(0, visibleCount)
+                      .map((entry) => renderRow(entry, projectName(entry.projectId)))}
                     {!rows.length && !loading && (
                       <p className="px-2 py-1.5 text-xs text-muted-foreground">
                         {search || filter !== "all"
@@ -354,7 +362,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                   </ProjectGroup>
                 ))}
                 {unassignedFolders.map((folder) => {
-                  const name = folder.cwd ? pathName(folder.cwd) : "Unassigned";
+                  const name = folder.label;
                   return (
                     <ProjectGroup
                       key={folder.key}
@@ -377,18 +385,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                         folder.cwd ? () => projectFromFolder(folder.cwd as string) : undefined
                       }
                     >
-                      {folder.rows.slice(0, visibleCount).map((entry) => (
-                        <MobileHistoryRow
-                          key={entry.id}
-                          entry={entry}
-                          state={stateOf(entry)}
-                          pending={pending}
-                          selected={isSelected(entry)}
-                          project={null}
-                          onSelect={() => selectEntry(entry)}
-                          onView={() => openSessionView(entry)}
-                        />
-                      ))}
+                      {folder.rows.slice(0, visibleCount).map((entry) => renderRow(entry, null))}
                     </ProjectGroup>
                   );
                 })}
@@ -421,34 +418,10 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                           <span className="min-w-0 truncate">{agentDisplayName(group.agent)}</span>
                           <span className="tabular-nums">{group.rows.length}</span>
                         </p>
-                        {group.rows.map((entry) => (
-                          <MobileHistoryRow
-                            key={entry.id}
-                            entry={entry}
-                            state={stateOf(entry)}
-                            pending={pending}
-                            selected={isSelected(entry)}
-                            project={projectName(entry.projectId)}
-                            query={search}
-                            onSelect={() => selectEntry(entry)}
-                            onView={() => openSessionView(entry)}
-                          />
-                        ))}
+                        {group.rows.map((entry) => renderRow(entry, projectName(entry.projectId)))}
                       </div>
                     ))
-                  : shown.map((entry) => (
-                      <MobileHistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        project={projectName(entry.projectId)}
-                        query={search}
-                        onSelect={() => selectEntry(entry)}
-                        onView={() => openSessionView(entry)}
-                      />
-                    ))}
+                  : shown.map((entry) => renderRow(entry, projectName(entry.projectId)))}
               </div>
             )}
             {loading && (
@@ -636,6 +609,9 @@ function MobileHistoryRow({
             <BookOpen size={15} />
           </button>
         </ActionHelp>
+      )}
+      {!((entry.kind === "native" || entry.kind === "archive") && onView) && !(open && tab) && (
+        <span aria-hidden className="size-11 shrink-0" />
       )}
       {open && tab && (
         <ActionHelp

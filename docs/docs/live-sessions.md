@@ -9,6 +9,23 @@ paths, network shares, file URLs and POSIX paths. For example,
 `\\?\C:\Projects\orc` displays as `orc` rather than the full path in session and
 notification titles. Named sessions keep their titles; execution uses the original
 folder path. Codex uses the first prompt when its native title is only the folder.
+Claude Code sessions use the conversation title Claude writes (or your `/rename`),
+then the first prompt; the `<folder>-<hex>` name Claude Code gives its process is
+never used, so each `/clear` in one terminal is its own row with its own title, and
+a conversation with no prompt yet reads **New session**. Recency comes from the last
+message, not from the transcript file's modification time.
+
+Subagents nest under the session that started them: Claude Code subagents (their
+`.meta.json` description is the title), Codex spawned threads, Cursor subagent
+composers and OpenCode child sessions. A parent row shows **N subagents**, expands
+to the children, and takes the most urgent child state. Subagents do not raise
+notifications of their own. Cursor IDE chats take their folder from the workspace
+that holds them, and a transcript whose worktree was deleted falls back to the
+deepest folder that still exists.
+
+Choosing a session never changes the project filter in the header: **All projects**
+stays on **All projects**. A session whose project no longer exists groups by its
+folder, and folders that share a name show as much of the path as tells them apart.
 
 ## Rename, hide and fork
 

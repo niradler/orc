@@ -10,6 +10,7 @@ const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const SessionRow = z.object({
   id: z.string().regex(SESSION_ID),
+  parent_id: z.string().nullish(),
   directory: z.string().nullish(),
   title: z.string().nullish(),
   model: z.string().nullish(),
@@ -23,9 +24,9 @@ const SessionRow = z.object({
 });
 
 const SESSION_COLUMNS =
-  "id, directory, title, model, time_created, time_updated, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write";
+  "id, parent_id, directory, title, model, time_created, time_updated, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write";
 const LEGACY_SESSION_COLUMNS =
-  "id, directory, title, time_created, time_updated, tokens_input, tokens_output, tokens_reasoning";
+  "id, parent_id, directory, title, time_created, time_updated, tokens_input, tokens_output, tokens_reasoning";
 
 /** Queries a table that may not exist in this OpenCode version's database. */
 async function queryTable<T extends object>(
@@ -96,11 +97,17 @@ export function opencodeAdapter(
       // OpenCode 2.2+ keeps sessions in session_v2; the legacy session table
       // still holds conversations created before the migration, so read both.
       const tail = `WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT ${SESSION_LIMIT}`;
+      const childTail = `WHERE parent_id IS NOT NULL ORDER BY time_updated DESC LIMIT ${SESSION_LIMIT}`;
       const current = await sessionRows(runtime, path, "session_v2", tail);
       const legacy = await sessionRows(runtime, path, "session", tail);
+      const parents = new Set([...current, ...legacy].map((row) => row.id));
+      const children = [
+        ...(await sessionRows(runtime, path, "session_v2", childTail)),
+        ...(await sessionRows(runtime, path, "session", childTail)),
+      ].filter((row) => parents.has(row.parent_id));
       const seen = new Set<string>();
       const records: SessionRecord[] = [];
-      for (const raw of [...current, ...legacy]) {
+      for (const raw of [...current, ...legacy, ...children]) {
         const parsed = SessionRow.safeParse(raw);
         if (!parsed.success || seen.has(parsed.data.id)) continue;
         seen.add(parsed.data.id);
@@ -115,6 +122,7 @@ export function opencodeAdapter(
         const record: SessionRecord = {
           backend: "opencode",
           externalId: row.id,
+          ...(row.parent_id ? { parentId: row.parent_id } : {}),
           title: oneLine(row.title || row.id, 120),
           cwd: row.directory || null,
           status: "stopped",

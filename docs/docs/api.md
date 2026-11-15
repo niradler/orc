@@ -304,7 +304,7 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones |
+| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id |
 | `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |

@@ -55,6 +55,9 @@ const LiveSessionSchema = z
     id: z.string(),
     agent: z.string(),
     session_id: z.string().nullable(),
+    parent_id: z.string().nullable().default(null).openapi({
+      description: "Live session id of the session that spawned this subagent",
+    }),
     name: z.string().nullable(),
     summary: z.string().nullable(),
     tokens_used: z.number().nullable(),
@@ -105,6 +108,15 @@ const liveListRoute = createRoute({
         .default("false")
         .transform((v) => v === "true")
         .openapi({ description: "Include sessions a human hid from the list" }),
+      include_children: z
+        .enum(["true", "false"])
+        .optional()
+        .default("false")
+        .transform((v) => v === "true")
+        .openapi({
+          description:
+            "Also return the subagent sessions of the listed sessions; limit counts top-level sessions only",
+        }),
       limit: z.coerce.number().int().min(1).max(5000).optional().default(100),
     }),
   },
@@ -347,7 +359,28 @@ function toDto(s: typeof sessions.$inferSelect) {
 
 type GatewayRow = typeof gateway_sessions.$inferSelect;
 
+const nativeKey = (backend: string, host: string | null, runtimeId: string | null) =>
+  JSON.stringify([backend, host, runtimeId]);
+
 async function toLiveDtos(rows: GatewayRow[]) {
+  const parentIds = [
+    ...new Set(rows.flatMap((row) => (row.parent_session_id ? [row.parent_session_id] : []))),
+  ];
+  const parents = parentIds.length
+    ? await getDb().query.gateway_sessions.findMany({
+        where: and(
+          eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+          inArray(gateway_sessions.runtime_session_id, parentIds),
+        ),
+        columns: { id: true, backend: true, execution_host: true, runtime_session_id: true },
+      })
+    : [];
+  const parentByNative = new Map(
+    parents.map((row) => [
+      nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id),
+      row.id,
+    ]),
+  );
   const handoffs = rows.length
     ? await getDb().query.session_handoffs.findMany({
         where: inArray(
@@ -375,6 +408,11 @@ async function toLiveDtos(rows: GatewayRow[]) {
       id: r.id,
       agent: r.backend,
       session_id: r.runtime_session_id ?? null,
+      parent_id: r.parent_session_id
+        ? (parentByNative.get(
+            nativeKey(r.backend, r.execution_host ?? null, r.parent_session_id),
+          ) ?? null)
+        : null,
       name: r.display_title ?? r.title ?? null,
       summary: r.summary ?? null,
       tokens_used: r.tokens_used ?? null,
@@ -408,11 +446,13 @@ async function toLiveDtos(rows: GatewayRow[]) {
 }
 
 app.openapi(liveListRoute, async (c) => {
-  const { agent, task_id, active, include_hidden, limit, project_id } = c.req.valid("query");
+  const { agent, task_id, active, include_hidden, include_children, limit, project_id } =
+    c.req.valid("query");
   const bodyIds = task_id ? await sessionIdsOfTask(task_id) : [];
   const rows = await getDb().query.gateway_sessions.findMany({
     where: and(
       eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+      isNull(gateway_sessions.parent_session_id),
       include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
       project_id === "unassigned"
         ? isNull(gateway_sessions.project_id)
@@ -438,10 +478,34 @@ app.openapi(liveListRoute, async (c) => {
           )
         : undefined,
     ),
-    orderBy: [desc(gateway_sessions.last_activity_at)],
+    orderBy: [desc(gateway_sessions.last_activity_at), desc(gateway_sessions.updated_at)],
     limit,
   });
-  return c.json({ sessions: await toLiveDtos(rows) });
+  const listed = new Set<string>();
+  const unique = rows.filter((row) => {
+    if (!row.runtime_session_id) return true;
+    const key = nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id);
+    if (listed.has(key)) return false;
+    listed.add(key);
+    return true;
+  });
+  const parentIds = [...new Set(unique.flatMap((row) => row.runtime_session_id ?? []))];
+  const children =
+    include_children && parentIds.length
+      ? (
+          await getDb().query.gateway_sessions.findMany({
+            where: and(
+              eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+              include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
+              inArray(gateway_sessions.parent_session_id, parentIds),
+            ),
+            orderBy: [desc(gateway_sessions.last_activity_at)],
+          })
+        ).filter((row) =>
+          listed.has(nativeKey(row.backend, row.execution_host ?? null, row.parent_session_id)),
+        )
+      : [];
+  return c.json({ sessions: await toLiveDtos([...unique, ...children]) });
 });
 
 app.openapi(liveSearchRoute, async (c) => {

@@ -242,6 +242,7 @@ export type LiveSession = {
   id: string;
   agent: string;
   session_id: string | null;
+  parent_id?: string | null;
   name: string | null;
   summary: string | null;
   tokens_used: number | null;
