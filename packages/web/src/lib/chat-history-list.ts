@@ -326,7 +326,7 @@ export function folderProjectName(cwd: string, taken: string[]): string {
       .replace(/^-+|-+$/g, "")
       .slice(0, 90) || "project";
   const parts = cwd.split(/[\\/]/).filter(Boolean);
-  const base = slug(parts.at(-1) ?? "");
+  const base = slug(parts[parts.length - 1] ?? "");
   const candidates = [base, slug(parts.slice(-2).join("-"))];
   for (let n = 2; n < 100; n++) candidates.push(`${base}-${n}`);
   return candidates.find((name) => !used.has(name.toLowerCase())) ?? `${base}-${Date.now()}`;
