@@ -175,9 +175,9 @@ has:
   and the text stays readable.
 - `Html` — a short inline HTML snippet inside a sandboxed frame. The frame runs
   on an opaque origin with no ORC storage, credentials, API or parent access, and
-  the injected CSP blocks scripted requests (fetch, images, fonts and forms), so
-  it can run its own inline scripts and styles and show `data:` or `blob:` images
-  but cannot call the ORC API. The frame can still navigate itself to another
+  the injected CSP blocks scripted requests (fetch, network images, fonts and
+  forms), so it can run its own inline scripts and styles and show `data:` or
+  `blob:` images but cannot call the ORC API. The frame can still navigate itself to another
   URL, so treat its content as untrusted output; its scripts also run on the
   page's main thread, so a runaway loop freezes the chat tab. Use a scratchpad
   for HTML you want to save or edit; inline chat HTML is not saved as a

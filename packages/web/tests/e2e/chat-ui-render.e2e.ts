@@ -935,7 +935,7 @@ for (const theme of ["dark", "light"] as const) {
   }
 }
 
-test("inline HTML runs on an opaque origin and cannot reach ORC or the network", async ({
+test("inline HTML runs on an opaque origin with no ORC access and no scripted requests", async ({
   page,
 }) => {
   const probes = await probeRequests(page);

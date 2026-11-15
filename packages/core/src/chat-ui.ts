@@ -164,7 +164,7 @@ export const chatUiCatalog = defineCatalog(schema, {
         height: z.enum(["short", "tall"]).optional(),
       }),
       description:
-        "Inline sandboxed HTML (max 20k characters) on an opaque origin: no ORC API, storage, credentials or parent access, and CSP blocks scripted requests, images, fonts and forms. The frame can still navigate itself, so its content is untrusted; its scripts run on the page's main thread.",
+        "Inline sandboxed HTML (max 20k characters) on an opaque origin: no ORC API, storage, credentials or parent access, and CSP blocks scripted requests, network images, fonts and forms. The frame can still navigate itself, so its content is untrusted; its scripts run on the page's main thread.",
     },
     SessionUsage: {
       props: z.object({ sessionId: EntityId }),
