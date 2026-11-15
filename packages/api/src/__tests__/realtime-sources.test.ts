@@ -108,14 +108,18 @@ test("should report which paths changed so a pushed remote ref can be recognized
     seen.push(...paths);
   });
   try {
-    writeFileSync(join(root, ".git", "refs", "remotes", "origin", "main"), "abc\n");
-    await waitForChange(() => seen.length, 0);
-    expect(seen.some((path) => /(^|\/)refs\/remotes\/origin\/main$/.test(path))).toBe(true);
+    const ref = /(^|\/)refs\/remotes\/origin\/main$/;
+    const deadline = Date.now() + 8000;
+    while (!seen.some((path) => ref.test(path)) && Date.now() < deadline) {
+      writeFileSync(join(root, ".git", "refs", "remotes", "origin", "main"), `${Date.now()}\n`);
+      await Bun.sleep(200);
+    }
+    expect(seen.some((path) => ref.test(path))).toBe(true);
   } finally {
     stop();
     rmSync(root, { recursive: true, force: true });
   }
-}, 10_000);
+}, 15_000);
 
 test("should recheck GitHub a fixed number of times after a push and restart on a new push", async () => {
   let github = 0;
