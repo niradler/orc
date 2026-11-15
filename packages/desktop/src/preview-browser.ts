@@ -21,6 +21,7 @@ import {
   WebContentsView,
 } from "electron";
 import { z } from "zod";
+import { attachContextMenu } from "./context-menu-window.js";
 import { PreviewDownloads } from "./preview-downloads.js";
 import { PreviewFrames } from "./preview-frames.js";
 import { previewObservation } from "./preview-observation.js";
@@ -215,6 +216,7 @@ export class PreviewBrowser {
         },
       });
       view.setVisible(false);
+      attachContextMenu(view.webContents);
       this.owner.contentView.addChildView(view);
       const state: PreviewBrowserState = {
         session_id: id,
