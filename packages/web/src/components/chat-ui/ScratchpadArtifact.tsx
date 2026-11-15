@@ -4,20 +4,9 @@ import { Markdown } from "@/components/Markdown";
 import { withOrcKit } from "@/lib/orc-kit";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { isolatedHtml } from "./sandboxed-html";
 
 const DiagramPreview = lazy(() => import("./ScratchpadDiagramPreview"));
-
-// An opaque origin plus CSP keeps generated scripts away from ORC storage, API
-// credentials. CSP blocks connections/external resources; embed data and chart code.
-const HTML_POLICY = `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'`;
-
-function isolatedHtml(content: string): string {
-  const policy = `<meta http-equiv="Content-Security-Policy" content="${HTML_POLICY}">`;
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
-  return doctype
-    ? `${doctype[0]}${policy}${content.slice(doctype[0].length)}`
-    : `${policy}${content}`;
-}
 
 export function ScratchpadArtifact({
   pad,

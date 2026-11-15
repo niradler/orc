@@ -1,5 +1,5 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
-import { expect, type Page, type Request, test } from "@playwright/test";
+import { expect, type Frame, type Page, type Request, test } from "@playwright/test";
 import { CHAT_DASHBOARD_HTML } from "../fixtures/chat-dashboard";
 import { chatUiGalleryMessage } from "../fixtures/chat-ui-gallery";
 import { API_SECRET } from "./_helpers";
@@ -12,6 +12,83 @@ import {
 
 const THREAD = "60000000-0000-4000-8000-000000000001";
 const stamp = "2026-10-30T10:00:00.000Z";
+// A host the app never uses: a request to it can only come from a frame that escaped.
+const PROBE_ORIGIN = "http://probe.orc.test";
+
+/** Every probe request is blocked by CSP before it reaches the network, so a hit is a failure. */
+async function probeRequests(page: Page) {
+  const hits: string[] = [];
+  await page.route(`${PROBE_ORIGIN}/**`, (route) => {
+    hits.push(route.request().url());
+    return route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><title>Probe</title><p>probe reached</p>",
+    });
+  });
+  return hits;
+}
+
+/**
+ * Runs inside a sandboxed frame. CSP violations prove the browser refused the request,
+ * which a closed port or a CORS failure alone cannot prove.
+ */
+async function isolationProbe(frame: Frame) {
+  return frame.evaluate(async () => {
+    const violations: string[] = [];
+    document.addEventListener("securitypolicyviolation", (event) =>
+      violations.push(event.violatedDirective),
+    );
+    let parentBlocked = false;
+    let storageBlocked = false;
+    let networkBlocked = false;
+    let popupBlocked = false;
+    try {
+      void parent.document.body;
+    } catch {
+      parentBlocked = true;
+    }
+    try {
+      void localStorage.length;
+    } catch {
+      storageBlocked = true;
+    }
+    try {
+      await fetch("http://probe.orc.test/probe-fetch");
+    } catch {
+      networkBlocked = true;
+    }
+    const image = new Image();
+    image.src = "http://probe.orc.test/probe-image.png";
+    document.body.append(image);
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "http://probe.orc.test/probe-form";
+    document.body.append(form);
+    form.submit();
+    try {
+      popupBlocked = window.open("http://probe.orc.test/probe-window") === null;
+    } catch {
+      popupBlocked = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return {
+      parentBlocked,
+      storageBlocked,
+      networkBlocked,
+      popupBlocked,
+      bridgeAbsent: !("orc" in window),
+      origin: location.origin,
+      violations,
+    };
+  });
+}
+
+/** The same probe URL leaves the page when the app asks, so the hook above is live. */
+async function controlProbe(page: Page, hits: string[]) {
+  await page.evaluate(() => fetch("http://probe.orc.test/probe-control").catch(() => {}));
+  await expect.poll(() => hits.filter((url) => url.endsWith("/probe-control")).length).toBe(1);
+}
 
 const task = {
   id: "t1",
@@ -64,6 +141,21 @@ const project = {
   max_workers: null,
   created_at: stamp,
   updated_at: stamp,
+};
+
+const usage = {
+  latest: {
+    input_tokens: 120_000,
+    cached_input_tokens: 90_000,
+    cache_write_tokens: null,
+    recorded_at: stamp,
+    may_be_cold_after: null,
+  },
+  totals: null,
+  output_tokens: null,
+  requests: null,
+  compactions: null,
+  timeline: null,
 };
 
 const spec = {
@@ -155,6 +247,7 @@ for (const width of [1440, 390, 320]) {
       }),
     );
     await page.setViewportSize({ width, height: 900 });
+    const probes = await probeRequests(page);
     await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
     const panel = page.getByTestId("chat-ui-scratchpad");
     const frame = page.frameLocator('[data-testid="chat-ui-scratchpad-html"]');
@@ -167,33 +260,18 @@ for (const width of [1440, 390, 320]) {
     await expect(panel.getByRole("link", { name: "Scratchpad: Dataset dashboard" })).toBeVisible();
     const contentFrame = await (await iframe.elementHandle())?.contentFrame();
     if (!contentFrame) throw new Error("Dashboard frame missing");
-    const isolation = await contentFrame.evaluate(async () => {
-      let parentBlocked = false;
-      let storageBlocked = false;
-      let networkBlocked = false;
-      try {
-        void parent.document.body;
-      } catch {
-        parentBlocked = true;
-      }
-      try {
-        void localStorage.length;
-      } catch {
-        storageBlocked = true;
-      }
-      try {
-        await fetch("http://127.0.0.1:7701/api/tasks");
-      } catch {
-        networkBlocked = true;
-      }
-      return { parentBlocked, storageBlocked, networkBlocked, bridgeAbsent: !("orc" in window) };
-    });
-    expect(isolation).toEqual({
+    const isolation = await isolationProbe(contentFrame);
+    expect(isolation).toMatchObject({
       parentBlocked: true,
       storageBlocked: true,
       networkBlocked: true,
+      popupBlocked: true,
       bridgeAbsent: true,
+      origin: "null",
     });
+    expect(isolation.violations).toEqual(expect.arrayContaining(["connect-src", "img-src"]));
+    expect(probes).toEqual([]);
+    await controlProbe(page, probes);
     await panel.getByTestId("chat-ui-fullscreen").click();
     const dialog = page.getByTestId("chat-ui-fullscreen-dialog");
     await expect(dialog).toBeVisible();
@@ -292,6 +370,7 @@ async function mockApi(page: Page, requests: Request[], messageContent = content
       });
     if (path === "/projects") return route.fulfill({ json: { projects: [project], total: 1 } });
     if (path === "/jobs") return route.fulfill({ json: { jobs: [job], total: 1 } });
+    if (path === "/sessions/live/s1/cache") return route.fulfill({ json: usage });
     if (path === "/sessions/live")
       return route.fulfill({
         json: {
@@ -349,8 +428,13 @@ async function mockApi(page: Page, requests: Request[], messageContent = content
   };
   await page.addInitScript(
     ({ secret, id }) => {
-      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
-      localStorage.setItem("orc_chat_tabs", JSON.stringify({ threads: [id], active: id }));
+      // This also runs inside sandboxed chat-ui frames, where storage is unreachable.
+      try {
+        localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+        localStorage.setItem("orc_chat_tabs", JSON.stringify({ threads: [id], active: id }));
+      } catch {
+        /* opaque-origin frame */
+      }
     },
     { secret: API_SECRET, id: THREAD },
   );
@@ -367,20 +451,37 @@ async function mockApi(page: Page, requests: Request[], messageContent = content
 }
 
 for (const width of [1440, 390, 320]) {
-  test(`all 7 components render in chat at ${width}px`, async ({ page }, testInfo) => {
+  test(`all catalog components render in chat at ${width}px`, async ({ page }, testInfo) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await mockApi(
       page,
       [],
-      chatUiGalleryMessage({ task: "t1", job: "j1", project: "p1", pad: "s1" }),
+      chatUiGalleryMessage({ task: "t1", job: "j1", project: "p1", pad: "s1", session: "s1" }),
     );
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
     const block = page.getByTestId("chat-ui-block");
-    for (const id of ["task", "task-list", "job", "session-list", "scratchpad"]) {
+    for (const id of [
+      "task",
+      "task-list",
+      "job",
+      "session-list",
+      "scratchpad",
+      "progress",
+      "table",
+      "sparkline",
+      "key-value",
+      "callout",
+      "html",
+    ]) {
       await expect(block.getByTestId(`chat-ui-${id}`)).toBeAttached();
     }
+    await expect(block.getByTestId("chat-ui-metric")).toBeVisible();
+    await expect(block.getByTestId("chat-ui-chart")).toBeVisible();
+    await expect(block.getByTestId("chat-ui-session-usage-figure")).toContainText(
+      "120k input tokens · 75% cached",
+    );
     await expect(block).toContainText("Demo agent session");
     await expect(block.getByRole("alert")).toHaveCount(0);
     await expect(page.getByTestId("chat-ui-invalid")).toHaveCount(0);
@@ -621,3 +722,337 @@ for (const theme of ["dark", "light"] as const) {
     });
   }
 }
+
+const presentationSpec = {
+  root: "main",
+  elements: {
+    main: {
+      type: "Stack",
+      children: ["figures", "data"],
+    },
+    figures: {
+      type: "Stack",
+      props: { gap: "md" },
+      children: ["metric", "big", "progress", "sparkline", "kv", "callout", "usage"],
+    },
+    usage: { type: "SessionUsage", props: { sessionId: "s1" } },
+    data: {
+      type: "Stack",
+      props: { gap: "md" },
+      children: ["table", "emptyTable", "chart", "empty", "html"],
+    },
+    metric: {
+      type: "Metric",
+      props: { label: "Open tasks", value: 12, unit: "tasks", hint: "+3 this week", trend: "up" },
+    },
+    big: {
+      type: "Metric",
+      props: { label: "Lifetime events", value: 1_234_567, trend: "flat" },
+    },
+    progress: { type: "Progress", props: { value: 62, label: "Migration" } },
+    table: {
+      type: "Table",
+      props: {
+        caption: "Recent work",
+        columns: ["Task", "Status", "Owner", "Updated", "Notes"],
+        rows: [
+          [
+            "Render the presentation components in chat",
+            "Doing",
+            "codex",
+            "2 minutes ago",
+            "Chart legend, tooltip and series tokens",
+          ],
+          [
+            "Review a deliberately long table value that has to wrap",
+            "Done",
+            "claude",
+            "1 hour ago",
+            "Every cell wraps and keeps its full text at every width",
+          ],
+        ],
+      },
+    },
+    emptyTable: {
+      type: "Table",
+      props: { caption: "Runs by job", columns: ["Job", "Runs"], rows: [] },
+    },
+    sparkline: {
+      type: "Sparkline",
+      props: { values: [3, 5, 4, 8, 6, 9, 7], label: "Builds per day" },
+    },
+    kv: {
+      type: "KeyValue",
+      props: {
+        title: "Runtime",
+        items: [
+          { label: "Host", value: "This ORC server" },
+          { label: "Model", value: "codex-mini" },
+        ],
+      },
+    },
+    callout: {
+      type: "Callout",
+      props: { tone: "warn", text: "The recorded cache lifetime has elapsed.", title: "Heads up" },
+    },
+    chart: {
+      type: "Chart",
+      props: {
+        kind: "line",
+        title: "Sessions per day",
+        labels: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+        series: [
+          { name: "Chat", values: [4, 7, 5, 9, 6] },
+          { name: "Terminal", values: [2, 3, 4, 3, 5] },
+        ],
+      },
+    },
+    empty: {
+      type: "Chart",
+      props: {
+        kind: "bar",
+        title: "Runs by job",
+        labels: [],
+        series: [{ name: "Runs", values: [] }],
+      },
+    },
+    html: {
+      type: "Html",
+      props: {
+        title: "Inline HTML",
+        html: `<!doctype html><html><body style="font-family:sans-serif;margin:12px"><h1 style="font-size:16px">Inline HTML</h1><p id="out">script ran</p><script>
+          document.getElementById("out").textContent = "script ran";
+          try { void parent.document.body; window.__parent = "reached"; } catch { window.__parent = "blocked"; }
+          try { void localStorage.length; window.__storage = "reached"; } catch { window.__storage = "blocked"; }
+        </script></body></html>`,
+      },
+    },
+  },
+};
+
+for (const theme of ["dark", "light"] as const) {
+  for (const width of [1440, 390]) {
+    test(`presentation blocks render at ${width}px in ${theme}`, async ({ page }, testInfo) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      // Runs in the sandboxed Html frame too, where storage is intentionally unreachable.
+      await page.addInitScript((value) => {
+        try {
+          localStorage.setItem("orc_theme", value);
+        } catch {
+          /* opaque-origin frame */
+        }
+      }, theme);
+      await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(presentationSpec)}\n\`\`\``);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+      const block = page.getByTestId("chat-ui-block");
+
+      const metric = block.getByTestId("chat-ui-metric").first();
+      await expect(metric).toContainText("Open tasks");
+      await expect(metric).toContainText("12");
+      await expect(metric).toContainText("tasks");
+      await expect(metric.getByTestId("chat-ui-metric-trend")).toBeVisible();
+      await expect(metric.locator("p").first()).toHaveAttribute("title", "Open tasks");
+      // Numbers arrive formatted like the chart axis rather than as raw digits.
+      await expect(
+        block.getByTestId("chat-ui-metric").filter({ hasText: "Lifetime events" }),
+      ).toContainText("1,234,567");
+
+      const progress = block.getByTestId("chat-ui-progress").getByRole("progressbar");
+      await expect(progress).toHaveAttribute("aria-valuenow", "62");
+      await expect(progress).toHaveAttribute("aria-label", "Migration");
+      await expect(block.getByTestId("chat-ui-progress")).toContainText("62%");
+
+      const table = block.getByTestId("chat-ui-table").first();
+      await expect(table.getByRole("columnheader", { name: "Owner" })).toBeVisible();
+      await expect(table.locator("figcaption")).toHaveAttribute("title", "Recent work");
+      const longCell = table.getByRole("cell", { name: /deliberately long/ });
+      await expect(longCell).toHaveAttribute("title", /deliberately long/);
+      // Phones get no hover: the cell wraps and keeps its whole value in the layout.
+      await expect(longCell).toHaveCSS("white-space", "normal");
+      expect(await longCell.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
+        true,
+      );
+      await expect(
+        block.getByTestId("chat-ui-table").filter({ hasText: "Runs by job" }),
+      ).toContainText("No rows");
+      const scroller = table.getByTestId("chat-ui-table-scroll");
+      if (width === 390) {
+        await expect
+          .poll(() => scroller.evaluate((node) => node.scrollWidth > node.clientWidth + 1))
+          .toBe(true);
+        await scroller.focus();
+        await scroller.press("ArrowRight");
+        await expect.poll(() => scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+        expect(
+          await block.evaluate((node) => node.scrollWidth - node.clientWidth),
+        ).toBeLessThanOrEqual(0);
+      }
+
+      const sparkline = block.getByTestId("chat-ui-sparkline");
+      await expect(sparkline.getByRole("img")).toHaveAttribute("aria-label", /up from 3 to 7/);
+      await expect(sparkline).toContainText("Builds per day");
+      await expect(sparkline).toContainText("7");
+
+      await expect(block.getByTestId("chat-ui-key-value")).toContainText("This ORC server");
+      await expect(block.getByTestId("chat-ui-session-usage-figure")).toContainText(
+        "120k input tokens · 75% cached",
+      );
+      const callout = block.getByTestId("chat-ui-callout");
+      await expect(callout).toHaveAttribute("data-tone", "warn");
+      await expect(callout).toContainText("Warning:");
+      await expect(callout).toContainText("Heads up");
+
+      const chart = block.getByTestId("chat-ui-chart");
+      await expect(chart).toHaveAttribute("data-kind", "line");
+      await expect(chart).toContainText("Chat");
+      await expect(chart).toContainText("Terminal");
+      await expect(chart.getByRole("img")).toHaveAttribute("aria-label", /Chat 4 to 6/);
+      await expect(chart.getByRole("img")).toHaveAttribute("aria-label", /Terminal 2 to 5/);
+      await expect(chart.locator("svg.recharts-surface")).toHaveCount(1);
+      await chart.locator(".recharts-wrapper").hover({ position: { x: 120, y: 90 } });
+      await expect(chart.locator(".recharts-tooltip-wrapper")).toContainText("Terminal");
+
+      await expect(block.getByTestId("chat-ui-chart-empty")).toContainText(
+        "No data recorded for this chart yet.",
+      );
+      await expect(block.getByTestId("chat-ui-html")).toHaveCount(1);
+      await expect(page.getByTestId("chat-ui-invalid")).toHaveCount(0);
+      await scroller.evaluate((node) => {
+        node.scrollLeft = 0;
+      });
+      await page.mouse.move(4, 4);
+      await block.evaluate((node) => node.scrollIntoView({ block: "start" }));
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: testInfo.outputPath(`presentation-${width}-${theme}.png`) });
+      await chart.evaluate((node) => node.scrollIntoView({ block: "center" }));
+      await page.mouse.move(4, 4);
+      await page.waitForTimeout(500);
+      await chart.screenshot({ path: testInfo.outputPath(`chart-${width}-${theme}.png`) });
+      expect(errors).toEqual([]);
+    });
+  }
+}
+
+test("inline HTML runs on an opaque origin with no ORC access and no scripted requests", async ({
+  page,
+}) => {
+  const probes = await probeRequests(page);
+  await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(presentationSpec)}\n\`\`\``);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const iframe = page.getByTestId("chat-ui-html");
+  await expect(iframe).toHaveCount(1);
+  await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+  await expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
+  await expect(iframe).toHaveAttribute("loading", "lazy");
+  const source = await iframe.getAttribute("srcdoc");
+  expect(source).toContain("Content-Security-Policy");
+  expect(source).toContain("connect-src 'none'");
+  expect(source).not.toContain("allow-same-origin");
+
+  const frame = page.frameLocator('[data-testid="chat-ui-html"]');
+  await expect(frame.getByRole("paragraph")).toHaveText("script ran");
+  const contentFrame = await (await iframe.elementHandle())?.contentFrame();
+  if (!contentFrame) throw new Error("Inline HTML frame missing");
+  const isolation = await isolationProbe(contentFrame);
+  expect(isolation).toMatchObject({
+    parentBlocked: true,
+    storageBlocked: true,
+    networkBlocked: true,
+    popupBlocked: true,
+    bridgeAbsent: true,
+    origin: "null",
+  });
+  // A CSP violation proves the request was refused, not that the port was closed or CORS failed.
+  expect(isolation.violations).toEqual(expect.arrayContaining(["connect-src", "img-src"]));
+  expect(probes).toEqual([]);
+  const inlineProbes = await contentFrame.evaluate(() => {
+    const state = window as unknown as { __parent?: string; __storage?: string };
+    return { parentProbe: state.__parent, storageProbe: state.__storage };
+  });
+  expect(inlineProbes).toEqual({ parentProbe: "blocked", storageProbe: "blocked" });
+  await controlProbe(page, probes);
+});
+
+test("a sandboxed frame can still navigate itself, so its content is untrusted", async ({
+  page,
+}) => {
+  const navigations: string[] = [];
+  await page.route(`${PROBE_ORIGIN}/probe-nav/**`, (route) => {
+    navigations.push(route.request().url());
+    return route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><title>Navigated</title><p>external page</p>",
+    });
+  });
+  const navSpec = {
+    root: "frame",
+    elements: { frame: { type: "Html", props: { html: "<p>inline</p>", title: "Navigable" } } },
+  };
+  await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(navSpec)}\n\`\`\``);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const iframe = page.getByTestId("chat-ui-html");
+  await expect(iframe).toHaveCount(1);
+  const appUrl = page.url();
+  const contentFrame = await (await iframe.elementHandle())?.contentFrame();
+  if (!contentFrame) throw new Error("Inline HTML frame missing");
+  await contentFrame.evaluate(() => {
+    location.href = "http://probe.orc.test/probe-nav/page";
+  });
+  // The frame escapes its document by itself; only the surrounding app stays put.
+  await expect.poll(() => navigations.length).toBe(1);
+  await expect(
+    page.frameLocator('[data-testid="chat-ui-html"]').getByText("external page"),
+  ).toBeVisible();
+  expect(page.url()).toBe(appUrl);
+  expect(new URL(appUrl).origin).not.toBe(PROBE_ORIGIN);
+  await expect(page.getByTestId("chat-ui-block")).toHaveCount(1);
+});
+
+test("session usage omits the figure when the session records none", async ({ page }, testInfo) => {
+  await mockApi(
+    page,
+    [],
+    `\`\`\`orc-ui\n${JSON.stringify({ root: "u", elements: { u: { type: "SessionUsage", props: { sessionId: "s1" } } } })}\n\`\`\``,
+  );
+  await page.route("**/api/sessions/live/s1/cache", (route) =>
+    route.fulfill({
+      json: {
+        latest: null,
+        totals: null,
+        output_tokens: null,
+        requests: null,
+        compactions: null,
+        timeline: null,
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const usage = page.getByTestId("chat-ui-session-usage");
+  await expect(usage.getByTestId("chat-ui-session-usage-empty")).toHaveText(
+    "This session has no recorded usage yet.",
+  );
+  await expect(usage.getByTestId("chat-ui-session-usage-figure")).toHaveCount(0);
+  await expect(usage).not.toContainText("0 input tokens");
+  await expect(usage).not.toContainText("% cached");
+  await expect(usage.getByTestId("chat-ui-session-usage-help")).toHaveCount(0);
+  await usage.screenshot({ path: testInfo.outputPath("session-usage-empty.png") });
+});
+
+test("charts stay still under reduced motion", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(presentationSpec)}\n\`\`\``);
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const chart = page.getByTestId("chat-ui-chart");
+  await expect(chart.locator("svg.recharts-surface")).toHaveCount(1);
+  await chart.locator(".recharts-wrapper").hover({ position: { x: 120, y: 90 } });
+  await expect(chart.locator(".recharts-tooltip-wrapper")).toContainText("Chat");
+  expect(errors).toEqual([]);
+});

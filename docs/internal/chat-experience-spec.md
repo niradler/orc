@@ -123,7 +123,7 @@ moving Send/Stop; dividers appear only where a change actually happened; the
 duplicated analytics surface is gone with its tests updated; desktop and phone
 screenshots on the PR; `bun run ci:pr` green.
 
-## Wave 2 — orc-ui catalog v2 (separate session, not started)
+## Wave 2 — orc-ui catalog v2 (delivered, PR pending)
 
 Metric, Progress, Table, Sparkline, Chart (Recharts), KeyValue, Callout, inline
 sandboxed Html, and a live `SessionUsage` component, added to
@@ -131,7 +131,8 @@ sandboxed Html, and a live `SessionUsage` component, added to
 Acceptance: every component validates through `parseChatUiSpec`; charts follow
 DESIGN.md (Recharts, tooltip, legend or direct labels, series tokens); sandboxed
 Html cannot reach the app origin; the catalog text stays within the current
-prompt budget; no change to the six existing components.
+prompt budget; no change to the existing components (the catalog has seven, not
+six: Stack, Button, Task, TaskList, Job, SessionList, Scratchpad — all frozen).
 
 ## Wave 3 — normalized items and the deferred surface work
 
