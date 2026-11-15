@@ -1681,6 +1681,11 @@ export interface paths {
                                         recorded_at: string | null;
                                         pre_tokens: number | null;
                                         post_tokens: number | null;
+                                        /**
+                                         * @default null
+                                         * @enum {string|null}
+                                         */
+                                        trigger: "manual" | "auto" | null;
                                     }[] | null;
                                     timeline: {
                                         request: number;
@@ -18271,6 +18276,11 @@ export interface paths {
                                 recorded_at: string | null;
                                 pre_tokens: number | null;
                                 post_tokens: number | null;
+                                /**
+                                 * @default null
+                                 * @enum {string|null}
+                                 */
+                                trigger: "manual" | "auto" | null;
                             }[] | null;
                             timeline: {
                                 request: number;
@@ -18398,6 +18408,11 @@ export interface paths {
                                         recorded_at: string | null;
                                         pre_tokens: number | null;
                                         post_tokens: number | null;
+                                        /**
+                                         * @default null
+                                         * @enum {string|null}
+                                         */
+                                        trigger: "manual" | "auto" | null;
                                     }[] | null;
                                     timeline: {
                                         request: number;

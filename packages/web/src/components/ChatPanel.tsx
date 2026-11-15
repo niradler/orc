@@ -49,9 +49,10 @@ import {
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { ChatSessionStrip, useChatContextUsage } from "@/components/ChatSessionStrip";
-import { ChatTurnDivider, chatDividers } from "@/components/ChatTurnMeta";
+import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
+import { HelpPopover } from "@/components/HelpPopover";
 import {
   SessionDrawer,
   SessionHomeToggles,
@@ -75,8 +76,10 @@ import { useCompactViewport } from "@/hooks/useVisualViewport";
 import type { AgentState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
+import { chatDividers } from "@/lib/chat-dividers";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
 import { THIS_SERVER } from "@/lib/host-labels";
+import { chatContextHint } from "@/lib/session-cache";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -387,6 +390,9 @@ export function ChatPanel({
   // was recorded after that turn started; otherwise the figure belongs elsewhere.
   const latestUsage = contextUsage.data?.latest ?? null;
   const latestUsageAt = latestUsage?.recorded_at ? Date.parse(latestUsage.recorded_at) : Number.NaN;
+  // Only a genuinely large recorded request earns the hint; the copy comes from
+  // the agent's own compaction capability map.
+  const contextHint = chatContextHint(latestUsage, config.agent);
   const turnUsage =
     latestUsage &&
     Number.isFinite(latestUsageAt) &&
@@ -1197,6 +1203,18 @@ export function ChatPanel({
                 >
                   Running in its own agent. Sending unlocks when it finishes.
                 </p>
+              )}
+              {contextHint && (
+                <div
+                  data-testid="chat-context-hint"
+                  className="mx-auto mb-1.5 flex w-full max-w-3xl items-center gap-1 px-2 text-xs text-on-surface-variant"
+                >
+                  <p className="min-w-0 flex-1">{contextHint.text}</p>
+                  <HelpPopover label="large context" testId="chat-context-hint-help">
+                    <p>{contextHint.explanation}</p>
+                    <p className="mt-2">{contextHint.note}</p>
+                  </HelpPopover>
+                </div>
               )}
               <form
                 onSubmit={(event) => {

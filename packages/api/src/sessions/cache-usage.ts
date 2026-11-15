@@ -43,6 +43,20 @@ function timestamp(value: unknown): string | null {
   return Number.isFinite(millis) ? new Date(millis).toISOString() : null;
 }
 
+/** Only a provider that recorded this literal reason is trusted; timing is never a substitute. */
+function recordedTrigger(value: unknown): "manual" | "auto" | null {
+  return value === "manual" || value === "auto" ? value : null;
+}
+
+function parsedObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return object(value);
+  try {
+    return object(JSON.parse(value));
+  } catch {
+    return {};
+  }
+}
+
 function codexTokens(value: z.infer<typeof CodexUsage>): CacheTokenUsage {
   return {
     input_tokens: value.input_tokens,
@@ -145,10 +159,12 @@ function readPiCacheUsage(bytes: Uint8Array): SessionCacheUsage {
   const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
   for (const entry of parsed.branch) {
     if (entry.type !== "context_edit") continue;
+    // Pi's context edits record what changed, never why, so the trigger stays unknown.
     compactions.push({
       recorded_at: timestamp(entry.timestamp),
       pre_tokens: null,
       post_tokens: null,
+      trigger: null,
     });
   }
   result.compactions = compactions;
@@ -200,12 +216,15 @@ async function readOpenCodeCacheUsage(
     `SELECT id, type, data, time_created FROM session_message WHERE session_id = '${sessionId}' AND type IN ('assistant', 'compaction') ORDER BY seq`,
   );
   let rows: OpenCodeUsageRow[];
-  let compactionTimes: number[];
+  let compactions: { time: number; trigger: "manual" | "auto" | null }[];
   if (current.length) {
     rows = current;
-    compactionTimes = current
+    compactions = current
       .filter((row) => row.type === "compaction")
-      .map((row) => row.time_created);
+      .map((row) => ({
+        time: row.time_created,
+        trigger: recordedTrigger(parsedObject(row.data).trigger),
+      }));
   } else {
     rows = (
       await openCodeRows<OpenCodeUsageRow & { role: string | null }>(
@@ -214,7 +233,7 @@ async function readOpenCodeCacheUsage(
         `SELECT id, json_extract(data, '$.role') AS role, data, time_created FROM message WHERE session_id = '${sessionId}' ORDER BY time_created`,
       )
     ).filter((row) => row.role === "assistant");
-    compactionTimes = [];
+    compactions = [];
   }
   if (!rows.length) return result;
   const usage = parseOpenCodeUsage(rows);
@@ -228,10 +247,12 @@ async function readOpenCodeCacheUsage(
       output_tokens: event.outputTokens,
     });
   }
-  result.compactions = compactionTimes.map((time) => ({
-    recorded_at: Number.isFinite(time) && time > 0 ? new Date(time).toISOString() : null,
+  result.compactions = compactions.map((entry) => ({
+    recorded_at:
+      Number.isFinite(entry.time) && entry.time > 0 ? new Date(entry.time).toISOString() : null,
     pre_tokens: null,
     post_tokens: null,
+    trigger: entry.trigger,
   }));
   if (timeline.length) result.timeline = downsample(timeline);
   return result;
@@ -277,6 +298,7 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
           recorded_at: recordedAt,
           pre_tokens: tokens(meta.preTokens),
           post_tokens: tokens(meta.postTokens),
+          trigger: recordedTrigger(meta.trigger),
         });
         continue;
       }

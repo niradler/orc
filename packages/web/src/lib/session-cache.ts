@@ -1,7 +1,56 @@
+import { agentLabel, compactionPolicy } from "@orc/core/coding-agents";
 import type { SessionCacheUsage } from "@orc/core/usage";
 import { formatTokenCount } from "./token-count";
 
 const count = new Intl.NumberFormat();
+
+/**
+ * Large enough that agents commonly start compacting around here. It is a size,
+ * never a share of a window: ORC does not know the model's context window.
+ */
+export const CONTEXT_HINT_TOKENS = 150_000;
+
+export type ChatContextHint = {
+  /** The quiet composer line. */
+  text: string;
+  /** Full context for the shared help popover. */
+  explanation: string;
+  note: string;
+};
+
+/**
+ * Copy for the composer's large-context hint. The agent's own capability map
+ * decides the wording, so the hint never claims control ORC does not have.
+ */
+export function chatContextHint(
+  latest: SessionCacheUsage["latest"] | null | undefined,
+  agent: string,
+): ChatContextHint | null {
+  if (!latest || latest.input_tokens < CONTEXT_HINT_TOKENS) return null;
+  const policy = compactionPolicy(agent);
+  const label = agentLabel(agent);
+  const automatic =
+    policy.automatic === "configurable" && policy.setting
+      ? `${label} compacts automatically (${policy.setting})`
+      : `${label} compacts automatically on its own`;
+  return {
+    text: [
+      `${formatTokenCount(latest.input_tokens, false)} tokens of context`,
+      automatic,
+      policy.manual ? "Compact summarizes now" : "manual compaction is unavailable here",
+    ].join(" · "),
+    explanation: `The latest request carried ${count.format(latest.input_tokens)} tokens of context: the conversation the agent re-sends with every request. ORC does not know this model's context window, so this is a size rather than a percentage.`,
+    note: `${
+      policy.automatic === "configurable" && policy.setting
+        ? `Automatic compaction is controlled by the ${policy.setting} agent option.`
+        : `${label} decides when to compact internally.`
+    }${
+      policy.manual
+        ? " Compact in the session actions summarizes the conversation now; it runs when the session is idle."
+        : " Manual compaction is not available for this agent."
+    }`,
+  };
+}
 
 /**
  * One explanation shared by the header strip and the inline usage card, so the

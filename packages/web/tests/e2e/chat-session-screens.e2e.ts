@@ -268,6 +268,7 @@ for (const width of [1440, 390]) {
               recorded_at: new Date(now - 20 * 60_000).toISOString(),
               pre_tokens: 88_400,
               post_tokens: 12_200,
+              trigger: "auto",
             },
           ],
           timeline: null,
@@ -391,6 +392,9 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-turn-model")).toHaveCount(2);
     await expect(page.getByTestId("chat-turn-divider-model")).toContainText("claude-opus-4-1");
     await expect(page.getByTestId("chat-turn-divider-compaction")).toContainText(
+      "Context compacted automatically",
+    );
+    await expect(page.getByTestId("chat-turn-divider-compaction")).toContainText(
       "88k → 12k tokens",
     );
     await expect(page.getByTestId("chat-turn-tokens")).toContainText("48k tokens");
@@ -463,5 +467,83 @@ for (const width of [1440, 390]) {
         animations: "disabled",
       });
     }
+  });
+}
+
+// The composer hint is a size warning, not a window share: it appears only once
+// the latest recorded request is large, and it never claims control ORC lacks.
+for (const width of [1440, 390]) {
+  test(`chat context hint appears only for a large request at ${width}px`, async ({ page }) => {
+    const now = Date.now();
+    let inputTokens = 182_000;
+    const thread: ChatThread = {
+      id: HOME.chatA,
+      title: "Round cart totals to cents",
+      config: ChatSettingsSchema.parse({ agent: "claude", model: "claude-opus-4-1" }),
+      cwd: "/home/demo/acme-shop",
+      host: null,
+      runtimeId: "context-hint-runtime",
+      sourceId: "context-hint",
+      backend: "claude-code",
+      updatedAt: now - 60_000,
+      messages: [
+        {
+          id: `${HOME.chatA}-q`,
+          role: "user",
+          content: "Round the cart totals to cents.",
+          timestamp: now - 120_000,
+        },
+        {
+          id: `${HOME.chatA}-a`,
+          role: "assistant",
+          content: "The cart totals now round once at the money boundary.",
+          timestamp: now - 60_000,
+        },
+      ],
+    };
+    await page.setViewportSize({ width, height: 844 });
+    await mockSessionHome(page, now);
+    await page.route(`**/api/chat/threads/${HOME.chatA}`, (route) =>
+      route.fulfill({ json: thread }),
+    );
+    await page.route("**/api/sessions/live/context-hint/cache", (route) =>
+      route.fulfill({
+        json: {
+          latest: {
+            input_tokens: inputTokens,
+            cached_input_tokens: Math.round(inputTokens * 0.8),
+            cache_write_tokens: 0,
+            recorded_at: new Date(now - 60_000).toISOString(),
+            may_be_cold_after: null,
+          },
+          totals: null,
+          output_tokens: null,
+          requests: 1,
+          compactions: null,
+          timeline: null,
+        },
+      }),
+    );
+    await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+    await expect(page.getByTestId("chat-message-content").last()).toContainText("money boundary");
+    const hint = page.getByTestId("chat-context-hint");
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText("182k tokens of context");
+    // Claude compacts internally; ORC's own Compact action still exists.
+    await expect(hint).toContainText("Claude Code compacts automatically on its own");
+    await expect(hint).toContainText("Compact summarizes now");
+    // A size, never a share of a window ORC does not know.
+    await expect(hint).not.toContainText("%");
+    expect(await hint.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    await page.getByTestId("chat-context-hint-help").click();
+    await expect(page.getByTestId("chat-context-hint-help-content")).toContainText(
+      "does not know this model's context window",
+    );
+    await expect(page.getByTestId("chat-send-button")).toBeVisible();
+
+    inputTokens = 149_999;
+    await page.reload();
+    await expect(page.getByTestId("chat-message-content").last()).toContainText("money boundary");
+    await expect(page.getByTestId("chat-context-hint")).toHaveCount(0);
   });
 }
