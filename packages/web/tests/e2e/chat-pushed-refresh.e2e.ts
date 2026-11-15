@@ -132,7 +132,7 @@ test("a chat whose session changed on disk rebuilds itself without a manual refr
 });
 
 for (const width of [1440, 390]) {
-  test(`a turn running in its own agent streams in over SSE and blocks sending at ${width}px`, async ({
+  test(`a turn running in its own agent streams in over SSE and queues messages for it at ${width}px`, async ({
     page,
   }, testInfo) => {
     const state: SessionState = {
@@ -141,6 +141,34 @@ for (const width of [1440, 390]) {
       queued: [],
       live: { id: "live-1", agent: "claude", status: "running" },
     };
+    const inbox: Record<string, unknown>[] = [];
+    await page.route("**/api/sessions/live/live-1/messages", (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { messages: inbox } });
+      const { body } = route.request().postDataJSON() as { body: string };
+      const message = {
+        id: `msg-${inbox.length + 1}`,
+        project_id: null,
+        target_session_id: "live-1",
+        target_native_id: "native-runtime",
+        target_backend: "claude",
+        sender_kind: "human",
+        sender_session_id: null,
+        sender_native_id: null,
+        sender_backend: null,
+        sender_label: "human relay (ORC web)",
+        body,
+        position: inbox.length,
+        hop: 0,
+        state: "queued",
+        delivered_via: null,
+        delivery_error: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        delivered_at: null,
+      };
+      inbox.push(message);
+      return route.fulfill({ json: { message, target: { id: "live-1" } } });
+    });
     let turn = 0;
     const chat = await openPushedChat(
       page,
@@ -151,13 +179,19 @@ for (const width of [1440, 390]) {
     );
     const input = page.getByTestId("chat-input");
     const send = page.getByTestId("chat-send-button");
-    await expect(input).toHaveAttribute("placeholder", /Running in its own agent/);
-    await expect(page.getByTestId("chat-agent-running")).toBeVisible();
-    await input.fill("Can I interrupt?");
-    await expect(send).toBeDisabled();
+    await expect(input).toHaveAttribute("placeholder", /Messages queue for its next safe point/);
+    await expect(page.getByTestId("chat-agent-running")).toContainText("Send queues your message");
+    await input.fill("Also check the eval split");
+    await expect(send).toBeEnabled();
+    await expect(send).toHaveAccessibleName("Queue for its next safe point");
     await input.press("Enter");
-    await expect(input).toHaveValue("Can I interrupt?");
-    await page.screenshot({ path: testInfo.outputPath(`agent-running-${width}.png`) });
+    await expect.poll(() => inbox.length).toBe(1);
+    expect(inbox[0]?.body).toBe("Also check the eval split");
+    await expect(input).toHaveValue("");
+    const messages = page.getByTestId("session-messages");
+    await expect(messages).toContainText("1 queued");
+    await expect(messages.getByTestId("session-message-compose")).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`agent-queue-${width}.png`) });
 
     state.changed = true;
     await chat.pushSessions();
@@ -166,13 +200,33 @@ for (const width of [1440, 390]) {
     await chat.pushSessions();
     await expect(page.getByTestId("chat-messages").getByText("Agent step 2")).toBeVisible();
     expect(chat.rebuilt()).toBe(2);
-    await expect(send).toBeDisabled();
 
     state.live = { id: "live-1", agent: "claude", status: "idle" };
     await chat.pushSessions();
-    await expect(send).toBeEnabled();
     await expect(page.getByTestId("chat-agent-running")).toHaveCount(0);
     await expect(input).toHaveAttribute("placeholder", "Ask anything. / for prompts and skills");
-    await expect(input).toHaveValue("Can I interrupt?");
+    await expect(send).toHaveAccessibleName("Send message");
   });
 }
+
+test("an agent without a delivery hook blocks sending while it runs", async ({ page }) => {
+  const state: SessionState = {
+    changed: false,
+    running: false,
+    queued: [],
+    live: { id: "live-2", agent: "pi", status: "running" },
+  };
+  const chat = await openPushedChat(page, "claude", state, reply("Pi step"));
+  const input = page.getByTestId("chat-input");
+  const send = page.getByTestId("chat-send-button");
+  await expect(input).toHaveAttribute("placeholder", /Sending unlocks when it finishes/);
+  await input.fill("Can I interrupt?");
+  await expect(send).toBeDisabled();
+  await input.press("Enter");
+  await expect(input).toHaveValue("Can I interrupt?");
+  await expect(page.getByTestId("session-messages")).toHaveCount(0);
+  state.live = { id: "live-2", agent: "pi", status: "idle" };
+  await chat.pushSessions();
+  await expect(send).toBeEnabled();
+  await expect(input).toHaveValue("Can I interrupt?");
+});
