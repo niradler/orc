@@ -36,7 +36,7 @@ test.describe("@sanity critical flows", () => {
     expect(unauthenticated.status()).toBe(401);
     await gotoView(page, "activity");
     await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
-    await expect(page.getByTestId("stat-card").first()).toBeVisible();
+    await expect(page.getByTestId("activity-chart")).toBeVisible();
     await gotoView(page, "projects");
     await expect(page.getByTestId("view-title")).toHaveText(/projects/i);
     await gotoView(page, "sessions");

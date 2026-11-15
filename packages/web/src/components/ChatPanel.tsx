@@ -84,6 +84,7 @@ import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
+import { groupChatMessages } from "@/lib/chat-message-groups";
 import {
   appendDraftQuote,
   boundedText,
@@ -466,10 +467,16 @@ export function ChatPanel({
       ? (viewed?.name ?? "Session")
       : thread?.title;
   const headerState = viewId ? (viewed ? liveSessionState(viewed) : null) : sessionState;
-  const dividers = useMemo(
-    () => chatDividers(messages, contextUsage.data?.compactions ?? []),
-    [messages, contextUsage.data?.compactions],
-  );
+  const dividers = useMemo(() => {
+    const raw = chatDividers(messages, contextUsage.data?.compactions ?? []);
+    const { displayId } = groupChatMessages(messages);
+    const byMessage = new Map<string, typeof raw.trailing>();
+    for (const [id, list] of raw.byMessage) {
+      const key = displayId.get(id) ?? id;
+      byMessage.set(key, [...(byMessage.get(key) ?? []), ...list]);
+    }
+    return { byMessage, trailing: raw.trailing };
+  }, [messages, contextUsage.data?.compactions]);
   const storedMessages = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
@@ -565,20 +572,6 @@ export function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
-  const focusToggle = (
-    <ActionHelp label={focusChat ? "Exit focus chat (Escape)" : "Focus chat"}>
-      <button
-        type="button"
-        data-testid="chat-focus-toggle"
-        aria-label={focusChat ? "Exit focus chat" : "Focus chat"}
-        aria-pressed={focusChat}
-        onClick={() => setFocusChat((value) => !value)}
-        className={cn(iconButton, "pointer-coarse:min-h-11 pointer-coarse:min-w-11")}
-      >
-        <Focus size={17} />
-      </button>
-    </ActionHelp>
-  );
   const actionMenuRows = (includeSessionActions: boolean) => (
     <>
       <button
@@ -750,13 +743,13 @@ export function ChatPanel({
   useLayoutEffect(() => {
     if (!open) return;
     // Three rows in the hero; one row once the composer is docked.
-    const floor = hero ? HERO_INPUT_HEIGHT : 40;
+    const floor = hero ? HERO_INPUT_HEIGHT : 42;
     const measure = () => {
       if (!input.current) return;
       input.current.style.height = "auto";
       // Typed text decides its own height; an empty hero keeps three rows.
       const height = draft
-        ? Math.min(Math.max(input.current.scrollHeight, 40), 160)
+        ? Math.min(Math.max(input.current.scrollHeight, 42), 160)
         : Math.min(floor, 160);
       input.current.style.height = `${height}px`;
     };
@@ -1045,7 +1038,6 @@ export function ChatPanel({
                 </Popover>
               ))}
             {fullscreen && !phone && <SessionHomeToggles home={home} />}
-            {!phone && focusToggle}
             {onToggleFullscreen && (
               <ActionHelp label="Full screen chat">
                 <button
@@ -1059,9 +1051,9 @@ export function ChatPanel({
                 </button>
               </ActionHelp>
             )}
-            {/* The phone chat is a regular page: navigation (Back, the drawer or
+            {/* The chat page is a regular page: navigation (Back, the sidebar or
                 another destination) leaves it, so it has no close button. */}
-            {!(fullscreen && phone) && (
+            {!fullscreen && (
               <ActionHelp label="Close chat">
                 <button
                   type="button"

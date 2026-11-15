@@ -65,7 +65,7 @@ const UNKNOWN_MODEL = "__unknown__";
 type TokenKey = (typeof TOKEN_TYPES)[number]["key"];
 type Breakdown = "models" | "agents";
 type Granularity = "day" | "hour";
-type ChartPoint = UsageBucket & { label: string };
+export type ChartPoint = UsageBucket & { label: string };
 
 function agentName(agent: string): string {
   return agentNames[agent] ?? agent;
@@ -107,7 +107,7 @@ function bucketLabel(bucket: string, granularity: Granularity): string {
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function chartPoints(report: UsageReport | undefined): ChartPoint[] {
+export function chartPoints(report: UsageReport | undefined): ChartPoint[] {
   if (!report?.buckets.length) return [];
   const byBucket = new Map(report.buckets.map((bucket) => [bucket.bucket, bucket]));
   const step = report.granularity === "hour" ? 3_600_000 : 86_400_000;
