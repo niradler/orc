@@ -425,6 +425,8 @@ app.openapi(
 );
 
 const STEER_LIMIT = 32;
+/** The message may already be in the conversation, so a client must not resend it. */
+const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
 
 function steerable(
   run: ChatRun | undefined,
@@ -440,7 +442,10 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
   const previous = run.steering.get(requestId);
   if (previous) {
     if (previous.input !== input)
-      throw new ConflictError("This steering request ID already has different content.");
+      throw new ConflictError(
+        "This steering request ID already has different content.",
+        STEER_UNCONFIRMED,
+      );
     return previous.result;
   }
   if (run.steering.size >= STEER_LIMIT)
@@ -448,7 +453,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       "This response has reached its steering limit. Queue a message instead.",
     );
   if (run.thread.messages.some((message) => message.id === requestId))
-    throw new ConflictError("This message ID is already in use.");
+    throw new ConflictError("This message ID is already in use.", STEER_UNCONFIRMED);
   const steer = run.session.steer.bind(run.session);
   let dispatched = false;
   const deliver = async (): Promise<ChatThread> => {
@@ -497,7 +502,8 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       ];
       saveDelivery();
       throw new ConflictError(
-        "Steering delivery could not be confirmed. Reusing this request ID will not send it again; check the response before sending another message.",
+        "Steering delivery could not be confirmed. Check the response before sending another message; this text may already be in the conversation.",
+        STEER_UNCONFIRMED,
       );
     }
     delete message.activity;
@@ -1021,7 +1027,16 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ agentOptions: ChatAgentOptionsMapSchema }).strict(),
+            schema: z
+              .object({
+                agentOptions: ChatAgentOptionsMapSchema.optional(),
+                sendWhileRunning: z.enum(["steer", "queue"]).optional(),
+              })
+              .strict()
+              .refine(
+                (body) => body.agentOptions !== undefined || body.sendWhileRunning !== undefined,
+                "Provide agentOptions or sendWhileRunning",
+              ),
           },
         },
       },
@@ -1030,13 +1045,20 @@ app.openapi(
   }),
   (c) => {
     const thread = requireThread(c.req.valid("param").id);
-    const key = thread.runtimeId
-      ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
-      : thread.id;
-    if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
-      throw new ConflictError("Wait for the agent to finish before changing launch options.");
-    thread.config.agentOptions = c.req.valid("json").agentOptions;
-    thread.updatedAt = Date.now();
+    const body = c.req.valid("json");
+    // Launch options rebuild the next turn, so they wait for the running one. The
+    // send preference only steers the composer and applies immediately.
+    if (body.agentOptions !== undefined) {
+      const key = thread.runtimeId
+        ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
+        : thread.id;
+      if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
+        throw new ConflictError("Wait for the agent to finish before changing launch options.");
+      thread.config.agentOptions = body.agentOptions;
+    }
+    if (body.sendWhileRunning !== undefined) thread.config.sendWhileRunning = body.sendWhileRunning;
+    // A send preference is not conversation activity, so it does not reorder recents.
+    if (body.agentOptions !== undefined) thread.updatedAt = Date.now();
     store().save(thread);
     return c.json(thread);
   },
@@ -1622,6 +1644,8 @@ const requestSchema = z
     system: z.string().max(20000).optional(),
     autoApprove: z.boolean().optional(),
     permissionMode: ChatPermissionModeSchema.optional(),
+    // The composer's send preference, so a change made before the first message sticks.
+    sendWhileRunning: z.enum(["steer", "queue"]).optional(),
     agentOptions: ChatAgentOptionsMapSchema.optional(),
     // Where the user is chatting from. Sent to the agent only; the stored message stays the user's text.
     context: ChatTurnContextSchema.optional(),
@@ -1783,6 +1807,10 @@ async function openChat(
       throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = body.permissionMode;
   }
+  // Only a new conversation adopts the composer preference; an existing one owns
+  // its setting, so another device cannot silently replace it.
+  if (!body.threadId && body.sendWhileRunning !== undefined)
+    thread.config.sendWhileRunning = body.sendWhileRunning;
   // The switch mutates the shared thread, so every check that can reject the request
   // runs first: from the busy check below to beginTurn's reservation there must be no
   // await, or concurrent sends could move the conversation under each other.

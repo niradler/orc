@@ -2,6 +2,7 @@ import { type ChatSettings, ChatSettingsSchema } from "@orc/core/chat";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
+import { ChatSendModeSelect } from "@/components/ChatSendModeSelect";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -137,6 +138,7 @@ export function ChatSettingsForm({ onManageProviders }: { onManageProviders: () 
             </select>
           </div>
           <ChatPermissionSelect config={config} onChange={setConfig} disabled={pending} />
+          <ChatSendModeSelect config={config} onChange={setConfig} disabled={pending} />
           <Button data-testid="chat-settings-save" disabled={pending} onClick={() => void save()}>
             {pending ? "Saving…" : "Save chat defaults"}
           </Button>

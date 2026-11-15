@@ -650,6 +650,33 @@ describe("native chat runtime", () => {
     expect(calls.at(-1)?.opts.chatAgentOptions).toEqual(options.codex);
   });
 
+  test("send preference defaults to steering and saves per conversation", async () => {
+    const first = await turn({ messages: [{ role: "user", content: "send while responding" }] });
+    const opened = first.events[0];
+    if (opened?.type !== "thread") throw new Error("No conversation");
+    expect(opened.thread.config.sendWhileRunning).toBe("steer");
+    const path = `/api/chat/threads/${opened.thread.id}/config`;
+    const patch = (body: unknown) =>
+      app.request(path, {
+        method: "PATCH",
+        headers: AUTH,
+        body: JSON.stringify(body),
+      });
+    expect((await patch({})).status).toBe(400);
+    expect((await patch({ sendWhileRunning: "later" })).status).toBe(400);
+    expect((await patch({ sendWhileRunning: "queue" })).status).toBe(200);
+    const saved = (await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread;
+    expect(saved.config.sendWhileRunning).toBe("queue");
+    // A composer choice made before the first message rides the turn that creates it.
+    const created = await turn({
+      messages: [{ role: "user", content: "queue from the start" }],
+      sendWhileRunning: "queue",
+    });
+    const createdEvent = created.events[0];
+    if (createdEvent?.type !== "thread") throw new Error("No conversation");
+    expect(createdEvent.thread.config.sendWhileRunning).toBe("queue");
+  });
+
   test("model catalog validates auth, agent and conversation scope", async () => {
     expect((await request("/chat/models?agent=gemini", undefined, false)).status).toBe(401);
     expect((await request("/chat/models?agent=--bad")).status).toBe(400);
@@ -1449,6 +1476,16 @@ describe("native chat runtime", () => {
         })
       ).status,
     ).toBe(409);
+    // The send preference changes the composer only, so it applies right away.
+    expect(
+      (
+        await app.request(`/api/chat/threads/${opened.thread.id}/config`, {
+          method: "PATCH",
+          headers: AUTH,
+          body: JSON.stringify({ sendWhileRunning: "queue" }),
+        })
+      ).status,
+    ).toBe(200);
     expect(
       (
         await request(`/chat/runs/${opened.runId}/permission`, {
@@ -2031,14 +2068,14 @@ test("steering enters the active native session and persists the message without
       ).status,
     ).toBe(409);
     steeringFailure = false;
-    expect(
-      (
-        await request(`/chat/runs/${started.runId}/steer`, {
-          input: "uncertain steering",
-          requestId: uncertainId,
-        })
-      ).status,
-    ).toBe(409);
+    const retried = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "uncertain steering",
+      requestId: uncertainId,
+    });
+    expect(retried.status).toBe(409);
+    // The text may already be in the conversation, so clients must not resend it
+    // as a new turn; only a plain conflict is safe to queue.
+    expect(((await retried.json()) as { code: string }).code).toBe("STEER_UNCONFIRMED");
     expect(nativeSteers.filter((input) => input === "uncertain steering")).toHaveLength(1);
     const saved = ChatThreadSchema.parse(
       await (await request(`/chat/threads/${started.thread.id}`)).json(),

@@ -24,8 +24,8 @@ export class ValidationError extends OrcError {
 }
 
 export class ConflictError extends OrcError {
-  constructor(message: string) {
-    super(message, "CONFLICT", 409);
+  constructor(message: string, code = "CONFLICT") {
+    super(message, code, 409);
     this.name = "ConflictError";
   }
 }
