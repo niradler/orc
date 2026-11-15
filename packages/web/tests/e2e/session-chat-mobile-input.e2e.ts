@@ -164,49 +164,69 @@ for (const width of [1440, 390]) {
   });
 }
 
-test("stale status does not disable supported native agents and Cursor is read-only", async ({
-  page,
-}) => {
-  const sessions = ["codex", "claude", "gemini", "cursor-agent", "cursor"].map((agent, index) => ({
-    id: agent,
-    agent,
-    session_id: `native-${agent}`,
-    name: agent,
-    cwd: "/fixture",
-    status: "idle",
-    project_id: null,
-    last_activity_at: Date.now() - index * 1000,
-    tokens_used: null,
-  }));
-  await page.route("**/api/sessions/live?**", (route) => route.fulfill({ json: { sessions } }));
-  await page.route("**/api/sessions/live/*", (route) => {
-    const id = new URL(route.request().url()).pathname.split("/").at(-1);
-    const match = sessions.find((session) => session.id === id);
-    return match ? route.fulfill({ json: match }) : route.fallback();
+for (const width of [1280, 390])
+  test(`stale status does not disable supported native agents and Cursor is read-only at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const sessions = ["codex", "claude", "gemini", "cursor-agent", "cursor"].map(
+      (agent, index) => ({
+        id: agent,
+        agent,
+        session_id: `native-${agent}`,
+        name: agent,
+        cwd: "/fixture",
+        status: "idle",
+        project_id: null,
+        last_activity_at: Date.now() - index * 1000,
+        tokens_used: null,
+      }),
+    );
+    await page.route("**/api/sessions/live?**", (route) => route.fulfill({ json: { sessions } }));
+    await page.route("**/api/sessions/live/*", (route) => {
+      const id = new URL(route.request().url()).pathname.split("/").at(-1);
+      const match = sessions.find((session) => session.id === id);
+      return match ? route.fulfill({ json: match }) : route.fallback();
+    });
+    await page.route("**/api/sessions/live/*/transcript?**", (route) =>
+      route.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
+    );
+    await gotoView(page, "sessions");
+    for (const agent of ["codex", "claude", "gemini"]) {
+      const row = page.locator(
+        `[data-testid="chat-history-row"][data-history-id="native:${agent}"]`,
+      );
+      await expect(row.getByTestId("chat-resume-live")).toBeEnabled();
+    }
+    const cursor = page.locator(
+      '[data-testid="chat-history-row"][data-history-id="native:cursor-agent"]',
+    );
+    await cursor.getByTestId("chat-resume-live").click();
+    const view = page.getByTestId("session-view");
+    await expect(view.getByTestId("session-view-read-only")).toContainText(
+      "separate session stores",
+    );
+    await expect(view.getByTestId("open-chat-resume")).toHaveCount(0);
+    await expect(page.getByTestId("chat-input").filter({ visible: true })).toHaveCount(0);
+    await expect(page.locator('h2[title$="/ cursor-agent"]').filter({ visible: true })).toHaveCount(
+      1,
+    );
+    await expect(page.getByTestId("chat-header-state").filter({ visible: true })).toHaveAttribute(
+      "data-state",
+      "idle",
+    );
+    await expect(page.getByTestId("chat-header-actions").filter({ visible: true })).toHaveCount(0);
+    await expect(page.getByTestId("chat-options-button").filter({ visible: true })).toHaveCount(0);
+    await expect(view).toBeVisible();
+    await page.getByTestId("session-inspector-toggle").filter({ visible: true }).click();
+    const hidden = page.waitForRequest(
+      (request) =>
+        request.method() === "PATCH" && request.url().endsWith("/api/sessions/live/cursor-agent"),
+    );
+    await page
+      .getByTestId("session-inspector-session")
+      .filter({ visible: true })
+      .getByTestId("hide-session")
+      .click();
+    expect((await hidden).postDataJSON()).toEqual({ hidden: true });
   });
-  await page.route("**/api/sessions/live/*/transcript?**", (route) =>
-    route.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
-  );
-  await gotoView(page, "sessions");
-  for (const agent of ["codex", "claude", "gemini"]) {
-    const row = page.locator(`[data-testid="chat-history-row"][data-history-id="native:${agent}"]`);
-    await expect(row.getByTestId("chat-resume-live")).toBeEnabled();
-  }
-  const cursor = page.locator(
-    '[data-testid="chat-history-row"][data-history-id="native:cursor-agent"]',
-  );
-  await cursor.getByTestId("chat-resume-live").click();
-  const view = page.getByTestId("session-view");
-  await expect(view.getByTestId("session-view-read-only")).toContainText("separate session stores");
-  await expect(view.getByTestId("open-chat-resume")).toHaveCount(0);
-  await expect(page.getByTestId("chat-input").filter({ visible: true })).toHaveCount(0);
-  await expect(page.locator('h2[title$="/ cursor-agent"]').filter({ visible: true })).toHaveCount(
-    1,
-  );
-  await expect(page.getByTestId("chat-header-state").filter({ visible: true })).toHaveAttribute(
-    "data-state",
-    "idle",
-  );
-  await expect(page.getByTestId("chat-header-actions").filter({ visible: true })).toHaveCount(0);
-  await expect(page.getByTestId("chat-options-button").filter({ visible: true })).toHaveCount(0);
-});

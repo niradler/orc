@@ -486,7 +486,12 @@ export function useSessionHistory({
       } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
     } else if (entry.kind === "native") {
       if (!nativeChatAgent(entry.session.agent)) {
-        navigation.go({ viewId: entry.session.id, terminalId: null, liveId: null });
+        navigation.go({
+          viewId: entry.session.id,
+          terminalId: null,
+          liveId: null,
+          listOpen: false,
+        });
         return;
       }
       home?.go({ terminalId: null });

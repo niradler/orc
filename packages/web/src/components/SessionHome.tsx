@@ -66,15 +66,34 @@ function sessionCheckout(thread: ChatThread | null): Terminal | undefined {
   };
 }
 
-export function useSessionContext(terminalId: string | null): SessionContext {
+export function useSessionContext(
+  terminalId: string | null,
+  view?: { id: string; session: LiveSession | undefined },
+): SessionContext {
   const chat = useChat();
   const { terminals } = useTerminals();
   const live = useActiveLiveSessions();
   const terminal = terminalId ? terminals.find((item) => item.id === terminalId) : undefined;
-  const cwd = terminal ? terminal.cwd : (chat.thread?.cwd ?? null);
-  const host = terminal ? terminal.host : (chat.thread?.host ?? null);
-  const liveId = terminal ? terminal.live_session_id : (chat.thread?.sourceId ?? null);
-  const session = liveId ? live.data?.find((item) => item.id === liveId) : undefined;
+  const cwd = terminal
+    ? terminal.cwd
+    : view
+      ? (view.session?.cwd ?? null)
+      : (chat.thread?.cwd ?? null);
+  const host = terminal
+    ? terminal.host
+    : view
+      ? (view.session?.host ?? null)
+      : (chat.thread?.host ?? null);
+  const liveId = terminal
+    ? terminal.live_session_id
+    : view
+      ? view.id
+      : (chat.thread?.sourceId ?? null);
+  const session = view
+    ? view.session
+    : liveId
+      ? live.data?.find((item) => item.id === liveId)
+      : undefined;
   const sameFolder = (item: Terminal) => terminalInFolder(item, cwd, host);
   return {
     terminal,
@@ -88,7 +107,7 @@ export function useSessionContext(terminalId: string | null): SessionContext {
         : runningTerminalForFolder(terminals, cwd, host)) ??
       // Only a chat-only page can borrow the thread's folder; a terminal page
       // must never show Git for a different checkout than its Overview.
-      (terminalId ? undefined : sessionCheckout(chat.thread)),
+      (terminalId || view ? undefined : sessionCheckout(chat.thread)),
     shell: terminals.find(
       (item) => sameFolder(item) && item.kind === "shell" && item.id !== terminal?.id,
     ),

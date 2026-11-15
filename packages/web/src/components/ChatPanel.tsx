@@ -351,7 +351,6 @@ export function ChatPanel({
   const compactViewport = useCompactViewport();
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
-  const context = useSessionContext(home.terminalId);
   const terminalCenter = !!home.terminalId;
   const viewId = fullscreen && !terminalCenter ? home.viewId : null;
   const viewed = useQuery({
@@ -360,6 +359,10 @@ export function ChatPanel({
     enabled: !!viewId,
     retry: false,
   }).data;
+  const context = useSessionContext(
+    home.terminalId,
+    viewId ? { id: viewId, session: viewed } : undefined,
+  );
   // The drawer can take the conversation's space; collapsing or closing it
   // returns the column to the chat instead of leaving a half-empty screen.
   const [drawerExpanded, setDrawerExpanded] = useState(false);
@@ -908,6 +911,7 @@ export function ChatPanel({
           {terminalCenter && <SessionTerminalCenter context={context} />}
           {viewId && (
             <SessionView
+              key={viewId}
               sessionId={viewId}
               onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
             />
