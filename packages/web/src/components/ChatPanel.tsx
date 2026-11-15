@@ -1408,7 +1408,7 @@ export function ChatPanel({
           className="max-h-[85dvh] w-[min(56rem,calc(100vw-24px))] max-w-none overflow-y-auto"
         >
           <DialogTitle className="sr-only">Session analytics</DialogTitle>
-          {analyticsOpen && <ChatSessionAnalytics threadId={thread?.id} streaming={streaming} />}
+          {analyticsOpen && <ChatSessionAnalytics threadId={thread?.id} streaming={false} />}
         </DialogContent>
       </Dialog>
     </ThreadPrimitive.Root>
