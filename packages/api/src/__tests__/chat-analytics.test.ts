@@ -131,7 +131,7 @@ test("should reuse a parsed transcript until the file changes", async () => {
       reads += 1;
       return new Uint8Array(await Bun.file(path).arrayBuffer());
     },
-    stat: async () => ({ size, mtimeMs: size, isDirectory: false }),
+    stat: async () => ({ path, size, mtimeMs: size, birthtimeMs: 0 }),
   };
   const source = {
     backend: "claude",
