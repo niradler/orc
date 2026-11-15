@@ -143,8 +143,13 @@ splitting. Acceptance per item, all with existing E2E coverage preserved.
 
 ## Kickoff prompts
 
-Both prompts assume the repository at `C:/Projects/orc` and `origin/master`
-current with S1 merged (S2's plan card needs the `plan` kind).
+Both prompts assume `origin/master` current with S1 merged (S2's plan card needs
+the `plan` kind).
+
+Execution note (2026-11-15): S2 and S3 were started stacked on S1's commit
+`feat/chat-contracts-adapters` in `.orc/worktrees/chat-tool-cards` and
+`.orc/worktrees/chat-session-surface`. Their PRs target S1's branch until it
+merges, then retarget to `master`; no branch is rebased or force-pushed.
 
 ### S2 kickoff
 
