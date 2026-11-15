@@ -15,12 +15,13 @@ import { watchRemotePaths } from "./host-watch.js";
 const logger = createLogger("api:realtime");
 const checkouts = new Map<string, { host: ExecHost; cwd: string }>();
 const active = new Map<string, () => void>();
+const rechecks = new Map<string, ReturnType<typeof setTimeout>[]>();
 let clients = 0;
 let generation = 0;
 
 export function watchResourcePath(
   path: string,
-  onChange: () => void,
+  onChange: (paths: string[]) => void,
   recursive = true,
 ): () => void {
   const target = resolve(path);
@@ -28,6 +29,7 @@ export function watchResourcePath(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
+  let pending: string[] = [];
   const recover = (): void => {
     watcher?.close();
     clearTimeout(retry);
@@ -62,11 +64,14 @@ export function watchResourcePath(
             (parts.includes("objects") || parts.includes("logs") || parts.at(-1)?.endsWith(".lock"))
           )
             return;
+          pending.push(parts.join("/"));
           if (timer) return;
           timer = setTimeout(() => {
             timer = undefined;
             if (closed) return;
-            onChange();
+            const paths = pending;
+            pending = [];
+            onChange(paths);
             if (!exact || !existsSync(target)) attach();
           }, 100);
           timer.unref();
@@ -78,7 +83,7 @@ export function watchResourcePath(
       });
       if (retry) {
         retry = undefined;
-        onChange();
+        onChange([]);
       }
     } catch (error) {
       logger.error("Cannot watch resource", error);
@@ -94,6 +99,24 @@ export function watchResourcePath(
   };
 }
 
+export function scheduleGithubRechecks(
+  key: string,
+  delays: number[] = [180_000, 360_000, 540_000],
+): void {
+  for (const timer of rechecks.get(key) ?? []) clearTimeout(timer);
+  rechecks.set(
+    key,
+    delays.map((delay, index) => {
+      const timer = setTimeout(() => {
+        if (index === delays.length - 1) rechecks.delete(key);
+        changes.publish("github");
+      }, delay);
+      timer.unref();
+      return timer;
+    }),
+  );
+}
+
 function startCheckout(key: string, checkout: { host: ExecHost; cwd: string }): void {
   if (active.has(key)) return;
   const notify = (): void => changes.publish("git", "files");
@@ -101,7 +124,10 @@ function startCheckout(key: string, checkout: { host: ExecHost; cwd: string }): 
     key,
     checkout.host.kind === "ssh"
       ? watchRemotePaths(checkout.host, [checkout.cwd], notify)
-      : watchResourcePath(checkout.cwd, notify),
+      : watchResourcePath(checkout.cwd, (paths) => {
+          notify();
+          if (paths.some((path) => /(^|\/)refs\/remotes\//.test(path))) scheduleGithubRechecks(key);
+        }),
   );
 }
 
@@ -197,6 +223,8 @@ export function retainChangeSources(): () => void {
     if (--clients === 0) {
       for (const stop of active.values()) stop();
       active.clear();
+      for (const timers of rechecks.values()) for (const timer of timers) clearTimeout(timer);
+      rechecks.clear();
       checkouts.clear();
       generation++;
     }

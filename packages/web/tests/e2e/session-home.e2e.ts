@@ -461,3 +461,48 @@ test("inspector names a detached HEAD instead of claiming GitHub auth is missing
   await expect(status).toContainText("Detached HEAD: select a branch");
   await expect(status).not.toContainText("authentication is unavailable");
 });
+
+test("the inspector Refresh pulls a pull request opened after the card loaded", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockSessionHome(page);
+  let opened = false;
+  await page.route(`**/api/terminals/${HOME.terminal}/git/github`, (route) =>
+    route.fulfill({
+      json: {
+        auth: "gh",
+        login: "demo",
+        items: opened
+          ? [
+              {
+                repo: "acme/shop",
+                number: 419,
+                title: "Opened after the push",
+                url: "https://github.com/acme/shop/pull/419",
+                kind: "pr",
+                state: "open",
+                branch: "fix/cart-rounding",
+                assignees: [],
+                task_ids: [],
+              },
+            ]
+          : [],
+        errors: [],
+        truncated: false,
+      },
+    }),
+  );
+  await page.goto(`/chat?project=all&sessionTerminal=${HOME.terminal}&inspector=overview`);
+  await expect(page.getByTestId("session-inspector-pull-request-status")).toContainText(
+    "No open pull request",
+  );
+  opened = true;
+  await page.getByTestId("session-inspector-pr-refresh").click();
+  await expect(page.getByTestId("session-inspector-pull-request")).toContainText(
+    "Opened after the push",
+  );
+  await page
+    .getByTestId("session-inspector")
+    .screenshot({ path: test.info().outputPath("inspector-pr-refresh.png") });
+});
