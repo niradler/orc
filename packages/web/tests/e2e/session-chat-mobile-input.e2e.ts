@@ -200,4 +200,13 @@ test("stale status does not disable supported native agents and Cursor is read-o
   await expect(view.getByTestId("session-view-read-only")).toContainText("separate session stores");
   await expect(view.getByTestId("open-chat-resume")).toHaveCount(0);
   await expect(page.getByTestId("chat-input").filter({ visible: true })).toHaveCount(0);
+  await expect(page.locator('h2[title$="/ cursor-agent"]').filter({ visible: true })).toHaveCount(
+    1,
+  );
+  await expect(page.getByTestId("chat-header-state").filter({ visible: true })).toHaveAttribute(
+    "data-state",
+    "idle",
+  );
+  await expect(page.getByTestId("chat-header-actions").filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByTestId("chat-options-button").filter({ visible: true })).toHaveCount(0);
 });
