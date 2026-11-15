@@ -1,18 +1,43 @@
 import type { ChatActivity, ChatMessage } from "@orc/core/chat";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
+import { activityIcon } from "@/components/chat-ui/tool-renderers";
+import { useNow } from "@/hooks/useNow";
 import { AGENT_STATES } from "@/lib/agent-state";
 import { foldLabel, foldTurn, formatClock } from "@/lib/chat-activity";
-import { type ChatTool, toolDetail, toolView } from "@/lib/chat-tools";
+import { toolKey } from "@/lib/chat-tools";
+import { cn } from "@/lib/utils";
 
 const ANNOUNCE_EVERY_MS = 2000;
+const TRAIL_LIMIT = 4;
 
-function useNow(): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
+type TrailEntry = { id: string; label: string; Icon: LucideIcon; startedAt?: number };
+
+/** A tool name reads better as a short label than as its provider's key. */
+function toolLabel(name: string): string {
+  const key = toolKey(name) || name.trim();
+  if (!key) return "Tool";
+  const words = key.replace(/[_-]+/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function activityTrail(activity: ChatActivity[]): TrailEntry[] {
+  return activity
+    .flatMap((item) => {
+      if (item.type === "status") return [];
+      return [
+        {
+          id: item.id,
+          label: item.type === "thinking" ? "Thinking" : toolLabel(item.name),
+          Icon: activityIcon(item),
+          ...(item.type === "tool" && item.startedAt !== undefined
+            ? { startedAt: item.startedAt }
+            : {}),
+        },
+      ];
+    })
+    .slice(-TRAIL_LIMIT);
 }
 
 export function ChatLiveStatus({
@@ -27,37 +52,68 @@ export function ChatLiveStatus({
   const [mountedAt] = useState(Date.now);
   const now = useNow();
   const { Icon, tone } = AGENT_STATES.working;
-  const current = foldTurn(activity).current;
-  const detail = current ? toolDetail(toolView(current)) : "";
+  const trail = activityTrail(activity);
   return (
-    <div
-      data-testid="chat-activity-status"
-      className="chat-activity-status flex min-w-0 shrink-0 items-center gap-2 px-4 py-2 text-xs text-on-surface-variant sm:px-6"
-    >
-      <Icon aria-hidden="true" size={14} strokeWidth={2.25} className={`shrink-0 ${tone}`} />
-      <span className="shrink-0 text-on-surface">{agent}</span>
-      <span className="shrink-0">
-        Working for{" "}
-        <span role="timer" data-testid="chat-working-timer" className="tabular-nums">
-          {formatClock(now - (startedAt ?? mountedAt))}
+    <div className="chat-activity-status shrink-0 px-4 pt-1 pb-1.5 sm:px-6">
+      <div
+        data-testid="chat-activity-status"
+        className="mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-outline-variant bg-surface/60 px-3 py-1.5 text-xs text-on-surface-variant"
+      >
+        <Icon
+          aria-hidden="true"
+          data-testid="chat-working-spinner"
+          size={14}
+          strokeWidth={2.25}
+          className={cn("shrink-0 motion-safe:animate-spin", tone)}
+        />
+        <AgentIcon agent={agent} size={14} className="shrink-0 text-on-surface-variant" />
+        <span className="shrink-0 font-medium text-on-surface">{agentDisplayName(agent)}</span>
+        <span className="shrink-0">
+          Working for{" "}
+          <span role="timer" data-testid="chat-working-timer" className="tabular-nums">
+            {formatClock(now - (startedAt ?? mountedAt))}
+          </span>
         </span>
-      </span>
-      {current && <CurrentTool tool={current} detail={detail} />}
+        {trail.length > 0 && (
+          <span
+            data-testid="chat-activity-trail"
+            className="flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-hidden"
+          >
+            {trail.map((entry, index) => {
+              const current = index === trail.length - 1;
+              const EntryIcon = entry.Icon;
+              const elapsed = current && entry.startedAt !== undefined ? now - entry.startedAt : 0;
+              return (
+                <span
+                  key={entry.id}
+                  data-testid={current ? "chat-current-tool" : "chat-activity-trail-item"}
+                  className={cn(
+                    "flex min-w-0 items-center gap-1",
+                    current ? "text-on-surface" : "text-on-surface-variant/60 max-sm:hidden",
+                  )}
+                >
+                  <EntryIcon aria-hidden="true" size={12} className="shrink-0" />
+                  <span className="truncate">{entry.label}</span>
+                  {elapsed >= 1000 && (
+                    <span
+                      data-testid="chat-current-tool-elapsed"
+                      className="shrink-0 tabular-nums text-on-surface-variant"
+                    >
+                      {formatClock(elapsed)}
+                    </span>
+                  )}
+                  {!current && (
+                    <span aria-hidden="true" className="shrink-0 text-outline">
+                      ·
+                    </span>
+                  )}
+                </span>
+              );
+            })}
+          </span>
+        )}
+      </div>
     </div>
-  );
-}
-
-function CurrentTool({ tool, detail }: { tool: ChatTool; detail: string }) {
-  return (
-    <span data-testid="chat-current-tool" className="flex min-w-0 items-center gap-2">
-      <span aria-hidden="true">·</span>
-      <span className="shrink-0 text-on-surface">{tool.name}</span>
-      {detail && (
-        <span className="min-w-0 truncate font-mono" title={detail}>
-          {detail}
-        </span>
-      )}
-    </span>
   );
 }
 

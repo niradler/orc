@@ -12,6 +12,9 @@ export interface TerminalTouchText {
 
 /** A press held this long is a long press, never a tap. */
 export const LONG_PRESS_MS = 450;
+// A finger drifts a pixel or two when tapping; anything beyond this was a gesture,
+// so lifting it must not replay a tap that focuses the terminal and raises the keyboard.
+const TAP_SLOP_PX = 4;
 
 export function attachTerminalTouchScroll(
   element: HTMLElement,
@@ -26,6 +29,8 @@ export function attachTerminalTouchScroll(
     y: number;
     at: number;
     moved: boolean;
+    /** The finger travelled far enough to be a swipe, even if it scrolled nothing. */
+    slid: boolean;
     /** Text was already selected, so this touch dismisses or scrolls instead of selecting. */
     hadSelection: boolean;
   } | null = null;
@@ -79,12 +84,30 @@ export function attachTerminalTouchScroll(
             y: touch.clientY,
             at: performance.now(),
             moved: false,
+            slid: false,
             hadSelection: text?.selected() ?? false,
           }
         : null;
     },
     { passive: false },
   );
+  const scrollBy = (clientX: number, clientY: number): boolean => {
+    const canvas = element.querySelector("canvas");
+    if (!gesture || !canvas) return false;
+    const deltaY = gesture.y - clientY;
+    gesture.y = clientY;
+    gesture.moved = true;
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        deltaY,
+        clientX,
+        clientY,
+      }),
+    );
+    return true;
+  };
   element.addEventListener(
     "touchmove",
     (event) => {
@@ -101,25 +124,17 @@ export function attachTerminalTouchScroll(
       if (!touch) return;
       // A long press that selected now drags the selection natively.
       if (!gesture.hadSelection && text?.selected()) return;
+      if (
+        !gesture.slid &&
+        Math.hypot(touch.clientX - gesture.startX, touch.clientY - gesture.startY) >= TAP_SLOP_PX
+      )
+        gesture.slid = true;
       if (!gesture.moved && Math.abs(touch.clientY - gesture.startY) < 6) return;
       // The selected rows are about to scroll away from the text under them.
       if (!gesture.moved) text?.clear();
-      const canvas = element.querySelector("canvas");
-      if (!canvas) return;
-      const deltaY = gesture.y - touch.clientY;
-      gesture.y = touch.clientY;
-      gesture.moved = true;
+      if (!scrollBy(touch.clientX, touch.clientY)) return;
       consumed = true;
       event.preventDefault();
-      canvas.dispatchEvent(
-        new WheelEvent("wheel", {
-          bubbles: true,
-          cancelable: true,
-          deltaY,
-          clientX: touch.clientX,
-          clientY: touch.clientY,
-        }),
-      );
     },
     { passive: false },
   );
@@ -127,10 +142,25 @@ export function attachTerminalTouchScroll(
     "touchend",
     (event) => {
       const pressed = gesture;
-      if (consumed) {
+      const ended = pressed
+        ? Array.from(event.changedTouches).find((touch) => touch.identifier === pressed.id)
+        : undefined;
+      // The browser holds back moves inside its own tap slop, so the release point is the
+      // only evidence that a short swipe happened. Treat it as a gesture, never a tap.
+      const slid =
+        !!pressed &&
+        (pressed.slid ||
+          (!!ended &&
+            Math.hypot(ended.clientX - pressed.startX, ended.clientY - pressed.startY) >=
+              TAP_SLOP_PX));
+      const selecting = !!pressed && (pressed.hadSelection || !!text?.selected());
+      if (consumed || (slid && !selecting)) {
+        // A swipe whose moves were withheld still scrolls its last few pixels.
+        if (pressed && !pressed.moved && ended && Math.abs(ended.clientY - pressed.startY) >= 6)
+          scrollBy(ended.clientX, ended.clientY);
         event.preventDefault();
         event.stopPropagation();
-      } else if (pressed && !pressed.moved && event.touches.length === 0) {
+      } else if (pressed && !slid && event.touches.length === 0) {
         if (pressed.hadSelection) {
           // A tap away from a selection only dismisses it.
           event.preventDefault();

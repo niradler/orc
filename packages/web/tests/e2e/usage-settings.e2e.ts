@@ -97,6 +97,7 @@ const report = {
     unindexed_sessions: 2,
     unindexed_tokens: 900,
     unknown_sessions: 1,
+    unsupported_sessions: 1,
     estimated_sessions: 1,
   },
 };

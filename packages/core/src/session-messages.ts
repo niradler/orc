@@ -159,6 +159,8 @@ export const SessionStatusSchema = z.object({
   children: z.array(identity),
   project_id: identity.nullable(),
   cwd: z.string(),
+  /** When a session another session started began; null for one a human started. */
+  started_at: timestamp.nullable(),
   updated_at: timestamp,
 });
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;

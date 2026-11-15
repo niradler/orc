@@ -610,6 +610,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -896,6 +899,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -1124,6 +1130,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -1355,6 +1364,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -1633,6 +1645,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -1922,6 +1937,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -2040,6 +2058,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -2238,6 +2259,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -2523,6 +2547,9 @@ export interface paths {
                                     input: string;
                                     result?: string;
                                     isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
                                 } | {
                                     /** @enum {string} */
                                     type: "status";
@@ -7863,6 +7890,7 @@ export interface paths {
                                 unindexed_sessions: number;
                                 unindexed_tokens: number;
                                 unknown_sessions: number;
+                                unsupported_sessions: number;
                                 estimated_sessions: number;
                             };
                         };
@@ -18886,6 +18914,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                         };
                     };
@@ -18963,6 +18992,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                         };
                     };
@@ -19029,6 +19059,7 @@ export interface paths {
                                 children: string[];
                                 project_id: string | null;
                                 cwd: string;
+                                started_at: number | null;
                                 updated_at: number;
                             }[];
                         };
@@ -19157,6 +19188,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                             timed_out: boolean;
                         };
@@ -19240,6 +19272,7 @@ export interface paths {
                                 children: string[];
                                 project_id: string | null;
                                 cwd: string;
+                                started_at: number | null;
                                 updated_at: number;
                             }[];
                             timed_out: boolean;
@@ -19309,6 +19342,7 @@ export interface paths {
                             children: string[];
                             project_id: string | null;
                             cwd: string;
+                            started_at: number | null;
                             updated_at: number;
                         };
                     };

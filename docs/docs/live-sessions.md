@@ -188,3 +188,24 @@ of tasks the agent created with `task_create`.
 ![Lineage on a parent chat](/screens/session-lineage-desktop.png)
 
 [Phone layout of a child chat](/screens/session-lineage-phone.png)
+
+### Following background work in chat
+
+A conversation can keep working after its last message. Detached commands and
+child sessions show up over the composer, so a quiet transcript does not read as
+a stuck one:
+
+- A tool call that starts detached work — a command or a subagent run in the
+  background — is marked from its own input, so it works the same for every
+  agent that can detach work.
+- A running, queued or waiting child session appears as a row with **Open**
+  (switch to its chat) and **Stop** (stop it and the sessions it started).
+  These rows follow the child's real status and clear when it settles.
+- Each row keeps its own clock. One job reads as a single line; several fold
+  into one summary row that expands to the full list.
+- Detached tool rows come from the agent's latest turn and clear when the agent
+  replies again: a backend that never reports a background command's exit
+  cannot be checked, so ORC does not keep claiming it is running.
+- A subagent an agent runs inside its own backend (Claude `Task`, OpenCode
+  subagents) stays ordinary tool activity in that turn; it is not a session ORC
+  can open or stop.

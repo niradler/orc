@@ -1332,6 +1332,18 @@ export const api = {
         "GET",
         `/sessions/live/${encodeURIComponent(id)}/lineage`,
       ),
+    children: (id: string) =>
+      req<{ sessions: import("@orc/core/session-messages").SessionStatus[] }>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/children`,
+      ),
+    stop: (id: string, cascade = true) =>
+      req<import("@orc/core/session-messages").SessionStatus>(
+        "POST",
+        `/sessions/live/${encodeURIComponent(id)}/stop`,
+        undefined,
+        { cascade: String(cascade) },
+      ),
     messages: (id: string) =>
       req<{ messages: SessionMessage[] }>(
         "GET",

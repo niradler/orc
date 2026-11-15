@@ -778,6 +778,8 @@ export function UsageSettings() {
                   .
                 </>
               )}
+              {data.coverage.unsupported_sessions > 0 &&
+                ` ${count.format(data.coverage.unsupported_sessions)} use agents that do not report per-request usage.`}
               {data.coverage.unknown_sessions > 0 &&
                 ` ${count.format(data.coverage.unknown_sessions)} have no recorded token count.`}
             </p>

@@ -1,6 +1,7 @@
 import { ChevronUp, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SessionContext } from "@/components/SessionHome";
+import { SessionTerminalHeader } from "@/components/SessionTerminalHeader";
 import { TerminalViewport } from "@/components/terminals/TerminalViewport";
 import { Button } from "@/components/ui/button";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
@@ -57,10 +58,7 @@ export function MobileTerminalPage({
       aria-label="Terminal"
       className="absolute inset-0 z-30 flex flex-col bg-background outline-none"
     >
-      <header
-        data-chat-gesture-header
-        className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2"
-      >
+      <SessionTerminalHeader context={context}>
         <button
           type="button"
           aria-label="Close terminal"
@@ -70,21 +68,7 @@ export function MobileTerminalPage({
         >
           <ChevronUp size={20} />
         </button>
-        <div className="min-w-0 flex-1 px-1">
-          <h2 className="truncate text-base font-medium leading-tight">
-            {terminal?.name ?? "Terminal"}
-          </h2>
-          <p className="truncate text-xs text-muted-foreground">
-            {context.cwd ?? "No folder"}
-            {context.host ? ` · ${context.host}` : ""}
-          </p>
-        </div>
-        <SquareTerminal
-          size={16}
-          className="mr-2 shrink-0 text-muted-foreground"
-          aria-hidden="true"
-        />
-      </header>
+      </SessionTerminalHeader>
       {terminal ? (
         <div className="flex min-h-0 flex-1 flex-col" data-swipe-ignore>
           <TerminalViewport terminalId={terminal.id} />

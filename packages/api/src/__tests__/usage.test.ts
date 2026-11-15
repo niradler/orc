@@ -121,6 +121,11 @@ test("should report request totals, model facets and time buckets with filters",
   insertSession.run("report1", LIVE_CHAT_ID, "codex", 190, Math.floor(now / 1000));
   insertSession.run("report2", LIVE_CHAT_ID, "codex", null, Math.floor(now / 1000));
   insertSession.run("report3", LIVE_CHAT_ID, "gemini", 30, Math.floor(now / 1000));
+  insertSession.run("report4", LIVE_CHAT_ID, "cursor-agent", 12, Math.floor(now / 1000));
+  insertSession.run("report5", LIVE_CHAT_ID, "codex", null, Math.floor(now / 1000));
+  sqlite.run("UPDATE gateway_sessions SET usage_version = ? WHERE id = 'report5'", [
+    USAGE_EVENT_VERSION,
+  ]);
   const insertEvent = sqlite.query(
     `INSERT INTO usage_events
        (id, session_id, event_key, agent, model, ts, input_tokens, output_tokens,
@@ -171,6 +176,19 @@ test("should report request totals, model facets and time buckets with filters",
   expect(data.models.map((row) => row.model).sort()).toEqual(["model-a", "model-b"]);
   expect(data.coverage.unindexed_sessions).toBeGreaterThanOrEqual(1);
   expect(data.coverage.unknown_sessions).toBeGreaterThanOrEqual(1);
+  const baselineCoverage = UsageReportSchema.parse(
+    await (await app.request("/api/usage/report?days=30", { headers })).json(),
+  ).coverage;
+  expect(baselineCoverage.unsupported_sessions).toBeGreaterThanOrEqual(1);
+  sqlite.run("UPDATE gateway_sessions SET usage_version = ? WHERE id = 'report2'", [
+    USAGE_EVENT_VERSION,
+  ]);
+  const attemptedCoverage = UsageReportSchema.parse(
+    await (await app.request("/api/usage/report?days=30", { headers })).json(),
+  ).coverage;
+  // An attempted session with no requests is no longer pending; it stays unknowable.
+  expect(attemptedCoverage.unindexed_sessions).toBe(baselineCoverage.unindexed_sessions - 1);
+  expect(attemptedCoverage.unknown_sessions).toBe(baselineCoverage.unknown_sessions);
 
   const unknown = UsageReportSchema.parse(
     await (
@@ -222,6 +240,13 @@ test("should replace a session ledger idempotently and record its latest model",
       )
       .get(),
   ).toEqual({ requests: 2, total: 50 });
+  expect(
+    sqlite
+      .query<{ rows: number; ids: number }, []>(
+        "SELECT count(*) AS rows, count(DISTINCT id) AS ids FROM usage_events WHERE session_id = 'ledger1'",
+      )
+      .get(),
+  ).toEqual({ rows: 2, ids: 2 });
   const row = sqlite
     .query<{ model: string; usage_version: number }, []>(
       "SELECT model, usage_version FROM gateway_sessions WHERE id = 'ledger1'",
