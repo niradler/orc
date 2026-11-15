@@ -499,20 +499,35 @@ export function ToolRow({ tool, live = false }: { tool: ChatTool; live?: boolean
   );
 }
 
+const PROVIDER_DATA_LIMIT = 20_000;
+
 /** Stored JSON, rendered as text only; a provider value never reaches the DOM as markup. */
 function providerData(data: Record<string, unknown> | undefined): string {
   if (!data) return "{}";
   try {
-    return JSON.stringify(data, null, 2);
+    const text = JSON.stringify(data, null, 2) ?? "";
+    return text.length > PROVIDER_DATA_LIMIT
+      ? `${text.slice(0, PROVIDER_DATA_LIMIT)}\n… truncated`
+      : text;
   } catch {
     return "";
   }
 }
 
-/** A kind this build does not know: quiet, collapsed, and bounded when opened. */
+/**
+ * A kind this build does not know: quiet, collapsed, and bounded when opened.
+ * The payload is stringified only after the row is opened, so a large unknown
+ * activity costs nothing while the fold stays collapsed.
+ */
 function ProviderRow({ item }: { item: Extract<ChatItem, { kind: "provider" }> }) {
+  const [open, setOpen] = useState(false);
   return (
-    <details data-testid="chat-provider-activity" data-kind={item.provider} className="group/tool">
+    <details
+      data-testid="chat-provider-activity"
+      data-kind={item.provider}
+      className="group/tool"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary className={rowSummary}>
         <Plug aria-hidden="true" size={14} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate font-mono" title={item.provider}>
@@ -527,7 +542,7 @@ function ProviderRow({ item }: { item: Extract<ChatItem, { kind: "provider" }> }
       </summary>
       <div className={bodyClass}>
         <pre data-testid="chat-provider-data" className={`${preClass} text-xs`}>
-          {providerData(item.data)}
+          {open ? providerData(item.data) : null}
         </pre>
       </div>
     </details>

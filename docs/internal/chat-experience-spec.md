@@ -1,7 +1,8 @@
 # Chat experience wave 1-3
 
-Status: wave 1 in progress (S1 `feat/chat-contracts-adapters`). Owner decisions
-locked 2026-11-15; this document records them, it does not re-open them.
+Status: waves 1 and 2 delivered (#361, #363, #364); wave 3 delivered on
+`feat/chat-items-windowing` (#376). Owner decisions locked 2026-11-15; this
+document records them, it does not re-open them.
 
 ## Current state
 
@@ -68,7 +69,7 @@ ChatActivity = thinking | tool | status
                  content: string }[] }
 ChatMessage += model?: string          // additive, no migration
 ChatItem = { id; ordinal; kind; parentId?; status?; ...per-kind payload }
-                                        // types only; nothing produces it yet
+                                        // produced by buildChatItems (wave 3)
 ```
 
 ### S1 `feat/chat-contracts-adapters` — contracts and adapters
@@ -149,7 +150,7 @@ the composer (count, paused state, edit/move/force/remove, documented in
 one item per known activity, plus one `provider` item per unknown activity that
 wave 1 preserved. Items keep the activity id, carry `ordinal` (position in the
 turn), `parentId` only where the provider states a parent (never invented), and
-`status` from the tool/plan entry. `ChatActivityList`, the fold summary and the
+`status: "failed"` on a tool call that errored. `ChatActivityList`, the fold summary and the
 filters read items instead of raw activity, so counts and failures cannot drift
 between the collapsed and expanded views. Unknown kinds render as a quiet,
 expandable row instead of disappearing.
@@ -213,7 +214,8 @@ layer owns the selection.
 - **Composer handoff**: the hero-to-docked move animates as a FLIP transition
   (180 ms) and is skipped under `prefers-reduced-motion`.
 - **Streaming blocks**: a running message splits markdown at stable top-level
-  block boundaries, memoizes completed blocks and re-parses only the tail;
+  block boundaries, memoizes completed blocks so only the tail re-renders (the
+  split itself still scans the accumulated text once per update);
   fences and display math are never split. Rendering stays progressive.
 
 Acceptance per item with desktop and phone coverage; every new selector uses

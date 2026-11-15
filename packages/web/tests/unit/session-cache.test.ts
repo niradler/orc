@@ -73,9 +73,15 @@ test("composer hint names the agent's own compaction control and never a window 
 
   // OpenCode has no manual action, so the hint says the agent keeps control.
   expect(hint("opencode").text).toBe(
-    "182k tokens of context · OpenCode compacts automatically on its own · manual compaction is unavailable here",
+    "182k tokens of context · OpenCode compacts automatically on its own · no manual compaction in ORC",
   );
   expect(hint("opencode").note).toContain("Manual compaction is not available for this agent");
+
+  // A generic ACP agent never exposes its policy; ORC does not guess one.
+  expect(hint("cursor").text).toBe(
+    "182k tokens of context · ORC does not know when Cursor compacts · no manual compaction in ORC",
+  );
+  expect(hint("cursor").note).toContain("does not expose its compaction policy");
 
   // A size, never a percentage of a context window ORC does not know.
   for (const agent of ["claude", "codex", "pi", "opencode"]) {

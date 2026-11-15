@@ -139,6 +139,15 @@ for (const width of [1440, 390]) {
   test(`blank chat centres the hero composer and the first send docks it at ${width}px`, async ({
     page,
   }) => {
+    await page.addInitScript(() => {
+      const w = window as unknown as { __handoffs: number };
+      w.__handoffs = 0;
+      const original = Element.prototype.animate;
+      Element.prototype.animate = function (keyframes, options) {
+        if (typeof options === "object" && options?.duration === 180) w.__handoffs += 1;
+        return original.call(this, keyframes, options);
+      };
+    });
     const panel = await openBlankChat(page, width);
     const footer = panel.locator(".chat-composer-footer");
     const input = panel.getByTestId("chat-input");
@@ -160,6 +169,12 @@ for (const width of [1440, 390]) {
     if (width === 1440) await input.press("Enter");
     else await panel.getByTestId("chat-send-button").click();
     await expect(footer).toHaveAttribute("data-hero", "false");
+    // Exactly the one hero→docked handoff ran; nothing else animated the composer.
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __handoffs: number }).__handoffs ?? 0),
+      )
+      .toBe(1);
     await expect(panel.getByTestId("chat-message-content").last()).toContainText("HERO");
     // Desktop sends with Enter, and the same textarea keeps the caret: the hero
     // docks instead of remounting. A phone taps Send, so focus is the button's.
@@ -189,6 +204,15 @@ for (const width of [1440, 390]) {
 
 test("reduced motion skips the composer handoff and leaves no transform", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const w = window as unknown as { __handoffs: number };
+    w.__handoffs = 0;
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (keyframes, options) {
+      if (typeof options === "object" && options?.duration === 180) w.__handoffs += 1;
+      return original.call(this, keyframes, options);
+    };
+  });
   const panel = await openBlankChat(page, 1440);
   const footer = panel.locator(".chat-composer-footer");
   await expect(footer).toHaveAttribute("data-hero", "true");
@@ -199,6 +223,10 @@ test("reduced motion skips the composer handoff and leaves no transform", async 
   const composer = panel.getByTestId("chat-composer-box");
   expect(await composer.evaluate((element) => element.getAnimations().length)).toBe(0);
   expect(await composer.evaluate((element) => getComputedStyle(element).transform)).toBe("none");
+  // The animation was never requested, so this cannot pass by deleting the call site.
+  expect(await page.evaluate(() => (window as unknown as { __handoffs: number }).__handoffs)).toBe(
+    0,
+  );
 });
 
 test("a streaming fenced answer renders one code block while the text arrives", async ({

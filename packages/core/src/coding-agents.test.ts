@@ -44,11 +44,15 @@ test("should state each adapter's compaction policy without inventing control", 
     automatic: "configurable",
     setting: "autoCompaction",
   });
-  // OpenCode and generic ACP agents are under the agent's own control.
+  // OpenCode compacts on its own but exposes no manual action; a generic ACP
+  // agent exposes neither, so ORC says it does not know.
   expect(compactionPolicy("opencode")).toEqual({ manual: false, automatic: "agent" });
-  expect(compactionPolicy("cursor")).toEqual({ manual: false, automatic: "agent" });
+  expect(compactionPolicy("cursor")).toEqual({
+    manual: false,
+    automatic: "unknown",
+  });
   expect(compactionPolicy("some-new-acp-agent")).toEqual({
     manual: false,
-    automatic: "agent",
+    automatic: "unknown",
   });
 });

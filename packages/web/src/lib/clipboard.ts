@@ -11,10 +11,12 @@ export async function copyText(text: string): Promise<boolean> {
       area.style.position = "fixed";
       area.style.opacity = "0";
       document.body.append(area);
-      area.select();
-      const ok = document.execCommand("copy");
-      area.remove();
-      if (!ok) throw new Error("Clipboard copy was rejected.");
+      try {
+        area.select();
+        if (!document.execCommand("copy")) throw new Error("Clipboard copy was rejected.");
+      } finally {
+        area.remove();
+      }
     }
     return true;
   } catch {

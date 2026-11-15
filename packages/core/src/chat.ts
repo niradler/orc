@@ -257,6 +257,9 @@ function providerParentId(data: Record<string, unknown> | undefined): string | u
  * one `provider` item per kind this build does not know. The provider items are
  * appended because wave 1 moved those kinds into a separate list, so their original
  * position among the known activities is no longer recoverable.
+ *
+ * `startedAt` and `background` stay on the raw activity: the live trail and
+ * background-work row read those, and no item row renders elapsed tool time.
  */
 export function buildChatItems(message: {
   activity?: readonly ChatActivity[] | undefined;

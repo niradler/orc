@@ -32,18 +32,22 @@ export function chatContextHint(
   const automatic =
     policy.automatic === "configurable" && policy.setting
       ? `${label} compacts automatically (${policy.setting})`
-      : `${label} compacts automatically on its own`;
+      : policy.automatic === "agent"
+        ? `${label} compacts automatically on its own`
+        : `ORC does not know when ${label} compacts`;
   return {
     text: [
       `${formatTokenCount(latest.input_tokens, false)} tokens of context`,
       automatic,
-      policy.manual ? "Compact summarizes now" : "manual compaction is unavailable here",
+      policy.manual ? "Compact summarizes now" : "no manual compaction in ORC",
     ].join(" · "),
     explanation: `The latest request carried ${count.format(latest.input_tokens)} tokens of context: the conversation the agent re-sends with every request. ORC does not know this model's context window, so this is a size rather than a percentage.`,
     note: `${
       policy.automatic === "configurable" && policy.setting
         ? `Automatic compaction is controlled by the ${policy.setting} agent option.`
-        : `${label} decides when to compact internally.`
+        : policy.automatic === "agent"
+          ? `${label} decides when to compact internally.`
+          : `${label} does not expose its compaction policy to ORC.`
     }${
       policy.manual
         ? " Compact in the session actions summarizes the conversation now; it runs when the session is idle."

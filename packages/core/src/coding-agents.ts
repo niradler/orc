@@ -32,7 +32,7 @@ export function supportsManualCompaction(agent: string): boolean {
  */
 export type CompactionPolicy = {
   manual: boolean;
-  automatic: "agent" | "configurable";
+  automatic: "agent" | "configurable" | "unknown";
   /** The ORC agent option that controls automatic compaction, when one exists. */
   setting?: string;
 };
@@ -42,7 +42,11 @@ export function compactionPolicy(agent: string): CompactionPolicy {
   if (agent === "codex")
     return { manual, automatic: "configurable", setting: "model_auto_compact_token_limit" };
   if (agent === "pi") return { manual, automatic: "configurable", setting: "autoCompaction" };
-  return { manual, automatic: "agent" };
+  // These adapters compact internally on a schedule ORC can observe but not set.
+  if (agent === "claude" || agent === "opencode") return { manual, automatic: "agent" };
+  // A generic ACP adapter may or may not compact; reporting "unknown" keeps ORC
+  // from claiming a policy the adapter never exposed.
+  return { manual, automatic: "unknown" };
 }
 
 /** Agents whose model catalog ORC can discover without starting a conversation turn. */
