@@ -397,6 +397,20 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-turn-cache")).toContainText("85% cached");
     await shot("chat-session-composer");
 
+    await page.route(`**/api/chat/threads/${HOME.chatA}/analytics`, (route) =>
+      route.fulfill({ json: analyticsFixture(Date.now()) }),
+    );
+    const analyticsButton = page.getByTestId("chat-analytics-button").filter({ visible: true });
+    if (!(await analyticsButton.count()))
+      await page.getByTestId("chat-actions-menu").filter({ visible: true }).click();
+    await analyticsButton.first().click();
+    const analytics = page.getByTestId("chat-analytics-dialog");
+    await expect(analytics).toBeVisible();
+    await expect(analytics.getByTestId("chat-analytics-turns")).toContainText("2");
+    await page.screenshot({ path: testInfo.outputPath(`chat-analytics-dialog-${width}.png`) });
+    await analytics.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(analytics).toBeHidden();
+
     await openChatSettings(page);
     await expect(page.getByTestId("chat-session-id-agent")).toContainText("6c1f0d8e");
     await expect(page.getByTestId("chat-settings-tab-analytics")).toHaveCount(0);
