@@ -7,6 +7,9 @@ export const CHAT_UI_FENCE = "orc-ui";
 export const CHAT_UI_MAX_ELEMENTS = 200;
 /** Inline sandboxed HTML is a snippet beside the answer, not a saved page. */
 export const CHAT_UI_HTML_MAX_LENGTH = 20_000;
+/** Per-type caps keep one answer from stacking dozens of heavy frames or charts. */
+export const CHAT_UI_MAX_CHARTS = 8;
+export const CHAT_UI_MAX_HTML = 4;
 
 const TaskStatus = z.enum([
   "todo",
@@ -32,7 +35,7 @@ const SeriesName = Text(40);
 const TableProps = z
   .object({
     columns: z.array(Text(40)).min(1).max(6),
-    rows: z.array(z.array(z.string().max(200)).max(6)).max(50),
+    rows: z.array(z.array(z.string().trim().min(1).max(200)).max(6)).max(50),
     caption: Text(120).optional(),
   })
   .refine((props) => props.rows.every((row) => row.length === props.columns.length), {
@@ -125,7 +128,7 @@ export const chatUiCatalog = defineCatalog(schema, {
     Table: {
       props: TableProps,
       description:
-        "Static columns and rows (max 6 columns, 50 rows); long cells truncate and phones scroll the table sideways.",
+        "Static columns and rows (max 6 columns, 50 rows); cells wrap and phones scroll the table sideways.",
     },
     Sparkline: {
       props: z.object({ values: z.array(z.number()).min(2).max(60), label: Text(60).optional() }),
@@ -161,7 +164,7 @@ export const chatUiCatalog = defineCatalog(schema, {
         height: z.enum(["short", "tall"]).optional(),
       }),
       description:
-        "Inline sandboxed HTML (max 20k characters) in a network-blocked iframe: inline styles, scripts and data/blob images only; no ORC API, storage or external requests.",
+        "Inline sandboxed HTML (max 20k characters) on an opaque origin: no ORC API, storage, credentials or parent access, and CSP blocks scripted requests, images, fonts and forms. The frame can still navigate itself, so its content is untrusted; its scripts run on the page's main thread.",
     },
     SessionUsage: {
       props: z.object({ sessionId: EntityId }),
@@ -276,9 +279,12 @@ export function parseChatUiSpec(source: string): ChatUiParseResult {
   // Bound rendered nodes as well as definitions: a tiny cyclic/shared graph can
   // otherwise recurse forever or expand exponentially in React.
   let rendered = 0;
+  const typeCounts = new Map<string, number>();
   function visit(key: string, ancestors: Set<string>): boolean {
     if (!Object.keys(spec.elements).includes(key) || ancestors.has(key)) return false;
     if (++rendered > CHAT_UI_MAX_ELEMENTS) return false;
+    const type = spec.elements[key]?.type;
+    if (type) typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
     const next = new Set(ancestors).add(key);
     return (spec.elements[key]?.children ?? []).every((child) => visit(child, next));
   }
@@ -287,6 +293,14 @@ export function parseChatUiSpec(source: string): ChatUiParseResult {
       ok: false,
       error: "Invalid layout: missing element, cycle, or too many rendered nodes",
     };
+  // Count rendered occurrences, not definitions: one shared Chart referenced many times
+  // still mounts many charts.
+  const charts = typeCounts.get("Chart") ?? 0;
+  if (charts > CHAT_UI_MAX_CHARTS)
+    return { ok: false, error: `Spec exceeds ${CHAT_UI_MAX_CHARTS} Chart components` };
+  const frames = typeCounts.get("Html") ?? 0;
+  if (frames > CHAT_UI_MAX_HTML)
+    return { ok: false, error: `Spec exceeds ${CHAT_UI_MAX_HTML} Html components` };
   const issues = validateSpec(spec).issues.filter((issue) => issue.severity === "error");
   if (issues.length) return { ok: false, error: issues.map((issue) => issue.message).join("; ") };
   const checked = chatUiCatalog.validate(spec);
@@ -396,6 +410,7 @@ Use only when <orc-context> says source: webchat and live monitoring, direct int
 scratchpad artifact adds value; otherwise Markdown. Resolve real ids with ORC tools first. Reply with
 an orc-ui fence; text outside it is Markdown. Only Stack takes children; actions need a Button press.
 Metric, Progress, Table, Sparkline, Chart, KeyValue, Callout and Html only show data you pass.
+Html runs sandboxed with no ORC access or scripted requests.
 ${example}
 
 Components:

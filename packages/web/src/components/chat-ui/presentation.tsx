@@ -7,6 +7,7 @@ import {
   TrendingUp,
   TriangleAlert,
 } from "lucide-react";
+import { fullNumber } from "@/lib/chat-ui-chart";
 import { cn } from "@/lib/utils";
 import { ProgressBar } from "./primitives";
 
@@ -30,10 +31,12 @@ export function Metric({
   const Icon = trend ? TREND_ICON[trend] : null;
   return (
     <div data-testid="chat-ui-metric" className="min-w-0">
-      <p className="truncate text-xs text-on-surface-variant">{label}</p>
+      <p className="break-words text-xs text-on-surface-variant" title={label}>
+        {label}
+      </p>
       <p className="mt-0.5 flex min-w-0 items-baseline gap-1">
         <span className="text-2xl font-medium tabular-nums break-words text-on-surface">
-          {value}
+          {typeof value === "number" ? fullNumber(value) : value}
         </span>
         {unit && <span className="text-sm text-on-surface-variant">{unit}</span>}
       </p>
@@ -65,7 +68,7 @@ function indexed(values: string[]) {
   return values.map((value, index) => ({ key: `${index}:${value}`, value }));
 }
 
-/** Long cells truncate with their full text in the title; phones scroll the table. */
+/** Cells wrap so a phone reader sees the full value; only wide screens cap the column. */
 export function Table({
   columns,
   rows,
@@ -80,7 +83,9 @@ export function Table({
   return (
     <figure data-testid="chat-ui-table" className="min-w-0">
       {caption && (
-        <figcaption className="mb-1 truncate text-xs text-on-surface-variant">{caption}</figcaption>
+        <figcaption className="mb-1 break-words text-xs text-on-surface-variant" title={caption}>
+          {caption}
+        </figcaption>
       )}
       <section
         aria-label={caption ?? "Table"}
@@ -103,21 +108,35 @@ export function Table({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-outline-variant">
-            {body.map((row) => (
-              <tr key={row.key}>
-                {row.cells.map((cell) => (
-                  <td
-                    key={cell.key}
-                    title={cell.value.length > 32 ? cell.value : undefined}
-                    className="max-w-56 truncate py-1.5 pr-4 text-on-surface last:pr-0"
-                  >
-                    {cell.value}
-                  </td>
-                ))}
+          {body.length === 0 ? (
+            <tbody>
+              <tr>
+                <td
+                  data-testid="chat-ui-table-empty"
+                  colSpan={header.length}
+                  className="py-1.5 text-xs text-on-surface-variant"
+                >
+                  No rows
+                </td>
               </tr>
-            ))}
-          </tbody>
+            </tbody>
+          ) : (
+            <tbody className="divide-y divide-outline-variant">
+              {body.map((row) => (
+                <tr key={row.key}>
+                  {row.cells.map((cell) => (
+                    <td
+                      key={cell.key}
+                      title={cell.value.length > 32 ? cell.value : undefined}
+                      className="min-w-24 max-w-none break-words py-1.5 pr-4 align-top text-on-surface last:pr-0 md:max-w-56"
+                    >
+                      {cell.value}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          )}
         </table>
       </section>
     </figure>

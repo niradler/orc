@@ -4,8 +4,8 @@ import { formatTokenCount } from "./token-count";
 const count = new Intl.NumberFormat();
 
 /**
- * One explanation shared by the header strip, the inline usage card and the
- * analytics detail, so the figure always means the same thing.
+ * One explanation shared by the header strip and the inline usage card, so the
+ * figure always means the same thing.
  */
 export function contextUsageHelp(
   tokens: number,

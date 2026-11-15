@@ -1,5 +1,5 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
-import { expect, type Page, type Request, test } from "@playwright/test";
+import { expect, type Frame, type Page, type Request, test } from "@playwright/test";
 import { CHAT_DASHBOARD_HTML } from "../fixtures/chat-dashboard";
 import { chatUiGalleryMessage } from "../fixtures/chat-ui-gallery";
 import { API_SECRET } from "./_helpers";
@@ -12,6 +12,83 @@ import {
 
 const THREAD = "60000000-0000-4000-8000-000000000001";
 const stamp = "2026-10-30T10:00:00.000Z";
+// A host the app never uses: a request to it can only come from a frame that escaped.
+const PROBE_ORIGIN = "http://probe.orc.test";
+
+/** Every probe request is blocked by CSP before it reaches the network, so a hit is a failure. */
+async function probeRequests(page: Page) {
+  const hits: string[] = [];
+  await page.route(`${PROBE_ORIGIN}/**`, (route) => {
+    hits.push(route.request().url());
+    return route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><title>Probe</title><p>probe reached</p>",
+    });
+  });
+  return hits;
+}
+
+/**
+ * Runs inside a sandboxed frame. CSP violations prove the browser refused the request,
+ * which a closed port or a CORS failure alone cannot prove.
+ */
+async function isolationProbe(frame: Frame) {
+  return frame.evaluate(async () => {
+    const violations: string[] = [];
+    document.addEventListener("securitypolicyviolation", (event) =>
+      violations.push(event.violatedDirective),
+    );
+    let parentBlocked = false;
+    let storageBlocked = false;
+    let networkBlocked = false;
+    let popupBlocked = false;
+    try {
+      void parent.document.body;
+    } catch {
+      parentBlocked = true;
+    }
+    try {
+      void localStorage.length;
+    } catch {
+      storageBlocked = true;
+    }
+    try {
+      await fetch("http://probe.orc.test/probe-fetch");
+    } catch {
+      networkBlocked = true;
+    }
+    const image = new Image();
+    image.src = "http://probe.orc.test/probe-image.png";
+    document.body.append(image);
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "http://probe.orc.test/probe-form";
+    document.body.append(form);
+    form.submit();
+    try {
+      popupBlocked = window.open("http://probe.orc.test/probe-window") === null;
+    } catch {
+      popupBlocked = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return {
+      parentBlocked,
+      storageBlocked,
+      networkBlocked,
+      popupBlocked,
+      bridgeAbsent: !("orc" in window),
+      origin: location.origin,
+      violations,
+    };
+  });
+}
+
+/** The same probe URL leaves the page when the app asks, so the hook above is live. */
+async function controlProbe(page: Page, hits: string[]) {
+  await page.evaluate(() => fetch("http://probe.orc.test/probe-control").catch(() => {}));
+  await expect.poll(() => hits.filter((url) => url.endsWith("/probe-control")).length).toBe(1);
+}
 
 const task = {
   id: "t1",
@@ -170,6 +247,7 @@ for (const width of [1440, 390, 320]) {
       }),
     );
     await page.setViewportSize({ width, height: 900 });
+    const probes = await probeRequests(page);
     await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
     const panel = page.getByTestId("chat-ui-scratchpad");
     const frame = page.frameLocator('[data-testid="chat-ui-scratchpad-html"]');
@@ -182,33 +260,18 @@ for (const width of [1440, 390, 320]) {
     await expect(panel.getByRole("link", { name: "Scratchpad: Dataset dashboard" })).toBeVisible();
     const contentFrame = await (await iframe.elementHandle())?.contentFrame();
     if (!contentFrame) throw new Error("Dashboard frame missing");
-    const isolation = await contentFrame.evaluate(async () => {
-      let parentBlocked = false;
-      let storageBlocked = false;
-      let networkBlocked = false;
-      try {
-        void parent.document.body;
-      } catch {
-        parentBlocked = true;
-      }
-      try {
-        void localStorage.length;
-      } catch {
-        storageBlocked = true;
-      }
-      try {
-        await fetch("http://127.0.0.1:7701/api/tasks");
-      } catch {
-        networkBlocked = true;
-      }
-      return { parentBlocked, storageBlocked, networkBlocked, bridgeAbsent: !("orc" in window) };
-    });
-    expect(isolation).toEqual({
+    const isolation = await isolationProbe(contentFrame);
+    expect(isolation).toMatchObject({
       parentBlocked: true,
       storageBlocked: true,
       networkBlocked: true,
+      popupBlocked: true,
       bridgeAbsent: true,
+      origin: "null",
     });
+    expect(isolation.violations).toEqual(expect.arrayContaining(["connect-src", "img-src"]));
+    expect(probes).toEqual([]);
+    await controlProbe(page, probes);
     await panel.getByTestId("chat-ui-fullscreen").click();
     const dialog = page.getByTestId("chat-ui-fullscreen-dialog");
     await expect(dialog).toBeVisible();
@@ -670,17 +733,21 @@ const presentationSpec = {
     figures: {
       type: "Stack",
       props: { gap: "md" },
-      children: ["metric", "progress", "sparkline", "kv", "callout", "usage"],
+      children: ["metric", "big", "progress", "sparkline", "kv", "callout", "usage"],
     },
     usage: { type: "SessionUsage", props: { sessionId: "s1" } },
     data: {
       type: "Stack",
       props: { gap: "md" },
-      children: ["table", "chart", "empty", "html"],
+      children: ["table", "emptyTable", "chart", "empty", "html"],
     },
     metric: {
       type: "Metric",
       props: { label: "Open tasks", value: 12, unit: "tasks", hint: "+3 this week", trend: "up" },
+    },
+    big: {
+      type: "Metric",
+      props: { label: "Lifetime events", value: 1_234_567, trend: "flat" },
     },
     progress: { type: "Progress", props: { value: 62, label: "Migration" } },
     table: {
@@ -697,7 +764,7 @@ const presentationSpec = {
             "Chart legend, tooltip and series tokens",
           ],
           [
-            "Review a deliberately long table value that has to truncate",
+            "Review a deliberately long table value that has to wrap",
             "Done",
             "claude",
             "1 hour ago",
@@ -705,6 +772,10 @@ const presentationSpec = {
           ],
         ],
       },
+    },
+    emptyTable: {
+      type: "Table",
+      props: { caption: "Runs by job", columns: ["Job", "Runs"], rows: [] },
     },
     sparkline: {
       type: "Sparkline",
@@ -777,22 +848,35 @@ for (const theme of ["dark", "light"] as const) {
       await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
       const block = page.getByTestId("chat-ui-block");
 
-      const metric = block.getByTestId("chat-ui-metric");
+      const metric = block.getByTestId("chat-ui-metric").first();
       await expect(metric).toContainText("Open tasks");
       await expect(metric).toContainText("12");
       await expect(metric).toContainText("tasks");
       await expect(metric.getByTestId("chat-ui-metric-trend")).toBeVisible();
+      await expect(metric.locator("p").first()).toHaveAttribute("title", "Open tasks");
+      // Numbers arrive formatted like the chart axis rather than as raw digits.
+      await expect(
+        block.getByTestId("chat-ui-metric").filter({ hasText: "Lifetime events" }),
+      ).toContainText("1,234,567");
 
       const progress = block.getByTestId("chat-ui-progress").getByRole("progressbar");
       await expect(progress).toHaveAttribute("aria-valuenow", "62");
       await expect(progress).toHaveAttribute("aria-label", "Migration");
       await expect(block.getByTestId("chat-ui-progress")).toContainText("62%");
 
-      const table = block.getByTestId("chat-ui-table");
+      const table = block.getByTestId("chat-ui-table").first();
       await expect(table.getByRole("columnheader", { name: "Owner" })).toBeVisible();
+      await expect(table.locator("figcaption")).toHaveAttribute("title", "Recent work");
       const longCell = table.getByRole("cell", { name: /deliberately long/ });
       await expect(longCell).toHaveAttribute("title", /deliberately long/);
-      await expect(longCell).toHaveCSS("text-overflow", "ellipsis");
+      // Phones get no hover: the cell wraps and keeps its whole value in the layout.
+      await expect(longCell).toHaveCSS("white-space", "normal");
+      expect(await longCell.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
+        true,
+      );
+      await expect(
+        block.getByTestId("chat-ui-table").filter({ hasText: "Runs by job" }),
+      ).toContainText("No rows");
       const scroller = table.getByTestId("chat-ui-table-scroll");
       if (width === 390) {
         await expect
@@ -824,6 +908,8 @@ for (const theme of ["dark", "light"] as const) {
       await expect(chart).toHaveAttribute("data-kind", "line");
       await expect(chart).toContainText("Chat");
       await expect(chart).toContainText("Terminal");
+      await expect(chart.getByRole("img")).toHaveAttribute("aria-label", /Chat 4 to 6/);
+      await expect(chart.getByRole("img")).toHaveAttribute("aria-label", /Terminal 2 to 5/);
       await expect(chart.locator("svg.recharts-surface")).toHaveCount(1);
       await chart.locator(".recharts-wrapper").hover({ position: { x: 120, y: 90 } });
       await expect(chart.locator(".recharts-tooltip-wrapper")).toContainText("Terminal");
@@ -852,6 +938,7 @@ for (const theme of ["dark", "light"] as const) {
 test("inline HTML runs on an opaque origin and cannot reach ORC or the network", async ({
   page,
 }) => {
+  const probes = await probeRequests(page);
   await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(presentationSpec)}\n\`\`\``);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
@@ -859,6 +946,7 @@ test("inline HTML runs on an opaque origin and cannot reach ORC or the network",
   await expect(iframe).toHaveCount(1);
   await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
   await expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
+  await expect(iframe).toHaveAttribute("loading", "lazy");
   const source = await iframe.getAttribute("srcdoc");
   expect(source).toContain("Content-Security-Policy");
   expect(source).toContain("connect-src 'none'");
@@ -868,45 +956,61 @@ test("inline HTML runs on an opaque origin and cannot reach ORC or the network",
   await expect(frame.getByRole("paragraph")).toHaveText("script ran");
   const contentFrame = await (await iframe.elementHandle())?.contentFrame();
   if (!contentFrame) throw new Error("Inline HTML frame missing");
-  const isolation = await contentFrame.evaluate(async () => {
-    let parentBlocked = false;
-    let storageBlocked = false;
-    let networkBlocked = false;
-    try {
-      void parent.document.body;
-    } catch {
-      parentBlocked = true;
-    }
-    try {
-      void localStorage.length;
-    } catch {
-      storageBlocked = true;
-    }
-    try {
-      await fetch("http://127.0.0.1:7701/api/tasks");
-    } catch {
-      networkBlocked = true;
-    }
-    const probes = window as unknown as { __parent?: string; __storage?: string };
-    return {
-      parentBlocked,
-      storageBlocked,
-      networkBlocked,
-      bridgeAbsent: !("orc" in window),
-      origin: location.origin,
-      parentProbe: probes.__parent,
-      storageProbe: probes.__storage,
-    };
-  });
-  expect(isolation).toEqual({
+  const isolation = await isolationProbe(contentFrame);
+  expect(isolation).toMatchObject({
     parentBlocked: true,
     storageBlocked: true,
     networkBlocked: true,
+    popupBlocked: true,
     bridgeAbsent: true,
     origin: "null",
-    parentProbe: "blocked",
-    storageProbe: "blocked",
   });
+  // A CSP violation proves the request was refused, not that the port was closed or CORS failed.
+  expect(isolation.violations).toEqual(expect.arrayContaining(["connect-src", "img-src"]));
+  expect(probes).toEqual([]);
+  const inlineProbes = await contentFrame.evaluate(() => {
+    const state = window as unknown as { __parent?: string; __storage?: string };
+    return { parentProbe: state.__parent, storageProbe: state.__storage };
+  });
+  expect(inlineProbes).toEqual({ parentProbe: "blocked", storageProbe: "blocked" });
+  await controlProbe(page, probes);
+});
+
+test("a sandboxed frame can still navigate itself, so its content is untrusted", async ({
+  page,
+}) => {
+  const navigations: string[] = [];
+  await page.route(`${PROBE_ORIGIN}/probe-nav/**`, (route) => {
+    navigations.push(route.request().url());
+    return route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><title>Navigated</title><p>external page</p>",
+    });
+  });
+  const navSpec = {
+    root: "frame",
+    elements: { frame: { type: "Html", props: { html: "<p>inline</p>", title: "Navigable" } } },
+  };
+  await mockApi(page, [], `\`\`\`orc-ui\n${JSON.stringify(navSpec)}\n\`\`\``);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+  const iframe = page.getByTestId("chat-ui-html");
+  await expect(iframe).toHaveCount(1);
+  const appUrl = page.url();
+  const contentFrame = await (await iframe.elementHandle())?.contentFrame();
+  if (!contentFrame) throw new Error("Inline HTML frame missing");
+  await contentFrame.evaluate(() => {
+    location.href = "http://probe.orc.test/probe-nav/page";
+  });
+  // The frame escapes its document by itself; only the surrounding app stays put.
+  await expect.poll(() => navigations.length).toBe(1);
+  await expect(
+    page.frameLocator('[data-testid="chat-ui-html"]').getByText("external page"),
+  ).toBeVisible();
+  expect(page.url()).toBe(appUrl);
+  expect(new URL(appUrl).origin).not.toBe(PROBE_ORIGIN);
+  await expect(page.getByTestId("chat-ui-block")).toHaveCount(1);
 });
 
 test("session usage omits the figure when the session records none", async ({ page }, testInfo) => {

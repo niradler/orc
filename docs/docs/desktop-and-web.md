@@ -161,11 +161,11 @@ has:
 - `Metric` — one headline number with a label, an optional unit and a trend hint.
   The arrow is decoration; the hint carries the meaning.
 - `Progress` — a determinate 0–100 percentage with an optional label.
-- `Table` — up to six columns and fifty rows. Long cells truncate with the full
-  value in the title, and a phone scrolls the table sideways instead of
-  squeezing its columns or widening the conversation.
-- `Sparkline` — a small trend line without axes; the latest value and the range
-  stay in text beside it.
+- `Table` — up to six columns and fifty rows. Cells wrap instead of truncating,
+  and a phone scrolls the table sideways rather than squeezing its columns or
+  widening the conversation. A table with headers but no rows says "No rows".
+- `Sparkline` — a small trend line without axes; the latest value stays in text
+  beside it and the full range is in its accessible label.
 - `Chart` — a Recharts line, bar or area chart with a tooltip and a named legend,
   using the shared series colors in both themes. Motion is short and stopped
   under reduced motion. A chart with no points says so instead of showing an
@@ -173,11 +173,15 @@ has:
 - `KeyValue` — a compact definition list for up to eight labelled values.
 - `Callout` — an info, warn, error or done note. A small icon carries the tone
   and the text stays readable.
-- `Html` — a short inline HTML snippet inside a sandboxed, opaque-origin frame.
-  It can run its own inline scripts and styles and show `data:` or `blob:`
-  images, but it cannot read ORC storage or credentials, call the ORC API, reach
-  the network or navigate the app. Use a scratchpad for HTML you want to save or
-  edit; chat HTML is not stored.
+- `Html` — a short inline HTML snippet inside a sandboxed frame. The frame runs
+  on an opaque origin with no ORC storage, credentials, API or parent access, and
+  the injected CSP blocks scripted requests (fetch, images, fonts and forms), so
+  it can run its own inline scripts and styles and show `data:` or `blob:` images
+  but cannot call the ORC API. The frame can still navigate itself to another
+  URL, so treat its content as untrusted output; its scripts also run on the
+  page's main thread, so a runaway loop freezes the chat tab. Use a scratchpad
+  for HTML you want to save or edit; inline chat HTML is not saved as a
+  scratchpad.
 
 `SessionUsage` shows the same figure as the header strip for a session the answer
 talks about: the latest request's input tokens and the share served from the
@@ -524,9 +528,10 @@ state. The saved pad content stays the same.
 
 Kit tabs support clicking, Left/Right arrows with wrapping, and Home/End. Only
 the selected panel is shown. The kit does not grant ORC API access: editor pads
-still require **Render with ORC access**, and chat artifacts retain their opaque
-sandbox and network-blocking policy. Prefer inline SVG for charts that must work
-in both views; a CDN chart library is blocked in chat.
+still require **Render with ORC access**, and chat artifacts keep their opaque
+sandbox and the CSP that blocks scripted requests and external resources. Prefer
+inline SVG for charts that must work in both views; a CDN chart library is
+blocked in chat.
 
 For concise component markup, use built-in custom elements such as
 `<orc-card>`, `<orc-stat label="Open tasks" value="12">`,

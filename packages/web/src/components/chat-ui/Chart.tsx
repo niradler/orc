@@ -13,12 +13,16 @@ import {
 } from "recharts";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
+  type ChartKind,
   type ChartSeries,
   chartRows,
+  chartSummary,
   compactNumber,
   fullNumber,
   hasChartData,
   SERIES_COLORS,
+  seriesKey,
+  sparklineDirection,
   sparklineRows,
   sparklineSummary,
 } from "@/lib/chat-ui-chart";
@@ -93,7 +97,7 @@ export default function Chart({
   series,
   title,
 }: {
-  kind?: "line" | "bar" | "area";
+  kind?: ChartKind;
   labels: string[];
   series: ChartSeries[];
   title?: string;
@@ -109,7 +113,7 @@ export default function Chart({
         </p>
       </div>
     );
-  const summary = `${title ?? "Chart"}: ${kind} chart, ${series.length === 1 ? series[0]?.name : `${series.length} series`}, ${labels[0]} to ${labels[labels.length - 1]}.`;
+  const summary = chartSummary({ title, kind, labels, series });
   return (
     <figure data-testid="chat-ui-chart" data-kind={kind} className="min-w-0">
       {title && (
@@ -137,7 +141,8 @@ export default function Chart({
               {series.map((item, index) => (
                 <Bar
                   key={item.name}
-                  dataKey={item.name}
+                  dataKey={seriesKey(index)}
+                  name={item.name}
                   fill={SERIES_COLORS[index]}
                   radius={[2, 2, 0, 0]}
                   isAnimationActive={!reduced}
@@ -152,7 +157,8 @@ export default function Chart({
                 <Area
                   key={item.name}
                   type="monotone"
-                  dataKey={item.name}
+                  dataKey={seriesKey(index)}
+                  name={item.name}
                   stroke={SERIES_COLORS[index]}
                   fill={SERIES_COLORS[index]}
                   fillOpacity={0.15}
@@ -169,7 +175,8 @@ export default function Chart({
                 <Line
                   key={item.name}
                   type="monotone"
-                  dataKey={item.name}
+                  dataKey={seriesKey(index)}
+                  name={item.name}
                   stroke={SERIES_COLORS[index]}
                   strokeWidth={2}
                   dot={false}
@@ -185,7 +192,7 @@ export default function Chart({
   );
 }
 
-/** Shape-only trend: no axes, but the latest value and range stay in text. */
+/** Shape-only trend: no axes; the latest value stays in text and the range is in the label. */
 export function Sparkline({ values, label }: { values: number[]; label?: string }) {
   const reduced = useMediaQuery(REDUCED_MOTION);
   const summary = sparklineSummary(values);
@@ -199,7 +206,7 @@ export function Sparkline({ values, label }: { values: number[]; label?: string 
       <div
         className="h-8 w-40 max-w-full"
         role="img"
-        aria-label={`${name}: ${summary.direction} from ${fullNumber(summary.first)} to ${fullNumber(summary.last)}, low ${fullNumber(summary.min)}, high ${fullNumber(summary.max)}`}
+        aria-label={`${name}: ${sparklineDirection(summary)}, low ${fullNumber(summary.min)}, high ${fullNumber(summary.max)}`}
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={sparklineRows(values)} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>

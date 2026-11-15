@@ -1,15 +1,18 @@
 import { contextFigure, useChatContextUsage } from "@/components/ChatSessionStrip";
 import { HelpPopover } from "@/components/HelpPopover";
+import { useChat } from "@/hooks/useChat";
 import { formatTokenCount } from "@/lib/live-sessions";
 import { contextUsageHelp } from "@/lib/session-cache";
 import { Failure, Loading, Panel } from "./primitives";
 
 /**
  * The same figure as the chat header strip, for a session the answer talks about.
+ * Only the thread you have open keeps polling; a historical session is read once.
  * A session with no recorded request has no figure, so nothing reads as zero.
  */
 export function SessionUsageCard({ sessionId }: { sessionId: string }) {
-  const { data, isLoading, error } = useChatContextUsage(sessionId, true);
+  const live = useChat().thread?.sourceId === sessionId;
+  const { data, isLoading, error } = useChatContextUsage(sessionId, live);
   if (isLoading) return <Loading label="Loading session usage" />;
   if (error) return <Failure label="Session usage unavailable." error={error} />;
   const figure = contextFigure(data?.latest);

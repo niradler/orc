@@ -12,6 +12,13 @@ import { SessionUsageCard } from "./SessionUsageCard";
 const Chart = lazy(() => import("./Chart"));
 const Sparkline = lazy(() => import("./Chart").then((module) => ({ default: module.Sparkline })));
 const ChartFallback = () => <div className="h-56 w-full" aria-hidden="true" />;
+// Same caption line plus 2rem plot as the real sparkline, so lazy loading does not shift the answer.
+const SparklineFallback = () => (
+  <div className="min-w-0" aria-hidden="true">
+    <div className="h-4 w-24" />
+    <div className="h-8 w-40 max-w-full" />
+  </div>
+);
 
 const GAP = { sm: "gap-1.5", md: "gap-3", lg: "gap-5" } as const;
 const BUTTON_VARIANT = {
@@ -64,7 +71,7 @@ const components: Components<typeof chatUiCatalog> = {
   Progress: ({ props }) => <Progress value={props.value} label={props.label} />,
   Table: ({ props }) => <Table columns={props.columns} rows={props.rows} caption={props.caption} />,
   Sparkline: ({ props }) => (
-    <Suspense fallback={<div className="h-12 w-40" aria-hidden="true" />}>
+    <Suspense fallback={<SparklineFallback />}>
       <Sparkline values={props.values} label={props.label} />
     </Suspense>
   ),

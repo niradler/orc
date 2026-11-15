@@ -3,8 +3,10 @@ import { isolatedHtml } from "./sandboxed-html";
 
 /**
  * Inline HTML beside an answer. The sandbox has no `allow-same-origin`, so the
- * frame runs on an opaque origin with no ORC storage, credentials or API access,
- * and the injected CSP blocks every network destination.
+ * frame runs on an opaque origin with no ORC storage, credentials, API or parent
+ * access, and the injected CSP blocks scripted requests (fetch, images, fonts,
+ * forms). The frame can still navigate itself to another URL, so its content is
+ * untrusted output, and its scripts run on this page's main thread.
  */
 export function HtmlBlock({
   html,
@@ -21,6 +23,7 @@ export function HtmlBlock({
       title={title ?? "Inline HTML content"}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
+      loading="lazy"
       srcDoc={isolatedHtml(html)}
       className={cn(
         "w-full rounded-md border border-outline-variant bg-white",

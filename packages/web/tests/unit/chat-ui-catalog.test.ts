@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { HTML_POLICY, isolatedHtml } from "../../src/components/chat-ui/sandboxed-html";
 import {
   chartRows,
+  chartSummary,
   hasChartData,
   SERIES_COLORS,
+  sparklineDirection,
   sparklineRows,
   sparklineSummary,
 } from "../../src/lib/chat-ui-chart";
@@ -19,9 +21,21 @@ test("chart rows pair every label with one value per series", () => {
       ],
     ),
   ).toEqual([
-    { label: "Mon", Chat: 4, Terminal: 2 },
-    { label: "Tue", Chat: 7, Terminal: null },
+    { label: "Mon", s0: 4, s1: 2 },
+    { label: "Tue", s0: 7, s1: null },
   ]);
+});
+
+test("chart rows keep series keys positional so names cannot collide", () => {
+  const rows = chartRows(
+    ["Mon"],
+    [
+      { name: "label", values: [1] },
+      { name: "__proto__", values: [2] },
+    ],
+  );
+  expect(rows).toEqual([{ label: "Mon", s0: 1, s1: 2 }]);
+  expect(Object.keys(rows[0] ?? {})).toEqual(["label", "s0", "s1"]);
 });
 
 test("a chart without points shows its empty state instead of a flat line", () => {
@@ -49,6 +63,30 @@ test("sparkline summary states direction and range in text", () => {
     { index: 0, value: 3 },
     { index: 1, value: 8 },
   ]);
+});
+
+test("a flat sparkline reads as no change instead of a range from itself", () => {
+  expect(sparklineDirection(sparklineSummary([3, 8, 1]))).toBe("down from 3 to 1");
+  expect(sparklineDirection(sparklineSummary([1, 4]))).toBe("up from 1 to 4");
+  expect(sparklineDirection(sparklineSummary([5, 5]))).toBe("no change, 5");
+  expect(sparklineDirection(sparklineSummary([1_200, 1_200]))).toBe("no change, 1,200");
+});
+
+test("chart summary states each series' first and last value", () => {
+  expect(
+    chartSummary({
+      title: "Sessions",
+      kind: "line",
+      labels: ["Mon", "Fri"],
+      series: [
+        { name: "Chat", values: [4, 6] },
+        { name: "Terminal", values: [2, 5] },
+      ],
+    }),
+  ).toBe("Sessions: line chart. Chat 4 to 6. Terminal 2 to 5. labels Mon to Fri.");
+  expect(
+    chartSummary({ kind: "bar", labels: ["Mon"], series: [{ name: "Runs", values: [7] }] }),
+  ).toBe("Chart: bar chart. Runs 7 to 7. labels Mon to Mon.");
 });
 
 test("inline HTML carries the sandbox policy before its own markup", () => {

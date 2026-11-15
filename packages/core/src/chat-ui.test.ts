@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { CHAT_UI_FENCE, chatUiCatalog, chatUiCatalogText, parseChatUiSpec } from "./chat-ui";
+import {
+  CHAT_UI_FENCE,
+  CHAT_UI_HTML_MAX_LENGTH,
+  CHAT_UI_MAX_CHARTS,
+  CHAT_UI_MAX_HTML,
+  chatUiCatalog,
+  chatUiCatalogText,
+  parseChatUiSpec,
+} from "./chat-ui";
 
 const parse = (spec: unknown) => parseChatUiSpec(JSON.stringify(spec));
 
@@ -188,6 +196,20 @@ describe("wave 2 presentational components", () => {
     expect(single("Metric", { label: "", value: 1 }).ok).toBe(false);
     expect(single("Metric", { label: "Open tasks", value: "x".repeat(25) }).ok).toBe(false);
     expect(single("Metric", { label: "Open tasks", value: 1, trend: "sideways" }).ok).toBe(false);
+    expect(single("Metric", { label: "Open tasks", value: 1, unit: "x".repeat(13) }).ok).toBe(
+      false,
+    );
+    expect(single("Metric", { label: "Open tasks", value: 1, hint: "x".repeat(61) }).ok).toBe(
+      false,
+    );
+    expect(
+      single("Metric", {
+        label: "Open tasks",
+        value: 1,
+        unit: "x".repeat(12),
+        hint: "x".repeat(60),
+      }).ok,
+    ).toBe(true);
     expect(single("Progress", { value: 101 }).ok).toBe(false);
     expect(single("Progress", { value: -1 }).ok).toBe(false);
     expect(single("Progress", { value: 50.5 }).ok).toBe(false);
@@ -196,6 +218,9 @@ describe("wave 2 presentational components", () => {
     expect(single("Sparkline", { values: Array.from({ length: 61 }, (_, i) => i) }).ok).toBe(false);
     expect(single("Sparkline", { values: [1, "two"] }).ok).toBe(false);
     expect(single("KeyValue", { items: [] }).ok).toBe(false);
+    expect(single("KeyValue", { items: [{ label: "Note", value: "x".repeat(201) }] }).ok).toBe(
+      false,
+    );
     expect(
       single("KeyValue", {
         items: Array.from({ length: 9 }, (_, i) => ({ label: `L${i}`, value: "v" })),
@@ -221,6 +246,8 @@ describe("wave 2 presentational components", () => {
       }).ok,
     ).toBe(false);
     expect(single("Table", { columns: ["A", "B"], rows: [["one cell"]] }).ok).toBe(false);
+    expect(single("Table", { columns: ["A"], rows: [["one", "two"]] }).ok).toBe(false);
+    expect(single("Table", { columns: ["A"], rows: [["   "]] }).ok).toBe(false);
     expect(single("Table", { columns: ["x".repeat(41)], rows: [["x"]] }).ok).toBe(false);
   });
 
@@ -267,6 +294,48 @@ describe("wave 2 presentational components", () => {
     expect(single("Html", { html: "<p>x</p>", height: "huge" }).ok).toBe(false);
     expect(single("SessionUsage", { sessionId: "../sessions/1" }).ok).toBe(false);
     expect(single("SessionUsage", {}).ok).toBe(false);
+  });
+
+  test("accepts an Html snippet at exactly the character limit and rejects one over it", () => {
+    expect(CHAT_UI_HTML_MAX_LENGTH).toBe(20_000);
+    expect(single("Html", { html: "x".repeat(CHAT_UI_HTML_MAX_LENGTH) }).ok).toBe(true);
+    expect(single("Html", { html: "x".repeat(CHAT_UI_HTML_MAX_LENGTH + 1) }).ok).toBe(false);
+  });
+
+  test("caps charts and inline frames per spec", () => {
+    const repeated = (type: string, props: unknown, count: number) => {
+      const children = Array.from({ length: count }, (_, index) => `n${index}`);
+      return {
+        root: "main",
+        elements: {
+          main: { type: "Stack", children },
+          ...Object.fromEntries(children.map((key) => [key, { type, props }])),
+        },
+      };
+    };
+    expect(parse(repeated("Chart", WAVE_2.Chart, CHAT_UI_MAX_CHARTS)).ok).toBe(true);
+    expect(parse(repeated("Chart", WAVE_2.Chart, CHAT_UI_MAX_CHARTS + 1))).toMatchObject({
+      ok: false,
+      error: `Spec exceeds ${CHAT_UI_MAX_CHARTS} Chart components`,
+    });
+    expect(parse(repeated("Html", WAVE_2.Html, CHAT_UI_MAX_HTML)).ok).toBe(true);
+    expect(parse(repeated("Html", WAVE_2.Html, CHAT_UI_MAX_HTML + 1))).toMatchObject({
+      ok: false,
+      error: `Spec exceeds ${CHAT_UI_MAX_HTML} Html components`,
+    });
+    // A shared definition still mounts once per reference, so the cap counts renders.
+    expect(
+      parse({
+        root: "main",
+        elements: {
+          main: {
+            type: "Stack",
+            children: Array.from({ length: CHAT_UI_MAX_CHARTS + 1 }, () => "chart"),
+          },
+          chart: { type: "Chart", props: WAVE_2.Chart },
+        },
+      }),
+    ).toMatchObject({ ok: false, error: `Spec exceeds ${CHAT_UI_MAX_CHARTS} Chart components` });
   });
 
   test("rejects a layout over the rendered element budget", () => {
