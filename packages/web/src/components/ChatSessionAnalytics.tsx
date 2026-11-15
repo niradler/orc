@@ -1,4 +1,5 @@
-import type { ChatToolStat } from "@orc/core/chat-analytics";
+import type { ChatSkillStat, ChatToolStat } from "@orc/core/chat-analytics";
+import type { SessionCacheUsage } from "@orc/core/usage";
 import { useQuery } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
 import { api } from "@/api/client";
@@ -72,7 +73,8 @@ export function ChatSessionAnalytics({
 
   const latest = data.context?.usage.latest ?? null;
   const timeline = data.context?.usage.timeline ?? [];
-  const compactions = data.context?.usage.compactions?.length ?? 0;
+  const compactionList = data.context?.usage.compactions ?? [];
+  const compactions = compactionList.length;
   const peak = timeline.reduce((highest, point) => Math.max(highest, point.context_tokens), 0);
   return (
     <div className="space-y-5">
@@ -189,6 +191,51 @@ export function ChatSessionAnalytics({
             The agent has not recorded token usage for a request yet. It appears after the next
             response.
           </p>
+        )}
+      </section>
+
+      {data.context?.supported && (
+        <section
+          aria-labelledby="chat-analytics-compactions-heading"
+          data-testid="chat-analytics-compaction-section"
+          className="space-y-2 border-t border-border pt-4"
+        >
+          <div className="flex items-center gap-1">
+            <h3 id="chat-analytics-compactions-heading" className="text-sm font-medium">
+              Compactions
+            </h3>
+            <HelpPopover label="Compaction analytics" testId="chat-analytics-compactions-help">
+              Each compaction replaces the conversation with a summary. Context shows the size of
+              the request before it and of the first request after it, as the agent recorded them.
+            </HelpPopover>
+          </div>
+          {compactions === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              This session has not been compacted yet.
+            </p>
+          ) : (
+            <CompactionTable compactions={compactionList} />
+          )}
+        </section>
+      )}
+
+      <section
+        aria-labelledby="chat-analytics-skills-heading"
+        className="space-y-2 border-t border-border pt-4"
+      >
+        <div className="flex items-center gap-1">
+          <h3 id="chat-analytics-skills-heading" className="text-sm font-medium">
+            Skills
+          </h3>
+          <HelpPopover label="Skill analytics" testId="chat-analytics-skills-help">
+            Counted from the tool calls that load a skill: Claude's Skill tool, ORC skill_read, and
+            reads of a skill's SKILL.md file.
+          </HelpPopover>
+        </div>
+        {data.skills.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No skills loaded in this chat yet.</p>
+        ) : (
+          <SkillTable skills={data.skills} />
         )}
       </section>
 
@@ -366,6 +413,77 @@ function Outcome({ label, value }: { label: string; value: number }) {
     <span>
       <span className="tabular-nums">{count.format(value)}</span> {label.toLowerCase()}
     </span>
+  );
+}
+
+function CompactionTable({
+  compactions,
+}: {
+  compactions: NonNullable<SessionCacheUsage["compactions"]>;
+}) {
+  return (
+    <table data-testid="chat-compaction-table" className="w-full text-xs tabular-nums">
+      <thead>
+        <tr className="text-left text-muted-foreground">
+          <th className="pb-1 font-normal">When</th>
+          <th className="pb-1 text-right font-normal">Before</th>
+          <th className="pb-1 text-right font-normal">After</th>
+          <th className="pb-1 text-right font-normal">Freed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {compactions.map((compaction, index) => (
+          <tr
+            // biome-ignore lint/suspicious/noArrayIndexKey: compactions are positional
+            key={index}
+            data-testid="chat-compaction-row"
+            className="border-t border-border/60"
+          >
+            <td className="py-1">
+              {compaction.recorded_at ? new Date(compaction.recorded_at).toLocaleString() : "—"}
+            </td>
+            <td className="py-1 text-right">
+              {compaction.pre_tokens === null
+                ? "—"
+                : formatTokenCount(compaction.pre_tokens, false)}
+            </td>
+            <td className="py-1 text-right">
+              {compaction.post_tokens === null
+                ? "—"
+                : formatTokenCount(compaction.post_tokens, false)}
+            </td>
+            <td className="py-1 text-right text-muted-foreground">
+              {compaction.pre_tokens && compaction.post_tokens !== null
+                ? `${percent.format((1 - compaction.post_tokens / compaction.pre_tokens) * 100)}%`
+                : "—"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function SkillTable({ skills }: { skills: ChatSkillStat[] }) {
+  return (
+    <table data-testid="chat-skill-table" className="w-full text-xs tabular-nums">
+      <thead>
+        <tr className="text-left text-muted-foreground">
+          <th className="pb-1 font-normal">Skill</th>
+          <th className="pb-1 text-right font-normal">Loads</th>
+        </tr>
+      </thead>
+      <tbody>
+        {skills.map((skill) => (
+          <tr key={skill.name} data-testid="chat-skill-row" className="border-t border-border/60">
+            <td className="max-w-56 truncate py-1 font-mono text-[11px]" title={skill.name}>
+              {skill.name}
+            </td>
+            <td className="py-1 text-right">{count.format(skill.loads)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

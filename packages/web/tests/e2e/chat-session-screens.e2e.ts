@@ -23,6 +23,10 @@ function analyticsFixture(now: number) {
     outcomes: { completed: 2, stopped: 0, failed: 0, running: 0 },
     durations: { averageMs: 171_000, medianMs: 171_000, p95Ms: 224_000, totalMs: 342_000 },
     toolTotal: 3,
+    skills: [
+      { name: "nir-collab", loads: 2 },
+      { name: "orc-track", loads: 1 },
+    ],
     tools: [
       { name: "Bash", calls: 3, failures: 1 },
       { name: "Read", calls: 1, failures: 0 },
@@ -406,6 +410,16 @@ for (const width of [1440, 390]) {
     const analytics = page.getByTestId("chat-analytics-dialog");
     await expect(analytics).toBeVisible();
     await expect(analytics.getByTestId("chat-analytics-turns")).toContainText("2");
+    const compaction = analytics.getByTestId("chat-compaction-row");
+    await expect(compaction).toHaveCount(1);
+    await expect(compaction).toContainText("122k");
+    await expect(compaction).toContainText("48k");
+    await expect(compaction).toContainText("60.7%");
+    await expect(analytics.getByTestId("chat-skill-row")).toHaveText([
+      /nir-collab\s*2/,
+      /orc-track\s*1/,
+    ]);
+    await analytics.getByTestId("chat-skill-table").scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`chat-analytics-dialog-${width}.png`) });
     await analytics.getByRole("button", { name: "Close", exact: true }).click();
     await expect(analytics).toBeHidden();

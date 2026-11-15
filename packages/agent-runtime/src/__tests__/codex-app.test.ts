@@ -66,6 +66,11 @@ test("should compact the existing native thread without sending a model prompt",
     const events: AgentEvent[] = [];
     for await (const event of session.events()) events.push(event);
     expect(events).toContainEqual({ type: "system_status", data: "Context compacted." });
+    expect(
+      events.filter(
+        (event) => event.type === "system_status" && event.data === "Compacting context…",
+      ),
+    ).toHaveLength(1);
     expect(events.find((event) => event.type === "result")?.data).toMatchObject({
       runtimeSessionId: "native-fixture",
       outcome: "completed",

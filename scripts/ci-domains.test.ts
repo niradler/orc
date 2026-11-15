@@ -19,7 +19,7 @@ import {
   unownedSourceFiles,
   unownedSourcePaths,
 } from "./ci-domains.js";
-import { packageTestSteps } from "./ci-plan.js";
+import { packageTestSteps, typecheckSteps } from "./ci-plan.js";
 
 const root = resolve(import.meta.dir, "..");
 const domains = readPackageDomains(root);
@@ -67,7 +67,7 @@ test("should leave package tests out of a docs-only change", () => {
 test("should run affected web units and sanity without the full browser suite before push", () => {
   const selection = selectDomains(["packages/web/src/App.tsx"], domains, dependents);
   const steps = packageTestSteps(root, selection, { sanity: true, e2e: false });
-  expect(steps.map(([name]) => name)).toEqual(["Test orc-ai", "Web unit tests", "Sanity e2e"]);
+  expect(steps.map(([name]) => name)).toEqual(["Web unit tests", "Sanity e2e"]);
   expect(steps.at(-1)?.[1]).toEqual([
     "bun",
     "packages/web/scripts/run-e2e.ts",
@@ -101,6 +101,46 @@ test("should keep sanity always on and full browser coverage explicit", () => {
   );
 });
 
+test("should run a changed package fully and only the dependent tests that import the change", () => {
+  const selection = selectDomains(["packages/core/src/ids.ts"], domains, dependents);
+  const steps = new Map(packageTestSteps(root, selection, { sanity: false, e2e: false }));
+  expect(steps.get("Test @orc/core")).toEqual(["bun", "run", "--filter", "@orc/core", "test"]);
+  const api = steps.get("Test @orc/api affected files");
+  expect(api?.slice(0, 4)).toEqual(["bun", "--cwd", "packages/api", "test"]);
+  const files = api?.slice(4) ?? [];
+  expect(files.length).toBeGreaterThan(0);
+  expect(files.every((file) => file.startsWith("./") && /\.test\.tsx?$/.test(file))).toBe(true);
+  const all = [...new Bun.Glob("src/**/*.test.ts").scanSync(join(root, "packages/api"))];
+  expect(files.length).toBeLessThan(all.length);
+});
+
+test("should skip a dependent package whose tests never import the change", () => {
+  const selection = selectDomains(["packages/web/src/App.tsx"], domains, dependents);
+  expect(selection.packageNames).toContain("orc-ai");
+  const names = packageTestSteps(root, selection, { sanity: false, e2e: false }).map(
+    ([name]) => name,
+  );
+  expect(names.some((name) => name.startsWith("Test orc-ai"))).toBe(false);
+});
+
+test("should run dependents fully when a package changes a file the import graph cannot see", () => {
+  const selection = selectDomains(["packages/core/package.json"], domains, dependents);
+  const names = packageTestSteps(root, selection, { sanity: false, e2e: false }).map(
+    ([name]) => name,
+  );
+  expect(names).toContain("Test @orc/runner");
+  expect(names.some((name) => name.endsWith("affected files"))).toBe(false);
+});
+
+test("should typecheck only selected packages, one at a time", () => {
+  const scoped = typecheckSteps(selectDomains(["packages/sdk/src/index.ts"], domains, dependents));
+  expect(scoped.map(([name]) => name)).toContain("Typecheck @orc/sdk");
+  expect(scoped.map(([name]) => name)).not.toContain("Typecheck @orc/core");
+  expect(typecheckSteps(undefined)).toEqual([
+    ["Typecheck", ["bun", "run", "--sequential", "--filter", "*", "typecheck"]],
+  ]);
+});
+
 test("should treat a package manifest as that package", () => {
   const selection = selectDomains(["packages/api/package.json"], domains, dependents);
   expect(selection.runAll).toBe(false);
@@ -116,9 +156,10 @@ test("should report a source file outside the owned trees", () => {
   expect(unownedSourcePaths(["scripts/ci-domains.ts", "docs/docs/pi.md"], domains)).toEqual([]);
 });
 
-test("should run every package when a shared script changes", () => {
-  const selection = selectDomains(["scripts/ci-domains.ts"], domains, dependents);
-  expect(selection.runAll).toBe(true);
+test("should run every package when a CI script changes, not for other scripts", () => {
+  expect(selectDomains(["scripts/ci-domains.ts"], domains, dependents).runAll).toBe(true);
+  expect(selectDomains(["scripts/pre-push.ts"], domains, dependents).runAll).toBe(true);
+  expect(selectDomains(["scripts/release.ts"], domains, dependents).runAll).toBe(false);
 });
 
 test("should run every package for root runtime and test configuration", () => {

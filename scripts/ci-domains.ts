@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 const RUN_ALL_FILES = new Set([
   "package.json",
@@ -11,7 +11,14 @@ const RUN_ALL_FILES = new Set([
   "Dockerfile",
   ".dockerignore",
 ]);
-const RUN_ALL_PREFIXES = ["patches/", "scripts/", ".github/", ".githooks/"];
+const RUN_ALL_PREFIXES = [
+  "patches/",
+  "scripts/ci-",
+  "scripts/pre-push",
+  "scripts/tsconfig",
+  ".github/",
+  ".githooks/",
+];
 const OWNED_PREFIXES = ["scripts/", "docs/"];
 const SKIP_DIRECTORIES = new Set([
   "node_modules",
@@ -28,6 +35,7 @@ const SKIP_DIRECTORIES = new Set([
   ".temp",
 ]);
 const SOURCE_FILE = /\.(tsx|ts|mts|cts|jsx|js|mjs|cjs)$/;
+const TEST_FILE = /[._](test|spec)\.(tsx|ts|mts|cts|jsx|js|mjs|cjs)$/;
 
 export type PackageDomain = {
   name: string;
@@ -38,6 +46,8 @@ export type PackageDomain = {
 export type DomainSelection = {
   runAll: boolean;
   packageNames: string[];
+  directNames: string[];
+  changedPaths: string[];
   reasons: string[];
 };
 
@@ -115,9 +125,8 @@ export function selectDomains(
   const direct = new Map<string, string[]>();
   const shared: string[] = [];
   const outside: string[] = [];
-  for (const raw of paths) {
-    const path = normalizeRepoPath(raw);
-    if (!path) continue;
+  const changedPaths = paths.map(normalizeRepoPath).filter(Boolean);
+  for (const path of changedPaths) {
     if (runsAllPackages(path)) {
       shared.push(path);
       continue;
@@ -132,9 +141,12 @@ export function selectDomains(
     direct.set(domain.name, files);
   }
   if (shared.length > 0) {
+    const all = domains.map((domain) => domain.name).sort();
     return {
       runAll: true,
-      packageNames: domains.map((domain) => domain.name).sort(),
+      packageNames: all,
+      directNames: all,
+      changedPaths,
       reasons: shared.map((path) => `${path} changes shared infrastructure`),
     };
   }
@@ -166,7 +178,77 @@ export function selectDomains(
     const extra = outside.length > 5 ? ` and ${outside.length - 5} more` : "";
     reasons.push(`no package tests: ${sample}${extra}`);
   }
-  return { runAll: false, packageNames, reasons };
+  return {
+    runAll: false,
+    packageNames,
+    directNames: [...direct.keys()].sort(),
+    changedPaths,
+    reasons,
+  };
+}
+
+function testFiles(directory: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (!SKIP_DIRECTORIES.has(entry.name)) found.push(...testFiles(path));
+    } else if (TEST_FILE.test(entry.name)) found.push(path);
+  }
+  return found;
+}
+
+const transpilers = {
+  ts: new Bun.Transpiler({ loader: "ts" }),
+  tsx: new Bun.Transpiler({ loader: "tsx" }),
+  js: new Bun.Transpiler({ loader: "js" }),
+  jsx: new Bun.Transpiler({ loader: "jsx" }),
+};
+
+function transpilerFor(file: string): Bun.Transpiler {
+  if (file.endsWith(".tsx")) return transpilers.tsx;
+  if (file.endsWith(".jsx")) return transpilers.jsx;
+  return /\.[mc]?ts$/.test(file) ? transpilers.ts : transpilers.js;
+}
+const importCache = new Map<string, string[]>();
+
+function localImports(file: string): string[] {
+  const cached = importCache.get(file);
+  if (cached) return cached;
+  const imports: string[] = [];
+  importCache.set(file, imports);
+  if (!SOURCE_FILE.test(file)) return imports;
+  for (const { path } of transpilerFor(file).scanImports(readFileSync(file, "utf8"))) {
+    try {
+      const resolved = Bun.resolveSync(path, dirname(file));
+      if (!/[\\/]node_modules[\\/]/.test(resolved) && existsSync(resolved)) imports.push(resolved);
+    } catch {}
+  }
+  return imports;
+}
+
+export function isSourceFile(path: string): boolean {
+  return SOURCE_FILE.test(path);
+}
+
+export function affectedTestFiles(root: string, folder: string, changedPaths: string[]): string[] {
+  const realRoot = realpathSync(root);
+  const changed = new Set(changedPaths.map((path) => join(realRoot, path)));
+  const packageRoot = join(realRoot, "packages", folder);
+  return testFiles(packageRoot)
+    .filter((test) => {
+      const seen = new Set<string>();
+      const queue = [test];
+      for (let file = queue.pop(); file; file = queue.pop()) {
+        if (changed.has(file)) return true;
+        if (seen.has(file)) continue;
+        seen.add(file);
+        queue.push(...localImports(file));
+      }
+      return false;
+    })
+    .map((path) => `./${normalizeRepoPath(relative(packageRoot, path))}`)
+    .sort();
 }
 
 export function unownedSourcePaths(paths: string[], domains: PackageDomain[]): string[] {
