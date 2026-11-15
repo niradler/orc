@@ -41,7 +41,10 @@ beforeAll(() => {
 
 afterAll(() => {
   teardownTestApp();
-  rmSync(root, { recursive: true, force: true });
+  // Bun keeps sqlite file handles on Windows until the next collection, so the
+  // fixture directory stays locked after close(). Collect before removing it.
+  Bun.gc(true);
+  rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
 });
 
 describe("claude sessions after /clear", () => {

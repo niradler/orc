@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type CreateTaskInput, type TaskPriority, type TaskStatus } from "@/api/client";
 import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { FormDialog } from "@/components/FormDialog";
@@ -30,11 +30,16 @@ export function CreateTaskDialog({
   open,
   onClose,
   defaultProjectId,
+  defaultTitle,
+  defaultBody,
   onCreated,
 }: {
   open: boolean;
   onClose: () => void;
   defaultProjectId?: string;
+  /** Seeds the title when the dialog opens; existing callers pass neither. */
+  defaultTitle?: string;
+  defaultBody?: string;
   onCreated?: (id: string) => void;
 }) {
   const steps = useFormSteps(
@@ -54,8 +59,8 @@ export function CreateTaskDialog({
   const [starting, setStarting] = useState(false);
   const [launchError, setLaunchError] = useState("");
 
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [title, setTitle] = useState(defaultTitle ?? "");
+  const [body, setBody] = useState(defaultBody ?? "");
   const [priority, setPriority] = useState<TaskPriority>("normal");
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [dueAt, setDueAt] = useState("");
@@ -65,10 +70,21 @@ export function CreateTaskDialog({
   const [skillName, setSkillName] = useState("");
   const [agentBackend, setAgentBackend] = useState(USE_DEFAULT_BACKEND);
   const [flowName, setFlowName] = useState(USE_DEFAULT_FLOW);
+  // Apply a prefill when the dialog opens without remounting; a dialog that is
+  // already open keeps the user's edits.
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setTitle(defaultTitle ?? "");
+      setBody(defaultBody ?? "");
+      setProjectId(defaultProjectId ?? "");
+    }
+    wasOpen.current = open;
+  }, [open, defaultTitle, defaultBody, defaultProjectId]);
   function resetFields() {
     steps.reset();
-    setTitle("");
-    setBody("");
+    setTitle(defaultTitle ?? "");
+    setBody(defaultBody ?? "");
     setPriority("normal");
     setStatus("todo");
     setDueAt("");
@@ -155,8 +171,8 @@ export function CreateTaskDialog({
           flowName,
         ]) !==
           JSON.stringify([
-            "",
-            "",
+            defaultTitle ?? "",
+            defaultBody ?? "",
             "normal",
             "todo",
             "",

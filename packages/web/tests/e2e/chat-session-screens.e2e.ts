@@ -272,6 +272,7 @@ for (const width of [1440, 390]) {
               recorded_at: new Date(now - 20 * 60_000).toISOString(),
               pre_tokens: 88_400,
               post_tokens: 12_200,
+              trigger: "auto",
             },
           ],
           timeline: null,
@@ -389,6 +390,9 @@ for (const width of [1440, 390]) {
     // The turn records its own model, usage on the newest turn, and both dividers.
     await expect(page.getByTestId("chat-turn-model")).toHaveCount(2);
     await expect(page.getByTestId("chat-turn-divider-model")).toContainText("claude-opus-4-1");
+    await expect(page.getByTestId("chat-turn-divider-compaction")).toContainText(
+      "Context compacted automatically",
+    );
     await expect(page.getByTestId("chat-turn-divider-compaction")).toContainText(
       "88k → 12k tokens",
     );

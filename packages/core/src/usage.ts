@@ -135,6 +135,8 @@ export const SessionCacheUsageSchema = z.object({
         recorded_at: z.string().datetime().nullable(),
         pre_tokens: z.number().nonnegative().nullable(),
         post_tokens: z.number().nonnegative().nullable(),
+        /** Only set when the provider recorded why it compacted; never inferred. */
+        trigger: z.enum(["manual", "auto"]).nullable().default(null),
       }),
     )
     .nullable(),

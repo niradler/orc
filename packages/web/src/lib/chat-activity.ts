@@ -1,4 +1,4 @@
-import type { ChatActivity, ChatTurn } from "@orc/core/chat";
+import { CHAT_ITEM_WINDOW, type ChatActivity, type ChatItem, type ChatTurn } from "@orc/core/chat";
 import { type ChatTool, type ToolView, toolView } from "./chat-tools";
 
 export type TurnTiming = Partial<ChatTurn>;
@@ -11,6 +11,8 @@ export type TurnFold = {
   added: number;
   removed: number;
   commands: number;
+  /** Kinds this build does not render, counted so the summary never drops them. */
+  provider: number;
   durationMs: number | null;
   current: ChatTool | null;
 };
@@ -50,16 +52,44 @@ export function formatClock(ms: number): string {
     : `${minutes}:${pad(seconds % 60)}`;
 }
 
-function isTool(item: ChatActivity): item is ChatTool {
-  return item.type === "tool";
+type ToolItem = Extract<ChatItem, { kind: "tool" }>;
+
+/** The legacy activity shape a row renderer needs; provider items have no renderer here. */
+export function chatItemActivity(item: ChatItem): ChatActivity | null {
+  if (item.kind === "provider") return null;
+  if (item.kind === "tool") return toolItemActivity(item);
+  if (item.kind === "plan")
+    return {
+      type: "plan",
+      id: item.id,
+      ...(item.title === undefined ? {} : { title: item.title }),
+      entries: item.entries,
+    };
+  if (item.kind === "thinking") return { type: "thinking", id: item.id, text: item.text };
+  return { type: "status", id: item.id, text: item.text };
 }
 
-function toolKind(tool: ChatTool): ToolView["kind"] {
-  return toolView(tool).kind;
+function toolItemActivity(item: ToolItem): ChatTool {
+  return {
+    type: "tool",
+    id: item.id,
+    name: item.name,
+    input: item.input,
+    ...(item.result === undefined ? {} : { result: item.result }),
+    ...(item.isError === undefined ? {} : { isError: item.isError }),
+  };
+}
+
+function isTool(item: ChatItem): item is ToolItem {
+  return item.kind === "tool";
+}
+
+function toolKind(tool: ToolItem): ToolView["kind"] {
+  return toolView(toolItemActivity(tool)).kind;
 }
 
 /** Which filters a tool call belongs to; a failed edit is both a change and a failure. */
-function inFilter(tool: ChatTool, filter: ActivityFilter): boolean {
+function inFilter(tool: ToolItem, filter: ActivityFilter): boolean {
   if (filter === "all") return true;
   if (filter === "failed") return tool.isError === true;
   const kind = toolKind(tool);
@@ -67,7 +97,7 @@ function inFilter(tool: ChatTool, filter: ActivityFilter): boolean {
   return kind === "run";
 }
 
-export function activityCounts(items: ChatActivity[]): Record<ActivityFilter, number> {
+export function activityCounts(items: ChatItem[]): Record<ActivityFilter, number> {
   const tools = items.filter(isTool);
   return {
     all: tools.length,
@@ -78,16 +108,29 @@ export function activityCounts(items: ChatActivity[]): Record<ActivityFilter, nu
 }
 
 /**
- * Selects the tool rows to show. Narration, thinking and plans are not tool
- * calls, so they stay visible under every filter; failures are never hidden by
- * "hide successful".
+ * Selects the rows to show. Narration, thinking, plans and unknown provider
+ * activities are not tool calls, so they stay visible under every filter;
+ * failures are never hidden by "hide successful".
  */
-export function filterActivity(items: ChatActivity[], prefs: ActivityPrefs): ChatActivity[] {
+export function filterActivity(items: ChatItem[], prefs: ActivityPrefs): ChatItem[] {
   return items.filter((item) => {
     if (!isTool(item)) return true;
     if (!inFilter(item, prefs.filter)) return false;
     return !(prefs.hideSuccessful && !item.isError && item.result !== undefined);
   });
+}
+
+/**
+ * The rows an expanded turn renders: the newest window, or everything once the
+ * turn's "show all" control is used. `hidden` counts what is still folded away.
+ */
+export function windowChatItems(
+  items: ChatItem[],
+  showAll: boolean,
+  size = CHAT_ITEM_WINDOW,
+): { shown: ChatItem[]; hidden: number } {
+  const hidden = showAll ? 0 : Math.max(0, items.length - size);
+  return { shown: hidden ? items.slice(hidden) : items, hidden };
 }
 
 export function parseActivityPrefs(raw: string | null | undefined): ActivityPrefs {
@@ -111,15 +154,15 @@ export function activityPrefsJson(prefs: ActivityPrefs): string {
   });
 }
 
-export function foldTurn(activity: ChatActivity[], timing: TurnTiming = {}): TurnFold {
-  const tools = activity.filter(isTool);
+export function foldTurn(items: ChatItem[], timing: TurnTiming = {}): TurnFold {
+  const tools = items.filter(isTool);
   const files = new Set<string>();
   let added = 0;
   let removed = 0;
   let commands = 0;
   for (const tool of tools) {
     if (tool.isError) continue;
-    const view = toolView(tool);
+    const view = toolView(toolItemActivity(tool));
     if (view.kind === "edit" || view.kind === "write")
       for (const file of view.files) {
         files.add(file.path);
@@ -134,17 +177,19 @@ export function foldTurn(activity: ChatActivity[], timing: TurnTiming = {}): Tur
       ? timing.finishedAt - timing.startedAt
       : null);
   const pending = tools.filter((tool) => tool.result === undefined);
+  const current = pending[pending.length - 1];
   return {
     tools: tools.length,
-    thoughts: activity.filter((item) => item.type === "thinking").length,
-    failed: tools.filter((tool) => tool.isError).length,
+    thoughts: items.filter((item) => item.kind === "thinking").length,
+    failed: tools.filter((tool) => tool.isError === true).length,
     running: pending.length,
     files: [...files],
     added,
     removed,
     commands,
+    provider: items.filter((item) => item.kind === "provider").length,
     durationMs: elapsed !== null && elapsed >= 1000 ? elapsed : null,
-    current: pending[pending.length - 1] ?? null,
+    current: current ? toolItemActivity(current) : null,
   };
 }
 
@@ -161,6 +206,9 @@ export function foldCounts(fold: TurnFold, includeFailure = true): string[] {
     fold.tools && !fold.files.length && fold.commands ? plural(fold.commands, "command") : "",
     includeFailure && fold.failed ? `${fold.failed} failed` : "",
     !fold.tools && fold.thoughts ? plural(fold.thoughts, "thought") : "",
+    fold.provider
+      ? `${fold.provider} unrecognized ${fold.provider === 1 ? "activity" : "activities"}`
+      : "",
   ].filter(Boolean);
 }
 

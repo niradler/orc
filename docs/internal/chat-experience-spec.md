@@ -1,7 +1,8 @@
 # Chat experience wave 1-3
 
-Status: wave 1 in progress (S1 `feat/chat-contracts-adapters`). Owner decisions
-locked 2026-11-15; this document records them, it does not re-open them.
+Status: waves 1 and 2 delivered (#361, #363, #364); wave 3 delivered on
+`feat/chat-items-windowing` (#376). Owner decisions locked 2026-11-15; this
+document records them, it does not re-open them.
 
 ## Current state
 
@@ -68,7 +69,7 @@ ChatActivity = thinking | tool | status
                  content: string }[] }
 ChatMessage += model?: string          // additive, no migration
 ChatItem = { id; ordinal; kind; parentId?; status?; ...per-kind payload }
-                                        // types only; nothing produces it yet
+                                        // produced by buildChatItems (wave 3)
 ```
 
 ### S1 `feat/chat-contracts-adapters` — contracts and adapters
@@ -123,7 +124,7 @@ moving Send/Stop; dividers appear only where a change actually happened; the
 duplicated analytics surface is gone with its tests updated; desktop and phone
 screenshots on the PR; `bun run ci:pr` green.
 
-## Wave 2 — orc-ui catalog v2 (delivered, PR pending)
+## Wave 2 — orc-ui catalog v2 (delivered, #364)
 
 Metric, Progress, Table, Sparkline, Chart (Recharts), KeyValue, Callout, inline
 sandboxed Html, and a live `SessionUsage` component, added to
@@ -136,11 +137,85 @@ six: Stack, Button, Task, TaskList, Job, SessionList, Scratchpad — all frozen)
 
 ## Wave 3 — normalized items and the deferred surface work
 
-`ChatItem` gets a producer: turn items carry identity, ordinal, nesting and
-paging, and the transcript can window history instead of loading 500 messages.
-Also deferred here: full context-compaction UX (#354), selection toolbar (#355),
-queue visibility, zen mode, draft hero, morph animation and streamdown block
-splitting. Acceptance per item, all with existing E2E coverage preserved.
+Delivered as one branch (`feat/chat-items-windowing`) in four stacked commits,
+tracked by #367.
+
+Queue visibility was already delivered by the pending-message disclosure above
+the composer (count, paused state, edit/move/force/remove, documented in
+`docs/docs/desktop-and-web.md`); wave 3 verified it and adds no second surface.
+
+### W3a — `ChatItem` producer and windowing
+
+`buildChatItems(message)` in `packages/core/src/chat.ts` is the single producer:
+one item per known activity, plus one `provider` item per unknown activity that
+wave 1 preserved. Items keep the activity id, carry `ordinal` (position in the
+turn), `parentId` only where the provider states a parent (never invented), and
+`status: "failed"` on a tool call that errored. `ChatActivityList`, the fold summary and the
+filters read items instead of raw activity, so counts and failures cannot drift
+between the collapsed and expanded views. Unknown kinds render as a quiet,
+expandable row instead of disappearing.
+
+Paging is two-level and both levels stay honest:
+
+- History pages stay as they are (`historyBefore`, "Load older messages"), so a
+  fresh read is one bounded window and older pages merge by message id.
+- Inside one turn, an expanded fold renders the last `CHAT_ITEM_WINDOW` (80)
+  items and offers "Show all N activities"; the collapsed summary always counts
+  every item, including failures beyond the window.
+
+Acceptance: a 500-message thread opens without loading all of it; a turn with
+>80 items expands in one click without rendering all of them; provider rows
+survive a re-save and are visible; no existing e2e selector changes meaning.
+
+### W3b — context compaction (#354)
+
+- `SessionCacheUsage.compactions[]` gains `trigger: "manual" | "auto" | null`.
+  Claude's `compactMetadata.trigger` is read; providers that do not record a
+  trigger leave it null rather than guessing.
+- The timeline divider reads `Context compacted automatically · 182k → 24k
+  tokens`, `manually`, or plainly when the trigger is unknown.
+- A small capability map in core (`supportsManualCompaction(agent)`) decides
+  whether ORC offers the Compact action; ORC never invents a policy the adapter
+  does not expose.
+- The size of the context is already shown with the newest turn's meta, so this
+  wave adds no separate hint above the composer.
+- Auto-compaction stays an agent/provider capability (Codex
+  `model_auto_compact_token_limit`, Pi's own settings, Claude's internal
+  behaviour); the chat docs say where each adapter's setting lives.
+
+Acceptance: the divider states trigger and drop when recorded; the newest turn's
+meta states the latest request's context size; analytics and the session strip
+still agree with the divider.
+
+### W3c — selection toolbar (#355)
+
+Selecting prose in a message shows a transient toolbar: Ask about this, Create
+task, Save, Copy as Markdown. Escape dismisses it; the same actions exist in the
+message actions menu, so keyboard-only and phone users are not dependent on a
+floating overlay. Ask about this appends a blockquote plus attribution to the
+composer draft (survives a tab switch) and focuses it; Create task opens the
+existing create-task dialog prefilled and links back to the session; Save reuses
+the existing scratchpad or memory flow rather than a second implementation; Copy
+as Markdown adds a source line. The toolbar never appears while a terminal text
+layer owns the selection.
+
+### W3d — focus and motion
+
+- **Focus chat (zen)**: a per-tab toggle that hides the header detail, queue
+  disclosure and background work while keeping errors, permissions and
+  questions visible; Escape exits. Available from session actions, not as a
+  global mode.
+- **Draft hero**: an empty thread centres the empty state and composer; the
+  first send docks it. One composer, layout-only change.
+- **Composer handoff**: the hero-to-docked move animates as a FLIP transition
+  (180 ms) and is skipped under `prefers-reduced-motion`.
+- **Streaming blocks**: a running message splits markdown at stable top-level
+  block boundaries, memoizes completed blocks so only the tail re-renders (the
+  split itself still scans the accumulated text once per update);
+  fences and display math are never split. Rendering stays progressive.
+
+Acceptance per item with desktop and phone coverage; every new selector uses
+`data-testid`; all existing chat e2e coverage preserved.
 
 ## Kickoff prompts
 

@@ -1,4 +1,4 @@
-import type { ChatActivity, ChatMessage } from "@orc/core/chat";
+import { buildChatItems, type ChatActivity, type ChatMessage } from "@orc/core/chat";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
@@ -168,8 +168,18 @@ export function ChatLiveAnnouncer({
     if (last?.role !== "assistant") return;
     const rest = last.content.slice(spoken.current).trim();
     const summary =
-      last.activity?.length || last.turn?.outcome
-        ? foldLabel(foldTurn(last.activity ?? [], last.turn), false, last.turn?.outcome)
+      last.activity?.length || last.providerActivity?.length || last.turn?.outcome
+        ? foldLabel(
+            foldTurn(
+              buildChatItems({
+                activity: last.activity,
+                providerActivity: last.providerActivity,
+              }),
+              last.turn,
+            ),
+            false,
+            last.turn?.outcome,
+          )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
   }, [streaming, last]);

@@ -1,5 +1,5 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
-import { supportsManualCompaction } from "@orc/core/coding-agents";
+import { agentLabel, supportsManualCompaction } from "@orc/core/coding-agents";
 import { sessionMessageHookSupported } from "@orc/core/session-messages";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,6 +9,7 @@ import {
   ChartColumn,
   ChevronDown,
   ChevronsDownUp,
+  Focus,
   History,
   ListPlus,
   LoaderCircle,
@@ -24,10 +25,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
-import { AgentMessageText } from "@/components/AgentMessageText";
+import { AgentMessageText, AgentTextStreamProvider } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
@@ -48,10 +50,12 @@ import {
   useChatPromptMenu,
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
+import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { useChatContextUsage } from "@/components/ChatSessionStrip";
-import { ChatTurnDivider, chatDividers } from "@/components/ChatTurnMeta";
+import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
+import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
 import {
   SessionDrawer,
@@ -65,6 +69,7 @@ import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionView } from "@/components/SessionView";
 import { StateBadge } from "@/components/StateBadge";
+import { ScratchpadFormDialog } from "@/components/scratchpad/ScratchpadFormDialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
@@ -78,12 +83,31 @@ import { useCompactViewport } from "@/hooks/useVisualViewport";
 import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
+import { chatDividers } from "@/lib/chat-dividers";
+import {
+  appendDraftQuote,
+  boundedText,
+  type ChatSelectionAction,
+  quoteDraft,
+  SELECTION_CAPTURE_LIMIT,
+  type SelectionSource,
+  selectionTitle,
+  taskBody,
+} from "@/lib/chat-selection";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
+import {
+  type ComposerBox,
+  composerHandoff,
+  composerHandoffTransform,
+} from "@/lib/composer-handoff";
 import { THIS_SERVER } from "@/lib/host-labels";
+import { scratchpadPath } from "@/lib/scratchpad-routes";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
 const composerText = "p-2 text-base leading-relaxed [scrollbar-gutter:stable]";
+// Three rows of 16px text at leading-relaxed, plus the composer's own padding.
+const HERO_INPUT_HEIGHT = 96;
 
 interface ChatPanelProps {
   open: boolean;
@@ -349,6 +373,56 @@ export function ChatPanel({
   const desktop = useBreakpoint("xl");
   const phone = !useBreakpoint("md");
   const compactViewport = useCompactViewport();
+  // Focus chat is in-memory view state for the open conversation, never a saved
+  // global mode: another chat, a closed chat or a reload starts unfocused.
+  const [focusChat, setFocusChat] = useState(false);
+  const focusScope = `${activeKey}:${open ? "open" : "closed"}`;
+  const [focusAt, setFocusAt] = useState(focusScope);
+  if (focusAt !== focusScope) {
+    // Adjust during render so a new or closed chat never paints one focused frame.
+    setFocusAt(focusScope);
+    setFocusChat(false);
+  }
+  // A blank thread puts the heading and composer together around the middle.
+  // The software keyboard compacts the viewport, and then the composer docks so
+  // it stays reachable instead of pushing the hero off screen.
+  const hero = messages.length === 0 && !streaming && !editingQueuedId && !compactViewport;
+  const composerBox = useRef<HTMLFormElement>(null);
+  // The hero rectangle of the composer, measured after layout-changing renders so
+  // typing in the hero does not skew the handoff. Streaming tokens do not change
+  // the key, so they never read layout. Only the first send arms the animation.
+  const composerLayout = useRef<{ hero: boolean; scope: string; box: ComposerBox } | null>(null);
+  const composerLayoutKey = useRef("");
+  const layoutKey = `${hero}:${open ? 1 : 0}:${activeKey}:${thread?.id ?? ""}:${draft.length}:${files.length}:${compactViewport ? 1 : 0}`;
+  const handoffArmed = useRef(false);
+  useLayoutEffect(() => {
+    if (composerLayoutKey.current === layoutKey) return;
+    composerLayoutKey.current = layoutKey;
+    const node = composerBox.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const box: ComposerBox = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+    const scope = `${activeKey}:${thread?.id ?? ""}`;
+    const previous = composerLayout.current;
+    composerLayout.current = { hero, scope, box };
+    if (!handoffArmed.current || hero || !previous?.hero || previous.scope !== scope) return;
+    handoffArmed.current = false;
+    if (!open || document.hidden || !box.width || !box.height) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const handoff = composerHandoff(previous.box, box);
+    if (!handoff) return;
+    // 180 ms ease-out: the docked composer starts where the hero was. Web
+    // Animations leaves no transform behind once it finishes.
+    node.animate([{ transform: composerHandoffTransform(handoff) }, { transform: "none" }], {
+      duration: 180,
+      easing: "ease-out",
+    });
+  });
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
   const terminalCenter = !!home.terminalId;
@@ -398,6 +472,17 @@ export function ChatPanel({
   );
   const storedMessages = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
+    [messages],
+  );
+  // What an attribution line needs from a message the user selected text in.
+  const messageSources = useMemo(
+    () =>
+      new Map(
+        messages.map((message) => [
+          message.id,
+          { agent: message.agent, role: message.role, timestamp: message.timestamp },
+        ]),
+      ),
     [messages],
   );
   const lastAssistant = useMemo(() => {
@@ -454,12 +539,17 @@ export function ChatPanel({
     }
     if (!ready || agentBlocked || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
+    // The first message docks the hero composer; animate that one move only.
+    if (hero) handoffArmed.current = true;
     const text = draft;
     setDraft("");
     // A failed steer keeps the text so the user can retry; a queued or steered
     // message already left the composer.
     void deliver(text).then((outcome) => {
-      if (outcome === "failed") setDraft((current) => (current === "" ? text : current));
+      if (outcome === "failed") {
+        handoffArmed.current = false;
+        setDraft((current) => (current === "" ? text : current));
+      }
     });
   };
   const compactDisabled =
@@ -475,6 +565,24 @@ export function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const focusToggle = (large: boolean) => (
+    <ActionHelp label={focusChat ? "Exit focus chat (Escape)" : "Focus chat"}>
+      <button
+        type="button"
+        data-testid="chat-focus-toggle"
+        aria-label={focusChat ? "Exit focus chat" : "Focus chat"}
+        aria-pressed={focusChat}
+        onClick={() => setFocusChat((value) => !value)}
+        className={cn(
+          iconButton,
+          large && "min-h-11 min-w-11",
+          "pointer-coarse:min-h-11 pointer-coarse:min-w-11",
+        )}
+      >
+        <Focus size={17} />
+      </button>
+    </ActionHelp>
+  );
   // One menu vocabulary for the phone and the narrow desktop header: Settings
   // first, then continue-in-terminal, then Refresh/Compact as labeled rows so the
   // actions stay reachable even when the phone's second header line is collapsed.
@@ -492,6 +600,19 @@ export function ChatPanel({
       >
         <Settings2 size={17} />
         Session settings
+      </button>
+      <button
+        type="button"
+        data-testid="chat-focus-menu"
+        aria-pressed={focusChat}
+        className={actionButton}
+        onClick={() => {
+          setActionsOpen(false);
+          setFocusChat((value) => !value);
+        }}
+      >
+        <Focus size={17} />
+        {focusChat ? "Exit focus chat" : "Focus chat"}
       </button>
       {!terminalCenter && (
         <ChatContinueInTerminal
@@ -545,8 +666,89 @@ export function ChatPanel({
   const input = useRef<HTMLTextAreaElement>(null);
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
+  const promptMenuOpen = useRef(false);
+  promptMenuOpen.current = promptMenu.matches.length > 0;
+  // Escape leaves focus chat, except while an overlay or an IME composition owns
+  // the key: a dialog, a menu, the prompt list, the selection toolbar or IME.
+  useEffect(() => {
+    if (!focusChat) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing || event.keyCode === 229) return;
+      // A popover, dialog or menu consumed the key first; it closes, focus stays.
+      if (event.defaultPrevented) return;
+      if (promptMenuOpen.current) return;
+      if (
+        document.querySelector(
+          '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-testid="chat-selection-toolbar"]',
+        )
+      )
+        return;
+      setFocusChat(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [focusChat]);
   const inputBackdrop = useRef<HTMLDivElement>(null);
   const plainPaste = useRef(false);
+  const [taskFromSelection, setTaskFromSelection] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+  const [padFromSelection, setPadFromSelection] = useState<{
+    title: string;
+    content: string;
+  } | null>(null);
+  const [savedPad, setSavedPad] = useState<{ id: string; title: string } | null>(null);
+  const lastActiveKey = useRef(activeKey);
+  useEffect(() => {
+    if (lastActiveKey.current === activeKey) return;
+    lastActiveKey.current = activeKey;
+    setSavedPad(null);
+  }, [activeKey]);
+  // Selection actions insert into the active tab's draft, so they survive a
+  // tab switch like text the user typed there.
+  const actOnSelection = useCallback(
+    (action: ChatSelectionAction, text: string, source: SelectionSource) => {
+      const bounded = boundedText(text, SELECTION_CAPTURE_LIMIT);
+      if (!bounded) return;
+      setSavedPad(null);
+      if (action === "ask") {
+        setDraft((current) => appendDraftQuote(current, quoteDraft(bounded, source)));
+        window.requestAnimationFrame(() => {
+          const field = input.current;
+          if (!field) return;
+          field.focus();
+          field.setSelectionRange(field.value.length, field.value.length);
+        });
+        return;
+      }
+      if (action === "task") {
+        setTaskFromSelection({
+          title: selectionTitle(bounded),
+          body: taskBody(bounded, source),
+        });
+        return;
+      }
+      setPadFromSelection({
+        title: selectionTitle(bounded),
+        content: quoteDraft(bounded, source),
+      });
+    },
+    [setDraft],
+  );
+  const resolveSelectionSource = useCallback(
+    (messageId: string): SelectionSource => {
+      const entry = messageSources.get(messageId);
+      return {
+        threadId: thread?.id,
+        title: thread?.title ?? "New chat",
+        // A quote from your own message is not attributed to the agent.
+        agent: entry?.role === "user" ? "You" : agentLabel(entry?.agent ?? config.agent),
+        timestamp: entry?.timestamp ?? Date.now(),
+      };
+    },
+    [config.agent, messageSources, thread?.id, thread?.title],
+  );
   const draftSegments = useMemo(
     () => commandSegments(draft, promptMenu.commandNames),
     [draft, promptMenu.commandNames],
@@ -554,12 +756,16 @@ export function ChatPanel({
   const highlighted = draftSegments.some((segment) => segment.command);
   useLayoutEffect(() => {
     if (!open) return;
+    // Three rows in the hero; one row once the composer is docked.
+    const floor = hero ? HERO_INPUT_HEIGHT : 40;
     const measure = () => {
       if (!input.current) return;
       input.current.style.height = "auto";
-      input.current.style.height = draft
-        ? `${Math.min(input.current.scrollHeight, 160)}px`
-        : "40px";
+      // Typed text decides its own height; an empty hero keeps three rows.
+      const height = draft
+        ? Math.min(Math.max(input.current.scrollHeight, 40), 160)
+        : Math.min(floor, 160);
+      input.current.style.height = `${height}px`;
     };
     measure();
     let width = 0;
@@ -574,7 +780,7 @@ export function ChatPanel({
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [draft, open]);
+  }, [draft, hero, open]);
   const [queueDisclosure, setQueueDisclosure] = useState({ key: activeKey, open: false });
   useLayoutEffect(() => {
     if (open && editingQueuedId)
@@ -617,6 +823,7 @@ export function ChatPanel({
     <ThreadPrimitive.Root
       data-testid="chat-panel"
       data-streaming={streaming ? "true" : "false"}
+      data-focus={focusChat ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(
         "relative h-full flex min-h-0 bg-background",
@@ -661,6 +868,9 @@ export function ChatPanel({
               phone
                 ? "flex flex-col gap-0.5 px-2 py-1"
                 : "flex min-h-12 items-center gap-1 px-3 py-1",
+              // Focus chat narrows the chrome: tighter padding, no strip detail
+              // and a one-line phone title.
+              focusChat && (phone ? "py-0.5" : "px-2"),
               !docked && !rail && !phone && "pl-40",
             )}
           >
@@ -707,11 +917,13 @@ export function ChatPanel({
                     >
                       {title ?? "New session"}
                     </h2>
-                    <p className="truncate text-xs text-muted-foreground">
-                      <span data-testid="session-project-breadcrumb">{projectName}</span>
-                      {" · "}
-                      {(viewId ? viewed?.host : thread?.host) ?? THIS_SERVER}
-                    </p>
+                    {!focusChat && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        <span data-testid="session-project-breadcrumb">{projectName}</span>
+                        {" · "}
+                        {(viewId ? viewed?.host : thread?.host) ?? THIS_SERVER}
+                      </p>
+                    )}
                   </div>
                   {streaming && !viewId && (
                     <LoaderCircle
@@ -721,46 +933,50 @@ export function ChatPanel({
                     />
                   )}
                   {!viewId && (
-                    <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
+                    <>
+                      {focusToggle(true)}
+                      <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Session actions"
+                            data-testid="chat-options-button"
+                            className={cn(
+                              iconButton,
+                              "min-h-11 min-w-11",
+                              sessionChanged && "text-warning",
+                            )}
+                          >
+                            <MoreHorizontal size={17} />
+                          </button>
+                        </PopoverTrigger>
+                        {/* Anchor below the whole two-line header so the menu never
+                            covers the Terminal/Inspector/Refresh/Compact controls. */}
+                        <PopoverAnchor virtualRef={header} />
+                        <PopoverContent
+                          data-testid="chat-actions-menu"
                           aria-label="Session actions"
-                          data-testid="chat-options-button"
-                          className={cn(
-                            iconButton,
-                            "min-h-11 min-w-11",
-                            sessionChanged && "text-warning",
-                          )}
+                          align="end"
+                          className="flex w-56 flex-col gap-1 p-1"
                         >
-                          <MoreHorizontal size={17} />
-                        </button>
-                      </PopoverTrigger>
-                      {/* Anchor below the whole two-line header so the menu never
-                          covers the Terminal/Inspector/Refresh/Compact controls. */}
-                      <PopoverAnchor virtualRef={header} />
-                      <PopoverContent
-                        data-testid="chat-actions-menu"
-                        aria-label="Session actions"
-                        align="end"
-                        className="flex w-56 flex-col gap-1 p-1"
-                      >
-                        {actionMenuRows(compactViewport)}
-                      </PopoverContent>
-                    </Popover>
+                          {actionMenuRows(compactViewport)}
+                        </PopoverContent>
+                      </Popover>
+                    </>
                   )}
                 </div>
                 <div className="chat-header-controls flex items-center justify-end gap-0.5">
-                  {headerState ? (
-                    <StateBadge
-                      state={headerState}
-                      compact
-                      testId="chat-header-state"
-                      className="mr-auto shrink-0"
-                    />
-                  ) : (
-                    <span className="mr-auto" />
-                  )}
+                  {!focusChat &&
+                    (headerState ? (
+                      <StateBadge
+                        state={headerState}
+                        compact
+                        testId="chat-header-state"
+                        className="mr-auto shrink-0"
+                      />
+                    ) : (
+                      <span className="mr-auto" />
+                    ))}
                   <SessionHomeToggles home={home} gestures />
                   {!terminalCenter && !viewId && (
                     <div
@@ -810,10 +1026,10 @@ export function ChatPanel({
                 <span className="min-w-0 truncate">{title ?? "New session"}</span>
               </h2>
             ) : null}
-            {!phone && Boolean(title || fullscreen) && (
+            {!phone && !focusChat && Boolean(title || fullscreen) && (
               <span aria-hidden="true" className="h-3 w-px shrink-0 bg-outline-variant" />
             )}
-            {!phone && headerState && (
+            {!phone && !focusChat && headerState && (
               <StateBadge
                 state={headerState}
                 compact={!headerWide}
@@ -874,6 +1090,7 @@ export function ChatPanel({
                 </Popover>
               ))}
             {fullscreen && !phone && <SessionHomeToggles home={home} />}
+            {!phone && focusToggle(false)}
             {onToggleFullscreen && (
               <ActionHelp label="Full screen chat">
                 <button
@@ -921,6 +1138,8 @@ export function ChatPanel({
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col",
+              // A blank thread centres the hero heading and composer together.
+              hero && "justify-center",
               (terminalCenter || drawerExpanded || viewId) && "hidden",
             )}
           >
@@ -934,7 +1153,12 @@ export function ChatPanel({
                 Connection interrupted. Reconnecting…
               </p>
             )}
-            <div className="relative flex min-h-0 flex-1 flex-col">
+            <div className={cn("relative flex min-h-0 flex-col", !hero && "flex-1")}>
+              <ChatSelectionToolbar
+                resetKey={`${thread?.id ?? "new"}:${open ? "open" : "closed"}`}
+                resolveSource={resolveSelectionSource}
+                onAction={actOnSelection}
+              />
               <ThreadPrimitive.Viewport
                 ref={scroll.viewportRef}
                 autoScroll={false}
@@ -943,9 +1167,12 @@ export function ChatPanel({
                 scrollToBottomOnThreadSwitch={false}
                 data-testid="chat-messages"
                 data-pinned={scroll.pinned}
-                className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
+                className={cn(
+                  "chat-messages relative min-h-0 overflow-y-auto px-4 py-5 sm:px-6",
+                  hero ? "flex-none py-0" : "flex-1",
+                )}
               >
-                <div ref={scroll.contentRef} className="flex min-h-full flex-col">
+                <div ref={scroll.contentRef} className={cn("flex flex-col", !hero && "min-h-full")}>
                   {historyBefore !== null && (
                     <button
                       type="button"
@@ -961,7 +1188,12 @@ export function ChatPanel({
                     </button>
                   )}
                   {messages.length === 0 && !streaming && (
-                    <div className="chat-empty-state mx-auto flex w-full max-w-(--chat-width) flex-1 flex-col justify-center gap-2">
+                    <div
+                      className={cn(
+                        "chat-empty-state mx-auto flex w-full max-w-(--chat-width) flex-col gap-2",
+                        hero ? "px-4 pt-2" : "flex-1 justify-center",
+                      )}
+                    >
                       <h3 className="text-lg font-medium">What are you working on?</h3>
                       <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
                         Ask about your tasks, review agent activity, or work through a coding
@@ -970,7 +1202,7 @@ export function ChatPanel({
                     </div>
                   )}
                   <ChatForkNotice thread={thread ?? undefined} />
-                  <SessionLineage sessionId={thread?.id ?? null} />
+                  {!focusChat && <SessionLineage sessionId={thread?.id ?? null} />}
                   <ThreadPrimitive.Messages>
                     {({ message }) => {
                       const custom = message.metadata.custom;
@@ -991,6 +1223,7 @@ export function ChatPanel({
                             }}
                             data-testid="chat-message"
                             data-role={message.role}
+                            data-message-id={message.id}
                             className="group/message mx-auto mb-3 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
@@ -1020,11 +1253,14 @@ export function ChatPanel({
                               >
                                 <ChatActivityList
                                   value={custom.activity}
+                                  providerActivity={custom.providerActivity}
                                   turn={custom.turn}
                                   live={live}
                                 />
                                 <ChatAttachments value={custom.attachments} />
-                                <MessagePrimitive.Parts components={textParts} />
+                                <AgentTextStreamProvider streaming={live}>
+                                  <MessagePrimitive.Parts components={textParts} />
+                                </AgentTextStreamProvider>
                               </div>
                             </div>
                             {!live && (
@@ -1039,6 +1275,12 @@ export function ChatPanel({
                                 cachedTokens={usage?.cached_input_tokens}
                                 forkDisabledReason={forkDisabledReason}
                                 onForked={openThread}
+                                threadTitle={thread?.title ?? "New chat"}
+                                agent={agentLabel(
+                                  typeof custom.agent === "string" ? custom.agent : config.agent,
+                                )}
+                                timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                onSelectionAction={actOnSelection}
                               />
                             )}
                           </MessagePrimitive.Root>
@@ -1081,11 +1323,21 @@ export function ChatPanel({
               />
             )}
             <ChatBackgroundWork
-              items={background}
+              items={focusChat ? [] : background}
               error={backgroundError}
               onOpen={(sessionId) => void openBackground(sessionId)}
               onStop={(sessionId) => void stopBackground(sessionId)}
             />
+            {focusChat && backgroundError && (
+              // Focus hides the background rows, never a failure raised from them.
+              <p
+                role="alert"
+                data-testid="chat-background-error"
+                className="px-4 pb-1 text-xs text-error"
+              >
+                {backgroundError}
+              </p>
+            )}
             <ChatLiveAnnouncer
               streaming={streaming}
               agent={streamingAgent}
@@ -1164,7 +1416,7 @@ export function ChatPanel({
                 )}
               </div>
             )}
-            {queued.length + answers.length > 0 && (
+            {!focusChat && queued.length + answers.length > 0 && (
               <details
                 key={activeKey}
                 open={queueDisclosure.key === activeKey && queueDisclosure.open}
@@ -1220,7 +1472,15 @@ export function ChatPanel({
                 </ol>
               </details>
             )}
-            <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
+            <div
+              data-hero={hero ? "true" : "false"}
+              className={cn(
+                "chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6",
+                // The hero gives the composer the same column and width as the
+                // docked footer; only its place in the column changes.
+                hero && "pt-4",
+              )}
+            >
               {agentRunning && (
                 <div className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2">
                   <p
@@ -1242,7 +1502,24 @@ export function ChatPanel({
                   )}
                 </div>
               )}
+              {savedPad && (
+                <p
+                  role="status"
+                  data-testid="chat-selection-saved"
+                  className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
+                >
+                  Saved to{" "}
+                  <Link
+                    to={scratchpadPath(savedPad.id)}
+                    data-testid="chat-selection-saved-link"
+                    className="text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                  >
+                    {savedPad.title}
+                  </Link>
+                </p>
+              )}
               <form
+                ref={composerBox}
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (event.target !== event.currentTarget) return;
@@ -1364,7 +1641,7 @@ export function ChatPanel({
                         submit();
                       }
                     }}
-                    rows={1}
+                    rows={hero ? 3 : 1}
                     className={`chat-composer-input ${composerText} relative block w-full resize-none overflow-y-auto bg-transparent placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60 ${highlighted ? "text-transparent caret-on-surface" : ""}`}
                   />
                 </div>
@@ -1483,6 +1760,28 @@ export function ChatPanel({
         </div>
       </MobileChatShell>
       {fullscreen && !phone && <SessionInspector context={context} home={home} narrow={!desktop} />}
+      {taskFromSelection && (
+        <CreateTaskDialog
+          open
+          defaultProjectId={thread?.projectId}
+          defaultTitle={taskFromSelection.title}
+          defaultBody={taskFromSelection.body}
+          onClose={() => setTaskFromSelection(null)}
+        />
+      )}
+      {padFromSelection && (
+        <ScratchpadFormDialog
+          defaultProjectId={thread?.projectId ?? ""}
+          defaultSessionId={thread?.sourceId ?? undefined}
+          defaultTitle={padFromSelection.title}
+          defaultContent={padFromSelection.content}
+          onClose={() => setPadFromSelection(null)}
+          onSaved={(pad) => {
+            setPadFromSelection(null);
+            setSavedPad({ id: pad.id, title: pad.title });
+          }}
+        />
+      )}
       <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
         <DialogContent
           data-testid="chat-analytics-dialog"

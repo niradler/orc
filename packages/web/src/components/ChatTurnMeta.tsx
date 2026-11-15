@@ -2,71 +2,11 @@ import { ChatTurnSchema } from "@orc/core/chat";
 import { ArrowRightLeft, ChevronsDownUp } from "lucide-react";
 import { memo } from "react";
 import { foldTurn, formatDuration } from "@/lib/chat-activity";
+import { type ChatDivider, compactionDividerLabel } from "@/lib/chat-dividers";
 import { formatTokenCount } from "@/lib/live-sessions";
 import { cn } from "@/lib/utils";
 
 const count = new Intl.NumberFormat();
-
-export type ChatDivider =
-  | { type: "model"; model: string }
-  | { type: "compact"; pre: number | null; post: number | null };
-
-type DividerMessage = {
-  id: string;
-  role: "user" | "assistant";
-  timestamp: number;
-  model?: string | undefined;
-};
-
-type DividerCompaction = {
-  recorded_at: string | null;
-  pre_tokens: number | null;
-  post_tokens: number | null;
-};
-
-/**
- * Dividers mark real boundaries only: a recorded model change between
- * consecutive assistant turns, and a recorded compaction placed on the first
- * message that follows it. Anything without a recorded time or model is left
- * out rather than guessed.
- */
-export function chatDividers(
-  messages: readonly DividerMessage[],
-  compactions: readonly DividerCompaction[] = [],
-): { byMessage: Map<string, ChatDivider[]>; trailing: ChatDivider[] } {
-  const byMessage = new Map<string, ChatDivider[]>();
-  const trailing: ChatDivider[] = [];
-  const push = (id: string | null, divider: ChatDivider) => {
-    if (!id) trailing.push(divider);
-    else byMessage.set(id, [...(byMessage.get(id) ?? []), divider]);
-  };
-
-  let previousModel: string | undefined;
-  let turnStart: string | null = null;
-  for (const message of messages) {
-    if (message.role === "user") {
-      turnStart ??= message.id;
-      continue;
-    }
-    if (message.model) {
-      if (previousModel && previousModel !== message.model)
-        push(turnStart ?? message.id, { type: "model", model: message.model });
-      previousModel = message.model;
-    }
-    turnStart = null;
-  }
-
-  for (const compaction of compactions) {
-    const at = compaction.recorded_at ? Date.parse(compaction.recorded_at) : Number.NaN;
-    if (!Number.isFinite(at)) continue;
-    push(messages.find((message) => message.timestamp >= at)?.id ?? null, {
-      type: "compact",
-      pre: compaction.pre_tokens,
-      post: compaction.post_tokens,
-    });
-  }
-  return { byMessage, trailing };
-}
 
 export function ChatTurnDivider({ divider }: { divider: ChatDivider }) {
   return (
@@ -86,21 +26,26 @@ export function ChatTurnDivider({ divider }: { divider: ChatDivider }) {
         ) : (
           <>
             <ChevronsDownUp aria-hidden="true" size={12} className="shrink-0" />
-            <span data-testid="chat-turn-divider-label" className="truncate">
-              Context compacted
-              {divider.pre !== null && divider.post !== null && (
-                <span className="tabular-nums">
-                  {" "}
-                  · {formatTokenCount(divider.pre, false)} → {formatTokenCount(divider.post, false)}{" "}
-                  tokens
-                </span>
-              )}
-            </span>
+            <CompactionDividerLabel divider={divider} />
           </>
         )}
       </span>
       <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-outline-variant" />
     </div>
+  );
+}
+
+function CompactionDividerLabel({
+  divider,
+}: {
+  divider: Extract<ChatDivider, { type: "compact" }>;
+}) {
+  const { label, drop } = compactionDividerLabel(divider);
+  return (
+    <span data-testid="chat-turn-divider-label" className="truncate">
+      {label}
+      {drop && <span className="tabular-nums"> · {drop}</span>}
+    </span>
   );
 }
 

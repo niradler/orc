@@ -52,7 +52,7 @@ test("should deduplicate Claude input, include cache writes in the denominator, 
   });
 });
 
-test("should count Claude compactions with their before and after context size", () => {
+test("should count Claude compactions with their recorded trigger and before and after context size", () => {
   const compact = (timestamp: string, compactMetadata: unknown) => ({
     type: "system",
     subtype: "compact_boundary",
@@ -65,12 +65,33 @@ test("should count Claude compactions with their before and after context size",
       claude("before", 70, 20),
       compact("2026-11-06T12:10:00Z", { trigger: "auto", preTokens: 448563, postTokens: 41112 }),
       claude("after", 40, 5),
-      compact("2026-11-06T12:20:00Z", { preTokens: "bad" }),
+      compact("2026-11-06T12:20:00Z", {
+        trigger: "manual",
+        preTokens: 41112,
+        postTokens: 12000,
+      }),
+      compact("2026-11-06T12:30:00Z", { preTokens: "bad", trigger: "because-it-was-large" }),
     ]),
   );
   expect(result.compactions).toEqual([
-    { recorded_at: "2026-11-06T12:10:00.000Z", pre_tokens: 448563, post_tokens: 41112 },
-    { recorded_at: "2026-11-06T12:20:00.000Z", pre_tokens: null, post_tokens: null },
+    {
+      recorded_at: "2026-11-06T12:10:00.000Z",
+      pre_tokens: 448563,
+      post_tokens: 41112,
+      trigger: "auto",
+    },
+    {
+      recorded_at: "2026-11-06T12:20:00.000Z",
+      pre_tokens: 41112,
+      post_tokens: 12000,
+      trigger: "manual",
+    },
+    {
+      recorded_at: "2026-11-06T12:30:00.000Z",
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: null,
+    },
   ]);
   expect(result.requests).toBe(2);
   expect(result.output_tokens).toBe(1998);
@@ -106,8 +127,18 @@ test("should count Codex compactions with the context before and after them", ()
   );
   expect(result.latest?.input_tokens).toBe(22_000);
   expect(result.compactions).toEqual([
-    { recorded_at: "2026-11-06T12:05:00.000Z", pre_tokens: 180_000, post_tokens: 22_000 },
-    { recorded_at: "2026-11-06T12:30:00.000Z", pre_tokens: 22_000, post_tokens: null },
+    {
+      recorded_at: "2026-11-06T12:05:00.000Z",
+      pre_tokens: 180_000,
+      post_tokens: 22_000,
+      trigger: null,
+    },
+    {
+      recorded_at: "2026-11-06T12:30:00.000Z",
+      pre_tokens: 22_000,
+      post_tokens: null,
+      trigger: null,
+    },
   ]);
 });
 
@@ -242,7 +273,12 @@ test("should read Pi usage and context edits on the active branch", () => {
   expect(result.output_tokens).toBe(25);
   expect(result.requests).toBe(2);
   expect(result.compactions).toEqual([
-    { recorded_at: "2026-11-06T12:10:00.000Z", pre_tokens: null, post_tokens: null },
+    {
+      recorded_at: "2026-11-06T12:10:00.000Z",
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: null,
+    },
   ]);
 });
 
@@ -270,6 +306,12 @@ test("should read OpenCode request usage from its database", async () => {
         tokens: { input: 20, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
       }),
     },
+    {
+      id: "m3",
+      type: "compaction",
+      time_created: 3_000,
+      data: JSON.stringify({ trigger: "manual" }),
+    },
   ];
   const result = await loadSessionCacheUsage(
     {
@@ -294,7 +336,22 @@ test("should read OpenCode request usage from its database", async () => {
   expect(result.output_tokens).toBe(15);
   expect(result.requests).toBe(2);
   expect(result.timeline?.map((point) => point.context_tokens)).toEqual([550, 20]);
-  expect(result.compactions).toHaveLength(1);
+  expect(result.compactions).toEqual([
+    // The compaction message records no reason, so the trigger stays unknown.
+    {
+      recorded_at: new Date(2_000).toISOString(),
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: null,
+    },
+    // An explicit stored reason is honoured rather than guessed.
+    {
+      recorded_at: new Date(3_000).toISOString(),
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: "manual",
+    },
+  ]);
 });
 
 test("should keep private source errors out of cache endpoint failures", async () => {
