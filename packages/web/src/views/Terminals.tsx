@@ -374,7 +374,9 @@ export default function Terminals() {
           className="relative shrink-0 flex flex-col min-h-0 border-r border-outline-variant bg-background"
         >
           <div className="flex shrink-0 items-center gap-1 px-3 py-1.5">
-            <h2 className="min-w-0 flex-1 text-sm font-medium text-on-surface">Sessions</h2>
+            <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-on-surface">
+              Sessions
+            </h2>
             <SessionHomeLink
               terminalId={terminalId}
               label="Open sessions view"

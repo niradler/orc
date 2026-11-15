@@ -485,7 +485,7 @@ export function CommandPalette({
       >
         <Search className="size-4" />
         <span className="hidden lg:inline">Search anything…</span>
-        <kbd className="hidden sm:inline text-xs text-outline">⌘/Ctrl K</kbd>
+        <kbd className="hidden sm:inline pointer-coarse:hidden text-xs text-outline">⌘/Ctrl K</kbd>
       </Button>
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent
