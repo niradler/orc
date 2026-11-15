@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  ChartColumn,
   ChevronDown,
   ChevronsDownUp,
   History,
@@ -46,6 +47,7 @@ import {
   useChatPromptMenu,
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
+import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { ChatSessionStrip, useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider, chatDividers } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
@@ -60,6 +62,7 @@ import {
 } from "@/components/SessionHome";
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionView } from "@/components/SessionView";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -139,6 +142,33 @@ function ChatRefreshAction({
     </button>
   );
   return row ? button : <ActionHelp label="Refresh session">{button}</ActionHelp>;
+}
+
+function ChatAnalyticsAction({
+  row = false,
+  large = false,
+  disabled,
+  onOpen,
+}: {
+  row?: boolean;
+  large?: boolean;
+  disabled: boolean;
+  onOpen: () => void;
+}) {
+  const button = (
+    <button
+      type="button"
+      data-testid="chat-analytics-button"
+      onClick={onOpen}
+      disabled={disabled}
+      className={cn(row ? actionButton : iconButton, large && "min-h-11 min-w-11")}
+      aria-label="Session analytics"
+    >
+      <ChartColumn size={17} />
+      {row && "Session analytics"}
+    </button>
+  );
+  return row ? button : <ActionHelp label="Session analytics">{button}</ActionHelp>;
 }
 
 function ChatCompactAction({
@@ -393,6 +423,7 @@ export function ChatPanel({
   const headerWide = headerWidth >= 620;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   // One menu vocabulary for the phone and the narrow desktop header: Settings
   // first, then continue-in-terminal, then Refresh/Compact as labeled rows so the
   // actions stay reachable even when the phone's second header line is collapsed.
@@ -428,6 +459,14 @@ export function ChatPanel({
             onRefresh={() => {
               setActionsOpen(false);
               void reload();
+            }}
+          />
+          <ChatAnalyticsAction
+            row
+            disabled={!thread}
+            onOpen={() => {
+              setActionsOpen(false);
+              setAnalyticsOpen(true);
             }}
           />
           <ChatCompactAction
@@ -681,6 +720,11 @@ export function ChatPanel({
                         disabled={!thread || refreshing}
                         onRefresh={() => void reload()}
                       />
+                      <ChatAnalyticsAction
+                        large
+                        disabled={!thread}
+                        onOpen={() => setAnalyticsOpen(true)}
+                      />
                       <ChatCompactAction
                         large
                         agent={config.agent}
@@ -737,6 +781,7 @@ export function ChatPanel({
                     disabled={!thread || refreshing}
                     onRefresh={() => void reload()}
                   />
+                  <ChatAnalyticsAction disabled={!thread} onOpen={() => setAnalyticsOpen(true)} />
                   <ChatContinueInTerminal control={terminalControl} />
                   <ChatCompactAction
                     agent={config.agent}
@@ -1357,6 +1402,15 @@ export function ChatPanel({
         </div>
       </MobileChatShell>
       {fullscreen && !phone && <SessionInspector context={context} home={home} narrow={!desktop} />}
+      <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
+        <DialogContent
+          data-testid="chat-analytics-dialog"
+          className="max-h-[85dvh] w-[min(56rem,calc(100vw-24px))] max-w-none overflow-y-auto"
+        >
+          <DialogTitle className="sr-only">Session analytics</DialogTitle>
+          {analyticsOpen && <ChatSessionAnalytics threadId={thread?.id} streaming={false} />}
+        </DialogContent>
+      </Dialog>
     </ThreadPrimitive.Root>
   );
 }
