@@ -12,18 +12,28 @@ That is the local pull-request gate. The pre-commit hook checks lint and formatt
 
 | Command | What it runs |
 | --- | --- |
-| `bun run ci:changed` | Lint, format, typecheck, domain ownership, dependency security, knip dependency hygiene, and unit tests for packages changed since `master` plus packages that depend on them |
+| `bun run ci:changed` | Lint, format, domain ownership, dependency security, knip dependency hygiene, typecheck of the selected packages, the full unit suite of each changed package, and only the dependent-package test files that import a changed file |
 | `bun run ci:pr` | The changed-package run, plus `@sanity` browser flows, including for web changes |
 | `bun run ci` | Lint, format, typecheck, domain ownership, dependency security, knip dependency hygiene, and every package's unit tests |
 | `bun run ci:full` | `bun run ci` plus the full browser suite |
 
+Package tests spawn real agent CLIs. Pi 1.5.2 runs under `node` from `PATH` and needs Node.js 22.19 or newer; an older default (for example `fnm default` on 22.14) fails `packages/api/src/__tests__/pi-chat.test.ts` with "Models could not be loaded from this agent".
+
 `bun run check` fixes lint and format in place. Pass `--changed <ref>` to compare with a branch other than `origin/master` (or `master` when the remote ref is missing). The command prints which packages it selected and why. Add `--plan` to print the commands without running them, for example `bun run ci:pr --plan`. Selection includes tracked working-tree and staged changes as well as branch commits; push from the checkout you validated. For a new branch, comparison still uses `origin/master`, so it includes all PR changes. Fetch the base before starting work to keep that comparison current.
 
-A change to `bun.lock`, the root manifest, `patches/`, `scripts/`, `.github/`, `.githooks/`, or a root `tsconfig*.json` runs every package. Docs and other files outside a package do not add package tests. On a pull request they still run `@sanity`.
+A change to `bun.lock`, the root manifest, `patches/`, the CI scripts (`scripts/ci-*`, `scripts/pre-push*`, `scripts/tsconfig.json`), `.github/`, `.githooks/`, or a root `tsconfig*.json` runs every package. Other files under `scripts/` do not. Docs and other files outside a package do not add package tests. On a pull request they still run `@sanity`.
 
 ## Domains and the sanity tag
 
-A domain is a workspace package. `scripts/ci-domains.ts` reads each `packages/*/package.json` and the `workspace:` dependencies. A package change runs that package's `test` script and the same for every package that depends on it, directly or through another package. `@orc/web` unit tests are `test:unit`. Its units run when the pull-request gate selects `@orc/web`; the browser gate always runs the small sanity suite. Use `bun scripts/ci-local.ts --changed --e2e` to additionally run the full web browser suite when web is affected.
+A domain is a workspace package. `scripts/ci-domains.ts` reads each `packages/*/package.json` and the `workspace:` dependencies. Selection works in two tiers:
+
+| Package | Tests that run |
+| --- | --- |
+| Changed (a file under `packages/<name>/` is in the diff) | Its whole `test` script |
+| Depends on a changed package, directly or transitively | Only its test files whose static import graph reaches a changed file (`affectedTestFiles` in `scripts/ci-domains.ts`); none if no test imports the change |
+| Depends on a package that changed a non-source file (`package.json`, `.sql`, `.md`, fixtures) | Its whole `test` script, since imports cannot see that file |
+
+Typecheck covers the same selected packages, one `tsc` at a time; a run-all change typechecks every package sequentially. Parallel `tsc` across all packages was killed for memory (exit 137) on the homelab runner. `bun test --changed` is not used: it does not follow workspace imports, so a `@orc/core` change selects no tests in its dependents. The import graph misses tests that reach a dependency only through a spawned process or a computed `import()` path; `ci:full` before merge covers those. `@orc/web` unit tests are `test:unit`. Its units follow the same two tiers; the browser gate always runs the small sanity suite. Use `bun scripts/ci-local.ts --changed --e2e` to additionally run the full web browser suite when web is affected.
 
 `scripts/ci-domains.test.ts` fails if a source or test file is not under a package, `scripts/`, or `docs/`. Adding a package with a `package.json` name and a `test` script is enough; there is no second list to edit. Vendored trees (`.examples`, `.demo`) and generated docs output are outside that check.
 

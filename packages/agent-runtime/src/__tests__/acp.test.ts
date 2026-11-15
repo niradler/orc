@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AcpSession } from "../acp.js";
@@ -13,7 +21,7 @@ afterEach(async () => {
   }
 });
 function fixture(opts: Partial<SessionOpts> = {}, mode = "normal") {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-direct-acp-"));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-direct-acp-")));
   if (mode === "moved-session") mkdirSync(join(cwd, "moved"), { recursive: true });
   const script = join(cwd, "peer.ts");
   writeFileSync(

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb, getSqlite } from "@orc/db/client";
@@ -19,7 +19,7 @@ let worktreeBase = "";
 
 beforeAll(async () => {
   app = setupTestApp();
-  root = mkdtempSync(join(tmpdir(), "orc-project-map-"));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "orc-project-map-")));
   nestedProjectFolder = join(root, "nested");
   mkdirSync(nestedProjectFolder, { recursive: true });
   const main = join(root, "worktree-repo");
@@ -42,7 +42,7 @@ beforeAll(async () => {
       cwd: main,
     },
   );
-  worktreeBase = mkdtempSync(join(tmpdir(), "orc-worktree-"));
+  worktreeBase = realpathSync(mkdtempSync(join(tmpdir(), "orc-worktree-")));
   worktreeFolder = join(worktreeBase, "checkout");
   execFileSync("git", ["worktree", "add", "-q", worktreeFolder], { cwd: main });
   expect((await req(app, "POST", "/projects", { name: "mapping-root", scope: root })).status).toBe(

@@ -25,11 +25,19 @@ extra agents, production changes, publication, or imply hook enforcement.
 - Use Bun workspaces (`bun install`), TypeScript strict/ESM, and Biome. Shared
   contracts use Zod; shared types live in `@orc/core/types` and IDs use
   `ulid()` from `@orc/core/ids`. Avoid barrel re-exports and comments that do
-  not explain non-obvious intent. Run checks appropriate to the change.
-  Package domains and the `@sanity` tag are described in
-  [docs/development/build-and-test.md](docs/development/build-and-test.md):
-  lint/format for the pre-commit hook, `ci:pr` for the pre-push hook and a pull request, and
-  `ci:full` before merging to master or releasing.
+  not explain non-obvious intent.
+- Tests are scoped to the change; never run the whole suite while iterating.
+  `bun run ci:pr` (pre-push hook and the PR CI job) diffs against `origin/master` and runs:
+  the full suite of each changed package, only the dependent-package test files whose
+  imports reach a changed file, typecheck of those packages one at a time, and the `@sanity`
+  browser flows (the critical paths in `packages/web/tests/e2e/sanity.e2e.ts`). Use
+  `bun run ci:changed` while iterating (no browser), `bun run ci:pr --plan` to see what will
+  run and why, and `bun --cwd packages/<name> test ./path/to.test.ts` for one file.
+  `ci:full` (every unit plus the full browser suite) runs before merging to master or
+  releasing. Root manifests, `bun.lock`, `patches/`, CI scripts, `.github/` and `.githooks/`
+  run everything. A new critical flow gets a `@sanity` test; a flaky test is fixed at its
+  race, never retried or skipped. Details:
+  [docs/development/build-and-test.md](docs/development/build-and-test.md).
 - PRs that change UI include screenshots of the changed states (desktop and phone) linked in
   the PR; use `bun run ci:changed` for a fast CI pass while iterating — `ci:pr` stays the gate.
 - Never force-push, not even `--force-with-lease`, and do not rewrite a pushed branch

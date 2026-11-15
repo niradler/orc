@@ -113,7 +113,7 @@ export class AcpSession implements AgentSession {
   private fail(message: string): void {
     if (this.failure || this.closed) return;
     this.failure = message;
-    this.queue.push({ type: "error", data: message });
+    if (!this.done) this.queue.push({ type: "error", data: message });
     this.done = true;
     this.cancelPending();
     this.wake?.();
@@ -517,6 +517,7 @@ export class AcpSession implements AgentSession {
             ...(this.movedFrom ? { cwd: this.effectiveCwd } : {}),
           },
         });
+        this.done = true;
       })
       .catch(() =>
         this.fail("ACP prompt failed. Check the agent's login and session availability."),
