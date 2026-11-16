@@ -53,7 +53,7 @@ for (const width of [1440, 390]) {
       await editor
         .locator("summary")
         .filter({ hasText: /^Inbound routing/ })
-        .click();
+        .press("Enter");
       await editor.getByRole("button", { name: "Add routing rule", exact: true }).click();
       await editor.getByTestId("channel-route-name").fill("Private messages for Nir");
       await editor.getByTestId("channel-route-project").selectOption(project.id);
@@ -104,7 +104,7 @@ for (const width of [1440, 390]) {
       await editor
         .locator("summary")
         .filter({ hasText: /^Custom commands/ })
-        .click();
+        .press("Enter");
       await editor.getByRole("button", { name: "Add custom command", exact: true }).click();
       await editor.getByTestId("channel-command-name").fill("summary");
       await editor.getByTestId("channel-command-description").fill("Summarize a task");
@@ -160,7 +160,7 @@ for (const width of [1440, 390]) {
       await editor
         .locator("summary")
         .filter({ hasText: /^Custom commands/ })
-        .click();
+        .press("Enter");
       await expect(
         editor.getByRole("button", { name: "Edit /summary", exact: true }),
       ).toBeVisible();
@@ -173,7 +173,7 @@ for (const width of [1440, 390]) {
       await editor
         .locator("summary")
         .filter({ hasText: /^Inbound routing/ })
-        .click();
+        .press("Enter");
       await expect(editor.getByTestId("channel-route-default")).toContainText(
         "Show setup guidance; no agent starts.",
       );
@@ -240,7 +240,7 @@ for (const width of [1440, 390]) {
       await editor
         .locator("summary")
         .filter({ hasText: /^Inbound routing/ })
-        .click();
+        .press("Enter");
       await editor
         .getByRole("button", { name: "Edit rule Private messages for Nir", exact: true })
         .click();

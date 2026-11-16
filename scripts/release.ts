@@ -7,9 +7,10 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { publishDockerRelease } from "./release-docker.js";
@@ -87,12 +88,27 @@ function validate(): void {
   command("bun", ["x", "tsc", "-p", "scripts/tsconfig.json"]);
   const testHome = mkdtempSync(join(tmpdir(), "orc-release-home-"));
   console.log(`Release test home: ${testHome}`);
-  const env = { HOME: testHome, USERPROFILE: testHome };
-  run("bun", ["test", "scripts/release.test.ts", "scripts/release-verification.test.ts"], {
-    cwd: ROOT,
-    env,
-  });
-  run("bun", ["run", "test"], { cwd: ROOT, env });
+  // Same isolation as ci-local.ts: Windows fixtures also read APPDATA/LOCALAPPDATA, and the
+  // installed Playwright browsers must stay resolvable before the home is swapped.
+  const env = {
+    PLAYWRIGHT_BROWSERS_PATH:
+      process.env.PLAYWRIGHT_BROWSERS_PATH ??
+      join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "ms-playwright"),
+    HOME: testHome,
+    USERPROFILE: testHome,
+    APPDATA: join(testHome, "AppData", "Roaming"),
+    LOCALAPPDATA: join(testHome, "AppData", "Local"),
+    XDG_CONFIG_HOME: join(testHome, ".config"),
+  };
+  try {
+    run("bun", ["test", "scripts/release.test.ts", "scripts/release-verification.test.ts"], {
+      cwd: ROOT,
+      env,
+    });
+    run("bun", ["run", "test"], { cwd: ROOT, env });
+  } finally {
+    rmSync(testHome, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+  }
 }
 
 async function verifyRelease(state: State, runtime: boolean): Promise<void> {
