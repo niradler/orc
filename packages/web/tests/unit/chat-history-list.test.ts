@@ -406,3 +406,23 @@ test("folder groups with the same name show enough of the path to tell them apar
   ]);
   expect(folderLabel("/work/agentops", ["/work/agentops"], ["agentops"])).toBe("work/agentops");
 });
+
+test("an open tab older than its saved thread still merges the native session and takes its title", () => {
+  const thread = { ...saved, title: "Coding agent competition framework", updatedAt: 5 };
+  const tab = {
+    key: "tab-1",
+    projectId: null,
+    config: { agent: "codex" },
+    thread: { id: saved.id, title: "finish the post and lets merge the pr", updatedAt: 1 },
+    messages: [],
+    draft: "",
+    files: [],
+    queued: [],
+    permissions: [],
+    questions: [],
+  } as unknown as Parameters<typeof chatHistoryList>[0][number];
+  const entries = chatHistoryList([tab], [thread], [live], []);
+  expect(entries.map((entry) => [entry.id, entry.title])).toEqual([
+    [`chat:${saved.id}`, "Coding agent competition framework"],
+  ]);
+});

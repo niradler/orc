@@ -154,6 +154,76 @@ describe("claude sessions after /clear", () => {
   });
 });
 
+test("a /clear with no prompt after it lists no empty session", async () => {
+  const registry = join(root, "clear-registry");
+  const projects = join(root, "clear-projects", "-tmp-orc");
+  const worked = "aaaaaaaa-0000-4000-8000-000000000011";
+  const empty = "aaaaaaaa-0000-4000-8000-000000000012";
+  mkdirSync(registry, { recursive: true });
+  mkdirSync(projects, { recursive: true });
+  const register = (sessionId: string) =>
+    writeFileSync(
+      join(registry, "31355.json"),
+      JSON.stringify({
+        pid: process.pid,
+        sessionId,
+        cwd: "/tmp/orc",
+        status: "idle",
+        startedAt: Date.parse("2026-11-16T08:36:39Z"),
+        updatedAt: Date.parse("2026-11-16T16:03:23Z"),
+      }),
+    );
+  writeFileSync(
+    join(projects, `${worked}.jsonl`),
+    jsonl([
+      { type: "user", timestamp: "2026-11-16T15:00:00Z", message: { content: "fix PR 405" } },
+      {
+        type: "assistant",
+        timestamp: "2026-11-16T15:01:00Z",
+        message: { id: "m1", usage: { input_tokens: 10, output_tokens: 5 } },
+      },
+    ]),
+  );
+  writeFileSync(
+    join(projects, `${empty}.jsonl`),
+    jsonl([
+      {
+        type: "user",
+        isMeta: true,
+        timestamp: "2026-11-16T16:03:23Z",
+        message: { content: "<local-command-caveat>Caveat</local-command-caveat>" },
+      },
+      {
+        type: "user",
+        timestamp: "2026-11-16T16:03:22Z",
+        message: {
+          content:
+            "<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>",
+        },
+      },
+      {
+        type: "system",
+        subtype: "local_command",
+        timestamp: "2026-11-16T16:03:23Z",
+        content: "<local-command-stdout></local-command-stdout>",
+      },
+    ]),
+  );
+  const adapter = claudeAdapter({
+    registry,
+    desktop: null,
+    projects: join(root, "clear-projects"),
+  });
+  register(worked);
+  await runSync([adapter], { force: true });
+  register(empty);
+  await runSync([adapter], { force: true });
+
+  const ids = (await live("&agent=claude")).map((row) => row.session_id);
+  expect(ids).toContain(worked);
+  expect(ids).not.toContain(empty);
+});
+
 test("a session that never wrote a transcript drops its process name", async () => {
   const id = "aaaaaaaa-0000-4000-8000-000000000003";
   const records = await claudeAdapter({
