@@ -516,9 +516,6 @@ export function ChatWorkspaceControls() {
                           ? `New worktree from ${currentBranch}`
                           : "New worktree from the current branch"}
                       </span>
-                      <span className="block text-xs text-muted-foreground">
-                        Isolated from the current branch
-                      </span>
                     </span>
                     {worktree && (!base || base === currentBranch) && (
                       <Check size={14} aria-hidden="true" />
@@ -538,9 +535,6 @@ export function ChatWorkspaceControls() {
                       <GitBranchPlus size={14} aria-hidden="true" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">New worktree from {defaultBase}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          Isolated from the default branch
-                        </span>
                       </span>
                       {worktree && base === defaultBase && <Check size={14} aria-hidden="true" />}
                     </button>
@@ -565,9 +559,11 @@ export function ChatWorkspaceControls() {
                           ? `New worktree from ${customBase}`
                           : "New worktree from another branch"}
                       </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {customBase ? "Selected base branch" : "Pick a local or remote branch"}
-                      </span>
+                      {!customBase && (
+                        <span className="block text-xs text-muted-foreground">
+                          Pick a local or remote branch
+                        </span>
+                      )}
                     </span>
                     {customBase ? (
                       <Check size={14} aria-hidden="true" />

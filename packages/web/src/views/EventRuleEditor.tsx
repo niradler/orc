@@ -10,6 +10,7 @@ import {
   type RuleOrcAction,
 } from "@orc/core/rule-types";
 import { useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -364,7 +365,13 @@ export function EventRuleEditor({
         </div>
       </fieldset>
       <fieldset className="space-y-3">
-        <legend className="font-medium mb-2">2. Filtering</legend>
+        <legend className="mb-2 flex items-center gap-1 font-medium">
+          2. Filtering
+          <HelpPopover label="Filtering" testId="rule-filtering-help">
+            No conditions matches every selected event. Regex uses RE2 syntax. Filters apply equally
+            to every target.
+          </HelpPopover>
+        </legend>
         <select
           aria-label="Combine conditions"
           data-testid="rule-filter-match"
@@ -489,10 +496,6 @@ export function EventRuleEditor({
         >
           Add condition
         </Button>
-        <p className="text-xs text-muted-foreground">
-          No conditions matches every selected event. Regex uses RE2 syntax. Filters apply equally
-          to every target.
-        </p>
       </fieldset>
       <fieldset className="space-y-3">
         <legend className="font-medium mb-2" data-testid="rule-target-heading">
@@ -601,7 +604,13 @@ export function EventRuleEditor({
         )}
         {type === "orc_action" && (
           <>
-            <Label htmlFor="rule-orc-action">ORC action</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="rule-orc-action">ORC action</Label>
+              <HelpPopover label="ORC action" testId="rule-orc-action-help">
+                Uses the existing ORC services and agent connection. Failures are visible in action
+                history.
+              </HelpPopover>
+            </div>
             <select
               id="rule-orc-action"
               data-testid="rule-orc-action"
@@ -617,17 +626,19 @@ export function EventRuleEditor({
             </select>
             {orcAction === "sync_agent_memory" && (
               <>
-                <Label htmlFor="rule-memory-directory">Claude memory directory</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="rule-memory-directory">Claude memory directory</Label>
+                  <HelpPopover label="Claude memory directory" testId="rule-memory-directory-help">
+                    Use auto or the absolute local directory. Only Markdown topic files inside that
+                    directory are shared. Session end catches writes without file-tool events.
+                  </HelpPopover>
+                </div>
                 <Input
                   id="rule-memory-directory"
                   data-testid="rule-memory-directory"
                   value={memoryDirectory}
                   onChange={(event) => setMemoryDirectory(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Use auto or the absolute local directory. Only Markdown topic files inside that
-                  directory are shared. Session end catches writes without file-tool events.
-                </p>
               </>
             )}
             {orcAction === "record_event" && (
@@ -670,10 +681,6 @@ export function EventRuleEditor({
               value={orcTimeout}
               onChange={(event) => setOrcTimeout(Number(event.target.value))}
             />
-            <p className="text-xs text-muted-foreground">
-              Uses the existing ORC services and agent connection. Failures are visible in action
-              history.
-            </p>
           </>
         )}
         {type === "inject_context" && (
@@ -687,30 +694,32 @@ export function EventRuleEditor({
         )}
         {type === "job" && (
           <>
-            <select
-              aria-label="ORC job"
-              data-testid="rule-job"
-              className={selectClass}
-              value={jobId}
-              onChange={(event) => setJobId(event.target.value)}
-            >
-              <option value="">Select an enabled job</option>
-              {jobs.data
-                ?.filter(
-                  (job) =>
-                    (job.project_id ?? null) === projectId &&
-                    !job.command.startsWith("__internal:"),
-                )
-                .map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.name}
-                  </option>
-                ))}
-            </select>
+            <div className="flex items-center gap-1">
+              <select
+                aria-label="ORC job"
+                data-testid="rule-job"
+                className={selectClass}
+                value={jobId}
+                onChange={(event) => setJobId(event.target.value)}
+              >
+                <option value="">Select an enabled job</option>
+                {jobs.data
+                  ?.filter(
+                    (job) =>
+                      (job.project_id ?? null) === projectId &&
+                      !job.command.startsWith("__internal:"),
+                  )
+                  .map((job) => (
+                    <option key={job.id} value={job.id}>
+                      {job.name}
+                    </option>
+                  ))}
+              </select>
+              <HelpPopover label="ORC job" testId="rule-job-help">
+                Jobs run in the background and must belong to this policy's project.
+              </HelpPopover>
+            </div>
             {jobs.error && <p role="alert">{String(jobs.error)}</p>}
-            <p className="text-xs text-muted-foreground">
-              Jobs run in the background and must belong to this policy's project.
-            </p>
           </>
         )}
         {type === "script" && (
@@ -725,7 +734,15 @@ export function EventRuleEditor({
               <option value="sync">Synchronous: return a decision or context</option>
               <option value="background">Background: run through the job queue</option>
             </select>
-            <Label htmlFor="rule-script-argv">Executable and arguments (JSON array)</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="rule-script-argv">Executable and arguments (JSON array)</Label>
+              <HelpPopover label="Script output" testId="rule-script-help">
+                Event JSON is sent to stdin. Synchronous stdout:{" "}
+                {`{"decision":"abstain","context":["..."]}`} or{" "}
+                {`{"decision":"deny","reason":"..."}`}. Blocking/context results require event
+                support. Background output is recorded in Jobs.
+              </HelpPopover>
+            </div>
             <textarea
               id="rule-script-argv"
               data-testid="rule-script-argv"
@@ -743,19 +760,22 @@ export function EventRuleEditor({
               value={timeout}
               onChange={(event) => setTimeoutValue(Number(event.target.value))}
             />
-            <p className="text-xs text-muted-foreground">
-              Event JSON is sent to stdin. Synchronous stdout:{" "}
-              {`{"decision":"abstain","context":["..."]}`} or {`{"decision":"deny","reason":"..."}`}
-              . Blocking/context results require event support. Background output is recorded in
-              Jobs.
-            </p>
           </>
         )}
         {type === "rewrite_command" && (
           <>
-            <Label htmlFor="rule-processor-argv">
-              Command processor (executable and arguments)
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="rule-processor-argv">
+                Command processor (executable and arguments)
+              </Label>
+              <HelpPopover label="Command processor" testId="rule-processor-help">
+                Use any trusted local CLI. Event JSON goes to stdin; {"{command}"} as a complete
+                argument passes the original command without shell interpolation. Stdout must
+                contain the replacement command. Claude Bash executes it and returns its output,
+                with normal permission checks. RTK example: rewrite codes [0, 3], passthrough [1].
+                Other failures block the call.
+              </HelpPopover>
+            </div>
             <textarea
               id="rule-processor-argv"
               data-testid="rule-processor-argv"
@@ -791,13 +811,6 @@ export function EventRuleEditor({
               value={passthroughCodes}
               onChange={(event) => setPassthroughCodes(event.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Use any trusted local CLI. Event JSON goes to stdin; {"{command}"} as a complete
-              argument passes the original command without shell interpolation. Stdout must contain
-              the replacement command. Claude Bash executes it and returns its output, with normal
-              permission checks. RTK example: rewrite codes [0, 3], passthrough [1]. Other failures
-              block the call.
-            </p>
           </>
         )}
       </fieldset>

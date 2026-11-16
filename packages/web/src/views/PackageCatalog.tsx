@@ -11,6 +11,7 @@ import {
   type SkillRefContent,
 } from "@/api/client";
 import { AgentPackageFiles } from "@/components/AgentPackageFiles";
+import { HelpPopover } from "@/components/HelpPopover";
 import {
   confirmPackageDraftClose,
   forgetPackageDraft,
@@ -245,6 +246,12 @@ export default function PackageCatalog() {
         help="Packages combine instructions, skills and tools for reuse. Use a package in chat or a terminal on the host and folder you choose."
         action={
           <div className="flex flex-wrap gap-2">
+            {tools.data && !tools.data.apm && (
+              <HelpPopover label="APM availability" testId="package-apm-help">
+                Catalog editing is available. Installation, Git acquisition and installation exports
+                require APM on this ORC machine.
+              </HelpPopover>
+            )}
             <Button
               variant="ghost"
               data-testid="package-import-button"
@@ -414,12 +421,6 @@ export default function PackageCatalog() {
           {issue.path}: {issue.error}
         </p>
       ))}
-      {tools.data && !tools.data.apm && (
-        <p className="text-xs text-muted-foreground">
-          Catalog editing is available. Installation, Git acquisition and installation exports
-          require APM on this ORC machine.
-        </p>
-      )}
       {selectedId && !action && (
         <AgentPackageFiles
           key={selectedId}

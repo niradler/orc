@@ -283,7 +283,13 @@ export function JobEditorDialog({
                   </div>
                   {draft.action.type !== "task" && (
                     <div className="space-y-1.5">
-                      <Label htmlFor="job-directory">Working directory</Label>
+                      <div className="flex items-center gap-1">
+                        <Label htmlFor="job-directory">Working directory</Label>
+                        <HelpPopover label="Working directory" testId="job-directory-help">
+                          A path on the selected host. Worktrees use this repository as their
+                          source.
+                        </HelpPopover>
+                      </div>
                       <Input
                         id="job-directory"
                         aria-label="Working directory"
@@ -296,9 +302,6 @@ export function JobEditorDialog({
                             : "Use project directory"
                         }
                       />
-                      <p className="text-xs text-outline">
-                        A path on the selected host. Worktrees use this repository as their source.
-                      </p>
                     </div>
                   )}
                   <div className="md:col-span-2">
@@ -374,18 +377,20 @@ export function JobEditorDialog({
                   </div>
                 </FormStepPanel>
                 <FormStepPanel steps={steps} id="settings">
-                  <label className="flex min-h-11 items-center gap-3 text-sm md:col-span-2">
-                    <input
-                      type="checkbox"
-                      data-testid={job ? "job-edit-enabled" : "job-create-enabled"}
-                      checked={draft.enabled}
-                      onChange={(event) => change("enabled", event.target.checked)}
-                    />
-                    Enable this job
-                  </label>
-                  <p className="text-xs text-outline md:col-span-2">
-                    Disabled jobs stay saved. You can still run them manually.
-                  </p>
+                  <div className="flex items-center gap-1 md:col-span-2">
+                    <label className="flex min-h-11 items-center gap-3 text-sm">
+                      <input
+                        type="checkbox"
+                        data-testid={job ? "job-edit-enabled" : "job-create-enabled"}
+                        checked={draft.enabled}
+                        onChange={(event) => change("enabled", event.target.checked)}
+                      />
+                      Enable this job
+                    </label>
+                    <HelpPopover label="Enabled job" testId="job-enabled-help">
+                      Disabled jobs stay saved. You can still run them manually.
+                    </HelpPopover>
+                  </div>
                   {draft.action.type !== "task" && (
                     <div className="md:col-span-2">
                       <JobEnvironmentFields

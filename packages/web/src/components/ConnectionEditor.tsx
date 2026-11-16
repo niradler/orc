@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, Eye, EyeOff, LogIn, Plus, X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { FormDialog } from "@/components/FormDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -297,7 +298,13 @@ function ConnectionForm({
                 </summary>
                 <div className="space-y-4 border-t border-outline-variant p-3">
                   {draft.type === "openapi" && (
-                    <Field label="Base URL" hint="Overrides the servers listed in the spec.">
+                    <Field
+                      label="Base URL"
+                      help={{
+                        testId: "connection-base-url-help",
+                        content: "Overrides the servers listed in the spec.",
+                      }}
+                    >
                       {(id) => (
                         <Input
                           id={id}
@@ -515,7 +522,14 @@ function AuthSection({
             </Field>
             <Field
               label={clientCredentials ? "Client ID *" : "Client ID"}
-              hint={clientCredentials ? undefined : "Blank registers a client automatically."}
+              help={
+                clientCredentials
+                  ? undefined
+                  : {
+                      testId: "connection-client-id-help",
+                      content: "Blank registers a client automatically.",
+                    }
+              }
             >
               {(id) => (
                 <Input
@@ -605,18 +619,32 @@ function TestResult({
 function Field({
   label,
   hint,
+  help,
   children,
 }: {
   label: string;
   hint?: string | undefined;
+  help?: { testId: string; content: ReactNode } | undefined;
   children: (id: string) => ReactNode;
 }) {
   const id = useId();
+  const labelNode = (
+    <Label htmlFor={id} className={labelClass}>
+      {label}
+    </Label>
+  );
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className={labelClass}>
-        {label}
-      </Label>
+      {help ? (
+        <div className="flex items-center gap-1">
+          {labelNode}
+          <HelpPopover label={label.replace(/\s*\*$/, "")} testId={help.testId}>
+            {help.content}
+          </HelpPopover>
+        </div>
+      ) : (
+        labelNode
+      )}
       {children(id)}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>

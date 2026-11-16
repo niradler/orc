@@ -832,9 +832,6 @@ export function AgentSettings() {
         <DialogContent>
           <div className="flex items-center gap-1">
             <DialogTitle>New provider</DialogTitle>
-            <HelpPopover label="New provider" testId="provider-new-help">
-              Choose a coding-agent adapter, then configure its models and environment.
-            </HelpPopover>
           </div>
           <DialogDescription className="sr-only">
             Choose a coding-agent adapter, then configure its models and environment.

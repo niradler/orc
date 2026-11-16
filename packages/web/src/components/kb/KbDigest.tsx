@@ -2,6 +2,7 @@ import type { KbDigest, KbDigestRun, KnowledgeBase } from "@orc/core/kb";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { DigestDialog, RemoveDigestDialog, useAction } from "@/components/kb/KbDialogs";
 import { KbSetupRow, StateDot } from "@/components/kb/KbSetupRow";
 import { Button } from "@/components/ui/button";
@@ -160,29 +161,28 @@ export function KbDigestSection({ kb }: { kb: KnowledgeBase }) {
           )
         }
         actions={
-          d ? (
-            <RunNow kb={kb} digest={d} onStarted={() => setExpanded(true)} />
-          ) : digest.data === null ? (
-            <Button
-              size="sm"
-              variant="outline"
-              data-testid="kb-digest-add"
-              onClick={() => setDialog("edit")}
-            >
-              Set up
-            </Button>
-          ) : null
+          <>
+            <HelpPopover label="Digest" testId="kb-digest-help">
+              A digest is an agent that reads new memories, sessions and open comments, then keeps
+              the documents in this knowledge base current. It can run on a schedule or only when
+              you start it.
+            </HelpPopover>
+            {d ? (
+              <RunNow kb={kb} digest={d} onStarted={() => setExpanded(true)} />
+            ) : digest.data === null ? (
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="kb-digest-add"
+                onClick={() => setDialog("edit")}
+              >
+                Set up
+              </Button>
+            ) : null}
+          </>
         }
       >
-        {d ? (
-          <DigestDetails kb={kb} digest={d} onEdit={() => setDialog("edit")} />
-        ) : (
-          <p className="max-w-prose text-outline">
-            A digest is an agent that reads new memories, sessions and open comments, then keeps the
-            documents in this knowledge base current. It can run on a schedule or only when you
-            start it.
-          </p>
-        )}
+        {d ? <DigestDetails kb={kb} digest={d} onEdit={() => setDialog("edit")} /> : undefined}
       </KbSetupRow>
       {dialog === "edit" && (
         <DigestDialog

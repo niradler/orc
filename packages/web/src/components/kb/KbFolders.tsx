@@ -3,6 +3,7 @@ import { FolderOpen, FolderSync, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { ErrorLine, Field, useAction } from "@/components/kb/KbDialogs";
 import { ago } from "@/components/kb/KbDigest";
 import { KbSetupRow, StateDot } from "@/components/kb/KbSetupRow";
@@ -145,19 +146,21 @@ export function KbFolders({ kb }: { kb: KnowledgeBase }) {
         )
       }
       actions={
-        list.length === 0 && !expanded ? (
-          <Button size="sm" variant="outline" data-testid="kb-folders-add" onClick={openForm}>
-            Add folder
-          </Button>
-        ) : null
+        <>
+          <HelpPopover label="Synced folders" testId="kb-folders-help">
+            Matching files are copied in and kept in sync: ORC rescans every minute while the daemon
+            runs, or when you choose Scan now. A copy you edit here stops following its file. ORC
+            never writes to the folder.
+          </HelpPopover>
+          {list.length === 0 && !expanded ? (
+            <Button size="sm" variant="outline" data-testid="kb-folders-add" onClick={openForm}>
+              Add folder
+            </Button>
+          ) : null}
+        </>
       }
     >
       <div className="min-w-0 space-y-3">
-        <p className="max-w-prose text-outline">
-          Matching files are copied in and kept in sync: ORC rescans every minute while the daemon
-          runs, or when you choose Scan now. A copy you edit here stops following its file. ORC
-          never writes to the folder.
-        </p>
         {list.length > 0 && (
           <ul className="divide-y divide-outline-variant" data-testid="kb-sources-list">
             {list.map((s) => (

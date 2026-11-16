@@ -13,6 +13,7 @@ import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "rea
 import { api } from "@/api/client";
 import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { cronLabel, cronProblem, WEEKDAYS } from "@/components/kb/KbDigest";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { TagInput } from "@/components/TagInput";
@@ -76,14 +77,26 @@ export function Field({
   label,
   children,
   hint,
+  help,
+  helpTestId,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
+  help?: ReactNode;
+  /** Required with `help` so each info icon has its own test id. */
+  helpTestId?: string;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm text-muted-foreground">{label}</Label>
+      <div className="flex items-center gap-1">
+        <Label className="text-sm text-muted-foreground">{label}</Label>
+        {help && (
+          <HelpPopover label={label} testId={helpTestId}>
+            {help}
+          </HelpPopover>
+        )}
+      </div>
       {children}
       {hint && <p className="text-xs text-outline">{hint}</p>}
     </div>
@@ -175,7 +188,15 @@ function EditableByFields({
 }) {
   return (
     <fieldset className="space-y-2 rounded-md border border-outline-variant p-3">
-      <legend className="px-1 text-sm text-muted-foreground">Who can change documents</legend>
+      <legend className="px-1 text-sm text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          Who can change documents
+          <HelpPopover label="Who can change documents" testId="kb-editable-help">
+            Every source can read and search. Knowledge base settings change only from the UI, CLI
+            or API.
+          </HelpPopover>
+        </span>
+      </legend>
       <div className="flex flex-wrap gap-x-4 gap-y-2">
         {KB_CALL_SOURCES.map((source) => (
           <label key={source} className="flex items-center gap-2 text-sm">
@@ -195,10 +216,6 @@ function EditableByFields({
           </label>
         ))}
       </div>
-      <p className="text-xs text-outline">
-        Every source can read and search. Knowledge base settings change only from the UI, CLI or
-        API.
-      </p>
     </fieldset>
   );
 }
@@ -260,7 +277,8 @@ export function CreateKbDialog({
         </Field>
         <Field
           label="Belongs to"
-          hint="Project knowledge bases are visible in that project; global ones in every project."
+          help="Project knowledge bases are visible in that project; global ones in every project."
+          helpTestId="kb-owner-help"
         >
           <Select value={owner} onValueChange={setOwner}>
             <SelectTrigger aria-label="Belongs to" data-testid="kb-owner-select">
@@ -348,14 +366,14 @@ export function KbSettingsDialog({
             rows={2}
           />
         </Field>
-        <div className="space-y-1 text-sm">
+        <div className="flex items-center gap-1 text-sm">
           <div className="font-medium">Belongs to</div>
-          <p className="text-outline" data-testid="kb-settings-owner">
+          <HelpPopover label="Belongs to" testId="kb-settings-owner">
             {kb.project_id === null
               ? "Global, visible in every project"
               : `${projects.data?.find((p) => p.id === kb.project_id)?.name ?? "A project"}, visible in that project`}
             . Set when the knowledge base is created.
-          </p>
+          </HelpPopover>
         </div>
         <EditableByFields value={editableBy} onChange={setEditableBy} />
         <Field label="Parser for uploads" hint="Applies to new uploads and reparses.">
@@ -534,7 +552,8 @@ export function NewDocumentDialog({
         </div>
         <Field
           label="Title"
-          hint={heading && !title.trim() ? "Taken from the first heading." : undefined}
+          help="Taken from the first heading when you leave the title empty."
+          helpTestId="kb-doc-title-help"
         >
           <Input
             aria-label="Title"
@@ -548,7 +567,8 @@ export function NewDocumentDialog({
         {file ? (
           <Field
             label="File"
-            hint="Converted to searchable text after it is added. The original file is kept."
+            help="Converted to searchable text after it is added. The original file is kept."
+            helpTestId="kb-doc-file-help"
           >
             <div
               data-testid="kb-doc-file"

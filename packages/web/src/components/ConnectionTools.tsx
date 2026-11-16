@@ -61,8 +61,7 @@ export function ConnectionTools({
             {mcp ? name : `${name} tools`}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Choose what agents may use, or open an item to try it.
-            {!enabled && " The connection is disabled, so nothing can be called."}
+            {!enabled && "The connection is disabled, so nothing can be called."}
           </DialogDescription>
         </DialogHeader>
         {mcp ? (
