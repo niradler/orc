@@ -1174,7 +1174,7 @@ export function ChatPanel({
                             data-testid="chat-message"
                             data-role={message.role}
                             data-message-id={message.id}
-                            className="group/message mx-auto mb-3 w-full max-w-(--chat-width) min-w-0 chat-message"
+                            className="group/message mx-auto mb-1 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
                               className={
@@ -1183,14 +1183,7 @@ export function ChatPanel({
                                   : undefined
                               }
                             >
-                              <div
-                                data-testid="chat-message-agent"
-                                className={
-                                  message.role === "user"
-                                    ? "sr-only"
-                                    : "mb-1 text-xs font-medium text-on-surface-variant"
-                                }
-                              >
+                              <div data-testid="chat-message-agent" className="sr-only">
                                 {message.role === "user"
                                   ? "You"
                                   : typeof custom.agent === "string"
@@ -1213,26 +1206,31 @@ export function ChatPanel({
                                 </AgentTextStreamProvider>
                               </div>
                             </div>
-                            {!live && (
-                              <ChatMessageActions
-                                threadId={thread?.id}
-                                messageId={message.id}
-                                role={message.role === "user" ? "user" : "assistant"}
-                                content={content}
-                                turn={custom.turn}
-                                model={stored?.model}
-                                tokens={usage?.input_tokens}
-                                cachedTokens={usage?.cached_input_tokens}
-                                forkDisabledReason={forkDisabledReason}
-                                onForked={openThread}
-                                threadTitle={thread?.title ?? "New chat"}
-                                agent={agentLabel(
-                                  typeof custom.agent === "string" ? custom.agent : config.agent,
-                                )}
-                                timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
-                                onSelectionAction={actOnSelection}
-                              />
-                            )}
+                            {!live &&
+                              (message.role === "user" ||
+                                !!content.trim() ||
+                                !!custom.turn ||
+                                !!stored?.model ||
+                                !!usage?.input_tokens) && (
+                                <ChatMessageActions
+                                  threadId={thread?.id}
+                                  messageId={message.id}
+                                  role={message.role === "user" ? "user" : "assistant"}
+                                  content={content}
+                                  turn={custom.turn}
+                                  model={stored?.model}
+                                  tokens={usage?.input_tokens}
+                                  cachedTokens={usage?.cached_input_tokens}
+                                  forkDisabledReason={forkDisabledReason}
+                                  onForked={openThread}
+                                  threadTitle={thread?.title ?? "New chat"}
+                                  agent={agentLabel(
+                                    typeof custom.agent === "string" ? custom.agent : config.agent,
+                                  )}
+                                  timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                  onSelectionAction={actOnSelection}
+                                />
+                              )}
                           </MessagePrimitive.Root>
                         </>
                       );
