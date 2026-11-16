@@ -1,5 +1,6 @@
 import type { JobAction } from "@orc/core/job-actions";
 import { type ReactElement, useId } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { JobAgentPicker } from "@/components/JobAgentPicker";
 import { MarkdownField } from "@/components/MarkdownField";
 import { Input } from "@/components/ui/input";
@@ -78,18 +79,20 @@ export function JobActionFields({
               rows={4}
             />
           </div>
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={value.auto_approve}
-              onChange={(event) => onChange({ ...value, auto_approve: event.target.checked })}
-            />
-            Allow agent tools automatically
-          </label>
-          <p className="text-xs text-outline">
-            Starts a tracked agent session. When automatic tool approval is off, permission requests
-            are denied.
-          </p>
+          <div className="flex items-center gap-1">
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={value.auto_approve}
+                onChange={(event) => onChange({ ...value, auto_approve: event.target.checked })}
+              />
+              Allow agent tools automatically
+            </label>
+            <HelpPopover label="Agent tool approval" testId="job-agent-approval-help">
+              Starts a tracked agent session. When automatic tool approval is off, permission
+              requests are denied.
+            </HelpPopover>
+          </div>
         </>
       )}
       {value.type === "task" && (
@@ -113,17 +116,23 @@ export function JobActionFields({
             onChange={(body) => onChange({ ...value, body })}
             rows={4}
           />
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              data-testid="job-task-autostart"
-              checked={value.start_automatically}
-              onChange={(event) =>
-                onChange({ ...value, start_automatically: event.target.checked })
-              }
-            />
-            Start the task flow automatically
-          </label>
+          <div className="flex items-center gap-1">
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                data-testid="job-task-autostart"
+                checked={value.start_automatically}
+                onChange={(event) =>
+                  onChange({ ...value, start_automatically: event.target.checked })
+                }
+              />
+              Start the task flow automatically
+            </label>
+            <HelpPopover label="Automatic task start" testId="job-task-autostart-help">
+              Creates a task in this job's project. Automatic start is off by default; the task
+              waits for a manual flow start.
+            </HelpPopover>
+          </div>
           {value.start_automatically && (
             <div className="space-y-1.5">
               <Label htmlFor={`${id}-flow`}>Flow (blank uses the configured default)</Label>
@@ -137,10 +146,6 @@ export function JobActionFields({
               />
             </div>
           )}
-          <p className="text-xs text-outline">
-            Creates a task in this job's project. Automatic start is off by default; the task waits
-            for a manual flow start.
-          </p>
         </>
       )}
     </section>

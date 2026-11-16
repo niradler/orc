@@ -93,17 +93,19 @@ export function DesktopConnectionSettings() {
         <p className="text-sm">
           This window shows <span className="font-medium">{state.url}</span>.
         </p>
-        <p className="text-sm text-muted-foreground">
-          Change the server from the local ORC dashboard. It keeps the remote address, token and
-          headers in this app's data folder.
-        </p>
-        <Button
-          data-testid="desktop-connection-local"
-          variant="outline"
-          onClick={() => void bridge.openLocalSettings()}
-        >
-          Open local connection settings
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            data-testid="desktop-connection-local"
+            variant="outline"
+            onClick={() => void bridge.openLocalSettings()}
+          >
+            Open local connection settings
+          </Button>
+          <HelpPopover label="local connection settings" testId="desktop-connection-local-help">
+            Change the server from the local ORC dashboard. It keeps the remote address, token and
+            headers in this app's data folder.
+          </HelpPopover>
+        </div>
       </div>
     );
 
@@ -191,7 +193,6 @@ export function DesktopConnectionSettings() {
           <div className="grid gap-4 border-t border-border pt-4 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
             <div>
               <Label htmlFor="desktop-connection-url">Server URL</Label>
-              <p className="mt-1 text-xs text-muted-foreground">The dashboard address.</p>
             </div>
             <Input
               id="desktop-connection-url"
@@ -248,15 +249,12 @@ export function DesktopConnectionSettings() {
             </div>
           </div>
           <div className="grid gap-4 border-t border-border pt-4 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
-            <div>
-              <div className="flex items-center gap-1">
-                <Label>Headers</Label>
-                <HelpPopover label="server headers" testId="desktop-connection-headers-help">
-                  Extra request headers for a reverse proxy, for example Cloudflare Access. They are
-                  sent only to this server's address. Authorization is set from the token.
-                </HelpPopover>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">Optional proxy headers.</p>
+            <div className="flex items-center gap-1">
+              <Label>Headers</Label>
+              <HelpPopover label="server headers" testId="desktop-connection-headers-help">
+                Extra request headers for a reverse proxy, for example Cloudflare Access. They are
+                sent only to this server's address. Authorization is set from the token.
+              </HelpPopover>
             </div>
             <HeadersField headers={headers} onChange={setHeaders} onEdit={setHeader} />
           </div>

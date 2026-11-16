@@ -1,6 +1,7 @@
 import { CheckCircle, Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getApiUrl } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,19 +75,21 @@ export function McpServerSettings() {
 
   return (
     <section aria-labelledby="mcp-server-title" data-testid="settings-mcp">
-      <h2 id="mcp-server-title" className="mb-1 text-base font-medium">
-        MCP server
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        Build the connection for an agent. Options become query parameters on the ORC endpoint;
-        nothing here changes the server.
-      </p>
+      <div className="mb-1 flex items-center gap-1">
+        <h2 id="mcp-server-title" className="text-base font-medium">
+          MCP server
+        </h2>
+        <HelpPopover label="MCP server connection" testId="mcp-server-help">
+          Build the connection for an agent. Options become query parameters on the ORC endpoint;
+          nothing here changes the server.
+        </HelpPopover>
+      </div>
       <div className={row}>
-        <div>
+        <div className="flex items-center gap-1">
           <Label htmlFor="mcp-base-url">Endpoint</Label>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <HelpPopover label="MCP endpoint" testId="mcp-base-url-help">
             Change the host when the agent reaches ORC by another address.
-          </p>
+          </HelpPopover>
         </div>
         <Input
           id="mcp-base-url"
@@ -96,11 +99,11 @@ export function McpServerSettings() {
         />
       </div>
       <div className={row}>
-        <div>
+        <div className="flex items-center gap-1">
           <span className="text-sm font-medium">Tool surface</span>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <HelpPopover label="tool surface" testId="mcp-tool-surface-help">
             Meta serves search, describe and invoke so agents load schemas on demand.
-          </p>
+          </HelpPopover>
         </div>
         <fieldset aria-label="Tool surface" className="flex flex-wrap gap-2">
           {(["meta", "full"] as const).map((value) => (
@@ -117,11 +120,11 @@ export function McpServerSettings() {
         </fieldset>
       </div>
       <div className={row}>
-        <div>
+        <div className="flex items-center gap-1">
           <span className="text-sm font-medium">Projects</span>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <HelpPopover label="MCP projects" testId="mcp-projects-help">
             No selection serves every project. Selected projects scope project-aware tools.
-          </p>
+          </HelpPopover>
         </div>
         <details>
           <summary className="min-h-11 cursor-pointer py-3 text-sm">
@@ -153,12 +156,12 @@ export function McpServerSettings() {
         </details>
       </div>
       <div className={row}>
-        <div>
+        <div className="flex items-center gap-1">
           <span className="text-sm font-medium">Authentication</span>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <HelpPopover label="MCP authentication" testId="mcp-authentication-help">
             The snippet names an environment variable holding the API secret or an access token from
             Security; the value itself is never shown.
-          </p>
+          </HelpPopover>
         </div>
         <div className="space-y-2">
           <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm">
@@ -184,7 +187,6 @@ export function McpServerSettings() {
       <div className={row}>
         <div>
           <Label htmlFor="mcp-client">Client</Label>
-          <p className="mt-1 text-xs text-muted-foreground">Format to copy into the agent.</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <select

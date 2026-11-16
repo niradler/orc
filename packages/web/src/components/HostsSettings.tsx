@@ -56,13 +56,10 @@ export function HostsSettings({
   const execution = <ExecutionHostRow openOn={expandExecution} />;
   return (
     <section aria-labelledby="hosts-title" data-testid="hosts-settings">
-      <h2 id="hosts-title" className="mb-1 hidden text-base font-medium md:block">
-        Hosts
-      </h2>
-      <div className="mb-4 flex items-start gap-1">
-        <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-          The ORC server this dashboard talks to, and where its work runs.
-        </p>
+      <div className="mb-4 flex items-center gap-1">
+        <h2 id="hosts-title" className="hidden text-base font-medium md:block">
+          Hosts
+        </h2>
         <HelpPopover label="hosts" testId="hosts-help">
           The API rows are the ORC servers this dashboard can talk to. The SSH row is where the
           connected server runs chats, terminals and jobs: its own machine, or a host from its{" "}

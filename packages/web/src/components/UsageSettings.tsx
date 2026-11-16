@@ -796,7 +796,13 @@ export function UsageSettings() {
 
       <details className="border-t border-border pt-4" data-testid="usage-quotas">
         <summary className="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
-          <span>Account quotas</span>
+          <span className="flex items-center gap-1">
+            Account quotas
+            <HelpPopover label="account quotas" testId="usage-quotas-help">
+              Local CLI accounts on the API host. SSH accounts are excluded. Credentials stay on the
+              server.
+            </HelpPopover>
+          </span>
           <span className="text-xs font-normal text-muted-foreground">
             {quotas.isPending
               ? "Loading…"
@@ -805,10 +811,6 @@ export function UsageSettings() {
                 : `${count.format(quotas.data?.accounts.length ?? 0)} accounts · refresh to update`}
           </span>
         </summary>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Local CLI accounts on the API host. SSH accounts are excluded. Credentials stay on the
-          server.
-        </p>
         {quotas.isPending && (
           <p role="status" className="mt-3 text-sm text-muted-foreground">
             Loading account quotas…

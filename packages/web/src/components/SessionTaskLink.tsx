@@ -2,13 +2,13 @@ import { Link2, Pencil } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { LiveSession, TaskStatus } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskPicker } from "@/components/TaskPicker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -71,14 +71,18 @@ export function SessionTaskLink({
           </button>
         </DialogTrigger>
         <DialogContent
+          aria-describedby={undefined}
           data-testid="session-task-dialog"
           className="max-h-[85dvh] w-[calc(100%-2rem)] overflow-y-auto"
         >
           <DialogHeader>
-            <DialogTitle>Link a task</DialogTitle>
-            <DialogDescription>
-              Choose a recent task for {session.name ?? "this session"}, or paste an exact task ID.
-            </DialogDescription>
+            <div className="flex items-center gap-1">
+              <DialogTitle>Link a task</DialogTitle>
+              <HelpPopover label="Link a task" testId="session-task-dialog-help">
+                Choose a recent task for {session.name ?? "this session"}, or paste an exact task
+                ID.
+              </HelpPopover>
+            </div>
           </DialogHeader>
           {link.error && (
             <p role="alert" className="text-sm text-error">

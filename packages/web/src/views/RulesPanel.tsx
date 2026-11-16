@@ -6,14 +6,7 @@ import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useProjects } from "@/hooks/useProjects";
 import { useViewParam } from "@/lib/view-params";
@@ -570,7 +563,7 @@ export function RulesPanel() {
           defaultWidth={640}
           resizeKey="rules"
           data-testid="rule-editor-panel"
-          aria-describedby="rule-editor-description"
+          aria-describedby={undefined}
           onOpenAutoFocus={(event) => {
             if (editorOpen) {
               event.preventDefault();
@@ -584,9 +577,6 @@ export function RulesPanel() {
         >
           <SheetHeader>
             <SheetTitle>{editing ? `Edit ${editing.id}` : "Add rule"}</SheetTitle>
-            <SheetDescription id="rule-editor-description">
-              Select a template to fill the form, or define a rule from scratch.
-            </SheetDescription>
           </SheetHeader>
           <SheetBody className="space-y-4" data-testid="rule-editor-region">
             {!editing && (

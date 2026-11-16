@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConnectionEditor } from "@/components/ConnectionEditor";
 import { ConnectionTools } from "@/components/ConnectionTools";
+import { HelpPopover } from "@/components/HelpPopover";
 import { McpServerSettings } from "@/components/McpServerSettings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,19 +56,21 @@ function ConnectionsSettings({ enabled }: { enabled: boolean }) {
   const actionError = setEnabled.error ?? refresh.error;
   return (
     <section aria-labelledby="connections-title" data-testid="settings-connections">
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 id="connections-title" className="text-base font-medium">
-          Connections
-        </h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <h2 id="connections-title" className="text-base font-medium">
+            Connections
+          </h2>
+          <HelpPopover label="connections" testId="connections-help">
+            APIs and MCP servers in the <code>spec</code> CLI registry. ORC edits that registry
+            directly, so changes here and from <code>spec</code> stay in step.
+          </HelpPopover>
+        </div>
         <Button size="sm" data-testid="connection-add" onClick={() => setEditing(null)}>
           <Plus className="size-4" />
           Add connection
         </Button>
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">
-        APIs and MCP servers in the <code>spec</code> CLI registry. ORC edits that registry
-        directly, so changes here and from <code>spec</code> stay in step.
-      </p>
       {isLoading && <p className="text-sm text-muted-foreground">Loading connections…</p>}
       {(error ?? actionError) && (
         <p role="alert" className="mb-3 text-sm text-error">

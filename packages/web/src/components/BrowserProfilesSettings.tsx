@@ -1,5 +1,6 @@
 import type { PreviewImportSource, PreviewProfile } from "@orc/core/desktop-preview";
 import { useEffect, useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { desktopBridge } from "@/lib/desktop-bridge";
 
@@ -44,13 +45,15 @@ export function BrowserProfilesSettings() {
   }
   return (
     <div className="border-b border-border py-4" data-testid="browser-profiles-settings">
-      <h3 className="text-sm font-medium">Browser profiles</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Every chat uses the ORC browser profile unless you pick another one in its browser panel, so
-        a login made once works for you and your agents in every chat and survives restarts. Add a
-        saved profile to keep a second set of logins apart. Temporary keeps one chat's logins in
-        memory only.
-      </p>
+      <div className="flex items-center gap-1">
+        <h3 className="text-sm font-medium">Browser profiles</h3>
+        <HelpPopover label="Browser profiles" testId="browser-profiles-help">
+          Every chat uses the ORC browser profile unless you pick another one in its browser panel,
+          so a login made once works for you and your agents in every chat and survives restarts.
+          Add a saved profile to keep a second set of logins apart. Temporary keeps one chat's
+          logins in memory only.
+        </HelpPopover>
+      </div>
       <form
         className="mt-3 flex flex-wrap gap-2"
         onSubmit={(event) => {
@@ -145,14 +148,16 @@ export function BrowserProfilesSettings() {
       </div>
       <details open className="mt-4" data-testid="browser-import-settings">
         <summary className="cursor-pointer text-sm">
-          Import logins from Chrome, Edge, Brave, Arc, Firefox or Safari
+          <span className="inline-flex items-center gap-1">
+            Import logins from Chrome, Edge, Brave, Arc, Firefox or Safari
+            <HelpPopover label="Importing logins" testId="browser-import-help">
+              Logins go into the profile selected above. Scan installed Firefox profiles, or
+              Chrome/Edge/Brave/Chromium on macOS and Linux, and Safari on macOS. Only the sites you
+              choose are copied. Close the source browser first. OS keychain approval may be
+              required; Linux encrypted stores require Secret Service’s secret-tool.
+            </HelpPopover>
+          </span>
         </summary>
-        <p className="my-2 text-xs text-muted-foreground">
-          Logins go into the profile selected above. Scan installed Firefox profiles, or
-          Chrome/Edge/Brave/Chromium on macOS and Linux, and Safari on macOS. Only the sites you
-          choose are copied. Close the source browser first. OS keychain approval may be required;
-          Linux encrypted stores require Secret Service’s secret-tool.
-        </p>
         <div className="my-2 flex flex-wrap gap-2">
           <Button
             disabled={busy || !selected}
@@ -208,13 +213,6 @@ export function BrowserProfilesSettings() {
             </Button>
           )}
         </div>
-        <p className="my-2 text-xs text-muted-foreground">
-          Connect a Chrome/Edge profile whose local debugging endpoint you enabled, then select
-          sites and a destination profile. Approve any prompt in that browser. Only selected sites’
-          cookies are copied; the agent never receives this connection. Passwords, local storage and
-          device-bound sessions are not transferred. Some sites require logging in again. Windows
-          Chrome/Edge app-bound cookie files require this connection.
-        </p>
         <a
           className="text-xs underline"
           href="https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session"
@@ -223,7 +221,7 @@ export function BrowserProfilesSettings() {
         >
           Chrome connection instructions
         </a>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             type="number"
             min={1024}
@@ -248,6 +246,13 @@ export function BrowserProfilesSettings() {
           >
             Find source sites
           </Button>
+          <HelpPopover label="Live browser connection" testId="browser-import-live-help">
+            Connect a Chrome/Edge profile whose local debugging endpoint you enabled, then select
+            sites and a destination profile. Approve any prompt in that browser. Only selected
+            sites’ cookies are copied; the agent never receives this connection. Passwords, local
+            storage and device-bound sessions are not transferred. Some sites require logging in
+            again. Windows Chrome/Edge app-bound cookie files require this connection.
+          </HelpPopover>
         </div>
         {source && (
           <div className="mt-3">

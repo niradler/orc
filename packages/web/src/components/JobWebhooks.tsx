@@ -3,6 +3,7 @@ import { type ReactElement, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { getApiUrl, type Job, type ManagedWebhook } from "@/api/client";
 import { ErrorState } from "@/components/ErrorState";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,7 +78,13 @@ export function WebhookCreate({
   return (
     <div className="space-y-3" data-testid="webhook-create-form">
       <div className="space-y-1.5">
-        <Label htmlFor={`${id}-name`}>Webhook name</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor={`${id}-name`}>Webhook name</Label>
+          <HelpPopover label="Webhook name" testId="webhook-create-help">
+            Create the event source here. Connect jobs and choose their event filters in Jobs. No
+            job is required to create a webhook.
+          </HelpPopover>
+        </div>
         <Input
           id={`${id}-name`}
           data-testid="webhook-name"
@@ -100,10 +107,6 @@ export function WebhookCreate({
           <option value="generic">Other service (HMAC)</option>
         </select>
       </div>
-      <p className="text-xs text-outline">
-        Create the event source here. Connect jobs and choose their event filters in Jobs. No job is
-        required to create a webhook.
-      </p>
       {create.error && (
         <p role="alert" className="text-sm text-error">
           {create.error.message}

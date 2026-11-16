@@ -7,6 +7,7 @@ import { AgentEditor } from "@/components/AgentEditor";
 import { CodeEditor } from "@/components/CodeEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
+import { HelpPopover } from "@/components/HelpPopover";
 import { PackageRunDialog } from "@/components/PackageRunDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -287,19 +288,21 @@ export default function Agents() {
                   <summary className="cursor-pointer text-muted-foreground">
                     Source and configuration
                   </summary>
-                  <p className="my-3 text-xs text-muted-foreground break-all">
-                    {agent.data.id} · {agent.data.source} definition
-                  </p>
+                  <div className="my-3 flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground break-all">
+                      {agent.data.id} · {agent.data.source} definition
+                    </p>
+                    <HelpPopover label="Using this agent in a flow" testId="agent-flow-help">
+                      To use this agent in a flow, set <code>"agent": "{agent.data.id}"</code> on
+                      its agent node.
+                    </HelpPopover>
+                  </div>
                   <pre
                     data-testid="agent-fields"
                     className="max-h-80 overflow-auto rounded bg-background p-3 text-xs"
                   >
                     {JSON.stringify(agent.data.fields, null, 2)}
                   </pre>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    To use this agent in a flow, set <code>"agent": "{agent.data.id}"</code> on its
-                    agent node.
-                  </p>
                 </details>
               </div>
             ) : (

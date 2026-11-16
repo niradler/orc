@@ -1,13 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { copyText } from "@/lib/terminal-runtime";
 
 /**
@@ -23,11 +16,15 @@ export function TerminalTextSheet({ text, onClose }: { text: string; onClose: ()
         if (!open) onClose();
       }}
     >
-      <SheetContent data-testid="terminal-text-sheet" defaultWidth={720} resizeKey="terminal-text">
+      <SheetContent
+        aria-describedby={undefined}
+        data-testid="terminal-text-sheet"
+        defaultWidth={720}
+        resizeKey="terminal-text"
+      >
         <SheetHeader className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <SheetTitle>Terminal text</SheetTitle>
-            <SheetDescription>Select text to copy it, or copy everything.</SheetDescription>
           </div>
           <Button
             size="sm"

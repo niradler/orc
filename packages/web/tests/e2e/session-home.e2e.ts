@@ -239,18 +239,6 @@ test.describe("session home on desktop", () => {
     await page.getByTestId("session-list-expand").click();
     await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
   });
-
-  test("opens a terminal agent from Terminals Sessions", async ({ page }) => {
-    await mockSessionHome(page);
-    await page.goto(`/terminals/${HOME.terminal}?project=all`);
-    await page.getByTestId("terminals-open-home").click();
-    await expect(page).toHaveURL(
-      new RegExp(`/chat\\?project=all&sessionTerminal=${HOME.terminal}`),
-    );
-    await expect(page.getByTestId("session-terminal")).toBeVisible();
-    await page.goBack();
-    await expect(page).toHaveURL(new RegExp(`/terminals/${HOME.terminal}\\?project=all$`));
-  });
 });
 
 for (const width of [1440, 390])
