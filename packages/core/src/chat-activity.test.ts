@@ -5,6 +5,7 @@ import {
   CHAT_ITEM_WINDOW,
   type ChatActivity,
   type ChatProviderActivity,
+  readChatActivity,
 } from "./chat";
 
 test("should update a re-announced tool call in place and keep its result", () => {
@@ -171,4 +172,38 @@ test("should return no items for empty or missing activity", () => {
   expect(buildChatItems({})).toEqual([]);
   expect(buildChatItems({ activity: [], providerActivity: [] })).toEqual([]);
   expect(CHAT_ITEM_WINDOW).toBe(80);
+});
+
+test("subagent transcripts upsert in place and survive the tolerant reader", () => {
+  const first = appendChatActivity([], {
+    type: "subagent",
+    data: {
+      id: "ses_child",
+      title: "Explore",
+      status: "running",
+      activity: [{ type: "tool", id: "call-1", name: "read", input: "a.txt" }],
+    },
+  });
+  expect(first).toHaveLength(1);
+  const updated = appendChatActivity(first, {
+    type: "subagent",
+    data: {
+      id: "ses_child",
+      title: "Explore",
+      status: "completed",
+      activity: [{ type: "tool", id: "call-1", name: "read", input: "a.txt", result: "contents" }],
+      text: "The answer",
+    },
+  });
+  expect(updated).toHaveLength(1);
+  expect(updated[0]).toMatchObject({ type: "subagent", status: "completed", text: "The answer" });
+  const items = buildChatItems({ activity: updated });
+  expect(items[0]).toMatchObject({
+    kind: "subagent",
+    subagentStatus: "completed",
+    title: "Explore",
+  });
+  const roundtrip = readChatActivity(updated);
+  expect(roundtrip.activity).toHaveLength(1);
+  expect(roundtrip.provider).toHaveLength(0);
 });

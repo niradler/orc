@@ -115,6 +115,7 @@ export function withPermissionMode(config: ChatSettings, mode: PermissionMode): 
 
 const EFFORT_LABELS: Record<string, string> = {
   off: "Off",
+  none: "None",
   minimal: "Minimal",
   low: "Low",
   medium: "Medium",
@@ -171,6 +172,7 @@ export function agentEffortValue(config: ChatSettings): string {
   if (!options) return "";
   if (options.runtime === "claude-sdk") return options.options.effort ?? "";
   if (options.runtime === "pi") return options.options.thinkingLevel ?? "";
+  if (options.runtime === "opencode") return options.options.effort ?? "";
   if (options.runtime !== "codex") return "";
   return codexSetting(options.args, CODEX_EFFORT_KEY) ?? "";
 }
@@ -220,6 +222,11 @@ export function withAgentEffort(config: ChatSettings, value: string): ChatSettin
     );
     if (value) args.push("-c", `${CODEX_EFFORT_KEY}="${value}"`);
     options = { runtime, args };
+  } else if (runtime === "opencode") {
+    const next = saved?.runtime === "opencode" ? { ...saved.options } : {};
+    if (value) next.effort = value;
+    else delete next.effort;
+    options = { runtime, options: next };
   } else return config;
   return {
     ...config,
@@ -229,7 +236,15 @@ export function withAgentEffort(config: ChatSettings, value: string): ChatSettin
 
 export function agentEffort(config: ChatSettings): string | null {
   const value = agentEffortValue(config);
-  return value ? (EFFORT_LABELS[value] ?? value) : null;
+  if (!value || value === "default") return null;
+  return EFFORT_LABELS[value] ?? value;
+}
+
+/** Live effort choices (OpenCode) without the adapter-default row the picker adds itself. */
+export function liveEffortChoices(
+  choices: readonly AgentEffortChoice[] | undefined,
+): AgentEffortChoice[] {
+  return (choices ?? []).filter((choice) => choice.value && choice.value !== "default");
 }
 
 export function agentModelLabel(model: string, effort: string | null): string {

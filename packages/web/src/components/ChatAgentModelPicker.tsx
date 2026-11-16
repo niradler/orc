@@ -11,6 +11,7 @@ import {
   agentEffortChoices,
   agentEffortValue,
   agentModelLabel,
+  liveEffortChoices,
   withAgentEffort,
 } from "@/lib/composer-chips";
 
@@ -59,11 +60,17 @@ export function ChatAgentModelPicker() {
   const modelName = choices.get(config.model) || config.model || "Agent default";
   const effortValue = agentEffortValue(config);
   const effort = agentEffort(config);
-  const effortChoices = agentEffortChoices(config.agent);
+  const capabilities = useAgentCapabilities(config.agent, thread);
+  // OpenCode's effort levels are model-dependent: the session reports them live,
+  // and the model catalog probes them for a chat that has not started yet.
+  const effortChoices =
+    config.agent === "opencode"
+      ? liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices)
+      : agentEffortChoices(config.agent);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
-  const fixedModel = useAgentCapabilities(config.agent, thread)?.modelSelection === false;
+  const fixedModel = capabilities?.modelSelection === false;
   const modelsDisabled = streaming || !ready || fixedModel;
 
   const note = fixedModel
@@ -72,7 +79,9 @@ export function ChatAgentModelPicker() {
       ? "Provider, model and effort changes are available after the current response. Changing agent starts a new session."
       : thread
         ? "Switching to another account of the same agent continues this chat with your prior context. Changing agent starts a new session. Model and effort changes apply to the next turn."
-        : undefined;
+        : config.agent === "opencode" && !effortChoices.length
+          ? "Effort levels load from the agent when the session starts."
+          : undefined;
   return (
     <AgentModelPicker
       agent={config.agent}
@@ -120,7 +129,14 @@ export function ChatAgentModelPicker() {
       onModel={(model) => setConfig({ ...config, model })}
       efforts={effortChoices}
       effort={effortValue}
-      onEffort={(value) => setConfig(withAgentEffort(config, value))}
+      onEffort={(value) => {
+        const next = withAgentEffort(config, value);
+        setConfig(next);
+        // Persist on the conversation right away; a send also carries the options,
+        // so a failed save still applies on the next message.
+        const options = next.agentOptions[config.agent];
+        if (thread && options) void chat.applyAgentOptions(config.agent, options).catch(() => {});
+      }}
     />
   );
 }

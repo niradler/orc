@@ -34,7 +34,9 @@ function activityTrail(activity: ChatActivity[]): TrailEntry[] {
               ? "Thinking"
               : item.type === "plan"
                 ? (item.title ?? "Plan")
-                : toolLabel(item.name),
+                : item.type === "subagent"
+                  ? (item.title ?? "Subagent")
+                  : toolLabel(item.name),
           Icon: activityIcon(item),
           ...(item.type === "tool" && item.startedAt !== undefined
             ? { startedAt: item.startedAt }

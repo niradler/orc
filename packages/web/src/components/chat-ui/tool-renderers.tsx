@@ -1,5 +1,6 @@
 import type { ChatActivity, ChatItem } from "@orc/core/chat";
 import {
+  Bot,
   Brain,
   ChevronRight,
   CircleAlert,
@@ -46,6 +47,7 @@ import {
 } from "@/lib/chat-tools";
 import { useDesktopPreview } from "@/lib/desktop-preview-context";
 import { diffLines } from "@/lib/git-diff";
+import { cn } from "@/lib/utils";
 
 const rowSummary =
   "flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11 [&::-webkit-details-marker]:hidden";
@@ -73,6 +75,7 @@ export function activityIcon(item: ChatActivity): LucideIcon {
   if (item.type === "thinking") return Brain;
   if (item.type === "status") return Info;
   if (item.type === "plan") return ListTodo;
+  if (item.type === "subagent") return Bot;
   return toolIcon(toolView(item));
 }
 
@@ -549,14 +552,85 @@ function ProviderRow({ item }: { item: Extract<ChatItem, { kind: "provider" }> }
   );
 }
 
+/** A subagent's inline transcript: its own tool calls and answer, nested in the parent turn. */
+function SubagentRow({
+  item,
+  live = false,
+}: {
+  item: Extract<ChatItem, { kind: "subagent" }>;
+  live?: boolean;
+}) {
+  const running = item.subagentStatus === "running";
+  const failed = item.subagentStatus === "failed";
+  const tools = item.activity.filter((child) => child.type === "tool").length;
+  return (
+    <details
+      data-testid="chat-subagent-inline"
+      data-status={item.subagentStatus}
+      className="group/tool"
+      open={running || undefined}
+    >
+      <summary className={rowSummary}>
+        <Bot
+          aria-hidden="true"
+          size={14}
+          className={cn(
+            "shrink-0",
+            failed ? "text-error" : running ? "text-progress" : "text-on-surface-variant",
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate text-on-surface">{item.title || "Subagent"}</span>
+        <span
+          className={cn(
+            "shrink-0 text-[11px]",
+            failed ? "text-error" : running ? "text-progress" : "text-outline",
+          )}
+        >
+          {failed ? "Failed" : running ? "Working" : "Done"}
+          {tools ? ` · ${tools} ${tools === 1 ? "tool" : "tools"}` : ""}
+        </span>
+        <ChevronRight
+          aria-hidden="true"
+          size={14}
+          className="shrink-0 group-open/tool:rotate-90 motion-safe:transition-transform"
+        />
+      </summary>
+      <div className={bodyClass}>
+        {item.activity.map((child) =>
+          child.type === "tool" ? (
+            <ToolRow key={child.id} tool={child} live={live && running} />
+          ) : (
+            <p
+              key={child.id}
+              className="px-1.5 py-0.5 whitespace-pre-wrap wrap-break-word text-on-surface-variant"
+            >
+              {child.text}
+            </p>
+          ),
+        )}
+        {item.text && (
+          <div
+            data-testid="chat-subagent-text"
+            className="mt-1 px-1.5 whitespace-pre-wrap wrap-break-word text-on-surface"
+          >
+            {item.text}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export function ActivityRow({ item, live = false }: { item: ChatItem; live?: boolean }) {
   if (item.kind === "provider") return <ProviderRow item={item} />;
+  if (item.kind === "subagent") return <SubagentRow item={item} live={live} />;
   const activity = chatItemActivity(item);
   if (!activity) return null;
   if (activity.type === "tool") return <ToolRow tool={activity} live={live} />;
   if (activity.type === "plan") return <PlanCard plan={activity} />;
   if (activity.type === "status")
     return <p className="px-1.5 py-1 wrap-break-word text-on-surface-variant">{activity.text}</p>;
+  if (activity.type !== "thinking") return null;
   return (
     <details data-testid="chat-thinking" className="group/tool">
       <summary className={rowSummary}>

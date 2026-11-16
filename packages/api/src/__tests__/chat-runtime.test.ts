@@ -328,7 +328,7 @@ describe("native chat runtime", () => {
     }
     calls.length = 0;
   });
-  test("should fold pre-tool narration separately from the final reply", async () => {
+  test("should keep pre-tool prose in the reply instead of folding it as narration", async () => {
     narrateBeforeTool = true;
     try {
       const result = await turn({ messages: [{ role: "user", content: "Inspect and summarize" }] });
@@ -337,14 +337,61 @@ describe("native chat runtime", () => {
       const stored = ChatThreadSchema.parse(
         await (await request(`/chat/threads/${opened.thread.id}`)).json(),
       );
-      expect(stored.messages.at(-1)?.content).toBe("Hello from the native session");
-      expect(stored.messages.at(-1)?.activity).toContainEqual({
-        type: "status",
-        id: expect.any(String),
-        text: "First I will inspect the workspace.",
-      });
+      expect(stored.messages.at(-1)?.content).toBe(
+        "First I will inspect the workspace.\n\nHello from the native session",
+      );
+      expect(stored.messages.at(-1)?.activity ?? []).not.toContainEqual(
+        expect.objectContaining({ type: "status", text: "First I will inspect the workspace." }),
+      );
     } finally {
       narrateBeforeTool = false;
+      calls.length = 0;
+    }
+  });
+  test("should freeze per-turn token usage at turn end", async () => {
+    const transcript = join(home, "usage-fixture.jsonl");
+    writeFileSync(
+      transcript,
+      `${JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            last_token_usage: { input_tokens: 1234, cached_input_tokens: 1000 },
+            total_token_usage: { input_tokens: 1234, cached_input_tokens: 1000 },
+          },
+        },
+      })}\n`,
+    );
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-usage",
+        backend: "codex",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "usage-native",
+        cwd: home,
+        transcript_path: transcript,
+      })
+      .run();
+    resultIdentity = "usage-native";
+    try {
+      const result = await turn({ messages: [{ role: "user", content: "Count tokens" }] });
+      const opened = result.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      const stored = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(stored.messages.at(-1)?.turn?.usage).toEqual({
+        input_tokens: 1234,
+        cached_input_tokens: 1000,
+      });
+    } finally {
+      resultIdentity = undefined;
+      getSqlite().query("DELETE FROM gateway_sessions WHERE id=?").run("source-usage");
+      rmSync(transcript, { force: true });
       calls.length = 0;
     }
   });

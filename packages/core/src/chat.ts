@@ -106,6 +106,11 @@ export type ChatSettings = z.infer<typeof ChatSettingsSchema>;
 export const ChatModelsSchema = z.object({
   models: z.array(z.object({ id: ChatModelSchema, label: z.string().max(120) })),
   warning: z.string().nullable(),
+  /** Live effort levels for the agent's default model, when it exposes them. */
+  effortChoices: z
+    .array(z.object({ value: z.string().min(1).max(64), label: z.string().min(1).max(120) }))
+    .max(16)
+    .optional(),
 });
 export type ChatModels = z.infer<typeof ChatModelsSchema>;
 
@@ -157,22 +162,58 @@ export type ChatPlanPayload = z.infer<typeof ChatPlanPayloadSchema>;
 export const ChatPlanSchema = ChatPlanPayloadSchema.extend({ type: z.literal("plan") });
 export type ChatPlan = z.infer<typeof ChatPlanSchema>;
 
+const ChatThinkingSchema = z.object({
+  type: z.literal("thinking"),
+  id: z.string(),
+  text: z.string(),
+});
+const ChatToolSchema = z.object({
+  type: z.literal("tool"),
+  id: z.string(),
+  name: z.string(),
+  input: z.string(),
+  result: z.string().optional(),
+  isError: z.boolean().optional(),
+  /** When the call was announced, so a long-running call can show its elapsed time. */
+  startedAt: z.number().finite().nonnegative().optional(),
+  /** Work the call left running; it can outlive the turn that started it. */
+  background: z.enum(CHAT_BACKGROUND_KINDS).optional(),
+});
+const ChatStatusSchema = z.object({ type: z.literal("status"), id: z.string(), text: z.string() });
+
+/**
+ * A subagent's own transcript, streamed live while the parent turn runs and kept
+ * with it afterwards. The whole block is re-sent on every change (like a plan),
+ * so it updates in place instead of appending a row per child event.
+ */
+export const CHAT_SUBAGENT_MAX_ITEMS = 50;
+export const ChatSubagentStatusSchema = z.enum(["running", "completed", "failed"]);
+export type ChatSubagentStatus = z.infer<typeof ChatSubagentStatusSchema>;
+export const ChatSubagentPayloadSchema = z.object({
+  /** The child session's native id. */
+  id: z.string().min(1).max(200),
+  title: z.string().max(200).optional(),
+  status: ChatSubagentStatusSchema,
+  activity: z
+    .array(z.discriminatedUnion("type", [ChatThinkingSchema, ChatToolSchema, ChatStatusSchema]))
+    .max(CHAT_SUBAGENT_MAX_ITEMS),
+  /** The child's answer text, accumulated as it streams. */
+  text: z.string().max(100000).optional(),
+});
+export type ChatSubagentPayload = z.infer<typeof ChatSubagentPayloadSchema>;
+/** The child transcript's own items: no nested subagents or plans. */
+export type ChatSubagentActivity = ChatSubagentPayload["activity"];
+export const ChatSubagentSchema = ChatSubagentPayloadSchema.extend({
+  type: z.literal("subagent"),
+});
+export type ChatSubagent = z.infer<typeof ChatSubagentSchema>;
+
 export const ChatActivitySchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("thinking"), id: z.string(), text: z.string() }),
-  z.object({
-    type: z.literal("tool"),
-    id: z.string(),
-    name: z.string(),
-    input: z.string(),
-    result: z.string().optional(),
-    isError: z.boolean().optional(),
-    /** When the call was announced, so a long-running call can show its elapsed time. */
-    startedAt: z.number().finite().nonnegative().optional(),
-    /** Work the call left running; it can outlive the turn that started it. */
-    background: z.enum(CHAT_BACKGROUND_KINDS).optional(),
-  }),
-  z.object({ type: z.literal("status"), id: z.string(), text: z.string() }),
+  ChatThinkingSchema,
+  ChatToolSchema,
+  ChatStatusSchema,
   ChatPlanSchema,
+  ChatSubagentSchema,
 ]);
 export type ChatActivity = z.infer<typeof ChatActivitySchema>;
 
@@ -226,6 +267,13 @@ export type ChatItem = {
   | { kind: "status"; text: string }
   | { kind: "tool"; name: string; input: string; result?: string; isError?: boolean }
   | { kind: "plan"; title?: string; entries: ChatPlanEntry[] }
+  | {
+      kind: "subagent";
+      title?: string;
+      subagentStatus: ChatSubagentStatus;
+      activity: ChatSubagentActivity;
+      text?: string;
+    }
   | { kind: "provider"; provider: string; data?: Record<string, unknown> }
 );
 /** How many items an expanded turn renders before offering the rest. */
@@ -289,6 +337,18 @@ export function buildChatItems(message: {
       });
       continue;
     }
+    if (item.type === "subagent") {
+      items.push({
+        id: item.id,
+        ordinal,
+        kind: "subagent",
+        ...(item.title === undefined ? {} : { title: item.title }),
+        subagentStatus: item.status,
+        activity: item.activity,
+        ...(item.text === undefined ? {} : { text: item.text }),
+      });
+      continue;
+    }
     items.push({
       id: item.id,
       ordinal,
@@ -319,6 +379,14 @@ export const ChatTurnSchema = z.object({
   finishedAt: z.number().finite().nonnegative().optional(),
   durationMs: z.number().finite().nonnegative().optional(),
   outcome: z.enum(["completed", "stopped", "failed"]).optional(),
+  // Frozen at turn end so a finished turn's token figure does not keep drifting
+  // as the session records later requests.
+  usage: z
+    .object({
+      input_tokens: z.number().int().nonnegative(),
+      cached_input_tokens: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 export type ChatTurn = z.infer<typeof ChatTurnSchema>;
 
@@ -525,6 +593,7 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("thinking"), text: z.string() }),
   z.object({ type: z.literal("system_status"), text: z.string() }),
   z.object({ type: z.literal("plan"), data: ChatPlanPayloadSchema }),
+  z.object({ type: z.literal("subagent"), data: ChatSubagentPayloadSchema }),
   z.object({
     type: z.literal("tool_use"),
     data: z.object({ id: z.string(), name: z.string(), input: z.string() }),
@@ -652,5 +721,17 @@ export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): 
       -200,
     ) as ChatActivity[];
   if (event.type === "plan") return mergeChatPlan(activity, event.data);
+  if (event.type === "subagent") {
+    const incoming: ChatSubagent = {
+      type: "subagent",
+      ...event.data,
+      activity: event.data.activity.slice(0, CHAT_SUBAGENT_MAX_ITEMS),
+    };
+    const at = activity.findIndex((item) => item.type === "subagent" && item.id === incoming.id);
+    if (at === -1) return [...activity, incoming].slice(-200) as ChatActivity[];
+    const next = [...activity];
+    next[at] = incoming;
+    return next;
+  }
   return activity;
 }

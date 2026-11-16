@@ -304,7 +304,14 @@ export function ChatPanel({
     agentRunning && session.data?.live && sessionMessageHookSupported(session.data.live.agent)
       ? session.data.live
       : null;
-  const agentBlocked = agentRunning && !agentInbox;
+  // The watcher's "running" claim can go stale (the agent finished or died without a
+  // status update). Never hard-lock the composer on it: offer an explicit override.
+  const [agentOverride, setAgentOverride] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the deps are change triggers, not reads — drop the override when the thread or its running claim changes
+  useEffect(() => {
+    setAgentOverride(false);
+  }, [thread?.id, session.data?.live?.status]);
+  const agentBlocked = agentRunning && !agentInbox && !agentOverride;
   const queueToAgent = useSendSessionMessage(agentInbox?.id ?? null);
   const runElsewhere = !!session.data?.running && !streaming && !refreshing;
   const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
@@ -513,11 +520,15 @@ export function ChatPanel({
   // was recorded after that turn started; otherwise the figure belongs elsewhere.
   const latestUsage = contextUsage.data?.latest ?? null;
   const latestUsageAt = latestUsage?.recorded_at ? Date.parse(latestUsage.recorded_at) : Number.NaN;
-  const turnUsage =
-    latestUsage &&
-    Number.isFinite(latestUsageAt) &&
-    lastAssistant?.turn &&
-    latestUsageAt >= lastAssistant.turn.startedAt
+  // A finished turn carries a frozen token figure; only a still-live turn reads the
+  // session's latest recorded request, so completed turns stop drifting upward.
+  const frozenUsage = lastAssistant?.turn?.usage;
+  const turnUsage = frozenUsage
+    ? frozenUsage
+    : latestUsage &&
+        Number.isFinite(latestUsageAt) &&
+        lastAssistant?.turn &&
+        latestUsageAt >= lastAssistant.turn.startedAt
       ? latestUsage
       : null;
   const projects = useProjects();
@@ -1449,8 +1460,23 @@ export function ChatPanel({
                   >
                     {agentInbox
                       ? "Running in its own agent. Send queues your message for its next safe point."
-                      : "Running in its own agent. Sending unlocks when it finishes."}
+                      : agentOverride
+                        ? "Sending unlocked. The running status may be stale."
+                        : "Running in its own agent. Sending unlocks when it finishes."}
                   </p>
+                  {agentBlocked && (
+                    <button
+                      type="button"
+                      data-testid="chat-agent-send-anyway"
+                      onClick={() => {
+                        setAgentOverride(true);
+                        void session.refetch();
+                      }}
+                      className="mt-0.5 text-xs text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                    >
+                      Still blocked? Send anyway
+                    </button>
+                  )}
                   {queueToAgent.error && (
                     <p role="alert" className="text-xs text-error">
                       {queueToAgent.error.message}

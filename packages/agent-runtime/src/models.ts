@@ -8,6 +8,7 @@ import {
   resolveProviderEnvironment,
 } from "@orc/core/provider-service";
 import { z } from "zod";
+import { type AcpEffortChoice, probeOpenCodeEffortChoices } from "./acp.js";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { resolveCodexLaunch } from "./codex.js";
 import { endStdin, writeToStdin } from "./io.js";
@@ -17,6 +18,22 @@ import { PiRpc } from "./pi-rpc.js";
 export interface AgentModel {
   id: string;
   label: string;
+}
+
+/** Live effort levels for a new OpenCode chat; null when the agent exposes none. */
+export async function discoverOpenCodeEffortChoices(
+  host: ExecHost,
+  cwd: string,
+  providerId?: string,
+): Promise<AcpEffortChoice[] | null> {
+  const profile = providerForAgent("opencode", providerId, true);
+  const executable = providerExecutable(profile);
+  return probeOpenCodeEffortChoices({
+    cwd,
+    executionHost: host.kind === "ssh" ? host.alias : null,
+    ...(executable ? { providerExecutable: executable } : {}),
+    env: resolveProviderEnvironment(profile).env,
+  });
 }
 
 function object(value: unknown): Record<string, unknown> | null {
