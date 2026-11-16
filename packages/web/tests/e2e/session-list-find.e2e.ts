@@ -152,6 +152,22 @@ for (const width of [1440, 390])
       await expect(rows.first()).toContainText("Write release notes");
     });
 
+    test("drops a row that leaves the Done filter while the pointer is on the list", async ({
+      page,
+      request,
+    }) => {
+      const { sessions, events } = await setup(page, request);
+      await page.goto(sessionUrl);
+      await page.getByTestId("session-filter-done").click();
+      const rows = page.getByTestId("chat-session-list").getByTestId("chat-history-row");
+      await expect(rows).toHaveCount(2);
+      await rows.first().hover();
+      touch(sessions[3], "running");
+      await events.push();
+      await expect(rows).toHaveCount(1);
+      expect(await ids(rows, "data-state")).toEqual(["done"]);
+    });
+
     test("opens the project and marks the session the chat page is showing", async ({
       page,
       request,
