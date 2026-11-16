@@ -250,7 +250,7 @@ export const ChatMessageActions = memo(function ChatMessageActions({
     <div
       data-testid="chat-message-meta"
       className={cn(
-        "mt-1 flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-variant",
+        "flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-variant",
         role === "user" && "justify-end",
       )}
     >
