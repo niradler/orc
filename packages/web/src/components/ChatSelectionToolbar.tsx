@@ -1,4 +1,4 @@
-import { Bookmark, Check, ClipboardCopy, MessageSquareText, SquarePlus } from "lucide-react";
+import { Bookmark, Check, ClipboardCopy, Copy, MessageSquareText, SquarePlus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -51,7 +51,7 @@ export function ChatSelectionToolbar({
 }) {
   const [selection, setSelection] = useState<SelectionSnapshot | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"text" | "markdown" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
@@ -159,7 +159,7 @@ export function ChatSelectionToolbar({
 
   useEffect(() => {
     if (!copied) return;
-    copyTimer.current = window.setTimeout(() => setCopied(false), 2000);
+    copyTimer.current = window.setTimeout(() => setCopied(null), 2000);
     return () => window.clearTimeout(copyTimer.current);
   }, [copied]);
 
@@ -197,11 +197,13 @@ export function ChatSelectionToolbar({
     setSelection(null);
   };
 
-  const copy = async () => {
+  const copy = async (format: "text" | "markdown") => {
     if (!selection) return;
-    const ok = await copyText(markdownSelection(selection.text, selection.source));
+    const ok = await copyText(
+      format === "markdown" ? markdownSelection(selection.text, selection.source) : selection.text,
+    );
     if (ok) {
-      setCopied(true);
+      setCopied(format);
       setError(null);
     } else setError(CLIPBOARD_ERROR);
   };
@@ -229,8 +231,7 @@ export function ChatSelectionToolbar({
         onClick={() => act("ask")}
       >
         <MessageSquareText aria-hidden="true" size={14} />
-        <span className="max-sm:sr-only">Ask about this</span>
-        <span className="sm:hidden">Ask</span>
+        <span>Ask</span>
       </button>
       <button
         type="button"
@@ -241,8 +242,37 @@ export function ChatSelectionToolbar({
         onClick={() => act("task")}
       >
         <SquarePlus aria-hidden="true" size={14} />
-        <span className="max-sm:sr-only">Create task</span>
-        <span className="sm:hidden">Task</span>
+        <span>Task</span>
+      </button>
+      <button
+        type="button"
+        data-testid="chat-selection-copy"
+        aria-label={copied === "text" ? "Copied" : "Copy"}
+        title="Copy"
+        className={actionClass}
+        onClick={() => void copy("text")}
+      >
+        {copied === "text" ? (
+          <Check aria-hidden="true" size={14} />
+        ) : (
+          <Copy aria-hidden="true" size={14} />
+        )}
+        <span>Copy</span>
+      </button>
+      <button
+        type="button"
+        data-testid="chat-selection-copy-md"
+        aria-label={copied === "markdown" ? "Copied as Markdown" : "Copy as Markdown"}
+        title="Copy as Markdown with its source"
+        className={actionClass}
+        onClick={() => void copy("markdown")}
+      >
+        {copied === "markdown" ? (
+          <Check aria-hidden="true" size={14} />
+        ) : (
+          <ClipboardCopy aria-hidden="true" size={14} />
+        )}
+        <span>Copy MD</span>
       </button>
       <button
         type="button"
@@ -255,25 +285,9 @@ export function ChatSelectionToolbar({
         <Bookmark aria-hidden="true" size={14} />
         <span>Save</span>
       </button>
-      <button
-        type="button"
-        data-testid="chat-selection-copy"
-        aria-label={copied ? "Copied as Markdown" : "Copy as Markdown"}
-        title="Copy as Markdown"
-        className={actionClass}
-        onClick={() => void copy()}
-      >
-        {copied ? (
-          <Check aria-hidden="true" size={14} />
-        ) : (
-          <ClipboardCopy aria-hidden="true" size={14} />
-        )}
-        <span className="max-sm:sr-only">Copy as Markdown</span>
-        <span className="sm:hidden">Copy</span>
-      </button>
       {copied && (
         <span role="status" className="sr-only">
-          Copied as Markdown
+          {copied === "markdown" ? "Copied as Markdown" : "Copied"}
         </span>
       )}
       {error && (

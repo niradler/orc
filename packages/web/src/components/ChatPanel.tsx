@@ -78,12 +78,17 @@ import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
-import { useSendSessionMessage, useSessionChildren } from "@/hooks/useSessions";
+import {
+  useSendSessionMessage,
+  useSessionChildren,
+  useSessionSubagents,
+} from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
 import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
+import { groupChatMessages } from "@/lib/chat-message-groups";
 import {
   appendDraftQuote,
   boundedText,
@@ -102,6 +107,7 @@ import {
 } from "@/lib/composer-handoff";
 import { THIS_SERVER } from "@/lib/host-labels";
 import { scratchpadPath } from "@/lib/scratchpad-routes";
+import { matchSubagents } from "@/lib/subagent-links";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -466,10 +472,16 @@ export function ChatPanel({
       ? (viewed?.name ?? "Session")
       : thread?.title;
   const headerState = viewId ? (viewed ? liveSessionState(viewed) : null) : sessionState;
-  const dividers = useMemo(
-    () => chatDividers(messages, contextUsage.data?.compactions ?? []),
-    [messages, contextUsage.data?.compactions],
-  );
+  const dividers = useMemo(() => {
+    const raw = chatDividers(messages, contextUsage.data?.compactions ?? []);
+    const { displayId } = groupChatMessages(messages);
+    const byMessage = new Map<string, typeof raw.trailing>();
+    for (const [id, list] of raw.byMessage) {
+      const key = displayId.get(id) ?? id;
+      byMessage.set(key, [...(byMessage.get(key) ?? []), ...list]);
+    }
+    return { byMessage, trailing: raw.trailing };
+  }, [messages, contextUsage.data?.compactions]);
   const storedMessages = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
@@ -484,6 +496,11 @@ export function ChatPanel({
         ]),
       ),
     [messages],
+  );
+  const { data: subagents } = useSessionSubagents(thread?.sourceId ?? thread?.id ?? null);
+  const subagentLinks = useMemo(
+    () => matchSubagents(messages, subagents ?? []),
+    [messages, subagents],
   );
   const lastAssistant = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index--) {
@@ -565,20 +582,6 @@ export function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
-  const focusToggle = (
-    <ActionHelp label={focusChat ? "Exit focus chat (Escape)" : "Focus chat"}>
-      <button
-        type="button"
-        data-testid="chat-focus-toggle"
-        aria-label={focusChat ? "Exit focus chat" : "Focus chat"}
-        aria-pressed={focusChat}
-        onClick={() => setFocusChat((value) => !value)}
-        className={cn(iconButton, "pointer-coarse:min-h-11 pointer-coarse:min-w-11")}
-      >
-        <Focus size={17} />
-      </button>
-    </ActionHelp>
-  );
   const actionMenuRows = (includeSessionActions: boolean) => (
     <>
       <button
@@ -750,13 +753,13 @@ export function ChatPanel({
   useLayoutEffect(() => {
     if (!open) return;
     // Three rows in the hero; one row once the composer is docked.
-    const floor = hero ? HERO_INPUT_HEIGHT : 40;
+    const floor = hero ? HERO_INPUT_HEIGHT : 42;
     const measure = () => {
       if (!input.current) return;
       input.current.style.height = "auto";
       // Typed text decides its own height; an empty hero keeps three rows.
       const height = draft
-        ? Math.min(Math.max(input.current.scrollHeight, 40), 160)
+        ? Math.min(Math.max(input.current.scrollHeight, 42), 160)
         : Math.min(floor, 160);
       input.current.style.height = `${height}px`;
     };
@@ -984,14 +987,17 @@ export function ChatPanel({
             {!phone && !focusChat && Boolean(title || fullscreen) && (
               <span aria-hidden="true" className="h-3 w-px shrink-0 bg-outline-variant" />
             )}
-            {!phone && !focusChat && headerState && (
-              <StateBadge
-                state={headerState}
-                compact={!headerWide}
-                testId="chat-header-state"
-                className="shrink-0"
-              />
-            )}
+            {!phone &&
+              !focusChat &&
+              headerState &&
+              !(headerState === "working" && headerWide && !terminalCenter && !viewId) && (
+                <StateBadge
+                  state={headerState}
+                  compact={!headerWide}
+                  testId="chat-header-state"
+                  className="shrink-0"
+                />
+              )}
             {/* Session facts sit beside the title; actions stay at the right edge. */}
             {!phone && <div className="min-w-0 flex-1" aria-hidden="true" />}
             {!phone &&
@@ -999,7 +1005,7 @@ export function ChatPanel({
                 <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
                   <ChatRefreshAction
                     stale={sessionChanged}
-                    busy={refreshing || reconnecting}
+                    busy={refreshing || reconnecting || headerState === "working"}
                     disabled={!thread || refreshing}
                     onRefresh={() => void reload()}
                   />
@@ -1045,7 +1051,6 @@ export function ChatPanel({
                 </Popover>
               ))}
             {fullscreen && !phone && <SessionHomeToggles home={home} />}
-            {!phone && focusToggle}
             {onToggleFullscreen && (
               <ActionHelp label="Full screen chat">
                 <button
@@ -1059,9 +1064,9 @@ export function ChatPanel({
                 </button>
               </ActionHelp>
             )}
-            {/* The phone chat is a regular page: navigation (Back, the drawer or
+            {/* The chat page is a regular page: navigation (Back, the sidebar or
                 another destination) leaves it, so it has no close button. */}
-            {!(fullscreen && phone) && (
+            {!fullscreen && (
               <ActionHelp label="Close chat">
                 <button
                   type="button"
@@ -1179,7 +1184,7 @@ export function ChatPanel({
                             data-testid="chat-message"
                             data-role={message.role}
                             data-message-id={message.id}
-                            className="group/message mx-auto mb-3 w-full max-w-(--chat-width) min-w-0 chat-message"
+                            className="group/message mx-auto mb-1 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
                               className={
@@ -1188,14 +1193,7 @@ export function ChatPanel({
                                   : undefined
                               }
                             >
-                              <div
-                                data-testid="chat-message-agent"
-                                className={
-                                  message.role === "user"
-                                    ? "sr-only"
-                                    : "mb-1 text-xs font-medium text-on-surface-variant"
-                                }
-                              >
+                              <div data-testid="chat-message-agent" className="sr-only">
                                 {message.role === "user"
                                   ? "You"
                                   : typeof custom.agent === "string"
@@ -1211,6 +1209,7 @@ export function ChatPanel({
                                   providerActivity={custom.providerActivity}
                                   turn={custom.turn}
                                   live={live}
+                                  subagents={subagentLinks}
                                 />
                                 <ChatAttachments value={custom.attachments} />
                                 <AgentTextStreamProvider streaming={live}>
@@ -1218,26 +1217,31 @@ export function ChatPanel({
                                 </AgentTextStreamProvider>
                               </div>
                             </div>
-                            {!live && (
-                              <ChatMessageActions
-                                threadId={thread?.id}
-                                messageId={message.id}
-                                role={message.role === "user" ? "user" : "assistant"}
-                                content={content}
-                                turn={custom.turn}
-                                model={stored?.model}
-                                tokens={usage?.input_tokens}
-                                cachedTokens={usage?.cached_input_tokens}
-                                forkDisabledReason={forkDisabledReason}
-                                onForked={openThread}
-                                threadTitle={thread?.title ?? "New chat"}
-                                agent={agentLabel(
-                                  typeof custom.agent === "string" ? custom.agent : config.agent,
-                                )}
-                                timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
-                                onSelectionAction={actOnSelection}
-                              />
-                            )}
+                            {!live &&
+                              (message.role === "user" ||
+                                !!content.trim() ||
+                                !!custom.turn ||
+                                !!stored?.model ||
+                                !!usage?.input_tokens) && (
+                                <ChatMessageActions
+                                  threadId={thread?.id}
+                                  messageId={message.id}
+                                  role={message.role === "user" ? "user" : "assistant"}
+                                  content={content}
+                                  turn={custom.turn}
+                                  model={stored?.model}
+                                  tokens={usage?.input_tokens}
+                                  cachedTokens={usage?.cached_input_tokens}
+                                  forkDisabledReason={forkDisabledReason}
+                                  onForked={openThread}
+                                  threadTitle={thread?.title ?? "New chat"}
+                                  agent={agentLabel(
+                                    typeof custom.agent === "string" ? custom.agent : config.agent,
+                                  )}
+                                  timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                  onSelectionAction={actOnSelection}
+                                />
+                              )}
                           </MessagePrimitive.Root>
                         </>
                       );

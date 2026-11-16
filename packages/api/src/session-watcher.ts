@@ -136,6 +136,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     updated_at: new Date(),
     ...(r.cwd !== undefined && { cwd: r.cwd }),
     ...(r.parentId !== undefined && { parent_session_id: r.parentId }),
+    ...(r.spawnedFromId !== undefined && { spawned_from_session_id: r.spawnedFromId }),
     ...(r.summary !== undefined && { summary: r.summary }),
     ...(r.pid !== undefined && { pid: r.pid }),
     ...(r.transcriptPath !== undefined && {

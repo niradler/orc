@@ -12,6 +12,7 @@ import {
   type PreviewImportSource,
   type PreviewPreferences,
   type PreviewProfile,
+  type PreviewProfileChoice,
 } from "@orc/core/desktop-preview";
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 import { NOTIFY_CHANNEL, type NotifyRequest, OPEN_CHANNEL } from "./notify.js";
@@ -97,7 +98,10 @@ contextBridge.exposeInMainWorld("orcDesktop", {
             ipcRenderer.invoke(PREVIEW_COMMAND, { action: "profiles" }),
           createProfile: (name: string): Promise<PreviewProfile> =>
             ipcRenderer.invoke(PREVIEW_COMMAND, { action: "profile_create", name }),
-          selectProfile: (session_id: string, profile_id?: string | null): Promise<string | null> =>
+          selectProfile: (
+            session_id: string,
+            profile_id?: PreviewProfileChoice,
+          ): Promise<PreviewProfileChoice> =>
             ipcRenderer.invoke(PREVIEW_COMMAND, {
               action: "profile_select",
               session_id,

@@ -1,6 +1,7 @@
 import { Plug, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ErrorState } from "@/components/ErrorState";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,10 +64,6 @@ export function SshHostSettings() {
   const body = (
     <>
       <div className="space-y-4">
-        <p className="font-body text-sm text-muted-foreground">
-          Server-wide: applies to new chats, terminals and jobs for everyone using this ORC server.
-          Open ones keep their host.
-        </p>
         {ssh.locked && (
           <p data-testid="ssh-locked" className="font-body text-sm text-tertiary">
             Fixed by ORC_SSH_HOST in orc's environment.
@@ -78,9 +75,15 @@ export function SshHostSettings() {
           </p>
         )}
         <div className="space-y-2">
-          <Label htmlFor="ssh-host" className="font-label text-sm text-muted-foreground">
-            Host
-          </Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor="ssh-host" className="font-label text-sm text-muted-foreground">
+              Host
+            </Label>
+            <HelpPopover label="execution host" testId="ssh-host-help">
+              Server-wide: applies to new chats, terminals and jobs for everyone using this ORC
+              server. Open ones keep their host.
+            </HelpPopover>
+          </div>
           <Select value={choice} onValueChange={setChoice} disabled={disabled}>
             <SelectTrigger
               id="ssh-host"
@@ -127,9 +130,14 @@ export function SshHostSettings() {
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ssh-remote-port" className="font-label text-sm text-muted-foreground">
-            Tunnel port override
-          </Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor="ssh-remote-port" className="font-label text-sm text-muted-foreground">
+              Tunnel port override
+            </Label>
+            <HelpPopover label="tunnel port override" testId="ssh-remote-port-help">
+              Leave empty to let SSH choose an available port automatically.
+            </HelpPopover>
+          </div>
           <Input
             id="ssh-remote-port"
             aria-invalid={Boolean(alias && !portValid)}
@@ -144,9 +152,6 @@ export function SshHostSettings() {
           {alias && !portValid && (
             <p className="text-sm text-error">Enter a remote port from 1 to 65535.</p>
           )}
-          <p className="font-body text-sm text-muted-foreground">
-            Leave empty to let SSH choose an available port automatically.
-          </p>
         </div>
         <div className="flex gap-3">
           <Button

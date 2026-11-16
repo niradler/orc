@@ -212,7 +212,7 @@ for (const width of [1440, 390]) {
       animations: "disabled",
     });
     if (width === 1440) {
-      await page.getByTestId("chat-close-button").click();
+      await page.getByTestId("nav-tasks").click();
       await toggleThemeInPlace(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
       await page.getByTestId("chat-open-button").click();
@@ -227,7 +227,7 @@ for (const width of [1440, 390]) {
         path: testInfo.outputPath("session-controls-light-1440.png"),
         animations: "disabled",
       });
-      await page.getByTestId("chat-close-button").click();
+      await page.getByTestId("nav-tasks").click();
       await toggleThemeInPlace(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     }

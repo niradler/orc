@@ -44,10 +44,10 @@ test("focus chat hides the header state and queue while keeping the composer, St
     // The header's session state is the detail focus mode removes.
     await expect(panel.getByTestId("chat-header-state")).toBeVisible();
 
-    await expect(panel.getByTestId("chat-focus-toggle")).toHaveAttribute("aria-pressed", "false");
-    await panel.getByTestId("chat-focus-toggle").click();
+    await expect(panel.getByTestId("chat-focus-toggle")).toHaveCount(0);
+    await openChatActions(page);
+    await page.getByTestId("chat-focus-menu").click();
     await expect(panel).toHaveAttribute("data-focus", "true");
-    await expect(panel.getByTestId("chat-focus-toggle")).toHaveAttribute("aria-pressed", "true");
     // Focus hides the chrome a reader does not need mid-conversation.
     await expect(panel.getByTestId("chat-header-state")).toHaveCount(0);
     await expect(panel.getByTestId("chat-message-queue")).toHaveCount(0);
@@ -67,7 +67,7 @@ test("focus chat hides the header state and queue while keeping the composer, St
   await expect(panel).toHaveAttribute("data-focus", "false");
   await expect(panel.getByTestId("chat-header-state")).toBeVisible();
 
-  // The session actions menu reaches the same toggle, and keeps Escape for itself.
+  // The session actions menu toggles it again, and keeps Escape for itself.
   await openChatActions(page);
   await expect(page.getByTestId("chat-focus-menu")).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("chat-focus-menu").click();

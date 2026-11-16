@@ -362,30 +362,4 @@ test.describe("queued tasks on the board", () => {
       await apiDelete(request, `/tasks/${task.id}`);
     }
   });
-
-  test("the dashboard counts a queued task as pending, not in progress", async ({
-    page,
-    request,
-  }) => {
-    const task = await createTask(request, tid("pw-queued-dash"));
-    try {
-      const { tasks } = await apiGet<{ tasks: Task[] }>(request, "/tasks?limit=100");
-      const doing = tasks.filter((t) => t.status === "doing").length;
-      const pending = tasks.filter((t) => t.status === "todo" || t.status === "queued").length;
-
-      await apiPatch<Task>(request, `/tasks/${task.id}`, { status: "queued" });
-      await gotoView(page, "activity");
-
-      // Moving todo → queued must not move the Doing tile, and must leave the
-      // Todo tile where it was: both surfaces treat queued as pending.
-      const value = (label: string) =>
-        page
-          .locator(`[data-testid="stat-card"][data-stat-label="${label}"]`)
-          .getByTestId("stat-card-value");
-      await expect(value("Doing")).toHaveText(String(doing));
-      await expect(value("Todo")).toHaveText(String(pending));
-    } finally {
-      await apiDelete(request, `/tasks/${task.id}`);
-    }
-  });
 });

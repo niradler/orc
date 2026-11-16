@@ -1,6 +1,7 @@
 import type { JobAction } from "@orc/core/job-actions";
 import type { JobSettings } from "@orc/core/job-settings";
 import { useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSsh } from "@/hooks/useSsh";
@@ -87,7 +88,13 @@ export function JobDestinationFields({
       {action.type === "command" && (
         <>
           <div className="space-y-1.5">
-            <Label htmlFor="job-shell">Shell</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="job-shell">Shell</Label>
+              <HelpPopover label="Shell" testId="job-shell-help">
+                The script is passed as the final argument. The interpreter must be installed on the
+                selected host.
+              </HelpPopover>
+            </div>
             <select
               id="job-shell"
               data-testid="job-shell"
@@ -145,10 +152,6 @@ export function JobDestinationFields({
               </div>
             </div>
           )}
-          <p className="text-xs text-outline">
-            The script is passed as the final argument. The interpreter must be installed on the
-            selected host.
-          </p>
         </>
       )}
       {action.type === "agent" && (
@@ -177,7 +180,13 @@ export function JobDestinationFields({
           {settings.workspace?.mode === "worktree" && (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="job-base-ref">Base branch or ref</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="job-base-ref">Base branch or ref</Label>
+                  <HelpPopover label="Base branch or ref" testId="job-base-ref-help">
+                    HEAD inherits the project checkout’s current commit. Override with a local
+                    branch or remote-tracking ref. Each run gets an isolated, detached worktree.
+                  </HelpPopover>
+                </div>
                 <Input
                   id="job-base-ref"
                   data-testid="job-base-ref"
@@ -194,33 +203,31 @@ export function JobDestinationFields({
                     })
                   }
                 />
-                <p className="text-xs text-outline">
-                  HEAD inherits the project checkout’s current commit. Override with a local branch
-                  or remote-tracking ref. Each run gets an isolated, detached worktree.
-                </p>
               </div>
-              <label className="flex min-h-11 items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  data-testid="job-cleanup"
-                  checked={settings.workspace.cleanup_on_success}
-                  onChange={(event) =>
-                    onChange({
-                      ...settings,
-                      workspace: {
-                        mode: "worktree",
-                        base_ref: settings.workspace?.base_ref ?? "HEAD",
-                        cleanup_on_success: event.target.checked,
-                      },
-                    })
-                  }
-                />
-                Clean up worktree after a successful run
-              </label>
-              <p className="text-xs text-outline">
-                Failed runs, files (including ignored files), and commits absent from the base are
-                kept. Run history records the worktree path.
-              </p>
+              <div className="flex items-center gap-1">
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    data-testid="job-cleanup"
+                    checked={settings.workspace.cleanup_on_success}
+                    onChange={(event) =>
+                      onChange({
+                        ...settings,
+                        workspace: {
+                          mode: "worktree",
+                          base_ref: settings.workspace?.base_ref ?? "HEAD",
+                          cleanup_on_success: event.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  Clean up worktree after a successful run
+                </label>
+                <HelpPopover label="Worktree cleanup" testId="job-cleanup-help">
+                  Failed runs, files (including ignored files), and commits absent from the base are
+                  kept. Run history records the worktree path.
+                </HelpPopover>
+              </div>
             </>
           )}
         </div>

@@ -470,6 +470,7 @@ function setupDb(sqlite: Database): void {
     "UPDATE usage_events SET resolution='rollup' WHERE resolution IN ('day','model')",
     "CREATE INDEX IF NOT EXISTS usage_events_raw_ts_idx ON usage_events(ts) WHERE resolution='request'",
     "ALTER TABLE gateway_sessions ADD COLUMN parent_session_id TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN spawned_from_session_id TEXT",
   ];
   for (const statement of migrations) {
     try {
@@ -596,6 +597,7 @@ const INDEXES = `
   CREATE INDEX IF NOT EXISTS gateway_sessions_status_role_idx ON gateway_sessions(status, role);
   CREATE INDEX IF NOT EXISTS gateway_sessions_project_idx ON gateway_sessions(project_id);
   CREATE INDEX IF NOT EXISTS gateway_sessions_parent_idx ON gateway_sessions(backend, parent_session_id);
+  CREATE INDEX IF NOT EXISTS gateway_sessions_spawned_from_idx ON gateway_sessions(backend, spawned_from_session_id);
   CREATE UNIQUE INDEX IF NOT EXISTS gateway_sessions_live_native_idx
     ON gateway_sessions(backend, IFNULL(execution_host, ''), runtime_session_id)
     WHERE chat_id = '__live-sessions__' AND runtime_session_id IS NOT NULL;

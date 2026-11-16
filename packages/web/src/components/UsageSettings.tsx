@@ -65,7 +65,7 @@ const UNKNOWN_MODEL = "__unknown__";
 type TokenKey = (typeof TOKEN_TYPES)[number]["key"];
 type Breakdown = "models" | "agents";
 type Granularity = "day" | "hour";
-type ChartPoint = UsageBucket & { label: string };
+export type ChartPoint = UsageBucket & { label: string };
 
 function agentName(agent: string): string {
   return agentNames[agent] ?? agent;
@@ -107,7 +107,7 @@ function bucketLabel(bucket: string, granularity: Granularity): string {
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function chartPoints(report: UsageReport | undefined): ChartPoint[] {
+export function chartPoints(report: UsageReport | undefined): ChartPoint[] {
   if (!report?.buckets.length) return [];
   const byBucket = new Map(report.buckets.map((bucket) => [bucket.bucket, bucket]));
   const step = report.granularity === "hour" ? 3_600_000 : 86_400_000;
@@ -796,7 +796,13 @@ export function UsageSettings() {
 
       <details className="border-t border-border pt-4" data-testid="usage-quotas">
         <summary className="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
-          <span>Account quotas</span>
+          <span className="flex items-center gap-1">
+            Account quotas
+            <HelpPopover label="account quotas" testId="usage-quotas-help">
+              Local CLI accounts on the API host. SSH accounts are excluded. Credentials stay on the
+              server.
+            </HelpPopover>
+          </span>
           <span className="text-xs font-normal text-muted-foreground">
             {quotas.isPending
               ? "Loading…"
@@ -805,10 +811,6 @@ export function UsageSettings() {
                 : `${count.format(quotas.data?.accounts.length ?? 0)} accounts · refresh to update`}
           </span>
         </summary>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Local CLI accounts on the API host. SSH accounts are excluded. Credentials stay on the
-          server.
-        </p>
         {quotas.isPending && (
           <p role="status" className="mt-3 text-sm text-muted-foreground">
             Loading account quotas…

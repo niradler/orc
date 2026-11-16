@@ -1,5 +1,6 @@
 import type { PreviewImportSource, PreviewProfile } from "@orc/core/desktop-preview";
 import { useEffect, useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { desktopBridge } from "@/lib/desktop-bridge";
 
@@ -8,7 +9,7 @@ export function BrowserProfilesSettings() {
   const [profiles, setProfiles] = useState<PreviewProfile[]>([]);
   const [name, setName] = useState("");
   const [rename, setRename] = useState("");
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState("default");
   const [port, setPort] = useState("9222");
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [store, setStore] = useState("");
@@ -44,11 +45,15 @@ export function BrowserProfilesSettings() {
   }
   return (
     <div className="border-b border-border py-4" data-testid="browser-profiles-settings">
-      <h3 className="text-sm font-medium">Saved browser profiles</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Log in inside ORC to keep a login here. Each chat starts in temporary mode. Choosing the
-        same saved profile explicitly shares its cookies and site storage between those chats.
-      </p>
+      <div className="flex items-center gap-1">
+        <h3 className="text-sm font-medium">Browser profiles</h3>
+        <HelpPopover label="Browser profiles" testId="browser-profiles-help">
+          Every chat uses the ORC browser profile unless you pick another one in its browser panel,
+          so a login made once works for you and your agents in every chat and survives restarts.
+          Add a saved profile to keep a second set of logins apart. Temporary keeps one chat's
+          logins in memory only.
+        </HelpPopover>
+      </div>
       <form
         className="mt-3 flex flex-wrap gap-2"
         onSubmit={(event) => {
@@ -76,24 +81,22 @@ export function BrowserProfilesSettings() {
           Create profile
         </Button>
       </form>
-      {profiles.length > 0 && (
-        <select
-          aria-label="Saved browser profile"
-          data-testid="browser-profile-select"
-          className="form-control form-control-single mt-3"
-          value={selected}
-          onChange={(event) => setSelected(event.target.value)}
-        >
-          <option value="">Choose a profile</option>
-          {profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profile.name}
-            </option>
-          ))}
-        </select>
-      )}
-      {selected && (
-        <div className="mt-2 flex flex-wrap gap-2">
+      <select
+        aria-label="Browser profile"
+        data-testid="browser-profile-select"
+        className="form-control form-control-single mt-3"
+        value={selected}
+        onChange={(event) => setSelected(event.target.value)}
+      >
+        <option value="default">ORC browser · default for every chat</option>
+        {profiles.map((profile) => (
+          <option key={profile.id} value={profile.id}>
+            {profile.name}
+          </option>
+        ))}
+      </select>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {selected !== "default" && (
           <input
             aria-label="Rename browser profile"
             data-testid="browser-profile-rename-name"
@@ -103,6 +106,8 @@ export function BrowserProfilesSettings() {
             onChange={(event) => setRename(event.target.value)}
             placeholder="New profile name"
           />
+        )}
+        {selected !== "default" && (
           <Button
             disabled={busy || !rename.trim()}
             data-testid="browser-profile-rename"
@@ -118,33 +123,41 @@ export function BrowserProfilesSettings() {
           >
             Rename
           </Button>
-          <Button
-            variant="ghost"
-            disabled={busy}
-            data-testid="browser-profile-remove"
-            onClick={() =>
-              void run(async () => {
-                if (!bridge) return;
-                if (await bridge.removeProfile(selected)) {
-                  setProfiles(await bridge.profiles());
-                  setSelected("");
-                  setStatus("Profile removed and site data cleared.");
-                }
-              })
-            }
-          >
-            Remove profile
-          </Button>
-        </div>
-      )}
-      <details className="mt-4" data-testid="browser-import-settings">
-        <summary className="cursor-pointer text-sm">Import selected browser logins</summary>
-        <p className="my-2 text-xs text-muted-foreground">
-          Select a destination profile above. Scan installed Firefox profiles, or
-          Chrome/Edge/Brave/Chromium on macOS and Linux, and Safari on macOS. Only the sites you
-          choose are copied. Close the source browser first. OS keychain approval may be required;
-          Linux encrypted stores require Secret Service’s secret-tool.
-        </p>
+        )}
+        <Button
+          variant="ghost"
+          disabled={busy}
+          data-testid="browser-profile-remove"
+          onClick={() =>
+            void run(async () => {
+              if (!bridge) return;
+              if (await bridge.removeProfile(selected)) {
+                setProfiles(await bridge.profiles());
+                setStatus(
+                  selected === "default"
+                    ? "ORC browser logins and site data cleared."
+                    : "Profile removed and site data cleared.",
+                );
+                setSelected("default");
+              }
+            })
+          }
+        >
+          {selected === "default" ? "Clear browser data" : "Remove profile"}
+        </Button>
+      </div>
+      <details open className="mt-4" data-testid="browser-import-settings">
+        <summary className="cursor-pointer text-sm">
+          <span className="inline-flex items-center gap-1">
+            Import logins from Chrome, Edge, Brave, Arc, Firefox or Safari
+            <HelpPopover label="Importing logins" testId="browser-import-help">
+              Logins go into the profile selected above. Scan installed Firefox profiles, or
+              Chrome/Edge/Brave/Chromium on macOS and Linux, and Safari on macOS. Only the sites you
+              choose are copied. Close the source browser first. OS keychain approval may be
+              required; Linux encrypted stores require Secret Service’s secret-tool.
+            </HelpPopover>
+          </span>
+        </summary>
         <div className="my-2 flex flex-wrap gap-2">
           <Button
             disabled={busy || !selected}
@@ -200,13 +213,6 @@ export function BrowserProfilesSettings() {
             </Button>
           )}
         </div>
-        <p className="my-2 text-xs text-muted-foreground">
-          Connect a Chrome/Edge profile whose local debugging endpoint you enabled, then select
-          sites and a destination profile. Approve any prompt in that browser. Only selected sites’
-          cookies are copied; the agent never receives this connection. Passwords, local storage and
-          device-bound sessions are not transferred. Some sites require logging in again. Windows
-          Chrome/Edge app-bound cookie files require this connection.
-        </p>
         <a
           className="text-xs underline"
           href="https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session"
@@ -215,7 +221,7 @@ export function BrowserProfilesSettings() {
         >
           Chrome connection instructions
         </a>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             type="number"
             min={1024}
@@ -240,14 +246,32 @@ export function BrowserProfilesSettings() {
           >
             Find source sites
           </Button>
+          <HelpPopover label="Live browser connection" testId="browser-import-live-help">
+            Connect a Chrome/Edge profile whose local debugging endpoint you enabled, then select
+            sites and a destination profile. Approve any prompt in that browser. Only selected
+            sites’ cookies are copied; the agent never receives this connection. Passwords, local
+            storage and device-bound sessions are not transferred. Some sites require logging in
+            again. Windows Chrome/Edge app-bound cookie files require this connection.
+          </HelpPopover>
         </div>
         {source && (
           <div className="mt-3">
             <p className="text-xs text-muted-foreground">
               {source.name} · Select sites to copy into{" "}
-              {profiles.find((profile) => profile.id === selected)?.name}
+              {selected === "default"
+                ? "the ORC browser"
+                : profiles.find((profile) => profile.id === selected)?.name}
             </p>
-            <div className="mt-2 max-h-48 overflow-y-auto">
+            <label className="mt-2 flex min-h-9 items-center gap-2 text-xs font-medium">
+              <input
+                type="checkbox"
+                data-testid="browser-import-all"
+                checked={sites.length === source.sites.length}
+                onChange={(event) => setSites(event.target.checked ? source.sites : [])}
+              />
+              All {source.sites.length} sites
+            </label>
+            <div className="max-h-48 overflow-y-auto">
               {source.sites.map((site) => (
                 <label key={site} className="flex min-h-9 items-center gap-2 text-xs">
                   <input

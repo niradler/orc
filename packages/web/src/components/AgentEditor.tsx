@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { AgentFull } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -185,24 +186,26 @@ export function AgentEditor({ agent, pending, error, onSave }: Props) {
                   </div>
                 ))}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      data-testid="agent-custom-tools"
-                      type="checkbox"
-                      checked={fields.tools !== undefined}
-                      onChange={(event) => {
-                        setTools([]);
-                        setSource(
-                          setAgentField(source, "tools", event.target.checked ? {} : undefined),
-                        );
-                      }}
-                    />{" "}
-                    Customize tool access
-                  </label>
-                  <p className="text-xs text-outline">
-                    Use the tool names supported by your chosen backend. With customization off, the
-                    backend's default tools apply. An empty custom list allows no tools.
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        data-testid="agent-custom-tools"
+                        type="checkbox"
+                        checked={fields.tools !== undefined}
+                        onChange={(event) => {
+                          setTools([]);
+                          setSource(
+                            setAgentField(source, "tools", event.target.checked ? {} : undefined),
+                          );
+                        }}
+                      />{" "}
+                      Customize tool access
+                    </label>
+                    <HelpPopover label="Customize tool access" testId="agent-custom-tools-help">
+                      Use the tool names supported by your chosen backend. With customization off,
+                      the backend's default tools apply. An empty custom list allows no tools.
+                    </HelpPopover>
+                  </div>
                   {fields.tools !== undefined && (
                     <>
                       {tools.map((tool, index) => (
@@ -283,7 +286,13 @@ export function AgentEditor({ agent, pending, error, onSave }: Props) {
                     </>
                   )}
                 </div>
-                <Label htmlFor="agent-instructions">Instructions</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="agent-instructions">Instructions</Label>
+                  <HelpPopover label="Instructions" testId="agent-instructions-help">
+                    Use YAML + Markdown to edit handoffs and additional configuration. Custom fields
+                    are preserved.
+                  </HelpPopover>
+                </div>
                 <CodeEditor
                   id="agent-instructions"
                   testId="agent-instructions-input"
@@ -293,10 +302,6 @@ export function AgentEditor({ agent, pending, error, onSave }: Props) {
                   value={parsed.value?.body ?? ""}
                   onChange={(value) => setSource(setAgentBody(source, value))}
                 />
-                <p className="text-xs text-outline">
-                  Use YAML + Markdown to edit handoffs and additional configuration. Custom fields
-                  are preserved.
-                </p>
               </>
             )
           )}

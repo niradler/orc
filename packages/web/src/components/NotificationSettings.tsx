@@ -1,5 +1,6 @@
 import { PUSH_TOPICS, type PushDevice, type PushTopic } from "@orc/core/push";
 import { Bell, BellOff, Send, Trash2, Volume2 } from "lucide-react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useProjects } from "@/hooks/useProjects";
@@ -85,12 +86,12 @@ function SoundSettings() {
   };
   return (
     <div className="mt-6 space-y-3" data-testid="notification-sound-settings">
-      <div>
+      <div className="flex items-center gap-1">
         <h3 className="text-sm font-medium">Sound</h3>
-        <p className="text-sm text-muted-foreground">
+        <HelpPopover label="Sound" testId="notification-sound-help">
           A short chime plays in this browser when work needs you. Completed work stays silent;
           updates remain in the notification menu.
-        </p>
+        </HelpPopover>
       </div>
       <label className="flex min-h-11 items-center gap-2 text-sm sm:min-h-0 [@media(pointer:coarse)]:min-h-11">
         <input
@@ -168,12 +169,14 @@ export function NotificationSettings() {
 
   return (
     <section aria-labelledby="notifications-title">
-      <h2 id="notifications-title" className="mb-1 text-base font-medium">
-        Notifications
-      </h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Choose alerts and sounds. Push stays quiet while ORC is focused.
-      </p>
+      <div className="mb-2 flex items-center gap-1">
+        <h2 id="notifications-title" className="text-base font-medium">
+          Notifications
+        </h2>
+        <HelpPopover label="Notifications" testId="notifications-help">
+          Choose alerts and sounds. Push stays quiet while ORC is focused.
+        </HelpPopover>
+      </div>
       <Separator className="mb-4" />
       {support !== "supported" ? (
         <p data-testid="push-unsupported" className="text-sm text-muted-foreground">

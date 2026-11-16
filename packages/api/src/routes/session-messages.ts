@@ -11,6 +11,7 @@ import {
   SessionSpawnSchema,
   type SessionStatus,
   SessionStatusSchema,
+  SessionSubagentsSchema,
   SessionWaitManySchema,
   SessionWaitSchema,
 } from "@orc/core/session-messages";
@@ -19,7 +20,12 @@ import { getSqlite } from "@orc/db/client";
 import { SessionMessageStore } from "@orc/db/session-messages";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
-import { requireAncestor, sendToSession, sessionLineage } from "../sessions/control.js";
+import {
+  requireAncestor,
+  sendToSession,
+  sessionLineage,
+  sessionSubagents,
+} from "../sessions/control.js";
 import { chatStatus, spawnChat, stopChat } from "./chat.js";
 
 const app = createRouter();
@@ -260,6 +266,23 @@ app.openapi(
     },
   }),
   (c) => c.json(sessionLineage(c.req.valid("param").id), 200),
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/sessions/live/{id}/subagents",
+    tags: ["Sessions"],
+    summary: "The subagents a session ran, each with the tool call that started it",
+    request: { params },
+    responses: {
+      200: {
+        description: "Subagents in start order",
+        content: { "application/json": { schema: SessionSubagentsSchema } },
+      },
+    },
+  }),
+  async (c) => c.json(await sessionSubagents(c.req.valid("param").id), 200),
 );
 
 function settled(current: SessionStatus, initial: SessionStatus, until: "idle" | "message") {

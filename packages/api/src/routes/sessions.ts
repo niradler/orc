@@ -58,6 +58,10 @@ const LiveSessionSchema = z
     parent_id: z.string().nullable().default(null).openapi({
       description: "Live session id of the session that spawned this subagent",
     }),
+    spawned_from_id: z.string().nullable().default(null).openapi({
+      description:
+        "Live session id of the session that started this one as an independent session (Claude Desktop start_session)",
+    }),
     name: z.string().nullable(),
     summary: z.string().nullable(),
     tokens_used: z.number().nullable(),
@@ -364,7 +368,11 @@ const nativeKey = (backend: string, host: string | null, runtimeId: string | nul
 
 async function toLiveDtos(rows: GatewayRow[]) {
   const parentIds = [
-    ...new Set(rows.flatMap((row) => (row.parent_session_id ? [row.parent_session_id] : []))),
+    ...new Set(
+      rows.flatMap((row) =>
+        [row.parent_session_id, row.spawned_from_session_id].filter((id): id is string => !!id),
+      ),
+    ),
   ];
   const parents = parentIds.length
     ? await getDb().query.gateway_sessions.findMany({
@@ -411,6 +419,11 @@ async function toLiveDtos(rows: GatewayRow[]) {
       parent_id: r.parent_session_id
         ? (parentByNative.get(
             nativeKey(r.backend, r.execution_host ?? null, r.parent_session_id),
+          ) ?? null)
+        : null,
+      spawned_from_id: r.spawned_from_session_id
+        ? (parentByNative.get(
+            nativeKey(r.backend, r.execution_host ?? null, r.spawned_from_session_id),
           ) ?? null)
         : null,
       name: r.display_title ?? r.title ?? null,

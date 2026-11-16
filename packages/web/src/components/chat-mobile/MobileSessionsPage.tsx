@@ -31,7 +31,7 @@ import {
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import type { ChatHistoryEntry } from "@/lib/chat-history-list";
-import { entryAgent } from "@/lib/chat-history-list";
+import { entryAgent, nestedLabel } from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
 function activityWhen(ms: number): string {
@@ -117,7 +117,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
         onSelect={() => selectEntry(entry)}
       />
       {entry.children?.length ? (
-        <SubagentList count={entry.children.length}>
+        <SubagentList label={nestedLabel(entry.children)}>
           {entry.children.map((child) => renderRow(child, null))}
         </SubagentList>
       ) : null}

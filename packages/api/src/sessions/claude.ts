@@ -32,7 +32,12 @@ const RegistryEntry = z.object({
 export type RegistryEntry = z.infer<typeof RegistryEntry>;
 
 const DesktopEntry = z.object({
+  sessionId: z.string().optional(),
   cliSessionId: z.string().min(1),
+  spawnedFrom: z
+    .object({ sessionId: z.string().min(1) })
+    .nullish()
+    .catch(null),
   cwd: z.string(),
   title: z.string().optional(),
   createdAt: z.number().optional(),
@@ -183,7 +188,16 @@ export function claudeAdapter(
   } = {},
   runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): SessionAdapter {
-  const desktopCache = new Map<string, { mtime: number; record: SessionRecord | null }>();
+  const desktopCache = new Map<
+    string,
+    {
+      mtime: number;
+      record: SessionRecord | null;
+      desktopId?: string;
+      cliId?: string;
+      spawnedFrom?: string;
+    }
+  >();
   const metaCache = new Map<string, { mtime: number; meta: TranscriptMeta }>();
   const subagentCache = new Map<string, { mtime: number; title: string | null }>();
 
@@ -237,10 +251,16 @@ export function claudeAdapter(
           let cached = desktopCache.get(path);
           if (cached?.mtime !== mtime) {
             let record: SessionRecord | null = null;
+            let link: { desktopId?: string; cliId?: string; spawnedFrom?: string } = {};
             try {
               const d = DesktopEntry.parse(
                 JSON.parse(new TextDecoder().decode(await runtime.readFile(path, 2 * 1024 * 1024))),
               );
+              link = {
+                cliId: d.cliSessionId,
+                ...(d.sessionId ? { desktopId: d.sessionId } : {}),
+                ...(d.spawnedFrom ? { spawnedFrom: d.spawnedFrom.sessionId } : {}),
+              };
               if (!d.isArchived) {
                 const last = new Date(d.lastActivityAt ?? d.createdAt ?? Date.now());
                 record = {
@@ -254,10 +274,20 @@ export function claudeAdapter(
                 };
               }
             } catch {}
-            cached = { mtime, record };
+            cached = { mtime, record, ...link };
             desktopCache.set(path, cached);
           }
           if (cached.record) records.set(cached.record.externalId, { ...cached.record });
+        }
+        const cliByDesktopId = new Map(
+          [...desktopCache.values()].flatMap((entry) =>
+            entry.desktopId && entry.cliId ? [[entry.desktopId, entry.cliId] as const] : [],
+          ),
+        );
+        for (const entry of desktopCache.values()) {
+          const record = entry.record && records.get(entry.record.externalId);
+          const parent = entry.spawnedFrom && cliByDesktopId.get(entry.spawnedFrom);
+          if (record && parent && parent !== record.externalId) record.spawnedFromId = parent;
         }
       }
 

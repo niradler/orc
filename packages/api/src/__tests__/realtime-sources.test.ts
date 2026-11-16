@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { changes } from "@orc/core/changes";
 import { LOCAL_HOST } from "@orc/core/exec-host";
 import { watchProcessExit } from "../realtime/process-watch.js";
-import { watchResourcePath } from "../realtime/sources.js";
+import { scheduleGithubRechecks, watchResourcePath } from "../realtime/sources.js";
 import { startSessionWatcher } from "../session-watcher.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -97,5 +97,44 @@ test("should notify transcript file changes even when the session metadata does 
     stop();
     teardownTestApp();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("should report which paths changed so a pushed remote ref can be recognized", async () => {
+  const root = mkdtempSync(join(tmpdir(), "orc-ref-watch-"));
+  mkdirSync(join(root, ".git", "refs", "remotes", "origin"), { recursive: true });
+  const seen: string[] = [];
+  const stop = watchResourcePath(root, (paths) => {
+    seen.push(...paths);
+  });
+  try {
+    const ref = /(^|\/)refs\/remotes\/origin\/main$/;
+    const deadline = Date.now() + 8000;
+    while (!seen.some((path) => ref.test(path)) && Date.now() < deadline) {
+      writeFileSync(join(root, ".git", "refs", "remotes", "origin", "main"), `${Date.now()}\n`);
+      await Bun.sleep(200);
+    }
+    expect(seen.some((path) => ref.test(path))).toBe(true);
+  } finally {
+    stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("should recheck GitHub a fixed number of times after a push and restart on a new push", async () => {
+  let github = 0;
+  const unsubscribe = changes.subscribe((change) => {
+    if (change.resources.includes("github")) github++;
+  });
+  try {
+    scheduleGithubRechecks("checkout:test", [40, 80, 120]);
+    await Bun.sleep(60);
+    scheduleGithubRechecks("checkout:test", [40, 80, 120]);
+    await Bun.sleep(250);
+    expect(github).toBe(4);
+    await Bun.sleep(150);
+    expect(github).toBe(4);
+  } finally {
+    unsubscribe();
   }
 });

@@ -1,10 +1,10 @@
 import type { SessionLineage as Lineage } from "@orc/core/session-messages";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
 import { useChat } from "@/hooks/useChat";
+import { useOpenLiveSession } from "@/hooks/useOpenLiveSession";
 import { useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionLineage } from "@/hooks/useSessions";
 
@@ -27,7 +27,7 @@ function NodeLink({ node, onOpen }: { node: Node; onOpen: (node: Node) => void }
 export function SessionLineage({ sessionId }: { sessionId: string | null }) {
   const { data } = useSessionLineage(sessionId);
   const chat = useChat();
-  const navigate = useNavigate();
+  const openSession = useOpenLiveSession();
   const home = useSessionHome();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +37,11 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
 
   async function openNode(node: Node): Promise<void> {
     setError(null);
-    if (node.kind === "session") {
-      navigate(`/chat?sessionLive=${encodeURIComponent(node.id)}&project=all`);
-      return;
-    }
     try {
+      if (node.kind === "session") {
+        await openSession(node.id);
+        return;
+      }
       chat.openThread(await api.chat.get(node.id));
       if (home.viewId) home.go({ viewId: null }, { replace: true });
     } catch (cause) {

@@ -1,7 +1,7 @@
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { activityAdvanced, oneLine } from "./common.js";
+import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { parseOpenCodeUsage } from "./usage-parsers.js";
 
@@ -125,7 +125,10 @@ export function opencodeAdapter(
           ...(row.parent_id ? { parentId: row.parent_id } : {}),
           title: oneLine(row.title || row.id, 120),
           cwd: row.directory || null,
-          status: "stopped",
+          // OpenCode persists the session row as the turn and its parts advance,
+          // so recent writes are the only cross-version liveness signal: its
+          // lifecycle columns (time_busy/time_idle) stay stale after a turn.
+          status: statusFromMtime(row.time_updated),
           createdAt: new Date(row.time_created),
           lastActivityAt: new Date(row.time_updated),
           transcriptPath: path,

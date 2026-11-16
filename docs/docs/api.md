@@ -304,12 +304,13 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id |
+| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`) |
 | `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
 | `GET` | `/sessions/live/{id}/analytics` | Analytics for the chat that owns this session |
 | `GET` | `/sessions/live/{id}/cache` | Recorded prompt-cache usage |
+| `GET` | `/sessions/live/{id}/subagents` | The subagents a session ran, in start order, each with `tool_call_id`: the parent's tool call that started it (null for Cursor, which records none) |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
 | `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
 | `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |

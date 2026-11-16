@@ -1,4 +1,9 @@
-import type { BrowserAction, PreviewBrowserState, PreviewProfile } from "@orc/core/desktop-preview";
+import type {
+  BrowserAction,
+  PreviewBrowserState,
+  PreviewProfile,
+  PreviewProfileChoice,
+} from "@orc/core/desktop-preview";
 import { createContext, useContext } from "react";
 
 /** A file opened from a chat link, an attachment or the native picker, shown
@@ -36,7 +41,7 @@ export interface DesktopBrowserPaneValue {
   /** Agent preview delivery can be unavailable for this session/host. */
   deliveryError: string | null;
   profiles: PreviewProfile[];
-  profileId: string | null;
+  profileId: PreviewProfileChoice;
   /** The chat's profile selection is still loading; ignore changes until it resolves. */
   profilesPending: boolean;
   displayBusy: boolean;
@@ -49,7 +54,7 @@ export interface DesktopBrowserPaneValue {
   changeTab(action: "tab_select" | "tab_close", tabId: string): void;
   newTab(): void;
   display(command: BrowserAction): void;
-  selectProfile(id: string | null): void;
+  selectProfile(id: PreviewProfileChoice): void;
   showFile(id: string): void;
   closeFile(id: string): void;
   reloadFile(id: string): void;

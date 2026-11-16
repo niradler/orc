@@ -3,14 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { stringify as stringifyYaml } from "yaml";
 import { api, type SkillFileInput } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { HelpPopover } from "@/components/HelpPopover";
 import { PackageFileTabs } from "@/components/PackageFileTabs";
 import { Button } from "@/components/ui/button";
-import {
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -187,14 +183,14 @@ export function PackageEditor({
   }
 
   return (
-    <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%-1rem)] max-w-4xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+    <DialogContent
+      aria-describedby={undefined}
+      className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%-1rem)] max-w-4xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6"
+    >
       <DialogHeader>
         <DialogTitle className="wrap-break-word pr-8">
           {initial ? `Edit ${initial.name}` : "New package"}
         </DialogTitle>
-        <DialogDescription>
-          Save a configuration once, then use it in any project.
-        </DialogDescription>
       </DialogHeader>
       {!format ? (
         <div className="grid gap-3 sm:grid-cols-2" data-testid="package-type-choice">
@@ -204,7 +200,7 @@ export function PackageEditor({
             onClick={() => selectFormat("apm")}
             className="rounded-lg border border-outline-variant p-5 text-left hover:bg-surface-low"
           >
-            <strong className="block mb-2">APM package</strong>
+            <strong className="mb-2 block">APM package</strong>
             <span className="text-sm text-outline">
               Instructions, agents, skills, MCP and dependencies. Configure with apm.yml.
             </span>
@@ -215,7 +211,7 @@ export function PackageEditor({
             onClick={() => selectFormat("agent-plugin")}
             className="rounded-lg border border-outline-variant p-5 text-left hover:bg-surface-low"
           >
-            <strong className="block mb-2">Agent Plugin</strong>
+            <strong className="mb-2 block">Agent Plugin</strong>
             <span className="text-sm text-outline">
               Portable skills and MCP. Configure with plugin.json and mcp.json.
             </span>
@@ -290,9 +286,17 @@ export function PackageEditor({
             {tab === "configuration" && (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm text-outline">
-                    {format === "apm" ? "APM configuration" : "Portable plugin identity"}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-outline">
+                      {format === "apm" ? "APM configuration" : "Portable plugin identity"}
+                    </span>
+                    {format !== "apm" && (
+                      <HelpPopover label="Agent Plugin" testId="package-plugin-format-help">
+                        Agent Plugins v1 contains skills and MCP. Choose APM if you need shared
+                        instructions or agent profiles.
+                      </HelpPopover>
+                    )}
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
@@ -346,7 +350,18 @@ export function PackageEditor({
                     {format === "apm" ? (
                       <>
                         <div className="space-y-1">
-                          <Label htmlFor="package-apm-mcp">MCP servers (YAML declarations)</Label>
+                          <div className="flex items-center gap-1">
+                            <Label htmlFor="package-apm-mcp">MCP servers (YAML declarations)</Label>
+                            <HelpPopover label="MCP servers" testId="package-apm-mcp-help">
+                              Use registry names, or named APM mappings with transport and
+                              command/URL. Credentials use environment references such as{" "}
+                              <code>
+                                {"$"}
+                                {"{API_TOKEN}"}
+                              </code>
+                              .
+                            </HelpPopover>
+                          </div>
                           <CodeEditor
                             id="package-apm-mcp"
                             path="mcp-dependencies.yml"
@@ -370,15 +385,6 @@ export function PackageEditor({
                               }
                             }}
                           />
-                          <p className="text-xs text-outline">
-                            Use registry names, or named APM mappings with transport and
-                            command/URL. Credentials use environment references such as{" "}
-                            <code>
-                              {"$"}
-                              {"{API_TOKEN}"}
-                            </code>
-                            .
-                          </p>
                           {mcpError && (
                             <p role="alert" className="text-sm text-destructive">
                               {mcpError}
@@ -386,7 +392,16 @@ export function PackageEditor({
                           )}
                         </div>
                         <div className="space-y-1">
-                          <Label htmlFor="package-instructions">Shared instructions</Label>
+                          <div className="flex items-center gap-1">
+                            <Label htmlFor="package-instructions">Shared instructions</Label>
+                            <HelpPopover
+                              label="Shared instructions"
+                              testId="package-instructions-help"
+                            >
+                              Saved as an APM instruction primitive. Agent-specific model and tool
+                              configuration belongs in an agent definition.
+                            </HelpPopover>
+                          </div>
                           <Textarea
                             id="package-instructions"
                             data-testid="package-instructions"
@@ -403,10 +418,6 @@ export function PackageEditor({
                               )
                             }
                           />
-                          <p className="text-xs text-outline">
-                            Saved as an APM instruction primitive. Agent-specific model and tool
-                            configuration belongs in an agent definition.
-                          </p>
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="package-agent-picker">
@@ -450,38 +461,28 @@ export function PackageEditor({
                             ))}
                           </select>
                         </div>
-                        <p className="text-sm text-outline">
-                          Configure targets, MCP dependencies and launch scripts in Edit YAML.
-                          Supporting agent files are editable in Files.
-                        </p>
                       </>
                     ) : (
-                      <>
-                        <p className="text-sm text-outline">
-                          Agent Plugins v1 contains skills and MCP. Choose APM if you need shared
-                          instructions or agent profiles.
+                      <div className="space-y-1">
+                        <Label>mcp.json (optional)</Label>
+                        <CodeEditor
+                          path="mcp.json"
+                          testId="package-mcp-input"
+                          height={220}
+                          value={
+                            mcpFile?.content ??
+                            JSON.stringify({ $schema: MCP_SCHEMA, mcpServers: {} }, null, 2)
+                          }
+                          readOnly={busy}
+                          onChange={(content) =>
+                            setFiles(replacePackageFile(files, "mcp.json", content))
+                          }
+                        />
+                        <p className="text-xs text-outline">
+                          Credentials are managed by the coding agent. Keep secrets out of package
+                          files.
                         </p>
-                        <div className="space-y-1">
-                          <Label>mcp.json (optional)</Label>
-                          <CodeEditor
-                            path="mcp.json"
-                            testId="package-mcp-input"
-                            height={220}
-                            value={
-                              mcpFile?.content ??
-                              JSON.stringify({ $schema: MCP_SCHEMA, mcpServers: {} }, null, 2)
-                            }
-                            readOnly={busy}
-                            onChange={(content) =>
-                              setFiles(replacePackageFile(files, "mcp.json", content))
-                            }
-                          />
-                          <p className="text-xs text-outline">
-                            Credentials are managed by the coding agent. Keep secrets out of package
-                            files.
-                          </p>
-                        </div>
-                      </>
+                      </div>
                     )}
                   </>
                 )}
@@ -516,17 +517,19 @@ export function PackageEditor({
                       </div>
                     );
                   })}
-                <p className="text-sm text-outline">
-                  Choose skills from your library. Their SKILL.md, scripts, references and assets
-                  are copied into this package; the originals stay available independently.
-                </p>
-                <Input
-                  aria-label="Search existing skills"
-                  data-testid="package-skill-search"
-                  placeholder="Search your skills…"
-                  value={skillSearch}
-                  onChange={(event) => setSkillSearch(event.target.value)}
-                />
+                <div className="flex items-center gap-1">
+                  <Input
+                    aria-label="Search existing skills"
+                    data-testid="package-skill-search"
+                    placeholder="Search your skills…"
+                    value={skillSearch}
+                    onChange={(event) => setSkillSearch(event.target.value)}
+                  />
+                  <HelpPopover label="Package skills" testId="package-skills-help">
+                    Choose skills from your library. Their SKILL.md, scripts, references and assets
+                    are copied into this package; the originals stay available independently.
+                  </HelpPopover>
+                </div>
                 {skills.error && <p role="alert">{skills.error.message}</p>}
                 {skills.isLoading && <p>Loading skills…</p>}
                 <div className="max-h-[40dvh] overflow-auto space-y-2">

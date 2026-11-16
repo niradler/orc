@@ -27,10 +27,10 @@ export function useVisualViewport(): void {
     if (!viewport) return;
     const root = document.documentElement;
     const update = () => {
-      if (viewport.scale !== 1) return;
-      root.style.setProperty("--app-height", `${viewport.height}px`);
-      root.style.setProperty("--app-top", `${viewport.offsetTop}px`);
-      root.dataset.compactViewport = String(viewport.height < 320);
+      const height = viewport.scale === 1 ? viewport.height : window.innerHeight;
+      root.style.setProperty("--app-height", `${height}px`);
+      root.style.setProperty("--app-top", `${viewport.scale === 1 ? viewport.offsetTop : 0}px`);
+      root.dataset.compactViewport = String(height < 320);
     };
     update();
     viewport.addEventListener("resize", update);

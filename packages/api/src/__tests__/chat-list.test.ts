@@ -50,6 +50,7 @@ test("authenticated chat listing exposes only summary identity for flat history 
         sourceId: "source-id",
         host: "remote-a",
         projectId: null,
+        spawnedFrom: null,
       },
       {
         id: legacy,
@@ -61,6 +62,7 @@ test("authenticated chat listing exposes only summary identity for flat history 
         sourceId: null,
         host: null,
         projectId: null,
+        spawnedFrom: null,
       },
       {
         id: corrupt,
@@ -72,6 +74,7 @@ test("authenticated chat listing exposes only summary identity for flat history 
         sourceId: null,
         host: null,
         projectId: null,
+        spawnedFrom: null,
       },
     ],
   });
