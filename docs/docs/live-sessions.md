@@ -23,6 +23,13 @@ notifications of their own. Cursor IDE chats take their folder from the workspac
 that holds them, and a transcript whose worktree was deleted falls back to the
 deepest folder that still exists.
 
+Independent sessions nest the same way under the session that started them: a
+session started through ORC's session spawn tool (any agent) and a Claude Desktop
+session started with `start_session`, read from `spawnedFrom` in the Desktop
+session files. They form a tree, so a spawned session that starts more shows them
+under itself. The toggle counts both kinds, for example **1 subagent · 2 sessions**.
+A spawned session keeps its own notifications and usage.
+
 Choosing a session never changes the project filter in the header: **All projects**
 stays on **All projects**. A session whose project no longer exists groups by its
 folder, and folders that share a name show as much of the path as tells them apart.

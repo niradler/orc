@@ -20,6 +20,7 @@ import {
   folderLabel,
   folderProjectName,
   historyEntryState,
+  withDescendants,
 } from "@/lib/chat-history-list";
 import { resolveAgentId } from "@/lib/composer-chips";
 import {
@@ -340,7 +341,7 @@ export function useSessionHistory({
   };
   const states = new Map(
     scopedEntries
-      .flatMap((entry) => [entry, ...(entry.children ?? [])])
+      .flatMap(withDescendants)
       .map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
   );
   const byId = new Map(scopedEntries.map((entry) => [entry.id, entry]));
@@ -435,9 +436,7 @@ export function useSessionHistory({
   );
   // Opening the list must land on the project of the session already on screen,
   // even though every group is collapsed by default.
-  const activeRow = entries.find(
-    (entry) => isSelected(entry) || !!entry.children?.some((child) => isSelected(child)),
-  );
+  const activeRow = entries.find((entry) => withDescendants(entry).some(isSelected));
   const activeAssigned = !!activeRow && assigned(activeRow);
   const autoExpanded = useRef("");
   useEffect(() => {
@@ -459,7 +458,7 @@ export function useSessionHistory({
     setExpandedProjects((ids) => (ids.includes(group) ? ids : [...ids, group]));
   }, [open, section, activeRow, activeAssigned, projectGroups, unassignedRows]);
   const active = entries
-    .flatMap((entry) => [entry, ...(entry.children ?? [])])
+    .flatMap(withDescendants)
     .find((entry) => entry.kind === "local" && entry.tab.key === chat.activeKey);
   const activeKeys = active?.seenKeys.join("\n") ?? "";
   const activeUpdated = active?.updatedAt ?? 0;

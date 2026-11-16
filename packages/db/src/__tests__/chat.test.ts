@@ -19,6 +19,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: "source-session",
         cwd: "/private",
         host: "remote-a",
+        spawnedBy: { sessionId: "parent-chat", at: 1, notify: false },
         messages: [{ content: "Private message" }],
       }),
     );
@@ -33,6 +34,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         runtimeId: ["not-a-string"],
         sourceId: { id: "not-a-string" },
         host: 42,
+        spawnedBy: { sessionId: 42 },
       }),
     );
     const summaries = new ChatStore(db).list();
@@ -46,6 +48,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: "source-session",
         host: "remote-a",
         projectId: null,
+        spawnedFrom: "parent-chat",
         resumed: 0,
       },
       {
@@ -57,6 +60,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
+        spawnedFrom: null,
         resumed: 0,
       },
       {
@@ -68,6 +72,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
+        spawnedFrom: null,
         resumed: 0,
       },
       {
@@ -79,6 +84,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
         sourceId: null,
         host: null,
         projectId: null,
+        spawnedFrom: null,
         resumed: 0,
       },
     ]);
@@ -146,6 +152,7 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         sourceId: null,
         host: "host-b",
         projectId: null,
+        spawnedFrom: null,
         resumed: 0,
       },
       {
@@ -157,6 +164,7 @@ test("chat summaries retain host identity for equal runtime IDs on different exe
         sourceId: null,
         host: "host-a",
         projectId: null,
+        spawnedFrom: null,
         resumed: 0,
       },
     ]);
@@ -179,6 +187,7 @@ test("chat summaries expose project but not the working folder", () => {
       JSON.stringify({
         config: { agent: "codex" },
         projectId: "proj-shop",
+        spawnedFrom: null,
         resumed: 0,
         cwd: "/srv/shop",
         messages: [{ content: "Private message" }],
@@ -201,6 +210,7 @@ test("chat summaries expose project but not the working folder", () => {
         sourceId: null,
         host: null,
         projectId: "proj-shop",
+        spawnedFrom: null,
         resumed: 0,
       },
       {
@@ -212,6 +222,7 @@ test("chat summaries expose project but not the working folder", () => {
         sourceId: null,
         host: null,
         projectId: null,
+        spawnedFrom: null,
         resumed: 0,
       },
     ]);

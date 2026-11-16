@@ -42,7 +42,7 @@ import {
 } from "@/hooks/useSessionHistory";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
-import { type ChatHistoryEntry, entryAgent } from "@/lib/chat-history-list";
+import { type ChatHistoryEntry, entryAgent, nestedLabel } from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
 export function ChatSessionPicker({
@@ -918,14 +918,15 @@ export function HistoryRow({
           <Highlight text={entry.snippets[0]} query={query} />
         </p>
       )}
-      {nested?.length ? <SubagentList count={nested.length}>{nested}</SubagentList> : null}
+      {nested?.length && entry.children ? (
+        <SubagentList label={nestedLabel(entry.children)}>{nested}</SubagentList>
+      ) : null}
     </div>
   );
 }
 
-export function SubagentList({ count, children }: { count: number; children: ReactNode }) {
+export function SubagentList({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const label = `${count} ${count === 1 ? "subagent" : "subagents"}`;
   return (
     <div data-testid="chat-session-subagents" className="pb-1 pl-6">
       <button

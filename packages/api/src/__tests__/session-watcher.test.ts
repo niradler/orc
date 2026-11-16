@@ -25,6 +25,8 @@ type Row = {
   tokens_used: number | null;
   tokens_estimated: boolean;
   task: { id: string } | null;
+  parent_id: string | null;
+  spawned_from_id: string | null;
 };
 
 let app: ReturnType<typeof createApp>;
@@ -181,6 +183,51 @@ describe("claude adapter: live registry", () => {
 });
 
 describe("claude adapter: ended sessions, tokens and summary", () => {
+  test("desktop start_session links nest a spawned session under the session that started it", async () => {
+    const desktop = join(root, "desktop-spawn", "org", "user");
+    mkdirSync(desktop, { recursive: true });
+    const write = (desktopId: string, cliId: string, extra: Record<string, unknown> = {}) =>
+      writeFileSync(
+        join(desktop, `${desktopId}.json`),
+        JSON.stringify({
+          sessionId: desktopId,
+          cliSessionId: cliId,
+          cwd: "/tmp/spawn-repo",
+          title: cliId,
+          createdAt: 1_780_000_000_000,
+          lastActivityAt: 1_780_000_500_000,
+          ...extra,
+        }),
+      );
+    write("local_root", "spawn-root");
+    write("local_child", "spawn-child", { spawnedFrom: { sessionId: "local_root", taskId: "t" } });
+    write("local_grand", "spawn-grand", { spawnedFrom: { sessionId: "local_child" } });
+    write("local_gone", "spawn-orphan", { spawnedFrom: { sessionId: "local_missing" } });
+    write("local_bad", "spawn-bad", { spawnedFrom: "not an object" });
+
+    await runSync(
+      [
+        claudeAdapter({
+          registry: join(root, "empty-registry"),
+          desktop: join(root, "desktop-spawn"),
+          projects: null,
+        }),
+      ],
+      { force: true },
+    );
+
+    const all = await live({ active: false });
+    const idOf = (cliId: string) => all.find((r) => r.session_id === cliId)?.id;
+    const spawnedFrom = (cliId: string) => all.find((r) => r.session_id === cliId)?.spawned_from_id;
+    expect(idOf("spawn-root")).toBeDefined();
+    expect(spawnedFrom("spawn-root")).toBeNull();
+    expect(spawnedFrom("spawn-child")).toBe(idOf("spawn-root"));
+    expect(spawnedFrom("spawn-grand")).toBe(idOf("spawn-child"));
+    expect(spawnedFrom("spawn-orphan")).toBeNull();
+    expect(spawnedFrom("spawn-bad")).toBeNull();
+    expect(all.find((r) => r.session_id === "spawn-child")?.parent_id).toBeNull();
+  });
+
   test("desktop metadata becomes an ended session with summary and de-duplicated tokens", async () => {
     const desktop = join(root, "desktop", "org", "user");
     const projects = join(root, "projects", "-tmp-ended-repo");

@@ -315,6 +315,7 @@ export const gateway_sessions = sqliteTable(
     mode: text("mode").notNull(),
     runtime_session_id: text("runtime_session_id"),
     parent_session_id: text("parent_session_id"),
+    spawned_from_session_id: text("spawned_from_session_id"),
     execution_host: text("execution_host"),
     cwd: text("cwd"),
     acpx_agent: text("acpx_agent"),
@@ -352,6 +353,7 @@ export const gateway_sessions = sqliteTable(
   (t) => [
     index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at),
     index("gateway_sessions_parent_idx").on(t.backend, t.parent_session_id),
+    index("gateway_sessions_spawned_from_idx").on(t.backend, t.spawned_from_session_id),
   ],
 );
 

@@ -739,6 +739,7 @@ export interface paths {
                                 sourceId?: string | null;
                                 host?: string | null;
                                 projectId?: string | null;
+                                spawnedFrom?: string | null;
                             }[];
                         };
                     };
@@ -23116,6 +23117,11 @@ export interface components {
              * @default null
              */
             parent_id: string | null;
+            /**
+             * @description Live session id of the session that started this one as an independent session (Claude Desktop start_session)
+             * @default null
+             */
+            spawned_from_id: string | null;
             name: string | null;
             summary: string | null;
             tokens_used: number | null;
