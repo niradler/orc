@@ -288,7 +288,7 @@ function chatPush(thread: ChatThread, status: string, body: string): PushMessage
   return {
     title: notificationTitle(`${status} · ${truncate(thread.title, 120)}`, project),
     body,
-    url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
+    url: `/chat?chatThread=${encodeURIComponent(thread.id)}&project=${encodeURIComponent(thread.projectId ?? "all")}`,
     tag: `chat:${thread.id}`,
   };
 }
@@ -2095,6 +2095,7 @@ async function beginTurn(
   const mock = chatMockEnabled();
   const backend = createBackend(thread.backend);
   active.add(key);
+  let nativeKey: string | undefined;
   const runId = crypto.randomUUID();
   let stopped = false;
   let halt = () => {};
@@ -2451,6 +2452,14 @@ async function beginTurn(
           // at the result above or when the session closes (bounded by stopFallback).
           if (stopped) continue;
           touch();
+          if (!nativeKey) {
+            const nativeId = run.session?.getRuntimeSessionId?.();
+            if (nativeId) {
+              nativeKey = turnKey(thread.host, thread.backend, nativeId);
+              if (nativeKey === key || active.has(nativeKey)) nativeKey = key;
+              else active.add(nativeKey);
+            }
+          }
           if (event.type === "tool_use") toolsPending++;
           else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
           outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
@@ -2616,6 +2625,7 @@ async function beginTurn(
           });
       } finally {
         active.delete(key);
+        if (nativeKey && nativeKey !== key) active.delete(nativeKey);
         runs.delete(runId);
         changes.publish("human-requests", "session-messages");
         queueMicrotask(startPendingChildren);

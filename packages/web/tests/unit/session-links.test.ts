@@ -15,6 +15,13 @@ describe("session notification paths", () => {
     );
   });
 
+  test("should open a stored side-chat link on the chat page", () => {
+    expect(sessionPath("/activity?chat=open&chatThread=t-1&project=acme")).toBe(
+      "/chat?chatThread=t-1&project=acme",
+    );
+    expect(sessionPath("/?chat=open&chatThread=t-1")).toBe("/chat?chatThread=t-1&project=all");
+  });
+
   test("should open the session list when the old link named no session", () => {
     expect(sessionPath("/sessions")).toBe("/chat?sessionList=show");
     expect(sessionPath("/sessions?project=acme")).toBe("/chat?project=acme&sessionList=show");

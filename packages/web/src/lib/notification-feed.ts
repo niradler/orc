@@ -31,22 +31,19 @@ export function notificationInView(item: OrcNotification, view: NotificationView
       : undefined;
   const targetThread =
     target.searchParams.get("chatThread") ?? request?.input.origin.chat_thread_id;
-  if (
-    (params.get("chat") || view.pathname === "/chat") &&
-    targetThread &&
-    targetThread === view.chatThreadId
-  )
-    return true;
-  // A session notification is in view when the chat page shows that session's
-  // conversation, its read-only view, or the same native session from a running terminal.
-  if (view.pathname !== "/chat") return false;
+  const chatOpen = !!params.get("chat") || view.pathname === "/chat";
+  if (chatOpen && targetThread && targetThread === view.chatThreadId) return true;
   // Resuming clears the link parameter, so the open thread remembers its source session.
   if (
+    chatOpen &&
     view.threadSourceId &&
     item.type.startsWith("agent.") &&
     view.threadSourceId === item.source_id
   )
     return true;
+  // A session notification is in view when the chat page shows that session's
+  // conversation, its read-only view, or the same native session from a running terminal.
+  if (view.pathname !== "/chat") return false;
   const liveId = params.get("sessionLive") ?? params.get("sessionView");
   if (
     liveId &&

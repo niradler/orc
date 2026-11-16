@@ -277,19 +277,21 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const state = delivery.current;
-      const incoming = feed.current.flush(Date.now(), (item) => {
-        if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
-        return notificationInView(item, {
-          active: true,
-          pathname: state.location.pathname,
-          search: state.location.search,
-          chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
-          threadSourceId:
-            state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.sourceId ?? null,
-          sessions: state.sessions,
-          requests: state.requests ?? undefined,
-        });
-      });
+      const incoming = feed.current
+        .flush(Date.now(), (item) => {
+          if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
+          return notificationInView(item, {
+            active: true,
+            pathname: state.location.pathname,
+            search: state.location.search,
+            chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
+            threadSourceId:
+              state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.sourceId ?? null,
+            sessions: state.sessions,
+            requests: state.requests ?? undefined,
+          });
+        })
+        .filter((item) => item.type !== "agent.finished");
       if (!incoming.length) return;
       setToasts((current) => mergeNotificationToasts(current, incoming));
       setAnnouncement(

@@ -4,8 +4,14 @@
  * so an old link still opens the session it names.
  */
 export function sessionPath(path: string): string {
-  if (path !== "/sessions" && !path.startsWith("/sessions?")) return path;
   const url = new URL(path, "http://localhost");
+  const thread = url.searchParams.get("chatThread");
+  if (thread && url.searchParams.get("chat") === "open") {
+    const next = new URLSearchParams({ chatThread: thread });
+    next.set("project", url.searchParams.get("project") ?? "all");
+    return `/chat?${next}`;
+  }
+  if (path !== "/sessions" && !path.startsWith("/sessions?")) return path;
   const id = url.searchParams.get("session");
   const next = new URLSearchParams(url.searchParams);
   next.delete("session");

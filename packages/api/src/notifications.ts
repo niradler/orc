@@ -129,7 +129,7 @@ export function recordChatNotification(
     requires_action: waiting,
     project_id: thread.projectId ?? null,
     cwd: thread.cwd,
-    path: `/activity?chat=open&chatThread=${encodeURIComponent(thread.id)}${thread.projectId ? `&project=${encodeURIComponent(thread.projectId)}` : ""}`,
+    path: `/chat?chatThread=${encodeURIComponent(thread.id)}&project=${encodeURIComponent(thread.projectId ?? "all")}`,
   });
 }
 
@@ -178,12 +178,7 @@ export function recordObservedNotification(
         threads.some(
           (thread) =>
             activeTurns.has(thread.id) ||
-            (kind === "finished" &&
-              sqlite
-                .query(
-                  "SELECT 1 FROM notifications WHERE source_id=? AND type IN ('agent.finished','agent.failed') AND created_at>=? LIMIT 1",
-                )
-                .get(thread.id, event.activity)),
+            (kind === "finished" && thread.updatedAt >= event.activity - 10_000),
         )
       );
     });
