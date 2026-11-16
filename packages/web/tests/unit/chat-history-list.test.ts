@@ -6,6 +6,8 @@ import {
   folderLabel,
   folderProjectName,
   historyEntryState,
+  nestedLabel,
+  withDescendants,
 } from "../../src/lib/chat-history-list";
 
 const saved = {
@@ -338,6 +340,61 @@ test("a subagent opened as a chat stays nested under its parent", () => {
   const entries = chatHistoryList([], [opened], [child, parent], []);
   expect(entries.map((entry) => entry.id)).toEqual(["native:parent"]);
   expect(entries[0]?.children?.map((entry) => entry.id)).toEqual([`chat:${opened.id}`]);
+});
+
+test("independent sessions nest under the session that started them, in a tree", () => {
+  const root = { ...live, id: "root", session_id: "r", name: "SFT training", project_id: null };
+  const child = {
+    ...live,
+    id: "child",
+    session_id: "c",
+    spawned_from_id: "root",
+    name: "Dataset v3",
+    project_id: null,
+  };
+  const grand = {
+    ...live,
+    id: "grand",
+    session_id: "g",
+    spawned_from_id: "child",
+    name: "Benchmark baselines",
+    status: "running" as const,
+    project_id: null,
+    last_activity_at: "2026-11-01T00:00:00Z",
+  };
+  const subagent = { ...live, id: "sub", session_id: "s", parent_id: "root", project_id: null };
+  const orcSpawn = {
+    ...saved,
+    id: "90000000-0000-4000-8000-000000000003",
+    title: "Spawned through ORC",
+    agent: "claude",
+    runtimeId: "orc-run",
+    sourceId: null,
+    spawnedFrom: "root",
+  };
+  const entries = chatHistoryList([], [orcSpawn], [grand, child, root, subagent], []);
+  expect(entries.map((entry) => entry.id)).toEqual(["native:root"]);
+  const [top] = entries;
+  expect(top?.children?.map((entry) => [entry.id, !!entry.spawned])).toEqual([
+    ["native:child", true],
+    ["native:sub", false],
+    [`chat:${orcSpawn.id}`, true],
+  ]);
+  expect(top?.children?.[0]?.children?.map((entry) => entry.id)).toEqual(["native:grand"]);
+  expect(top?.observedState).toBe("working");
+  expect(top?.updatedAt).toBe(Date.parse("2026-11-01T00:00:00Z"));
+  expect(nestedLabel(top?.children ?? [])).toBe("1 subagent · 2 sessions");
+  expect(withDescendants(top as NonNullable<typeof top>).map((entry) => entry.id)).toContain(
+    "native:grand",
+  );
+  expect(chatHistoryList([], [], [grand, child, root], [], "baselines").map((e) => e.id)).toEqual([
+    "native:root",
+  ]);
+  const loop = [
+    { ...root, spawned_from_id: "child" },
+    { ...child, spawned_from_id: "root" },
+  ];
+  expect(chatHistoryList([], [], loop, []).map((entry) => entry.id)).toHaveLength(1);
 });
 
 test("folder groups with the same name show enough of the path to tell them apart", () => {
