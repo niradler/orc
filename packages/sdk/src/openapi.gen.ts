@@ -19673,6 +19673,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/{id}/subagents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The subagents a session ran, each with the tool call that started it */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Subagents in start order */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            subagents: {
+                                id: string;
+                                session_id: string | null;
+                                title: string;
+                                status: string;
+                                tool_call_id: string | null;
+                                created_at: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/live/{id}/wait": {
         parameters: {
             query?: never;

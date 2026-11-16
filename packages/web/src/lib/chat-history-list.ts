@@ -317,6 +317,13 @@ export function chatHistoryList(
           .map((item) => keywords.get(item.id) ?? item.title)
           .join(" "),
       );
+  const keepSpawned = (entry: ChatHistoryEntry) => {
+    if (!entry.children) return;
+    entry.children = entry.children.filter((child) => child.spawned);
+    for (const child of entry.children) keepSpawned(child);
+    if (!entry.children.length) delete entry.children;
+  };
+  for (const entry of entries) if (!nested.has(entry)) keepSpawned(entry);
   return entries
     .filter((entry) => !nested.has(entry))
     .filter(

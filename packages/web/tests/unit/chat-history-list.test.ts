@@ -302,7 +302,7 @@ test("a folder's project name is a valid, unused slug", () => {
   expect(folderProjectName(`/x/${"a".repeat(300)}`, [])).toHaveLength(90);
 });
 
-test("subagent sessions nest under their parent and lift its state and recency", () => {
+test("subagent sessions stay out of the list but lift their parent's state and recency", () => {
   const parent = {
     ...live,
     id: "parent",
@@ -324,7 +324,7 @@ test("subagent sessions nest under their parent and lift its state and recency",
   const entries = chatHistoryList([], [], [child, parent, orphan], []);
   expect(entries.map((entry) => entry.id)).toEqual(["native:parent", "native:orphan"]);
   const [top] = entries;
-  expect(top?.children?.map((entry) => entry.id)).toEqual(["native:child"]);
+  expect(top?.children).toBeUndefined();
   expect(top?.observedState).toBe("working");
   expect(top?.updatedAt).toBe(Date.parse("2026-10-31T00:00:00Z"));
   expect(top?.seenKeys).toContain("native:child");
@@ -333,13 +333,13 @@ test("subagent sessions nest under their parent and lift its state and recency",
   ]);
 });
 
-test("a subagent opened as a chat stays nested under its parent", () => {
+test("a subagent opened as a chat stays out of the list", () => {
   const parent = { ...live, id: "parent", session_id: "p", project_id: null };
   const child = { ...live, id: "child", session_id: "c", parent_id: "parent", project_id: null };
   const opened = { ...saved, id: "90000000-0000-4000-8000-000000000002", sourceId: "child" };
   const entries = chatHistoryList([], [opened], [child, parent], []);
   expect(entries.map((entry) => entry.id)).toEqual(["native:parent"]);
-  expect(entries[0]?.children?.map((entry) => entry.id)).toEqual([`chat:${opened.id}`]);
+  expect(entries[0]?.children).toBeUndefined();
 });
 
 test("independent sessions nest under the session that started them, in a tree", () => {
@@ -377,13 +377,12 @@ test("independent sessions nest under the session that started them, in a tree",
   const [top] = entries;
   expect(top?.children?.map((entry) => [entry.id, !!entry.spawned])).toEqual([
     ["native:child", true],
-    ["native:sub", false],
     [`chat:${orcSpawn.id}`, true],
   ]);
   expect(top?.children?.[0]?.children?.map((entry) => entry.id)).toEqual(["native:grand"]);
   expect(top?.observedState).toBe("working");
   expect(top?.updatedAt).toBe(Date.parse("2026-11-01T00:00:00Z"));
-  expect(nestedLabel(top?.children ?? [])).toBe("1 subagent · 2 sessions");
+  expect(nestedLabel(top?.children ?? [])).toBe("2 sessions");
   expect(withDescendants(top as NonNullable<typeof top>).map((entry) => entry.id)).toContain(
     "native:grand",
   );

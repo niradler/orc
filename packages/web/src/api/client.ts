@@ -1353,6 +1353,11 @@ export const api = {
         "GET",
         `/sessions/live/${encodeURIComponent(id)}/lineage`,
       ),
+    subagents: (id: string) =>
+      req<import("@orc/core/session-messages").SessionSubagents>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/subagents`,
+      ),
     children: (id: string) =>
       req<{ sessions: import("@orc/core/session-messages").SessionStatus[] }>(
         "GET",
