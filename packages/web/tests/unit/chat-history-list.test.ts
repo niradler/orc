@@ -331,6 +331,15 @@ test("subagent sessions nest under their parent and lift its state and recency",
   ]);
 });
 
+test("a subagent opened as a chat stays nested under its parent", () => {
+  const parent = { ...live, id: "parent", session_id: "p", project_id: null };
+  const child = { ...live, id: "child", session_id: "c", parent_id: "parent", project_id: null };
+  const opened = { ...saved, id: "90000000-0000-4000-8000-000000000002", sourceId: "child" };
+  const entries = chatHistoryList([], [opened], [child, parent], []);
+  expect(entries.map((entry) => entry.id)).toEqual(["native:parent"]);
+  expect(entries[0]?.children?.map((entry) => entry.id)).toEqual([`chat:${opened.id}`]);
+});
+
 test("folder groups with the same name show enough of the path to tell them apart", () => {
   const folders = ["/tmp/a/e330/repo", "/tmp/a/e330b/repo", "/Users/nir/orc", null];
   expect(folders.map((cwd) => folderLabel(cwd, folders))).toEqual([

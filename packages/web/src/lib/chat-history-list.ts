@@ -188,7 +188,7 @@ export function chatHistoryList(
   for (const session of native) {
     const child = liveEntries.get(session.id);
     const parent = session.parent_id ? liveEntries.get(session.parent_id) : undefined;
-    if (!child || !parent || child === parent || child.kind !== "native") continue;
+    if (!child || !parent || child === parent) continue;
     parent.children = [...(parent.children ?? []), child];
     nested.add(child);
   }
