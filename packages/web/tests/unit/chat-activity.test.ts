@@ -64,6 +64,7 @@ test("should fold a finished turn into duration, tool count, churn and unique ch
     added: 3,
     removed: 3,
     commands: 1,
+    subagents: 0,
     provider: 0,
     durationMs: 42_000,
     current: null,

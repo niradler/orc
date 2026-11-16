@@ -7,8 +7,10 @@ import {
   chatBackendFor,
   createBackend,
   discoverAgentModels,
+  discoverOpenCodeEffortChoices,
   type RuleGap,
   type SessionOpts,
+  SteerNotConsumedError,
   sessionRules,
   UNKNOWN_CAPABILITIES,
 } from "@orc/agent-runtime";
@@ -101,6 +103,7 @@ import {
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
+import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { isClaudeProcessName } from "../sessions/claude.js";
@@ -364,14 +367,21 @@ app.openapi(
       });
     modelRequests++;
     const result = discoverAgentModels(agent, host, cwd, selectedProvider)
-      .then(
-        (models): ChatModels => ({
+      .then(async (models): Promise<ChatModels> => {
+        // OpenCode's effort levels are model-dependent and only readable over a
+        // live ACP handshake; probe them alongside the catalog for a new chat.
+        const effortChoices =
+          agent === "opencode"
+            ? await discoverOpenCodeEffortChoices(host, cwd, selectedProvider).catch(() => null)
+            : null;
+        return {
           models,
           warning: models.length
             ? null
             : "No models were reported. Choose a saved or custom model.",
-        }),
-      )
+          ...(effortChoices ? { effortChoices } : {}),
+        };
+      })
       .catch(
         (): ChatModels => ({
           models: [],
@@ -495,7 +505,17 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
     dispatched = true;
     try {
       await steer(expandChatInput(input, run.thread.projectId ?? null));
-    } catch {
+    } catch (error) {
+      if (error instanceof SteerNotConsumedError) {
+        // The agent confirmed it did not take the text: roll the intent back so
+        // the client can queue the same message without duplicating it.
+        run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
+        run.steering.delete(requestId);
+        saveDelivery();
+        throw new ConflictError(
+          "This response cannot take the message right now. Queue a message instead.",
+        );
+      }
       message.activity = [
         {
           type: "status",
@@ -690,6 +710,34 @@ async function transcriptMark(thread: ChatThread, source?: NativeSource | null) 
     .stat(row.transcript_path)
     .catch(() => null);
   return info ? `${info.size}:${info.mtimeMs}` : null;
+}
+
+/** Freeze the session's latest recorded request as this turn's token figure so a
+ *  finished turn does not keep drifting as later requests are recorded. Best-effort:
+ *  a read failure leaves the figure to the live usage view. */
+async function captureTurnUsage(
+  thread: ChatThread,
+  startedAt: number,
+): Promise<{ input_tokens: number; cached_input_tokens: number } | undefined> {
+  try {
+    const source = await nativeSource(thread);
+    if (!source?.transcript_path || !["claude", "codex", "pi", "opencode"].includes(source.backend))
+      return undefined;
+    const usage = await loadSessionCacheUsage(
+      hostRuntime(execHostFor(source.execution_host ?? null)),
+      source.backend,
+      source.transcript_path,
+      source.runtime_session_id ?? null,
+    );
+    const latest = usage.latest;
+    if (!latest || latest.input_tokens <= 0) return undefined;
+    const at = latest.recorded_at ? Date.parse(latest.recorded_at) : Number.NaN;
+    // A figure recorded before this turn began belongs to an earlier turn.
+    if (Number.isFinite(at) && at < startedAt) return undefined;
+    return { input_tokens: latest.input_tokens, cached_input_tokens: latest.cached_input_tokens };
+  } catch {
+    return undefined;
+  }
 }
 
 async function importTranscript(thread: ChatThread, source: NativeSource): Promise<boolean> {
@@ -2168,12 +2216,10 @@ async function beginTurn(
       timer = setTimeout(expire, turnLimits.idleMs);
     };
     touch();
+    // Tracks whether a tool call interrupted the prose, so the next text starts a
+    // new paragraph instead of running into the previous remark.
+    let proseInterrupted = false;
     const emit = async (event: ChatEvent) => {
-      if (event.type === "tool_use" && assistant.content) {
-        const narration = assistant.content;
-        assistant.content = "";
-        await emit({ type: "narration", text: narration });
-      }
       if (
         event.type !== "thread" &&
         event.type !== "turn" &&
@@ -2181,7 +2227,18 @@ async function beginTurn(
         event.type !== "capabilities"
       )
         responded = true;
-      if (event.type === "text") assistant.content += event.text;
+      // Prose stays in the message content even when tool calls follow it, so the
+      // assistant's words render as a regular message instead of being folded into
+      // the collapsed activity block as narration.
+      if (event.type === "text") {
+        const text = proseInterrupted && assistant.content ? `\n\n${event.text}` : event.text;
+        proseInterrupted = false;
+        assistant.content += text;
+        // The break travels with the text event so the live stream and the stored
+        // message stay identical.
+        event = { ...event, text };
+      }
+      if (event.type === "tool_use") proseInterrupted = true;
       if (event.type === "error") failure ??= event.message;
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
       publish(run, event);
@@ -2406,6 +2463,7 @@ async function beginTurn(
           if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
             await emit({ type: event.type, text: event.data });
           else if (event.type === "plan") await emit({ type: "plan", data: event.data });
+          else if (event.type === "subagent") await emit({ type: "subagent", data: event.data });
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
@@ -2482,6 +2540,10 @@ async function beginTurn(
         publish(run, { type: "error", message });
       }
       const finishedAt = Date.now();
+      const frozenUsage = await Promise.race([
+        captureTurnUsage(thread, startedAt),
+        Bun.sleep(5000).then(() => undefined),
+      ]);
       assistant.turn = {
         startedAt,
         finishedAt,
@@ -2493,6 +2555,7 @@ async function beginTurn(
             : failure || agentOutcome === "failed"
               ? "failed"
               : "completed",
+        ...(frozenUsage ? { usage: frozenUsage } : {}),
       };
       assistant.timestamp = finishedAt;
       // Do not pin a native id the backend explicitly reported as non-resumable;

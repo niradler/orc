@@ -59,9 +59,9 @@ export const OPENCODE_CAPABILITIES: AgentCapabilities = Object.freeze({
   modelSelection: true,
   images: true,
   mcp: true,
-  // OpenCode accepts a second session/prompt during a turn as a steer. Verified
-  // against opencode 1.19.5 over `opencode acp`; steer() downgrades per session
-  // if an agent rejects one.
+  // OpenCode accepts steering: 2.x through the `_session/steering` extension,
+  // 1.x as a second session/prompt during a turn (verified against 1.19.5 over
+  // `opencode acp`). steer() downgrades per session if an agent rejects one.
   steering: true,
 });
 

@@ -394,7 +394,7 @@ async function distanceFromBottom(page: Page) {
     .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight);
 }
 
-test("pre-tool narration folds while the final reply stays visible", async ({ page }) => {
+test("pre-tool prose stays visible as part of the reply", async ({ page }) => {
   await installStreamControl(page);
   await page.goto("/?chat=open");
   await page.getByTestId("chat-input").fill("Inspect then summarize");
@@ -408,17 +408,16 @@ test("pre-tool narration folds while the final reply stays visible", async ({ pa
     messages.getByText("First I will inspect the workspace.", { exact: true }),
   ).toBeVisible();
   await push(page, 0, [
-    { type: "narration", text: "First I will inspect the workspace." },
     { type: "tool_use", data: { id: "read", name: "Read", input: '{"path":"README.md"}' } },
     { type: "tool_result", data: { toolUseId: "read", content: "Read complete", isError: false } },
-    { type: "text", text: "The workspace is ready." },
+    { type: "text", text: "\n\nThe workspace is ready." },
     { type: "done" },
   ]);
   await expect(messages.getByText("The workspace is ready.", { exact: true })).toBeVisible();
-  const narration = messages.getByText("First I will inspect the workspace.", { exact: true });
-  await expect(narration).toBeHidden();
-  await page.getByTestId("chat-turn-fold-summary").click();
-  await expect(narration).toBeVisible();
+  // The pre-tool prose remains a regular visible message, not folded into the turn.
+  await expect(
+    messages.getByText("First I will inspect the workspace.", { exact: true }),
+  ).toBeVisible();
 });
 
 test("streaming follows only while pinned and Jump to latest returns with a new count", async ({

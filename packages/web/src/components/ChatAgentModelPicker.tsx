@@ -6,7 +6,14 @@ import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useEnabledAgents, useProviders } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
-import { agentEffort, agentModelLabel } from "@/lib/composer-chips";
+import {
+  agentEffort,
+  agentEffortChoices,
+  agentEffortValue,
+  agentModelLabel,
+  liveEffortChoices,
+  withAgentEffort,
+} from "@/lib/composer-chips";
 
 export function ChatAgentModelPicker() {
   const chat = useChat();
@@ -51,21 +58,29 @@ export function ChatAgentModelPicker() {
     ? "Models could not be loaded. Saved and custom models are available."
     : catalog.data?.warning;
   const modelName = choices.get(config.model) || config.model || "Agent default";
+  const effortValue = agentEffortValue(config);
   const effort = agentEffort(config);
+  const capabilities = useAgentCapabilities(config.agent, thread);
+  // OpenCode's effort levels are model-dependent: the session reports them live,
+  // and the model catalog probes them for a chat that has not started yet.
+  const effortChoices =
+    config.agent === "opencode"
+      ? liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices)
+      : agentEffortChoices(config.agent);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
-  const fixedModel = useAgentCapabilities(config.agent, thread)?.modelSelection === false;
+  const fixedModel = capabilities?.modelSelection === false;
   const modelsDisabled = streaming || !ready || fixedModel;
 
   const note = fixedModel
     ? `${name} picks its own model here.${thread ? " Changing agent starts a new session." : ""}`
     : streaming
-      ? "Provider and model changes are available after the current response. Changing agent starts a new session."
+      ? "Provider, model and effort changes are available after the current response. Changing agent starts a new session."
       : thread
-        ? "Switching to another account of the same agent continues this chat with your prior context. Changing agent starts a new session. Model changes apply to the next turn."
-        : effort
-          ? `Effort is set in ${name} options.`
+        ? "Switching to another account of the same agent continues this chat with your prior context. Changing agent starts a new session. Model and effort changes apply to the next turn."
+        : config.agent === "opencode" && !effortChoices.length
+          ? "Effort levels load from the agent when the session starts."
           : undefined;
   return (
     <AgentModelPicker
@@ -112,6 +127,16 @@ export function ChatAgentModelPicker() {
         return false;
       }}
       onModel={(model) => setConfig({ ...config, model })}
+      efforts={effortChoices}
+      effort={effortValue}
+      onEffort={(value) => {
+        const next = withAgentEffort(config, value);
+        setConfig(next);
+        // Persist on the conversation right away; a send also carries the options,
+        // so a failed save still applies on the next message.
+        const options = next.agentOptions[config.agent];
+        if (thread && options) void chat.applyAgentOptions(config.agent, options).catch(() => {});
+      }}
     />
   );
 }

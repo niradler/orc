@@ -217,6 +217,18 @@ for (const width of [1440, 390]) {
       localStorage.setItem("orc_chat_history_width", "320");
     });
     await mockSessionHome(page, now);
+    if (CAPTURE)
+      await page.route("**/api/chat/models?**", (route) =>
+        route.fulfill({
+          json: {
+            models: [
+              { id: "claude-opus-4-1", label: "Claude Opus 4.1" },
+              { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+            ],
+            warning: null,
+          },
+        }),
+      );
     await page.route(`**/api/chat/threads/${HOME.chatA}`, (route) =>
       route.fulfill({ json: thread }),
     );
@@ -399,6 +411,19 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-turn-tokens")).toContainText("48k tokens");
     await expect(page.getByTestId("chat-turn-cache")).toContainText("85% cached");
     await shot("chat-session-composer");
+    if (CAPTURE) {
+      await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+      await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+      await page.screenshot({
+        path:
+          width === 1440
+            ? `${repoRoot()}/docs/public/screens/chat-agent-picker.png`
+            : testInfo.outputPath(`chat-agent-picker-${width}.png`),
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
+    }
 
     await page.route(`**/api/chat/threads/${HOME.chatA}/analytics`, (route) =>
       route.fulfill({ json: analyticsFixture(Date.now()) }),

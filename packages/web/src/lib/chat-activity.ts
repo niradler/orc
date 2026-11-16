@@ -11,6 +11,8 @@ export type TurnFold = {
   added: number;
   removed: number;
   commands: number;
+  /** Inline subagent transcripts streamed with this turn. */
+  subagents: number;
   /** Kinds this build does not render, counted so the summary never drops them. */
   provider: number;
   durationMs: number | null;
@@ -64,6 +66,15 @@ export function chatItemActivity(item: ChatItem): ChatActivity | null {
       id: item.id,
       ...(item.title === undefined ? {} : { title: item.title }),
       entries: item.entries,
+    };
+  if (item.kind === "subagent")
+    return {
+      type: "subagent",
+      id: item.id,
+      ...(item.title === undefined ? {} : { title: item.title }),
+      status: item.subagentStatus,
+      activity: item.activity,
+      ...(item.text === undefined ? {} : { text: item.text }),
     };
   if (item.kind === "thinking") return { type: "thinking", id: item.id, text: item.text };
   return { type: "status", id: item.id, text: item.text };
@@ -187,6 +198,7 @@ export function foldTurn(items: ChatItem[], timing: TurnTiming = {}): TurnFold {
     added,
     removed,
     commands,
+    subagents: items.filter((item) => item.kind === "subagent").length,
     provider: items.filter((item) => item.kind === "provider").length,
     durationMs: elapsed !== null && elapsed >= 1000 ? elapsed : null,
     current: current ? toolItemActivity(current) : null,
@@ -204,6 +216,7 @@ export function foldCounts(fold: TurnFold, includeFailure = true): string[] {
     fold.tools ? plural(fold.tools, "tool") : "",
     fold.files.length ? `${plural(fold.files.length, "file")} changed${churn}` : "",
     fold.tools && !fold.files.length && fold.commands ? plural(fold.commands, "command") : "",
+    fold.subagents ? plural(fold.subagents, "subagent") : "",
     includeFailure && fold.failed ? `${fold.failed} failed` : "",
     !fold.tools && fold.thoughts ? plural(fold.thoughts, "thought") : "",
     fold.provider

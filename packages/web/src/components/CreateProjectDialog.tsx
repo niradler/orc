@@ -31,10 +31,18 @@ export function CreateProjectDialog({
   open,
   onClose,
   onFirstTask,
+  initialName,
+  initialScope,
+  onCreated,
+  allowFirstTask = true,
 }: {
   open: boolean;
   onClose: () => void;
   onFirstTask: (id: string) => void;
+  initialName?: string;
+  initialScope?: string;
+  onCreated?: (id: string) => void;
+  allowFirstTask?: boolean;
 }) {
   const steps = useFormSteps(
     [
@@ -44,11 +52,11 @@ export function CreateProjectDialog({
     ],
     open,
   );
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("active");
   const [tags, setTags] = useState("");
-  const [scope, setScope] = useState("");
+  const [scope, setScope] = useState(initialScope ?? "");
   const [gitRemoteUrl, setGitRemoteUrl] = useState("");
   const [githubSync, setGithubSync] = useState<GithubSyncConfig>({
     enabled: false,
@@ -57,7 +65,7 @@ export function CreateProjectDialog({
   const [maxWorkers, setMaxWorkers] = useState("");
   const [workspace, setWorkspace] = useState<WorkspaceEnvironment>(defaultWorkspaceEnvironment);
   const createProject = useCreateProject();
-  const [firstTask, setFirstTask] = useState(true);
+  const [firstTask, setFirstTask] = useState(allowFirstTask);
   const [folderError, setFolderError] = useState("");
   const dirty =
     JSON.stringify([
@@ -73,28 +81,28 @@ export function CreateProjectDialog({
       workspace,
     ]) !==
     JSON.stringify([
-      "",
+      initialName ?? "",
       "",
       "active",
       "",
+      initialScope ?? "",
       "",
       "",
-      "",
-      true,
+      allowFirstTask,
       { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
       defaultWorkspaceEnvironment(),
     ]);
   function resetForm() {
     steps.reset();
-    setName("");
+    setName(initialName ?? "");
     setDescription("");
     setStatus("active");
     setTags("");
-    setScope("");
+    setScope(initialScope ?? "");
     setGitRemoteUrl("");
     setGithubSync({ enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS });
     setMaxWorkers("");
-    setFirstTask(true);
+    setFirstTask(allowFirstTask);
     setWorkspace(defaultWorkspaceEnvironment());
     setFolderError("");
     createProject.reset();
@@ -128,6 +136,7 @@ export function CreateProjectDialog({
       onSuccess: (project) => {
         resetForm();
         closeAfterSave();
+        onCreated?.(project.id);
         if (firstTask) onFirstTask(project.id);
       },
     });
@@ -281,15 +290,17 @@ export function CreateProjectDialog({
                       className="bg-background border-control-border text-on-surface font-body text-sm"
                     />
                   </div>
-                  <label className="flex min-h-11 items-center gap-2 text-[13px] text-muted-foreground md:col-span-2">
-                    <input
-                      type="checkbox"
-                      data-testid="project-first-task"
-                      checked={firstTask}
-                      onChange={(event) => setFirstTask(event.target.checked)}
-                    />
-                    Create the first task after saving
-                  </label>
+                  {allowFirstTask && (
+                    <label className="flex min-h-11 items-center gap-2 text-[13px] text-muted-foreground md:col-span-2">
+                      <input
+                        type="checkbox"
+                        data-testid="project-first-task"
+                        checked={firstTask}
+                        onChange={(event) => setFirstTask(event.target.checked)}
+                      />
+                      Create the first task after saving
+                    </label>
+                  )}
                   <GithubSyncFields value={githubSync} onChange={setGithubSync} />
                 </FormStepPanel>
                 <FormStepPanel steps={steps} id="workspace">

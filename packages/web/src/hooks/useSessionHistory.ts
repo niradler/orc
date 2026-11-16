@@ -1,11 +1,12 @@
 import { nativeChatAgent } from "@orc/core/chat";
+import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { useChat } from "@/hooks/useChat";
-import { useCreateProject, useProjects } from "@/hooks/useProjects";
+import { useProjects } from "@/hooks/useProjects";
 import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionSeen } from "@/hooks/useSessionSeen";
 import { useSessionSearch } from "@/hooks/useSessions";
@@ -148,11 +149,11 @@ export function useSessionHistory({
   const [error, setError] = useState("");
   // All statuses: sessions can belong to archived/paused projects and must stay reachable.
   const projectsQuery = useProjects();
-  const createProject = useCreateProject();
   const { data: projects, isLoading: projectsLoading, error: projectsError } = projectsQuery;
   const { data: ssh } = useSsh();
   const [section, setSection] = useState<SessionSection>(storedSection);
   const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
+  const [adoptFolder, setAdoptFolder] = useState<{ cwd: string; name: string } | null>(null);
   const [deep, setDeepState] = useState(() => storedFlag(DEEP_KEY));
   const [agentFilter, setAgentFilterState] = useState(storedAgent);
   const [sort, setSortState] = useState<SessionSort>(storedSort);
@@ -526,19 +527,23 @@ export function useSessionHistory({
     home?.go({ terminalId: null });
     setOpen(false);
   };
-  const projectFromFolder = async (cwd: string) => {
-    if (createProject.isPending) return;
-    try {
-      const name = folderProjectName(
+  const projectFromFolder = (cwd: string) => {
+    // Reuse a project that already owns this folder instead of creating a duplicate.
+    const existing = projectForFolder(cwd, projects ?? []);
+    if (existing) {
+      setExpandedProjects((ids) => (ids.includes(existing.id) ? ids : [...ids, existing.id]));
+      setError("");
+      return;
+    }
+    // Otherwise open the new-project dialog prefilled with the folder, so creating
+    // a project is an explicit, editable step rather than a silent duplicate.
+    setAdoptFolder({
+      cwd,
+      name: folderProjectName(
         cwd,
         (projects ?? []).map((project) => project.name),
-      );
-      const project = await createProject.mutateAsync({ name, scope: cwd });
-      setExpandedProjects((ids) => [...ids, project.id]);
-      setError("");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Project could not be created.");
-    }
+      ),
+    });
   };
   const newSession = () => {
     chat.newTab();
@@ -617,6 +622,10 @@ export function useSessionHistory({
     unassignedRows,
     unassignedFolders,
     projectFromFolder,
+    adoptFolder,
+    closeAdopt: () => setAdoptFolder(null),
+    expandProject: (id: string) =>
+      setExpandedProjects((ids) => (ids.includes(id) ? ids : [...ids, id])),
     loading,
     selectEntry,
     select,

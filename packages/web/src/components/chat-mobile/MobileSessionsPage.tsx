@@ -16,6 +16,7 @@ import { Fragment, type ReactNode, useCallback, useEffect, useRef } from "react"
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { ArchiveResumeForm, ProjectGroup, SubagentList } from "@/components/ChatControls";
+import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { Highlight } from "@/components/Highlight";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import { StateBadge } from "@/components/StateBadge";
@@ -86,6 +87,9 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
     unassignedRows,
     unassignedFolders,
     projectFromFolder,
+    adoptFolder,
+    closeAdopt,
+    expandProject,
     loading,
     selectEntry,
     newProjectSession,
@@ -463,6 +467,17 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
             )}
           </div>
         </>
+      )}
+      {adoptFolder && (
+        <CreateProjectDialog
+          open
+          initialName={adoptFolder.name}
+          initialScope={adoptFolder.cwd}
+          allowFirstTask={false}
+          onClose={closeAdopt}
+          onCreated={expandProject}
+          onFirstTask={expandProject}
+        />
       )}
     </section>
   );
