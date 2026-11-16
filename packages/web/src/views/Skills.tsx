@@ -890,12 +890,23 @@ function SkillDetailSheet({
   const assignments = useQuery({
     queryKey: ["skill-projects", skillName],
     queryFn: () => api.skills.projects(skillName as string),
-    enabled: allProjects && open && Boolean(skillName),
+    enabled: open && Boolean(skillName),
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnMount: "always",
     retry: false,
   });
   const assignedProjects = [...new Set(assignments.data?.project_ids ?? [])].sort();
+  const queryClient = useQueryClient();
+  const [scopeError, setScopeError] = useState("");
+  const saveScope = useMutation({
+    mutationFn: (projectIds: string[]) => api.skills.setProjects(skillName as string, projectIds),
+    onMutate: () => setScopeError(""),
+    onSuccess: (result) => {
+      queryClient.setQueryData(["skill-projects", skillName], result);
+      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+    onError: (cause) => setScopeError(cause instanceof Error ? cause.message : String(cause)),
+  });
   const selectedProject = assignedProjects.includes(instructionProject)
     ? instructionProject
     : assignedProjects[0];
@@ -911,7 +922,6 @@ function SkillDetailSheet({
   const [selectedFile, setSelectedFile] = useViewParam<string>("skillFile", "SKILL.md");
   const fileQuery = useSkill(readableName, selectedFile ?? "SKILL.md", detailScope);
   const file = fileQuery.data as SkillRefContent | undefined;
-  const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const documentId = `skill:${detailScope.project_id ?? "global"}:${skillName}:${selectedFile ?? "SKILL.md"}`;
   const projectName = (id?: string) =>
@@ -943,6 +953,65 @@ function SkillDetailSheet({
           )}
           {scopeReady && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {assignments.isSuccess && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="skill-scope"
+                      disabled={saveScope.isPending}
+                    >
+                      Scope:{" "}
+                      {assignedProjects.length === 0
+                        ? "Global"
+                        : assignedProjects.length === 1
+                          ? projectName(assignedProjects[0])
+                          : `${assignedProjects.length} projects`}
+                      <ChevronDown size={12} />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    aria-label="Skill scope"
+                    align="start"
+                    className="w-64 space-y-1 p-2"
+                  >
+                    <label className="flex min-h-9 items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        data-testid="skill-scope-global"
+                        checked={assignedProjects.length === 0}
+                        disabled={assignedProjects.length === 0 || saveScope.isPending}
+                        onChange={() => saveScope.mutate([])}
+                      />
+                      Global (every project)
+                    </label>
+                    {projects.map((project) => (
+                      <label key={project.id} className="flex min-h-9 items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          data-testid={`skill-scope-project-${project.id}`}
+                          checked={assignedProjects.includes(project.id)}
+                          disabled={saveScope.isPending}
+                          onChange={(event) =>
+                            saveScope.mutate(
+                              event.target.checked
+                                ? [...assignedProjects, project.id]
+                                : assignedProjects.filter((id) => id !== project.id),
+                            )
+                          }
+                        />
+                        {project.name}
+                      </label>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
+              {scopeError && (
+                <span role="alert" className="text-error">
+                  {scopeError}
+                </span>
+              )}
               {allProjects && assignedProjects.length > 0 ? (
                 <>
                   <Label htmlFor={contextId}>Instructions for</Label>

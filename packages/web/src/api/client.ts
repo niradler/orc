@@ -1467,6 +1467,10 @@ export const api = {
       }),
     projects: (name: string) =>
       req<{ project_ids: string[] }>("GET", `/skills/${encodeURIComponent(name)}/projects`),
+    setProjects: (name: string, project_ids: string[]) =>
+      req<{ project_ids: string[] }>("PUT", `/skills/${encodeURIComponent(name)}/projects`, {
+        project_ids,
+      }),
     create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
   },
   agents: {
