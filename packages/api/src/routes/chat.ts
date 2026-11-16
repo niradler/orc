@@ -285,7 +285,7 @@ function chatPush(thread: ChatThread, status: string, body: string): PushMessage
   return {
     title: notificationTitle(`${status} · ${truncate(thread.title, 120)}`, project),
     body,
-    url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
+    url: `/chat?chatThread=${encodeURIComponent(thread.id)}&project=all`,
     tag: `chat:${thread.id}`,
   };
 }

@@ -129,7 +129,7 @@ export function recordChatNotification(
     requires_action: waiting,
     project_id: thread.projectId ?? null,
     cwd: thread.cwd,
-    path: `/activity?chat=open&chatThread=${encodeURIComponent(thread.id)}${thread.projectId ? `&project=${encodeURIComponent(thread.projectId)}` : ""}`,
+    path: `/chat?chatThread=${encodeURIComponent(thread.id)}&project=${encodeURIComponent(thread.projectId ?? "all")}`,
   });
 }
 
