@@ -178,12 +178,7 @@ export function recordObservedNotification(
         threads.some(
           (thread) =>
             activeTurns.has(thread.id) ||
-            (kind === "finished" &&
-              sqlite
-                .query(
-                  "SELECT 1 FROM notifications WHERE source_id=? AND type IN ('agent.finished','agent.failed') AND created_at>=? LIMIT 1",
-                )
-                .get(thread.id, event.activity)),
+            (kind === "finished" && thread.updatedAt >= event.activity - 10_000),
         )
       );
     });

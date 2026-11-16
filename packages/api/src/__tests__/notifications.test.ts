@@ -200,6 +200,8 @@ test("should leave a completed turn linked to its active chat and move the next 
     activity: Date.now() - 1000,
   };
   recordObservedNotification(event, () => true);
+  recordObservedNotification({ ...event, activity: Date.now() + 2000 }, () => true);
+  await Bun.sleep(1100);
   const store = new NotificationStore(sqlite);
   const items = () =>
     store.list().notifications.filter((item) => [thread.id, nativeId].includes(item.source_id));
@@ -211,7 +213,7 @@ test("should leave a completed turn linked to its active chat and move the next 
   );
   expect(items()[0]?.read_at).not.toBeNull();
   await Bun.sleep(2);
-  recordObservedNotification({ ...event, activity: Date.now() }, () => true);
+  recordObservedNotification({ ...event, activity: Date.now() + 60_000 }, () => true);
   await Bun.sleep(1100);
   expect(items()).toHaveLength(1);
   // The native session now opens through the chat page's live-session link.
