@@ -212,6 +212,9 @@ test("should recognize a session notification in the chat thread resumed from it
   expect(notificationInView(finished, view)).toBe(true);
   expect(notificationInView(finished, { ...view, threadSourceId: "native-2" })).toBe(false);
   expect(notificationInView(finished, { ...view, pathname: "/tasks" })).toBe(false);
+  expect(notificationInView(finished, { ...view, pathname: "/tasks", search: "?chat=open" })).toBe(
+    true,
+  );
   // A human request's own id is not a session id.
   expect(
     notificationInView(

@@ -85,9 +85,7 @@ test("Needs you: no toast or chime for the session already in view", async ({ pa
   expect(await scenario.chimeNotes()).toBe(0);
 });
 
-test("Done: a finished session gives one silent toast that pauses on hover and closes itself", async ({
-  page,
-}) => {
+test("Done: a finished session lands silently in the bell without a toast", async ({ page }) => {
   const scenario = await notificationScenario(page, {
     sessions: [liveSession(1, "running")],
     requests: [],
@@ -99,28 +97,16 @@ test("Done: a finished session gives one silent toast that pauses on hover and c
 
   scenario.state.sessions = [liveSession(1, "idle")];
   await poll(page);
-
-  const toast = page.getByTestId("agent-toast");
-  await expect(toast).toHaveCount(1, { timeout: 2_000 });
-  await expect(toast).toHaveAttribute("data-level", "done");
-  await expect(toast).toContainText("Fix flaky login test");
-  await expect(toast.getByTestId("agent-toast-approve")).toHaveCount(0);
-  await expect(page.getByTestId("agent-notification-live")).toHaveText("Fix flaky login test");
-  expect(await scenario.chimeNotes()).toBe(0);
-
-  await toast.hover();
-  await page.clock.fastForward(8_000);
-  await expect(toast).toHaveCount(1);
-  await page.mouse.move(5, 5);
-  await page.clock.fastForward(6_500);
-  await expect(toast).toHaveCount(0);
-
-  await poll(page);
   await page.clock.runFor(1_500);
-  await expect(toast).toHaveCount(0);
+
+  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  expect(await scenario.chimeNotes()).toBe(0);
+  await expect(page.getByTestId("notification-bell").first()).toHaveAccessibleName(
+    "Notifications: 1 unread",
+  );
 });
 
-test("Done: sessions finishing together collapse into one toast", async ({ page }) => {
+test("Done: sessions finishing together open from the bell on the chat page", async ({ page }) => {
   const scenario = await notificationScenario(page, {
     sessions: [liveSession(1, "running"), liveSession(2, "running"), liveSession(3, "running")],
     requests: [],
@@ -135,17 +121,13 @@ test("Done: sessions finishing together collapse into one toast", async ({ page 
     liveSession(3, "idle"),
   ];
   await poll(page);
+  await page.clock.runFor(1_500);
 
-  const toast = page.getByTestId("agent-toast");
-  await expect(toast).toHaveCount(1, { timeout: 2_000 });
-  await expect(toast).toContainText("3 updates finished");
-  await expect(page.getByTestId("agent-notification-live")).toHaveText("3 new notifications");
-  expect(await scenario.chimeNotes()).toBe(0);
-
-  await toast.getByTestId("agent-toast-open").click();
+  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  await page.getByTestId("notification-bell").first().click();
   await expect(page.getByTestId("notification-menu")).toBeVisible();
   await page.getByTestId("notification-menu").getByTestId("notification-open").first().click();
-  await expect(page).toHaveURL(/\/chat\?.*sessionLive=notify-live-1/);
+  await expect(page).toHaveURL(/\/chat\?.*sessionLive=notify-live-/);
 });
 
 test("Done: the open chat clears its completion without a toast", async ({ page }) => {
