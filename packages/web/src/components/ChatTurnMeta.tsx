@@ -65,9 +65,8 @@ export const ChatTurnMeta = memo(function ChatTurnMeta({
   cachedTokens?: number | undefined;
 }) {
   const timing = ChatTurnSchema.safeParse(turn);
-  if (!timing.success) return null;
-  const { outcome, finishedAt } = timing.data;
-  const durationMs = foldTurn([], timing.data).durationMs;
+  const { outcome, finishedAt } = timing.success ? timing.data : {};
+  const durationMs = timing.success ? foldTurn([], timing.data).durationMs : null;
   const reason = outcome === "stopped" ? "Stopped" : outcome === "failed" ? "Failed" : null;
   const verb =
     reason === "Stopped" ? "Stopped after" : reason === "Failed" ? "Failed after" : "Worked for";
