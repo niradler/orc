@@ -23,6 +23,8 @@ Package tests spawn real agent CLIs. Pi 1.5.2 runs under `node` from `PATH` and 
 
 A change to `bun.lock`, the root manifest, `patches/`, the CI scripts (`scripts/ci-*`, `scripts/pre-push*`, `scripts/tsconfig.json`), `.github/`, `.githooks/`, or a root `tsconfig*.json` runs every package. Other files under `scripts/` do not. Docs and other files outside a package do not add package tests. On a pull request they still run `@sanity`.
 
+Gates and release steps start from a filtered environment: `gateEnv` (`scripts/gate-env.ts`) strips `GIT_*` hook exports and inherited `ORC_*` runtime overrides, keeping only `ORC_SQLITE_VEC_PATH` and `ORC_DESKTOP_PATH`. An ORC-launched agent shell injects `ORC_HOME`, `ORC_API_SECRET` and channel tokens; `ORC_HOME` would defeat the test home isolation (`orcHome()` prefers it) and live credentials must not reach tests. Test steps additionally isolate `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and `XDG_CONFIG_HOME` under a temporary CI home.
+
 ## Domains and the sanity tag
 
 A domain is a workspace package. `scripts/ci-domains.ts` reads each `packages/*/package.json` and the `workspace:` dependencies. Selection works in two tiers:

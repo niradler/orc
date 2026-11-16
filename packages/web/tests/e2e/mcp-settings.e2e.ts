@@ -38,7 +38,15 @@ for (const width of [1440, 390]) {
       await expect(section).toContainText("Browser example");
       await expect(page.getByTestId("mcp-prompt-editor")).toHaveCount(0);
       await expect(section).not.toContainText("Resources");
-      await expect(section).toContainText("{{request}}");
+      // #393 moved the prompt hint into the shared HelpPopover (portaled, closed by default).
+      const promptsHelp = page.getByTestId("mcp-prompts-help");
+      await promptsHelp.scrollIntoViewIfNeeded();
+      await promptsHelp.focus();
+      await page.keyboard.press("Escape");
+      await promptsHelp.press("Enter");
+      await expect(page.getByTestId("mcp-prompts-help-content")).toContainText("{{request}}");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("mcp-prompts-help-content")).toHaveCount(0);
       expect(await section.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await section.screenshot({ path: testInfo.outputPath(`mcp-settings-${width}.png`) });
       const saved = await (

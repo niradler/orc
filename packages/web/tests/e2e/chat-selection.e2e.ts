@@ -214,6 +214,10 @@ test.describe("touch", () => {
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const { reply } = await openChatWithReply(page);
+    // Select only once the response has settled: the stream-end status re-render
+    // replaces the text node and collapses a selection made mid-stream.
+    await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
+    await expect(page.getByRole("status").filter({ hasText: "Worked" })).toBeVisible();
     // A phone selects by long-press; the selection event is what the toolbar reads.
     await reply.evaluate((node) => {
       const range = document.createRange();

@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { apiPost, gotoView, repoRoot, tid } from "./_helpers";
+import { apiDelete, apiPost, gotoView, repoRoot, tid } from "./_helpers";
 
 test("view help works with keyboard, hover and touch without permanent introductions", async ({
   page,
@@ -161,12 +161,21 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
   const project = await apiPost<{ id: string }>(request, "/projects", {
     name: tid("visual-workspace"),
   });
+  const pads: string[] = [];
   for (const [kind, title] of [
     ["doc", "Release checklist"],
     ["html", "UI cleanup proposal"],
     ["diagram", "Access provider flow"],
   ]) {
-    await apiPost(request, "/scratchpads", { title, kind, project_id: project.id });
+    pads.push(
+      (
+        await apiPost<{ id: string }>(request, "/scratchpads", {
+          title,
+          kind,
+          project_id: project.id,
+        })
+      ).id,
+    );
   }
   const previewJob = await apiPost<{ id: string }>(request, "/jobs", {
     name: "Knowledge digest",
@@ -175,64 +184,83 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
     project_id: project.id,
     enabled: false,
   });
-  await apiPost(request, "/jobs", {
+  const backgroundJob = await apiPost<{ id: string }>(request, "/jobs", {
     name: "Background workspace job",
     command: "echo background",
     trigger_type: "manual",
     project_id: project.id,
     enabled: false,
   });
-  await page.route("**/api/sessions/live?*", (route) =>
-    route.fulfill({
-      json: {
-        sessions: [
-          {
-            id: "compact-session",
-            session_id: "compact-native",
-            agent: "codex",
-            name: "Workspace UI cleanup",
-            status: "stopped",
-            project_id: project.id,
-            task: null,
-            handoff: null,
-            last_activity_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            tokens_used: 48200,
-            tokens_estimated: false,
-            cwd: "C:/Projects/orc",
-            summary: "Reduce repeated introductions and make room for active work.",
-          },
-        ],
-      },
-    }),
-  );
-  await gotoView(page, "sessions");
-  const output = join(repoRoot(), ".claude/validation/ux-density");
-  mkdirSync(output, { recursive: true });
-  for (const theme of ["dark", "light"]) {
-    await page.evaluate((theme) => {
-      localStorage.setItem("orc_theme", theme);
-      document.documentElement.classList.toggle("dark", theme === "dark");
-    }, theme);
-    for (const width of [1440, 768, 390, 320]) {
-      await page.setViewportSize({ width, height: 900 });
-      for (const route of ["webhooks", "chat", "scratchpad", "jobs"]) {
-        await page.goto(
-          `/${route}?project=${project.id}${route === "scratchpad" ? `&padProject=${project.id}` : ""}${route === "chat" ? "&sessionList=show" : ""}`,
-        );
-        if (route === "chat")
-          await expect(
-            page.getByTestId("chat-session-list").getByTestId("chat-history-row"),
-          ).toBeVisible();
-        if (route === "scratchpad") await expect(page.getByTestId("scratchpad-row")).toHaveCount(3);
-        if (route === "jobs")
-          await expect(page.locator(`[data-job-id="${previewJob.id}"]`)).toBeVisible();
-        expect(
-          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-          `${theme} ${width} ${route}`,
-        ).toBe(true);
-        await page.screenshot({ path: join(output, `${route}-${theme}-${width}.png`) });
+  try {
+    await page.route("**/api/sessions/live?*", (route) =>
+      route.fulfill({
+        json: {
+          sessions: [
+            {
+              id: "compact-session",
+              session_id: "compact-native",
+              agent: "codex",
+              name: "Workspace UI cleanup",
+              status: "stopped",
+              project_id: project.id,
+              task: null,
+              handoff: null,
+              last_activity_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              tokens_used: 48200,
+              tokens_estimated: false,
+              cwd: "C:/Projects/orc",
+              summary: "Reduce repeated introductions and make room for active work.",
+            },
+          ],
+        },
+      }),
+    );
+    await gotoView(page, "sessions");
+    const output = join(repoRoot(), ".claude/validation/ux-density");
+    mkdirSync(output, { recursive: true });
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate((theme) => {
+        localStorage.setItem("orc_theme", theme);
+        document.documentElement.classList.toggle("dark", theme === "dark");
+      }, theme);
+      for (const width of [1440, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const route of ["webhooks", "chat", "scratchpad", "jobs"]) {
+          await page.goto(
+            `/${route}?project=${project.id}${route === "scratchpad" ? `&padProject=${project.id}` : ""}${route === "chat" ? "&sessionList=show" : ""}`,
+          );
+          if (route === "chat")
+            await expect(
+              page.getByTestId("chat-session-list").getByTestId("chat-history-row"),
+            ).toBeVisible();
+          if (route === "scratchpad") {
+            // Extra pads can appear (auto Learnings digest, concurrent fixtures);
+            // assert the seeded pads instead of an exact row count.
+            for (const title of [
+              "Release checklist",
+              "UI cleanup proposal",
+              "Access provider flow",
+            ])
+              await expect(
+                page.getByTestId("scratchpad-row").filter({ hasText: title }),
+              ).toBeVisible();
+          }
+          if (route === "jobs")
+            await expect(page.locator(`[data-job-id="${previewJob.id}"]`)).toBeVisible();
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+            `${theme} ${width} ${route}`,
+          ).toBe(true);
+          await page.screenshot({ path: join(output, `${route}-${theme}-${width}.png`) });
+        }
       }
     }
+  } finally {
+    // A retry must not collide with the previous attempt's fixtures (jobs key 409).
+    await apiDelete(request, `/jobs/${previewJob.id}`);
+    await apiDelete(request, `/jobs/${backgroundJob.id}`);
+    for (const id of pads) await apiDelete(request, `/scratchpads/${id}`);
+    await apiDelete(request, `/projects/${project.id}`);
   }
 });

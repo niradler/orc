@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, type Page, test } from "@playwright/test";
 import { closeChatHistory, openChatHistory } from "./_chat-ui";
+import { openFinalFormStep } from "./_form-ui";
 import { API_SECRET, repoRoot } from "./_helpers";
 
 const screen = (name: string) => join(repoRoot(), "docs", "public", "screens", name);
@@ -551,7 +552,14 @@ for (const width of [1440, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`folder-groups-${width}.png`) });
 
     await sft.getByTestId("session-folder-adopt").click();
-    await expect.poll(() => created).toEqual({ name: "nebius-sft", scope: "/fixture/nebius-sft" });
+    // #402: adopt opens the prefilled New project dialog instead of posting directly.
+    const dialog = page.getByTestId("form-dialog");
+    await expect(dialog.getByTestId("project-name-input")).toHaveValue("nebius-sft");
+    await openFinalFormStep(page);
+    await dialog.getByTestId("project-submit").click();
+    await expect
+      .poll(() => created)
+      .toMatchObject({ name: "nebius-sft", scope: "/fixture/nebius-sft" });
     await expect(folders).toHaveCount(1);
     const adopted = list.getByTestId("session-project-proj-sft");
     await expect(adopted).toContainText("SFT run");

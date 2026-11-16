@@ -21,6 +21,7 @@ import {
   selectDomains,
 } from "./ci-domains.js";
 import { packageTestSteps, type Step, typecheckSteps } from "./ci-plan.js";
+import { gateEnv } from "./gate-env.js";
 
 const args = process.argv.slice(2);
 const changedFlag = args.indexOf("--changed");
@@ -36,6 +37,7 @@ const steps: Step[] = [
   ["Domain ownership", ["bun", "test", "scripts/ci-domains.test.ts"]],
   ["Push hook tests", ["bun", "test", "scripts/pre-push.test.ts"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],
+  ["Gate env isolation", ["bun", "test", "scripts/gate-env.test.ts"]],
   ["Knip dependency hygiene", ["bun", "run", "knip:deps"]],
 ];
 
@@ -60,11 +62,10 @@ if (args.includes("--plan")) {
   process.exit(0);
 }
 
-// Git hooks export GIT_DIR, GIT_INDEX_FILE, ... pointing at this repository. Tests that create
-// throwaway repos would inherit them and run git against the real repo, so drop them all.
-const env = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")),
-);
+// Drop git hook exports and inherited ORC runtime overrides (ORC_HOME, ORC_API_SECRET, ...):
+// they would run throwaway-repo tests against the real repo, defeat the test HOME isolation
+// below, or leak live credentials into tests. See gate-env.ts.
+const env = gateEnv(process.env);
 // Preserve the installed browser before test HOME/LOCALAPPDATA are isolated.
 // Otherwise run-e2e resolves Chromium under the empty temporary CI home.
 env.PLAYWRIGHT_BROWSERS_PATH ??= join(

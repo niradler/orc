@@ -26,10 +26,15 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
 4. **Release** from PowerShell, in the background, with output going to a scratchpad log.
    Export the gate overrides for the release process too — `bun run release` inherits
    the environment and otherwise runs the default four shards, which is where the
-   shard stalls (#336) come from:
-   `$env:PW_SHARDS="2"; $env:PW_RETRIES="1";
-   $env:NPM_CONFIG_USERCONFIG="<scratch>/npmrc"; $null | autho exec --map "NPM_TOKEN=npm token" -- bun run release --yes`.
-   The npmrc contains only `//registry.npmjs.org/:_authToken=${NPM_TOKEN}`.
+   shard stalls (#336) come from. On a contended Windows box use `PW_SHARDS=1`: two
+   shards still race (random hook timeouts, session-status and fixture-count flakes).
+   PowerShell strips a bare `--` before native commands, so `autho exec … -- bun …`
+   dies with "Missing command after --"; put the command in a scratch `.cmd` wrapper
+   and run `cmd /c wrapper.cmd`:
+   `$env:PW_SHARDS="1"; $env:PW_RETRIES="1";
+   $env:NPM_CONFIG_USERCONFIG="<scratch>/npmrc"; $null | cmd /c <scratch>/release.cmd`.
+   The wrapper holds `autho exec --map "NPM_TOKEN=npm token" -- bun run release --yes`;
+   the npmrc contains only `//registry.npmjs.org/:_authToken=${NPM_TOKEN}`.
    Watch `.orc/release-state.json` `completed[]`, because the log stays empty while
    autho buffers. Resume after a failure with `--resume --yes`.
    Accepting the npm archive without serving it ("npm publication is not public yet")
@@ -55,6 +60,10 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
      `printf | grep -q`). Directory entries carry a trailing slash (`./knowledge/`).
      Absent `daemon.pid`/`daemon.json`/`orc.db-wal`/`-shm` in the listing are
      expected: graceful stop removes them. Then start orc again.
+   - Tell Nir not to touch orc during the window: a manual Cockpit restart mid-tar
+     fails it with "file changed as we read it" and leaves orc down. Keep an ERR trap
+     that restarts orc on any abort, and prove consistency by hashing the archived
+     `orc.db` against `migration-check.db` (a start after the copy is harmless).
 6. **Lab rollout after Docker publishes.**
    - Pull `niradler/orc:<v>@sha256:<digest>`; check `arch=amd64` and label
      `org.opencontainers.image.revision` == the release commit.
@@ -118,6 +127,9 @@ Speed rules:
 | Smoke health 404 or anonymous requests return 200 | Probed `/health` instead of `/api/health`; or ran without `--env-file orc.env` → open mode | Use `/api/health`; pass the env-file so auth matches prod |
 | Public origin check returns a Cloudflare login page | `orc.niradler.com` sits behind CF Access | Send `CF-Access-Client-Id`/`-Secret` from autho `homelab-access` |
 | Log stays empty during the release | autho buffers child output | Watch `.orc/release-state.json` `completed[]` |
+| `tar: .: file changed as we read it`, orc left down | Someone restarted orc (Cockpit) inside the stopped window | ERR trap restarts orc on abort; hash archived `orc.db` vs `migration-check.db` to prove the copy predates the restart; ask Nir for hands-off |
+| Full gate fails a different random subset each run (hook timeout, `idle` vs `ended`, row counts) | Cross-shard load on one Windows box; per-shard failure lists look like retry passes | `PW_SHARDS=1` for the release gate; read both shards' final lists, not just the last summary |
+| Unchanged specs red after a UI wave (copy, popover geometry, dialog confirmation, exact counts) | Tests assert pre-wave behavior; PR CI only runs `@sanity` | Reproduce the failing cases in isolation, A/B against the pre-wave tag, then follow the intended behavior (HelpPopover content, outside-point geometry, dialog submit, seeded-title assertions) |
 
 ## Self-improvement (required)
 
