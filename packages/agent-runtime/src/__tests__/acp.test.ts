@@ -41,8 +41,8 @@ for await (const line of createInterface({input:process.stdin})) {
  if(m.id==='client-access') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.error)}});emit({id:promptId,result:{stopReason:'end_turn'}});continue;}
  if(m.id==='late-cancel') {emit({id:promptId,result:{stopReason:'cancelled'}});continue;}
  if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,...(mode==='steer-extension'||mode==='steer-decline'?{_meta:{steering:{supported:true}}}:{}),agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
- else if(m.method==='session/new') {emit({id:m.id,result:{sessionId:session,...(mode==='model'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'test-model',name:'Test model'}]}]}:{}),...(['effort','effort-switch','child-updates','child-permission'].includes(mode)?{configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'},{value:'default',name:'Default'}]}]}:{})}});if(mode==='idle-permission')setTimeout(()=>ask('late-idle'),20);}
- else if(m.method==='session/set_config_option') emit({id:m.id,result:{configOptions:[]}});
+ else if(m.method==='session/new') {emit({id:m.id,result:{sessionId:session,...(mode==='model-effort'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'}]}]}:{}),...(mode==='model'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'test-model',name:'Test model'}]}]}:{}),...(['effort','effort-switch','child-updates','child-permission'].includes(mode)?{configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'},{value:'default',name:'Default'}]}]}:{})}});if(mode==='idle-permission')setTimeout(()=>ask('late-idle'),20);}
+ else if(m.method==='session/set_config_option') emit({id:m.id,result:{configOptions:mode==='model-effort'&&m.params.configId==='model'?[{id:'model',name:'Model',category:'model',type:'select',currentValue:m.params.value,options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'max',name:'Max'}]}]:[]}});
  else if(m.method==='session/list') emit({id:m.id,result:{sessions:[{sessionId:session,cwd:moved,title:'Moved'}]}});
  else if(m.method==='session/load') { if(mode==='missing-session') {emit({id:m.id,error:{code:-32602,message:'Invalid params: session not found: '+m.params.sessionId,data:{sessionId:m.params.sessionId}}});continue;} if(mode==='moved-session'&&m.params.cwd!==moved) {session=m.params.sessionId;emit({id:m.id,error:{code:-32602,message:'Invalid params: session '+m.params.sessionId+' does not belong to cwd: '+m.params.cwd,data:{sessionId:m.params.sessionId,cwd:m.params.cwd}}});continue;} session=m.params.sessionId;update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OLD HISTORY'}});emit({id:m.id,result:{}}); }
  else if(m.method==='session/prompt') {
@@ -54,6 +54,13 @@ for await (const line of createInterface({input:process.stdin})) {
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
   else if(mode==='effort') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'EFFORT OK'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
   else if(mode==='effort-switch') {update(session,{sessionUpdate:'config_option_update',configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'}]}]});update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'SWITCHED'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
+  else if(mode==='child-chatty') {
+   const child={id:'ses_child',parentID:session,depth:1,title:'Long delegation'};
+   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'x'.repeat(90000)},_meta:{'opencode/child-session':child}});
+   for(let i=0;i<40;i++){update(session,{sessionUpdate:'tool_call',toolCallId:'ses_child:t'+i,title:'Read',kind:'read',status:'pending',rawInput:{path:'f'+i},_meta:{'opencode/child-session':child}});update(session,{sessionUpdate:'tool_call_update',toolCallId:'ses_child:t'+i,status:'completed',rawOutput:'ok',_meta:{'opencode/child-session':child}});}
+   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'PARENT ANSWER'}});
+   emit({id:promptId,result:{stopReason:'end_turn'}});
+  }
   else if(mode==='child-updates') {
    const child={id:'ses_child',parentID:session,depth:1,title:'Explore the codebase'};
    update(session,{sessionUpdate:'tool_call',toolCallId:'task-1',title:'task',kind:'other',status:'pending',rawInput:{description:'Explore',subagent_type:'explore'}});
@@ -421,6 +428,27 @@ test("ACP applies the saved OpenCode effort and exposes the live choices", async
   expect(events.some((e) => e.type === "text" && e.data === "EFFORT OK")).toBe(true);
 });
 
+test("ACP reads effort levels from the chosen model, not the session default", async () => {
+  const { session, cwd } = fixture(
+    { model: "big-model", chatAgentOptions: { runtime: "opencode", options: { effort: "max" } } },
+    "model-effort",
+  );
+  await session.initialize();
+  expect(session.capabilities.effortChoices).toEqual([
+    { value: "low", label: "Low" },
+    { value: "max", label: "Max" },
+  ]);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((m) => m.method === "session/set_config_option");
+  expect(wire.map((m) => [m.params.configId, m.params.value])).toEqual([
+    ["model", "big-model"],
+    ["effort", "max"],
+  ]);
+});
+
 test("ACP keeps the agent default when the saved effort is unavailable for the model", async () => {
   const { session, cwd } = fixture(
     { chatAgentOptions: { runtime: "opencode", options: { effort: "xhigh" } } },
@@ -450,6 +478,16 @@ test("ACP refreshes effort choices when the agent reports a config option update
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
   ]);
+});
+
+test("ACP keeps a long subagent delegation under the output limit", async () => {
+  const { session } = fixture({}, "child-chatty");
+  await session.initialize();
+  await session.send("Delegate");
+  const events = await run(session);
+  expect(events.filter((e) => e.type === "error")).toEqual([]);
+  expect(events.filter((e) => e.type === "subagent").length).toBeGreaterThan(40);
+  expect(events.some((e) => e.type === "text" && e.data === "PARENT ANSWER")).toBe(true);
 });
 
 test("ACP streams OpenCode child-session updates as one inline subagent transcript", async () => {

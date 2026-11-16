@@ -2540,7 +2540,10 @@ async function beginTurn(
         publish(run, { type: "error", message });
       }
       const finishedAt = Date.now();
-      const frozenUsage = await captureTurnUsage(thread, startedAt);
+      const frozenUsage = await Promise.race([
+        captureTurnUsage(thread, startedAt),
+        Bun.sleep(5000).then(() => undefined),
+      ]);
       assistant.turn = {
         startedAt,
         finishedAt,

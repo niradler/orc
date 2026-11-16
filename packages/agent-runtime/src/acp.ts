@@ -17,6 +17,7 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type SessionConfigOption,
+  type SetSessionConfigOptionResponse,
 } from "@agentclientprotocol/sdk";
 import { CHAT_SUBAGENT_MAX_ITEMS, type ChatSubagentActivity } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
@@ -227,7 +228,7 @@ export class AcpSession implements AgentSession {
 
   private push(event: AgentEvent): void {
     if (this.closed) return;
-    this.outputBytes += JSON.stringify(event).length;
+    if (event.type !== "subagent") this.outputBytes += JSON.stringify(event).length;
     if (this.outputBytes > 2_000_000) {
       this.fail("ACP response exceeded the output limit.");
       return;
@@ -654,14 +655,15 @@ export class AcpSession implements AgentSession {
           throw new Error(
             "This ACP agent does not expose model selection. Clear the explicit model or use ACPX.",
           );
-        await this.request(
-          agent.request("session/set_config_option", {
+        const changed = await this.request(
+          agent.request<SetSessionConfigOptionResponse>("session/set_config_option", {
             sessionId: this.runtimeId,
             configId: model.id,
             value: this.opts.model,
           }),
           "session/set_config_option",
         );
+        if (changed?.configOptions?.length) configOptions = changed.configOptions;
       }
       const effort = thoughtLevelOption(configOptions);
       const choices = effortChoicesOf(effort);
