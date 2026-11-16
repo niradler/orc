@@ -4,10 +4,11 @@ import {
   ChatTurnSchema,
   readChatActivity,
 } from "@orc/core/chat";
-import { ChevronRight, CircleAlert, EyeOff } from "lucide-react";
+import { Bot, ChevronRight, CircleAlert, EyeOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ActivityRow } from "@/components/chat-ui/tool-renderers";
 import { HelpPopover } from "@/components/HelpPopover";
+import { useOpenLiveSession } from "@/hooks/useOpenLiveSession";
 import {
   ACTIVITY_FILTER_LABELS,
   ACTIVITY_FILTERS,
@@ -22,6 +23,7 @@ import {
   parseActivityPrefs,
   windowChatItems,
 } from "@/lib/chat-activity";
+import type { SessionSubagent } from "@/lib/subagent-links";
 import { cn } from "@/lib/utils";
 
 function readPrefs(): ActivityPrefs {
@@ -92,16 +94,72 @@ function ActivityFilters({
   );
 }
 
+const SUBAGENT_STATUS: Record<string, string> = {
+  running: "Working",
+  idle: "Idle",
+  stopped: "Done",
+  error: "Failed",
+};
+
+function SubagentRows({ items }: { items: SessionSubagent[] }) {
+  const openSession = useOpenLiveSession();
+  const [error, setError] = useState<string | null>(null);
+  if (!items.length) return null;
+  async function open(id: string): Promise<void> {
+    setError(null);
+    try {
+      await openSession(id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The subagent could not be opened.");
+    }
+  }
+  return (
+    <ul data-testid="chat-subagents" className="mb-1 space-y-0.5">
+      {items.map((subagent) => (
+        <li key={subagent.id}>
+          <button
+            type="button"
+            data-testid="chat-subagent"
+            data-status={subagent.status}
+            onClick={() => void open(subagent.id)}
+            className="flex min-h-7 w-fit max-w-full items-center gap-2 rounded-md px-1.5 text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11"
+          >
+            <Bot aria-hidden="true" size={13} className="shrink-0" />
+            <span className="min-w-0 truncate">{subagent.title}</span>
+            <span
+              className={cn(
+                "shrink-0 text-[11px]",
+                subagent.status === "running" ? "text-primary" : "text-outline",
+                subagent.status === "error" && "text-error",
+              )}
+            >
+              {SUBAGENT_STATUS[subagent.status] ?? subagent.status}
+            </span>
+            <ChevronRight aria-hidden="true" size={13} className="shrink-0" />
+          </button>
+        </li>
+      ))}
+      {error && (
+        <li role="alert" className="px-1.5 text-xs text-error">
+          {error}
+        </li>
+      )}
+    </ul>
+  );
+}
+
 export function ChatActivityList({
   value,
   providerActivity,
   turn,
   live = false,
+  subagents,
 }: {
   value: unknown;
   providerActivity?: unknown;
   turn?: unknown;
   live?: boolean;
+  subagents?: ReadonlyMap<string, SessionSubagent>;
 }) {
   const items = useMemo(() => {
     // The tolerant reader splits kinds this build knows from the ones it keeps
@@ -134,6 +192,14 @@ export function ChatActivityList({
     [items, start, end, durationMs],
   );
   const counts = useMemo(() => activityCounts(items), [items]);
+  const started = useMemo(
+    () =>
+      items.flatMap((item) => {
+        const subagent = item.kind === "tool" ? subagents?.get(item.id) : undefined;
+        return subagent ? [subagent] : [];
+      }),
+    [items, subagents],
+  );
   const visible = useMemo(() => filterActivity(items, prefs), [items, prefs]);
   // The window belongs to this turn only: the fold instance is the message's.
   const [showAll, setShowAll] = useState(false);
@@ -145,66 +211,69 @@ export function ChatActivityList({
     storePrefs(next);
   };
   return (
-    <details
-      data-testid="chat-turn-fold"
-      data-live={live || undefined}
-      data-failed={fold.failed > 0 || undefined}
-      className="group/fold mb-1 text-xs text-on-surface-variant"
-    >
-      <summary
-        data-testid="chat-turn-fold-summary"
-        className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11 [&::-webkit-details-marker]:hidden"
+    <>
+      <details
+        data-testid="chat-turn-fold"
+        data-live={live || undefined}
+        data-failed={fold.failed > 0 || undefined}
+        className="group/fold mb-1 text-xs text-on-surface-variant"
       >
-        <span data-testid="chat-turn-fold-label" className="min-w-0 truncate">
-          {summary.text}
-        </span>
-        {summary.failure && (
-          <span className="flex shrink-0 items-center gap-1 text-error">
-            <CircleAlert aria-hidden="true" size={12} />
-            {summary.failure}
+        <summary
+          data-testid="chat-turn-fold-summary"
+          className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11 [&::-webkit-details-marker]:hidden"
+        >
+          <span data-testid="chat-turn-fold-label" className="min-w-0 truncate">
+            {summary.text}
           </span>
-        )}
-        <ChevronRight
-          aria-hidden="true"
-          size={14}
-          className="shrink-0 group-open/fold:rotate-90 motion-safe:transition-transform"
-        />
-      </summary>
-      <section
-        aria-label="Tool calls"
-        data-testid="chat-activity"
-        className="mt-1 ml-2 max-h-[min(28rem,60dvh)] overflow-y-auto border-l border-outline-variant pl-1"
-      >
-        {fold.tools > 0 && <ActivityFilters prefs={prefs} counts={counts} onChange={update} />}
-        {windowed.hidden > 0 && (
-          <button
-            type="button"
-            data-testid="chat-items-show-all"
-            onClick={() => setShowAll(true)}
-            className="mb-1 min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
-          >
-            Show all {visible.length} activities
-          </button>
-        )}
-        {windowed.shown.map((item) => (
-          <ActivityRow key={`${item.ordinal}-${item.id}`} item={item} live={live} />
-        ))}
-        {fold.tools > 0 && visible.every((item) => item.kind !== "tool") && (
-          <p
-            data-testid="chat-activity-empty"
-            className="flex flex-wrap items-center gap-2 px-1.5 py-1"
-          >
-            No tool calls match this filter.
+          {summary.failure && (
+            <span className="flex shrink-0 items-center gap-1 text-error">
+              <CircleAlert aria-hidden="true" size={12} />
+              {summary.failure}
+            </span>
+          )}
+          <ChevronRight
+            aria-hidden="true"
+            size={14}
+            className="shrink-0 group-open/fold:rotate-90 motion-safe:transition-transform"
+          />
+        </summary>
+        <section
+          aria-label="Tool calls"
+          data-testid="chat-activity"
+          className="mt-1 ml-2 max-h-[min(28rem,60dvh)] overflow-y-auto border-l border-outline-variant pl-1"
+        >
+          {fold.tools > 0 && <ActivityFilters prefs={prefs} counts={counts} onChange={update} />}
+          {windowed.hidden > 0 && (
             <button
               type="button"
-              onClick={() => update({ ...prefs, filter: "all", hideSuccessful: false })}
-              className="min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
+              data-testid="chat-items-show-all"
+              onClick={() => setShowAll(true)}
+              className="mb-1 min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
             >
-              Show all
+              Show all {visible.length} activities
             </button>
-          </p>
-        )}
-      </section>
-    </details>
+          )}
+          {windowed.shown.map((item) => (
+            <ActivityRow key={`${item.ordinal}-${item.id}`} item={item} live={live} />
+          ))}
+          {fold.tools > 0 && visible.every((item) => item.kind !== "tool") && (
+            <p
+              data-testid="chat-activity-empty"
+              className="flex flex-wrap items-center gap-2 px-1.5 py-1"
+            >
+              No tool calls match this filter.
+              <button
+                type="button"
+                onClick={() => update({ ...prefs, filter: "all", hideSuccessful: false })}
+                className="min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
+              >
+                Show all
+              </button>
+            </p>
+          )}
+        </section>
+      </details>
+      <SubagentRows items={started} />
+    </>
   );
 }

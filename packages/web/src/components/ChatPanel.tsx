@@ -78,7 +78,11 @@ import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
-import { useSendSessionMessage, useSessionChildren } from "@/hooks/useSessions";
+import {
+  useSendSessionMessage,
+  useSessionChildren,
+  useSessionSubagents,
+} from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
 import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
@@ -103,6 +107,7 @@ import {
 } from "@/lib/composer-handoff";
 import { THIS_SERVER } from "@/lib/host-labels";
 import { scratchpadPath } from "@/lib/scratchpad-routes";
+import { matchSubagents } from "@/lib/subagent-links";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
@@ -491,6 +496,11 @@ export function ChatPanel({
         ]),
       ),
     [messages],
+  );
+  const { data: subagents } = useSessionSubagents(thread?.sourceId ?? thread?.id ?? null);
+  const subagentLinks = useMemo(
+    () => matchSubagents(messages, subagents ?? []),
+    [messages, subagents],
   );
   const lastAssistant = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index--) {
@@ -1199,6 +1209,7 @@ export function ChatPanel({
                                   providerActivity={custom.providerActivity}
                                   turn={custom.turn}
                                   live={live}
+                                  subagents={subagentLinks}
                                 />
                                 <ChatAttachments value={custom.attachments} />
                                 <AgentTextStreamProvider streaming={live}>
