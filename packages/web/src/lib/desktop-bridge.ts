@@ -7,6 +7,7 @@ import type {
   PreviewImportSource,
   PreviewPreferences,
   PreviewProfile,
+  PreviewProfileChoice,
 } from "@orc/core/desktop-preview";
 import type { NotificationLevel } from "./agent-notifications";
 
@@ -110,7 +111,10 @@ export interface OrcDesktopBridge {
     ): Promise<PreviewImportResult>;
     profiles(): Promise<PreviewProfile[]>;
     createProfile(name: string): Promise<PreviewProfile>;
-    selectProfile(session_id: string, profile_id?: string | null): Promise<string | null>;
+    selectProfile(
+      session_id: string,
+      profile_id?: PreviewProfileChoice,
+    ): Promise<PreviewProfileChoice>;
     dirty(value: boolean): Promise<void>;
     preferences(): Promise<PreviewPreferences>;
     setPreferences(preferences: PreviewPreferences): Promise<PreviewPreferences>;

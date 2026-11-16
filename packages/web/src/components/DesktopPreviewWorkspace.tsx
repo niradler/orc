@@ -3,6 +3,7 @@ import {
   type PreviewBrowserState,
   type PreviewFile,
   type PreviewProfile,
+  type PreviewProfileChoice,
   type PreviewRequest,
   previewLink,
 } from "@orc/core/desktop-preview";
@@ -217,7 +218,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<PreviewProfile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<{
     session: string;
-    id: string | null;
+    id: PreviewProfileChoice;
   } | null>(null);
   useEffect(() => {
     let active = true;
@@ -225,7 +226,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       .then(([list, id]) => {
         if (active) {
           setProfiles(list ?? []);
-          setSelectedProfile({ session: nativeId, id: id ?? null });
+          setSelectedProfile({ session: nativeId, id: id ?? "default" });
         }
       })
       .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
@@ -249,7 +250,12 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
           ),
         );
         setSelectedProfile((old) =>
-          old?.id && !list.some((profile) => profile.id === old.id) ? { ...old, id: null } : old,
+          old &&
+          old.id !== "default" &&
+          old.id !== "temporary" &&
+          !list.some((profile) => profile.id === old.id)
+            ? { ...old, id: "default" }
+            : old,
         );
       }),
     [bridge],
@@ -271,18 +277,18 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
   }, [bridge, session, key, edit]);
 
   const selectProfile = useCallback(
-    (id: string | null) => {
+    (id: PreviewProfileChoice) => {
       if (
         storedModel.browser &&
         !window.confirm(
-          "Switch browser profile? This closes this chat's browser tabs. File drafts stay open. Choosing a saved profile shares its logins with other chats using that profile.",
+          "Switch browser profile? This closes this chat's browser tabs. File drafts stay open.",
         )
       )
         return;
       void bridge
         ?.selectProfile(nativeId, id)
         .then((selected) => {
-          setSelectedProfile({ session: nativeId, id: selected ?? null });
+          setSelectedProfile({ session: nativeId, id: selected });
           edit(key, (old) => ({ ...old, browser: null }));
         })
         .catch((cause) => edit(key, (old) => ({ ...old, error: error(cause) })));
@@ -801,7 +807,7 @@ function PreviewWorkspace({ children }: { children: ReactNode }) {
       error: storedModel.error,
       deliveryError,
       profiles,
-      profileId: selectedProfile?.session === nativeId ? (selectedProfile.id ?? null) : null,
+      profileId: selectedProfile?.session === nativeId ? selectedProfile.id : "default",
       profilesPending: selectedProfile?.session !== nativeId,
       displayBusy,
       recording:
