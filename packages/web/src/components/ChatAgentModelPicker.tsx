@@ -6,7 +6,13 @@ import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useEnabledAgents, useProviders } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
-import { agentEffort, agentModelLabel } from "@/lib/composer-chips";
+import {
+  agentEffort,
+  agentEffortChoices,
+  agentEffortValue,
+  agentModelLabel,
+  withAgentEffort,
+} from "@/lib/composer-chips";
 
 export function ChatAgentModelPicker() {
   const chat = useChat();
@@ -51,7 +57,9 @@ export function ChatAgentModelPicker() {
     ? "Models could not be loaded. Saved and custom models are available."
     : catalog.data?.warning;
   const modelName = choices.get(config.model) || config.model || "Agent default";
+  const effortValue = agentEffortValue(config);
   const effort = agentEffort(config);
+  const effortChoices = agentEffortChoices(config.agent);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
@@ -61,12 +69,10 @@ export function ChatAgentModelPicker() {
   const note = fixedModel
     ? `${name} picks its own model here.${thread ? " Changing agent starts a new session." : ""}`
     : streaming
-      ? "Provider and model changes are available after the current response. Changing agent starts a new session."
+      ? "Provider, model and effort changes are available after the current response. Changing agent starts a new session."
       : thread
-        ? "Switching to another account of the same agent continues this chat with your prior context. Changing agent starts a new session. Model changes apply to the next turn."
-        : effort
-          ? `Effort is set in ${name} options.`
-          : undefined;
+        ? "Switching to another account of the same agent continues this chat with your prior context. Changing agent starts a new session. Model and effort changes apply to the next turn."
+        : undefined;
   return (
     <AgentModelPicker
       agent={config.agent}
@@ -112,6 +118,9 @@ export function ChatAgentModelPicker() {
         return false;
       }}
       onModel={(model) => setConfig({ ...config, model })}
+      efforts={effortChoices}
+      effort={effortValue}
+      onEffort={(value) => setConfig(withAgentEffort(config, value))}
     />
   );
 }
