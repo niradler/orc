@@ -344,7 +344,12 @@ export function useSessionHistory({
       .flatMap(withDescendants)
       .map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
   );
-  const byId = new Map(scopedEntries.map((entry) => [entry.id, entry]));
+  const listed = orderedEntries.filter(
+    (entry) =>
+      matchesFilter(states.get(entry.id) ?? "idle", filter) ||
+      withDescendants(entry).some(isSelected),
+  );
+  const byId = new Map(listed.map((entry) => [entry.id, entry]));
   const counts = filterCounts(scopedEntries.map((entry) => states.get(entry.id) ?? "idle"));
   const loading =
     threads.isLoading ||
@@ -353,7 +358,7 @@ export function useSessionHistory({
     projectsLoading ||
     (deepSearching && contentSearch.isLoading);
   const stable = useStableOrder({
-    items: orderedEntries.filter((entry) => matchesFilter(states.get(entry.id) ?? "idle", filter)),
+    items: listed,
     id: (entry) => entry.id,
     version: (entry) => String(entry.updatedAt),
     lookup: (id) => byId.get(id),
