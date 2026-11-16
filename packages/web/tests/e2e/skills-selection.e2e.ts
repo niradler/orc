@@ -275,3 +275,36 @@ for (const width of [1440, 390]) {
     await captureState(page, { path: info.outputPath("skills-assigned-instructions.png") });
   });
 }
+
+test("the skill sheet changes a skill's scope between global and projects", async ({
+  page,
+  request,
+}) => {
+  const project = await apiPost<{ id: string; name: string }>(request, "/projects", {
+    name: tid("scope-target"),
+  });
+  const name = tid("scope-change");
+  await apiPost(request, "/skills", {
+    name,
+    content: `---\nname: ${name}\ndescription: Scope change\n---\nBody.`,
+  });
+  await gotoView(page, "skills");
+  await selectProject(page, "all");
+  await page.getByTestId("skill-search-input").fill(name);
+  const row = page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`);
+  await row.getByTestId("skill-open").click();
+  const scope = page.getByTestId("skill-scope");
+  await expect(scope).toContainText("Global");
+  await scope.click();
+  await page.getByTestId(`skill-scope-project-${project.id}`).click();
+  await expect(scope).toContainText(project.name);
+  await expect(page.getByTestId("skill-instruction-project")).toHaveValue(project.id);
+  expect(
+    (await apiGet<{ project_ids: string[] }>(request, `/skills/${name}/projects`)).project_ids,
+  ).toEqual([project.id]);
+  await page.getByTestId("skill-scope-global").click();
+  await expect(scope).toContainText("Global");
+  expect(
+    (await apiGet<{ project_ids: string[] }>(request, `/skills/${name}/projects`)).project_ids,
+  ).toEqual([]);
+});
