@@ -5,7 +5,6 @@ import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { ResumeActions } from "@/components/ResumeActions";
-import { SessionHomeLink } from "@/components/SessionHomeLink";
 import { ContinueInChat } from "@/components/terminals/ContinueInChat";
 import { NewTerminalMenu, useTerminalLaunchDraft } from "@/components/terminals/NewTerminalMenu";
 import { RenameTerminal } from "@/components/terminals/RenameTerminal";
@@ -375,13 +374,8 @@ export default function Terminals() {
         >
           <div className="flex shrink-0 items-center gap-1 px-3 py-1.5">
             <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-on-surface">
-              Sessions
+              Terminals
             </h2>
-            <SessionHomeLink
-              terminalId={terminalId}
-              label="Open sessions view"
-              testId="terminals-open-home"
-            />
             {worktreeManager}
             {newMenu}
           </div>
