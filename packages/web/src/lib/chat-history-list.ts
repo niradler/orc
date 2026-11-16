@@ -189,8 +189,8 @@ export function chatHistoryList(
     else existing.seenKeys.push(`native:${session.id}`);
     entry.provider ??= session.agent;
     entry.projectId =
-      session.project_id ??
       entry.projectId ??
+      session.project_id ??
       projectForFolder(session.cwd, projectFolders)?.id ??
       session.project_id;
     const hit = session as LiveSession & { snippets?: string[]; matched?: string[] };

@@ -86,3 +86,31 @@ test("chat summary metadata does not bypass API authentication", async () => {
   const response = await app.request("/api/chat/threads");
   expect(response.status).toBe(401);
 });
+
+test("a chat whose session was hidden leaves the list unless hidden sessions are asked for", async () => {
+  const sqlite = getSqlite();
+  sqlite
+    .prepare(
+      "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, title, status, created_at, hidden_at) VALUES ('hidrow', '__live-sessions__', 'claude', 'direct', 'native-hid', 'Hidden', 'stopped', 1790000000, 1790000001)",
+    )
+    .run();
+  const id = crypto.randomUUID();
+  sqlite
+    .query("INSERT INTO chat_threads (id, title, updated_at, data) VALUES (?, ?, 1, ?)")
+    .run(id, "Hidden chat", JSON.stringify({ sourceId: "hidrow" }));
+  const ids = async (query: string) =>
+    (
+      (await (await req(app, "GET", `/chat/threads${query}`)).json()).threads as { id: string }[]
+    ).map((thread) => thread.id);
+  expect(await ids("")).not.toContain(id);
+  expect(await ids("?include_hidden=true")).toContain(id);
+});
+
+test("every saved chat is listed, not only the newest hundred", async () => {
+  const insert = getSqlite().query(
+    "INSERT INTO chat_threads (id, title, updated_at, data) VALUES (?, ?, ?, '{}')",
+  );
+  for (let index = 0; index < 105; index++) insert.run(crypto.randomUUID(), `Chat ${index}`, index);
+  const body = await (await req(app, "GET", "/chat/threads")).json();
+  expect(body.threads).toHaveLength(105);
+});

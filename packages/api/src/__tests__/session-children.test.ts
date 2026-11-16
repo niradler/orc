@@ -399,3 +399,29 @@ describe("opencode subagents", () => {
     expect(byId.has("ses_orphan01")).toBe(false);
   });
 });
+
+test("codex titles drop terminal colors and fall past command tags", async () => {
+  const dir = join(root, "codex-titles");
+  mkdirSync(dir, { recursive: true });
+  const db = new Database(join(dir, "state.sqlite"));
+  db.exec(
+    "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT, preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT, created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER, archived INTEGER)",
+  );
+  const insert = db.prepare(
+    "INSERT INTO threads (id, title, cwd, preview, first_user_message, tokens_used, rollout_path, created_at_ms, created_at, updated_at_ms, updated_at, archived) VALUES (?,?,'/tmp/codex-app',?,?,0,'/missing.jsonl',1790000000000,1790000000,1790000100000,1790000100,0)",
+  );
+  const colored = "\u001b[1m# daily-health\u001b[0m";
+  insert.run("019e-colored", colored, colored, colored);
+  const cleared = "<command-name>/clear</command-name>";
+  insert.run("019e-cleared", cleared, cleared, cleared);
+  db.close();
+  const records = await codexAdapter(join(dir, "state.sqlite"), {
+    dbPaths: [join(dir, "state.sqlite")],
+  }).list(new Map());
+  const byId = new Map(records.map((record) => [record.externalId, record]));
+  expect(byId.get("019e-colored")).toMatchObject({
+    title: "# daily-health",
+    summary: "# daily-health",
+  });
+  expect(byId.get("019e-cleared")).toMatchObject({ title: "codex-app", summary: null });
+});

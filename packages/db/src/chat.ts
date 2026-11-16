@@ -55,7 +55,7 @@ export class ChatStore {
           END AS spawnedFrom,
           CASE WHEN json_valid(data) THEN json_type(data, '$.importedMessages') IS NOT NULL ELSE 0 END
             AS resumed
-        FROM chat_threads ORDER BY updated_at DESC LIMIT 100`,
+        FROM chat_threads ORDER BY updated_at DESC`,
       )
       .all();
   }

@@ -951,6 +951,16 @@ app.openapi(
     method: "get",
     path: "/chat/threads",
     tags: ["Chat"],
+    request: {
+      query: z.object({
+        include_hidden: z
+          .enum(["true", "false"])
+          .optional()
+          .default("false")
+          .transform((v) => v === "true")
+          .openapi({ description: "Include chats whose session a human hid from the list" }),
+      }),
+    },
     responses: {
       200: {
         description: "Recent chats",
@@ -978,6 +988,7 @@ app.openapi(
     },
   }),
   async (c) => {
+    const { include_hidden } = c.req.valid("query");
     const threads = store().list();
     const sourceIds = [
       ...new Set(threads.flatMap((thread) => (thread.sourceId ? [thread.sourceId] : []))),
@@ -985,7 +996,7 @@ app.openapi(
     const sources = sourceIds.length
       ? await getDb().query.gateway_sessions.findMany({
           where: inArray(gateway_sessions.id, sourceIds),
-          columns: { id: true, title: true, display_title: true, cwd: true },
+          columns: { id: true, title: true, display_title: true, cwd: true, hidden_at: true },
         })
       : [];
     const sourceById = new Map(sources.map((row) => [row.id, row]));
@@ -996,11 +1007,16 @@ app.openapi(
       return thread.resumed || isClaudeProcessName(thread.title, source.cwd) ? title : null;
     };
     return c.json({
-      threads: threads.map(({ resumed, ...thread }) => ({
-        ...thread,
-        title: sourceTitle({ ...thread, resumed }) || thread.title,
-        running: !!threadRun(thread.id),
-      })),
+      threads: threads
+        .filter(
+          (thread) =>
+            include_hidden || !(thread.sourceId && sourceById.get(thread.sourceId)?.hidden_at),
+        )
+        .map(({ resumed, ...thread }) => ({
+          ...thread,
+          title: sourceTitle({ ...thread, resumed }) || thread.title,
+          running: !!threadRun(thread.id),
+        })),
     });
   },
 );

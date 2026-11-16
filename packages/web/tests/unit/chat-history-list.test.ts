@@ -426,3 +426,11 @@ test("an open tab older than its saved thread still merges the native session an
     [`chat:${saved.id}`, "Coding agent competition framework"],
   ]);
 });
+
+test("a chat stays in the project it was started in when its session's folder maps elsewhere", () => {
+  const thread = { ...saved, projectId: "project-chat" };
+  const session = { ...live, project_id: "project-folder" };
+  const [entry] = chatHistoryList([], [thread], [session], []);
+  expect(entry?.projectId).toBe("project-chat");
+  expect(chatHistoryList([], [thread], [session], [], "", "project-folder")).toEqual([]);
+});
