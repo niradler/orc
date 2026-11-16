@@ -123,15 +123,20 @@ export function chatHistoryList(
   for (const thread of [...saved].sort(
     (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
   )) {
-    if (chatIds.has(thread.id)) {
-      const entry = entries.find((entry) => entry.id === `chat:${thread.id}`);
-      if (entry && thread.running) observe(entry, "working");
-      continue;
-    }
     const key =
       thread.agent && thread.runtimeId
         ? nativeKey(thread.agent, thread.runtimeId, thread.host)
         : null;
+    if (chatIds.has(thread.id)) {
+      const entry = entries.find((entry) => entry.id === `chat:${thread.id}`);
+      if (!entry) continue;
+      if (thread.running) observe(entry, "working");
+      if (thread.title) entry.title = thread.title;
+      keywords.set(entry.id, `${keywords.get(entry.id) ?? ""} ${thread.title}`);
+      if (thread.sourceId && !sources.has(thread.sourceId)) sources.set(thread.sourceId, entry);
+      if (key && !identities.has(key)) identities.set(key, entry);
+      continue;
+    }
     const existing =
       (thread.sourceId ? sources.get(thread.sourceId) : undefined) ||
       (key ? identities.get(key) : undefined);
@@ -184,8 +189,8 @@ export function chatHistoryList(
     else existing.seenKeys.push(`native:${session.id}`);
     entry.provider ??= session.agent;
     entry.projectId =
-      session.project_id ??
       entry.projectId ??
+      session.project_id ??
       projectForFolder(session.cwd, projectFolders)?.id ??
       session.project_id;
     const hit = session as LiveSession & { snippets?: string[]; matched?: string[] };

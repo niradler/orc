@@ -40,6 +40,25 @@ describe("database change notifications", () => {
       sqlite.close();
     }
   });
+  test("should notify a column added after the triggers were first installed", async () => {
+    const sqlite = new Database(":memory:");
+    sqlite.exec("CREATE TABLE skill_usage(skill_name TEXT)");
+    installChangeTracking(sqlite, ":memory:");
+    stopChangeTracking(sqlite);
+    sqlite.exec("ALTER TABLE skill_usage ADD COLUMN read_count INTEGER");
+    sqlite.query("INSERT INTO skill_usage VALUES ('example', 1)").run();
+    installChangeTracking(sqlite, ":memory:");
+    const events: ResourceChange[] = [];
+    const unsubscribe = changes.subscribe((event) => events.push(event));
+    try {
+      sqlite.query("UPDATE skill_usage SET read_count = 2").run();
+      await Bun.sleep(50);
+      expect(events).toEqual([{ resources: ["skill-usage"] }]);
+    } finally {
+      unsubscribe();
+      sqlite.close();
+    }
+  });
   test("should identify skill counter updates separately from skill content changes", async () => {
     const sqlite = new Database(":memory:");
     sqlite.exec("CREATE TABLE skill_usage(skill_name TEXT, read_count INTEGER)");

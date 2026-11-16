@@ -154,6 +154,76 @@ describe("claude sessions after /clear", () => {
   });
 });
 
+test("a /clear with no prompt after it lists no empty session", async () => {
+  const registry = join(root, "clear-registry");
+  const projects = join(root, "clear-projects", "-tmp-orc");
+  const worked = "aaaaaaaa-0000-4000-8000-000000000011";
+  const empty = "aaaaaaaa-0000-4000-8000-000000000012";
+  mkdirSync(registry, { recursive: true });
+  mkdirSync(projects, { recursive: true });
+  const register = (sessionId: string) =>
+    writeFileSync(
+      join(registry, "31355.json"),
+      JSON.stringify({
+        pid: process.pid,
+        sessionId,
+        cwd: "/tmp/orc",
+        status: "idle",
+        startedAt: Date.parse("2026-11-16T08:36:39Z"),
+        updatedAt: Date.parse("2026-11-16T16:03:23Z"),
+      }),
+    );
+  writeFileSync(
+    join(projects, `${worked}.jsonl`),
+    jsonl([
+      { type: "user", timestamp: "2026-11-16T15:00:00Z", message: { content: "fix PR 405" } },
+      {
+        type: "assistant",
+        timestamp: "2026-11-16T15:01:00Z",
+        message: { id: "m1", usage: { input_tokens: 10, output_tokens: 5 } },
+      },
+    ]),
+  );
+  writeFileSync(
+    join(projects, `${empty}.jsonl`),
+    jsonl([
+      {
+        type: "user",
+        isMeta: true,
+        timestamp: "2026-11-16T16:03:23Z",
+        message: { content: "<local-command-caveat>Caveat</local-command-caveat>" },
+      },
+      {
+        type: "user",
+        timestamp: "2026-11-16T16:03:22Z",
+        message: {
+          content:
+            "<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>",
+        },
+      },
+      {
+        type: "system",
+        subtype: "local_command",
+        timestamp: "2026-11-16T16:03:23Z",
+        content: "<local-command-stdout></local-command-stdout>",
+      },
+    ]),
+  );
+  const adapter = claudeAdapter({
+    registry,
+    desktop: null,
+    projects: join(root, "clear-projects"),
+  });
+  register(worked);
+  await runSync([adapter], { force: true });
+  register(empty);
+  await runSync([adapter], { force: true });
+
+  const ids = (await live("&agent=claude")).map((row) => row.session_id);
+  expect(ids).toContain(worked);
+  expect(ids).not.toContain(empty);
+});
+
 test("a session that never wrote a transcript drops its process name", async () => {
   const id = "aaaaaaaa-0000-4000-8000-000000000003";
   const records = await claudeAdapter({
@@ -328,4 +398,30 @@ describe("opencode subagents", () => {
     expect(byId.get("ses_parent01")?.parentId).toBeUndefined();
     expect(byId.has("ses_orphan01")).toBe(false);
   });
+});
+
+test("codex titles drop terminal colors and fall past command tags", async () => {
+  const dir = join(root, "codex-titles");
+  mkdirSync(dir, { recursive: true });
+  const db = new Database(join(dir, "state.sqlite"));
+  db.exec(
+    "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT, preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT, created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER, archived INTEGER)",
+  );
+  const insert = db.prepare(
+    "INSERT INTO threads (id, title, cwd, preview, first_user_message, tokens_used, rollout_path, created_at_ms, created_at, updated_at_ms, updated_at, archived) VALUES (?,?,'/tmp/codex-app',?,?,0,'/missing.jsonl',1790000000000,1790000000,1790000100000,1790000100,0)",
+  );
+  const colored = "\u001b[1m# daily-health\u001b[0m";
+  insert.run("019e-colored", colored, colored, colored);
+  const cleared = "<command-name>/clear</command-name>";
+  insert.run("019e-cleared", cleared, cleared, cleared);
+  db.close();
+  const records = await codexAdapter(join(dir, "state.sqlite"), {
+    dbPaths: [join(dir, "state.sqlite")],
+  }).list(new Map());
+  const byId = new Map(records.map((record) => [record.externalId, record]));
+  expect(byId.get("019e-colored")).toMatchObject({
+    title: "# daily-health",
+    summary: "# daily-health",
+  });
+  expect(byId.get("019e-cleared")).toMatchObject({ title: "codex-app", summary: null });
 });

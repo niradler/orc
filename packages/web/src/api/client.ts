@@ -818,7 +818,7 @@ export const api = {
         cwd,
         providerId,
       }),
-    list: () =>
+    list: (includeHidden = false) =>
       req<{
         threads: {
           id: string;
@@ -831,7 +831,7 @@ export const api = {
           host?: string | null;
           projectId?: string | null;
         }[];
-      }>("GET", "/chat/threads"),
+      }>("GET", "/chat/threads", undefined, includeHidden ? { include_hidden: true } : undefined),
     cancel: (runId: string) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),

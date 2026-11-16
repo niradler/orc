@@ -94,7 +94,7 @@ test("chat summaries retain identity without exposing content and tolerate legac
   }
 });
 
-test("chat summaries keep the newest100 limit when stored data is malformed", () => {
+test("chat summaries list every chat newest first when stored data is malformed", () => {
   const db = new Database(":memory:");
   installChat(db);
   try {
@@ -104,9 +104,9 @@ test("chat summaries keep the newest100 limit when stored data is malformed", ()
     for (let index = 0; index < 105; index++)
       insert.run(`chat-${index}`, `Chat ${index}`, index, "not-json");
     const summaries = new ChatStore(db).list();
-    expect(summaries).toHaveLength(100);
+    expect(summaries).toHaveLength(105);
     expect(summaries[0]?.updatedAt).toBe(104);
-    expect(summaries[99]?.updatedAt).toBe(5);
+    expect(summaries[104]?.updatedAt).toBe(0);
     expect(
       summaries.every(
         (summary) =>

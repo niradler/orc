@@ -467,6 +467,7 @@ app.openapi(liveListRoute, async (c) => {
       eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
       isNull(gateway_sessions.parent_session_id),
       include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
+      sql`NOT (coalesce(${gateway_sessions.tokens_used}, -1) = 0 AND ${gateway_sessions.summary} IS NULL)`,
       project_id === "unassigned"
         ? isNull(gateway_sessions.project_id)
         : project_id

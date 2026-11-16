@@ -191,8 +191,8 @@ export function useSessionHistory({
   const [commit, setCommit] = useState("");
   const [subdirectory, setSubdirectory] = useState("");
   const threads = useQuery({
-    queryKey: ["chat-threads", open],
-    queryFn: api.chat.list,
+    queryKey: ["chat-threads", open, includeHidden],
+    queryFn: () => api.chat.list(includeHidden),
     enabled: open,
     staleTime: 0,
   });

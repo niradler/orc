@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { zstdDecompressSync } from "node:zlib";
 import { displayPath, pathLabel } from "@orc/core/display-path";
 import { type HostFileInfo, type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
@@ -8,6 +9,12 @@ import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { readCodexQuestionPending } from "./codex-attention.js";
 import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
 import { hasWriter, remoteWriters } from "./ownership.js";
+
+function promptText(text: string | null | undefined): string {
+  const plain = stripVTControlCharacters(text ?? "");
+  return plain.trimStart().startsWith("<") ? "" : plain;
+}
+
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { lifetimeUsage, parseCodexUsage } from "./usage-parsers.js";
 
@@ -175,13 +182,14 @@ export function codexAdapter(
               ...(codexParent(r.source) ? { parentId: codexParent(r.source) } : {}),
               title: oneLine(
                 r.name ||
-                  (displayPath(r.title) !== displayPath(r.cwd) ? r.title : "") ||
-                  r.first_user_message ||
+                  (displayPath(r.title) !== displayPath(r.cwd) ? promptText(r.title) : "") ||
+                  promptText(r.first_user_message) ||
                   pathLabel(r.cwd) ||
                   "Codex session",
                 120,
               ),
-              summary: oneLine(r.preview || r.first_user_message || "", 400) || null,
+              summary:
+                oneLine(promptText(r.preview) || promptText(r.first_user_message), 400) || null,
               cwd: r.cwd,
               status,
               ...(pendingHuman !== undefined ? { pendingHuman } : {}),
