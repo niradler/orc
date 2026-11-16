@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
 import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flow/FlowPicker";
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Markdown } from "@/components/Markdown";
 import { MarkdownField } from "@/components/MarkdownField";
 import { PriorityBadge } from "@/components/PriorityBadge";
@@ -174,18 +175,21 @@ export function TaskDetailSheet({
                 <SheetTitle>{task.title}</SheetTitle>
                 {task.github_sync && (
                   <div className="space-y-1 text-xs text-muted-foreground">
-                    <a
-                      data-testid="task-github-issue-link"
-                      href={task.github_issue ?? undefined}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline"
-                    >
-                      GitHub #{task.github_sync.number}
-                    </a>
-                    <p>
-                      Title, description and labels come from GitHub. Status changes sync both ways.
-                    </p>
+                    <div className="flex items-center gap-1">
+                      <a
+                        data-testid="task-github-issue-link"
+                        href={task.github_issue ?? undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        GitHub #{task.github_sync.number}
+                      </a>
+                      <HelpPopover label="GitHub sync" testId="task-github-sync-help">
+                        Title, description and labels come from GitHub. Status changes sync both
+                        ways.
+                      </HelpPopover>
+                    </div>
                     {task.github_sync.error ? (
                       <p role="alert" className="text-error">
                         {task.github_sync.error}

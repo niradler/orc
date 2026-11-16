@@ -13,6 +13,7 @@ type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   sourceId?: string | null;
   host?: string | null;
   projectId?: string | null;
+  spawnedFrom?: string | null;
 };
 type HistorySource =
   | { kind: "local"; tab: ChatTab }
@@ -32,7 +33,23 @@ export type ChatHistoryEntry = HistorySource & {
   snippets?: string[];
   matched?: string[];
   children?: ChatHistoryEntry[];
+  spawned?: boolean;
 };
+
+export function withDescendants(entry: ChatHistoryEntry): ChatHistoryEntry[] {
+  return [entry, ...(entry.children ?? []).flatMap(withDescendants)];
+}
+
+export function nestedLabel(children: readonly ChatHistoryEntry[]): string {
+  const sessions = children.filter((child) => child.spawned).length;
+  const subagents = children.length - sessions;
+  return [
+    subagents ? `${subagents} ${subagents === 1 ? "subagent" : "subagents"}` : "",
+    sessions ? `${sessions} ${sessions === 1 ? "session" : "sessions"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 function observe(entry: ChatHistoryEntry, state: AgentState) {
   entry.observedState = entry.observedState ? moreUrgent(entry.observedState, state) : state;
@@ -185,21 +202,46 @@ export function chatHistoryList(
     liveEntries.set(session.id, entry);
   }
   const nested = new Set<ChatHistoryEntry>();
-  for (const session of native) {
-    const child = liveEntries.get(session.id);
-    const parent = session.parent_id ? liveEntries.get(session.parent_id) : undefined;
-    if (!child || !parent || child === parent || child.kind !== "native") continue;
+  const parentOf = new Map<ChatHistoryEntry, ChatHistoryEntry>();
+  const chatEntries = new Map(entries.map((entry) => [entry.id, entry]));
+  const spawnParent = (id: string | null | undefined) =>
+    id ? (liveEntries.get(id) ?? chatEntries.get(`chat:${id}`)) : undefined;
+  const nest = (child: ChatHistoryEntry | undefined, parent: ChatHistoryEntry | undefined) => {
+    if (!child || !parent || nested.has(child)) return false;
+    for (let at: ChatHistoryEntry | undefined = parent; at; at = parentOf.get(at))
+      if (at === child) return false;
     parent.children = [...(parent.children ?? []), child];
+    parentOf.set(child, parent);
     nested.add(child);
+    return true;
+  };
+  for (const session of native) {
+    const parent = session.parent_id ? liveEntries.get(session.parent_id) : undefined;
+    nest(liveEntries.get(session.id), parent);
   }
-  for (const entry of entries) {
-    if (!entry.children) continue;
+  const nestSpawn = (child: ChatHistoryEntry | undefined, from: string | null | undefined) => {
+    if (child && nest(child, spawnParent(from))) child.spawned = true;
+  };
+  for (const session of native) nestSpawn(liveEntries.get(session.id), session.spawned_from_id);
+  for (const entry of entries)
+    nestSpawn(
+      entry,
+      entry.kind === "local"
+        ? entry.tab.thread?.spawnedBy?.sessionId
+        : entry.kind === "saved"
+          ? entry.thread.spawnedFrom
+          : undefined,
+    );
+  const rollup = (entry: ChatHistoryEntry) => {
+    if (!entry.children) return;
+    for (const child of entry.children) rollup(child);
     entry.children.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
     const busy = rollupState(entry.children.map((child) => child.observedState));
     if (busy) observe(entry, busy);
     entry.updatedAt = Math.max(entry.updatedAt, ...entry.children.map((child) => child.updatedAt));
     entry.seenKeys.push(...entry.children.flatMap((child) => child.seenKeys));
-  }
+  };
+  for (const entry of entries) if (!nested.has(entry)) rollup(entry);
   for (const terminal of terminals) {
     if (terminal.status !== "running" || (terminal.kind === "shell" && !includeShells)) continue;
     const linked = terminal.live_session_id ? liveEntries.get(terminal.live_session_id) : undefined;
@@ -268,11 +310,20 @@ export function chatHistoryList(
     entry.projectId = projectForFolder(entryCwd(entry), projectFolders)?.id ?? entry.projectId;
   }
   for (const entry of entries)
-    if (entry.children?.length)
+    if (entry.children?.length && !nested.has(entry))
       keywords.set(
         entry.id,
-        [entry, ...entry.children].map((item) => keywords.get(item.id) ?? item.title).join(" "),
+        withDescendants(entry)
+          .map((item) => keywords.get(item.id) ?? item.title)
+          .join(" "),
       );
+  const keepSpawned = (entry: ChatHistoryEntry) => {
+    if (!entry.children) return;
+    entry.children = entry.children.filter((child) => child.spawned);
+    for (const child of entry.children) keepSpawned(child);
+    if (!entry.children.length) delete entry.children;
+  };
+  for (const entry of entries) if (!nested.has(entry)) keepSpawned(entry);
   return entries
     .filter((entry) => !nested.has(entry))
     .filter(

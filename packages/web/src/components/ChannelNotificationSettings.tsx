@@ -8,6 +8,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { api } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -81,26 +82,30 @@ export function ChannelNotificationFilters({
   }
   return (
     <div data-testid="channel-notification-filters" className="space-y-2">
-      <Toggle
-        label="Forward notifications"
-        checked={filter.enabled}
-        onChange={(enabled) => update({ ...filter, enabled })}
-      />
-      <p className="text-xs text-outline">
-        Safe summaries and links only. Uses this recipient’s project restrictions. Does not allow
-        replies or approvals. Replaces interactive question delivery for this recipient while
-        selected.
-      </p>
+      <div className="flex items-center gap-1">
+        <Toggle
+          label="Forward notifications"
+          checked={filter.enabled}
+          onChange={(enabled) => update({ ...filter, enabled })}
+        />
+        <HelpPopover label="Forward notifications" testId="channel-notification-forward-help">
+          Safe summaries and links only. Uses this recipient’s project restrictions. Does not allow
+          replies or approvals. Replaces interactive question delivery for this recipient while
+          selected.
+        </HelpPopover>
+      </div>
       {filter.enabled && (
         <details className="border-t border-border">
           <summary className="min-h-11 cursor-pointer py-3 text-sm">
-            Notification filters and preview
+            <span className="inline-flex items-center gap-1">
+              Notification filters and preview
+              <HelpPopover label="Notification filters" testId="channel-notification-filter-help">
+                Empty groups match all known values. Selected groups must all match. New types are
+                excluded by default.
+              </HelpPopover>
+            </span>
           </summary>
           <div className="space-y-3 pb-2">
-            <p className="text-xs text-outline">
-              Empty groups match all known values. Selected groups must all match. New types are
-              excluded by default.
-            </p>
             <fieldset>
               <legend className="text-sm font-medium">Types</legend>
               {options("types", NOTIFICATION_TYPES)}
@@ -237,22 +242,33 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary className="min-h-11 cursor-pointer py-3 text-sm">
-        Notification forwarding · {policy.data?.enabled ? "enabled" : "paused"}
+        <span className="inline-flex items-center gap-1">
+          Notification forwarding · {policy.data?.enabled ? "enabled" : "paused"}
+          <HelpPopover
+            label="Notification forwarding"
+            testId="channel-notification-forwarding-help"
+          >
+            Enable forwarding here and opt in each recipient below. Only new events after activation
+            are forwarded; history and events during a pause are not replayed. In-app notifications
+            stay enabled. An in-flight send may finish after pausing.
+          </HelpPopover>
+        </span>
       </summary>
       <div className="space-y-3 pb-3">
-        <p className="text-xs text-outline">
-          Enable forwarding here and opt in each recipient below. Only new events after activation
-          are forwarded; history and events during a pause are not replayed. In-app notifications
-          stay enabled. An in-flight send may finish after pausing.
-        </p>
         <Toggle
           label="Enable channel notification forwarding"
           checked={value.enabled}
           disabled={disabled}
           onChange={(enabled) => setDraft({ ...value, enabled })}
         />
-        <label htmlFor={urlId} className="grid gap-1 text-sm">
-          ORC URL for source links
+        <div className="grid gap-1 text-sm">
+          <div className="flex items-center gap-1">
+            <label htmlFor={urlId}>ORC URL for source links</label>
+            <HelpPopover label="ORC URL for source links" testId="channel-notification-url-help">
+              Use the ORC origin reachable from your phone or channel client. No credentials, path
+              or query parameters.
+            </HelpPopover>
+          </div>
           <Input
             data-testid="notification-base-url"
             id={urlId}
@@ -262,11 +278,7 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
             disabled={disabled}
             onChange={(event) => setDraft({ ...value, base_url: event.target.value })}
           />
-        </label>
-        <p className="text-xs text-outline">
-          Use the ORC origin reachable from your phone or channel client. No credentials, path or
-          query parameters.
-        </p>
+        </div>
         <Button
           type="button"
           size="sm"

@@ -2,14 +2,9 @@ import { useMutation } from "@tanstack/react-query";
 import { unzipSync } from "fflate";
 import { useState } from "react";
 import { api, type SkillFileInput } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type PackageFormat, packageFields } from "@/lib/package-draft";
@@ -123,12 +118,12 @@ export function PackageImportDialog({
   }
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%-1rem)] max-w-xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+      <DialogContent
+        aria-describedby={undefined}
+        className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%-1rem)] max-w-xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6"
+      >
         <DialogHeader>
           <DialogTitle>Import a package</DialogTitle>
-          <DialogDescription>
-            Add reusable configuration to your catalog, then choose where to install it.
-          </DialogDescription>
         </DialogHeader>
         <div role="tablist" aria-label="Import source" className="flex flex-wrap gap-2">
           {[
@@ -161,7 +156,12 @@ export function PackageImportDialog({
                 void findPackages();
               }}
             >
-              <Label htmlFor="package-git-source">Repository URL</Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="package-git-source">Repository URL</Label>
+                <HelpPopover label="Repository URL" testId="package-git-source-help">
+                  Paste a GitHub, GitLab, Bitbucket or Azure DevOps repository or package link.
+                </HelpPopover>
+              </div>
               <Input
                 id="package-git-source"
                 data-testid="package-git-source"
@@ -177,9 +177,6 @@ export function PackageImportDialog({
                   setSelection("");
                 }}
               />
-              <p className="text-xs text-outline">
-                Paste a GitHub, GitLab, Bitbucket or Azure DevOps repository or package link.
-              </p>
               <Button
                 type="submit"
                 data-testid="package-git-discover"
@@ -269,9 +266,19 @@ export function PackageImportDialog({
               <option value="apm">APM</option>
               <option value="agent-plugin">Agent Plugin</option>
             </select>
-            <Label htmlFor="agent-package-folder">
-              {tab === "folder" ? "Package folder" : "Package source ZIP"}
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="agent-package-folder">
+                {tab === "folder" ? "Package folder" : "Package source ZIP"}
+              </Label>
+              <HelpPopover
+                label={tab === "folder" ? "Package folder" : "Package source ZIP"}
+                testId="package-import-source-help"
+              >
+                Original manifests and supporting files are preserved. Import does not launch an
+                agent or run package scripts. Use ZIP on phones where folder selection is
+                unavailable.
+              </HelpPopover>
+            </div>
             <Input
               key={tab}
               id="agent-package-folder"
@@ -299,10 +306,6 @@ export function PackageImportDialog({
                 }
               }}
             />
-            <p className="text-xs text-outline">
-              Original manifests and supporting files are preserved. Import does not launch an agent
-              or run package scripts. Use ZIP on phones where folder selection is unavailable.
-            </p>
           </div>
         )}
         {(discover.error ||

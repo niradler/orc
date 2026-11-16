@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { dailyCron, parseDailyCron } from "@/lib/job-schedule";
@@ -94,7 +95,12 @@ export function JobScheduleFields({
         </>
       )}
       <div className="space-y-1.5">
-        <Label htmlFor="job-timezone">Timezone</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor="job-timezone">Timezone</Label>
+          <HelpPopover label="Timezone" testId="job-timezone-help">
+            Uses this timezone, including daylight saving changes.
+          </HelpPopover>
+        </div>
         <Input
           id="job-timezone"
           required
@@ -102,9 +108,6 @@ export function JobScheduleFields({
           onChange={(event) => onTimezone(event.target.value)}
           placeholder="Asia/Jerusalem"
         />
-        <p className="text-xs text-outline">
-          Uses this timezone, including daylight saving changes.
-        </p>
       </div>
     </div>
   );

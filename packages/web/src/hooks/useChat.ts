@@ -36,6 +36,7 @@ import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { activeApiHeaders } from "@/lib/api-hosts";
+import { groupChatMessages } from "@/lib/chat-message-groups";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
 import { getResourceConnection, subscribeResourceConnection } from "@/lib/resource-events";
@@ -1645,7 +1646,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChatController();
   useChatLink(chat);
   const messages = useMemo<ThreadMessageLike[]>(() => {
-    const history = chat.messages.map(toThreadMessage);
+    const history = groupChatMessages(chat.messages).messages.map(toThreadMessage);
     if (chat.streaming)
       history.push({
         id: chat.streamingId,

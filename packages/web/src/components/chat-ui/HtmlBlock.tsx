@@ -1,3 +1,5 @@
+import { withOrcKit } from "@/lib/orc-kit";
+import { useAppearance, useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { isolatedHtml } from "./sandboxed-html";
 
@@ -17,6 +19,8 @@ export function HtmlBlock({
   title?: string;
   height?: "short" | "tall";
 }) {
+  const { theme } = useTheme();
+  const { darkBackground } = useAppearance();
   return (
     <iframe
       data-testid="chat-ui-html"
@@ -24,9 +28,9 @@ export function HtmlBlock({
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       loading="lazy"
-      srcDoc={isolatedHtml(html)}
+      srcDoc={isolatedHtml(withOrcKit(html, theme, darkBackground))}
       className={cn(
-        "w-full rounded-md border border-outline-variant bg-white",
+        "w-full rounded-md border border-outline-variant bg-background",
         height === "tall" ? "h-[26rem]" : "h-60",
       )}
     />

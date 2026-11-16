@@ -905,6 +905,7 @@ export const api = {
       granularity: "day" | "hour";
       agent?: string;
       model?: string;
+      project_id?: string;
     }) => req<UsageReport>("GET", "/usage/report", undefined, params),
     usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {
@@ -1351,6 +1352,11 @@ export const api = {
       req<import("@orc/core/session-messages").SessionLineage>(
         "GET",
         `/sessions/live/${encodeURIComponent(id)}/lineage`,
+      ),
+    subagents: (id: string) =>
+      req<import("@orc/core/session-messages").SessionSubagents>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/subagents`,
       ),
     children: (id: string) =>
       req<{ sessions: import("@orc/core/session-messages").SessionStatus[] }>(

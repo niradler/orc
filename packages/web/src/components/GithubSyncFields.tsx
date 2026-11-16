@@ -3,6 +3,7 @@ import {
   type GithubSyncConfig,
   type GithubSyncState,
 } from "@orc/core/github-sync";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -17,19 +18,21 @@ export function GithubSyncFields({
 }) {
   return (
     <div className="space-y-3 md:col-span-2" data-testid="github-sync-settings">
-      <label className="flex min-h-11 items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          data-testid="github-sync-enabled"
-          checked={value.enabled}
-          onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
-        />
-        Sync repository issues as tasks
-      </label>
-      <p className="text-xs text-muted-foreground">
-        Statuses sync both ways every minute while the API runs. Imported issues never start agents
-        automatically.
-      </p>
+      <div className="flex items-center gap-1">
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            data-testid="github-sync-enabled"
+            checked={value.enabled}
+            onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
+          />
+          Sync repository issues as tasks
+        </label>
+        <HelpPopover label="GitHub issue sync" testId="github-sync-help">
+          Statuses sync both ways every minute while the API runs. Imported issues never start
+          agents automatically.
+        </HelpPopover>
+      </div>
       {state?.error && (
         <p role="alert" className="text-sm text-error">
           {state.error}

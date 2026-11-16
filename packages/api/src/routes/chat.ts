@@ -920,6 +920,7 @@ app.openapi(
                   sourceId: z.string().nullable().optional(),
                   host: z.string().nullable().optional(),
                   projectId: z.string().nullable().optional(),
+                  spawnedFrom: z.string().nullable().optional(),
                 }),
               ),
             }),

@@ -142,6 +142,16 @@ export function useTaskSessions(taskId: string | null) {
   });
 }
 
+export function useSessionSubagents(sessionId: string | null) {
+  return useQuery({
+    queryKey: ["sessions", "subagents", sessionId],
+    queryFn: () => api.sessions.subagents(sessionId as string),
+    select: (data) => data.subagents,
+    enabled: Boolean(sessionId),
+    retry: false,
+  });
+}
+
 export function useSessionLineage(sessionId: string | null) {
   return useQuery({
     queryKey: ["sessions", "lineage", sessionId],

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Terminal } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useTerminals } from "@/lib/terminals";
 
@@ -20,6 +20,7 @@ export function RenameTerminal({ terminal, onClose }: { terminal: Terminal; onCl
       }}
     >
       <DialogContent
+        aria-describedby={undefined}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           document
@@ -30,7 +31,6 @@ export function RenameTerminal({ terminal, onClose }: { terminal: Terminal; onCl
         }}
       >
         <DialogTitle>Rename terminal</DialogTitle>
-        <DialogDescription>Choose a friendly name for this terminal session.</DialogDescription>
         <form
           className="space-y-4"
           onSubmit={async (event) => {

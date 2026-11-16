@@ -15,13 +15,25 @@ never used, so each `/clear` in one terminal is its own row with its own title, 
 a conversation with no prompt yet reads **New session**. Recency comes from the last
 message, not from the transcript file's modification time.
 
-Subagents nest under the session that started them: Claude Code subagents (their
-`.meta.json` description is the title), Codex spawned threads, Cursor subagent
-composers and OpenCode child sessions. A parent row shows **N subagents**, expands
-to the children, and takes the most urgent child state. Subagents do not raise
-notifications of their own. Cursor IDE chats take their folder from the workspace
-that holds them, and a transcript whose worktree was deleted falls back to the
-deepest folder that still exists.
+Subagents show inside the parent's chat, under the turn that started them: Claude
+Code subagents (their `.meta.json` description is the title), Codex spawned threads,
+Cursor subagent composers and OpenCode child sessions. Each row shows the subagent's
+title and live state; pressing it opens the subagent's own session, whose
+**Started by** link leads back to the parent. A call is matched to its subagent by
+the id each agent records (Claude `toolUseId`, Codex `SubAgentActivity`, OpenCode
+`task` metadata); Cursor records none, so its subagents match calls in start order.
+Subagents are not listed in the session list, but a parent row still takes the most
+urgent subagent state and matches a search for a subagent's title. Subagents do not
+raise notifications of their own. Cursor IDE chats take their folder from the
+workspace that holds them, and a transcript whose worktree was deleted falls back to
+the deepest folder that still exists.
+
+Independent sessions nest in the session list under the session that started them:
+a session started through ORC's session spawn tool (any agent) and a Claude Desktop
+session started with `start_session`, read from `spawnedFrom` in the Desktop session
+files. They form a tree, so a spawned session that starts more shows them under
+itself, and the parent row counts them as **N sessions**. A spawned session keeps
+its own notifications and usage.
 
 Choosing a session never changes the project filter in the header: **All projects**
 stays on **All projects**. A session whose project no longer exists groups by its

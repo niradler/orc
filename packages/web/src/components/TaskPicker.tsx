@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { ErrorState } from "@/components/ErrorState";
+import { HelpPopover } from "@/components/HelpPopover";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,20 +48,22 @@ export function TaskPicker({
   );
   return (
     <div className="space-y-3">
-      <Input
-        data-testid="session-task-search"
-        aria-label="Search tasks or enter a task ID"
-        value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setError(null);
-        }}
-        placeholder="Search recent tasks or paste a task ID"
-      />
-      <p className="text-xs text-outline">
-        Up to 100 recent tasks{projectId ? " in this project" : " across projects"}. Older or
-        other-project tasks can be linked by exact ID.
-      </p>
+      <div className="flex items-center gap-1">
+        <Input
+          data-testid="session-task-search"
+          aria-label="Search tasks or enter a task ID"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setError(null);
+          }}
+          placeholder="Search recent tasks or paste a task ID"
+        />
+        <HelpPopover label="Recent tasks" testId="session-task-help">
+          Up to 100 recent tasks{projectId ? " in this project" : " across projects"}. Older or
+          other-project tasks can be linked by exact ID.
+        </HelpPopover>
+      </div>
       {error && (
         <p role="alert" className="text-sm text-error">
           {error}

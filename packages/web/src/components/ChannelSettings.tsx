@@ -25,6 +25,7 @@ import {
   ChannelNotificationFilters,
   ChannelNotificationSettings,
 } from "@/components/ChannelNotificationSettings";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useEnabledAgents } from "@/hooks/useAgents";
@@ -75,12 +76,31 @@ function Check({
     </label>
   );
 }
-function Field({ label, children }: { label: string; children: ReactElement<{ id?: string }> }) {
+function Field({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: ReactElement;
+  children: ReactElement<{ id?: string }>;
+}) {
   const id = useId();
+  const control = cloneElement(children, { id });
+  if (help)
+    return (
+      <div className="grid min-w-0 gap-1 text-sm">
+        <div className="flex items-center gap-1">
+          <label htmlFor={id}>{label}</label>
+          {help}
+        </div>
+        {control}
+      </div>
+    );
   return (
     <label htmlFor={id} className="grid min-w-0 gap-1 text-sm">
       <span>{label}</span>
-      {cloneElement(children, { id })}
+      {control}
     </label>
   );
 }
@@ -165,7 +185,12 @@ function TargetEditor({
       />
       <details>
         <summary className="min-h-11 cursor-pointer py-3 text-sm">
-          Project restrictions ({target.project_ids.length || "all projects"})
+          <span className="inline-flex items-center gap-1">
+            Project restrictions ({target.project_ids.length || "all projects"})
+            <HelpPopover label="Project restrictions" testId="channel-target-projects-help">
+              No selection allows all projects. Inbound always requires approved sender IDs.
+            </HelpPopover>
+          </span>
         </summary>
         <div className="flex flex-wrap gap-x-4">
           {projects.map((p) => (
@@ -184,9 +209,6 @@ function TargetEditor({
             />
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">
-          No selection allows all projects. Inbound always requires approved sender IDs.
-        </p>
       </details>
       {error && (
         <p role="alert" className="text-sm text-error">
@@ -244,24 +266,25 @@ function RouteEditor({
           onChange={(e) => setRoute({ ...route, name: e.target.value })}
         />
       </Field>
-      <Check
-        label="Rule enabled"
-        checked={route.enabled}
-        onChange={(v) => setRoute({ ...route, enabled: v })}
-      />
-      {isChannelCatchAll(route.condition) ? (
-        <p className="text-sm text-muted-foreground">
-          Runs only when no enabled rule above matches. Recipient and project permissions still
-          apply.
-        </p>
-      ) : (
-        validChannelCondition(value.condition) && (
-          <ChannelConditionBuilder
-            value={value.condition}
-            onChange={(condition) => setRoute({ ...route, condition })}
-            onValidity={setConditionValid}
-          />
-        )
+      <div className="flex items-center gap-1">
+        <Check
+          label="Rule enabled"
+          checked={route.enabled}
+          onChange={(v) => setRoute({ ...route, enabled: v })}
+        />
+        {isChannelCatchAll(route.condition) && (
+          <HelpPopover label="Fallback rule" testId="channel-route-fallback-help">
+            Runs only when no enabled rule above matches. Recipient and project permissions still
+            apply.
+          </HelpPopover>
+        )}
+      </div>
+      {!isChannelCatchAll(route.condition) && validChannelCondition(value.condition) && (
+        <ChannelConditionBuilder
+          value={value.condition}
+          onChange={(condition) => setRoute({ ...route, condition })}
+          onValidity={setConditionValid}
+        />
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Action">
@@ -554,12 +577,14 @@ function ConnectionEditor({
       )}
       <details>
         <summary className="min-h-11 cursor-pointer py-3 text-sm">
-          Provider configuration (advanced)
+          <span className="inline-flex items-center gap-1">
+            Provider configuration (advanced)
+            <HelpPopover label="Provider configuration" testId="channel-provider-config-help">
+              Set connection-wide native message options under message_defaults. Per-message
+              overrides take precedence. Keep credentials in the credential fields above.
+            </HelpPopover>
+          </span>
         </summary>
-        <p className="mb-2 text-xs text-muted-foreground">
-          Set connection-wide native message options under message_defaults. Per-message overrides
-          take precedence. Keep credentials in the credential fields above.
-        </p>
         <textarea
           aria-label="Provider configuration JSON"
           className="form-control min-h-28 w-full font-mono text-xs"
@@ -769,11 +794,16 @@ function ConnectionEditor({
             className="space-y-2 border-t border-border py-3"
             data-testid="channel-replies-setup"
           >
-            <p className="text-sm">
-              Allow approved senders for {replyTarget} to talk to an agent and answer its questions.
-            </p>
             <div className="grid gap-2 sm:grid-cols-2">
-              <Field label="Reply project">
+              <Field
+                label="Reply project"
+                help={
+                  <HelpPopover label="Agent replies" testId="channel-replies-senders-help">
+                    Allow approved senders for {replyTarget} to talk to an agent and answer its
+                    questions.
+                  </HelpPopover>
+                }
+              >
                 <select
                   className={control}
                   value={replyProject}
@@ -811,13 +841,7 @@ function ConnectionEditor({
                 placeholder="Use the agent default"
               />
             </Field>
-            <p className="text-xs text-muted-foreground">
-              The reply project is the default. Use “default” for the agent to follow Chat Settings.
-              /projects, /agent and /model can change this conversation's choices within recipient
-              permissions. The project needs a working directory. Existing earlier routing rules
-              retain priority. Apply, then save the connection.
-            </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 data-testid="channel-replies-apply"
                 disabled={!replyProject || !replyAgent.trim()}
@@ -876,6 +900,12 @@ function ConnectionEditor({
               >
                 Apply agent replies
               </Button>
+              <HelpPopover label="Agent reply routing" testId="channel-replies-help">
+                The reply project is the default. Use “default” for the agent to follow Chat
+                Settings. /projects, /agent and /model can change this conversation's choices within
+                recipient permissions. The project needs a working directory. Existing earlier
+                routing rules retain priority. Apply, then save the connection.
+              </HelpPopover>
               <Button variant="ghost" onClick={() => setReplyTarget(null)}>
                 Cancel
               </Button>
@@ -902,12 +932,14 @@ function ConnectionEditor({
       </details>
       <details>
         <summary className="min-h-11 cursor-pointer py-3 text-sm">
-          Custom commands ({shortcuts.length})
+          <span className="inline-flex items-center gap-1">
+            Custom commands ({shortcuts.length})
+            <HelpPopover label="Custom commands" testId="channel-commands-help">
+              Shortcuts send a configured prompt to the routed agent. Use $ARGUMENTS for command
+              arguments. Telegram: /summary. Slack: /orc summary. ORC controls cannot be replaced.
+            </HelpPopover>
+          </span>
         </summary>
-        <p className="mb-2 text-xs text-muted-foreground">
-          Shortcuts send a configured prompt to the routed agent. Use $ARGUMENTS for command
-          arguments. Telegram: /summary. Slack: /orc summary. ORC controls cannot be replaced.
-        </p>
         {shortcuts.map((c) => (
           <div
             key={c.command}
@@ -994,12 +1026,14 @@ function ConnectionEditor({
       </details>
       <details>
         <summary className="min-h-11 cursor-pointer py-3 text-sm">
-          Inbound routing ({draft.routes.length})
+          <span className="inline-flex items-center gap-1">
+            Inbound routing ({draft.routes.length})
+            <HelpPopover label="Inbound routing" testId="channel-routing-help">
+              Checked from top to bottom. The first enabled match handles the message; later rules
+              do not run. Only approved senders and permitted projects can invoke an agent.
+            </HelpPopover>
+          </span>
         </summary>
-        <p className="mb-3 text-sm text-muted-foreground">
-          Checked from top to bottom. The first enabled match handles the message; later rules do
-          not run. Only approved senders and permitted projects can invoke an agent.
-        </p>
         <ol className="divide-y divide-border" data-testid="channel-route-order">
           {draft.routes
             .filter((r) => !isChannelCatchAll(r.condition))
@@ -1104,9 +1138,6 @@ function ConnectionEditor({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 space-y-1">
               <p className="text-sm font-medium">Otherwise</p>
-              <p className="text-xs text-muted-foreground">
-                After all rules above, for any remaining authorized message.
-              </p>
               <p className="break-words text-sm">
                 {fallback?.enabled
                   ? routeActionLabel(fallback, projects)
@@ -1288,9 +1319,6 @@ export function ChannelSettings({ active }: { active: boolean }) {
           </Button>
         </div>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Send messages to approved recipients and route incoming messages to agents.
-      </p>
       <ChannelNotificationSettings active={active} />
       {(error || channels.error || providers.error) && (
         <p role="alert" className="break-words text-sm text-error">

@@ -739,6 +739,7 @@ export interface paths {
                                 sourceId?: string | null;
                                 host?: string | null;
                                 projectId?: string | null;
+                                spawnedFrom?: string | null;
                             }[];
                         };
                     };
@@ -8183,6 +8184,8 @@ export interface paths {
                     granularity?: "day" | "hour";
                     agent?: string;
                     model?: string;
+                    /** @description Project id, or unassigned for sessions without a project */
+                    project_id?: string;
                 };
                 header?: never;
                 path?: never;
@@ -19670,6 +19673,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/{id}/subagents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The subagents a session ran, each with the tool call that started it */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Subagents in start order */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            subagents: {
+                                id: string;
+                                session_id: string | null;
+                                title: string;
+                                status: string;
+                                tool_call_id: string | null;
+                                created_at: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/live/{id}/wait": {
         parameters: {
             query?: never;
@@ -23114,6 +23164,11 @@ export interface components {
              * @default null
              */
             parent_id: string | null;
+            /**
+             * @description Live session id of the session that started this one as an independent session (Claude Desktop start_session)
+             * @default null
+             */
+            spawned_from_id: string | null;
             name: string | null;
             summary: string | null;
             tokens_used: number | null;

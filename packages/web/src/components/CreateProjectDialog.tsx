@@ -9,6 +9,7 @@ import type { CreateProjectInput, ProjectStatus } from "@/api/client";
 import { api } from "@/api/client";
 import { FormDialog } from "@/components/FormDialog";
 import { GithubSyncFields } from "@/components/GithubSyncFields";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -248,12 +249,17 @@ export function CreateProjectDialog({
                     )}
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
-                    <Label
-                      htmlFor="project-git-remote-url"
-                      className="font-label text-sm text-muted-foreground"
-                    >
-                      Git remote URL (optional)
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label
+                        htmlFor="project-git-remote-url"
+                        className="font-label text-sm text-muted-foreground"
+                      >
+                        Git remote URL (optional)
+                      </Label>
+                      <HelpPopover label="git remote URL" testId="project-git-remote-help">
+                        Repository address without credentials. Leave blank if not needed.
+                      </HelpPopover>
+                    </div>
                     <Input
                       id="project-git-remote-url"
                       className="bg-background border-control-border text-on-surface font-body text-sm"
@@ -262,9 +268,6 @@ export function CreateProjectDialog({
                       onChange={(event) => setGitRemoteUrl(event.target.value)}
                       placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Repository address without credentials. Leave blank if not needed.
-                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="font-label text-sm  text-muted-foreground">Max workers</Label>
