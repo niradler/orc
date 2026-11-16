@@ -1,4 +1,4 @@
-import type { ChatQuestion } from "@orc/core/chat";
+import type { ChatQuestion, ChatSubagentPayload } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
 import type { AgentCapabilities } from "@orc/core/types";
 import type { OrcMcpMode } from "./orc-mcp.js";
@@ -83,6 +83,7 @@ export type AgentEvent =
   | { type: "text"; data: string }
   | { type: "thinking"; data: string }
   | { type: "plan"; data: { id: string; title?: string; entries: AgentPlanEntry[] } }
+  | { type: "subagent"; data: ChatSubagentPayload }
   | { type: "tool_use"; data: { id: string; name: string; input: string } }
   | {
       type: "tool_result";

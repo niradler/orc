@@ -14,6 +14,7 @@ import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { AgentEffortChoice } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 export function AgentModelPicker({
@@ -23,6 +24,9 @@ export function AgentModelPicker({
   choices,
   onAgent,
   onModel,
+  efforts,
+  effort,
+  onEffort,
   ready = true,
   streaming = false,
   modelsDisabled = false,
@@ -44,6 +48,9 @@ export function AgentModelPicker({
   choices: Map<string, string>;
   onAgent: (agent: string) => boolean;
   onModel: (model: string) => void;
+  efforts?: AgentEffortChoice[] | undefined;
+  effort?: string | undefined;
+  onEffort?: ((value: string) => void) | undefined;
   ready?: boolean;
   streaming?: boolean;
   modelsDisabled?: boolean;
@@ -65,9 +72,11 @@ export function AgentModelPicker({
   const [error, setError] = useState("");
   const agentList = useRef<HTMLDivElement>(null);
   const modelList = useRef<HTMLDivElement>(null);
+  const effortList = useRef<HTMLDivElement>(null);
   const name = agentName ?? agentLabel(agent);
   const modelName = choices.get(selectedModel) || selectedModel || "Agent default";
   const summary = suppliedSummary ?? modelName;
+  const effortChoices = efforts ?? [];
   function reset(): void {
     setCustom(false);
     setError("");
@@ -83,10 +92,21 @@ export function AgentModelPicker({
   }
   function columns(event: KeyboardEvent<HTMLElement>): void {
     if (event.target instanceof HTMLInputElement) return;
-    if (event.key === "ArrowRight" && agentList.current?.contains(event.target as Node)) {
+    const target = event.target as Node;
+    if (event.key === "ArrowRight" && agentList.current?.contains(target)) {
       event.preventDefault();
       focusChipOption(modelList.current);
-    } else if (event.key === "ArrowLeft" && modelList.current?.contains(event.target as Node)) {
+    } else if (
+      event.key === "ArrowRight" &&
+      effortList.current &&
+      modelList.current?.contains(target)
+    ) {
+      event.preventDefault();
+      focusChipOption(effortList.current);
+    } else if (event.key === "ArrowLeft" && effortList.current?.contains(target)) {
+      event.preventDefault();
+      focusChipOption(modelList.current);
+    } else if (event.key === "ArrowLeft" && modelList.current?.contains(target)) {
       event.preventDefault();
       focusChipOption(agentList.current);
     }
@@ -139,21 +159,32 @@ export function AgentModelPicker({
         aria-label="Choose agent and model"
         side="top"
         align="start"
-        className="w-[26rem] max-w-[calc(100vw-2rem)] p-1.5"
+        className={cn(
+          "max-h-[min(36rem,60vh)] max-w-[calc(100vw-1.5rem)] overflow-y-auto p-1.5",
+          effortChoices.length ? "w-[32rem]" : "w-[26rem]",
+        )}
+        collisionPadding={12}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           focusChipOption(started ? modelList.current : agentList.current);
         }}
         onKeyDown={columns}
       >
-        <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5 max-[420px]:grid-cols-1">
+        <div
+          className={cn(
+            "grid gap-1.5 max-[520px]:grid-cols-1",
+            effortChoices.length
+              ? "grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)_minmax(0,0.75fr)]"
+              : "grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]",
+          )}
+        >
           <div
             ref={agentList}
             role="menu"
             aria-label="Agent"
             data-testid={`${testIdPrefix}-agent-select`}
             onKeyDown={onChipListKeyDown}
-            className="min-w-0 border-border max-[420px]:border-b max-[420px]:pb-1.5 min-[421px]:border-r min-[421px]:pr-1.5"
+            className="min-w-0 border-border max-[520px]:border-b max-[520px]:pb-1.5 min-[521px]:border-r min-[521px]:pr-1.5"
           >
             <p className={chipHeading}>Agent</p>
             {(providers?.length
@@ -196,7 +227,11 @@ export function AgentModelPicker({
             aria-label={`${name} model`}
             data-testid={`${testIdPrefix}-model-select`}
             onKeyDown={onChipListKeyDown}
-            className="min-w-0"
+            className={cn(
+              "min-w-0",
+              effortChoices.length &&
+                "border-border max-[520px]:border-b max-[520px]:pb-1.5 min-[521px]:border-r min-[521px]:pr-1.5",
+            )}
           >
             <p className={chipHeading}>Model</p>
             <div className="max-h-64 overflow-y-auto">
@@ -291,6 +326,36 @@ export function AgentModelPicker({
               </p>
             )}
           </div>
+          {effortChoices.length > 0 && (
+            <div
+              ref={effortList}
+              role="menu"
+              aria-label={`${name} effort`}
+              data-testid={`${testIdPrefix}-effort-select`}
+              onKeyDown={onChipListKeyDown}
+              className="min-w-0"
+            >
+              <p className={chipHeading}>Effort</p>
+              <div className="max-h-64 overflow-y-auto">
+                {[{ value: "", label: "Default" }, ...effortChoices].map((choice) => (
+                  <button
+                    type="button"
+                    key={choice.value || "default"}
+                    role="menuitemradio"
+                    data-chip-option
+                    aria-checked={(effort ?? "") === choice.value}
+                    data-testid={`${testIdPrefix}-effort-option-${choice.value || "default"}`}
+                    disabled={modelsDisabled}
+                    onClick={() => onEffort?.(choice.value)}
+                    className={chipOption}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{choice.label}</span>
+                    {(effort ?? "") === choice.value && <Check size={14} aria-hidden="true" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         {note && (
           <div className="mt-1.5 flex items-center gap-1 border-t border-border px-2 pt-1.5 text-xs text-muted-foreground">

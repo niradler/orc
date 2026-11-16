@@ -75,7 +75,9 @@ export function JobEditorDialog({
       ? JSON.stringify(
           job.action.options.runtime === "claude-sdk" || job.action.options.runtime === "pi"
             ? job.action.options.options
-            : job.action.options.args,
+            : "args" in job.action.options
+              ? job.action.options.args
+              : job.action.options.options,
           null,
           2,
         )
@@ -124,11 +126,13 @@ export function JobEditorDialog({
             ? "pi"
             : action.backend === "codex-cli"
               ? "codex"
-              : "acpx";
+              : action.backend === "opencode"
+                ? "opencode"
+                : "acpx";
       try {
         const raw: unknown = JSON.parse(optionsDraft);
         const options = ChatAgentOptionsSchema.parse(
-          runtime === "claude-sdk" || runtime === "pi"
+          runtime === "claude-sdk" || runtime === "pi" || runtime === "opencode"
             ? { runtime, options: raw }
             : { runtime, args: raw },
         );

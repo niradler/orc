@@ -21,7 +21,8 @@ export function ChatAgentOptionsEditor() {
   const initial = JSON.stringify(
     saved?.runtime === "claude-sdk" || saved?.runtime === "pi"
       ? saved.options
-      : (saved?.args ?? (["claude-sdk", "pi"].includes(runtime) ? {} : [])),
+      : ((saved && "args" in saved ? saved.args : undefined) ??
+          (["claude-sdk", "pi"].includes(runtime) ? {} : [])),
     null,
     2,
   );
@@ -48,7 +49,7 @@ export function ChatAgentOptionsEditor() {
       return;
     }
     const parsed = ChatAgentOptionsSchema.safeParse(
-      runtime === "claude-sdk" || runtime === "pi"
+      runtime === "claude-sdk" || runtime === "pi" || runtime === "opencode"
         ? { runtime, options: raw }
         : { runtime, args: raw },
     );

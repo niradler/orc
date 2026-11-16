@@ -1,4 +1,5 @@
 import type { ChatSettings } from "@orc/core/chat";
+import { type ChatAgentOptions, type ClaudeChatOptions, chatRuntime } from "@orc/core/chat-options";
 import { agentForSessionBackend, codingAgent } from "@orc/core/coding-agents";
 import { pathLabel } from "@orc/core/display-path";
 
@@ -113,6 +114,8 @@ export function withPermissionMode(config: ChatSettings, mode: PermissionMode): 
 }
 
 const EFFORT_LABELS: Record<string, string> = {
+  off: "Off",
+  none: "None",
   minimal: "Minimal",
   low: "Low",
   medium: "Medium",
@@ -120,22 +123,128 @@ const EFFORT_LABELS: Record<string, string> = {
   xhigh: "Extra high",
   max: "Max",
 };
+/** Effort values each adapter accepts, in increasing order. */
+const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+const PI_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const CODEX_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+const CODEX_EFFORT_KEY = "model_reasoning_effort";
+
+export type AgentEffortChoice = { value: string; label: string };
+
+/** Effort choices the current adapter exposes in the composer; empty when it has none. */
+export function agentEffortChoices(agent: string): AgentEffortChoice[] {
+  const runtime = chatRuntime(agent);
+  const values =
+    runtime === "claude-sdk"
+      ? CLAUDE_EFFORTS
+      : runtime === "pi"
+        ? PI_EFFORTS
+        : runtime === "codex"
+          ? CODEX_EFFORTS
+          : [];
+  return values.map((value) => ({ value, label: EFFORT_LABELS[value] ?? value }));
+}
+
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  return /^".*"$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
+}
+
+/** Reads a `-c key=value` pair from Codex arguments, honoring both separated and inline forms. */
+function codexSetting(args: readonly string[], key: string): string | undefined {
+  for (let index = 0; index < args.length; index++) {
+    const token = args[index] ?? "";
+    const equals = token.indexOf("=");
+    const flag = equals >= 0 ? token.slice(0, equals) : token;
+    if (flag !== "-c" && flag !== "--config") continue;
+    const value = equals >= 0 ? token.slice(equals + 1) : args[index + 1];
+    if (value === undefined) continue;
+    const split = value.indexOf("=");
+    if (split > 0 && value.slice(0, split).trim() === key) return unquote(value.slice(split + 1));
+    if (equals < 0) index++;
+  }
+  return undefined;
+}
+
+/** Returns the raw effort value selected for the current agent, or "" for the adapter default. */
+export function agentEffortValue(config: ChatSettings): string {
+  const options = config.agentOptions[config.agent];
+  if (!options) return "";
+  if (options.runtime === "claude-sdk") return options.options.effort ?? "";
+  if (options.runtime === "pi") return options.options.thinkingLevel ?? "";
+  if (options.runtime === "opencode") return options.options.effort ?? "";
+  if (options.runtime !== "codex") return "";
+  return codexSetting(options.args, CODEX_EFFORT_KEY) ?? "";
+}
+
+/** Drops every Codex `-c` entry for the key so a new effort can replace it cleanly. */
+function withoutCodexSetting(args: readonly string[], key: string): string[] {
+  const kept: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const token = args[index] ?? "";
+    const equals = token.indexOf("=");
+    const flag = equals >= 0 ? token.slice(0, equals) : token;
+    if (flag !== "-c" && flag !== "--config") {
+      kept.push(token);
+      continue;
+    }
+    const value = equals >= 0 ? token.slice(equals + 1) : args[index + 1];
+    const split = value?.indexOf("=") ?? -1;
+    if (value !== undefined && split > 0 && value.slice(0, split).trim() === key) {
+      if (equals < 0) index++;
+      continue;
+    }
+    kept.push(token);
+    if (equals < 0 && index + 1 < args.length) kept.push(args[++index] ?? "");
+  }
+  return kept;
+}
+
+/** Returns a copy of the chat config with the chosen effort applied to the current agent. */
+export function withAgentEffort(config: ChatSettings, value: string): ChatSettings {
+  const runtime = chatRuntime(config.agent);
+  const saved = config.agentOptions[config.agent];
+  let options: ChatAgentOptions;
+  if (runtime === "claude-sdk") {
+    const next = saved?.runtime === "claude-sdk" ? { ...saved.options } : {};
+    if (value) next.effort = value as NonNullable<ClaudeChatOptions["effort"]>;
+    else delete next.effort;
+    options = { runtime, options: next };
+  } else if (runtime === "pi") {
+    const next = saved?.runtime === "pi" ? { ...saved.options } : {};
+    if (value) next.thinkingLevel = value as NonNullable<typeof next.thinkingLevel>;
+    else delete next.thinkingLevel;
+    options = { runtime, options: next };
+  } else if (runtime === "codex") {
+    const args = withoutCodexSetting(
+      saved?.runtime === "codex" ? saved.args : [],
+      CODEX_EFFORT_KEY,
+    );
+    if (value) args.push("-c", `${CODEX_EFFORT_KEY}="${value}"`);
+    options = { runtime, args };
+  } else if (runtime === "opencode") {
+    const next = saved?.runtime === "opencode" ? { ...saved.options } : {};
+    if (value) next.effort = value;
+    else delete next.effort;
+    options = { runtime, options: next };
+  } else return config;
+  return {
+    ...config,
+    agentOptions: { ...config.agentOptions, [config.agent]: options },
+  };
+}
 
 export function agentEffort(config: ChatSettings): string | null {
-  const options = config.agentOptions[config.agent];
-  if (!options) return null;
-  if (options.runtime === "claude-sdk")
-    return options.options.effort ? EFFORT_LABELS[options.options.effort] : null;
-  if (options.runtime === "pi")
-    return options.options.thinkingLevel
-      ? (EFFORT_LABELS[options.options.thinkingLevel] ?? options.options.thinkingLevel)
-      : null;
-  if (options.runtime !== "codex") return null;
-  for (const arg of options.args) {
-    const match = /^model_reasoning_effort\s*=\s*"?([a-z]+)"?$/i.exec(arg.trim());
-    if (match?.[1]) return EFFORT_LABELS[match[1].toLowerCase()] ?? match[1];
-  }
-  return null;
+  const value = agentEffortValue(config);
+  if (!value || value === "default") return null;
+  return EFFORT_LABELS[value] ?? value;
+}
+
+/** Live effort choices (OpenCode) without the adapter-default row the picker adds itself. */
+export function liveEffortChoices(
+  choices: readonly AgentEffortChoice[] | undefined,
+): AgentEffortChoice[] {
+  return (choices ?? []).filter((choice) => choice.value && choice.value !== "default");
 }
 
 export function agentModelLabel(model: string, effort: string | null): string {

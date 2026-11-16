@@ -10,7 +10,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AcpSession } from "../acp.js";
+import type { AgentCapabilities } from "@orc/core/types";
+import { AcpSession, SteerNotConsumedError } from "../acp.js";
+import { OPENCODE_CAPABILITIES } from "../capabilities.js";
 import type { AgentEvent, PermissionResult, SessionOpts } from "../types.js";
 
 const owned: { cwd: string; session: AcpSession }[] = [];
@@ -20,7 +22,7 @@ afterEach(async () => {
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
-function fixture(opts: Partial<SessionOpts> = {}, mode = "normal") {
+function fixture(opts: Partial<SessionOpts> = {}, mode = "normal", initial?: AgentCapabilities) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-direct-acp-")));
   if (mode === "moved-session") mkdirSync(join(cwd, "moved"), { recursive: true });
   const script = join(cwd, "peer.ts");
@@ -31,39 +33,65 @@ import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
 const update=(sessionId,update)=>emit({method:'session/update',params:{sessionId,update}});
-let promptId; let session='native-acp'; const mode=${JSON.stringify(mode)};
+let promptId; const promptIds=[]; let session='native-acp'; const mode=${JSON.stringify(mode)};
 const moved=join(process.cwd(),'moved');
 const ask=id=>emit({id,method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'late',title:'Late action',kind:'execute'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'deny',name:'Deny',kind:'reject_once'}]}});
 for await (const line of createInterface({input:process.stdin})) {
  const m=JSON.parse(line);appendFileSync('wire.ndjson',line+'\\n');
  if(m.id==='client-access') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.error)}});emit({id:promptId,result:{stopReason:'end_turn'}});continue;}
  if(m.id==='late-cancel') {emit({id:promptId,result:{stopReason:'cancelled'}});continue;}
- if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
- else if(m.method==='session/new') {emit({id:m.id,result:{sessionId:session,...(mode==='model'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'test-model',name:'Test model'}]}]}:{})}});if(mode==='idle-permission')setTimeout(()=>ask('late-idle'),20);}
- else if(m.method==='session/set_config_option') emit({id:m.id,result:{configOptions:[]}});
+ if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,...(mode==='steer-extension'||mode==='steer-decline'?{_meta:{steering:{supported:true}}}:{}),agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
+ else if(m.method==='session/new') {emit({id:m.id,result:{sessionId:session,...(mode==='model-effort'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'}]}]}:{}),...(mode==='model'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'test-model',name:'Test model'}]}]}:{}),...(['effort','effort-switch','child-updates','child-permission'].includes(mode)?{configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'},{value:'default',name:'Default'}]}]}:{})}});if(mode==='idle-permission')setTimeout(()=>ask('late-idle'),20);}
+ else if(m.method==='session/set_config_option') emit({id:m.id,result:{configOptions:mode==='model-effort'&&m.params.configId==='model'?[{id:'model',name:'Model',category:'model',type:'select',currentValue:m.params.value,options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'max',name:'Max'}]}]:[]}});
  else if(m.method==='session/list') emit({id:m.id,result:{sessions:[{sessionId:session,cwd:moved,title:'Moved'}]}});
  else if(m.method==='session/load') { if(mode==='missing-session') {emit({id:m.id,error:{code:-32602,message:'Invalid params: session not found: '+m.params.sessionId,data:{sessionId:m.params.sessionId}}});continue;} if(mode==='moved-session'&&m.params.cwd!==moved) {session=m.params.sessionId;emit({id:m.id,error:{code:-32602,message:'Invalid params: session '+m.params.sessionId+' does not belong to cwd: '+m.params.cwd,data:{sessionId:m.params.sessionId,cwd:m.params.cwd}}});continue;} session=m.params.sessionId;update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OLD HISTORY'}});emit({id:m.id,result:{}}); }
  else if(m.method==='session/prompt') {
-  promptId=m.id;
+  promptId=m.id;promptIds.push(m.id);
   if(mode==='exit') { process.exit(2); }
   else if(mode==='oversize') process.stdout.write('x'.repeat(2100000));
-  else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold') {}
+  else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold'||mode==='steer-extension'||mode==='steer-decline'||mode==='steer-legacy') {}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
+  else if(mode==='effort') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'EFFORT OK'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
+  else if(mode==='effort-switch') {update(session,{sessionUpdate:'config_option_update',configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'}]}]});update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'SWITCHED'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
+  else if(mode==='child-chatty') {
+   const child={id:'ses_child',parentID:session,depth:1,title:'Long delegation'};
+   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'x'.repeat(90000)},_meta:{'opencode/child-session':child}});
+   for(let i=0;i<40;i++){update(session,{sessionUpdate:'tool_call',toolCallId:'ses_child:t'+i,title:'Read',kind:'read',status:'pending',rawInput:{path:'f'+i},_meta:{'opencode/child-session':child}});update(session,{sessionUpdate:'tool_call_update',toolCallId:'ses_child:t'+i,status:'completed',rawOutput:'ok',_meta:{'opencode/child-session':child}});}
+   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'PARENT ANSWER'}});
+   emit({id:promptId,result:{stopReason:'end_turn'}});
+  }
+  else if(mode==='child-updates') {
+   const child={id:'ses_child',parentID:session,depth:1,title:'Explore the codebase'};
+   update(session,{sessionUpdate:'tool_call',toolCallId:'task-1',title:'task',kind:'other',status:'pending',rawInput:{description:'Explore',subagent_type:'explore'}});
+   update(session,{sessionUpdate:'tool_call',toolCallId:'ses_child:read-1',title:'Explore: Read file',kind:'read',status:'pending',rawInput:{path:'b.txt'},_meta:{'opencode/child-session':child}});
+   update(session,{sessionUpdate:'tool_call_update',toolCallId:'ses_child:read-1',status:'completed',rawOutput:'child file contents',_meta:{'opencode/child-session':child}});
+   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'CHILD ANSWER'},_meta:{'opencode/child-session':child}});
+   update(session,{sessionUpdate:'tool_call_update',toolCallId:'task-1',status:'completed',rawOutput:{metadata:{sessionId:'ses_child'}}});
+   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'PARENT ANSWER'}});
+   emit({id:promptId,result:{stopReason:'end_turn'}});
+  }
+  else if(mode==='child-permission') {emit({id:'child-permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'ses_child:run-1',title:'Run a command',kind:'execute',_meta:{'opencode/child-session':{id:'ses_child',parentID:session,depth:1,title:'Explore the codebase'}}},options:[{optionId:'native-allow',name:'Yes',kind:'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});}
   else {
    update('other-session',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'WRONG SESSION'}});
    update(session,{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Working'}});
    update(session,{sessionUpdate:'tool_call',toolCallId:'read-1',title:'Read file',kind:'read',status:'pending',rawInput:{path:'a.txt'}});
    emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',title:'Read file',kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
   }
+ } else if(m.id==='child-permission') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'CHILD DONE'}});emit({id:promptId,result:{stopReason:'end_turn'}});
  } else if(m.id==='permission') {
   update(session,{sessionUpdate:'tool_call_update',toolCallId:'read-1',status:'completed',rawOutput:'file contents'});
   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.result)}});
   emit({id:promptId,result:{stopReason:'end_turn'}});
- } else if(m.method==='session/cancel') {if(mode==='cancel-late')ask('late-cancel');else if(mode!=='cancel-hold')emit({id:promptId,result:{stopReason:'cancelled'}});}
+ } else if(m.method==='_session/steering') emit({id:m.id,result:mode==='steer-decline'?{outcome:'promptRequired',reason:'noRunningTurn'}:{outcome:'injected'}});
+ else if(m.method==='session/cancel') {if(mode==='cancel-late')ask('late-cancel');else if(mode!=='cancel-hold')for(const id of promptIds)emit({id,result:{stopReason:'cancelled'}});}
 }`,
   );
-  const session = new AcpSession({ cwd, orcMcp: false, ...opts }, [process.execPath, script]);
+  const session = new AcpSession(
+    { cwd, orcMcp: false, ...opts },
+    [process.execPath, script],
+    initial,
+  );
   owned.push({ cwd, session });
   return { session, cwd };
 }
@@ -111,6 +139,7 @@ for (const decision of ["approved", "denied", "session"] as const) {
       .map((line) => JSON.parse(line));
     expect(wire.find((m) => m.method === "initialize").params.clientCapabilities).toEqual({
       elicitation: { form: {} },
+      _meta: { "opencode/child-session-updates": true },
     });
     expect(session.capabilities.questions).toBe(true);
     expect(session.getRuntimeSessionId()).toBe("native-acp");
@@ -222,6 +251,62 @@ test("ACP refuses to steer without a declared capability and sends nothing", asy
   expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(1);
 });
 
+test("ACP steers through _session/steering when advertised and keeps a single prompt", async () => {
+  const { session, cwd } = fixture({}, "steer-extension", OPENCODE_CAPABILITIES);
+  await session.initialize();
+  await session.send("Wait");
+  await session.steer("steer");
+  expect(session.capabilities.steering).toBe(true);
+  await session.interrupt();
+  await run(session);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(1);
+  expect(wire.find((m) => m.method === "_session/steering").params).toEqual({
+    sessionId: "native-acp",
+    prompt: [{ type: "text", text: "steer" }],
+    _meta: { steering: { idleBehavior: "promptRequired" } },
+  });
+});
+
+test("ACP surfaces a promptRequired steer decline as not consumed and keeps the capability", async () => {
+  const { session, cwd } = fixture({}, "steer-decline", OPENCODE_CAPABILITIES);
+  await session.initialize();
+  await session.send("Wait");
+  let declineError: unknown;
+  try {
+    await session.steer("steer");
+  } catch (error) {
+    declineError = error;
+  }
+  expect(declineError).toBeInstanceOf(SteerNotConsumedError);
+  expect(session.capabilities.steering).toBe(true);
+  await session.interrupt();
+  await run(session);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(1);
+});
+
+test("ACP without the steering extension still steers via a second prompt", async () => {
+  const { session, cwd } = fixture({}, "steer-legacy", OPENCODE_CAPABILITIES);
+  await session.initialize();
+  await session.send("Wait");
+  await session.steer("steer");
+  await session.interrupt();
+  await run(session);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(2);
+  expect(wire.some((m) => m.method === "_session/steering")).toBe(false);
+});
+
 test("ACP cancellation completes without losing native identity", async () => {
   const { session } = fixture({}, "cancel");
   await session.initialize();
@@ -323,3 +408,126 @@ for (const mode of ["client-fs", "client-terminal"]) {
     expect(existsSync(join(cwd, "forbidden.txt"))).toBe(false);
   });
 }
+
+test("ACP applies the saved OpenCode effort and exposes the live choices", async () => {
+  const { session, cwd } = fixture(
+    { chatAgentOptions: { runtime: "opencode", options: { effort: "high" } } },
+    "effort",
+  );
+  await session.initialize();
+  expect(session.capabilities.effortChoices).toEqual([
+    { value: "none", label: "None" },
+    { value: "high", label: "High" },
+    { value: "default", label: "Default" },
+  ]);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8");
+  expect(wire).toContain('"configId":"effort"');
+  expect(wire).toContain('"value":"high"');
+  await session.send("Go");
+  const events = await run(session);
+  expect(events.some((e) => e.type === "text" && e.data === "EFFORT OK")).toBe(true);
+});
+
+test("ACP reads effort levels from the chosen model, not the session default", async () => {
+  const { session, cwd } = fixture(
+    { model: "big-model", chatAgentOptions: { runtime: "opencode", options: { effort: "max" } } },
+    "model-effort",
+  );
+  await session.initialize();
+  expect(session.capabilities.effortChoices).toEqual([
+    { value: "low", label: "Low" },
+    { value: "max", label: "Max" },
+  ]);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((m) => m.method === "session/set_config_option");
+  expect(wire.map((m) => [m.params.configId, m.params.value])).toEqual([
+    ["model", "big-model"],
+    ["effort", "max"],
+  ]);
+});
+
+test("ACP keeps the agent default when the saved effort is unavailable for the model", async () => {
+  const { session, cwd } = fixture(
+    { chatAgentOptions: { runtime: "opencode", options: { effort: "xhigh" } } },
+    "effort",
+  );
+  await session.initialize();
+  await session.send("Go");
+  const events = await run(session);
+  expect(
+    events.some(
+      (e) =>
+        e.type === "system_status" &&
+        e.data.includes('Effort "xhigh" is not available for this model'),
+    ),
+  ).toBe(true);
+  expect(readFileSync(join(cwd, "wire.ndjson"), "utf8")).not.toContain('"configId":"effort"');
+});
+
+test("ACP refreshes effort choices when the agent reports a config option update", async () => {
+  const { session } = fixture({}, "effort-switch");
+  await session.initialize();
+  await session.send("Switch model");
+  const events = await run(session);
+  const updates = events.filter((e) => e.type === "capabilities");
+  const last = updates[updates.length - 1];
+  expect(last?.data.effortChoices).toEqual([
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+  ]);
+});
+
+test("ACP keeps a long subagent delegation under the output limit", async () => {
+  const { session } = fixture({}, "child-chatty");
+  await session.initialize();
+  await session.send("Delegate");
+  const events = await run(session);
+  expect(events.filter((e) => e.type === "error")).toEqual([]);
+  expect(events.filter((e) => e.type === "subagent").length).toBeGreaterThan(40);
+  expect(events.some((e) => e.type === "text" && e.data === "PARENT ANSWER")).toBe(true);
+});
+
+test("ACP streams OpenCode child-session updates as one inline subagent transcript", async () => {
+  const { session } = fixture({}, "child-updates");
+  await session.initialize();
+  await session.send("Delegate the exploration");
+  const events = await run(session);
+  const subagents = events.filter((e) => e.type === "subagent");
+  expect(subagents.length).toBeGreaterThan(0);
+  const last = subagents[subagents.length - 1];
+  expect(last?.data).toMatchObject({
+    id: "ses_child",
+    title: "Explore the codebase",
+    status: "completed",
+    text: "CHILD ANSWER",
+  });
+  const tools = last?.data.activity.filter((item) => item.type === "tool") ?? [];
+  expect(tools).toHaveLength(1);
+  expect(tools[0]).toMatchObject({ id: "ses_child:read-1", result: "child file contents" });
+  // The child's answer never leaks into the parent's text stream.
+  const text = events
+    .filter((e) => e.type === "text")
+    .map((e) => e.data)
+    .join("");
+  expect(text).toBe("PARENT ANSWER");
+  // The parent keeps its own task call.
+  expect(events.some((e) => e.type === "tool_use" && e.data.id === "task-1")).toBe(true);
+});
+
+test("ACP names the subagent on a child session's permission request", async () => {
+  const { session } = fixture({}, "child-permission");
+  await session.initialize();
+  await session.send("Delegate");
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "permission_request") {
+      expect(event.data.command).toBe("Explore the codebase: Run a command");
+      session.respondPermission(event.data.requestId, "approved");
+    }
+  }
+  expect(events.some((e) => e.type === "result")).toBe(true);
+});

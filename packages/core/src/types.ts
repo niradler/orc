@@ -61,6 +61,12 @@ export const AgentCapabilitiesSchema = z.object({
   mcp: z.boolean(),
   fork: z.boolean(),
   rollback: z.boolean(),
+  /** Live effort levels the adapter exposes for the session's current model
+   *  (OpenCode's ACP thought_level config option). Absent when the agent has none. */
+  effortChoices: z
+    .array(z.object({ value: z.string().min(1).max(64), label: z.string().min(1).max(120) }))
+    .max(16)
+    .optional(),
 });
 export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;
 

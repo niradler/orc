@@ -79,3 +79,23 @@ test("should detect a configured ACP command instead of the default binary", () 
   initializeAgentPreferences((name) => (name === "custom-acp" ? process.execPath : null));
   expect(loadConfig().preferences.agents).toEqual(["opencode"]);
 });
+
+test("should align saved providers with discovery when no selection was recorded", () => {
+  saveProviderSettings(readProviderSettings());
+  updateGlobalConfig((raw) => {
+    const preferences = (raw.preferences ?? {}) as Record<string, unknown>;
+    delete preferences.agents;
+    raw.preferences = preferences;
+  });
+  expect(loadConfig().preferences.agents).toBeUndefined();
+  initializeAgentPreferences((name) => (name === "claude" ? process.execPath : null));
+  expect(loadConfig().preferences.agents).toEqual(["claude"]);
+  const saved = readProviderSettings();
+  expect(saved.providers.find((profile) => profile.id === "claude")?.enabled).toBe(true);
+  expect(saved.providers.find((profile) => profile.id === "codex")?.enabled).toBe(false);
+  expect(saved.default_provider_id).toBe("claude");
+  // Once the selection is recorded, later runs keep it even when binaries vanish.
+  const before = readFileSync(globalConfigPath(), "utf8");
+  initializeAgentPreferences(() => null);
+  expect(readFileSync(globalConfigPath(), "utf8")).toBe(before);
+});

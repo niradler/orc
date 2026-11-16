@@ -20,6 +20,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
+import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { Highlight } from "@/components/Highlight";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
@@ -89,6 +90,9 @@ export function ChatSessionPicker({
     unassignedRows,
     unassignedFolders,
     projectFromFolder,
+    adoptFolder,
+    closeAdopt,
+    expandProject,
     loading,
     selectEntry,
     newProjectSession,
@@ -458,6 +462,17 @@ export function ChatSessionPicker({
             Retry
           </Button>
         </div>
+      )}
+      {adoptFolder && (
+        <CreateProjectDialog
+          open
+          initialName={adoptFolder.name}
+          initialScope={adoptFolder.cwd}
+          allowFirstTask={false}
+          onClose={closeAdopt}
+          onCreated={expandProject}
+          onFirstTask={expandProject}
+        />
       )}
     </SessionHistoryFrame>
   );
