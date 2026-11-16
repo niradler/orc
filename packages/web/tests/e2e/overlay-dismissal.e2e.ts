@@ -110,7 +110,13 @@ for (const width of [320, 390, 1440]) {
           await expect(page.getByTestId(picker)).toBeVisible();
           const messages = page.getByTestId("chat-messages").filter({ visible: true });
           if (width < 1000) await messages.tap({ position: { x: 8, y: 8 } });
-          else await messages.click({ position: { x: 8, y: 8 } });
+          // At desktop widths the agent/model/effort popover covers the pinned empty messages
+          // strip, so the outside tap must land outside the chat panel entirely.
+          else
+            await page
+              .getByRole("banner")
+              .first()
+              .click({ position: { x: 8, y: 8 } });
           await expect(page.getByTestId(picker)).toBeHidden();
           await expect(input).toHaveValue("Picker draft");
         }

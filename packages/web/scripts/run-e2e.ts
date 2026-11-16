@@ -201,12 +201,14 @@ async function cleanup(): Promise<void> {
     try {
       if (shard.api) await shard.api.exited;
       if (explicitDb)
-        rmSync(shard.dbPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+        rmSync(shard.dbPath, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     } catch (error) {
       failures.push(error);
     }
     try {
-      rmSync(shard.home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      // Windows releases child-process file handles asynchronously after exit; a ~1s retry
+      // budget loses that race and fails teardown with EBUSY even when every test passed.
+      rmSync(shard.home, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     } catch (error) {
       failures.push(error);
     }
