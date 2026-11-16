@@ -36,9 +36,13 @@ for (const width of [1440, 390]) {
     const suffix = width === 1440 ? "desktop" : "phone";
     const shot = async (name: string) => {
       await page.screenshot({
-        path: CAPTURE
-          ? `${repoRoot()}/docs/public/screens/${name}-${suffix}.png`
-          : testInfo.outputPath(`${name}-${suffix}.png`),
+        // Only the desktop variants are shown by a docs page. Keep the phone
+        // captures as review artifacts in the git-ignored test output so a docs
+        // refresh cannot commit an image nothing links to.
+        path:
+          CAPTURE && width === 1440
+            ? `${repoRoot()}/docs/public/screens/${name}-${suffix}.png`
+            : testInfo.outputPath(`${name}-${suffix}.png`),
         animations: "disabled",
       });
     };
