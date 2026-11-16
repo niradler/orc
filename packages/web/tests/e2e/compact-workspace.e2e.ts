@@ -234,8 +234,18 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
             await expect(
               page.getByTestId("chat-session-list").getByTestId("chat-history-row"),
             ).toBeVisible();
-          if (route === "scratchpad")
-            await expect(page.getByTestId("scratchpad-row")).toHaveCount(3);
+          if (route === "scratchpad") {
+            // Extra pads can appear (auto Learnings digest, concurrent fixtures);
+            // assert the seeded pads instead of an exact row count.
+            for (const title of [
+              "Release checklist",
+              "UI cleanup proposal",
+              "Access provider flow",
+            ])
+              await expect(
+                page.getByTestId("scratchpad-row").filter({ hasText: title }),
+              ).toBeVisible();
+          }
           if (route === "jobs")
             await expect(page.locator(`[data-job-id="${previewJob.id}"]`)).toBeVisible();
           expect(
