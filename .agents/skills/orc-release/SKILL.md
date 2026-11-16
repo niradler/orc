@@ -117,6 +117,7 @@ Speed rules:
 | Lab `docker build`/`docker compose` prints usage or not found | Lab docker CLI has no build/compose subcommands | buildx plugin path for builds; `homelab-code-server` helper container with docker socket for compose |
 | Bump collides with an existing npm version | Previous release commit never reached master | Preflight version check (step 1) |
 | Fix PR's `changed` check sits queued | Homelab runner session went stale (container replaced) | Cancel the run, then `gh run rerun <id>`; check `gha-runner-pool.service` on the lab |
+| mac-arm64 job `cancelled` after ~15 min with empty steps | GitHub never provisioned a macos runner; `--failed`/`--job` rerun refuse cancelled jobs | Whole-run `gh run rerun <id>`, then `--resume --yes` |
 | Backup tar prints `socket ignored` | SSH control sockets in `/data/.orc/ssh` | Harmless; sockets don't need backing up |
 | Backup verify claims `orc.db` missing though the archive is fine | grep/pipefail SIGPIPE. `tar -tzf \| grep -q` kills tar; `printf '%s\n' "$listing" \| grep -qx` kills printf on the FIRST match, so a present file reads as missing | Materialize the listing once, then `grep -qxF -- ./orc.db <<<"$listing"`. Directory entries carry a trailing slash (`./knowledge/`), so match that form |
 | Canonical gate fails with `connect ETIMEDOUT 127.0.0.1:<port>` in unrelated specs | `bun run release --yes` inherits no overrides and runs the default four shards (#336) | Export `PW_SHARDS=2 PW_RETRIES=1` before `bun run release`; with a clean tree a failed pre-flight gate needs no resume |
