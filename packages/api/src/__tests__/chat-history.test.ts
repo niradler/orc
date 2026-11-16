@@ -58,3 +58,25 @@ test("imported chat history retains thinking and tool results without blank user
   ]);
   expect(history[2]?.content).toBe("Original answer");
 });
+
+test("imported chat history times each turn from the prompt to its last answer", () => {
+  const at = (minute: number) => `2026-11-16T10:${String(minute).padStart(2, "0")}:00Z`;
+  const ms = (minute: number) => Date.parse(at(minute));
+  const history = chatHistory(
+    [
+      { index: 0, role: "user", time: at(0), blocks: [{ type: "text", text: "First" }] },
+      { index: 1, role: "assistant", time: at(1), blocks: [{ type: "text", text: "Working" }] },
+      { index: 2, role: "assistant", time: at(3), blocks: [{ type: "text", text: "Done" }] },
+      { index: 3, role: "user", time: null, blocks: [{ type: "text", text: "Second" }] },
+      { index: 4, role: "assistant", time: at(5), blocks: [{ type: "text", text: "Untimed" }] },
+    ],
+    "claude",
+  );
+  expect(history.map((message) => message.turn)).toEqual([
+    undefined,
+    undefined,
+    { startedAt: ms(0), finishedAt: ms(3) },
+    undefined,
+    undefined,
+  ]);
+});

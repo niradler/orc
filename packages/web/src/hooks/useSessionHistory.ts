@@ -458,9 +458,9 @@ export function useSessionHistory({
     autoExpanded.current = signature;
     setExpandedProjects((ids) => (ids.includes(group) ? ids : [...ids, group]));
   }, [open, section, activeRow, activeAssigned, projectGroups, unassignedRows]);
-  const active = entries.find(
-    (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
-  );
+  const active = entries
+    .flatMap((entry) => [entry, ...(entry.children ?? [])])
+    .find((entry) => entry.kind === "local" && entry.tab.key === chat.activeKey);
   const activeKeys = active?.seenKeys.join("\n") ?? "";
   const activeUpdated = active?.updatedAt ?? 0;
   useEffect(() => {
