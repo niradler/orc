@@ -6,6 +6,7 @@ export {
   startGateway,
   stopGateway,
 } from "./manager.js";
+export { speechConfigured, transcribeAudio } from "./speech.js";
 export { resolveChatKey } from "./store.js";
 export type {
   Button,

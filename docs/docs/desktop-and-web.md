@@ -302,7 +302,8 @@ browser's image decoder. PDF and Office previews are not included.
 
 The browser uses a separate session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
-are blocked. Browser downloads are staged privately (16 MB each, four across the
+are blocked. Only the ORC window itself may use the microphone, and only for
+composer dictation. Browser downloads are staged privately (16 MB each, four across the
 app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
 as saved. Every chat uses the shared **ORC browser** profile by default, so a site
@@ -714,6 +715,23 @@ Pasting at least 16 KiB or 200 lines attaches the text as `pasted-text-N.txt`.
 Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach files.
 
 <img src="/screens/chat-composer-390.png" alt="Compact composer icons on a phone" width="260">
+
+### Dictation
+
+The microphone beside the attach button speaks a prompt into the draft. It is
+off until the server has a speech provider configured (see
+[Configuration](./configuration.md#speech-tts)); until then it shows **Dictation off · Set up**,
+linking to that page. Press it, or **Cmd/Ctrl+Shift+D** in the composer, to start
+recording. The composer tools turn into a recording bar with elapsed time and an
+input level. **Insert** (or **Enter**, or the shortcut again) stops and
+transcribes; **Cancel** (or **Escape**) discards the clip. The transcript lands at
+the cursor, replacing any selection, and is never sent for you. Send, Queue and
+Send now stay disabled while recording and transcribing. A recording stops on its
+own after five minutes. A blocked or missing microphone, or a failed
+transcription, shows the reason with **Retry**, which resends the same clip
+when the recording itself succeeded. The browser needs HTTPS or `localhost` to
+reach the microphone. The audio goes to the ORC server, which forwards it to the
+configured provider; the provider key never leaves the server.
 
 ## Desktop app only
 

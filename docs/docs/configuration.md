@@ -502,6 +502,23 @@ Channels are configured under **Settings → Connections → Channels**.
 
 Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_*` enables text-to-speech.
 
+Speech powers composer dictation in the web and desktop app and voice messages in
+channels. Dictation is available once `speech.enabled` is true and the selected
+provider has an `api_key`; `GET /api/speech/status` reports it and
+`POST /api/speech/transcribe` (multipart field `audio`, up to 25 MB) returns
+`{ "text": "..." }`. Each provider also accepts `base_url` and `model`, for example
+to point `openai` at another OpenAI-compatible transcription endpoint.
+
+```json
+{
+  "speech": {
+    "enabled": true,
+    "provider": "groq",
+    "groq": { "api_key": "gsk_..." }
+  }
+}
+```
+
 ## Other environment variables
 
 | Variable              | Default                    | Purpose                                                                                                                                                        |

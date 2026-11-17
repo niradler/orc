@@ -62,6 +62,10 @@ function needsConversion(format: string): boolean {
   return !["mp3", "wav", "webm", "m4a", "mp4"].includes(format.toLowerCase());
 }
 
+export function speechConfigured(config = loadConfig()): boolean {
+  return config.speech.enabled && !!config.speech[config.speech.provider].api_key;
+}
+
 export async function transcribeAudio(input: {
   audio: Uint8Array;
   format: string;
@@ -103,6 +107,7 @@ export async function transcribeAudio(input: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60_000),
     });
     const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
@@ -138,6 +143,7 @@ export async function transcribeAudio(input: {
     method: "POST",
     headers: { Authorization: `Bearer ${provider.api_key}` },
     body: form,
+    signal: AbortSignal.timeout(60_000),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(text || `Speech request failed (${response.status})`);

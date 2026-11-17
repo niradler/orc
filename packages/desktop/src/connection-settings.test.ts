@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   applyConnectionDraft,
+  appMicrophoneAllowed,
   localConnection,
   mergeHeaders,
   normalizeHeaders,
@@ -193,4 +194,15 @@ test("should fall back to the local server when the client file is damaged", () 
   writeFileSync(path, "{broken");
   expect(readConnectionSettings(path)).toEqual(localConnection());
   expect(readConnectionSettings(join(path, "..", "missing.json"))).toEqual(localConnection());
+});
+
+test("only the app origin gets the microphone, and only for audio", () => {
+  const app = "http://127.0.0.1:7700";
+  expect(appMicrophoneAllowed("http://127.0.0.1:7700/tasks?chat=full", app, ["audio"])).toBe(true);
+  expect(appMicrophoneAllowed("http://127.0.0.1:3000/", app, ["audio"])).toBe(false);
+  expect(appMicrophoneAllowed("https://evil.example/", app, ["audio"])).toBe(false);
+  expect(appMicrophoneAllowed("http://127.0.0.1:7700/", app, ["audio", "video"])).toBe(false);
+  expect(appMicrophoneAllowed("http://127.0.0.1:7700/", app, ["video"])).toBe(false);
+  expect(appMicrophoneAllowed("http://127.0.0.1:7700/", app, [])).toBe(false);
+  expect(appMicrophoneAllowed("http://127.0.0.1:7700/", null, ["audio"])).toBe(false);
 });
