@@ -9,10 +9,16 @@ const clip = readFileSync(join(import.meta.dir, "fixtures", "dictation.webm"));
 let app: ReturnType<typeof setupTestApp>;
 let received: { auth: string | null; model: unknown; name: string; size: number }[] = [];
 let reply = { body: "add a retry to the deploy step", status: 200 };
+const qwenRequests: Record<string, unknown>[] = [];
 const provider = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
   async fetch(request) {
+    if (new URL(request.url).pathname.endsWith("/chat/completions")) {
+      const body = (await request.json()) as Record<string, unknown>;
+      qwenRequests.push({ auth: request.headers.get("authorization"), ...body });
+      return Response.json({ choices: [{ message: { content: " qwen heard it " } }] });
+    }
     const form = await request.formData();
     const file = form.get("file") as File;
     received.push({
@@ -107,4 +113,34 @@ test("an oversized recording is rejected with 413 before reaching the provider",
   expect(res.status).toBe(413);
   expect(((await res.json()) as { code: string }).code).toBe("TOO_LARGE");
   expect(received).toHaveLength(0);
+});
+
+test("switching speech.provider changes the backend while the route stays the same", async () => {
+  const base_url = `http://127.0.0.1:${provider.port}/v1`;
+  reply = { body: "groq heard it", status: 200 };
+  received = [];
+  configure({
+    enabled: true,
+    provider: "groq",
+    language: "en",
+    groq: { api_key: "gsk_x", base_url },
+  });
+  const groq = await transcribe(new Blob([clip], { type: "audio/webm" }));
+  expect(await groq.json()).toEqual({ text: "groq heard it" });
+  expect(received.map((r) => [r.auth, r.model])).toEqual([
+    ["Bearer gsk_x", "whisper-large-v3-turbo"],
+  ]);
+
+  configure({
+    enabled: true,
+    provider: "qwen",
+    language: "en",
+    qwen: { api_key: "q-key", base_url },
+  });
+  const qwen = await transcribe(new Blob([clip], { type: "audio/webm" }));
+  expect(await qwen.json()).toEqual({ text: "qwen heard it" });
+  expect(qwenRequests).toMatchObject([
+    { auth: "Bearer q-key", model: "qwen3-asr-flash", asr_options: { language: "en" } },
+  ]);
+  expect(received).toHaveLength(1);
 });
