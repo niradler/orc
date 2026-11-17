@@ -45,7 +45,7 @@ export const ChatModelSchema = z
   .string()
   .trim()
   .max(200)
-  .regex(/^$|^[a-z0-9][a-z0-9._:/@+-]*$/i);
+  .regex(/^$|^[a-z0-9][a-z0-9._:/@+-]*(\[[a-z0-9]+\])?$/i);
 export const ChatQuestionSchema = z.object({
   requestId: z.string().min(1).max(256),
   questions: z
