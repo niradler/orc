@@ -128,6 +128,14 @@ export const ComposerProfileSchema = z
   })
   .strict();
 export type ComposerProfile = z.infer<typeof ComposerProfileSchema>;
+export const FavoriteModelsSchema = z.array(FavoriteModelSchema).max(100);
+export const ComposerProfilesSchema = z
+  .array(ComposerProfileSchema)
+  .max(50)
+  .refine(
+    (profiles) => new Set(profiles.map((profile) => profile.id)).size === profiles.length,
+    "Profile ids must be unique",
+  );
 export const ChatModelsSchema = z.object({
   models: z.array(
     z.object({

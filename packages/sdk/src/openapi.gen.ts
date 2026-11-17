@@ -8707,6 +8707,8 @@ export interface paths {
                                 /** @enum {string} */
                                 permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                             }[];
+                            /** @description Revision of favorite_models and composer_profiles from the last read; required when saving either. A stale revision returns 409. */
+                            composer_revision?: string;
                             agents?: string[];
                             provider_paths?: {
                                 claude?: string;
@@ -8847,6 +8849,8 @@ export interface paths {
                             /** @enum {string} */
                             permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         }[];
+                        /** @description Revision of favorite_models and composer_profiles from the last read; required when saving either. A stale revision returns 409. */
+                        composer_revision?: string;
                         agents?: string[];
                         provider_paths?: {
                             claude?: string;
@@ -8977,6 +8981,8 @@ export interface paths {
                                 /** @enum {string} */
                                 permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                             }[];
+                            /** @description Revision of favorite_models and composer_profiles from the last read; required when saving either. A stale revision returns 409. */
+                            composer_revision?: string;
                             agents?: string[];
                             provider_paths?: {
                                 claude?: string;

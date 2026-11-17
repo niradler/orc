@@ -149,12 +149,12 @@ export function ChatAgentModelPicker() {
       effort: effortValue,
       ...(modes.includes(mode) ? { permissionMode: mode } : {}),
     };
-    preferences.save({
+    preferences.save((current) => ({
       composer_profiles: [
-        ...preferences.profiles.filter((item) => item.name !== name),
+        ...(current.composer_profiles ?? []).filter((item) => item.name !== name),
         profile,
       ].slice(-50),
-    });
+    }));
     setNaming(null);
   }
   const fixedModel = capabilities?.modelSelection === false;
@@ -194,12 +194,14 @@ export function ChatAgentModelPicker() {
       }}
       favorites={favorites}
       onFavorite={(model) =>
-        preferences.save({
-          favorite_models: favorites.has(model)
-            ? preferences.favorites.filter(
-                (entry) => entry.agent !== config.agent || entry.id !== model,
-              )
-            : [...preferences.favorites, { agent: config.agent, id: model }].slice(-100),
+        preferences.save((current) => {
+          const saved = current.favorite_models ?? [];
+          const pinned = saved.some((entry) => entry.agent === config.agent && entry.id === model);
+          return {
+            favorite_models: pinned
+              ? saved.filter((entry) => entry.agent !== config.agent || entry.id !== model)
+              : [...saved, { agent: config.agent, id: model }].slice(-100),
+          };
         })
       }
       onProviderSettings={(id) =>
@@ -242,11 +244,11 @@ export function ChatAgentModelPicker() {
                   data-testid={`chat-profile-delete-${profile.id}`}
                   aria-label={`Delete profile ${profile.name}`}
                   onClick={() =>
-                    preferences.save({
-                      composer_profiles: preferences.profiles.filter(
+                    preferences.save((current) => ({
+                      composer_profiles: (current.composer_profiles ?? []).filter(
                         (item) => item.id !== profile.id,
                       ),
-                    })
+                    }))
                   }
                   className={`${profileChip} border-l border-border text-muted-foreground`}
                 >

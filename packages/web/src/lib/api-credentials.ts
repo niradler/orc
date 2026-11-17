@@ -21,6 +21,7 @@ export type WorkspacePreferences = {
   chat?: ChatSettings;
   favorite_models?: FavoriteModel[];
   composer_profiles?: ComposerProfile[];
+  composer_revision?: string;
   agents?: string[];
   provider_paths?: ProviderPaths;
 };

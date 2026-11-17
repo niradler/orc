@@ -1,5 +1,5 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
-import { expect, test } from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 import { chooseChatAgent, openChatAgentModel, showPickerTab } from "./_chat-ui";
 import { AUTH_HEADERS, gotoView } from "./_helpers";
 
@@ -12,21 +12,28 @@ const models = {
   warning: null,
 };
 
-test.beforeEach(async ({ page, request }) => {
-  await request.patch("/api/settings", {
+async function saveComposer(request: APIRequestContext, data: Record<string, unknown>) {
+  const current = await (await request.get("/api/settings", { headers: AUTH_HEADERS })).json();
+  const response = await request.patch("/api/settings", {
     headers: AUTH_HEADERS,
-    data: {
-      chat: ChatSettingsSchema.parse({ agent: "claude", permissionMode: "plan" }),
-      favorite_models: [],
-      composer_profiles: [],
-    },
+    data: { ...data, composer_revision: current.composer_revision },
+  });
+  expect(response.status()).toBe(200);
+}
+
+test.beforeEach(async ({ page, request }) => {
+  await saveComposer(request, {
+    chat: ChatSettingsSchema.parse({ agent: "claude", permissionMode: "plan" }),
+    favorite_models: [],
+    composer_profiles: [],
   });
   await page.route("**/api/chat/models?**", (route) => route.fulfill({ json: models }));
 });
 test.afterEach(async ({ request }) => {
-  await request.patch("/api/settings", {
-    headers: AUTH_HEADERS,
-    data: { chat: ChatSettingsSchema.parse({}), favorite_models: [], composer_profiles: [] },
+  await saveComposer(request, {
+    chat: ChatSettingsSchema.parse({}),
+    favorite_models: [],
+    composer_profiles: [],
   });
 });
 
@@ -106,6 +113,45 @@ for (const width of [1440, 390]) {
   });
 }
 
+test("a save from a stale tab is refused and retried, never dropping the other tab's change", async ({
+  browser,
+  request,
+}) => {
+  const open = async () => {
+    const page = await browser.newPage();
+    await page.route("**/api/chat/models?**", (route) => route.fulfill({ json: models }));
+    await gotoView(page, "activity");
+    await page.goto("/?chat=open");
+    await chooseChatAgent(page, "claude");
+    await openChatAgentModel(page);
+    await showPickerTab(page, "model");
+    return page;
+  };
+  const first = await open();
+  const second = await open();
+  await first.getByTestId("chat-profile-new").click();
+  await first.getByTestId("chat-profile-name").fill("From first tab");
+  await first.getByTestId("chat-profile-save").click();
+  await expect(first.getByTestId("chat-profiles")).toContainText("From first tab");
+  await second.getByTestId("chat-model-favorite-sonnet").click();
+  await expect(second.getByTestId("chat-profiles").getByRole("alert")).toContainText(
+    "changed elsewhere",
+  );
+  await expect(second.getByTestId("chat-profiles")).toContainText("From first tab");
+  await second.getByTestId("chat-model-favorite-sonnet").click();
+  await expect(second.getByTestId("chat-model-favorite-sonnet")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const saved = await (await request.get("/api/settings", { headers: AUTH_HEADERS })).json();
+  expect(saved.favorite_models).toEqual([{ agent: "claude", id: "sonnet" }]);
+  expect(saved.composer_profiles.map((item: { name: string }) => item.name)).toEqual([
+    "From first tab",
+  ]);
+  await first.close();
+  await second.close();
+});
+
 test("Codex lists its own approval presets by name", async ({ page, request }) => {
   await request.patch("/api/settings", {
     headers: AUTH_HEADERS,
@@ -129,20 +175,17 @@ test("a terminal launches with the chosen model, effort and mode, and a profile 
   page,
   request,
 }) => {
-  await request.patch("/api/settings", {
-    headers: AUTH_HEADERS,
-    data: {
-      composer_profiles: [
-        {
-          id: "deep",
-          name: "Deep plan",
-          agent: "claude",
-          model: "opus",
-          effort: "max",
-          permissionMode: "plan",
-        },
-      ],
-    },
+  await saveComposer(request, {
+    composer_profiles: [
+      {
+        id: "deep",
+        name: "Deep plan",
+        agent: "claude",
+        model: "opus",
+        effort: "max",
+        permissionMode: "plan",
+      },
+    ],
   });
   const bodies: Record<string, unknown>[] = [];
   await page.route("**/api/terminals", (route) => {

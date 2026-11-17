@@ -14,22 +14,23 @@ export function useEnabledAgents(): string[] {
   return enabledAgents(data?.agents);
 }
 
+type ComposerPatch = Pick<WorkspacePreferences, "favorite_models" | "composer_profiles">;
+
 export function useComposerPreferences() {
   const client = useQueryClient();
   const { data } = useQuery({ queryKey: WORKSPACE_PREFERENCES_KEY, queryFn: api.settings.get });
   const save = useMutation({
-    mutationKey: WORKSPACE_PREFERENCES_KEY,
-    mutationFn: (patch: Pick<WorkspacePreferences, "favorite_models" | "composer_profiles">) =>
-      api.settings.save(patch),
-    onMutate: (patch) =>
-      client.setQueryData<WorkspacePreferences>(WORKSPACE_PREFERENCES_KEY, (current) => ({
-        ...current,
-        ...patch,
-      })),
-    onSuccess: (saved) => {
-      if (client.isMutating({ mutationKey: WORKSPACE_PREFERENCES_KEY }) <= 1)
-        client.setQueryData(WORKSPACE_PREFERENCES_KEY, saved);
+    scope: { id: "composer-preferences" },
+    mutationFn: async (change: (current: WorkspacePreferences) => ComposerPatch) => {
+      const current =
+        client.getQueryData<WorkspacePreferences>(WORKSPACE_PREFERENCES_KEY) ??
+        (await api.settings.get());
+      return api.settings.save({
+        ...change(current),
+        composer_revision: current.composer_revision,
+      });
     },
+    onSuccess: (saved) => client.setQueryData(WORKSPACE_PREFERENCES_KEY, saved),
     onError: () => client.invalidateQueries({ queryKey: WORKSPACE_PREFERENCES_KEY }),
   });
   return {
