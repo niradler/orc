@@ -47,7 +47,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   "session-messages": ["sessions"],
   // Usage is indexed in the background; the page refreshes when the ledger changes
   // and on every event-stream reconnect instead of on a timer.
-  usage: ["usage-report"],
+  usage: ["usage-report", "session-cache"],
   jobs: [
     "jobs",
     "job",
