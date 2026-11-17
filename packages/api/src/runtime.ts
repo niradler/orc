@@ -10,6 +10,7 @@ import {
   getKnowledgeService,
   startKnowledgeMaintenance,
 } from "@orc/knowledge";
+import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { startGithubIssueSync } from "./git/issue-sync.js";
 import { startHumanRequestDelivery } from "./human-request-delivery.js";
 import { withKbJobHooks } from "./kb-jobs.js";
@@ -26,6 +27,7 @@ import {
   type TerminalSocketData,
   terminalWebsocket,
 } from "./terminals/ws.js";
+import { handleVoiceUpgrade, type VoiceSocketData, voiceWebsocket } from "./voice.js";
 
 const logger = createLogger("api");
 const config = loadConfig();
@@ -36,17 +38,28 @@ try {
 }
 const app = createApp();
 
-const server = Bun.serve<TerminalSocketData>({
+type SocketData = TerminalSocketData | VoiceSocketData;
+const socketHandler = (ws: ServerWebSocket<SocketData>) =>
+  ("threadId" in ws.data ? voiceWebsocket : terminalWebsocket) as WebSocketHandler<SocketData>;
+
+const server = Bun.serve<SocketData>({
   port: config.api.port,
   hostname: config.api.host,
   fetch(req, srv) {
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      const handled = handleTerminalUpgrade(req, srv);
-      if (handled !== null) return handled;
+      const terminal = handleTerminalUpgrade(req, srv as Server<TerminalSocketData>);
+      if (terminal !== null) return terminal;
+      const voice = handleVoiceUpgrade(req, srv as Server<VoiceSocketData>);
+      if (voice !== null) return voice;
     }
     return app.fetch(req);
   },
-  websocket: terminalWebsocket,
+  websocket: {
+    maxPayloadLength: 1024 * 1024,
+    open: (ws) => socketHandler(ws).open?.(ws),
+    message: (ws, message) => socketHandler(ws).message?.(ws, message),
+    close: (ws, code, reason) => socketHandler(ws).close?.(ws, code, reason),
+  },
   // SSE streams (/chat/stream) can idle between agent chunks longer than Bun's
   // 10s default, so we raise the idle timeout to Bun's max (255s) rather than
   // disabling it. Disabling it (0) let half-open/abandoned sockets accumulate

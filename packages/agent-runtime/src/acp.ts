@@ -32,13 +32,14 @@ import { endStdin, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
 import { planEvent, planFromToolInput } from "./plan.js";
 import { registerBackend } from "./registry.js";
-import type {
-  AgentBackend,
-  AgentEvent,
-  AgentSession,
-  ImageAttachment,
-  PermissionResult,
-  SessionOpts,
+import {
+  type AgentBackend,
+  type AgentEvent,
+  type AgentSession,
+  type ImageAttachment,
+  isSpeakTool,
+  type PermissionResult,
+  type SessionOpts,
 } from "./types.js";
 
 export type AcpEffortChoice = { value: string; label: string };
@@ -315,7 +316,7 @@ export class AcpSession implements AgentSession {
       return Promise.resolve({ outcome: { outcome: "cancelled" } });
     // Never turn an ordinary ORC approval into the agent's persistent policy.
     const once = params.options.find((option) => option.kind === "allow_once");
-    if (this.opts.autoApprove && once)
+    if ((this.opts.autoApprove || isSpeakTool(params.toolCall.title ?? "")) && once)
       return Promise.resolve({ outcome: { outcome: "selected", optionId: once.optionId } });
     const id = ulid();
     return new Promise<RequestPermissionResponse>((resolve) => {

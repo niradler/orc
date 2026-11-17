@@ -93,7 +93,9 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
       selected?.map((project) => project.id),
     );
     return toolDefinitions.filter(
-      (tool) => !tool.name.startsWith("preview_") || available.has(tool.name),
+      (tool) =>
+        (!tool.name.startsWith("preview_") || available.has(tool.name)) &&
+        (tool.name !== "speak" || options.agentSessionId),
     );
   }
 
@@ -208,7 +210,15 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: selectedMode === "meta" ? metaToolListing() : listing(await servedTools()),
+    tools:
+      selectedMode === "meta"
+        ? [
+            ...metaToolListing(),
+            ...(options.agentSessionId
+              ? listing(toolDefinitions.filter((tool) => tool.name === "speak"))
+              : []),
+          ]
+        : listing(await servedTools()),
   }));
 
   // In meta mode a CallTool naming a real tool is routed through the same
