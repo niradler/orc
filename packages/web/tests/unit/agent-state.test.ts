@@ -52,13 +52,13 @@ describe("agent state language", () => {
     expect(waitingLabel({ reason: "question", tool: null })).toBe("question");
     expect(sendOutcome({ streaming: false, steers: false, inbox: false })).toBeNull();
     expect(sendOutcome({ streaming: true, steers: true, inbox: false })).toBe(
-      "Send steers the current turn.",
+      "Sends steer this turn",
     );
     expect(sendOutcome({ streaming: true, steers: false, inbox: false })).toBe(
-      "Send queues until the turn ends.",
+      "Sends queue until the turn ends",
     );
     expect(sendOutcome({ streaming: false, steers: false, inbox: true, waitingFor: null })).toBe(
-      "Running in its own agent. Send queues your message for its next safe point.",
+      "Running in its own agent · sends queue",
     );
     expect(
       sendOutcome({
@@ -67,6 +67,6 @@ describe("agent state language", () => {
         inbox: true,
         waitingFor: { reason: "permission", tool: "Bash" },
       }),
-    ).toBe("Needs you · permission · Bash. Send queues until it is answered.");
+    ).toBe("Bash permission pending · sends queue");
   });
 });

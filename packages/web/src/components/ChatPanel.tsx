@@ -1467,7 +1467,7 @@ export function ChatPanel({
                         })
                       : agentOverride
                         ? "Sending unlocked. The running status may be stale."
-                        : "Running in its own agent. Sending unlocks when it finishes."}
+                        : "Running in its own agent · send unlocks when it finishes"}
                   </p>
                   {agentBlocked && (
                     <button
@@ -1592,13 +1592,7 @@ export function ChatPanel({
                     aria-activedescendant={
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
-                    placeholder={
-                      agentInbox
-                        ? "Running in its own agent. Messages queue for its next safe point."
-                        : agentBlocked
-                          ? "Running in its own agent. Sending unlocks when it finishes."
-                          : "Ask anything. / for prompts and skills"
-                    }
+                    placeholder="Ask anything. / for prompts and skills"
                     disabled={!ready}
                     value={draft}
                     onChange={(event) => {

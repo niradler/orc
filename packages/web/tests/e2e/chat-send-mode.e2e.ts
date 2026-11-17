@@ -66,7 +66,7 @@ for (const width of [390, 1440]) {
     await expect(panel).toHaveAttribute("data-streaming", "true");
     await expect(panel.getByTestId("chat-input")).toBeEnabled();
     await expect(panel.getByTestId("chat-send-outcome")).toHaveText(
-      "Send queues until the turn ends.",
+      "Sends queue until the turn ends",
     );
     await panel.getByTestId("chat-input").fill("Reply with exactly: HELD.");
     await panel.getByTestId("chat-send-button").click();

@@ -103,8 +103,8 @@ export function sendOutcome(input: {
 }): string | null {
   if (input.inbox)
     return input.waitingFor
-      ? `Needs you · ${waitingLabel(input.waitingFor)}. Send queues until it is answered.`
-      : "Running in its own agent. Send queues your message for its next safe point.";
+      ? `${[input.waitingFor.tool, input.waitingFor.reason].filter(Boolean).join(" ")} pending · sends queue`
+      : "Running in its own agent · sends queue";
   if (!input.streaming) return null;
-  return input.steers ? "Send steers the current turn." : "Send queues until the turn ends.";
+  return input.steers ? "Sends steer this turn" : "Sends queue until the turn ends";
 }
