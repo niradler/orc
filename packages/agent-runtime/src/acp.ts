@@ -799,41 +799,52 @@ export class AcpSession implements AgentSession {
         });
       } catch (error) {
         if (Date.now() - started <= 2000 && !this.closed && !this.failure && !this.cancelling) {
-          this.capabilities = { ...this.capabilities, steering: false };
-          this.push({ type: "capabilities", data: this.capabilities });
-          this.push({
-            type: "system_status",
-            data: "This agent rejected steering; the running turn continues. Queue the message instead.",
-          });
+          this.refuseSteering();
+          // The request failed, so the text was not consumed: the caller can
+          // safely queue it instead of treating delivery as unconfirmed.
+          throw new SteerNotConsumedError();
         }
         throw error;
       }
       if (result?.outcome === "injected" || result?.outcome === "startedNewTurn") return;
       throw new SteerNotConsumedError();
     }
-    const started = Date.now();
-    // OpenCode answers an accepted steer only when the turn ends, so do not wait
-    // for it. A refusal is immediate; a later failure belongs to the turn itself
-    // and must not relabel this session's steering support.
-    void this.connection.agent
-      .request<PromptResponse, PromptRequest>("session/prompt", {
-        sessionId: this.runtimeId,
-        prompt: [{ type: "text", text: prompt }],
-      })
-      .catch(() => {
-        if (Date.now() - started > 2000) return;
-        // A dead, closed or cancelling turn is not a steering refusal; its own
-        // failure path already reports what happened.
-        if (this.closed || this.failure || this.cancelling) return;
-        this.capabilities = { ...this.capabilities, steering: false };
-        // Tell the client now so its send control stops offering steering for
-        // this turn instead of failing on the next attempt.
-        this.push({ type: "capabilities", data: this.capabilities });
-        this.push({
-          type: "system_status",
-          data: "This agent rejected steering; the running turn continues. Queue the message instead.",
-        });
-      });
+    // OpenCode answers an accepted steer only when the turn ends, so wait just
+    // for the immediate refusal window. A refusal means the text was not
+    // consumed and is reported synchronously so the caller queues it; a later
+    // failure belongs to the turn itself and must not relabel steering support.
+    const request = this.connection.agent.request<PromptResponse, PromptRequest>("session/prompt", {
+      sessionId: this.runtimeId,
+      prompt: [{ type: "text", text: prompt }],
+    });
+    const refused = request.then(
+      () => false,
+      () => true,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const window = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), 2000);
+    });
+    const immediateRefusal = await Promise.race([refused, window]);
+    clearTimeout(timer);
+    // A dead, closed or cancelling turn is not a steering refusal; its own
+    // failure path already reports what happened.
+    if (immediateRefusal && !this.closed && !this.failure && !this.cancelling) {
+      this.refuseSteering();
+      throw new SteerNotConsumedError();
+    }
+  }
+
+  /** Withdraw steering for this session and tell the client why the turn continues. */
+  private refuseSteering(): void {
+    this.capabilities = { ...this.capabilities, steering: false };
+    // Tell the client now so its send control stops offering steering for
+    // this turn instead of failing on the next attempt.
+    this.push({ type: "capabilities", data: this.capabilities });
+    this.push({
+      type: "system_status",
+      data: "This agent rejected steering; the running turn continues.",
+    });
   }
 
   respondQuestion(id: string, answers: Record<string, string[]>): void {

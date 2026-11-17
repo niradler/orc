@@ -314,8 +314,9 @@ for after the turn, and files always queue. This was verified against OpenCode 1
 steering during a running tool call. The ACP handshake has no steering field, so
 ORC declares it for the OpenCode backend and keeps it on the negotiated session;
 if an OpenCode build rejects a mid-turn prompt, ORC turns the flag off for that
-session and reports that the message should be queued instead. Other direct ACP
-agents, and ACPX, keep steering disabled rather than assuming concurrency.
+session and queues the message instead, with an info note on the pending row
+explaining the refusal. Other direct ACP agents, and ACPX, keep steering disabled
+rather than assuming concurrency.
 
 Direct ACP advertises form elicitation and turns form questions into the same
 chat question card used by Codex and Claude, including single-choice,

@@ -16,6 +16,7 @@ import {
   createBackend,
   registerBackend,
   type SessionOpts,
+  SteerNotConsumedError,
 } from "@orc/agent-runtime";
 import {
   type ChatEvent,
@@ -50,6 +51,7 @@ let secretQuestion = false;
 let manyOptions = false;
 const nativeSteers: string[] = [];
 let steeringFailure = false;
+let steeringRefused = false;
 let steeringDelay = 0;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
@@ -81,6 +83,7 @@ function session(call: (typeof calls)[number]): AgentSession {
     steer: async (prompt) => {
       nativeSteers.push(prompt);
       if (steeringDelay) await Bun.sleep(steeringDelay);
+      if (steeringRefused) throw new SteerNotConsumedError();
       if (steeringFailure) throw new Error("fixture uncertain delivery");
       call.prompt = prompt;
     },
@@ -2180,6 +2183,21 @@ test("steering enters the active native session and persists the message without
     // as a new turn; only a plain conflict is safe to queue.
     expect(((await retried.json()) as { code: string }).code).toBe("STEER_UNCONFIRMED");
     expect(nativeSteers.filter((input) => input === "uncertain steering")).toHaveLength(1);
+    // A confirmed refusal consumed nothing: the intent rolls back so the client
+    // can queue the same text, and the distinct code explains the queue entry.
+    const refusedId = crypto.randomUUID();
+    steeringRefused = true;
+    const refused = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "refused steering",
+      requestId: refusedId,
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe("STEER_REFUSED");
+    steeringRefused = false;
+    const rolledBack = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(rolledBack.messages.some((message) => message.id === refusedId)).toBe(false);
     const saved = ChatThreadSchema.parse(
       await (await request(`/chat/threads/${started.thread.id}`)).json(),
     );
@@ -2202,6 +2220,7 @@ test("steering enters the active native session and persists the message without
   } finally {
     waitPermission = false;
     steeringFailure = false;
+    steeringRefused = false;
     steeringDelay = 0;
     await request(`/chat/runs/${started.runId}/cancel`, {});
     await reader.cancel();

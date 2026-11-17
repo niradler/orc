@@ -508,12 +508,14 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
     } catch (error) {
       if (error instanceof SteerNotConsumedError) {
         // The agent confirmed it did not take the text: roll the intent back so
-        // the client can queue the same message without duplicating it.
+        // the client can queue the same message without duplicating it. The
+        // distinct code lets the client show why the message landed in the queue.
         run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
         run.steering.delete(requestId);
         saveDelivery();
         throw new ConflictError(
-          "This response cannot take the message right now. Queue a message instead.",
+          "The agent rejected steering; the running turn continues.",
+          "STEER_REFUSED",
         );
       }
       message.activity = [

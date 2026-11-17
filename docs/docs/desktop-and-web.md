@@ -657,9 +657,14 @@ either way, so both stay one press away. Attachments always queue, because
 steering carries text only.
 When the turn cannot take the message — the reply is still starting, the backend
 answers one message at a time, or every chat worker is busy — the message stays
-queued and sends when the turn ends, without an error. A steer whose delivery the
+queued and sends when the turn ends, without an error. When the agent actively
+rejects steering, the message queues the same way and the pending list opens;
+an info icon on the queued row explains the refusal. A steer whose delivery the
 agent never confirmed is not resent: chat keeps the text and asks you to check
 the conversation first, because the message may already be there.
+
+![Queued message with the steering-refusal reason popover](/screens/chat-steer-refusal-queue-desktop.png)
+[Phone layout](/screens/chat-steer-refusal-queue-phone.png)
 Open the pending list to edit a message, move it up or down, remove it, or send
 it ahead of the current reply.
 An expanded pending list stays open across busy-worker retries. After it drains,

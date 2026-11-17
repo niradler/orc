@@ -276,3 +276,62 @@ test("a refused steer queues the message and an unconfirmed one is never resent"
   // Retrying the same text reuses its request ID, so a recovery can never send twice.
   expect(state.requests[1]).toBe(state.requests[2]);
 });
+
+for (const width of [390, 1440]) {
+  test(`a steering refusal queues the message with a visible reason at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    const config = ChatSettingsSchema.parse({ agent: "codex", model: "" });
+    await request.patch("/api/settings", {
+      headers: { Authorization: `Bearer ${API_SECRET}` },
+      data: { chat: config },
+    });
+    const thread: ChatThread = {
+      id: "20000000-0000-4000-8000-000000000004",
+      title: "Steer refusal",
+      config,
+      backend: "codex-cli",
+      capabilities,
+      runtimeId: "native-steer",
+      sourceId: null,
+      cwd: "/fixture",
+      host: null,
+      messages: [],
+      updatedAt: Date.now(),
+    };
+    await installSteeringFixture(page, thread);
+    await page.setViewportSize({ width, height: 900 });
+    await gotoView(page, "tasks");
+    await page.goto("/tasks?chat=open");
+    const panel = page.getByTestId("chat-panel");
+    const input = page.getByTestId("chat-input").filter({ visible: true });
+    const send = page.getByTestId("chat-send-button").filter({ visible: true });
+    await input.fill("Start the turn");
+    await send.click();
+    await expect(panel).toHaveAttribute("data-streaming", "true");
+    await page.evaluate(() =>
+      Reflect.set(window, "steerConflict", {
+        error: "The agent rejected steering; the running turn continues.",
+        code: "STEER_REFUSED",
+      }),
+    );
+    await input.fill("Queue me with a reason.");
+    await send.click();
+    // The refusal queues the text and opens the pending list so the reason is visible.
+    await expect(panel.getByTestId("chat-pending-count")).toHaveText("1 pending");
+    await expect(panel.getByTestId("chat-message-queue")).toHaveAttribute("open", "");
+    await expect(panel.getByTestId("chat-queued-content")).toHaveText("Queue me with a reason.");
+    await expect(panel.getByTestId("chat-error")).toHaveCount(0);
+    await expect(input).toHaveValue("");
+    await panel.getByTestId("chat-queued-note").filter({ visible: true }).click();
+    const note = page.getByTestId("chat-queued-note-content");
+    await expect(note).toContainText("rejected steering");
+    await expect(note).toContainText("sends automatically");
+    await page.screenshot({ path: testInfo.outputPath(`steer-refusal-queue-${width}.png`) });
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+}

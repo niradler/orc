@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { chatBackendFor, OPENCODE_CAPABILITIES } from "../capabilities.js";
-import { createBackend } from "../index.js";
+import { createBackend, SteerNotConsumedError } from "../index.js";
 import type { AgentEvent } from "../types.js";
 
 const saved = {
@@ -277,13 +277,15 @@ test("opencode disables steering for the session when the agent rejects a mid-tu
       }
     };
     await drain(() => events.some((event) => event.type === "text" && event.data === "WORKING"));
-    await session.steer?.("STEER-REJECT");
+    // The refusal is synchronous so the caller can queue the text instead of
+    // leaving it stranded in the transcript as a delivered message.
+    await expect(session.steer?.("STEER-REJECT")).rejects.toBeInstanceOf(SteerNotConsumedError);
+    expect(session.capabilities?.steering).toBe(false);
     await drain(() =>
       events.some(
         (event) => event.type === "system_status" && event.data.includes("rejected steering"),
       ),
     );
-    expect(session.capabilities?.steering).toBe(false);
     expect(
       events.some((event) => event.type === "capabilities" && event.data.steering === false),
     ).toBe(true);

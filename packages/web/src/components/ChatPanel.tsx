@@ -57,6 +57,7 @@ import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
+import { HelpPopover } from "@/components/HelpPopover";
 import {
   SessionDrawer,
   SessionHomeToggles,
@@ -799,6 +800,15 @@ export function ChatPanel({
         current.key === activeKey && current.open ? { key: activeKey, open: false } : current,
       );
   }, [activeKey, answers.length, editingQueuedId, open, queued.length, streaming]);
+  // A steer refusal queues the message with a reason; open the pending list so
+  // the explanation is visible instead of hidden behind the collapsed summary.
+  const notedQueued = useRef(new Set<string>());
+  useLayoutEffect(() => {
+    const fresh = queued.filter((entry) => entry.queueNote && !notedQueued.current.has(entry.id));
+    if (!fresh.length) return;
+    for (const entry of fresh) notedQueued.current.add(entry.id);
+    setQueueDisclosure({ key: activeKey, open: true });
+  }, [activeKey, queued]);
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
     initial: 384,
@@ -1424,6 +1434,7 @@ export function ChatPanel({
                     <QueuedMessage
                       key={entry.id}
                       content={entry.content}
+                      note={entry.queueNote}
                       editing={editingQueuedId === entry.id}
                       draft={queuedDraft}
                       onDraftChange={setQueuedDraft}
@@ -1782,6 +1793,7 @@ export function ChatPanel({
 
 function QueuedMessage({
   content,
+  note,
   editing,
   draft,
   onDraftChange,
@@ -1797,6 +1809,7 @@ function QueuedMessage({
   onRemove,
 }: {
   content: string;
+  note?: string;
   editing: boolean;
   draft: string;
   onDraftChange: (draft: string) => void;
@@ -1863,6 +1876,11 @@ function QueuedMessage({
         </form>
       ) : (
         <div className="flex min-h-11 items-center gap-1 sm:min-h-9">
+          {note && (
+            <HelpPopover label="Why this message is queued" testId="chat-queued-note">
+              {note} It sends automatically when the current turn ends.
+            </HelpPopover>
+          )}
           <p
             data-testid="chat-queued-content"
             title={content}

@@ -40,7 +40,7 @@ for await (const line of createInterface({input:process.stdin})) {
  const m=JSON.parse(line);appendFileSync('wire.ndjson',line+'\\n');
  if(m.id==='client-access') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.error)}});emit({id:promptId,result:{stopReason:'end_turn'}});continue;}
  if(m.id==='late-cancel') {emit({id:promptId,result:{stopReason:'cancelled'}});continue;}
- if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,...(mode==='steer-extension'||mode==='steer-decline'?{_meta:{steering:{supported:true}}}:{}),agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
+ if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,...(mode==='steer-extension'||mode==='steer-decline'||mode==='steer-error'?{_meta:{steering:{supported:true}}}:{}),agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
  else if(m.method==='session/new') {emit({id:m.id,result:{sessionId:session,...(mode==='model-effort'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'}]}]}:{}),...(mode==='model'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'test-model',name:'Test model'}]}]}:{}),...(['effort','effort-switch','child-updates','child-permission'].includes(mode)?{configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'},{value:'default',name:'Default'}]}]}:{})}});if(mode==='idle-permission')setTimeout(()=>ask('late-idle'),20);}
  else if(m.method==='session/set_config_option') emit({id:m.id,result:{configOptions:mode==='model-effort'&&m.params.configId==='model'?[{id:'model',name:'Model',category:'model',type:'select',currentValue:m.params.value,options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'max',name:'Max'}]}]:[]}});
  else if(m.method==='session/list') emit({id:m.id,result:{sessions:[{sessionId:session,cwd:moved,title:'Moved'}]}});
@@ -49,7 +49,8 @@ for await (const line of createInterface({input:process.stdin})) {
   promptId=m.id;promptIds.push(m.id);
   if(mode==='exit') { process.exit(2); }
   else if(mode==='oversize') process.stdout.write('x'.repeat(2100000));
-  else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold'||mode==='steer-extension'||mode==='steer-decline'||mode==='steer-legacy') {}
+  else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold'||mode==='steer-extension'||mode==='steer-decline'||mode==='steer-legacy'||mode==='steer-error') {}
+  else if(mode==='steer-refuse') {if(promptIds.length>1)emit({id:m.id,error:{code:-32000,message:'a prompt is already running'}});}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
   else if(mode==='effort') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'EFFORT OK'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
@@ -83,7 +84,7 @@ for await (const line of createInterface({input:process.stdin})) {
   update(session,{sessionUpdate:'tool_call_update',toolCallId:'read-1',status:'completed',rawOutput:'file contents'});
   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.result)}});
   emit({id:promptId,result:{stopReason:'end_turn'}});
- } else if(m.method==='_session/steering') emit({id:m.id,result:mode==='steer-decline'?{outcome:'promptRequired',reason:'noRunningTurn'}:{outcome:'injected'}});
+ } else if(m.method==='_session/steering') {if(mode==='steer-error')emit({id:m.id,error:{code:-32000,message:'steering unavailable'}});else emit({id:m.id,result:mode==='steer-decline'?{outcome:'promptRequired',reason:'noRunningTurn'}:{outcome:'injected'}});}
  else if(m.method==='session/cancel') {if(mode==='cancel-late')ask('late-cancel');else if(mode!=='cancel-hold')for(const id of promptIds)emit({id,result:{stopReason:'cancelled'}});}
 }`,
   );
@@ -290,6 +291,32 @@ test("ACP surfaces a promptRequired steer decline as not consumed and keeps the 
     .split("\n")
     .map((line) => JSON.parse(line));
   expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(1);
+});
+
+test("ACP treats an immediate _session/steering failure as not consumed and withdraws steering", async () => {
+  const { session } = fixture({}, "steer-error", OPENCODE_CAPABILITIES);
+  await session.initialize();
+  await session.send("Wait");
+  await expect(session.steer("steer")).rejects.toBeInstanceOf(SteerNotConsumedError);
+  expect(session.capabilities.steering).toBe(false);
+  await session.interrupt();
+  await run(session);
+});
+
+test("ACP reports an immediate legacy steer refusal as not consumed and withdraws steering", async () => {
+  const { session, cwd } = fixture({}, "steer-refuse", OPENCODE_CAPABILITIES);
+  await session.initialize();
+  await session.send("Wait");
+  await expect(session.steer("steer")).rejects.toBeInstanceOf(SteerNotConsumedError);
+  expect(session.capabilities.steering).toBe(false);
+  await session.interrupt();
+  await run(session);
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(2);
+  expect(wire.some((m) => m.method === "_session/steering")).toBe(false);
 });
 
 test("ACP without the steering extension still steers via a second prompt", async () => {

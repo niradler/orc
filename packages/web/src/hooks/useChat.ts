@@ -92,6 +92,9 @@ interface PendingPermission {
 }
 
 /** One open conversation. Each tab streams on its own, so turns keep running in the background. */
+/** A pending message; queueNote explains why it queued instead of joining the live turn. */
+export type QueuedChatMessage = ChatMessage & { queueNote?: string };
+
 export interface ChatTab {
   workspace?: ChatWorkspace;
   createdAt?: number;
@@ -106,7 +109,7 @@ export interface ChatTab {
   draft: string;
   files: File[];
   queuedFiles: Record<string, File[]>;
-  queued: ChatMessage[];
+  queued: QueuedChatMessage[];
   editingQueuedId: string | null;
   queuedDraft: string;
   queuePaused: boolean;
@@ -1146,14 +1149,15 @@ function useChatController() {
   // Keyed so an awaited steer can queue into the conversation that asked for it,
   // even if another tab became active meanwhile.
   const queueFor = useCallback(
-    async (key: string, input: string) => {
+    async (key: string, input: string, note?: string) => {
       const current = find(key);
       if (!ready || !current || (!input.trim() && !current.files.length)) return;
-      const entry: ChatMessage = {
+      const entry: QueuedChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
         content: input.trim() || "Please inspect the attached files.",
         timestamp: Date.now(),
+        ...(note ? { queueNote: note } : {}),
       };
       update(key, (tab) => ({
         queued: [...tab.queued, entry],
@@ -1288,12 +1292,16 @@ function useChatController() {
   } | null>(null);
   // "unavailable" means the turn cannot take the message now (no live run in this
   // API, capability withdrawn, steering limit). It is not a failure: the caller
-  // queues the message instead of asking the user to fix something.
+  // queues the message instead of asking the user to fix something. The note
+  // carries the server's reason so the queued row can explain itself.
   const steerInput = useCallback(
-    async (key: string, input: string): Promise<"steered" | "unavailable" | "failed"> => {
+    async (
+      key: string,
+      input: string,
+    ): Promise<{ outcome: "steered" | "unavailable" | "failed"; note?: string }> => {
       const current = find(key);
       if (!current?.streaming || !current.runId || !input.trim() || current.files.length)
-        return "unavailable";
+        return { outcome: "unavailable" };
       setResponding(true);
       try {
         const previous = steeringRequest.current;
@@ -1322,17 +1330,17 @@ function useChatController() {
               }
             : { error: null, draft: tab.draft === input ? "" : tab.draft },
         );
-        return "steered";
+        return { outcome: "steered" };
       } catch (cause) {
         // A plain conflict means the turn cannot take the message: queueing is safe.
         // An unconfirmed steer may already be in the conversation, so resending it
         // would duplicate both the text and the turn.
         if (cause instanceof ApiError && cause.status === 409 && cause.code !== STEER_UNCONFIRMED)
-          return "unavailable";
+          return { outcome: "unavailable", note: cause.message };
         update(key, () => ({
           error: message(cause, "The message could not be sent into the active response."),
         }));
-        return "failed";
+        return { outcome: "failed" };
       } finally {
         setResponding(false);
       }
@@ -1346,8 +1354,10 @@ function useChatController() {
       const current = find(key);
       if (!ready || !current) return "failed";
       if (steersLive(current)) {
-        const outcome = await steerInput(key, input);
+        const { outcome, note } = await steerInput(key, input);
         if (outcome !== "unavailable") return outcome;
+        await queueFor(key, input, note);
+        return "queued";
       }
       await queueFor(key, input);
       return "queued";
@@ -1367,8 +1377,8 @@ function useChatController() {
     )
       return;
     const input = current.draft;
-    const outcome = await steerInput(key, input);
-    if (outcome === "unavailable") await queueFor(key, input);
+    const { outcome, note } = await steerInput(key, input);
+    if (outcome === "unavailable") await queueFor(key, input, note);
     if (outcome !== "failed")
       update(key, (tab) => ({ draft: tab.draft === input ? "" : tab.draft }));
   }, [find, queueFor, responding, steerInput, update]);
