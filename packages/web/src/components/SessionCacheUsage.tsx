@@ -1,7 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { api } from "@/api/client";
+import { useChatContextUsage } from "@/components/ChatSessionStrip";
 import { formatTokenCount } from "@/lib/live-sessions";
 import { sessionCacheIndicator } from "@/lib/session-cache";
 
@@ -9,13 +8,7 @@ const count = new Intl.NumberFormat();
 const SessionContextChart = lazy(() => import("@/components/SessionContextChart"));
 
 export function SessionCacheUsage({ sessionId, live }: { sessionId: string; live: boolean }) {
-  const { data, isError, refetch } = useQuery({
-    queryKey: ["session-cache", sessionId, live],
-    queryFn: () => api.sessions.cacheUsage(sessionId),
-    staleTime: 15_000,
-    refetchInterval: live ? 15_000 : false,
-    retry: 1,
-  });
+  const { data, isError, refetch } = useChatContextUsage(sessionId, live);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!data?.latest?.may_be_cold_after) return;
