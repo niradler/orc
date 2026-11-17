@@ -19,6 +19,7 @@ import { ArchiveResumeForm, ProjectGroup, SubagentList } from "@/components/Chat
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { Highlight } from "@/components/Highlight";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
+import { SessionModeIcon, SubagentChip } from "@/components/SessionRowContent";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,7 @@ import {
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
 import type { ChatHistoryEntry } from "@/lib/chat-history-list";
-import { entryAgent, nestedLabel } from "@/lib/chat-history-list";
+import { entryAgent, nestedLabel, sessionModelName } from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
 function activityWhen(ms: number): string {
@@ -507,6 +508,7 @@ function MobileHistoryRow({
   const hidden = entry.kind === "native" && !!entry.session.hidden;
   const status = AGENT_STATES[state].label;
   const host = entryHost(entry);
+  const model = sessionModelName(entry);
   const testId = terminal
     ? "chat-open-terminal"
     : entry.kind === "local"
@@ -517,7 +519,7 @@ function MobileHistoryRow({
           ? "chat-resume-live"
           : "chat-resume-archive";
   const meta = [
-    agent ? agentDisplayName(agent) : null,
+    model ? null : agent ? agentDisplayName(agent) : null,
     project,
     host ? host : entry.kind === "archive" ? null : "local",
     activityWhen(entry.updatedAt),
@@ -577,7 +579,12 @@ function MobileHistoryRow({
           />
         </span>
         <span className="flex w-full min-w-0 items-center gap-1.5 pl-7 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate">{meta}</span>
+          {entry.kind === "native" && <SessionModeIcon mode={entry.session.permission_mode} />}
+          <span className="min-w-0 truncate">
+            {model && <span data-testid="chat-session-run">{model} · </span>}
+            {meta}
+          </span>
+          <SubagentChip count={entry.subagents} />
           {entry.kind === "native" && entry.session.handoff?.status === "ready" && (
             <span data-testid="handoff-ready" className="shrink-0 text-primary">
               Ready to resume
