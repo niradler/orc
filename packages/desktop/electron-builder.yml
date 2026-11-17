@@ -19,6 +19,10 @@ publish:
 mac:
   category: public.app-category.developer-tools
   identity: "-"
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: ORC uses the microphone only while you dictate into the chat composer.
   target:
     - dmg
     - zip

@@ -155,6 +155,19 @@ export function webOrigin(value: string): string | null {
   }
 }
 
+export function appMicrophoneAllowed(
+  url: string,
+  appOrigin: string | null | undefined,
+  mediaTypes: readonly string[],
+): boolean {
+  return (
+    !!appOrigin &&
+    webOrigin(url) === appOrigin &&
+    mediaTypes.length > 0 &&
+    mediaTypes.every((type) => type === "audio")
+  );
+}
+
 /**
  * A request may carry a credential only when the document that issued it shares the
  * destination origin. Without an initiator the browser itself started the request,

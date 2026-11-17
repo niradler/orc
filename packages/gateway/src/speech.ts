@@ -62,6 +62,10 @@ function needsConversion(format: string): boolean {
   return !["mp3", "wav", "webm", "m4a", "mp4"].includes(format.toLowerCase());
 }
 
+export function speechConfigured(config = loadConfig()): boolean {
+  return config.speech.enabled && !!config.speech[config.speech.provider].api_key;
+}
+
 export async function transcribeAudio(input: {
   audio: Uint8Array;
   format: string;
