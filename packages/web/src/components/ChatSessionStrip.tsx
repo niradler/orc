@@ -4,7 +4,6 @@ import { Gauge } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { api } from "@/api/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { contextUsageHelp } from "@/lib/session-cache";
 import { formatTokenCount } from "@/lib/token-count";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +35,6 @@ export function contextFigure(
   return { tokens: latest.input_tokens, percent: Math.min(100, Math.max(0, percent)) };
 }
 
-const count = new Intl.NumberFormat();
 const ContextRing = lazy(() => import("@/components/ContextRing"));
 
 export function ChatContextMeter({
@@ -54,7 +52,6 @@ export function ChatContextMeter({
   const percent = window ? Math.min(100, Math.round((used / window) * 100)) : null;
   const tone =
     percent === null ? null : percent >= 90 ? "error" : percent >= 80 ? "warning" : "series-1";
-  const help = contextUsageHelp(figure.tokens, figure.percent, compactions);
   return (
     <Popover>
       <PopoverTrigger
@@ -84,28 +81,21 @@ export function ChatContextMeter({
         data-testid="chat-context-meter-popover"
         side="top"
         align="end"
-        className="w-72 space-y-2 text-xs leading-relaxed"
+        className="w-auto space-y-1 text-xs tabular-nums"
       >
-        <p className="font-medium tabular-nums">
+        <p className="font-medium">
           {window
-            ? `${count.format(used)} of ${count.format(window)} context tokens · ${percent}%`
-            : `${count.format(used)} context tokens`}
+            ? `${formatTokenCount(used, false)} / ${formatTokenCount(window, false)} · ${percent}%`
+            : `${formatTokenCount(used, false)} tokens`}
         </p>
         {percent !== null && percent >= 80 && (
-          <p data-testid="chat-context-meter-warning" className="text-on-surface">
-            Context is almost full. When it fills, the agent compacts or stops, and the older
-            conversation is summarized. Compact now or start a new chat to choose what to keep.
-          </p>
+          <p data-testid="chat-context-meter-warning">Compact or start a new chat</p>
         )}
-        {!window && (
+        {compactions > 0 && (
           <p className="text-on-surface-variant">
-            The agent does not report its model's context window, so the share used is not shown.
+            {compactions} {compactions === 1 ? "compaction" : "compactions"}
           </p>
         )}
-        <p className="text-on-surface-variant">
-          {figure.percent}% of the latest request came from the provider's cache.
-        </p>
-        <p className="text-on-surface-variant">{help.note}</p>
       </PopoverContent>
     </Popover>
   );

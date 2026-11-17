@@ -143,9 +143,30 @@ test("chat header state stays inside a 320px phone", async ({ page }, testInfo) 
 });
 
 const meterCases = [
-  { name: "unknown", context: 48_210, window: null, label: "48k", tone: "unknown" },
-  { name: "ring", context: 48_210, window: 200_000, label: "24%", tone: "series-1" },
-  { name: "full", context: 178_400, window: 200_000, label: "89%", tone: "warning" },
+  {
+    name: "unknown",
+    popover: "48k tokens",
+    context: 48_210,
+    window: null,
+    label: "48k",
+    tone: "unknown",
+  },
+  {
+    name: "ring",
+    popover: "48k / 200k · 24%",
+    context: 48_210,
+    window: 200_000,
+    label: "24%",
+    tone: "series-1",
+  },
+  {
+    name: "full",
+    popover: "178k / 200k · 89%",
+    context: 178_400,
+    window: 200_000,
+    label: "89%",
+    tone: "warning",
+  },
 ] as const;
 
 for (const width of [1440, 390])
@@ -234,15 +255,13 @@ for (const width of [1440, 390])
       });
       await meter.click();
       const popover = page.getByTestId("chat-context-meter-popover");
-      await expect(popover).toContainText(
-        meterCase.window
-          ? `${meterCase.context.toLocaleString("en-US")} of 200,000 context tokens · ${meterCase.label}`
-          : "48,210 context tokens",
+      await expect(popover).toHaveText(
+        [
+          meterCase.popover,
+          ...(meterCase.tone === "warning" ? ["Compact or start a new chat"] : []),
+          "1 compaction",
+        ].join(""),
       );
-      await expect(popover).toContainText(
-        "85% of the latest request came from the provider's cache",
-      );
-      await expect(popover).toContainText("1 compaction has summarized");
       await expect(page.getByTestId("chat-context-meter-warning")).toHaveCount(
         meterCase.tone === "warning" ? 1 : 0,
       );
