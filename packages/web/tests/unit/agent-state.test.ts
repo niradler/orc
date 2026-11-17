@@ -4,8 +4,8 @@ import {
   AGENT_STATES,
   liveSessionState,
   moreUrgent,
+  pendingLabel,
   rollupState,
-  sendOutcome,
   waitingLabel,
 } from "../../src/lib/agent-state";
 
@@ -47,26 +47,18 @@ describe("agent state language", () => {
     expect(new Set(states.map((s) => s.Icon)).size).toBe(states.length);
   });
 
-  test("should say what a send does now for each run state", () => {
+  test("should name a wait by its reason and short tool name", () => {
     expect(waitingLabel({ reason: "permission", tool: "Bash" })).toBe("permission · Bash");
     expect(waitingLabel({ reason: "question", tool: null })).toBe("question");
-    expect(sendOutcome({ streaming: false, steers: false, inbox: false })).toBeNull();
-    expect(sendOutcome({ streaming: true, steers: true, inbox: false })).toBe(
-      "Sends steer this turn",
-    );
-    expect(sendOutcome({ streaming: true, steers: false, inbox: false })).toBe(
-      "Sends queue until the turn ends",
-    );
-    expect(sendOutcome({ streaming: false, steers: false, inbox: true, waitingFor: null })).toBe(
-      "Running in its own agent · sends queue",
-    );
     expect(
-      sendOutcome({
-        streaming: false,
-        steers: false,
-        inbox: true,
-        waitingFor: { reason: "permission", tool: "Bash" },
+      waitingLabel({
+        reason: "permission",
+        tool: "mcp__claude_ai_ClickUp__clickup_get_bulk_tasks_time_in_status",
       }),
-    ).toBe("Bash permission pending · sends queue");
+    ).toBe("permission · clickup_get_bulk_tasks_time_in_status");
+    expect(pendingLabel({ reason: "permission", tool: "Bash" })).toBe(
+      "Bash permission pending · sends queue",
+    );
+    expect(pendingLabel({ reason: "dialog", tool: null })).toBe("dialog pending · sends queue");
   });
 });

@@ -432,10 +432,22 @@ export function claudeAdapter(
           record.summary = meta.prompt;
         }
         const meta = metaCache.get(record.externalId)?.meta;
-        if (record.waitingFor && meta?.pendingTool)
+        let tool = meta?.pendingTool ?? null;
+        if (record.waitingFor && (tool === "Agent" || tool === "Task")) {
+          const child = subagents
+            .filter((subagent) => subagent.parentId === record.externalId)
+            .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+          tool = child
+            ? pendingTool(
+                new TextDecoder().decode(await runtime.readFile(child.path, 150 * 1024 * 1024)),
+              )
+            : null;
+          if (tool === "Agent" || tool === "Task") tool = null;
+        }
+        if (record.waitingFor && tool)
           record.waitingFor = {
-            reason: meta.pendingTool === "AskUserQuestion" ? "question" : record.waitingFor.reason,
-            tool: meta.pendingTool,
+            reason: tool === "AskUserQuestion" ? "question" : record.waitingFor.reason,
+            tool,
           };
         if (meta) {
           record.title =

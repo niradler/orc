@@ -84,7 +84,7 @@ import {
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
-import { type AgentState, liveSessionState, sendOutcome } from "@/lib/agent-state";
+import { type AgentState, liveSessionState, pendingLabel } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
@@ -1459,12 +1459,9 @@ export function ChatPanel({
                     className="text-xs text-on-surface-variant"
                   >
                     {agentInbox
-                      ? sendOutcome({
-                          streaming,
-                          steers: canSteerLive,
-                          inbox: true,
-                          waitingFor: agentInbox.waiting_for,
-                        })
+                      ? agentInbox.waiting_for
+                        ? pendingLabel(agentInbox.waiting_for)
+                        : "Running in its own agent · sends queue"
                       : agentOverride
                         ? "Sending unlocked. The running status may be stale."
                         : "Running in its own agent · send unlocks when it finishes"}
@@ -1498,7 +1495,7 @@ export function ChatPanel({
                   data-testid="chat-send-outcome"
                   className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
                 >
-                  {sendOutcome({ streaming, steers: canSteerLive, inbox: false })}
+                  {canSteerLive ? "Sends steer this turn" : "Sends queue until the turn ends"}
                 </p>
               )}
               {savedPad && (

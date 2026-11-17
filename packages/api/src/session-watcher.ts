@@ -101,7 +101,7 @@ const runStates = new Map<string, Map<string, RunState>>();
 
 const pendingKey = (backend: string, host: string | null) => JSON.stringify([backend, host]);
 
-export function sessionRunState(
+function sessionRunState(
   backend: string,
   host: string | null,
   nativeId: string | null,

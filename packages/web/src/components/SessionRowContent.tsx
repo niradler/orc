@@ -76,12 +76,22 @@ export function SessionRunChip({
 }: {
   session: Pick<LiveSession, "waiting_for" | "background_work"> | null;
 }): ReactNode {
-  if (session?.waiting_for)
+  if (session?.waiting_for) {
+    const full = session.waiting_for.tool
+      ? `${session.waiting_for.reason} · ${session.waiting_for.tool}`
+      : session.waiting_for.reason;
     return (
-      <span data-testid="chat-session-waiting" className="shrink-0 text-warning">
-        {waitingLabel(session.waiting_for)}
-      </span>
+      <ActionHelp label={full}>
+        <span
+          data-testid="chat-session-waiting"
+          data-label={full}
+          className="max-w-full shrink-0 truncate text-warning"
+        >
+          {waitingLabel(session.waiting_for)}
+        </span>
+      </ActionHelp>
     );
+  }
   if (!session?.background_work) return null;
   return (
     <ActionHelp label="Background work running">

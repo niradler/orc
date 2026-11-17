@@ -91,20 +91,14 @@ export function liveSessionState(
   return session.waiting_for_human ? "needs-you" : (LIVE_STATES[session.status] ?? "unknown");
 }
 
-export function waitingLabel(waiting: NonNullable<LiveSession["waiting_for"]>): string {
-  return waiting.tool ? `${waiting.reason} · ${waiting.tool}` : waiting.reason;
+type Waiting = NonNullable<LiveSession["waiting_for"]>;
+
+const shortTool = (tool: string) => tool.split("__").pop() || tool;
+
+export function waitingLabel(waiting: Waiting): string {
+  return waiting.tool ? `${waiting.reason} · ${shortTool(waiting.tool)}` : waiting.reason;
 }
 
-export function sendOutcome(input: {
-  streaming: boolean;
-  steers: boolean;
-  inbox: boolean;
-  waitingFor?: LiveSession["waiting_for"];
-}): string | null {
-  if (input.inbox)
-    return input.waitingFor
-      ? `${[input.waitingFor.tool, input.waitingFor.reason].filter(Boolean).join(" ")} pending · sends queue`
-      : "Running in its own agent · sends queue";
-  if (!input.streaming) return null;
-  return input.steers ? "Sends steer this turn" : "Sends queue until the turn ends";
+export function pendingLabel(waiting: Waiting): string {
+  return `${waiting.tool ? `${shortTool(waiting.tool)} ` : ""}${waiting.reason} pending · sends queue`;
 }
