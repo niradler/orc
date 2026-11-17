@@ -514,6 +514,14 @@ provider has an `api_key`; `GET /api/speech/status` reports it and
 `POST /api/speech/transcribe` (multipart field `audio`, up to 25 MB) returns
 `{ "text": "..." }`. Each provider also accepts `base_url` and `model`, for example
 to point `openai` at another OpenAI-compatible transcription endpoint.
+`speech.language` is sent to every provider (`language` for openai and groq,
+`asr_options.language` for qwen). `speech.provider` and `tts.provider` are chosen
+independently; an unknown provider fails when the config loads.
+
+Channels answer a voice message with a voice reply. With `tts.mode: "always"` they
+also speak replies to text messages. Spoken replies drop code blocks and markdown,
+and a reply longer than `tts.max_text_len` (0 means no limit) is cut at the last
+sentence that fits.
 
 ```json
 {

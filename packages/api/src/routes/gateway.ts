@@ -4,8 +4,7 @@ import {
   getGatewayManager,
   getGatewayStatus,
   sendGatewayMessage,
-  speechConfigured,
-  transcribeAudio,
+  speechToText,
 } from "@orc/gateway";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
@@ -98,7 +97,7 @@ app.openapi(
       },
     },
   }),
-  (c) => c.json({ available: speechConfigured() }),
+  (c) => c.json({ available: speechToText() !== null }),
 );
 
 app.use(
@@ -138,7 +137,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    if (!speechConfigured())
+    const stt = speechToText();
+    if (!stt)
       throw new OrcError("Speech is not configured on this server.", "SPEECH_UNAVAILABLE", 409);
     const { audio } = c.req.valid("form");
     if (!audio.size) throw new ValidationError("Recording is empty");
@@ -149,7 +149,8 @@ app.openapi(
         subtype
       ] ?? "webm";
     try {
-      const text = await transcribeAudio({
+      const text = await stt.transcribe({
+        signal: c.req.raw.signal,
         audio: new Uint8Array(await audio.arrayBuffer()),
         format,
       });
