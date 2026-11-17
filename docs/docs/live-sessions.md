@@ -15,12 +15,14 @@ never used, so each `/clear` in one terminal is its own row with its own title, 
 a conversation with no prompt yet reads **New session**. Recency comes from the last
 message, not from the transcript file's modification time.
 
-Subagents show inside the parent's chat, under the turn that started them: Claude
-Code subagents (their `.meta.json` description is the title), Codex spawned threads,
-Cursor subagent composers and OpenCode child sessions. Each row shows the subagent's
-title and live state; pressing it opens the subagent's own session, whose
-**Started by** link leads back to the parent. A call is matched to its subagent by
-the id each agent records (Claude `toolUseId`, Codex `SubAgentActivity`, OpenCode
+Subagents show inside the parent's chat, outside the turn's folded tool summary:
+Claude Code subagents (their `.meta.json` description is the title), Codex spawned
+threads, Cursor subagent composers and OpenCode child sessions. Each row shows the
+subagent's title and live state; pressing it opens the subagent's own chat. The
+subagent's header names the project and the parent session, and the parent crumb
+(or the back arrow on a phone) returns to the parent chat. The **Started by** link
+in the conversation works the same way. A call is matched to its subagent by the
+id each agent records (Claude `toolUseId`, Codex `SubAgentActivity`, OpenCode
 `task` metadata); Cursor records none, so its subagents match calls in start order.
 Subagents are not listed in the session list, but a parent row still takes the most
 urgent subagent state and matches a search for a subagent's title. Subagents do not

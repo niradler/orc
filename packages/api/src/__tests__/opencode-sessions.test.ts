@@ -302,6 +302,63 @@ test("should render a v2 OpenCode transcript with inline parts", async () => {
   ]);
 });
 
+test("should read inline OpenCode tool content and mark an error result", async () => {
+  const lines = [
+    {
+      time: 9000,
+      message: { role: "assistant" },
+      parts: [
+        {
+          type: "tool",
+          tool: "grep",
+          callID: "call_done",
+          state: {
+            status: "completed",
+            input: { pattern: "subagent" },
+            content: [{ type: "text", text: "2 matches" }],
+          },
+        },
+        {
+          type: "tool",
+          tool: "shell",
+          callID: "call_failed",
+          state: {
+            status: "error",
+            input: { command: "false" },
+            error: { type: "unknown", message: "exit code 1" },
+          },
+        },
+      ],
+    },
+  ];
+  const bytes = new TextEncoder().encode(lines.map((line) => JSON.stringify(line)).join("\n"));
+  const page = await readTranscriptBytes(bytes, "opencode", "opencode-inline-test", {});
+  expect(page.turns).toEqual([
+    {
+      index: 0,
+      role: "assistant",
+      time: new Date(9000).toISOString(),
+      blocks: [
+        {
+          type: "tool_use",
+          id: "call_done",
+          name: "grep",
+          input: '{"pattern":"subagent"}',
+          result: "2 matches",
+        },
+        {
+          type: "tool_use",
+          id: "call_failed",
+          name: "shell",
+          input: '{"command":"false"}',
+          result: "exit code 1",
+          isError: true,
+        },
+      ],
+    },
+  ]);
+});
+
 test("should read a legacy transcript from a database without v2 tables", async () => {
   const bytes = await opencodeTranscriptBytes(runtime, legacyDbPath, "ses_legacy");
   const page = await readTranscriptBytes(bytes, "opencode", "opencode-legacy-test", {});

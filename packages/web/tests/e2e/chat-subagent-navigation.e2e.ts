@@ -1,0 +1,185 @@
+import { spawnSync } from "node:child_process";
+import { type ChatActivity, ChatSettingsSchema } from "@orc/core/chat";
+import { expect, type Page, test } from "@playwright/test";
+import { API_SECRET, repoRoot } from "./_helpers";
+
+const headers = { Authorization: `Bearer ${API_SECRET}` };
+const defaults = ChatSettingsSchema.parse({});
+
+const PARENT_LIVE = "parent-live";
+const CHILD_LIVE = "child-live";
+const CHILD_NATIVE = "child-native";
+
+test.beforeEach(async ({ page, request }) => {
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
+  await request.patch("/api/settings", { headers, data: { chat: defaults } });
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
+});
+
+function seed(thread: unknown): void {
+  const seeded = spawnSync(
+    "bun",
+    [
+      "-e",
+      'import {getSqlite} from "./packages/db/src/client.ts";import {ChatStore} from "./packages/db/src/chat.ts";new ChatStore(getSqlite()).save(JSON.parse(process.argv[1]));',
+      JSON.stringify(thread),
+    ],
+    { cwd: repoRoot(), env: process.env, encoding: "utf8", timeout: 10000 },
+  );
+  expect(seeded.status, seeded.stderr).toBe(0);
+}
+
+function activity(): ChatActivity[] {
+  return [
+    {
+      type: "tool",
+      id: "call_sub",
+      name: "task",
+      input: JSON.stringify({ description: "Demo subagent render" }),
+    },
+    {
+      type: "tool",
+      id: "call_read",
+      name: "read",
+      input: JSON.stringify({ path: "README.md" }),
+      result: "Read complete",
+    },
+    {
+      type: "subagent",
+      id: "inline-child-native",
+      title: "Inline subagent",
+      status: "completed",
+      activity: [],
+      text: "The child finished.",
+    },
+  ];
+}
+
+function seedParent(id: string, started: number): void {
+  seed({
+    id,
+    title: "Parent session",
+    config: defaults,
+    cwd: "/tmp",
+    host: null,
+    runtimeId: null,
+    backend: "codex-cli",
+    sourceId: PARENT_LIVE,
+    updatedAt: started + 40_000,
+    messages: [
+      { id: `${id}-user`, role: "user", content: "Use a subagent", timestamp: started },
+      {
+        id: `${id}-assistant`,
+        role: "assistant",
+        content: "The subagent is done.",
+        timestamp: started + 40_000,
+        turn: {
+          startedAt: started,
+          finishedAt: started + 40_000,
+          durationMs: 40_000,
+          outcome: "completed",
+        },
+        activity: activity(),
+      },
+    ],
+  });
+}
+
+async function mockSubagent(page: Page): Promise<void> {
+  await page.route(/\/api\/sessions\/live\/[^/]+\/subagents$/, (route) => {
+    const id = new URL(route.request().url()).pathname.split("/")[4];
+    return route.fulfill({
+      json: {
+        subagents:
+          id === PARENT_LIVE
+            ? [
+                {
+                  id: CHILD_LIVE,
+                  session_id: CHILD_NATIVE,
+                  title: "Demo subagent render",
+                  status: "stopped",
+                  tool_call_id: "call_sub",
+                  created_at: Date.now() - 30_000,
+                },
+              ]
+            : [],
+      },
+    });
+  });
+  await page.route(`**/api/sessions/live/${CHILD_LIVE}`, (route) =>
+    route.fulfill({ json: { id: CHILD_LIVE, agent: "claude", session_id: CHILD_NATIVE } }),
+  );
+  await page.route(`**/api/sessions/live/${CHILD_LIVE}/lineage`, (route) =>
+    route.fulfill({
+      json: {
+        parent: { id: PARENT_LIVE, title: "Parent session", kind: "session", status: "running" },
+        children: [],
+      },
+    }),
+  );
+  await page.route("**/api/chat/threads", (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    return route.fulfill({
+      json: {
+        id: "73000000-0000-4000-8000-000000000001",
+        title: "Demo subagent render",
+        config: defaults,
+        cwd: "/tmp",
+        host: null,
+        runtimeId: CHILD_NATIVE,
+        sourceId: CHILD_LIVE,
+        backend: "claude-code",
+        updatedAt: Date.now(),
+        messages: [],
+      },
+    });
+  });
+  await page.route("**/api/chat/threads/*/live", (route) => route.fulfill({ status: 204 }));
+  await page.route("**/api/chat/threads/*/session", (route) =>
+    route.fulfill({ json: { running: false, queued: [] } }),
+  );
+}
+
+for (const width of [1440, 390]) {
+  test(`a subagent names its parent and goes back at ${width}px`, async ({ page }) => {
+    const parentId = crypto.randomUUID();
+    seedParent(parentId, Date.now() - 120_000);
+    await mockSubagent(page);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/?chat=open&chatThread=${parentId}`);
+
+    // The subagent tool call is not folded into the turn's tool count; the child
+    // transcript and the row that opens it stay visible outside.
+    const fold = page.getByTestId("chat-turn-fold");
+    await expect(page.getByTestId("chat-turn-fold-label")).toHaveText("Worked for 40s · 1 tool");
+    await expect(page.getByTestId("chat-subagent-inline")).toBeVisible();
+    const row = page.getByTestId("chat-subagent");
+    await expect(row).toContainText("Demo subagent render");
+    await expect(row).not.toBeHidden();
+    await expect(fold).not.toContainText("Demo subagent render");
+
+    await page.screenshot({ path: test.info().outputPath(`subagent-parent-${width}.png`) });
+    await row.click();
+    const headerTitle = page.locator('[data-testid="chat-panel"] header h2');
+    await expect(headerTitle).toContainText("Demo subagent render");
+    await expect(page.getByTestId("chat-subagent-kind")).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`subagent-open-${width}.png`) });
+    if (width === 1440) {
+      const parent = page.getByTestId("chat-parent-session");
+      await expect(parent).toHaveText("Parent session");
+      await parent.click();
+    } else {
+      const back = page.getByTestId("chat-parent-back");
+      await expect(back).toHaveAccessibleName("Back to Parent session");
+      await back.click();
+    }
+    await expect(headerTitle).toContainText("Parent session");
+    await expect(page).toHaveURL(new RegExp(parentId));
+  });
+}

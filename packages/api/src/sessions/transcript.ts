@@ -12,6 +12,8 @@ export type TranscriptBlock =
       input: string;
       id?: string;
       result?: string;
+      /** The provider recorded the call as failed, not merely finished without output. */
+      isError?: boolean;
     }
   | { type: "tool_result"; text: string; forId?: string };
 
@@ -277,8 +279,36 @@ type OpenCodePart = {
   synthetic?: boolean;
   tool?: string;
   callID?: string;
-  state?: { status?: string; input?: unknown; output?: unknown; error?: unknown };
+  state?: {
+    status?: string;
+    input?: unknown;
+    output?: unknown;
+    /** Inline tool parts (OpenCode 2.2+) keep their result here instead of `output`. */
+    content?: unknown;
+    error?: unknown;
+  };
 };
+
+function toolErrorText(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const message = (value as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return resultText(value);
+}
+
+/** A tool result OpenCode stored under `output` (legacy) or `content` (inline parts). */
+function openCodeToolResult(state: OpenCodePart["state"]): { result?: string; isError: boolean } {
+  const failed = state?.status === "error" || state?.error !== undefined;
+  const output = state?.output ?? state?.content;
+  const result =
+    output != null
+      ? resultText(output)
+      : state?.error !== undefined
+        ? toolErrorText(state.error)
+        : "";
+  return { ...(result ? { result } : {}), isError: failed };
+}
 
 async function* opencodeTurns(content: string): AsyncGenerator<Draft> {
   for await (const line of jsonLines(content)) {
@@ -292,13 +322,14 @@ async function* opencodeTurns(content: string): AsyncGenerator<Draft> {
       else if (part.type === "reasoning" && part.text)
         blocks.push({ type: "thinking", text: cut(part.text, TEXT_MAX) });
       else if (part.type === "tool") {
-        const output = part.state?.output ?? part.state?.error;
+        const { result, isError } = openCodeToolResult(part.state);
         blocks.push({
           type: "tool_use",
           name: part.tool ?? "tool",
           input: cut(stringify(part.state?.input ?? ""), TOOL_INPUT_MAX),
           ...(part.callID ? { id: part.callID } : {}),
-          ...(output != null ? { result: cut(resultText(output), TOOL_RESULT_MAX) } : {}),
+          ...(result ? { result: cut(result, TOOL_RESULT_MAX) } : {}),
+          ...(isError ? { isError: true } : {}),
         });
       }
     }

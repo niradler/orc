@@ -65,13 +65,20 @@ function codexLinks(bytes: Uint8Array) {
 
 function opencodeLinks(bytes: Uint8Array) {
   const links = new Map<string, string>();
-  for (const line of lines(bytes, "sessionId")) {
+  // Inline tool parts (OpenCode 2.2+) carry their result under `content`; every
+  // synthetic line still serializes a `parts` array, so match on that.
+  for (const line of lines(bytes, '"parts"')) {
     const parts = record(line).parts;
     for (const part of Array.isArray(parts) ? parts : []) {
       const tool = record(part);
       const metadata = record(record(tool.state).metadata);
-      if (typeof metadata.sessionId === "string" && typeof tool.callID === "string")
-        links.set(metadata.sessionId, tool.callID);
+      const child =
+        typeof metadata.sessionId === "string"
+          ? metadata.sessionId
+          : typeof metadata.sessionID === "string"
+            ? metadata.sessionID
+            : null;
+      if (child && typeof tool.callID === "string") links.set(child, tool.callID);
     }
   }
   return links;
