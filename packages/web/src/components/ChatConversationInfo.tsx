@@ -105,6 +105,7 @@ export function ChatConversationInfo({
                       capabilities.questions && "Questions",
                       capabilities.steering && "Steering",
                       capabilities.interrupt && "Native stop",
+                      capabilities.subagents && "Subagents",
                     ]
                       .filter(Boolean)
                       .join(" · ") || "Basic text conversation"}

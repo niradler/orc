@@ -969,13 +969,23 @@ export function HistoryRow({
   );
 }
 
-export function SubagentList({ label, children }: { label: string; children: ReactNode }) {
+export function SubagentList({
+  label,
+  children,
+  testId = "chat-session-subagents",
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  testId?: string;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
-    <div data-testid="chat-session-subagents" className="pb-1 pl-6">
+    <div data-testid={testId} className={cn("pb-1 pl-6", className)}>
       <button
         type="button"
-        data-testid="chat-session-subagents-toggle"
+        data-testid={`${testId}-toggle`}
         aria-expanded={open}
         aria-label={`${open ? "Hide" : "Show"} ${label}`}
         onClick={() => setOpen(!open)}

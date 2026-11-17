@@ -337,6 +337,67 @@ test("subagent sessions stay out of the list but lift their parent's state and r
   ]);
 });
 
+test("a failed grandchild subagent marks the top session Needs you", () => {
+  const parent = { ...live, id: "parent", session_id: "p", status: "idle" as const };
+  const child = {
+    ...live,
+    id: "child",
+    session_id: "c",
+    parent_id: "parent",
+    status: "idle" as const,
+  };
+  const grandchild = {
+    ...live,
+    id: "grandchild",
+    session_id: "g",
+    parent_id: "child",
+    status: "error" as const,
+  };
+  const entries = chatHistoryList([], [], [grandchild, child, parent], [], "", "all");
+  expect(entries.map((entry) => entry.id)).toEqual(["native:parent"]);
+  expect(entries[0]?.observedState).toBe("needs-you");
+  const healthy = chatHistoryList(
+    [],
+    [],
+    [{ ...grandchild, status: "idle" as const }, child, parent],
+    [],
+  );
+  expect(healthy[0]?.observedState).toBe("idle");
+});
+
+test("an ORC chat whose last turn has a failed or waiting subagent needs you", () => {
+  const tab = (status: "failed" | "waiting" | "completed") =>
+    ({
+      key: `tab-${status}`,
+      thread: { id: `thread-${status}`, title: status, updatedAt: 1 },
+      config: { agent: "claude" },
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          content: "",
+          activity: [
+            { type: "subagent", id: "outer", status: "completed", activity: [] },
+            { type: "subagent", id: "inner", parentId: "outer", status, activity: [] },
+          ],
+        },
+      ],
+      draft: "",
+      files: [],
+      queued: [],
+      streaming: false,
+      error: null,
+      permissions: [],
+      questions: [],
+      activity: [],
+    }) as unknown as Parameters<typeof chatHistoryList>[0][number];
+  const entries = chatHistoryList([tab("failed"), tab("waiting"), tab("completed")], [], [], []);
+  const state = (id: string) => entries.find((entry) => entry.id === id)?.observedState;
+  expect(state("chat:thread-failed")).toBe("needs-you");
+  expect(state("chat:thread-waiting")).toBe("needs-you");
+  expect(state("chat:thread-completed")).toBeUndefined();
+});
+
 test("a subagent opened as a chat stays out of the list", () => {
   const parent = { ...live, id: "parent", session_id: "p", project_id: null };
   const child = { ...live, id: "child", session_id: "c", parent_id: "parent", project_id: null };

@@ -32,9 +32,13 @@ beforeAll(() => {
   writeFileSync(join(subagents, "agent-a1.jsonl"), "");
   writeFileSync(join(subagents, "agent-a1.meta.json"), JSON.stringify({ toolUseId: "toolu_1" }));
   writeFileSync(join(subagents, "agent-a2.jsonl"), "");
+  writeFileSync(join(subagents, "agent-a3.jsonl"), "");
+  writeFileSync(join(subagents, "agent-a3.meta.json"), JSON.stringify({ toolUseId: "toolu_3" }));
   session("cparent", "claude", "claude-parent", join(root, "claude-parent.jsonl"), null, 1);
   session("cchild1", "claude", "agent-a1", join(subagents, "agent-a1.jsonl"), "claude-parent", 2);
   session("cchild2", "claude", "agent-a2", join(subagents, "agent-a2.jsonl"), "claude-parent", 3);
+  session("cgrand", "claude", "agent-a3", join(subagents, "agent-a3.jsonl"), "agent-a1", 4);
+  session("cgreat", "claude", "agent-a4", null, "agent-a3", 5);
   const rollout = join(root, "codex-parent.jsonl");
   writeFileSync(
     rollout,
@@ -72,6 +76,34 @@ beforeAll(() => {
       messages: [],
     }),
   );
+  new ChatStore(getSqlite()).save(
+    ChatThreadSchema.parse({
+      id: "33333333-3333-4333-8333-333333333333",
+      title: "Codex chat run by ORC",
+      config: { agent: "codex" },
+      cwd: "/tmp",
+      host: null,
+      runtimeId: "codex-parent",
+      backend: "codex-cli",
+      sourceId: "xparent",
+      updatedAt: 1,
+      messages: [],
+    }),
+  );
+  new ChatStore(getSqlite()).save(
+    ChatThreadSchema.parse({
+      id: "44444444-4444-4444-8444-444444444444",
+      title: "Codex chat with no source link",
+      config: { agent: "codex" },
+      cwd: "/tmp",
+      host: null,
+      runtimeId: "codex-parent",
+      backend: "codex-cli",
+      sourceId: null,
+      updatedAt: 1,
+      messages: [],
+    }),
+  );
 });
 
 afterAll(() => {
@@ -90,11 +122,40 @@ test("a session lists its subagents with the tool call that started each", async
   ).toEqual([
     ["cchild1", "toolu_1"],
     ["cchild2", null],
+    ["cgrand", "toolu_3"],
+    ["cgreat", null],
   ]);
   const codex = await (await req(app, "GET", "/sessions/live/xparent/subagents")).json();
   expect(codex.subagents).toMatchObject([{ id: "xchild", tool_call_id: "call_9" }]);
+  const chat = await (
+    await req(app, "GET", "/sessions/live/33333333-3333-4333-8333-333333333333/subagents")
+  ).json();
+  expect(chat.subagents).toMatchObject([{ id: "xchild", tool_call_id: "call_9" }]);
+  const unlinked = await (
+    await req(app, "GET", "/sessions/live/44444444-4444-4444-8444-444444444444/subagents")
+  ).json();
+  expect(unlinked.subagents).toMatchObject([{ id: "xchild", tool_call_id: "call_9" }]);
   const none = await (await req(app, "GET", "/sessions/live/cchild1/subagents")).json();
   expect(none.subagents).toEqual([]);
+});
+
+test("nested subagents name the subagent that spawned them", async () => {
+  const body = await (await req(app, "GET", "/sessions/live/cparent/subagents")).json();
+  expect(
+    body.subagents.map((s: { id: string; parent_id: string | null }) => [s.id, s.parent_id]),
+  ).toEqual([
+    ["cchild1", null],
+    ["cchild2", null],
+    ["cgrand", "cchild1"],
+    ["cgreat", "cgrand"],
+  ]);
+  const live = await (
+    await req(app, "GET", "/sessions/live?active=false&include_children=true")
+  ).json();
+  const parents = Object.fromEntries(
+    live.sessions.map((s: { id: string; parent_id: string | null }) => [s.id, s.parent_id]),
+  );
+  expect(parents).toMatchObject({ cgrand: "cchild1", cgreat: "cgrand" });
 });
 
 test("a subagent, also opened as a chat, names the session that started it", async () => {

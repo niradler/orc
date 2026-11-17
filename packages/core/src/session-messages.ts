@@ -193,6 +193,7 @@ export type SessionLineage = z.infer<typeof SessionLineageSchema>;
 
 export const SessionSubagentSchema = z.object({
   id: identity,
+  parent_id: identity.nullable(),
   session_id: z.string().nullable(),
   title: z.string(),
   status: z.string().max(32),
