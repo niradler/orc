@@ -136,7 +136,23 @@ async function mockSubagent(page: Page): Promise<void> {
         sourceId: CHILD_LIVE,
         backend: "claude-code",
         updatedAt: Date.now(),
-        messages: [],
+        messages: [
+          {
+            id: "73000000-0000-4000-8000-000000000002",
+            role: "user",
+            content: "Inspect the parser and report back.",
+            timestamp: Date.now() - 30_000,
+            agent: "claude",
+          },
+          {
+            id: "73000000-0000-4000-8000-000000000003",
+            role: "assistant",
+            content: "The parser reads inline tool results correctly; two matches found.",
+            timestamp: Date.now() - 25_000,
+            agent: "claude",
+            activity: [],
+          },
+        ],
       },
     });
   });
@@ -175,6 +191,7 @@ for (const width of [1440, 390]) {
       await expect(parent).toHaveText("Parent session");
       await parent.click();
     } else {
+      await expect(page.getByTestId("chat-parent-session")).toHaveText("Parent session");
       const back = page.getByTestId("chat-parent-back");
       await expect(back).toHaveAccessibleName("Back to Parent session");
       await back.click();
@@ -183,3 +200,23 @@ for (const width of [1440, 390]) {
     await expect(page).toHaveURL(new RegExp(parentId));
   });
 }
+
+test("a docked subagent chat names its parent at 1440px", async ({ page }) => {
+  const parentId = crypto.randomUUID();
+  seedParent(parentId, Date.now() - 120_000);
+  await mockSubagent(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/chat?chatThread=${parentId}`);
+
+  await page.getByTestId("chat-subagent").click();
+  const headerTitle = page.locator('[data-testid="chat-panel"] header h2');
+  await expect(headerTitle).toContainText("Demo subagent render");
+  // The docked chat page has room for the whole path: project, parent, title.
+  await expect(page.getByTestId("session-project-breadcrumb")).toBeVisible();
+  await expect(page.getByTestId("chat-parent-session")).toHaveText("Parent session");
+  await page.screenshot({ path: test.info().outputPath("subagent-docked-1440.png") });
+
+  await page.getByTestId("chat-parent-session").click();
+  await expect(headerTitle).toContainText("Parent session");
+  await expect(page).toHaveURL(new RegExp(parentId));
+});

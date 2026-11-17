@@ -1010,6 +1010,12 @@ export function ChatPanel({
                           className="shrink-0"
                         />
                       )}
+                      {parentCrumb && (
+                        <>
+                          {parentCrumb}
+                          <span aria-hidden="true">·</span>
+                        </>
+                      )}
                       <span className="truncate">
                         <span data-testid="session-project-breadcrumb">{projectName}</span>
                         {" · "}
