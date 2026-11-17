@@ -184,7 +184,7 @@ for (const width of [1440, 390]) {
     );
     const input = page.getByTestId("chat-input");
     const send = page.getByTestId("chat-send-button");
-    await expect(input).toHaveAttribute("placeholder", "Ask anything. / for prompts and skills");
+    await expect(input).toHaveAttribute("placeholder", "Ask anything. / for commands, @ for files");
     await expect(page.getByTestId("chat-agent-running")).toHaveText(
       "Running in its own agent · sends queue",
     );
@@ -230,7 +230,7 @@ for (const width of [1440, 390]) {
     state.live = { id: "live-1", agent: "claude", status: "idle" };
     await chat.pushSessions();
     await expect(page.getByTestId("chat-agent-running")).toHaveCount(0);
-    await expect(input).toHaveAttribute("placeholder", "Ask anything. / for prompts and skills");
+    await expect(input).toHaveAttribute("placeholder", "Ask anything. / for commands, @ for files");
     await expect(send).toHaveAccessibleName("Send message");
   });
 }

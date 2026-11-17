@@ -685,6 +685,18 @@ so the server can recover the original turn without starting another one.
 Every icon has an accessible name and opens its picker with the full details;
 phone touch targets are at least 44px. Send stays visible at the right.
 
+Type `/` to list ORC saved prompts and skills together with the agent's own
+commands and skills. Claude reports its slash commands, plugin commands and
+installed skills, matched by name or alias (`/review` finds `/code-review`);
+Codex reports its skills, which insert as `$name`. Each row shows its argument
+hint and source (the plugin, `user`, `repo`, or the agent for built-ins). A
+saved prompt or ORC skill with the same name wins. A message that starts with an
+agent command reaches the agent first, so Claude runs it natively. Type `@` to
+list files and folders under the conversation's working directory on its
+execution host, SSH hosts included; choosing a folder lists its contents, and
+choosing a file inserts `@path`. Dot files appear once the name you type starts
+with `.`. Arrow keys move, Enter or Tab chooses, Escape closes the list.
+
 The folder picker shows the full path, copy action, recent folders, host choices
 when configured, and browsing. Branch/worktree controls appear for Git folders.
 **Run in** keeps the current checkout, creates a worktree from the current branch,

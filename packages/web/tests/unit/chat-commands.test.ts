@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   activeCommand,
+  activeMention,
   type CommandOption,
   commandSegments,
+  mentionToken,
   rankCommands,
 } from "../../src/lib/chat-commands";
 
@@ -43,5 +45,56 @@ describe("command highlighting", () => {
       { text: "a/tdd /tdd/x", command: false },
     ]);
     expect(commandSegments("", names)).toEqual([]);
+  });
+
+  test("detects the @ mention at the caret and splits its folder from the typed name", () => {
+    expect(activeMention("@src/ap", 7)).toEqual({
+      query: "src/ap",
+      quoted: false,
+      start: 0,
+      folder: "src/",
+      leaf: "ap",
+    });
+    expect(activeMention("read @", 6)).toEqual({
+      query: "",
+      quoted: false,
+      start: 5,
+      folder: "",
+      leaf: "",
+    });
+    expect(activeMention('see @"My Docs/re', 16)).toEqual({
+      query: "My Docs/re",
+      quoted: true,
+      start: 4,
+      folder: "My Docs/",
+      leaf: "re",
+    });
+    expect(activeMention('@"My Docs/a.md" next', 20)).toBeNull();
+    expect(activeMention("mail me@example.com", 19)).toBeNull();
+    expect(activeMention("@src/a.ts done", 14)).toBeNull();
+    expect(activeCommand("@src/ap", 7)).toBeNull();
+    expect(mentionToken("src/api.ts")).toBe("@src/api.ts");
+    expect(mentionToken("My Docs/a.md")).toBe('@"My Docs/a.md"');
+  });
+
+  test("matches agent command aliases and fuzzy file names", () => {
+    const review: CommandOption = {
+      name: "code-review",
+      kind: "agent",
+      title: "",
+      description: "Review the diff",
+      aliases: ["review"],
+    };
+    expect(rankCommands([review], "rev")).toEqual([review]);
+    const entry = (name: string, kind: "file" | "folder"): CommandOption => ({
+      name,
+      kind,
+      title: "",
+      description: "",
+    });
+    const files = [entry("api", "folder"), entry("app.tsx", "file"), entry("web", "folder")];
+    expect(rankCommands(files, "ap").map((option) => option.name)).toEqual(["api", "app.tsx"]);
+    expect(rankCommands(files, "atx").map((option) => option.name)).toEqual(["app.tsx"]);
+    expect(rankCommands([review], "cdr")).toEqual([]);
   });
 });

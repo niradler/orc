@@ -689,7 +689,7 @@ export function ChatPanel({
   const dictation = useDictation(input, setDraft);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const promptMenuOpen = useRef(false);
-  promptMenuOpen.current = promptMenu.matches.length > 0;
+  promptMenuOpen.current = promptMenu.open;
   // Escape leaves focus chat, except while an overlay or an IME composition owns
   // the key: a dialog, a menu, the prompt list, the selection toolbar or IME.
   useEffect(() => {
@@ -1600,11 +1600,11 @@ export function ChatPanel({
                     ref={input}
                     data-testid="chat-input"
                     aria-label="Message your agent"
-                    aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
+                    aria-controls={promptMenu.open ? "chat-prompt-menu" : undefined}
                     aria-activedescendant={
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
-                    placeholder="Ask anything. / for prompts and skills"
+                    placeholder="Ask anything. / for commands, @ for files"
                     disabled={!ready}
                     value={draft}
                     onChange={(event) => {

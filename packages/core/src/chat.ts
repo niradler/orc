@@ -123,6 +123,25 @@ export const ChatModelsSchema = z.object({
 });
 export type ChatModels = z.infer<typeof ChatModelsSchema>;
 
+export const ChatAgentCommandSchema = z.object({
+  name: z.string().max(200),
+  token: z.string().max(201),
+  description: z.string().max(1000),
+  argumentHint: z.string().max(500),
+  aliases: z.array(z.string().max(200)).max(20),
+  source: z.string().max(120),
+});
+export type ChatAgentCommand = z.infer<typeof ChatAgentCommandSchema>;
+export const ChatAgentCommandsSchema = z.object({
+  commands: z.array(ChatAgentCommandSchema),
+  warning: z.string().nullable(),
+});
+export type ChatAgentCommands = z.infer<typeof ChatAgentCommandsSchema>;
+
+export const ChatFileEntrySchema = z.object({ name: z.string(), directory: z.boolean() });
+export const ChatFilesSchema = z.object({ entries: z.array(ChatFileEntrySchema) });
+export type ChatFiles = z.infer<typeof ChatFilesSchema>;
+
 /**
  * What a tool call leaves running after it returns: a shell command the agent detached
  * (a dev server, a test run) or a subagent it delegated to. A backend sets

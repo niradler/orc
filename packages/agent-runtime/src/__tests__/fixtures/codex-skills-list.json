@@ -1,0 +1,55 @@
+{
+  "id": 2,
+  "result": {
+    "data": [
+      {
+        "cwd": "/work/repo",
+        "errors": [],
+        "skills": [
+          {
+            "name": "orc-release",
+            "description": "Run or resume the ORC release fast and clean, then update the local desktop install and the homelab. Use for ORC release, installation upgrade, or lab rollout requests. Self-improves after every release that hit a problem.",
+            "path": "/fixture/skills/orc-release/SKILL.md",
+            "scope": "repo",
+            "enabled": true,
+            "pluginId": null
+          },
+          {
+            "name": "nir-collab",
+            "description": "Nir's personal dev collaboration protocol. Load for ANY engineering task — building, fixing, debugging, refactoring, investigating, planning. If about to write, change, or reason about code, load this skill.",
+            "path": "/fixture/skills/nir-collab/SKILL.md",
+            "scope": "user",
+            "enabled": true,
+            "pluginId": null
+          },
+          {
+            "name": "superpowers:brainstorming",
+            "description": "You MUST use this before any creative work - creating features, building components, adding functionality, modifying behavior, or planning anything new, in software or out of it (a talk, a business, a renovation).",
+            "path": "/fixture/skills/superpowers:brainstorming/SKILL.md",
+            "scope": "user",
+            "enabled": true,
+            "pluginId": "superpowers@claude-plugins-official"
+          },
+          {
+            "name": "imagegen",
+            "description": "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas.",
+            "interface": {
+              "displayName": "Image Gen",
+              "shortDescription": "Generate or edit images for websites, games, and more",
+              "iconSmall": "/Users/nir/.codex/skills/.system/imagegen/assets/imagegen-small.svg",
+              "iconLarge": "/Users/nir/.codex/skills/.system/imagegen/assets/imagegen.png",
+              "iconSmallUrl": null,
+              "iconLargeUrl": null,
+              "brandColor": null,
+              "defaultPrompt": "Use $imagegen to make or edit an image for this project."
+            },
+            "path": "/fixture/skills/imagegen/SKILL.md",
+            "scope": "system",
+            "enabled": true,
+            "pluginId": null
+          }
+        ]
+      }
+    ]
+  }
+}

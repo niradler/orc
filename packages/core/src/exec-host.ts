@@ -1533,6 +1533,53 @@ export async function listHostDirectories(host: ExecHost, path: string): Promise
   };
 }
 
+export async function listHostEntries(
+  host: ExecHost,
+  path: string,
+): Promise<{ name: string; directory: boolean }[]> {
+  let entries: { name: string; directory: boolean }[];
+  if (host.kind === "local") {
+    try {
+      entries = readdirSync(path, { withFileTypes: true }).map((entry) => {
+        let directory = entry.isDirectory();
+        if (entry.isSymbolicLink())
+          try {
+            directory = statSync(join(path, entry.name)).isDirectory();
+          } catch {}
+        return { name: entry.name, directory };
+      });
+    } catch {
+      throw new ValidationError(`Not a readable folder: ${path}`);
+    }
+  } else {
+    const result = await hostExec(
+      host,
+      [
+        "/bin/sh",
+        "-c",
+        'cd -P -- "$1" 2>/dev/null || exit 3; for f in * .[!.]* ..?*; do if [ -d "$f" ]; then printf "d%s\\n" "$f"; elif [ -e "$f" ]; then printf "f%s\\n" "$f"; fi; done',
+        "sh",
+        path,
+      ],
+      { login: false },
+    );
+    if (result.code === 255)
+      throw new SshError(
+        describeSshFailure(host.alias, result.stderr),
+        isSshTransportFailure(result.stderr),
+      );
+    if (result.code !== 0) throw new ValidationError(`Not a readable folder: ${path}`);
+    entries = result.stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => ({ name: line.slice(1), directory: line.startsWith("d") }));
+  }
+  return entries
+    .filter((entry) => entry.name !== ".git")
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, 5000);
+}
+
 function expandSshPath(path: string): string {
   if (path === "~") return homedir();
   if (path.startsWith("~/")) return join(homedir(), path.slice(2));

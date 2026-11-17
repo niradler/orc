@@ -1,0 +1,64 @@
+{
+  "type": "control_response",
+  "response": {
+    "subtype": "success",
+    "request_id": "models",
+    "response": {
+      "commands": [
+        {
+          "name": "airport",
+          "description": "Use only when the AIRPORT environment variable is set (running inside the Airport tabbed-terminal multiplexer). Covers spawning parallel agent sessions in their own Airport tab + git worktree, and pushing plans to Airport's visual \"Review Plan\" panel. If $AIRPORT is unset, this skill does not apply. (user)",
+          "argumentHint": ""
+        },
+        {
+          "name": "deep-research",
+          "description": "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)",
+          "argumentHint": "",
+          "builtin": true
+        },
+        {
+          "name": "feature-dev:feature-dev",
+          "description": "(feature-dev) Guided feature development with codebase understanding and architecture focus",
+          "argumentHint": "Optional feature description"
+        },
+        {
+          "name": "superpowers:brainstorming",
+          "description": "(superpowers) You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.",
+          "argumentHint": "",
+          "aliases": ["brainstorming"]
+        },
+        {
+          "name": "code-review",
+          "description": "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's review recipe covers them) at the given effort level (low/medium: fewer, high-confidence findings; high→max: broader coverage, may include uncertain findings); with no level given, it reuses the level you typed last. Pass --comment to post findings as inline PR comments, or --fix to apply the findings to the working tree after the review.",
+          "argumentHint": "[low|medium|high|xhigh|max] [--fix] [--comment] [<pr#>|<branch>|<path>]",
+          "aliases": ["review"],
+          "builtin": true
+        },
+        {
+          "name": "compact",
+          "description": "Free up context by summarizing the conversation so far",
+          "argumentHint": "<optional custom summarization instructions>",
+          "builtin": true
+        },
+        {
+          "name": "__remote-workflow",
+          "description": "Run the workflow script delivered in this session environment (server-launched sessions only)",
+          "argumentHint": "",
+          "builtin": true
+        },
+        {
+          "name": "anthropic-skills:canvas-design",
+          "description": "Create beautiful visual art in .png and .pdf documents using design philosophy. You should use this skill when the user asks to create a poster, piece of art, design, or other static piece. Create original visual designs, never copying existing artists' work to avoid copyright violations. (claude.ai sync)",
+          "argumentHint": "",
+          "aliases": ["canvas-design"]
+        },
+        {
+          "name": "anthropic-skills:doc-coauthoring",
+          "description": "Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks. (claude.ai sync)",
+          "argumentHint": "",
+          "aliases": ["doc-coauthoring"]
+        }
+      ]
+    }
+  }
+}

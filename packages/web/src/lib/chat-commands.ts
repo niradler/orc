@@ -1,8 +1,11 @@
 export type CommandOption = {
   name: string;
-  kind: "prompt" | "skill";
+  kind: "prompt" | "skill" | "agent" | "file" | "folder";
   title: string;
   description: string;
+  token?: string;
+  source?: string;
+  aliases?: string[];
 };
 
 const MAX_OPTIONS = 50;
@@ -15,18 +18,45 @@ export function activeCommand(draft: string, caret: number) {
   return { query, start: caret - query.length - 1 };
 }
 
+export function activeMention(draft: string, caret: number) {
+  const match = /(^|\s)@(?:"([^"]*)|([^\s"]*))$/.exec(draft.slice(0, caret));
+  if (!match) return null;
+  const quoted = match[2] !== undefined;
+  const query = match[2] ?? match[3] ?? "";
+  const slash = query.lastIndexOf("/");
+  return {
+    query,
+    quoted,
+    start: caret - query.length - (quoted ? 2 : 1),
+    folder: query.slice(0, slash + 1),
+    leaf: query.slice(slash + 1),
+  };
+}
+
+export function mentionToken(path: string) {
+  return /\s/.test(path) ? `@"${path}"` : `@${path}`;
+}
+
+function subsequence(text: string, query: string) {
+  let at = 0;
+  for (const char of text) if (char === query[at]) at++;
+  return at === query.length;
+}
+
 /** Puts prefix matches first, then other name or description matches. */
 export function rankCommands(options: CommandOption[], query: string): CommandOption[] {
   const q = query.toLowerCase();
   const scored = options.flatMap((option) => {
-    const name = option.name.toLowerCase();
-    const rank = name.startsWith(q)
+    const names = [option.name, ...(option.aliases ?? [])].map((name) => name.toLowerCase());
+    const rank = names.some((name) => name.startsWith(q))
       ? 0
-      : name.includes(q)
+      : names.some((name) => name.includes(q))
         ? 1
         : option.description.toLowerCase().includes(q)
           ? 2
-          : -1;
+          : (option.kind === "file" || option.kind === "folder") && subsequence(names[0] ?? "", q)
+            ? 3
+            : -1;
     return rank < 0 ? [] : [{ option, rank }];
   });
   return scored

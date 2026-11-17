@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../config.js";
@@ -13,6 +22,7 @@ import {
   isSshTransportFailure,
   LOCAL_HOST,
   listHostDirectories,
+  listHostEntries,
   parseProbe,
   parseSshConfigHosts,
   parseTunnelReady,
@@ -39,6 +49,28 @@ test("should resolve local home paths and list the default folder", async () => 
   expect(await expandHostPath(LOCAL_HOST, "~/projects")).toBe(join(homedir(), "projects"));
   expect(await expandHostPath(LOCAL_HOST, "/literal/path")).toBe("/literal/path");
   expect((await listHostDirectories(LOCAL_HOST, "")).path).toBe(homedir());
+});
+
+test("should list files and folders for composer mentions, following folder links and hiding .git", async () => {
+  const root = mkdtempSync(join(tmpdir(), "orc-entries-"));
+  try {
+    mkdirSync(join(root, "src"));
+    mkdirSync(join(root, ".git"));
+    writeFileSync(join(root, "README.md"), "");
+    writeFileSync(join(root, ".env"), "");
+    symlinkSync(join(root, "src"), join(root, "linked"));
+    expect(await listHostEntries(LOCAL_HOST, root)).toEqual([
+      { name: ".env", directory: false },
+      { name: "linked", directory: true },
+      { name: "README.md", directory: false },
+      { name: "src", directory: true },
+    ]);
+    await expect(listHostEntries(LOCAL_HOST, join(root, "missing"))).rejects.toThrow(
+      "Not a readable folder",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 async function runRemote(script: string): Promise<{ code: number; stdout: string }> {

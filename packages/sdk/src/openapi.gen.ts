@@ -333,6 +333,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the agent's own slash commands and skills */
+        get: {
+            parameters: {
+                query: {
+                    agent: string;
+                    providerId?: string;
+                    threadId?: string;
+                    host?: string;
+                    cwd?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Commands and skills reported by the selected coding agent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            commands: {
+                                name: string;
+                                token: string;
+                                description: string;
+                                argumentHint: string;
+                                aliases: string[];
+                                source: string;
+                            }[];
+                            warning: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a folder under the conversation's working directory on its execution host */
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                    threadId?: string;
+                    host?: string;
+                    cwd?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Files and folders in that folder */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            entries: {
+                                name: string;
+                                directory: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/models": {
         parameters: {
             query?: never;
@@ -344,8 +442,8 @@ export interface paths {
             parameters: {
                 query: {
                     agent: string;
-                    threadId?: string;
                     providerId?: string;
+                    threadId?: string;
                     host?: string;
                     cwd?: string;
                 };
@@ -623,6 +721,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -984,6 +1084,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -1283,6 +1385,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -1585,6 +1689,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -1869,6 +1975,10 @@ export interface paths {
                                         recorded_at: string | null;
                                         /** Format: date-time */
                                         may_be_cold_after: string | null;
+                                        /** @default null */
+                                        context_tokens: number | null;
+                                        /** @default null */
+                                        context_window: number | null;
                                     } | null;
                                     totals: {
                                         input_tokens: number;
@@ -2084,6 +2194,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -2452,6 +2564,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -2626,6 +2740,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -2895,6 +3011,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -3251,6 +3369,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -18726,6 +18846,10 @@ export interface paths {
                                 recorded_at: string | null;
                                 /** Format: date-time */
                                 may_be_cold_after: string | null;
+                                /** @default null */
+                                context_tokens: number | null;
+                                /** @default null */
+                                context_window: number | null;
                             } | null;
                             totals: {
                                 input_tokens: number;
@@ -18862,6 +18986,10 @@ export interface paths {
                                         recorded_at: string | null;
                                         /** Format: date-time */
                                         may_be_cold_after: string | null;
+                                        /** @default null */
+                                        context_tokens: number | null;
+                                        /** @default null */
+                                        context_window: number | null;
                                     } | null;
                                     totals: {
                                         input_tokens: number;

@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { isAbsolute, sep } from "node:path";
+import { isAbsolute, join, posix, sep } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
   chatBackendFor,
   createBackend,
+  discoverAgentCommands,
   discoverAgentModels,
   discoverOpenCodeEffortChoices,
   type RuleGap,
@@ -19,8 +20,11 @@ import { changes } from "@orc/core/changes";
 import {
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
+  type ChatAgentCommands,
+  ChatAgentCommandsSchema,
   ChatAnswersSchema,
   type ChatEvent,
+  ChatFilesSchema,
   ChatHistoryPageSchema,
   type ChatMessage,
   ChatModelSchema,
@@ -49,7 +53,13 @@ import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
 import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
-import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
+import {
+  execHostFor,
+  hostHome,
+  hostRuntime,
+  listHostEntries,
+  resolveExecHost,
+} from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { notificationTitle } from "@orc/core/notifications";
 import { AgentSetupSchema } from "@orc/core/package-launch";
@@ -294,6 +304,137 @@ function chatPush(thread: ChatThread, status: string, body: string): PushMessage
   };
 }
 
+async function chatTarget(
+  thread: ChatThread | null,
+  requestedHost: string | undefined,
+  requestedCwd: string | undefined,
+) {
+  if (thread && (requestedHost !== undefined || requestedCwd !== undefined))
+    throw new ValidationError("A conversation owns its execution host and working directory.");
+  const host = thread
+    ? execHostFor(thread.host)
+    : requestedHost === undefined
+      ? resolveExecHost()
+      : execHostFor(requestedHost === "__local__" ? null : requestedHost);
+  const cwd =
+    thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : homedir());
+  return { host, cwd };
+}
+
+const chatTargetQuery = {
+  threadId: id.optional(),
+  host: z
+    .string()
+    .regex(/^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/)
+    .max(128)
+    .optional(),
+  cwd: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4096)
+    .refine((value) => !value.includes("\0"))
+    .optional(),
+};
+
+const commandCatalogs = new Map<string, { at: number; result: Promise<ChatAgentCommands> }>();
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/commands",
+    tags: ["Chat"],
+    summary: "List the agent's own slash commands and skills",
+    request: {
+      query: z
+        .object({
+          agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i),
+          providerId: ProviderIdSchema.optional(),
+          ...chatTargetQuery,
+        })
+        .strict(),
+    },
+    responses: {
+      200: {
+        description: "Commands and skills reported by the selected coding agent",
+        content: { "application/json": { schema: ChatAgentCommandsSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    const { agent, threadId, providerId, host: requestedHost, cwd } = c.req.valid("query");
+    const thread = threadId ? requireThread(threadId) : null;
+    if (thread && thread.config.agent !== agent)
+      throw new ValidationError("The agent does not match this conversation.");
+    const selectedProvider = providerId ?? thread?.config.providerId;
+    providerForAgent(agent, selectedProvider, true);
+    const target = await chatTarget(thread, requestedHost, cwd);
+    const key = JSON.stringify([
+      agent,
+      target.host.kind === "ssh" ? target.host.alias : null,
+      target.cwd,
+      selectedProvider,
+      providerRevision(),
+    ]);
+    const cached = commandCatalogs.get(key);
+    if (cached && Date.now() - cached.at < 60_000) return c.json(await cached.result);
+    const result = discoverAgentCommands(agent, target.host, target.cwd, selectedProvider)
+      .then((commands): ChatAgentCommands => ({ commands, warning: null }))
+      .catch(
+        (): ChatAgentCommands => ({
+          commands: [],
+          warning: "Agent commands unavailable",
+        }),
+      );
+    if (commandCatalogs.size >= 32) {
+      const oldest = commandCatalogs.keys().next().value;
+      if (oldest !== undefined) commandCatalogs.delete(oldest);
+    }
+    commandCatalogs.set(key, { at: Date.now(), result });
+    const response = await result;
+    if (response.warning) commandCatalogs.delete(key);
+    return c.json(response);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/files",
+    tags: ["Chat"],
+    summary: "List a folder under the conversation's working directory on its execution host",
+    request: {
+      query: z
+        .object({
+          path: z
+            .string()
+            .max(4096)
+            .refine(
+              (value) =>
+                !value.includes("\0") && !isAbsolute(value) && !value.split(/[\\/]/).includes(".."),
+              "Use a path inside the working directory",
+            )
+            .default(""),
+          ...chatTargetQuery,
+        })
+        .strict(),
+    },
+    responses: {
+      200: {
+        description: "Files and folders in that folder",
+        content: { "application/json": { schema: ChatFilesSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    const { threadId, host: requestedHost, cwd, path } = c.req.valid("query");
+    const target = await chatTarget(threadId ? requireThread(threadId) : null, requestedHost, cwd);
+    const folder =
+      target.host.kind === "ssh" ? posix.join(target.cwd, path) : join(target.cwd, path);
+    return c.json({ entries: await listHostEntries(target.host, folder) });
+  },
+);
+
 app.openapi(
   createRoute({
     method: "get",
@@ -303,20 +444,8 @@ app.openapi(
       query: z
         .object({
           agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i),
-          threadId: id.optional(),
           providerId: ProviderIdSchema.optional(),
-          host: z
-            .string()
-            .regex(/^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/)
-            .max(128)
-            .optional(),
-          cwd: z
-            .string()
-            .trim()
-            .min(1)
-            .max(4096)
-            .refine((value) => !value.includes("\0"))
-            .optional(),
+          ...chatTargetQuery,
         })
         .strict(),
     },
@@ -345,13 +474,7 @@ app.openapi(
     if (thread && (requestedHost !== undefined || requestedCwd !== undefined))
       throw new ValidationError("A conversation owns its execution host and working directory.");
     if (!supportsModelDiscovery(agent)) return c.json({ models: [], warning: null });
-    const host = thread
-      ? execHostFor(thread.host)
-      : requestedHost === undefined
-        ? resolveExecHost()
-        : execHostFor(requestedHost === "__local__" ? null : requestedHost);
-    const cwd =
-      thread?.cwd ?? requestedCwd ?? (host.kind === "ssh" ? await hostHome(host) : homedir());
+    const { host, cwd } = await chatTarget(thread, requestedHost, requestedCwd);
     const key = JSON.stringify([
       agent,
       host.kind === "ssh" ? host.alias : null,
@@ -2437,7 +2560,9 @@ async function beginTurn(
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
-          setup.context && input.trim() !== "/compact" ? withOrcContext(turn, setup.context) : turn;
+          setup.context && !/^\/[\p{L}\p{N}][\p{L}\p{N}_:.-]*(?:\s|$)/u.test(turn)
+            ? withOrcContext(turn, setup.context)
+            : turn;
         const sent =
           setup.continuation && input.trim() !== "/compact"
             ? `${setup.continuation}\n\n${message}`

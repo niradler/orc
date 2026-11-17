@@ -10,6 +10,7 @@ export { chatBackendFor, UNKNOWN_CAPABILITIES } from "./capabilities.js";
 export { hostClaudeLoggedIn } from "./claude-sdk.js";
 export {
   type AgentModel,
+  discoverAgentCommands,
   discoverAgentModels,
   discoverOpenCodeEffortChoices,
 } from "./models.js";
