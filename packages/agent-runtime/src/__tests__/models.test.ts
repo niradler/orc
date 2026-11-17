@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  informativeDescription,
   parseAgentCommands,
   parseAgentModels,
   readAgentCatalog,
@@ -7,6 +8,8 @@ import {
   readTextModelCatalog,
 } from "../models";
 import claudeInitialize from "./fixtures/claude-initialize-commands.json";
+import claudeModels from "./fixtures/claude-initialize-models.json";
+import codexModels from "./fixtures/codex-model-list.json";
 import codexSkills from "./fixtures/codex-skills-list.json";
 
 describe("native command discovery", () => {
@@ -98,6 +101,57 @@ describe("native model discovery", () => {
     expect(parseAgentModels([{ value: "sonnet", displayName: "Sonnet" }], "claude")).toEqual([
       { id: "sonnet", label: "Sonnet" },
     ]);
+  });
+
+  test("keeps descriptions and supported efforts from real Claude and Codex catalogs", () => {
+    const claude = parseAgentModels(claudeModels, "claude");
+    expect(claude.map((model) => model.id)).toEqual(["default", "sonnet", "haiku"]);
+    expect(claude.find((model) => model.id === "sonnet")).toEqual({
+      id: "sonnet",
+      label: "Sonnet",
+      description: "Sonnet 5 · Efficient for routine tasks",
+      efforts: ["low", "medium", "high", "xhigh", "max"],
+    });
+    expect(claude.find((model) => model.id === "haiku")).toEqual({
+      id: "haiku",
+      label: "Haiku",
+      description: "Haiku 4.5 · Fastest for quick answers",
+    });
+    expect(parseAgentModels(codexModels.data, "codex")).toEqual([
+      {
+        id: "gpt-6.1-sol",
+        label: "GPT-6.1-Sol",
+        description: "Latest workhorse model for coding and everyday work.",
+        efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      },
+      {
+        id: "gpt-6.1-terra",
+        label: "GPT-6.1 Terra",
+        efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      },
+      {
+        id: "gpt-6-luna",
+        label: "GPT-6-Luna",
+        description: "Fast and affordable model for easier tasks.",
+        efforts: ["low", "medium", "high", "xhigh", "max"],
+      },
+    ]);
+    expect(
+      parseAgentModels(
+        [{ value: "x", supportedEffortLevels: ["low", "--bad", 3, "x y"], description: 7 }],
+        "claude",
+      ),
+    ).toEqual([{ id: "x", label: "x", efforts: ["low"] }]);
+  });
+
+  test("hides a description that only restates the model name", () => {
+    expect(informativeDescription("GPT-6.1 Terra Codex model.", "GPT-6.1 Terra", "codex")).toBe("");
+    expect(informativeDescription("Sonnet", "Sonnet", "claude")).toBe("");
+    expect(
+      informativeDescription("Sonnet 5 · Efficient for routine tasks", "Sonnet", "claude"),
+    ).toBe("Sonnet 5 · Efficient for routine tasks");
+    expect(informativeDescription("Haiku 4.5", "Haiku", "claude")).toBe("Haiku 4.5");
+    expect(informativeDescription("最速のモデル", "Fast", "pi")).toBe("最速のモデル");
   });
 
   test("Codex initializes and pages model/list without starting any turns", async () => {

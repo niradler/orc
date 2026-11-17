@@ -878,6 +878,9 @@ export const api = {
           tokens_used: number | null;
           tokens_estimated: boolean;
           status: LiveSessionStatus;
+          waiting_for_human: boolean;
+          waiting_for: LiveSession["waiting_for"];
+          background_work: boolean;
           created_at: string;
           last_activity_at: string | null;
         } | null;
@@ -1870,5 +1873,26 @@ export const api = {
     status: () => req<{ running: boolean; status: string }>("GET", "/gateway/status"),
     send: (data: { platform: string; chat_id: string; text: string; thread_id?: string }) =>
       req<null>("POST", "/gateway/send", data),
+  },
+
+  speech: {
+    status: () => req<{ available: boolean }>("GET", "/speech/status"),
+    transcribe: async (audio: Blob, signal?: AbortSignal) => {
+      const form = new FormData();
+      form.set("audio", audio, "dictation");
+      const res = await apiFetch("/speech/transcribe", { method: "POST", body: form, signal });
+      const json = (await res.json().catch(() => ({}))) as {
+        text?: string;
+        error?: unknown;
+        code?: unknown;
+      };
+      if (!res.ok)
+        throw new ApiError(
+          typeof json.error === "string" ? json.error : `HTTP ${res.status}`,
+          res.status,
+          typeof json.code === "string" ? json.code : null,
+        );
+      return json.text ?? "";
+    },
   },
 };

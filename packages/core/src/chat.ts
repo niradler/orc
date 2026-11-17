@@ -67,6 +67,8 @@ export const ChatQuestionSchema = z.object({
     .max(20),
 });
 export type ChatQuestion = z.infer<typeof ChatQuestionSchema>;
+export const CHAT_QUESTION_DISMISS_ANSWER =
+  "The user dismissed this question without answering. Continue with your best judgment; ask again only if you are truly blocked.";
 export const ChatAnswersSchema = z
   .record(z.string().min(1).max(256), z.array(z.string().max(20000)).min(1).max(20))
   .refine((value) => Object.keys(value).length <= 20, "Too many answers");
@@ -104,7 +106,14 @@ export const ChatSettingsSchema = z
   .strict();
 export type ChatSettings = z.infer<typeof ChatSettingsSchema>;
 export const ChatModelsSchema = z.object({
-  models: z.array(z.object({ id: ChatModelSchema, label: z.string().max(120) })),
+  models: z.array(
+    z.object({
+      id: ChatModelSchema,
+      label: z.string().max(120),
+      description: z.string().max(300).optional(),
+      efforts: z.array(z.string().min(1).max(64)).max(16).optional(),
+    }),
+  ),
   warning: z.string().nullable(),
   /** Live effort levels for the agent's default model, when it exposes them. */
   effortChoices: z
@@ -404,6 +413,8 @@ export const ChatTurnSchema = z.object({
     .object({
       input_tokens: z.number().int().nonnegative(),
       cached_input_tokens: z.number().int().nonnegative(),
+      context_tokens: z.number().int().nonnegative().optional(),
+      context_window: z.number().int().positive().optional(),
     })
     .optional(),
 });

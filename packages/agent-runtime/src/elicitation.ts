@@ -1,4 +1,8 @@
-import { type ChatQuestion, ChatQuestionSchema } from "@orc/core/chat";
+import {
+  CHAT_QUESTION_DISMISS_ANSWER,
+  type ChatQuestion,
+  ChatQuestionSchema,
+} from "@orc/core/chat";
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -235,10 +239,14 @@ export function acpElicitationForm(requestId: string, raw: Record<string, unknow
 
   return {
     question,
-    content(answers: Record<string, string[]>): Record<string, FormValue | string[]> {
+    content(answers: Record<string, string[]>): Record<string, FormValue | string[]> | null {
       const content: Record<string, FormValue | string[]> = Object.create(null);
       for (const { key, field, type, required, multi, choices, customKey } of fields) {
         const values = (answers[key] ?? []).filter((answer) => answer.trim().length > 0);
+        if (values.includes(CHAT_QUESTION_DISMISS_ANSWER)) {
+          if (required) return null;
+          continue;
+        }
         if (!values.length) {
           if (required) throw new Error("Missing form answer");
           continue;
@@ -372,11 +380,15 @@ export function elicitationForm(requestId: string, raw: Record<string, unknown>)
   });
   return {
     question,
-    content(answers: Record<string, string[]>): Record<string, string | number | boolean> {
+    content(answers: Record<string, string[]>): Record<string, string | number | boolean> | null {
       const content: Record<string, string | number | boolean> = Object.create(null);
       for (const [key, rawField] of fields) {
         const field = object(rawField);
         const answer = answers[key]?.[0];
+        if (answers[key]?.includes(CHAT_QUESTION_DISMISS_ANSWER)) {
+          if (required.includes(key)) return null;
+          continue;
+        }
         if (answer === "(skip)" && !required.includes(key)) continue;
         if (answer === undefined || answers[key]?.length !== 1)
           throw new Error("Missing form answer");

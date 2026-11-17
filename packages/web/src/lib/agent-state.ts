@@ -90,3 +90,15 @@ export function liveSessionState(
 ): AgentState {
   return session.waiting_for_human ? "needs-you" : (LIVE_STATES[session.status] ?? "unknown");
 }
+
+type Waiting = NonNullable<LiveSession["waiting_for"]>;
+
+const shortTool = (tool: string) => tool.split("__").pop() || tool;
+
+export function waitingLabel(waiting: Waiting): string {
+  return waiting.tool ? `${waiting.reason} · ${shortTool(waiting.tool)}` : waiting.reason;
+}
+
+export function pendingLabel(waiting: Waiting): string {
+  return `${waiting.tool ? `${shortTool(waiting.tool)} ` : ""}${waiting.reason} pending · sends queue`;
+}

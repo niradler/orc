@@ -463,6 +463,8 @@ export interface paths {
                             models: {
                                 id: string;
                                 label: string;
+                                description?: string;
+                                efforts?: string[];
                             }[];
                             warning: string | null;
                             effortChoices?: {
@@ -719,6 +721,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -1080,6 +1084,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -1379,6 +1385,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -1681,6 +1689,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -1854,6 +1864,13 @@ export interface paths {
                                 tokens_estimated: boolean;
                                 /** @enum {string} */
                                 status: "idle" | "running" | "stopped" | "error";
+                                waiting_for_human: boolean;
+                                waiting_for: {
+                                    /** @enum {string} */
+                                    reason: "permission" | "question" | "dialog";
+                                    tool: string | null;
+                                } | null;
+                                background_work: boolean;
                                 /** Format: date-time */
                                 created_at: string;
                                 /** Format: date-time */
@@ -1958,6 +1975,10 @@ export interface paths {
                                         recorded_at: string | null;
                                         /** Format: date-time */
                                         may_be_cold_after: string | null;
+                                        /** @default null */
+                                        context_tokens: number | null;
+                                        /** @default null */
+                                        context_window: number | null;
                                     } | null;
                                     totals: {
                                         input_tokens: number;
@@ -2173,6 +2194,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -2541,6 +2564,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -2715,6 +2740,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -2984,6 +3011,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -3340,6 +3369,8 @@ export interface paths {
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
                                     };
                                 };
                                 agent?: string;
@@ -18815,6 +18846,10 @@ export interface paths {
                                 recorded_at: string | null;
                                 /** Format: date-time */
                                 may_be_cold_after: string | null;
+                                /** @default null */
+                                context_tokens: number | null;
+                                /** @default null */
+                                context_window: number | null;
                             } | null;
                             totals: {
                                 input_tokens: number;
@@ -18951,6 +18986,10 @@ export interface paths {
                                         recorded_at: string | null;
                                         /** Format: date-time */
                                         may_be_cold_after: string | null;
+                                        /** @default null */
+                                        context_tokens: number | null;
+                                        /** @default null */
+                                        context_window: number | null;
                                     } | null;
                                     totals: {
                                         input_tokens: number;
@@ -20911,6 +20950,85 @@ export interface paths {
                         "application/json": {
                             error: string;
                         };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/speech/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether composer dictation can transcribe audio */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Speech availability */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SpeechStatus"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/speech/transcribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transcribe a recorded clip with the configured speech provider */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        audio: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Transcript */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SpeechTranscript"];
                     };
                 };
             };
@@ -23731,6 +23849,20 @@ export interface components {
             status: "idle" | "running" | "stopped" | "error";
             /** @default false */
             waiting_for_human: boolean;
+            /**
+             * @description Why the session waits for a human, and the tool that waits
+             * @default null
+             */
+            waiting_for: {
+                /** @enum {string} */
+                reason: "permission" | "question" | "dialog";
+                tool: string | null;
+            } | null;
+            /**
+             * @description Idle between turns while the agent's background work still runs
+             * @default false
+             */
+            background_work: boolean;
             /** @default false */
             hidden: boolean;
             /** @default false */
@@ -24218,6 +24350,12 @@ export interface components {
             chat_id: string;
             text: string;
             thread_id?: string;
+        };
+        SpeechStatus: {
+            available: boolean;
+        };
+        SpeechTranscript: {
+            text: string;
         };
         Terminal: {
             id: string;

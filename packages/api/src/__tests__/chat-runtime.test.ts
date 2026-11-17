@@ -357,8 +357,9 @@ describe("native chat runtime", () => {
         payload: {
           type: "token_count",
           info: {
-            last_token_usage: { input_tokens: 1234, cached_input_tokens: 1000 },
+            last_token_usage: { input_tokens: 1234, cached_input_tokens: 1000, total_tokens: 1300 },
             total_token_usage: { input_tokens: 1234, cached_input_tokens: 1000 },
+            model_context_window: 258_400,
           },
         },
       })}\n`,
@@ -387,6 +388,8 @@ describe("native chat runtime", () => {
       expect(stored.messages.at(-1)?.turn?.usage).toEqual({
         input_tokens: 1234,
         cached_input_tokens: 1000,
+        context_tokens: 1300,
+        context_window: 258_400,
       });
     } finally {
       resultIdentity = undefined;

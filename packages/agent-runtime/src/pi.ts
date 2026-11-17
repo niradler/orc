@@ -6,6 +6,7 @@ import type {
   RpcExtensionUIRequest,
   RpcSessionState,
 } from "@earendil-works/pi-coding-agent";
+import { CHAT_QUESTION_DISMISS_ANSWER } from "@orc/core/chat";
 import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   hostBinary,
@@ -114,6 +115,7 @@ export class PiSession implements AgentSession {
   private reloadPending = false;
   private modelError: string | undefined;
   private usage: unknown;
+  private contextWindow: number | undefined;
   private mode: LivePermissionMode;
   private readonly dialogs = new Map<
     string,
@@ -298,6 +300,7 @@ export class PiSession implements AgentSession {
   ): Promise<void> {
     try {
       const state = await this.verifyIdentity();
+      this.contextWindow = state.model?.contextWindow;
       if (state.isStreaming || state.isCompacting || state.pendingMessageCount > 0) return;
       if (this.reloadPending) {
         await this.checkBridge();
@@ -334,6 +337,7 @@ export class PiSession implements AgentSession {
         // handing out an id the next send would fail to resume.
         ...(this.resumable ? { runtimeSessionId: this.runtimeId } : { resumable: false }),
         usage: this.usage,
+        contextWindow: this.contextWindow,
         outcome,
       },
     });
@@ -553,7 +557,7 @@ export class PiSession implements AgentSession {
     const value = answers.answer?.[0];
     this.resolveDialog(
       id,
-      value === undefined
+      value === undefined || value === CHAT_QUESTION_DISMISS_ANSWER
         ? { cancelled: true }
         : dialog.method === "confirm"
           ? { confirmed: value === "Yes" }

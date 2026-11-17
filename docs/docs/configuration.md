@@ -251,6 +251,12 @@ Claude sessions with slash commands explicitly disabled must enable them first.
 There is no ORC idle-compaction timer. Compaction summarizes model context and may
 use provider quota; it does not erase the displayed ORC transcript.
 
+The context meter beside **Send** shows how full the agent's context is. It shows a
+ring and a percentage when the agent reports its model's window (Codex, and Claude
+and Pi chats run through ORC), and raw tokens otherwise. From 80% it warns that the
+agent will soon compact or stop. Open it for exact tokens, cache reuse and the
+compaction count.
+
 ## Usage in Settings
 
 Open **Settings → Usage** for request-level token usage and account quotas. ORC
@@ -501,6 +507,23 @@ Channels are configured under **Settings → Connections → Channels**.
 | `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys       |
 
 Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_*` enables text-to-speech.
+
+Speech powers composer dictation in the web and desktop app and voice messages in
+channels. Dictation is available once `speech.enabled` is true and the selected
+provider has an `api_key`; `GET /api/speech/status` reports it and
+`POST /api/speech/transcribe` (multipart field `audio`, up to 25 MB) returns
+`{ "text": "..." }`. Each provider also accepts `base_url` and `model`, for example
+to point `openai` at another OpenAI-compatible transcription endpoint.
+
+```json
+{
+  "speech": {
+    "enabled": true,
+    "provider": "groq",
+    "groq": { "api_key": "gsk_..." }
+  }
+}
+```
 
 ## Other environment variables
 

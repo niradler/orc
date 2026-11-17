@@ -6,8 +6,14 @@ export async function openChatAgentModel(page: Page): Promise<void> {
   await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
 }
 
+export async function showPickerTab(page: Page, tab: "agent" | "model" | "effort"): Promise<void> {
+  const trigger = page.getByTestId(`chat-picker-tab-${tab}`);
+  if (await trigger.isVisible()) await trigger.click();
+}
+
 export async function chooseChatAgent(page: Page, agent: string): Promise<void> {
   await openChatAgentModel(page);
+  await showPickerTab(page, "agent");
   const option = page.getByTestId(`chat-agent-option-${agent}`);
   await option.click();
   if (await page.getByTestId("chat-agent-model-picker").isVisible()) {
@@ -19,14 +25,17 @@ export async function chooseChatAgent(page: Page, agent: string): Promise<void> 
 
 export async function openChatModel(page: Page): Promise<void> {
   await openChatAgentModel(page);
+  await showPickerTab(page, "model");
   await expect(page.getByTestId("chat-model-select")).toBeVisible();
 }
 
 export async function chooseChatEffort(page: Page, effort: string): Promise<void> {
   await openChatAgentModel(page);
+  await showPickerTab(page, "effort");
   const option = page.getByTestId(`chat-effort-option-${effort}`);
   await option.click();
-  await expect(option).toHaveAttribute("aria-checked", "true");
+  if (await page.getByTestId("chat-agent-model-picker").isVisible())
+    await expect(option).toHaveAttribute("aria-checked", "true");
 }
 
 export async function chooseChatModel(page: Page, model: string): Promise<void> {

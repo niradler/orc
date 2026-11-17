@@ -1,5 +1,13 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { getGatewayManager, getGatewayStatus, sendGatewayMessage } from "@orc/gateway";
+import { OrcError, ValidationError } from "@orc/core/errors";
+import {
+  getGatewayManager,
+  getGatewayStatus,
+  sendGatewayMessage,
+  speechConfigured,
+  transcribeAudio,
+} from "@orc/gateway";
+import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
@@ -70,5 +78,91 @@ app.openapi(sendRoute, async (c) => {
   );
   return c.body(null, 204);
 });
+
+const SPEECH_MAX_BYTES = 25 * 1024 * 1024;
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/speech/status",
+    tags: ["Speech"],
+    summary: "Whether composer dictation can transcribe audio",
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({ available: z.boolean() }).openapi("SpeechStatus"),
+          },
+        },
+        description: "Speech availability",
+      },
+    },
+  }),
+  (c) => c.json({ available: speechConfigured() }),
+);
+
+app.use(
+  "/speech/transcribe",
+  bodyLimit({
+    maxSize: SPEECH_MAX_BYTES + 64 * 1024,
+    onError: (c) => c.json({ error: "Recording exceeds 25 MB", code: "TOO_LARGE" }, 413),
+  }),
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/speech/transcribe",
+    tags: ["Speech"],
+    summary: "Transcribe a recorded clip with the configured speech provider",
+    request: {
+      body: {
+        required: true,
+        content: {
+          "multipart/form-data": {
+            schema: z.object({
+              audio: z.instanceof(File).openapi({ type: "string", format: "binary" }),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({ text: z.string() }).openapi("SpeechTranscript"),
+          },
+        },
+        description: "Transcript",
+      },
+    },
+  }),
+  async (c) => {
+    if (!speechConfigured())
+      throw new OrcError("Speech is not configured on this server.", "SPEECH_UNAVAILABLE", 409);
+    const { audio } = c.req.valid("form");
+    if (!audio.size) throw new ValidationError("Recording is empty");
+    if (audio.size > SPEECH_MAX_BYTES) throw new ValidationError("Recording exceeds 25 MB");
+    const subtype = audio.type.split(";")[0]?.split("/")[1]?.replace(/^x-/, "") ?? "";
+    const format =
+      { webm: "webm", mp4: "mp4", m4a: "m4a", mpeg: "mp3", mp3: "mp3", wav: "wav", ogg: "ogg" }[
+        subtype
+      ] ?? "webm";
+    try {
+      const text = await transcribeAudio({
+        audio: new Uint8Array(await audio.arrayBuffer()),
+        format,
+      });
+      return c.json({ text });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new OrcError(
+        message.replace(/\b(sk|gsk)[-_][\w*.-]+/g, "[redacted]").slice(0, 500),
+        "SPEECH_FAILED",
+        502,
+      );
+    }
+  },
+);
 
 export { app as gatewayRouter };

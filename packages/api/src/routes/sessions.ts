@@ -14,7 +14,7 @@ import { previewSession } from "../desktop-preview/session.js";
 import { checkoutFiles } from "../git/files.js";
 import { gitStatus } from "../git/panel.js";
 import { createRouter } from "../lib/router.js";
-import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
+import { LIVE_CHAT_ID, liveRunFields, syncNow } from "../session-watcher.js";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { searchSessions } from "../sessions/search.js";
@@ -73,6 +73,17 @@ const LiveSessionSchema = z
     pid: z.number().nullable(),
     status: z.enum(["idle", "running", "stopped", "error"]),
     waiting_for_human: z.boolean().default(false),
+    waiting_for: z
+      .object({
+        reason: z.enum(["permission", "question", "dialog"]),
+        tool: z.string().nullable(),
+      })
+      .nullable()
+      .default(null)
+      .openapi({ description: "Why the session waits for a human, and the tool that waits" }),
+    background_work: z.boolean().default(false).openapi({
+      description: "Idle between turns while the agent's background work still runs",
+    }),
     hidden: z.boolean().default(false),
     renamed: z.boolean().default(false),
     project_id: z.string().nullable(),
@@ -438,11 +449,7 @@ async function toLiveDtos(rows: GatewayRow[]) {
       host: r.execution_host ?? null,
       pid: r.pid ?? null,
       status: r.status,
-      waiting_for_human: sessionWaitingForHuman(
-        r.backend,
-        r.execution_host ?? null,
-        r.runtime_session_id ?? null,
-      ),
+      ...liveRunFields(r.backend, r.execution_host ?? null, r.runtime_session_id ?? null),
       hidden: r.hidden_at != null,
       renamed: r.display_title != null,
       project_id: r.project_id ?? null,

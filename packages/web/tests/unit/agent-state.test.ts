@@ -4,7 +4,9 @@ import {
   AGENT_STATES,
   liveSessionState,
   moreUrgent,
+  pendingLabel,
   rollupState,
+  waitingLabel,
 } from "../../src/lib/agent-state";
 
 describe("agent state language", () => {
@@ -43,5 +45,20 @@ describe("agent state language", () => {
     const states = Object.values(AGENT_STATES);
     expect(new Set(states.map((s) => s.label)).size).toBe(states.length);
     expect(new Set(states.map((s) => s.Icon)).size).toBe(states.length);
+  });
+
+  test("should name a wait by its reason and short tool name", () => {
+    expect(waitingLabel({ reason: "permission", tool: "Bash" })).toBe("permission · Bash");
+    expect(waitingLabel({ reason: "question", tool: null })).toBe("question");
+    expect(
+      waitingLabel({
+        reason: "permission",
+        tool: "mcp__claude_ai_ClickUp__clickup_get_bulk_tasks_time_in_status",
+      }),
+    ).toBe("permission · clickup_get_bulk_tasks_time_in_status");
+    expect(pendingLabel({ reason: "permission", tool: "Bash" })).toBe(
+      "Bash permission pending · sends queue",
+    );
+    expect(pendingLabel({ reason: "dialog", tool: null })).toBe("dialog pending · sends queue");
   });
 });

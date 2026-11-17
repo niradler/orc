@@ -7,7 +7,12 @@ type SessionState = {
   changed: boolean;
   running: boolean;
   queued: { id: string; title: string }[];
-  live: { id: string; agent: string; status: string } | null;
+  live: {
+    id: string;
+    agent: string;
+    status: string;
+    waiting_for?: { reason: string; tool: string | null } | null;
+  } | null;
 };
 
 async function openPushedChat(
@@ -179,8 +184,10 @@ for (const width of [1440, 390]) {
     );
     const input = page.getByTestId("chat-input");
     const send = page.getByTestId("chat-send-button");
-    await expect(input).toHaveAttribute("placeholder", /Messages queue for its next safe point/);
-    await expect(page.getByTestId("chat-agent-running")).toContainText("Send queues your message");
+    await expect(input).toHaveAttribute("placeholder", "Ask anything. / for commands, @ for files");
+    await expect(page.getByTestId("chat-agent-running")).toHaveText(
+      "Running in its own agent · sends queue",
+    );
     await input.fill("Also check the eval split");
     await expect(send).toBeEnabled();
     await expect(send).toHaveAccessibleName("Queue for its next safe point");
@@ -201,6 +208,25 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-messages").getByText("Agent step 2")).toBeVisible();
     expect(chat.rebuilt()).toBe(2);
 
+    state.live = {
+      id: "live-1",
+      agent: "claude",
+      status: "running",
+      waiting_for: { reason: "permission", tool: "Bash" },
+    };
+    await chat.pushSessions();
+    await expect(page.getByTestId("chat-agent-running")).toHaveText(
+      "Bash permission pending · sends queue",
+    );
+    const line = page.getByTestId("chat-agent-running");
+    expect(await line.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect((await line.boundingBox())?.height ?? 0).toBeLessThan(24);
+    await page.screenshot({ path: testInfo.outputPath(`agent-waiting-${width}.png`) });
+    if (process.env.ORC_SCREENSHOT_DIR)
+      await page.screenshot({
+        path: `${process.env.ORC_SCREENSHOT_DIR}/composer-waiting-${width}.png`,
+      });
+
     state.live = { id: "live-1", agent: "claude", status: "idle" };
     await chat.pushSessions();
     await expect(page.getByTestId("chat-agent-running")).toHaveCount(0);
@@ -219,7 +245,9 @@ test("an agent without a delivery hook blocks sending while it runs", async ({ p
   const chat = await openPushedChat(page, "claude", state, reply("Pi step"));
   const input = page.getByTestId("chat-input");
   const send = page.getByTestId("chat-send-button");
-  await expect(input).toHaveAttribute("placeholder", /Sending unlocks when it finishes/);
+  await expect(page.getByTestId("chat-agent-running")).toHaveText(
+    "Running in its own agent · send unlocks when it finishes",
+  );
   await input.fill("Can I interrupt?");
   await expect(send).toBeDisabled();
   await input.press("Enter");

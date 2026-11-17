@@ -32,7 +32,12 @@ import { geminiAdapter } from "./sessions/gemini.js";
 import { lifecycleRecords, withLifecycle } from "./sessions/lifecycle.js";
 import { opencodeAdapter } from "./sessions/opencode.js";
 import { piAdapter, piSessionRoots } from "./sessions/pi.js";
-import type { KnownSession, SessionAdapter, SessionRecord } from "./sessions/types.js";
+import type {
+  KnownSession,
+  SessionAdapter,
+  SessionRecord,
+  SessionWaiting,
+} from "./sessions/types.js";
 import { maintainUsageRetention, writeSessionUsage } from "./sessions/usage-events.js";
 import type { ParsedUsage } from "./sessions/usage-parsers.js";
 
@@ -91,16 +96,45 @@ let usageChain: Promise<unknown> = Promise.resolve();
 let nextUsageMaintenance = 0;
 let synchronized: (() => Promise<void>) | undefined;
 let refreshWatchers: (() => void) | undefined;
-const pendingHuman = new Map<string, Set<string>>();
+type RunState = { waiting: boolean; waitingFor: SessionWaiting | null; background: boolean };
+const runStates = new Map<string, Map<string, RunState>>();
 
 const pendingKey = (backend: string, host: string | null) => JSON.stringify([backend, host]);
+
+function sessionRunState(
+  backend: string,
+  host: string | null,
+  nativeId: string | null,
+): RunState | undefined {
+  return nativeId ? runStates.get(pendingKey(backend, host))?.get(nativeId) : undefined;
+}
 
 export function sessionWaitingForHuman(
   backend: string,
   host: string | null,
   nativeId: string | null,
 ): boolean {
-  return !!nativeId && pendingHuman.get(pendingKey(backend, host))?.has(nativeId) === true;
+  return sessionRunState(backend, host, nativeId)?.waiting === true;
+}
+
+export function liveRunFields(backend: string, host: string | null, nativeId: string | null) {
+  const state = sessionRunState(backend, host, nativeId);
+  return {
+    waiting_for_human: state?.waiting === true,
+    waiting_for: state?.waitingFor ?? null,
+    background_work: state?.background === true,
+  };
+}
+
+function recordRunState(r: SessionRecord, previous: RunState | undefined): RunState | undefined {
+  if (r.status === "stopped") return undefined;
+  const waiting = r.pendingHuman ?? previous?.waiting ?? false;
+  const state = {
+    waiting,
+    waitingFor: waiting ? (r.waitingFor ?? previous?.waitingFor ?? null) : null,
+    background: r.background === true,
+  };
+  return state.waiting || state.background ? state : undefined;
 }
 
 const serialized = <T>(job: () => Promise<T>): Promise<T> => {
@@ -319,7 +353,7 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
   const executionHost = selectedHostAlias();
   try {
     const records = await adapter.list(await loadKnown(adapter.backend, executionHost));
-    const pending = new Set(pendingHuman.get(pendingKey(adapter.backend, executionHost)));
+    const pending = new Map(runStates.get(pendingKey(adapter.backend, executionHost)));
     let pendingChanged = false;
     const usageJobs: {
       id: string;
@@ -337,13 +371,11 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
           usage: r.usage,
           version: r.usageVersion,
         });
-      if (r.pendingHuman === true && r.status !== "stopped" && !pending.has(r.externalId)) {
-        pending.add(r.externalId);
-        pendingChanged = true;
-      } else if (
-        (r.pendingHuman === false || r.status === "stopped") &&
-        pending.delete(r.externalId)
-      ) {
+      const before = pending.get(r.externalId);
+      const after = recordRunState(r, before);
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        if (after) pending.set(r.externalId, after);
+        else pending.delete(r.externalId);
         pendingChanged = true;
       }
     }
@@ -366,7 +398,7 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
       });
     }
     const seen = records.map((r) => r.externalId);
-    for (const id of pending)
+    for (const id of pending.keys())
       if (!seen.includes(id)) {
         pending.delete(id);
         pendingChanged = true;
@@ -383,7 +415,7 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
           seen.length > 0 ? notInArray(gateway_sessions.runtime_session_id, seen) : undefined,
         ),
       );
-    pendingHuman.set(pendingKey(adapter.backend, executionHost), pending);
+    runStates.set(pendingKey(adapter.backend, executionHost), pending);
     if (pendingChanged) changes.publish("sessions");
     return { backend: adapter.backend, seen: records.length, ms: Date.now() - started };
   } catch (err) {
@@ -718,7 +750,7 @@ export function startSessionWatcher(
   attach();
   return () => {
     stopped = true;
-    pendingHuman.clear();
+    runStates.clear();
     unsubscribe();
     clearTimeout(debounce);
     clearTimeout(expiration);

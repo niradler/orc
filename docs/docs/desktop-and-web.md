@@ -239,7 +239,7 @@ Open a task to see its body, status, comments, linked sessions and Git links, an
 
 Live and ended sessions from Claude Code, Codex, Cursor, Gemini CLI, OpenCode and Pi appear in the chat page's session list on this machine or the selected host. Working sessions update live; a session that finished after you last opened it shows **Done** until you open it, and this browser remembers what you have seen. Ended sessions stay listed by default. See [Live sessions](./live-sessions.md).
 
-Filter with **All**, **Needs you**, **Working** and **Done**; each filter shows its count, and failed sessions count as Needs you. While your pointer is over the list, or a row has keyboard focus, rows stay where they are and an **N updated** pill applies the new order when you choose it.
+Filter with **All**, **Needs you**, **Working** and **Done**; each filter shows its count, and failed sessions count as Needs you. A Claude Code session that waits on you names why and which tool, such as **permission · Bash**, and an idle session whose background shell still runs shows a pulse icon. While a turn runs, the composer says whether Send steers the turn or queues until it ends. While your pointer is over the list, or a row has keyboard focus, rows stay where they are and an **N updated** pill applies the new order when you choose it.
 
 The **view** button on a session row opens the read-only viewer: transcript search with match navigation, tokens and start/end timing, task link, rename, hide, scratchpads, cache usage, lineage and the queued-message inbox. **Analytics** opens from that page and shows message, turn and tool counts for the chat behind the session, plus context growth with cache reuse and compaction markers, per-tool call and failure bars, and turn-duration bars when the agent records usage. Agents without readable usage still show the chat-derived counts with an explanation. Resumable sessions also offer **Continue in chat** and a copyable CLI resume command. Cursor sessions stay readable here because chat cannot resume Cursor's separate CLI store. Archived sessions open the same viewer for their stored transcript and offer resume into chat from a pushed commit.
 
@@ -302,7 +302,8 @@ browser's image decoder. PDF and Office previews are not included.
 
 The browser uses a separate session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
-are blocked. Browser downloads are staged privately (16 MB each, four across the
+are blocked. Only the ORC window itself may use the microphone, and only for
+composer dictation. Browser downloads are staged privately (16 MB each, four across the
 app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
 as saved. Every chat uses the shared **ORC browser** profile by default, so a site
@@ -616,6 +617,18 @@ default or a level such as Low, High or Extra high; the choice applies to the ne
 turn and is kept with that agent's chat options. Other adapters have no effort
 setting.
 
+Each discovered model shows the agent's own description under its name, unless the
+description only repeats the name. When the agent reports which effort levels a
+model supports (Claude Code and Codex do), the Effort column lists only those; a
+model that reports none, such as Haiku, has no Effort column, and switching to a
+model that lacks the selected level resets it to the default. A list of more than
+six models adds a search field; Enter picks the first match.
+
+On a phone the picker opens on a Model tab, beside Agent and Effort tabs that are
+labelled with the current choices. Picking an agent moves to Model, picking a
+model moves to Effort (or closes when the model has none), and picking an effort
+closes the picker.
+
 ## Chat turn progress
 
 Finished turns fold tool calls and intermediate narration into one expandable line;
@@ -726,6 +739,23 @@ Pasting at least 16 KiB or 200 lines attaches the text as `pasted-text-N.txt`.
 Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach files.
 
 <img src="/screens/chat-composer-390.png" alt="Compact composer icons on a phone" width="260">
+
+### Dictation
+
+The microphone beside the attach button speaks a prompt into the draft. It is
+off until the server has a speech provider configured (see
+[Configuration](./configuration.md#speech-tts)); until then it shows **Dictation off · Set up**,
+linking to that page. Press it, or **Cmd/Ctrl+Shift+D** in the composer, to start
+recording. The composer tools turn into a recording bar with elapsed time and an
+input level. **Insert** (or **Enter**, or the shortcut again) stops and
+transcribes; **Cancel** (or **Escape**) discards the clip. The transcript lands at
+the cursor, replacing any selection, and is never sent for you. Send, Queue and
+Send now stay disabled while recording and transcribing. A recording stops on its
+own after five minutes. A blocked or missing microphone, or a failed
+transcription, shows the reason with **Retry**, which resends the same clip
+when the recording itself succeeded. The browser needs HTTPS or `localhost` to
+reach the microphone. The audio goes to the ORC server, which forwards it to the
+configured provider; the provider key never leaves the server.
 
 ## Desktop app only
 

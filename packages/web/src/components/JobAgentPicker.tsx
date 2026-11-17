@@ -36,6 +36,13 @@ export function JobAgentPicker({
       selectedModel={value.model ?? ""}
       agents={agents}
       choices={choices}
+      descriptions={
+        new Map(
+          (catalog.data?.models ?? []).flatMap((entry) =>
+            entry.description ? [[entry.id, entry.description] as const] : [],
+          ),
+        )
+      }
       fetching={catalog.isFetching}
       modelsDisabled={fixed}
       warning={

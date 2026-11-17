@@ -255,6 +255,11 @@ export type LiveSession = {
   pid: number | null;
   status: LiveSessionStatus;
   waiting_for_human?: boolean;
+  waiting_for?: {
+    reason: "permission" | "question" | "dialog";
+    tool: string | null;
+  } | null;
+  background_work?: boolean;
   hidden?: boolean;
   renamed?: boolean;
   project_id: string | null;

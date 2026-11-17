@@ -40,6 +40,12 @@ import {
 } from "@/components/ChatContinueInTerminal";
 import { ChatSessionPicker } from "@/components/ChatControls";
 import { ChatConversationInfo } from "@/components/ChatConversationInfo";
+import {
+  ChatDictationButton,
+  ChatDictationPill,
+  isDictationShortcut,
+  useDictation,
+} from "@/components/ChatDictation";
 import { ChatForkNotice } from "@/components/ChatForkNotice";
 import { ChatLiveAnnouncer, ChatLiveStatus } from "@/components/ChatLiveStatus";
 import { ChatMessageActions } from "@/components/ChatMessageActions";
@@ -52,7 +58,7 @@ import {
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
-import { useChatContextUsage } from "@/components/ChatSessionStrip";
+import { ChatContextMeter, useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
@@ -84,7 +90,7 @@ import {
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
-import { type AgentState, liveSessionState } from "@/lib/agent-state";
+import { type AgentState, liveSessionState, pendingLabel } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
@@ -516,6 +522,13 @@ export function ChatPanel({
     }
     return undefined;
   }, [messages]);
+  const contextWindow = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const window = messages[index]?.turn?.usage?.context_window;
+      if (window) return window;
+    }
+    return undefined;
+  }, [messages]);
   // The latest recorded request belongs to the newest assistant turn only when it
   // was recorded after that turn started; otherwise the figure belongs elsewhere.
   const latestUsage = contextUsage.data?.latest ?? null;
@@ -556,6 +569,7 @@ export function ChatPanel({
           ? "Send now"
           : "Queue message";
   const submit = () => {
+    if (dictation.busy) return;
     if (agentInbox) {
       const body = draft.trim();
       if (!body || files.length || queueToAgent.isPending) return;
@@ -672,6 +686,7 @@ export function ChatPanel({
   }, [open]);
   const input = useRef<HTMLTextAreaElement>(null);
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
+  const dictation = useDictation(input, setDraft);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const promptMenuOpen = useRef(false);
   promptMenuOpen.current = promptMenu.open;
@@ -1459,10 +1474,12 @@ export function ChatPanel({
                     className="text-xs text-on-surface-variant"
                   >
                     {agentInbox
-                      ? "Running in its own agent. Send queues your message for its next safe point."
+                      ? agentInbox.waiting_for
+                        ? pendingLabel(agentInbox.waiting_for)
+                        : "Running in its own agent · sends queue"
                       : agentOverride
                         ? "Sending unlocked. The running status may be stale."
-                        : "Running in its own agent. Sending unlocks when it finishes."}
+                        : "Running in its own agent · send unlocks when it finishes"}
                   </p>
                   {agentBlocked && (
                     <button
@@ -1486,6 +1503,15 @@ export function ChatPanel({
                     <SessionMessageInbox session={agentInbox} live={false} compose={false} />
                   )}
                 </div>
+              )}
+              {streaming && (
+                <p
+                  role="status"
+                  data-testid="chat-send-outcome"
+                  className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
+                >
+                  {canSteerLive ? "Sends steer this turn" : "Sends queue until the turn ends"}
+                </p>
               )}
               {savedPad && (
                 <p
@@ -1578,13 +1604,7 @@ export function ChatPanel({
                     aria-activedescendant={
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
-                    placeholder={
-                      agentInbox
-                        ? "Running in its own agent. Messages queue for its next safe point."
-                        : agentBlocked
-                          ? "Running in its own agent. Sending unlocks when it finishes."
-                          : "Ask anything. / for commands, @ for files"
-                    }
+                    placeholder="Ask anything. / for commands, @ for files"
                     disabled={!ready}
                     value={draft}
                     onChange={(event) => {
@@ -1616,6 +1636,11 @@ export function ChatPanel({
                         event.shiftKey &&
                         event.key.toLowerCase() === "v";
                       if (promptMenu.onKeyDown(event)) return;
+                      if (dictation.available && isDictationShortcut(event)) {
+                        event.preventDefault();
+                        dictation.toggle();
+                        return;
+                      }
                       if (
                         event.key === "Enter" &&
                         !event.shiftKey &&
@@ -1631,9 +1656,13 @@ export function ChatPanel({
                   />
                 </div>
                 <div className="flex items-center justify-between gap-2">
+                  {dictation.phase !== "idle" && <ChatDictationPill dictation={dictation} />}
                   <div
                     data-testid="chat-composer-tools"
-                    className="chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5"
+                    className={cn(
+                      "chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5",
+                      dictation.phase !== "idle" && "hidden",
+                    )}
                   >
                     <label
                       className={`${iconButton} max-sm:min-h-11 max-sm:min-w-11 focus-within:ring-2 focus-within:ring-focus`}
@@ -1655,11 +1684,17 @@ export function ChatPanel({
                         }}
                       />
                     </label>
+                    <ChatDictationButton dictation={dictation} disabled={!ready} />
                     <ChatAgentModelPicker key={thread?.id ?? "new"} />
                     <ChatWorkspaceControls />
                     <ChatPermissionChip />
                   </div>
                   <div className="flex items-center gap-1">
+                    <ChatContextMeter
+                      usage={latestUsage ?? frozenUsage}
+                      window={latestUsage?.context_window ?? contextWindow}
+                      compactions={contextUsage.data?.compactions?.length ?? 0}
+                    />
                     {streaming && canSteerLive && (
                       <ActionHelp
                         label="Queue message"
@@ -1674,7 +1709,7 @@ export function ChatPanel({
                             setDraft("");
                             void send(text);
                           }}
-                          disabled={!draft.trim() && !files.length}
+                          disabled={dictation.busy || (!draft.trim() && !files.length)}
                           aria-label="Queue message"
                           className={iconButton}
                         >
@@ -1692,7 +1727,11 @@ export function ChatPanel({
                           data-testid="chat-steer-button"
                           onClick={() => void steer()}
                           disabled={
-                            !draft.trim() || !!files.length || responding || !steerAvailable
+                            dictation.busy ||
+                            !draft.trim() ||
+                            !!files.length ||
+                            responding ||
+                            !steerAvailable
                           }
                           aria-label="Send now"
                           className={iconButton}
@@ -1718,9 +1757,10 @@ export function ChatPanel({
                       <button
                         type="submit"
                         disabled={
-                          agentInbox
+                          dictation.busy ||
+                          (agentInbox
                             ? !draft.trim() || !!files.length || queueToAgent.isPending
-                            : !ready || agentBlocked || (!draft.trim() && !files.length)
+                            : !ready || agentBlocked || (!draft.trim() && !files.length))
                         }
                         data-testid="chat-send-button"
                         aria-label={sendLabel}

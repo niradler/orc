@@ -125,6 +125,8 @@ export const SessionCacheUsageSchema = z.object({
   latest: CacheTokenUsageSchema.extend({
     recorded_at: z.string().datetime().nullable(),
     may_be_cold_after: z.string().datetime().nullable(),
+    context_tokens: z.number().nonnegative().nullable().default(null),
+    context_window: z.number().int().positive().nullable().default(null),
   }).nullable(),
   totals: CacheTokenUsageSchema.nullable(),
   output_tokens: z.number().nonnegative().nullable(),

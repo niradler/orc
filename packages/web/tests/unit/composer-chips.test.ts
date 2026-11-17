@@ -163,6 +163,25 @@ describe("agent and model", () => {
     expect(agentEffortChoices("pi")[0]).toEqual({ value: "off", label: "Off" });
     expect(agentEffortChoices("opencode")).toEqual([]);
   });
+  test("agentEffortChoices narrows to the selected model's efforts and falls back otherwise", () => {
+    const values = (agent: string, efforts?: string[]) =>
+      agentEffortChoices(agent, efforts).map((choice) => choice.value);
+    expect(values("claude", ["low", "medium", "high", "max"])).toEqual([
+      "low",
+      "medium",
+      "high",
+      "max",
+    ]);
+    expect(values("claude", ["turbo"])).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(values("claude")).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(agentEffortChoices("codex", ["high", "ultra"])).toEqual([
+      { value: "high", label: "High" },
+      { value: "ultra", label: "Ultra" },
+    ]);
+    expect(values("codex")).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
+    expect(values("claude", [])).toEqual([]);
+    expect(values("opencode", ["high"])).toEqual([]);
+  });
   test("withAgentEffort writes each adapter's native effort field", () => {
     const claude = withAgentEffort(
       {

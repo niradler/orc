@@ -70,7 +70,8 @@ permission behavior.
 
 `GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence recorded by
 the agent: `latest` (including optional recorded time and a conservative
-`may_be_cold_after` hint) and `totals`. Claude, Codex and Pi are read from the
+`may_be_cold_after` hint, `context_tokens` as the agent counts its context, and
+`context_window` when the transcript records the model's window, as Codex does) and `totals`. Claude, Codex and Pi are read from the
 stored native transcript; OpenCode is read from its own session database on the
 execution host. Missing or unsupported evidence is `null`. No prompt text,
 credentials or transcript paths are returned.
@@ -294,7 +295,9 @@ provider identity. The run-session resolver checks run ownership and discovers o
 that native conversation on its recorded execution host. It does not switch the
 global execution host. Existing authentication protects both endpoints.
 
-`GET /chat/models` also accepts optional `host` and `cwd` for a job destination.
+`GET /chat/models` returns each model's `id` and `label`, plus `description` and
+`efforts` (supported effort values) when the agent reports them.
+It also accepts optional `host` and `cwd` for a job destination.
 Omit `host` to follow the selected host, use `__local__` to pin local, or supply an
 SSH alias. An existing `threadId` owns its host/directory and rejects these overrides.
 `GET /chat/commands?agent=` returns the agent's own slash commands and skills
@@ -307,7 +310,7 @@ folder under the working directory; both take the same `threadId`, `host` and `c
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`). `model` is the model the transcript last reported and `permission_mode` the latest permission mode (Claude `permissionMode`, Codex `approval_policy/sandbox_policy`); both are `null` when unknown |
+| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`). `model` is the model the transcript last reported and `permission_mode` the latest permission mode (Claude `permissionMode`, Codex `approval_policy/sandbox_policy`); both are `null` when unknown. `waiting_for` says why a session waits for a human (`permission`, `question` or `dialog`) and which `tool` waits; `background_work` is `true` while a session idles between turns with background work still running (Claude Code background shells) |
 | `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |

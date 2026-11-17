@@ -19,6 +19,7 @@ import {
   session,
   shell,
   Tray,
+  type WebContents,
 } from "electron";
 import {
   appMenuTemplate,
@@ -30,6 +31,7 @@ import {
 import { loadDesktopConfig, saveDesktopConnection } from "./connection.js";
 import {
   applyConnectionDraft,
+  appMicrophoneAllowed,
   type ConnectionDraft,
   type ConnectionMode,
   type ConnectionSettings,
@@ -677,11 +679,26 @@ function firstRunSetup(): void {
 
 function hardenSession(): void {
   const allowed = new Set(["clipboard-sanitized-write", "clipboard-read"]);
-  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
-    callback(allowed.has(permission)),
+  const appMicrophone = (contents: WebContents | null, url: string, mediaTypes: string[]) =>
+    !!contents &&
+    contents === win?.webContents &&
+    appMicrophoneAllowed(url, windowTarget?.origin, mediaTypes);
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(
+      allowed.has(permission) ||
+        (permission === "media" &&
+          appMicrophone(
+            contents,
+            details.requestingUrl,
+            "mediaTypes" in details ? (details.mediaTypes ?? []) : [],
+          )),
+    ),
   );
-  session.defaultSession.setPermissionCheckHandler((_contents, permission) =>
-    allowed.has(permission),
+  session.defaultSession.setPermissionCheckHandler(
+    (contents, permission, origin, details) =>
+      allowed.has(permission) ||
+      (permission === "media" &&
+        appMicrophone(contents, origin, details.mediaType ? [details.mediaType] : [])),
   );
   app.on("web-contents-created", (_event, contents) => {
     contents.on("will-attach-webview", (event) => event.preventDefault());

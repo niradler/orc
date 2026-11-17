@@ -1,6 +1,12 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { chooseChatAgent, chooseChatEffort, chooseChatModel, openChatModel } from "./_chat-ui";
+import {
+  chooseChatAgent,
+  chooseChatEffort,
+  chooseChatModel,
+  openChatModel,
+  showPickerTab,
+} from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
 
 for (const width of [320, 1440]) {
@@ -117,4 +123,188 @@ test("choosing a custom model does not submit an existing composer draft", async
   await expect(page.getByTestId("chat-model-current")).toHaveText("fixture-custom");
   await expect(page.getByTestId("chat-input")).toHaveValue("Unsent draft while choosing a model");
   expect(posts).toBe(0);
+});
+
+for (const width of [390, 1440]) {
+  test(`model picker shows descriptions, searches and narrows efforts at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    await request.patch("/api/settings", {
+      headers: { Authorization: `Bearer ${API_SECRET}` },
+      data: { chat: ChatSettingsSchema.parse({ agent: "codex" }) },
+    });
+    const models = ["sol", "terra", "astra", "luna", "nova", "vega", "orion"].map((name) => ({
+      id: `gpt-${name}`,
+      label: `GPT ${name}`,
+      description: `${name} model description`,
+      efforts: name === "luna" ? ["low", "medium", "high"] : ["low", "medium", "high", "xhigh"],
+    }));
+    await page.route("**/api/chat/models?**", (route) =>
+      route.fulfill({ json: { models, warning: null } }),
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await gotoView(page, "activity");
+    await page.goto("/?chat=open");
+    await openChatModel(page);
+    await expect(page.getByTestId("chat-model-option-gpt-sol")).toContainText(
+      "sol model description",
+    );
+    await page.getByTestId("chat-model-option-gpt-sol").click();
+    await chooseChatEffort(page, "xhigh");
+    await openChatModel(page);
+    await page.getByTestId("chat-model-search").fill("zzz");
+    await expect(page.getByTestId("chat-model-select")).toContainText("No models match");
+    await page.getByTestId("chat-model-search").fill("luna");
+    await expect(page.getByTestId("chat-model-option-gpt-luna")).toBeVisible();
+    await expect(page.getByTestId("chat-model-option-gpt-sol")).toHaveCount(0);
+    await page.getByTestId("chat-model-search").press("Enter");
+    await expect(page.getByTestId("chat-model-select")).toBeHidden();
+    await openChatModel(page);
+    await expect(page.getByTestId("chat-effort-option-default")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(page.getByTestId("chat-model-search")).toHaveValue("");
+    await expect(page.getByTestId("chat-model-option-gpt-luna")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await showPickerTab(page, "effort");
+    await expect(page.getByTestId("chat-effort-option-high")).toBeVisible();
+    await expect(page.getByTestId("chat-effort-option-xhigh")).toHaveCount(0);
+    await expect(page.getByTestId("chat-effort-option-minimal")).toHaveCount(0);
+    const picker = await page.getByTestId("chat-agent-model-picker").boundingBox();
+    expect(picker && picker.x >= 0 && picker.x + picker.width <= width).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+}
+
+test("phone picker uses Agent, Model and Effort tabs that advance on each pick", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "codex" }) },
+  });
+  const models = ["sol", "terra", "astra", "luna", "nova", "vega", "mini"].map((name) => ({
+    id: `gpt-${name}`,
+    label: `GPT ${name}`,
+    ...(name === "mini" ? {} : { efforts: ["low", "medium", "high"] }),
+  }));
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models, warning: null } }),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+  const tab = (name: string) => page.getByTestId(`chat-picker-tab-${name}`);
+  await expect(tab("model")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("model")).toHaveText("Agent default");
+  await expect(page.getByTestId("chat-agent-select")).toBeHidden();
+  expect((await tab("agent").boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await tab("agent").click();
+  await page.getByTestId("chat-agent-option-codex").click();
+  await expect(tab("model")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("chat-model-search").fill("sol");
+  await page.getByTestId("chat-model-option-gpt-sol").click();
+  await expect(tab("effort")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("model")).toHaveText("GPT sol");
+  await page.getByTestId("chat-effort-option-high").click();
+  await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
+  await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+  await expect(tab("effort")).toHaveText("High");
+  await page.getByTestId("chat-model-option-gpt-mini").click();
+  await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
+  await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+  await expect(tab("model")).toHaveText("GPT mini");
+  await expect(tab("effort")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("a saved effort the selected model does not report is neither shown nor sent", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: {
+      chat: ChatSettingsSchema.parse({
+        agent: "claude",
+        model: "haiku",
+        agentOptions: { claude: { runtime: "claude-sdk", options: { effort: "high" } } },
+      }),
+    },
+  });
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({
+      json: {
+        models: [
+          { id: "sonnet", label: "Sonnet", efforts: ["low", "medium", "high"] },
+          { id: "haiku", label: "Haiku" },
+        ],
+        warning: null,
+      },
+    }),
+  );
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  const pill = page.getByTestId("chat-agent-model-button").filter({ visible: true });
+  await expect(pill).toHaveAccessibleName(/Haiku/);
+  await expect(pill).not.toHaveAccessibleName(/effort/);
+  await openChatModel(page);
+  await expect(page.getByTestId("chat-effort-select")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const sent = page.waitForRequest((request) => request.url().endsWith("/api/chat/stream"));
+  await page.getByTestId("chat-input").filter({ visible: true }).fill("Stale effort");
+  await page.getByTestId("chat-send-button").filter({ visible: true }).click();
+  const body = (await sent).postDataJSON();
+  expect(body.model).toBe("haiku");
+  expect(body.agentOptions?.claude?.options?.effort).toBeUndefined();
+});
+
+test("a failed catalog keeps the full effort list and explains the failure", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "claude", model: "haiku" }) },
+  });
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ status: 500, json: { error: "boom" } }),
+  );
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  await openChatModel(page);
+  await expect(page.getByTestId("chat-model-warning")).toContainText("Models could not be loaded");
+  await showPickerTab(page, "effort");
+  for (const value of ["low", "medium", "high", "xhigh", "max"])
+    await expect(page.getByTestId(`chat-effort-option-${value}`)).toBeVisible();
+});
+
+test("a selected model missing from the catalog keeps the full effort list", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "claude", model: "custom-claude" }) },
+  });
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [{ id: "haiku", label: "Haiku" }], warning: null } }),
+  );
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  await openChatModel(page);
+  await expect(page.getByTestId("chat-model-option-custom-claude")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  for (const value of ["low", "medium", "high", "xhigh", "max"])
+    await expect(page.getByTestId(`chat-effort-option-${value}`)).toBeVisible();
 });
