@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ChatSettingsSchema } from "@orc/core/chat";
+import type { AgentCapabilities } from "@orc/core/types";
 import {
   agentEffort,
   agentEffortChoices,
@@ -14,6 +15,7 @@ import {
   modelDisplayName,
   pastedTextName,
   pathName,
+  permissionModes,
   resolveAgentId,
   shouldAttachPaste,
   withAgentEffort,
@@ -118,6 +120,18 @@ describe("permissions", () => {
     expect(withPermissionMode({ ...defaults, agent: "codex" }, "acceptEdits").agentOptions).toEqual(
       defaults.agentOptions,
     );
+  });
+  test("the picker lists the modes the agent offers", () => {
+    const claude = { permissionModes: ["default", "plan", "acceptEdits"] } as AgentCapabilities;
+    expect(permissionModes(claude)).toEqual(["default", "plan", "acceptEdits"]);
+    expect(permissionModes({ livePermissions: true } as AgentCapabilities)).toEqual([
+      "default",
+      "acceptEdits",
+      "bypassPermissions",
+    ]);
+    expect(permissionModes({ livePermissions: false } as AgentCapabilities)).toEqual([]);
+    const plan = withPermissionMode({ ...defaults, agent: "claude" }, "plan");
+    expect(effectivePermissionMode(plan)).toBe("plan");
   });
 });
 

@@ -51,7 +51,7 @@ export type SessionOpts = {
   acpxNativeSessionId?: string | undefined;
   a2aUrl?: string | undefined;
   agentApiUrl?: string | undefined;
-  permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions" | undefined;
+  permissionMode?: LivePermissionMode | undefined;
   systemPromptAppend?: string | undefined;
   agentProfile?: string | undefined;
   toolAllowlist?: string[] | undefined;
@@ -120,7 +120,7 @@ export type AgentEvent =
   | { type: "error"; data: string }
   | { type: "system_status"; data: string };
 
-export type LivePermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+export type LivePermissionMode = "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
 
 /** Approval prompts for file edits that `acceptEdits` answers itself. */
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "file changes"]);

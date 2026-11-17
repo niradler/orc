@@ -718,7 +718,15 @@ itself is fixed for the session.
 Changing agent after launch starts a separate session. The model picker disables
 changes during a response or when the backend selects its own model. Effort stays
 in agent options. The permissions chip shows the open session's mode — including
-**Ask in chat** — when the backend supports changing it live.
+**Ask in chat** — when the backend supports changing it live. Each agent lists
+only its own modes from `GET /chat/capabilities` (`permissionModes`). **Plan**
+(reads and plans, never edits) uses each agent's native mode: Claude's `plan`
+permission mode, Codex's plan collaboration mode and OpenCode's plan agent.
+Claude also offers **Auto** (Claude's classifier approves safe actions). Codex
+and Pi offer Ask in chat, Allow edits and Full access; OpenCode offers Ask in
+chat and Plan, applied from the next message. Pi and ACPX agents show that Plan
+isn't available. Leaving Plan during a Claude response applies to the running
+turn.
 
 **Session settings** in the chat header organizes the conversation into tabs.
 **Overview** shows the agent, model, execution host and folder, backend, last

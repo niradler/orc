@@ -22,7 +22,7 @@ export const sessionRowClass = "group flex min-w-0 items-center rounded-md";
 export const sessionRowButtonClass =
   "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60 max-sm:min-h-11 pointer-coarse:min-h-11";
 
-const MODE_ICONS = {
+export const MODE_ICONS = {
   default: ShieldQuestionMark,
   acceptEdits: ShieldCheck,
   "workspace-write": ShieldCheck,

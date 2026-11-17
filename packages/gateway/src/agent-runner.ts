@@ -1,6 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
-import { openAgentSession } from "./agent-runtime/index.js";
+import { createBackend, hasBackend, openAgentSession } from "./agent-runtime/index.js";
 import type { AgentSession, SessionOpts } from "./agent-runtime/types.js";
 import { escapeHtml } from "./html.js";
 import type { PermissionManager } from "./permission-manager.js";
@@ -55,6 +55,31 @@ type RunResult = {
 };
 
 const activeSessions = new Map<string, AgentSession>();
+
+export function permissionModesFor(sessionId: string, backend: string): readonly string[] {
+  const live = activeSessions.get(sessionId);
+  const capabilities = live?.alive()
+    ? live.capabilities
+    : hasBackend(backend)
+      ? createBackend(backend).capabilities
+      : undefined;
+  return capabilities?.permissionModes ?? [];
+}
+
+export async function applyPermissionMode(
+  sessionId: string,
+  mode: NonNullable<SessionOpts["permissionMode"]>,
+): Promise<"live" | "restart" | "idle"> {
+  const live = activeSessions.get(sessionId);
+  if (!live?.alive()) return "idle";
+  if (live.setPermissionMode && live.capabilities?.livePermissions) {
+    live.setPermissionMode(mode);
+    return "live";
+  }
+  activeSessions.delete(sessionId);
+  await live.close().catch(() => {});
+  return "restart";
+}
 
 export async function runAgentTurn(
   ctx: RunnerContext,

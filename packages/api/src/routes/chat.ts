@@ -49,7 +49,7 @@ import {
   ChatTurnContextSchema,
   withOrcContext,
 } from "@orc/core/chat-context";
-import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
+import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
 import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
@@ -560,6 +560,13 @@ app.openapi(
     });
   },
 );
+
+function permissionModeSupported(
+  backend: string,
+  mode: z.infer<typeof ChatPermissionModeSchema>,
+): boolean {
+  return createBackend(backend).capabilities?.permissionModes?.includes(mode) === true;
+}
 
 const STEER_LIMIT = 32;
 /** The message may already be in the conversation, so a client must not resend it. */
@@ -1846,6 +1853,8 @@ app.openapi(
     const { thread } = run;
     if (!run.session?.setPermissionMode)
       throw new ValidationError("This backend does not support changing live permissions.");
+    if (!permissionModeSupported(thread.backend, mode))
+      throw new ValidationError(unsupportedPermissionMode(mode));
     const updated: ChatThread = {
       ...thread,
       config: structuredClone(thread.config),
@@ -2131,8 +2140,10 @@ async function openChat(
   if (input === "/compact" && uploads.length)
     throw new ValidationError("Send attachments separately from context compaction.");
   if (body.permissionMode !== undefined) {
-    if (createBackend(thread.backend).capabilities?.livePermissions === false)
+    if (!createBackend(thread.backend).capabilities?.permissionModes)
       throw new ValidationError("This backend does not support ORC permission modes.");
+    if (!permissionModeSupported(thread.backend, body.permissionMode))
+      throw new ValidationError(unsupportedPermissionMode(body.permissionMode));
     thread.config.permissionMode = body.permissionMode;
   }
   // Only a new conversation adopts the composer preference; an existing one owns
@@ -2472,7 +2483,7 @@ async function beginTurn(
           cwd: thread.cwd,
           executionHost: thread.host,
           autoApprove: thread.config.autoApprove,
-          permissionMode: ["claude", "codex", "pi"].includes(thread.config.agent)
+          permissionMode: createBackend(thread.backend).capabilities?.permissionModes
             ? thread.config.permissionMode
             : undefined,
           model: thread.config.model,
@@ -2956,9 +2967,7 @@ async function startChild(
     ...(agent ? { agent } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(projectId ? { projectId } : {}),
-    ...(backend && createBackend(backend).capabilities?.livePermissions !== false
-      ? { permissionMode }
-      : {}),
+    ...(backend && permissionModeSupported(backend, permissionMode) ? { permissionMode } : {}),
     ...(sameAgent && source
       ? {
           agentOptions: source.config.agentOptions,
