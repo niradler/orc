@@ -1,4 +1,4 @@
-import type { ChatThread } from "@orc/core/chat";
+import { type ChatThread, readChatActivity } from "@orc/core/chat";
 import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
@@ -6,6 +6,7 @@ import type { ChatTab } from "@/hooks/useChat";
 import { type AgentState, liveSessionState, moreUrgent, rollupState } from "./agent-state";
 import { modelDisplayName, PERMISSION_LABELS } from "./composer-chips";
 import { lastSeen, type SeenRecord, unseenState } from "./session-seen";
+import { liveSubagentTree, subagentState } from "./subagent-links";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   running: boolean;
@@ -136,6 +137,18 @@ export function chatHistoryList(
         tab.thread ? 0 : timestamp(tab.createdAt),
       ),
     };
+    const last = tab.messages[tab.messages.length - 1];
+    const turnActivity = tab.streaming
+      ? tab.activity
+      : last?.role === "assistant"
+        ? readChatActivity(last.activity).activity
+        : [];
+    if (
+      liveSubagentTree(turnActivity).some((node) =>
+        ["needs-you", "failed"].includes(subagentState(node)),
+      )
+    )
+      observe(entry, "needs-you");
     entries.push(entry);
     keywords.set(entry.id, `${title} ${tab.config.agent} ${tab.thread?.cwd ?? ""}`);
     if (tab.thread?.runtimeId)
@@ -263,7 +276,11 @@ export function chatHistoryList(
     if (!entry.children) return;
     for (const child of entry.children) rollup(child);
     entry.children.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
-    const busy = rollupState(entry.children.map((child) => child.observedState));
+    const busy = rollupState(
+      entry.children.map((child) =>
+        child.observedState === "failed" ? "needs-you" : child.observedState,
+      ),
+    );
     if (busy) observe(entry, busy);
     entry.updatedAt = Math.max(entry.updatedAt, ...entry.children.map((child) => child.updatedAt));
     entry.seenKeys.push(...entry.children.flatMap((child) => child.seenKeys));

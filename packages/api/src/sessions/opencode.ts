@@ -101,10 +101,20 @@ export function opencodeAdapter(
       const current = await sessionRows(runtime, path, "session_v2", tail);
       const legacy = await sessionRows(runtime, path, "session", tail);
       const parents = new Set([...current, ...legacy].map((row) => row.id));
-      const children = [
+      const candidates = [
         ...(await sessionRows(runtime, path, "session_v2", childTail)),
         ...(await sessionRows(runtime, path, "session", childTail)),
-      ].filter((row) => parents.has(row.parent_id));
+      ];
+      const children: typeof candidates = [];
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const row of candidates)
+          if (!parents.has(row.id) && parents.has(row.parent_id)) {
+            children.push(row);
+            parents.add(row.id);
+            grew = true;
+          }
+      }
       const seen = new Set<string>();
       const records: SessionRecord[] = [];
       for (const raw of [...current, ...legacy, ...children]) {

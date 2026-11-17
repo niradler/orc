@@ -239,15 +239,31 @@ export async function sessionSubagents(id: string): Promise<SessionSubagents> {
        WHERE (id = ?1 OR runtime_session_id = ?1 OR (runtime_session_id = ?2 AND backend = ?3))
        AND parent_session_id IS NULL ORDER BY updated_at DESC LIMIT 1`,
     )
-    .get(id, thread?.runtimeId ?? null, thread?.backend ?? null);
+    .get(
+      id,
+      thread?.runtimeId ?? null,
+      thread?.backend === "codex-cli"
+        ? "codex"
+        : thread?.backend === "claude-cli"
+          ? "claude"
+          : (thread?.backend ?? null),
+    );
   if (!parent?.runtime_session_id) return { subagents: [] };
   const children = sqlite
     .query<SubagentRow, [string, string, string]>(
-      `SELECT ${LINEAGE_COLUMNS}, transcript_path, created_at FROM gateway_sessions
-       WHERE backend = ?1 AND parent_session_id = ?2 AND coalesce(execution_host, '') = ?3
-       ORDER BY created_at, id LIMIT 500`,
+      `WITH RECURSIVE tree(id, runtime_session_id) AS (
+         SELECT id, runtime_session_id FROM gateway_sessions
+         WHERE backend = ?1 AND parent_session_id = ?2 AND coalesce(execution_host, '') = ?3
+         UNION
+         SELECT g.id, g.runtime_session_id FROM gateway_sessions g JOIN tree t
+         ON g.parent_session_id = t.runtime_session_id
+         WHERE g.backend = ?1 AND coalesce(g.execution_host, '') = ?3
+       )
+       SELECT ${LINEAGE_COLUMNS}, transcript_path, created_at FROM gateway_sessions
+       WHERE id IN (SELECT id FROM tree) ORDER BY created_at, id LIMIT 500`,
     )
     .all(parent.backend, parent.runtime_session_id, parent.execution_host ?? "");
+  const byNative = new Map(children.map((child) => [child.runtime_session_id, child.id]));
   const calls = await subagentToolCalls(
     hostRuntime(execHostFor(parent.execution_host)),
     parent,
@@ -256,6 +272,7 @@ export async function sessionSubagents(id: string): Promise<SessionSubagents> {
   return {
     subagents: children.map((child) => ({
       id: child.id,
+      parent_id: byNative.get(child.parent_session_id ?? null) ?? null,
       session_id: child.runtime_session_id,
       title: child.title ?? "Subagent",
       status: child.status,

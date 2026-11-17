@@ -216,6 +216,10 @@ function storedTitle(title: string | undefined, cwd: string | null | undefined):
 const SubagentMeta = z.object({
   agentType: z.string().optional(),
   description: z.string().optional(),
+  parentAgentId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,200}$/)
+    .optional(),
 });
 
 export function claudeAdapter(
@@ -237,7 +241,10 @@ export function claudeAdapter(
     }
   >();
   const metaCache = new Map<string, { mtime: number; meta: TranscriptMeta }>();
-  const subagentCache = new Map<string, { mtime: number; title: string | null }>();
+  const subagentCache = new Map<
+    string,
+    { mtime: number; title: string | null; parentAgentId?: string }
+  >();
 
   const list = (value: string | string[] | null | undefined, fallback: string): string[] => {
     if (value === null) return [];
@@ -504,6 +511,7 @@ export function claudeAdapter(
           cwd: record.cwd ?? null,
           live: record.status !== "stopped",
         });
+      const subagentPaths = new Set(subagents.map((subagent) => subagent.path));
       for (const subagent of subagents) {
         const parent = parents.get(subagent.parentId);
         if (!parent) continue;
@@ -512,19 +520,25 @@ export function claudeAdapter(
         let cached = subagentCache.get(metaPath);
         if (metaMtime !== undefined && cached?.mtime !== metaMtime) {
           let title: string | null = null;
+          let parentAgentId: string | undefined;
           try {
             const meta = SubagentMeta.parse(
               JSON.parse(new TextDecoder().decode(await runtime.readFile(metaPath, 64 * 1024))),
             );
             title = meta.description || meta.agentType || null;
+            parentAgentId = meta.parentAgentId;
           } catch {}
-          cached = { mtime: metaMtime, title };
+          cached = { mtime: metaMtime, title, ...(parentAgentId ? { parentAgentId } : {}) };
           subagentCache.set(metaPath, cached);
         }
+        const parentAgent = cached?.parentAgentId && `agent-${cached.parentAgentId}`;
         records.set(basename(subagent.path, ".jsonl"), {
           backend: "claude",
           externalId: basename(subagent.path, ".jsonl"),
-          parentId: subagent.parentId,
+          parentId:
+            parentAgent && subagentPaths.has(join(dirname(subagent.path), `${parentAgent}.jsonl`))
+              ? parentAgent
+              : subagent.parentId,
           title: oneLine(cached?.title || "Subagent", 120),
           cwd: parent.cwd,
           status: parent.live ? statusFromMtime(subagent.mtimeMs) : "stopped",

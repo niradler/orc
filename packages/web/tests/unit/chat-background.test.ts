@@ -27,6 +27,28 @@ const subagent: ChatActivity = {
   background: "subagent",
 };
 
+test("reported subagents replace detached subagent calls and only running branches stay", () => {
+  const items = backgroundActivity([
+    command,
+    subagent,
+    {
+      type: "subagent",
+      id: "outer",
+      title: "Outer",
+      status: "running",
+      startedAt: 5,
+      activity: [],
+    },
+    { type: "subagent", id: "inner", parentId: "outer", status: "waiting", activity: [] },
+    { type: "subagent", id: "done", title: "Done", status: "completed", activity: [] },
+  ]);
+  expect(items.map((item) => [item.id, item.kind, item.status, item.label])).toEqual([
+    ["c1", "command", "running", "bun test --watch"],
+    ["outer", "subagent", "waiting", "Outer"],
+  ]);
+  expect(items[1]?.startedAt).toBe(5);
+});
+
 const session = (overrides: Partial<SessionStatus>): SessionStatus => ({
   session_id: "sess_1",
   title: "Reword the docs",
