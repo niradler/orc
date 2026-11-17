@@ -441,6 +441,14 @@ function ActivitySessions({
                             {session.task.title}
                           </span>
                         )}
+                        {session.send && session.send.status !== "error" && (
+                          <span
+                            data-testid="session-sent-badge"
+                            title={`Continue this session on ${session.send.host_label}`}
+                          >
+                            Sent to {session.send.host_label}
+                          </span>
+                        )}
                       </span>
                     </button>
                     <ResumeActions session={session} />

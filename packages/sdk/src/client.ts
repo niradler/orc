@@ -67,6 +67,7 @@ import type {
   SessionHandoffInput,
   SessionHandoffUpload,
 } from "@orc/core/session-handoff";
+import type { SessionSend, SessionSendInput, SessionSendPreview } from "@orc/core/session-send";
 import type { SkillDownload } from "@orc/core/skill-download";
 import type {
   LocalSkillAgentListing,
@@ -962,6 +963,12 @@ export function createOrcClient(options?: OrcClientOptions) {
 
       linkTask: (id: string, task_id: string | null) =>
         c<LiveSession>("PATCH", `/sessions/live/${id}`, { task_id }),
+
+      sendPreview: (id: string) =>
+        c<SessionSendPreview>("GET", `/sessions/live/${e(id)}/send-preview`),
+      sendTo: (id: string, input: SessionSendInput) =>
+        c<SessionSend>("POST", `/sessions/live/${e(id)}/send-to`, input),
+      sends: (id: string) => c<{ sends: SessionSend[] }>("GET", `/sessions/live/${e(id)}/sends`),
     },
 
     tags: {

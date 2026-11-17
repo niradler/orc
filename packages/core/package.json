@@ -46,6 +46,7 @@
     "./logger": "./src/logger.ts",
     "./live-session": "./src/live-session.ts",
     "./session-handoff": "./src/session-handoff.ts",
+    "./session-send": "./src/session-send.ts",
     "./session-archive": "./src/session-archive.ts",
     "./ids": "./src/ids.ts",
     "./timers": "./src/timers.ts",

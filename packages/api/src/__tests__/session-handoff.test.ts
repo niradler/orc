@@ -505,7 +505,9 @@ describe("native session handoff", () => {
 
   test("should construct POSIX native destinations for an SSH host without copying message paths", () => {
     const request = { ...input("codex"), remote: "origin", subdirectory: "" };
-    const files = handoffAdapters.codex.installFiles(
+    const install = handoffAdapters.codex.installFiles;
+    if (!install) throw new Error("codex adapter installs files");
+    const files = install(
       bundle("codex"),
       request,
       sourceId,
@@ -575,7 +577,9 @@ describe("native session handoff", () => {
     const handoff = await create();
     const row = await service.get(handoff.id);
     const cwd = join(target, ".orc", "worktrees", row.id);
-    const destination = handoffAdapters.claude.installFiles(
+    const install = handoffAdapters.claude.installFiles;
+    if (!install) throw new Error("claude adapter installs files");
+    const destination = install(
       bundle(),
       row.request,
       row.session_id,
