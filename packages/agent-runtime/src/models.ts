@@ -50,6 +50,15 @@ function printable(value: unknown, max: number): string {
     .slice(0, max);
 }
 
+function words(text: string): string[] {
+  return text.toLowerCase().match(/[a-z0-9]+(?:\.[a-z0-9]+)*/g) ?? [];
+}
+
+export function informativeDescription(description: string, label: string, agent: string): string {
+  const known = new Set([...words(label), ...words(agent), "model"]);
+  return words(description).some((word) => !known.has(word)) ? description : "";
+}
+
 export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
   if (!Array.isArray(value)) throw new Error("The agent returned no model catalog.");
   const models = new Map<string, AgentModel>();
@@ -67,7 +76,7 @@ export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
     );
     if (!parsed.success || !parsed.data) continue;
     const label = printable(row.displayName ?? row.name, 120) || parsed.data;
-    const description = printable(row.description, 300);
+    const description = informativeDescription(printable(row.description, 300), label, agent);
     const efforts = (
       Array.isArray(row.supportedEffortLevels)
         ? row.supportedEffortLevels

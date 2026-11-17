@@ -1,6 +1,12 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { chooseChatAgent, chooseChatEffort, chooseChatModel, openChatModel } from "./_chat-ui";
+import {
+  chooseChatAgent,
+  chooseChatEffort,
+  chooseChatModel,
+  openChatModel,
+  showPickerTab,
+} from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
 
 for (const width of [320, 1440]) {
@@ -123,7 +129,7 @@ for (const width of [390, 1440]) {
   test(`model picker shows descriptions, searches and narrows efforts at ${width}px`, async ({
     page,
     request,
-  }, testInfo) => {
+  }) => {
     await request.patch("/api/settings", {
       headers: { Authorization: `Bearer ${API_SECRET}` },
       data: { chat: ChatSettingsSchema.parse({ agent: "codex" }) },
@@ -144,9 +150,9 @@ for (const width of [390, 1440]) {
     await expect(page.getByTestId("chat-model-option-gpt-sol")).toContainText(
       "sol model description",
     );
-    await page.screenshot({ path: testInfo.outputPath(`model-picker-${width}.png`) });
     await page.getByTestId("chat-model-option-gpt-sol").click();
     await chooseChatEffort(page, "xhigh");
+    await openChatModel(page);
     await page.getByTestId("chat-model-search").fill("zzz");
     await expect(page.getByTestId("chat-model-select")).toContainText("No models match");
     await page.getByTestId("chat-model-search").fill("luna");
@@ -164,6 +170,7 @@ for (const width of [390, 1440]) {
       "aria-checked",
       "true",
     );
+    await showPickerTab(page, "effort");
     await expect(page.getByTestId("chat-effort-option-high")).toBeVisible();
     await expect(page.getByTestId("chat-effort-option-xhigh")).toHaveCount(0);
     await expect(page.getByTestId("chat-effort-option-minimal")).toHaveCount(0);
@@ -174,3 +181,47 @@ for (const width of [390, 1440]) {
     );
   });
 }
+
+test("phone picker uses Agent, Model and Effort tabs that advance on each pick", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "codex" }) },
+  });
+  const models = ["sol", "terra", "astra", "luna", "nova", "vega", "mini"].map((name) => ({
+    id: `gpt-${name}`,
+    label: `GPT ${name}`,
+    ...(name === "mini" ? {} : { efforts: ["low", "medium", "high"] }),
+  }));
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models, warning: null } }),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+  const tab = (name: string) => page.getByTestId(`chat-picker-tab-${name}`);
+  await expect(tab("model")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("model")).toHaveText("Agent default");
+  await expect(page.getByTestId("chat-agent-select")).toBeHidden();
+  expect((await tab("agent").boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await tab("agent").click();
+  await page.getByTestId("chat-agent-option-codex").click();
+  await expect(tab("model")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("chat-model-search").fill("sol");
+  await page.getByTestId("chat-model-option-gpt-sol").click();
+  await expect(tab("effort")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("model")).toHaveText("GPT sol");
+  await page.getByTestId("chat-effort-option-high").click();
+  await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
+  await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+  await expect(tab("effort")).toHaveText("High");
+  await page.getByTestId("chat-model-option-gpt-mini").click();
+  await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
+  await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+  await expect(tab("model")).toHaveText("GPT mini");
+  await expect(tab("effort")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

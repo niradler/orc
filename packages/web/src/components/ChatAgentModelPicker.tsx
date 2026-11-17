@@ -63,13 +63,17 @@ export function ChatAgentModelPicker() {
   const capabilities = useAgentCapabilities(config.agent, thread);
   // OpenCode's effort levels are model-dependent: the session reports them live,
   // and the model catalog probes them for a chat that has not started yet.
-  const effortChoices =
-    config.agent === "opencode"
-      ? liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices)
-      : agentEffortChoices(
-          config.agent,
-          catalog.data?.models.find((entry) => entry.id === config.model)?.efforts,
-        );
+  const effortsFor = (model: string) => {
+    if (config.agent === "opencode")
+      return liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices);
+    const models = catalog.data?.models ?? [];
+    const entry = models.find((item) => item.id === model);
+    return agentEffortChoices(
+      config.agent,
+      entry && (entry.efforts ?? (models.some((item) => item.efforts) ? [] : undefined)),
+    );
+  };
+  const effortChoices = effortsFor(config.model);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
@@ -138,18 +142,15 @@ export function ChatAgentModelPicker() {
       }}
       onModel={(model) => {
         const next = { ...config, model };
-        const supported = agentEffortChoices(
-          config.agent,
-          catalog.data?.models.find((entry) => entry.id === model)?.efforts,
-        );
         setConfig(
           effortValue &&
             config.agent !== "opencode" &&
-            !supported.some((choice) => choice.value === effortValue)
+            !effortsFor(model).some((choice) => choice.value === effortValue)
             ? withAgentEffort(next, "")
             : next,
         );
       }}
+      hasEfforts={(model) => effortsFor(model).length > 0}
       efforts={effortChoices}
       effort={effortValue}
       onEffort={(value) => {

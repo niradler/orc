@@ -177,7 +177,8 @@ describe("agent and model", () => {
       { value: "high", label: "High" },
       { value: "ultra", label: "Ultra" },
     ]);
-    expect(values("codex", [])).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
+    expect(values("codex")).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
+    expect(values("claude", [])).toEqual([]);
     expect(values("opencode", ["high"])).toEqual([]);
   });
   test("withAgentEffort writes each adapter's native effort field", () => {

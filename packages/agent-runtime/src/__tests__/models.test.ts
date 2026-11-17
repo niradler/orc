@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { parseAgentModels, readAgentModelCatalog, readTextModelCatalog } from "../models";
+import {
+  informativeDescription,
+  parseAgentModels,
+  readAgentModelCatalog,
+  readTextModelCatalog,
+} from "../models";
 import claudeModels from "./fixtures/claude-initialize-models.json";
 import codexModels from "./fixtures/codex-model-list.json";
 
@@ -24,11 +29,12 @@ describe("native model discovery", () => {
 
   test("keeps descriptions and supported efforts from real Claude and Codex catalogs", () => {
     const claude = parseAgentModels(claudeModels, "claude");
+    expect(claude.map((model) => model.id)).toEqual(["default", "sonnet", "haiku"]);
     expect(claude.find((model) => model.id === "sonnet")).toEqual({
       id: "sonnet",
       label: "Sonnet",
-      description: "Sonnet 4.6 · Efficient for routine tasks",
-      efforts: ["low", "medium", "high", "max"],
+      description: "Sonnet 5 · Efficient for routine tasks",
+      efforts: ["low", "medium", "high", "xhigh", "max"],
     });
     expect(claude.find((model) => model.id === "haiku")).toEqual({
       id: "haiku",
@@ -40,6 +46,11 @@ describe("native model discovery", () => {
         id: "gpt-6.1-sol",
         label: "GPT-6.1-Sol",
         description: "Latest workhorse model for coding and everyday work.",
+        efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      },
+      {
+        id: "gpt-6.1-terra",
+        label: "GPT-6.1 Terra",
         efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
       },
       {
@@ -55,6 +66,15 @@ describe("native model discovery", () => {
         "claude",
       ),
     ).toEqual([{ id: "x", label: "x", efforts: ["low"] }]);
+  });
+
+  test("hides a description that only restates the model name", () => {
+    expect(informativeDescription("GPT-6.1 Terra Codex model.", "GPT-6.1 Terra", "codex")).toBe("");
+    expect(informativeDescription("Sonnet", "Sonnet", "claude")).toBe("");
+    expect(
+      informativeDescription("Sonnet 5 · Efficient for routine tasks", "Sonnet", "claude"),
+    ).toBe("Sonnet 5 · Efficient for routine tasks");
+    expect(informativeDescription("Haiku 4.5", "Haiku", "claude")).toBe("Haiku 4.5");
   });
 
   test("Codex initializes and pages model/list without starting any turns", async () => {

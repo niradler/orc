@@ -122,6 +122,8 @@ for (const width of [320, 390, 1440]) {
         }
         const agent = page.getByTestId("chat-agent-model-button").filter({ visible: true });
         await agent.click();
+        if (await page.getByTestId("chat-picker-tab-agent").isVisible())
+          await page.getByTestId("chat-picker-tab-agent").click();
         await page.getByTestId("chat-agent-option-claude").click();
         await expect(page.getByTestId("chat-agent-option-claude")).toHaveAttribute(
           "aria-checked",

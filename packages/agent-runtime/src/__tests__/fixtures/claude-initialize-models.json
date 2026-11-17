@@ -1,8 +1,9 @@
 [
   {
     "value": "default",
+    "resolvedModel": "claude-opus-5-5[1m]",
     "displayName": "Default (recommended)",
-    "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks",
+    "description": "Opus 5.5 with 1M context · Best for everyday, complex tasks",
     "supportsEffort": true,
     "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
     "supportsAdaptiveThinking": true,
@@ -11,8 +12,9 @@
   },
   {
     "value": "opus[1m]",
-    "displayName": "Opus",
-    "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks",
+    "resolvedModel": "claude-opus-5-5[1m]",
+    "displayName": "Opus (1M context)",
+    "description": "Opus 5.5 with 1M context · Best for everyday, complex tasks",
     "supportsEffort": true,
     "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
     "supportsAdaptiveThinking": true,
@@ -20,9 +22,10 @@
     "supportsAutoMode": true
   },
   {
-    "value": "claude-fable-5-2[1m]",
+    "value": "claude-fable-5-1[1m]",
+    "resolvedModel": "claude-fable-5-1",
     "displayName": "Fable",
-    "description": "Fable 5.2 · Most capable for your hardest and longest-running tasks",
+    "description": "Fable 5.1 · Most capable for your hardest and longest-running tasks",
     "supportsEffort": true,
     "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
     "supportsAdaptiveThinking": true,
@@ -30,24 +33,17 @@
   },
   {
     "value": "sonnet",
+    "resolvedModel": "claude-sonnet-5",
     "displayName": "Sonnet",
-    "description": "Sonnet 4.6 · Efficient for routine tasks",
+    "description": "Sonnet 5 · Efficient for routine tasks",
     "supportsEffort": true,
-    "supportedEffortLevels": ["low", "medium", "high", "max"],
-    "supportsAdaptiveThinking": true,
-    "supportsAutoMode": true
-  },
-  {
-    "value": "sonnet[1m]",
-    "displayName": "Sonnet (1M context)",
-    "description": "Sonnet 4.6 with 1M context · Draws from usage credits · $3/$15 per Mtok",
-    "supportsEffort": true,
-    "supportedEffortLevels": ["low", "medium", "high", "max"],
+    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
     "supportsAdaptiveThinking": true,
     "supportsAutoMode": true
   },
   {
     "value": "haiku",
+    "resolvedModel": "claude-haiku-4-5-20251001",
     "displayName": "Haiku",
     "description": "Haiku 4.5 · Fastest for quick answers"
   }

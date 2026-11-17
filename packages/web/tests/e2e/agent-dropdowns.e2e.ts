@@ -1,6 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { chooseChatAgent, openChatModel } from "./_chat-ui";
+import { chooseChatAgent, openChatModel, showPickerTab } from "./_chat-ui";
 import { apiPatch, gotoView } from "./_helpers";
 
 for (const theme of ["dark", "light"] as const) {
@@ -17,6 +17,7 @@ for (const theme of ["dark", "light"] as const) {
       const current = page.getByTestId("chat-agent-current");
       await expect(current).toHaveText("Codex");
       await picker.click();
+      await showPickerTab(page, "agent");
       await expect(page.getByTestId("chat-agent-select")).toBeVisible();
       const list = page.getByTestId("chat-agent-model-picker");
       await expect(list).toBeVisible();

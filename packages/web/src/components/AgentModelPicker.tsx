@@ -14,6 +14,8 @@ import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { AgentEffortChoice } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +27,7 @@ export function AgentModelPicker({
   descriptions,
   onAgent,
   onModel,
+  hasEfforts,
   efforts,
   effort,
   onEffort,
@@ -50,6 +53,7 @@ export function AgentModelPicker({
   descriptions?: ReadonlyMap<string, string>;
   onAgent: (agent: string) => boolean;
   onModel: (model: string) => void;
+  hasEfforts?: (model: string) => boolean;
   efforts?: AgentEffortChoice[] | undefined;
   effort?: string | undefined;
   onEffort?: ((value: string) => void) | undefined;
@@ -73,6 +77,8 @@ export function AgentModelPicker({
   const [model, setModel] = useState("");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"agent" | "model" | "effort">("model");
+  const phone = useMediaQuery("(max-width: 520px)");
   const agentList = useRef<HTMLDivElement>(null);
   const modelList = useRef<HTMLDivElement>(null);
   const effortList = useRef<HTMLDivElement>(null);
@@ -80,6 +86,8 @@ export function AgentModelPicker({
   const modelName = choices.get(selectedModel) || selectedModel || "Agent default";
   const summary = suppliedSummary ?? modelName;
   const effortChoices = efforts ?? [];
+  const shown = tab === "effort" && !effortChoices.length ? "model" : tab;
+  const effortLabel = effortChoices.find((choice) => choice.value === (effort ?? ""))?.label;
   const modelRows = [["", "Agent default"] as const, ...choices].filter(([id, label]) =>
     `${id} ${label} ${descriptions?.get(id) ?? ""}`
       .toLowerCase()
@@ -93,12 +101,17 @@ export function AgentModelPicker({
   function chooseAgent(next: string): void {
     reset();
     if (onAgent(next)) setOpen(false);
-    else focusChipOption(modelList.current);
+    else showModels();
+  }
+  function showModels(): void {
+    setTab("model");
+    focusChipOption(modelList.current);
   }
   function chooseModel(next: string): void {
     onModel(next);
     reset();
-    setOpen(false);
+    if (phone && hasEfforts?.(next)) setTab("effort");
+    else setOpen(false);
   }
   function columns(event: KeyboardEvent<HTMLElement>): void {
     if (event.target instanceof HTMLInputElement) return;
@@ -126,7 +139,8 @@ export function AgentModelPicker({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        if (next) setTab("model");
+        else reset();
       }}
     >
       <PopoverTrigger asChild>
@@ -176,10 +190,41 @@ export function AgentModelPicker({
         collisionPadding={12}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          focusChipOption(started ? modelList.current : agentList.current);
+          focusChipOption(started || phone ? modelList.current : agentList.current);
         }}
         onKeyDown={columns}
       >
+        {phone && (
+          <Tabs value={shown} onValueChange={(value) => setTab(value as typeof tab)}>
+            <TabsList
+              aria-label="Agent, model and effort"
+              className={cn(
+                "mb-1.5 grid w-full p-0",
+                effortChoices.length ? "grid-cols-3" : "grid-cols-2",
+              )}
+            >
+              {(
+                [
+                  ["agent", "Agent", name],
+                  ["model", "Model", modelName],
+                  ...(effortChoices.length
+                    ? [["effort", "Effort", effortLabel ?? "Default"] as const]
+                    : []),
+                ] as const
+              ).map(([value, kind, pick]) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  aria-label={`${kind}: ${pick}`}
+                  data-testid={`${testIdPrefix}-picker-tab-${value}`}
+                  className="min-w-0 px-2"
+                >
+                  <span className="truncate">{pick}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        )}
         <div
           className={cn(
             "grid gap-1.5 max-[520px]:grid-cols-1",
@@ -194,9 +239,12 @@ export function AgentModelPicker({
             aria-label="Agent"
             data-testid={`${testIdPrefix}-agent-select`}
             onKeyDown={onChipListKeyDown}
-            className="min-w-0 border-border max-[520px]:border-b max-[520px]:pb-1.5 min-[521px]:border-r min-[521px]:pr-1.5"
+            className={cn(
+              "min-w-0 border-border min-[521px]:border-r min-[521px]:pr-1.5",
+              phone && shown !== "agent" && "hidden",
+            )}
           >
-            <p className={chipHeading}>Agent</p>
+            {!phone && <p className={chipHeading}>Agent</p>}
             {(providers?.length
               ? providers
               : agents.map((id) => ({ id, name: agentLabel(id), agent: id }))
@@ -220,7 +268,7 @@ export function AgentModelPicker({
                   if (providers?.length && onProvider) {
                     reset();
                     if (onProvider(entry.id)) setOpen(false);
-                    else focusChipOption(modelList.current);
+                    else showModels();
                   } else chooseAgent(entry.agent);
                 }}
                 className={chipOption}
@@ -239,11 +287,11 @@ export function AgentModelPicker({
             onKeyDown={onChipListKeyDown}
             className={cn(
               "min-w-0",
-              effortChoices.length &&
-                "border-border max-[520px]:border-b max-[520px]:pb-1.5 min-[521px]:border-r min-[521px]:pr-1.5",
+              effortChoices.length && "border-border min-[521px]:border-r min-[521px]:pr-1.5",
+              phone && shown !== "model" && "hidden",
             )}
           >
-            <p className={chipHeading}>Model</p>
+            {!phone && <p className={chipHeading}>Model</p>}
             {choices.size > 6 && (
               <Input
                 data-testid={`${testIdPrefix}-model-search`}
@@ -287,10 +335,7 @@ export function AgentModelPicker({
                   <span className="flex min-w-0 flex-1 flex-col py-1">
                     <span className="truncate">{label}</span>
                     {descriptions?.get(id) && (
-                      <span
-                        title={descriptions.get(id)}
-                        className="truncate text-xs text-muted-foreground"
-                      >
+                      <span className="line-clamp-2 text-xs text-muted-foreground">
                         {descriptions.get(id)}
                       </span>
                     )}
@@ -376,9 +421,9 @@ export function AgentModelPicker({
               aria-label={`${name} effort`}
               data-testid={`${testIdPrefix}-effort-select`}
               onKeyDown={onChipListKeyDown}
-              className="min-w-0"
+              className={cn("min-w-0", phone && shown !== "effort" && "hidden")}
             >
-              <p className={chipHeading}>Effort</p>
+              {!phone && <p className={chipHeading}>Effort</p>}
               <div className="max-h-64 overflow-y-auto">
                 {[{ value: "", label: "Default" }, ...effortChoices].map((choice) => (
                   <button
@@ -389,7 +434,10 @@ export function AgentModelPicker({
                     aria-checked={(effort ?? "") === choice.value}
                     data-testid={`${testIdPrefix}-effort-option-${choice.value || "default"}`}
                     disabled={modelsDisabled}
-                    onClick={() => onEffort?.(choice.value)}
+                    onClick={() => {
+                      onEffort?.(choice.value);
+                      if (phone) setOpen(false);
+                    }}
                     className={chipOption}
                   >
                     <span className="min-w-0 flex-1 truncate">{choice.label}</span>

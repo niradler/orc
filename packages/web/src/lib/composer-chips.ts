@@ -150,7 +150,8 @@ export function agentEffortChoices(
     runtime === "codex"
       ? (modelEfforts ?? [])
       : (modelEfforts ?? []).filter((value) => known.includes(value));
-  const values = known.length && reported.length ? reported : known;
+  const values =
+    !known.length || !modelEfforts || (modelEfforts.length && !reported.length) ? known : reported;
   return values.map((value) => ({ value, label: EFFORT_LABELS[value] ?? value }));
 }
 
