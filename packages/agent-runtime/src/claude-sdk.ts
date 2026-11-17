@@ -535,9 +535,9 @@ class ClaudeSDKSession implements AgentSession {
             try {
               const form = elicitationForm(requestId, request);
               const result = await this.waitForQuestion(turn, form.question, signal);
-              return result
-                ? { action: "accept", content: form.content(result) }
-                : { action: "cancel" };
+              if (!result) return { action: "cancel" };
+              const content = form.content(result);
+              return content ? { action: "accept", content } : { action: "decline" };
             } catch {
               push({
                 type: "system_status",

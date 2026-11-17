@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { CHAT_QUESTION_DISMISS_ANSWER } from "@orc/core/chat";
 import { ChatAgentOptionsSchema, chatRuntime } from "@orc/core/chat-options";
 import {
   codingAgent,
@@ -8,6 +9,7 @@ import {
 import { JobActionSchema } from "@orc/core/job-actions";
 import { ProviderProfileSchema } from "@orc/core/providers";
 import { parseAgentModels } from "../models";
+import { PiSession } from "../pi";
 
 test("Pi is a native provider with validated structured options and an executable override", () => {
   expect(codingAgent("pi")?.chatRuntime).toBe("pi");
@@ -96,4 +98,29 @@ test("Pi resolves npm command shims to the Node entry point", async () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("Pi answers a dismissed dialog as cancelled instead of a real choice", () => {
+  const writes: unknown[] = [];
+  const session = new PiSession({ cwd: "/tmp" });
+  const internals = session as unknown as {
+    rpc: { write(message: unknown): Promise<void>; waitingForHuman(waiting: boolean): void };
+    dialogs: Map<string, { method: string; permission: boolean }>;
+  };
+  internals.rpc = {
+    write: async (message) => void writes.push(message),
+    waitingForHuman: () => {},
+  };
+  for (const method of ["confirm", "select", "input"]) {
+    internals.dialogs.set(method, { method, permission: false });
+    session.respondQuestion(method, { answer: [CHAT_QUESTION_DISMISS_ANSWER] });
+  }
+  internals.dialogs.set("answered", { method: "confirm", permission: false });
+  session.respondQuestion("answered", { answer: ["No"] });
+  expect(writes).toEqual([
+    { type: "extension_ui_response", id: "confirm", cancelled: true },
+    { type: "extension_ui_response", id: "select", cancelled: true },
+    { type: "extension_ui_response", id: "input", cancelled: true },
+    { type: "extension_ui_response", id: "answered", confirmed: false },
+  ]);
 });

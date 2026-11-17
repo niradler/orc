@@ -28,8 +28,9 @@ generic notice linking to the original chat. Their contents remain in that chat.
 
 In chat, the question card lists the agent's suggestions plus a field for your
 own answer; **Send answer** needs an answer for every question. **Dismiss** skips
-the question: it sends a "no answer" note and lets the agent continue with its
-best judgment, keeping the conversation open. Cancelling a pending request from
+the question without inventing an answer and lets the agent continue, keeping the
+conversation open; [Connect agents](./connect-agents.md#capabilities-and-direct-acp)
+lists what each agent receives. Cancelling a pending request from
 the inbox instead withdraws it, and a managed agent waiting on that request stops.
 
 ![Chat question card with suggestions, a custom answer field and Dismiss](/screens/chat-question-card-desktop.png)

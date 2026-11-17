@@ -802,9 +802,10 @@ export class CodexAppSession implements AgentSession {
     )
       throw new Error("Answer every question before continuing.");
     if (request.form) {
+      const content = request.form.content(parsed);
       this.write({
         id: request.wireId,
-        result: { action: "accept", content: request.form.content(parsed) },
+        result: content ? { action: "accept", content } : { action: "decline", content: null },
       });
       this.resolved(requestId);
       return;
