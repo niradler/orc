@@ -84,7 +84,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { notificationProjectLabel } from "@orc/db/notification-producers";
 import { RuleStore } from "@orc/db/rules";
-import { gateway_sessions } from "@orc/db/schema";
+import { gateway_sessions, session_handoffs } from "@orc/db/schema";
 import { SessionMessageStore } from "@orc/db/session-messages";
 import { SkillHistory } from "@orc/db/skill-history";
 import { and, eq, inArray } from "drizzle-orm";
@@ -629,6 +629,14 @@ async function newThread(
     )
       throw new ValidationError("Session has no valid native session identity or working folder.");
     await getHandoffService().verifyResume(source.id);
+    // A moved session carries a one-time briefing into its first chat turn so
+    // the agent knows it resumed on another machine. Only an unconsumed ready
+    // handoff supplies it; later resumes must not repeat it.
+    const handoff = await getDb().query.session_handoffs.findFirst({
+      where: eq(session_handoffs.live_session_id, source.id),
+    });
+    if (handoff?.status === "ready" && handoff.request.briefing)
+      thread.handoffBriefing = handoff.request.briefing;
     const runtime = hostRuntime(execHostFor(source.execution_host ?? null));
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
@@ -944,6 +952,22 @@ function continuationPrompt(
   kind: "switch" | "fork" = "switch",
 ): string | undefined {
   return buildContinuation(messages, kind).prompt;
+}
+
+/**
+ * A moved session delivers its one-time handoff briefing with the first real
+ * turn, so the agent knows it resumed on another machine. Consuming clears the
+ * field; /compact leaves it for the next turn.
+ */
+export function consumeHandoffBriefing(
+  thread: ChatThread,
+  input: string,
+  continuation: string | undefined,
+): string | undefined {
+  if (!thread.handoffBriefing || input.trim() === "/compact") return continuation;
+  const briefing = thread.handoffBriefing;
+  delete thread.handoffBriefing;
+  return continuation ? `${briefing}\n\n${continuation}` : briefing;
 }
 
 app.openapi(
@@ -2029,6 +2053,8 @@ async function openChat(
     !thread.forkPending
   )
     continuation ??= continuationPrompt(thread.messages, "fork");
+  // The handoff briefing rides the first real turn; /compact must not consume it.
+  if (body.threadId) continuation = consumeHandoffBriefing(thread, input, continuation);
   // A turn that ended cleanly without establishing a native session — a Pi
   // extension-command turn, which Pi only persists once the transcript holds a
   // message — is safe to continue: the next send starts a fresh native session and

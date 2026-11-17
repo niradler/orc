@@ -701,6 +701,25 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   sqlite.exec(
     "CREATE INDEX IF NOT EXISTS session_handoffs_live_idx ON session_handoffs(live_session_id)",
   );
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS session_sends (
+    id TEXT PRIMARY KEY,
+    live_session_id TEXT NOT NULL REFERENCES gateway_sessions(id) ON DELETE CASCADE,
+    host_label TEXT NOT NULL,
+    host_url TEXT NOT NULL,
+    project TEXT NOT NULL,
+    handoff_id TEXT,
+    remote_session_id TEXT,
+    branch TEXT,
+    "commit" TEXT,
+    left_behind TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`);
+  sqlite.exec(
+    "CREATE INDEX IF NOT EXISTS session_sends_live_idx ON session_sends(live_session_id, created_at)",
+  );
   // Refreshes planner statistics for the indexes above; cheap when nothing changed.
   sqlite.exec("PRAGMA optimize=0x10002;");
   dropRetiredTables(sqlite);

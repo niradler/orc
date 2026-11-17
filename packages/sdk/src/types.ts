@@ -63,6 +63,7 @@ export type {
   SessionMessageCreate,
   SessionMessageResult,
 } from "@orc/core/session-messages";
+export type { SessionSend, SessionSendInput, SessionSendPreview } from "@orc/core/session-send";
 export type {
   LocalSkill,
   LocalSkillAgentListing,
@@ -239,6 +240,14 @@ export type Session = {
 export type LiveSessionStatus = "idle" | "running" | "stopped" | "error";
 export type LiveSession = {
   handoff?: { id: string; branch: string; commit: string; status: "ready" | "resumed" } | null;
+  send?: {
+    id: string;
+    status: "preparing" | "ready" | "error";
+    host_label: string;
+    host_url: string;
+    remote_session_id: string | null;
+    error: string | null;
+  } | null;
   id: string;
   agent: string;
   session_id: string | null;

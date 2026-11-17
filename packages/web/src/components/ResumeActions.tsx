@@ -8,6 +8,7 @@ import {
   Link2,
   MessageSquare,
   Pencil,
+  Send,
   Split,
   SquareTerminal,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type LiveSession } from "@/api/client";
 import { RenameSession } from "@/components/RenameSession";
+import { SendToHost } from "@/components/SendToHost";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useUpdateLiveSession } from "@/hooks/useSessions";
@@ -49,6 +51,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [sendingToHost, setSendingToHost] = useState(false);
   const command = resumeCommand(session);
   const fork = forkCommand(session);
   const existing = runningTerminalForSession(terminals, session.id);
@@ -131,6 +134,23 @@ export function ResumeActions({ session }: { session: LiveSession }) {
       setChatPending(false);
     }
   }
+
+  const sendAction = (close: () => void): ReactNode => (
+    <button
+      type="button"
+      data-testid="send-to-host"
+      disabled={busy}
+      title="Move this session to another ORC installation and continue it there"
+      onClick={() => {
+        close();
+        setSendingToHost(true);
+      }}
+      className={ITEM}
+    >
+      <Send size={13} />
+      Send to host…
+    </button>
+  );
 
   const housekeeping = (close: () => void): ReactNode => (
     <>
@@ -260,6 +280,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
                     <Link2 size={13} />
                     Copy terminal link
                   </button>
+                  {sendAction(close)}
                 </>
               )}
               housekeeping={housekeeping}
@@ -274,6 +295,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
               triggerTestId="session-actions-menu"
               triggerLabel="Session actions"
               triggerClass={`${ACTION} px-2`}
+              extra={sendAction}
               housekeeping={housekeeping}
             />
           </div>
@@ -295,6 +317,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         </p>
       )}
       <RenameSession session={session} open={renaming} onClose={() => setRenaming(false)} />
+      <SendToHost session={session} open={sendingToHost} onClose={() => setSendingToHost(false)} />
     </div>
   );
 }

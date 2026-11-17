@@ -268,6 +268,19 @@ Steps, from the laptop session, with `orc-cloud` connected over MCP:
 
 The worktree is `<repo>/.orc/worktrees/<handoff-id>` on branch `orc/handoff/<handoff-id>`. Only Git-tracked state and the native transcript move. Ignored files, dependencies, environment variables and running processes do not. The agent can run the whole sequence when asked to hand off; the `orc-platform` skill documents it. Details: [Session handoff](./session-handoff.md).
 
+### Send a session from the dashboard
+
+Without involving the agent, open the session's actions menu on the laptop dashboard and
+choose **Send to host…**. The picker lists the ORC servers saved under
+[Settings → Hosts](./desktop-and-web.md#settings); pick the server, then a project on it
+whose folder is a checkout of the same repository, and send. The laptop ORC snapshots the
+work (secret-looking files stay local), pushes it to the shared Git remote, uploads the
+conversation and prepares it on the server. The session shows **Ready to resume** there
+and **Sent to …** on the laptop; the first resumed turn carries a handoff briefing so the
+agent knows it changed machines. Both installations must reach the same Git remote, and
+the session must run on the laptop server's own machine. Details:
+[Session handoff](./session-handoff.md#send-from-the-dashboard).
+
 ### Sync session history
 
 To make laptop history searchable on the server without running anything, sync it into the session archive.

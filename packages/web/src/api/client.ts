@@ -57,6 +57,7 @@ import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
+import type { SessionSend, SessionSendInput, SessionSendPreview } from "@orc/core/session-send";
 import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@orc/core/usage";
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 import { activeApiHeaders, readApiUrl } from "../lib/api-hosts";
@@ -1293,6 +1294,12 @@ export const api = {
         subdirectory?: string;
       },
     ) => req<SessionHandoff>("POST", `/sessions/archive/${id}/resume`, input),
+    sendPreview: (id: string) =>
+      req<SessionSendPreview>("GET", `/sessions/live/${encodeURIComponent(id)}/send-preview`),
+    sendTo: (id: string, input: SessionSendInput) =>
+      req<SessionSend>("POST", `/sessions/live/${encodeURIComponent(id)}/send-to`, input),
+    sends: (id: string) =>
+      req<{ sends: SessionSend[] }>("GET", `/sessions/live/${encodeURIComponent(id)}/sends`),
     list: (params?: {
       agent?: string;
       job_run_id?: string;

@@ -24,8 +24,10 @@ import { getDb } from "@orc/db/client";
 import { bridge_chats, gateway_sessions, projects, session_handoffs } from "@orc/db/schema";
 import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { LIVE_CHAT_ID } from "../sessions/common.js";
+import { opencodeDbPath } from "../sessions/opencode.js";
 import { handoffAdapters } from "./adapters.js";
 import { prepareHandoffWorktree, validateHandoffRepo, verifyHandoffWorktree } from "./git.js";
+import { newOpenCodeId } from "./opencode-store.js";
 
 type HandoffRow = typeof session_handoffs.$inferSelect;
 const logger = createLogger("api:handoff");
@@ -93,21 +95,43 @@ export interface HandoffServiceOptions {
   runtimeFor?: (host: ExecHost) => HostRuntime;
   nativeRootFor?: (
     host: ExecHost,
-    agent: "claude" | "codex",
+    agent: SessionHandoffRequest["agent"],
     runtime: HostRuntime,
   ) => Promise<string>;
 }
 
 async function nativeRootFor(
   host: ExecHost,
-  agent: "claude" | "codex",
+  agent: SessionHandoffRequest["agent"],
   runtime: HostRuntime,
 ): Promise<string> {
   const home = await runtime.home();
-  const fallback = (host.kind === "ssh" || home.startsWith("/") ? posix : win32).join(
-    home,
-    `.${agent}`,
-  );
+  if (agent === "opencode") return opencodeDbPath(runtime);
+  const paths = host.kind === "ssh" || home.startsWith("/") ? posix : win32;
+  if (agent === "pi") {
+    const fallback = paths.join(home, ".pi", "agent", "sessions");
+    const expand = (value: string): string => {
+      const expanded =
+        value.startsWith("~/") || value.startsWith("~\\")
+          ? paths.join(home, value.slice(2))
+          : value;
+      return paths.isAbsolute(expanded) ? paths.join(expanded, "sessions") : fallback;
+    };
+    if (host.kind === "local")
+      return process.env.PI_CODING_AGENT_DIR ? expand(process.env.PI_CODING_AGENT_DIR) : fallback;
+    const result = await runtime.exec(
+      [
+        "python3",
+        "-c",
+        "import os,sys; print(os.path.expanduser(os.environ.get(sys.argv[1]) or ''))",
+        "PI_CODING_AGENT_DIR",
+      ],
+      { timeoutMs: 30_000 },
+    );
+    const value = result.stdout.trim();
+    return result.code === 0 && value ? expand(value) : fallback;
+  }
+  const fallback = paths.join(home, `.${agent}`);
   const variable = agent === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
   if (host.kind === "local") return process.env[variable] || fallback;
   const result = await runtime.exec(
@@ -190,7 +214,7 @@ export class HandoffService {
         id,
         request,
         project_id: project.id,
-        session_id: randomUUID(),
+        session_id: request.agent === "opencode" ? newOpenCodeId("ses") : randomUUID(),
         execution_host: host.kind === "ssh" ? host.alias : null,
         repo_root: root,
         token_hash: tokenHash(token),
@@ -308,16 +332,33 @@ export class HandoffService {
           "Reported repository subdirectory is missing in the pushed commit",
         );
       await checkContainedDirectory(host, worktree, cwd);
-      const files = adapter.installFiles(
-        bundle,
-        row.request,
-        row.session_id,
-        cwd,
-        await runtime.home(),
-        row.created_at,
-        await this.nativeRootFor(host, row.request.agent, runtime),
-      );
-      for (const file of files) await writePrivateFile(host, file.path, file.content);
+      const nativeRoot = await this.nativeRootFor(host, row.request.agent, runtime);
+      let transcriptPath: string | null;
+      if (adapter.install) {
+        const installed = await adapter.install({
+          bundle,
+          request: row.request,
+          sessionId: row.session_id,
+          cwd,
+          host,
+          nativeRoot,
+        });
+        transcriptPath = installed.transcriptPath;
+      } else {
+        const files = adapter.installFiles?.(
+          bundle,
+          row.request,
+          row.session_id,
+          cwd,
+          await runtime.home(),
+          row.created_at,
+          nativeRoot,
+        );
+        if (!files?.length)
+          throw new ValidationError("The agent adapter produced no session files");
+        for (const file of files) await writePrivateFile(host, file.path, file.content);
+        transcriptPath = files[0]?.path ?? null;
+      }
       const liveId = row.live_session_id ?? row.id;
       const db = getDb();
       db.transaction((tx) => {
@@ -338,7 +379,7 @@ export class HandoffService {
             status: "stopped",
             title: row.request.title ?? `Handoff: ${row.request.project} / ${row.request.branch}`,
             summary: `Imported from ${row.request.source_cwd}; branch ${row.request.branch} at ${row.request.commit}`,
-            transcript_path: files[0]?.path ?? null,
+            transcript_path: transcriptPath,
             last_activity_at: new Date(),
           })
           .onConflictDoNothing()

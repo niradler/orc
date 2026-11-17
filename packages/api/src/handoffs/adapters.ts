@@ -1,6 +1,8 @@
 import { posix, win32 } from "node:path";
 import { ValidationError } from "@orc/core/errors";
+import type { ExecHost } from "@orc/core/exec-host";
 import type { SessionBundle, SessionHandoffRequest } from "@orc/core/session-handoff";
+import { installOpenCodeSession, validateOpenCodeBundle } from "./opencode-store.js";
 
 export interface ImportedFile {
   path: string;
@@ -9,7 +11,7 @@ export interface ImportedFile {
 
 export interface HandoffAdapter {
   validate(bundle: SessionBundle, request: SessionHandoffRequest): void;
-  installFiles(
+  installFiles?(
     bundle: SessionBundle,
     request: SessionHandoffRequest,
     sessionId: string,
@@ -18,6 +20,15 @@ export interface HandoffAdapter {
     createdAt: Date,
     nativeRoot?: string,
   ): ImportedFile[];
+  /** Store-backed agents (OpenCode) install into their own database instead of files. */
+  install?(context: {
+    bundle: SessionBundle;
+    request: SessionHandoffRequest;
+    sessionId: string;
+    cwd: string;
+    host: ExecHost;
+    nativeRoot: string;
+  }): Promise<{ transcriptPath: string }>;
 }
 
 function records(content: string): Record<string, unknown>[] {
@@ -173,6 +184,49 @@ export const handoffAdapters: Record<SessionHandoffRequest["agent"], HandoffAdap
           ),
         },
       ];
+    },
+  },
+  pi: {
+    validate(bundle, request) {
+      validatePaths(bundle, false);
+      const rows = records(mainFile(bundle).content);
+      const header = rows[0];
+      if (
+        header?.type !== "session" ||
+        header.version !== 3 ||
+        header.id !== request.session_id ||
+        typeof header.cwd !== "string"
+      )
+        throw new ValidationError("Pi session log does not match the source session");
+    },
+    installFiles(bundle, request, sessionId, cwd, home, createdAt, nativeRoot) {
+      const paths = home.startsWith("/") ? posix : win32;
+      const root = nativeRoot ?? paths.join(home, ".pi", "agent", "sessions");
+      const projectKey = cwd.replace(/[^a-zA-Z0-9]/g, "-");
+      const stamp = createdAt.toISOString().replace(/[:.]/g, "-");
+      return [
+        {
+          path: paths.join(root, projectKey, `${stamp}_${sessionId}.jsonl`),
+          content: jsonl(
+            records(mainFile(bundle).content).map((row) => ({
+              ...row,
+              ...(row.type === "session" && row.id === request.session_id
+                ? { id: sessionId, cwd }
+                : {}),
+              ...(typeof row.cwd === "string" ? { cwd } : {}),
+            })),
+          ),
+        },
+      ];
+    },
+  },
+  opencode: {
+    validate(bundle, request) {
+      validateOpenCodeBundle(bundle, request);
+    },
+    async install({ bundle, request, sessionId, cwd, host, nativeRoot }) {
+      await installOpenCodeSession(host, nativeRoot, bundle, request, sessionId, cwd);
+      return { transcriptPath: nativeRoot };
     },
   },
 };

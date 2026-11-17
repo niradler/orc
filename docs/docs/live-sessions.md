@@ -59,6 +59,16 @@ without a CLI fork do not offer the action; fork those conversations from an
 assistant response in chat instead, which uses the agent's native session fork or a
 bounded context replay.
 
+**Send to host…** (the send icon in the same resume actions) moves a Claude Code,
+Codex, OpenCode or Pi session to another ORC installation saved under [Settings → Hosts](./desktop-and-web.md#settings):
+pick the server and one of its projects, optionally leave a note, and send. The source
+snapshots the repository (secret-looking files stay local), pushes it to the shared Git
+remote and uploads the conversation; the destination shows the session as **Ready to
+resume** and the source row keeps a **Sent to …** badge with a link back to the send
+result. The first resumed turn carries a handoff briefing so the agent knows it changed
+machines. Both installations must reach the same Git remote, and the session must run on
+the source server's own machine. Details: [Session handoff](./session-handoff.md#send-from-the-dashboard).
+
 Activity and full-width session history share compact title/provider/state rows.
 An ORC terminal agent without observed session activity shows **Unknown**, rather
 than assuming it is idle. A session's working folder decides its project: the most
