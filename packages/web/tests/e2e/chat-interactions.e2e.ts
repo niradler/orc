@@ -1,4 +1,4 @@
-import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
+import { CHAT_QUESTION_DISMISS_ANSWER, ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { chooseChatAgent, openChatActions, openChatSettings, settingsSection } from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
@@ -221,6 +221,139 @@ for (const width of [390, 1440]) {
     await page.getByTestId("chat-terminal-back").click();
     await expect(page).not.toHaveURL(/sessionTerminal=/);
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+
+  test(`chat question can be dismissed without picking an option at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    const config = ChatSettingsSchema.parse({ agent: "codex", permissionMode: "default" });
+    await request.patch("/api/settings", {
+      headers: { Authorization: `Bearer ${API_SECRET}` },
+      data: { chat: config },
+    });
+    const thread: ChatThread = {
+      id: "10000000-0000-4000-8000-000000000011",
+      title: "Dismiss validation",
+      config,
+      backend: "codex-cli",
+      runtimeId: "native-dismiss",
+      sourceId: "source-dismiss",
+      cwd: "/fixture",
+      host: null,
+      messages: [],
+      updatedAt: Date.now(),
+    };
+    await page.addInitScript(
+      ({ thread }) => {
+        const original = window.fetch.bind(window);
+        const encoder = new TextEncoder();
+        let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+        const emit = (event: unknown) =>
+          stream?.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        const state = { answer: {} as Record<string, unknown> };
+        Object.assign(window, { chatDismissTest: state });
+        window.fetch = async (input, init) => {
+          const url = new URL(
+            typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+            location.href,
+          );
+          if (url.pathname === "/api/chat/stream") {
+            return new Response(
+              new ReadableStream({
+                start(controller) {
+                  stream = controller;
+                  emit({
+                    type: "thread",
+                    thread: { ...thread, runtimeId: null },
+                    runId: "10000000-0000-4000-8000-000000000012",
+                  });
+                  emit({
+                    type: "question_request",
+                    data: {
+                      requestId: "question-dismiss-1",
+                      questions: [
+                        {
+                          id: "color",
+                          header: "Color",
+                          question: "Choose a color",
+                          options: [
+                            { label: "Blue", description: "Use blue" },
+                            { label: "Green", description: "Use green" },
+                          ],
+                        },
+                        {
+                          id: "colors",
+                          header: "Colors",
+                          question: "Choose colors",
+                          multiSelect: true,
+                          options: [{ label: "Red", description: "Use red" }],
+                        },
+                      ],
+                    },
+                  });
+                },
+              }),
+              { headers: { "Content-Type": "text/event-stream" } },
+            );
+          }
+          if (url.pathname.endsWith("/answer")) {
+            state.answer = JSON.parse(String(init?.body));
+            emit({ type: "request_resolved", requestId: "question-dismiss-1" });
+            emit({ type: "text", text: "Continuing without an answer" });
+            emit({ type: "session", runtimeId: thread.runtimeId });
+            emit({ type: "done" });
+            stream?.close();
+            thread.messages = [
+              {
+                id: "dismissed",
+                role: "assistant",
+                content: "Continuing without an answer",
+                timestamp: Date.now(),
+              },
+            ];
+            return Response.json({ ok: true });
+          }
+          if (url.pathname === `/api/chat/threads/${thread.id}`) return Response.json(thread);
+          return original(input, init);
+        };
+      },
+      { thread },
+    );
+    await page.route("**/api/chat/models?**", (route) =>
+      route.fulfill({ json: { models: [], warning: null } }),
+    );
+    await page.route("**/api/chat/threads", (route) => route.fulfill({ json: thread }));
+    await page.setViewportSize({ width, height: 900 });
+    await gotoView(page, "activity");
+    await page.goto("/?chat=open");
+    await page.getByTestId("chat-input").filter({ visible: true }).fill("Ask me something");
+    await page.getByTestId("chat-send-button").filter({ visible: true }).click();
+    await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+    // Nothing is selected yet: answering stays blocked, but dismissing is available.
+    await expect(page.getByTestId("chat-question-submit").filter({ visible: true })).toBeDisabled();
+    await page.getByTestId("chat-question-help").filter({ visible: true }).click();
+    await expect(page.getByTestId("chat-question-help-content")).toContainText(
+      "type your own answer",
+    );
+    await page.keyboard.press("Escape");
+    await page.screenshot({ path: testInfo.outputPath(`chat-question-dismiss-${width}.png`) });
+    await page.getByTestId("chat-question-dismiss").filter({ visible: true }).click();
+    await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeHidden();
+    await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
+    const state = await page.evaluate(
+      () => (window as unknown as { chatDismissTest: { answer: unknown } }).chatDismissTest,
+    );
+    expect(state.answer).toEqual({
+      requestId: "question-dismiss-1",
+      answers: {
+        color: [CHAT_QUESTION_DISMISS_ANSWER],
+        colors: [CHAT_QUESTION_DISMISS_ANSWER],
+      },
+    });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );

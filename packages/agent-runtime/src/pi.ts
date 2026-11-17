@@ -6,6 +6,7 @@ import type {
   RpcExtensionUIRequest,
   RpcSessionState,
 } from "@earendil-works/pi-coding-agent";
+import { CHAT_QUESTION_DISMISS_ANSWER } from "@orc/core/chat";
 import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   hostBinary,
@@ -553,7 +554,7 @@ export class PiSession implements AgentSession {
     const value = answers.answer?.[0];
     this.resolveDialog(
       id,
-      value === undefined
+      value === undefined || value === CHAT_QUESTION_DISMISS_ANSWER
         ? { cancelled: true }
         : dialog.method === "confirm"
           ? { confirmed: value === "Yes" }

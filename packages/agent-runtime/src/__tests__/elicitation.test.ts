@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { CHAT_QUESTION_DISMISS_ANSWER } from "@orc/core/chat";
 import { acpElicitationForm, elicitationForm } from "../elicitation.js";
 
 test("should translate primitive MCP forms into real questions and typed native content", () => {
@@ -186,4 +187,40 @@ test("should decline unsupported ACP elicitation modes and schemas", () => {
       },
     }),
   ).toThrow("Secret");
+});
+
+test("should omit dismissed optional fields and decline when a required field is dismissed", () => {
+  const dismissed = [CHAT_QUESTION_DISMISS_ANSWER];
+  const properties = {
+    color: { type: "string", enum: ["Blue", "Green"] },
+    colors: { type: "array", items: { enum: ["Red", "Blue"] } },
+    enabled: { type: "boolean" },
+    count: { type: "integer", minimum: 1, maximum: 3 },
+  };
+  const all = { color: dismissed, colors: dismissed, enabled: dismissed, count: dismissed };
+  const acp = (required: string[]) =>
+    acpElicitationForm("r", {
+      mode: "form",
+      message: "Configure",
+      requestedSchema: { type: "object", required, properties },
+    });
+  const mcp = (required: string[]) =>
+    elicitationForm("r", {
+      mode: "form",
+      requestedSchema: {
+        type: "object",
+        required,
+        properties: {
+          color: properties.color,
+          enabled: properties.enabled,
+          count: properties.count,
+        },
+      },
+    });
+  expect(acp([]).content(all)).toEqual({});
+  expect(acp([]).content({ ...all, color: ["Green"] })).toEqual({ color: "Green" });
+  for (const key of Object.keys(properties)) expect(acp([key]).content(all)).toBeNull();
+  expect(mcp([]).content(all)).toEqual({});
+  expect(mcp([]).content({ ...all, count: ["2"] })).toEqual({ count: 2 });
+  for (const key of ["color", "enabled", "count"]) expect(mcp([key]).content(all)).toBeNull();
 });

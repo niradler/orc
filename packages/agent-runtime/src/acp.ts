@@ -841,7 +841,7 @@ export class AcpSession implements AgentSession {
     if (!pending) throw new Error("This question is no longer pending.");
     const content = pending.form.content(answers);
     this.questions.delete(id);
-    pending.resolve({ action: "accept", content });
+    pending.resolve(content ? { action: "accept", content } : { action: "decline" });
     this.push({ type: "request_resolved", data: { requestId: id } });
   }
 
