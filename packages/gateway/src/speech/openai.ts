@@ -5,7 +5,6 @@ import {
   requestSignal,
   type SpeechToText,
   type TextToSpeech,
-  transcribable,
 } from "./audio.js";
 
 export function whisperSpeechToText(
@@ -17,8 +16,9 @@ export function whisperSpeechToText(
   if (!apiKey) return null;
   const baseUrl = (settings.base_url ?? defaults.baseUrl).replace(/\/$/, "");
   return {
+    maxBytes: 25 * 1024 * 1024,
     async transcribe(input) {
-      const { audio, format } = await transcribable(input);
+      const { audio, format } = input;
       const form = new FormData();
       form.append("model", settings.model ?? defaults.model);
       form.append("response_format", "text");
@@ -60,11 +60,12 @@ export function openaiTextToSpeech(config: OrcConfig): TextToSpeech | null {
           model: tts.openai.model ?? "tts-1",
           input: text,
           voice: tts.voice || "alloy",
+          response_format: "opus",
         }),
         signal: requestSignal(signal),
       });
       if (!response.ok) throw new Error(await response.text());
-      return { audio: new Uint8Array(await response.arrayBuffer()), format: "mp3" };
+      return { audio: new Uint8Array(await response.arrayBuffer()), format: "ogg" };
     },
   };
 }

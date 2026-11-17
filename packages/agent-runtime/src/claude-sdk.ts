@@ -453,7 +453,8 @@ class ClaudeSDKSession implements AgentSession {
       const permissionMode =
         this.opts.toolAllowlist !== undefined
           ? "default"
-          : (options.permissionMode ??
+          : (this.liveMode ??
+            options.permissionMode ??
             this.opts.permissionMode ??
             (this.opts.autoApprove ? "bypassPermissions" : "default"));
       logger.info("Starting Claude SDK query", {
@@ -970,6 +971,9 @@ class ClaudeSDKSession implements AgentSession {
 
   setPermissionMode(mode: LivePermissionMode): void {
     this.liveMode = mode;
+    this.turn?.query
+      ?.setPermissionMode(mode === "bypassPermissions" ? "acceptEdits" : mode)
+      .catch((error) => logger.warn("Claude permission mode change failed", { mode, error }));
     for (const [requestId, pending] of this.permissionResolvers)
       if (permissionModeAllows(mode, pending.tool)) this.respondPermission(requestId, "approved");
   }

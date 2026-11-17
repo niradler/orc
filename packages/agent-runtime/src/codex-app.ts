@@ -79,6 +79,9 @@ export class CodexAppSession implements AgentSession {
   private readonly pending = new Map<string, Pending>();
   private readonly subagents = new Map<string, ChatSubagentPayload>();
   private liveMode: LivePermissionMode | undefined;
+  private nativeMode: string | undefined;
+  private threadMode: LivePermissionMode | undefined;
+  private nativeModel: string | undefined;
 
   constructor(
     private readonly opts: SessionOpts,
@@ -400,7 +403,7 @@ export class CodexAppSession implements AgentSession {
     } else if (method === "serverRequest/resolved") {
       for (const [id, request] of this.pending)
         if (request.wireId === params.requestId) this.resolved(id);
-    } else if (method === "item/agentMessage/delta") {
+    } else if (method === "item/agentMessage/delta" || method === "item/plan/delta") {
       const itemId = String(params.itemId ?? "");
       this.streamedItems.add(itemId);
       this.pushText(itemId, String(params.delta ?? ""));
@@ -417,6 +420,11 @@ export class CodexAppSession implements AgentSession {
         this.actionItems.set(item.id, item);
       else if (method === "item/completed" && typeof item.id === "string")
         this.actionItems.delete(item.id);
+      if (item.type === "plan" && method === "item/completed") {
+        if (!this.streamedItems.has(String(item.id)) && typeof item.text === "string" && item.text)
+          this.pushText(String(item.id), item.text);
+        return;
+      }
       if (item.type === "agentMessage" && method === "item/completed") {
         if (!this.streamedItems.has(String(item.id)) && typeof item.text === "string" && item.text)
           this.pushText(String(item.id), item.text);
@@ -709,6 +717,10 @@ export class CodexAppSession implements AgentSession {
         throw new Error("Codex did not return the requested conversation identity.");
       this.runtimeId = id;
       this.forkSourceRuntimeId = undefined;
+      this.threadMode = mode;
+      const nativeMode = object(result.collaborationMode).mode;
+      this.nativeMode = typeof nativeMode === "string" ? nativeMode : undefined;
+      this.nativeModel = typeof result.model === "string" ? result.model : undefined;
     }
     this.activeTurnId = undefined;
     this.startedTurns.clear();
@@ -720,6 +732,7 @@ export class CodexAppSession implements AgentSession {
     }
     const started = await this.call("turn/start", {
       threadId: this.runtimeId,
+      ...this.collaborationMode(),
       input: [
         { type: "text", text: prompt },
         ...(images ?? []).map((image) => ({
@@ -729,6 +742,39 @@ export class CodexAppSession implements AgentSession {
       ],
     });
     this.adoptStartedTurn(started);
+  }
+
+  private collaborationMode(): Record<string, unknown> {
+    const live = this.liveMode ?? this.threadMode;
+    const policy =
+      live && live !== this.threadMode
+        ? {
+            approvalPolicy: live === "default" ? "on-request" : "never",
+            sandboxPolicy:
+              live === "bypassPermissions"
+                ? { type: "dangerFullAccess" }
+                : live === "acceptEdits"
+                  ? {
+                      type: "workspaceWrite",
+                      writableRoots: [],
+                      networkAccess: false,
+                      excludeTmpdirEnvVar: false,
+                      excludeSlashTmp: false,
+                    }
+                  : { type: "readOnly", networkAccess: false },
+          }
+        : {};
+    this.threadMode = live;
+    const mode = live === "plan" ? "plan" : "default";
+    if (mode === (this.nativeMode ?? "default") || !this.nativeModel) return policy;
+    this.nativeMode = mode;
+    return {
+      ...policy,
+      collaborationMode: {
+        mode,
+        settings: { model: this.nativeModel, reasoning_effort: null, developer_instructions: null },
+      },
+    };
   }
 
   private adoptStartedTurn(started: Record<string, unknown>): void {
@@ -892,7 +938,7 @@ export class CodexAppSession implements AgentSession {
       try {
         const started = await this.call(completed ? "turn/start" : "turn/steer", {
           threadId: this.runtimeId,
-          ...(completed ? {} : { expectedTurnId: request.asyncTurnId }),
+          ...(completed ? this.collaborationMode() : { expectedTurnId: request.asyncTurnId }),
           input,
         });
         if (completed) this.adoptStartedTurn(started);

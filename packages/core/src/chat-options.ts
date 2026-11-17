@@ -1,6 +1,16 @@
 import { z } from "zod";
 
-export const ChatPermissionModeSchema = z.enum(["default", "acceptEdits", "bypassPermissions"]);
+export const ChatPermissionModeSchema = z.enum([
+  "default",
+  "plan",
+  "acceptEdits",
+  "auto",
+  "bypassPermissions",
+]);
+
+export function unsupportedPermissionMode(mode: string): string {
+  return `This agent does not support the "${mode}" permission mode.`;
+}
 const argument = z
   .string()
   .min(1)

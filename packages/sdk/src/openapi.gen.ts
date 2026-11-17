@@ -530,6 +530,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -610,7 +611,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -642,7 +643,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -701,6 +702,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -979,7 +981,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -1011,7 +1013,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -1070,6 +1072,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1286,7 +1289,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -1318,7 +1321,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -1377,6 +1380,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1596,7 +1600,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -1628,7 +1632,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -1687,6 +1691,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -2107,7 +2112,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -2139,7 +2144,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -2198,6 +2203,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -2413,7 +2419,7 @@ export interface paths {
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
-                                    permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                    permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                     maxTurns?: number;
                                     maxBudgetUsd?: number;
                                     /** @enum {string} */
@@ -2483,7 +2489,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -2515,7 +2521,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -2574,6 +2580,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -2940,7 +2947,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -2972,7 +2979,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -3031,6 +3038,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -3266,7 +3274,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** @enum {string} */
-                        mode: "default" | "acceptEdits" | "bypassPermissions";
+                        mode: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                     };
                 };
             };
@@ -3304,7 +3312,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -3336,7 +3344,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -3395,6 +3403,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -3650,7 +3659,7 @@ export interface paths {
                         system?: string;
                         autoApprove?: boolean;
                         /** @enum {string} */
-                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         /** @enum {string} */
                         sendWhileRunning?: "steer" | "queue";
                         agentOptions?: {
@@ -3678,7 +3687,7 @@ export interface paths {
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
-                                    permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                    permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                     maxTurns?: number;
                                     maxBudgetUsd?: number;
                                     /** @enum {string} */
@@ -7907,7 +7916,7 @@ export interface paths {
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
-                                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                         maxTurns?: number;
                                         maxBudgetUsd?: number;
                                         /** @enum {string} */
@@ -7997,7 +8006,7 @@ export interface paths {
                                 runtime: "claude-sdk";
                                 options: {
                                     /** @enum {string} */
-                                    permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                    permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                     maxTurns?: number;
                                     maxBudgetUsd?: number;
                                     /** @enum {string} */
@@ -8082,7 +8091,7 @@ export interface paths {
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
-                                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                         maxTurns?: number;
                                         maxBudgetUsd?: number;
                                         /** @enum {string} */
@@ -8415,7 +8424,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -8447,7 +8456,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -8539,7 +8548,7 @@ export interface paths {
                             /** @default false */
                             autoApprove?: boolean;
                             /** @enum {string} */
-                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                             /**
                              * @default steer
                              * @enum {string}
@@ -8571,7 +8580,7 @@ export interface paths {
                                     runtime: "claude-sdk";
                                     options: {
                                         /** @enum {string} */
-                                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                         maxTurns?: number;
                                         maxBudgetUsd?: number;
                                         /** @enum {string} */
@@ -8653,7 +8662,7 @@ export interface paths {
                                 /** @default false */
                                 autoApprove: boolean;
                                 /** @enum {string} */
-                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                 /**
                                  * @default steer
                                  * @enum {string}
@@ -8685,7 +8694,7 @@ export interface paths {
                                         runtime: "claude-sdk";
                                         options: {
                                             /** @enum {string} */
-                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                                             maxTurns?: number;
                                             maxBudgetUsd?: number;
                                             /** @enum {string} */
@@ -22983,6 +22992,7 @@ export interface components {
                 fork: boolean;
                 rollback: boolean;
                 subagents?: boolean;
+                permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                 effortChoices?: {
                     value: string;
                     label: string;
@@ -24221,7 +24231,7 @@ export interface components {
                     runtime: "claude-sdk";
                     options: {
                         /** @enum {string} */
-                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         maxTurns?: number;
                         maxBudgetUsd?: number;
                         /** @enum {string} */
@@ -24350,7 +24360,7 @@ export interface components {
                     runtime: "claude-sdk";
                     options: {
                         /** @enum {string} */
-                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         maxTurns?: number;
                         maxBudgetUsd?: number;
                         /** @enum {string} */
@@ -24483,7 +24493,7 @@ export interface components {
                     runtime: "claude-sdk";
                     options: {
                         /** @enum {string} */
-                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         maxTurns?: number;
                         maxBudgetUsd?: number;
                         /** @enum {string} */
@@ -24601,6 +24611,7 @@ export interface components {
         };
         SpeechStatus: {
             available: boolean;
+            max_bytes: number;
         };
         SpeechTranscript: {
             text: string;

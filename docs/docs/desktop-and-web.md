@@ -718,7 +718,15 @@ itself is fixed for the session.
 Changing agent after launch starts a separate session. The model picker disables
 changes during a response or when the backend selects its own model. Effort stays
 in agent options. The permissions chip shows the open session's mode — including
-**Ask in chat** — when the backend supports changing it live.
+**Ask in chat** — when the backend supports changing it live. Each agent lists
+only its own modes from `GET /chat/capabilities` (`permissionModes`). **Plan**
+(reads and plans, never edits) uses each agent's native mode: Claude's `plan`
+permission mode, Codex's plan collaboration mode and OpenCode's plan agent.
+Claude also offers **Auto** (Claude's classifier approves safe actions). Codex
+and Pi offer Ask in chat, Allow edits and Full access; OpenCode offers Ask in
+chat and Plan, applied from the next message. Pi and ACPX agents show that Plan
+isn't available. Leaving Plan during a Claude response applies to the running
+turn.
 
 **Session settings** in the chat header organizes the conversation into tabs.
 **Overview** shows the agent, model, execution host and folder, backend, last
@@ -751,7 +759,7 @@ input level. **Insert** (or **Enter**, or the shortcut again) stops and
 transcribes; **Cancel** (or **Escape**) discards the clip. The transcript lands at
 the cursor, replacing any selection, and is never sent for you. Send, Queue and
 Send now stay disabled while recording and transcribing. A recording stops on its
-own after five minutes. A blocked or missing microphone, or a failed
+own after five minutes (sooner when the provider takes smaller clips). A blocked or missing microphone, or a failed
 transcription, shows the reason with **Retry**, which resends the same clip
 when the recording itself succeeded. The browser needs HTTPS or `localhost` to
 reach the microphone. The audio goes to the ORC server, which forwards it to the

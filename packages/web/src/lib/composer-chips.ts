@@ -2,6 +2,7 @@ import type { ChatSettings } from "@orc/core/chat";
 import { type ChatAgentOptions, type ClaudeChatOptions, chatRuntime } from "@orc/core/chat-options";
 import { agentForSessionBackend, codingAgent } from "@orc/core/coding-agents";
 import { pathLabel } from "@orc/core/display-path";
+import type { AgentCapabilities } from "@orc/core/types";
 
 export type PermissionMode = NonNullable<ChatSettings["permissionMode"]>;
 export type ComposerWorktree = {
@@ -15,9 +16,26 @@ export type ComposerWorktreeListing = { root: string | null; worktrees: Composer
 
 export const PERMISSION_LABELS: Record<PermissionMode, string> = {
   default: "Ask in chat",
+  plan: "Plan",
   acceptEdits: "Allow edits",
+  auto: "Auto",
   bypassPermissions: "Full access",
 };
+
+export const PERMISSION_DESCRIPTIONS: Record<PermissionMode, string> = {
+  default: "The agent's usual approvals",
+  plan: "Reads and plans, never edits",
+  acceptEdits: "Edits files, asks before commands",
+  auto: "A classifier approves safe actions",
+  bypassPermissions: "Never asks",
+};
+
+export function permissionModes(capabilities: AgentCapabilities | undefined): PermissionMode[] {
+  return (
+    capabilities?.permissionModes ??
+    (capabilities?.livePermissions ? ["default", "acceptEdits", "bypassPermissions"] : [])
+  );
+}
 
 export const PASTE_ATTACHMENT_BYTES = 16 * 1024;
 export const PASTE_ATTACHMENT_LINES = 200;

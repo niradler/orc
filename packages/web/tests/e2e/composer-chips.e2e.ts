@@ -360,6 +360,57 @@ test("permission chip appears only when the mode is not the default", async ({ p
   await expect(chip).toHaveCount(0);
 });
 
+for (const width of [1440, 390]) {
+  test(`each agent lists only its own permission modes, with descriptions, at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await request.patch("/api/settings", {
+      headers,
+      data: { chat: { ...defaults, agent: "claude", permissionMode: "plan" } },
+    });
+    await openChat(page);
+    const chip = page.getByTestId("chat-permission-chip");
+    await expect(chip).toHaveAttribute("data-mode", "plan");
+    await expect(chip).toHaveAccessibleName("Permissions: Plan");
+    await chip.click();
+    const plan = page.getByTestId("chat-permission-option-plan");
+    await expect(plan).toHaveAttribute("aria-checked", "true");
+    await expect(plan).toContainText("Reads and plans, never edits");
+    const box = await page.getByRole("menu", { name: "Permissions" }).boundingBox();
+    expect((box?.x ?? -1) >= 0 && (box?.x ?? 0) + (box?.width ?? 0) <= width).toBe(true);
+    await page.getByTestId("chat-permission-option-acceptEdits").click();
+    await expect(chip).toHaveAttribute("data-mode", "acceptEdits");
+
+    await page.getByTestId("chat-agent-model-button").click();
+    if (width < 640) await page.getByTestId("chat-picker-tab-agent").click();
+    await page.getByTestId("chat-agent-option-codex").click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
+    await chip.click();
+    await expect(page.getByTestId("chat-permission-option-plan")).toBeVisible();
+    await expect(page.getByTestId("chat-permission-option-auto")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(() => localStorage.clear());
+    await request.patch("/api/settings", {
+      headers,
+      data: {
+        chat: { ...defaults, agent: "opencode", permissionMode: "plan" },
+      },
+    });
+    await openChat(page);
+    await expect(chip).toHaveAttribute("data-mode", "plan");
+    await chip.click();
+    await expect(
+      page.getByRole("menu", { name: "Permissions" }).getByRole("menuitemradio"),
+    ).toHaveCount(2);
+    await page.getByTestId("chat-permission-option-default").click();
+    await expect(chip).toHaveCount(0);
+  });
+}
+
 test("backend capabilities lock the model column and hide the permission chip", async ({
   page,
   request,
