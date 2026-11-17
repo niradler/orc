@@ -90,3 +90,21 @@ export function liveSessionState(
 ): AgentState {
   return session.waiting_for_human ? "needs-you" : (LIVE_STATES[session.status] ?? "unknown");
 }
+
+export function waitingLabel(waiting: NonNullable<LiveSession["waiting_for"]>): string {
+  return waiting.tool ? `${waiting.reason} · ${waiting.tool}` : waiting.reason;
+}
+
+export function sendOutcome(input: {
+  streaming: boolean;
+  steers: boolean;
+  inbox: boolean;
+  waitingFor?: LiveSession["waiting_for"];
+}): string | null {
+  if (input.inbox)
+    return input.waitingFor
+      ? `Needs you · ${waitingLabel(input.waitingFor)}. Send queues until it is answered.`
+      : "Running in its own agent. Send queues your message for its next safe point.";
+  if (!input.streaming) return null;
+  return input.steers ? "Send steers the current turn." : "Send queues until the turn ends.";
+}

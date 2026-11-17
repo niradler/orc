@@ -19,7 +19,7 @@ import { ArchiveResumeForm, ProjectGroup, SubagentList } from "@/components/Chat
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { Highlight } from "@/components/Highlight";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
-import { SessionModeIcon, SubagentChip } from "@/components/SessionRowContent";
+import { SessionModeIcon, SessionRunChip, SubagentChip } from "@/components/SessionRowContent";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -584,6 +584,7 @@ function MobileHistoryRow({
             {model && <span data-testid="chat-session-run">{model} · </span>}
             {meta}
           </span>
+          {entry.kind === "native" && <SessionRunChip session={entry.session} />}
           <SubagentChip count={entry.subagents} />
           {entry.kind === "native" && entry.session.handoff?.status === "ready" && (
             <span data-testid="handoff-ready" className="shrink-0 text-primary">

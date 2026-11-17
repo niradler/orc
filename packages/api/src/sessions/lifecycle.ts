@@ -52,7 +52,8 @@ export function withLifecycle(
           lastActivityAt: new Date(
             Math.max(previous?.lastActivityAt.getTime() ?? 0, live.lastActivityAt.getTime()),
           ),
-          ...(live.pendingHuman === undefined && previous?.pendingHuman !== undefined
+          ...((live.pendingHuman === undefined || previous?.waitingFor) &&
+          previous?.pendingHuman !== undefined
             ? { pendingHuman: previous.pendingHuman }
             : {}),
         });

@@ -102,7 +102,7 @@ import {
   retireChatFinishedNotifications,
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
-import { LIVE_CHAT_ID } from "../session-watcher.js";
+import { LIVE_CHAT_ID, liveRunFields } from "../session-watcher.js";
 import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
@@ -1070,6 +1070,14 @@ app.openapi(
                   tokens_used: z.number().nullable(),
                   tokens_estimated: z.boolean(),
                   status: z.enum(["idle", "running", "stopped", "error"]),
+                  waiting_for_human: z.boolean(),
+                  waiting_for: z
+                    .object({
+                      reason: z.enum(["permission", "question", "dialog"]),
+                      tool: z.string().nullable(),
+                    })
+                    .nullable(),
+                  background_work: z.boolean(),
                   created_at: z.string().datetime(),
                   last_activity_at: z.string().datetime().nullable(),
                 })
@@ -1107,6 +1115,11 @@ app.openapi(
             tokens_used: source.tokens_used ?? null,
             tokens_estimated: source.backend === "cursor" && source.tokens_used != null,
             status: source.status,
+            ...liveRunFields(
+              source.backend,
+              source.execution_host ?? null,
+              source.runtime_session_id ?? null,
+            ),
             created_at: source.created_at.toISOString(),
             last_activity_at: source.last_activity_at?.toISOString() ?? null,
           }

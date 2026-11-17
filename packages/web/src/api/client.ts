@@ -857,6 +857,9 @@ export const api = {
           tokens_used: number | null;
           tokens_estimated: boolean;
           status: LiveSessionStatus;
+          waiting_for_human: boolean;
+          waiting_for: LiveSession["waiting_for"];
+          background_work: boolean;
           created_at: string;
           last_activity_at: string | null;
         } | null;

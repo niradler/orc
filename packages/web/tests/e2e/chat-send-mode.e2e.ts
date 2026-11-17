@@ -65,10 +65,17 @@ for (const width of [390, 1440]) {
     await panel.getByTestId("chat-send-button").click();
     await expect(panel).toHaveAttribute("data-streaming", "true");
     await expect(panel.getByTestId("chat-input")).toBeEnabled();
+    await expect(panel.getByTestId("chat-send-outcome")).toHaveText(
+      "Send queues until the turn ends.",
+    );
     await panel.getByTestId("chat-input").fill("Reply with exactly: HELD.");
     await panel.getByTestId("chat-send-button").click();
     await expect(panel.getByTestId("chat-pending-count")).toHaveText("1 pending");
     await page.screenshot({ path: testInfo.outputPath(`queued-${width}.png`) });
+    if (process.env.ORC_SCREENSHOT_DIR)
+      await page.screenshot({
+        path: `${process.env.ORC_SCREENSHOT_DIR}/composer-queues-${width}.png`,
+      });
     expect(steers).toHaveLength(0);
   });
 }

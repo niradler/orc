@@ -7,7 +7,12 @@ type SessionState = {
   changed: boolean;
   running: boolean;
   queued: { id: string; title: string }[];
-  live: { id: string; agent: string; status: string } | null;
+  live: {
+    id: string;
+    agent: string;
+    status: string;
+    waiting_for?: { reason: string; tool: string | null } | null;
+  } | null;
 };
 
 async function openPushedChat(
@@ -200,6 +205,22 @@ for (const width of [1440, 390]) {
     await chat.pushSessions();
     await expect(page.getByTestId("chat-messages").getByText("Agent step 2")).toBeVisible();
     expect(chat.rebuilt()).toBe(2);
+
+    state.live = {
+      id: "live-1",
+      agent: "claude",
+      status: "running",
+      waiting_for: { reason: "permission", tool: "Bash" },
+    };
+    await chat.pushSessions();
+    await expect(page.getByTestId("chat-agent-running")).toHaveText(
+      "Needs you · permission · Bash. Send queues until it is answered.",
+    );
+    await page.screenshot({ path: testInfo.outputPath(`agent-waiting-${width}.png`) });
+    if (process.env.ORC_SCREENSHOT_DIR)
+      await page.screenshot({
+        path: `${process.env.ORC_SCREENSHOT_DIR}/composer-waiting-${width}.png`,
+      });
 
     state.live = { id: "live-1", agent: "claude", status: "idle" };
     await chat.pushSessions();

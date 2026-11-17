@@ -6,7 +6,7 @@ import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { activityAdvanced, isAlive, oneLine, statusFromMtime } from "./common.js";
-import type { SessionAdapter, SessionRecord } from "./types.js";
+import type { SessionAdapter, SessionRecord, SessionWaiting } from "./types.js";
 import { lifetimeUsage, type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
 
 export const CLAUDE_REGISTRY_DIR = join(homedir(), ".claude", "sessions");
@@ -26,6 +26,7 @@ const RegistryEntry = z.object({
   name: z.string().optional(),
   nameSource: z.string().optional(),
   status: z.string().optional(),
+  waitingFor: z.string().nullish(),
   startedAt: z.number().optional(),
   updatedAt: z.number().optional(),
 });
@@ -57,6 +58,26 @@ function registryName(entry: RegistryEntry): string | null {
   return entry.nameSource === "derived" ? null : entry.name || null;
 }
 
+function waitingReason(waitingFor: string | null | undefined): SessionWaiting["reason"] {
+  if (waitingFor === "input needed") return "question";
+  return /permission|sandbox|worker/.test(waitingFor ?? "") ? "permission" : "dialog";
+}
+
+function registryRunState(
+  entry: RegistryEntry,
+  alive: boolean,
+): Pick<SessionRecord, "status" | "pendingHuman" | "waitingFor" | "background"> {
+  if (!alive) return { status: "stopped" };
+  if (entry.status === "waiting")
+    return {
+      status: "running",
+      pendingHuman: true,
+      waitingFor: { reason: waitingReason(entry.waitingFor), tool: null },
+    };
+  if (entry.status === "busy") return { status: "running", pendingHuman: false };
+  return { status: "idle", pendingHuman: false, background: entry.status === "shell" };
+}
+
 export function registryRecord(entry: RegistryEntry): SessionRecord {
   const now = Date.now();
   return {
@@ -65,7 +86,7 @@ export function registryRecord(entry: RegistryEntry): SessionRecord {
     title: registryName(entry) || pathLabel(entry.cwd) || "Claude session",
     cwd: entry.cwd,
     pid: entry.pid,
-    status: !isAlive(entry.pid) ? "stopped" : entry.status === "busy" ? "running" : "idle",
+    ...registryRunState(entry, isAlive(entry.pid)),
     createdAt: new Date(entry.startedAt ?? now),
     lastActivityAt: new Date(entry.updatedAt ?? now),
   };
@@ -113,6 +134,7 @@ export type TranscriptMeta = {
   prompt: string | null;
   firstAt: number | null;
   lastAt: number | null;
+  pendingTool: string | null;
 };
 
 function lineAt(content: string, index: number): string {
@@ -127,6 +149,21 @@ function lastField(content: string, marker: string, field: string): string | nul
   try {
     const value = JSON.parse(lineAt(content, index))?.[field];
     return typeof value === "string" && value.trim() ? oneLine(value, 120) : null;
+  } catch {
+    return null;
+  }
+}
+
+function pendingTool(content: string): string | null {
+  const index = content.lastIndexOf('"type":"tool_use"');
+  if (index === -1) return null;
+  try {
+    const blocks = JSON.parse(lineAt(content, index))?.message?.content;
+    const call = Array.isArray(blocks)
+      ? blocks.findLast((block: { type?: string }) => block.type === "tool_use")
+      : null;
+    if (typeof call?.id !== "string" || typeof call.name !== "string") return null;
+    return content.includes(`"tool_use_id":"${call.id}"`, index) ? null : call.name;
   } catch {
     return null;
   }
@@ -158,6 +195,7 @@ export function transcriptMeta(content: string): TranscriptMeta {
     prompt: firstPromptFromText(content),
     firstAt,
     lastAt,
+    pendingTool: pendingTool(content),
   };
 }
 
@@ -320,11 +358,7 @@ export function claudeAdapter(
             title: named || "New session",
             cwd: entry.cwd,
             pid: entry.pid,
-            status: !(await runtime.processAlive(entry.pid))
-              ? "stopped"
-              : entry.status === "busy"
-                ? "running"
-                : "idle",
+            ...registryRunState(entry, await runtime.processAlive(entry.pid)),
             createdAt: new Date(entry.startedAt ?? now),
             lastActivityAt: new Date(entry.updatedAt ?? now),
           };
@@ -383,6 +417,7 @@ export function claudeAdapter(
         let parsed: ParsedUsage | null = null;
         if (
           changed ||
+          (record.waitingFor && cached?.mtime !== mtime) ||
           before?.tokensUsed == null ||
           before?.tokensVersion !== CLAUDE_TOKENS_VERSION
         ) {
@@ -397,6 +432,11 @@ export function claudeAdapter(
           record.summary = meta.prompt;
         }
         const meta = metaCache.get(record.externalId)?.meta;
+        if (record.waitingFor && meta?.pendingTool)
+          record.waitingFor = {
+            reason: meta.pendingTool === "AskUserQuestion" ? "question" : record.waitingFor.reason,
+            tool: meta.pendingTool,
+          };
         if (meta) {
           record.title =
             meta.customTitle ||

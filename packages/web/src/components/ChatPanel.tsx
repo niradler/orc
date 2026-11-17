@@ -84,7 +84,7 @@ import {
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
-import { type AgentState, liveSessionState } from "@/lib/agent-state";
+import { type AgentState, liveSessionState, sendOutcome } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
@@ -1459,7 +1459,12 @@ export function ChatPanel({
                     className="text-xs text-on-surface-variant"
                   >
                     {agentInbox
-                      ? "Running in its own agent. Send queues your message for its next safe point."
+                      ? sendOutcome({
+                          streaming,
+                          steers: canSteerLive,
+                          inbox: true,
+                          waitingFor: agentInbox.waiting_for,
+                        })
                       : agentOverride
                         ? "Sending unlocked. The running status may be stale."
                         : "Running in its own agent. Sending unlocks when it finishes."}
@@ -1486,6 +1491,15 @@ export function ChatPanel({
                     <SessionMessageInbox session={agentInbox} live={false} compose={false} />
                   )}
                 </div>
+              )}
+              {streaming && (
+                <p
+                  role="status"
+                  data-testid="chat-send-outcome"
+                  className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
+                >
+                  {sendOutcome({ streaming, steers: canSteerLive, inbox: false })}
+                </p>
               )}
               {savedPad && (
                 <p

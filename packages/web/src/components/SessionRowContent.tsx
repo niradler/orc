@@ -1,4 +1,5 @@
 import {
+  Activity,
   Bot,
   Shield,
   ShieldAlert,
@@ -9,10 +10,11 @@ import {
   ShieldQuestionMark,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { LiveSession } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { StateBadge } from "@/components/StateBadge";
-import type { AgentState } from "@/lib/agent-state";
+import { type AgentState, waitingLabel } from "@/lib/agent-state";
 import { sessionModeLabel } from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +66,32 @@ export function SubagentChip({ count }: { count: number | undefined }): ReactNod
       >
         <Bot size={11} aria-hidden="true" />
         {count}
+      </span>
+    </ActionHelp>
+  );
+}
+
+export function SessionRunChip({
+  session,
+}: {
+  session: Pick<LiveSession, "waiting_for" | "background_work"> | null;
+}): ReactNode {
+  if (session?.waiting_for)
+    return (
+      <span data-testid="chat-session-waiting" className="shrink-0 text-warning">
+        {waitingLabel(session.waiting_for)}
+      </span>
+    );
+  if (!session?.background_work) return null;
+  return (
+    <ActionHelp label="Background work running">
+      <span
+        role="img"
+        aria-label="Background work running"
+        data-testid="chat-session-background"
+        className="inline-flex shrink-0 text-progress"
+      >
+        <Activity size={11} aria-hidden="true" />
       </span>
     </ActionHelp>
   );

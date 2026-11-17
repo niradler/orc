@@ -161,6 +161,7 @@ for (const width of [390, 1440]) {
     await expect(queue).toBeVisible();
     await expect(queue).toBeDisabled();
     await expect(page.getByTestId("chat-steer-button")).toHaveCount(0);
+    await expect(page.getByTestId("chat-send-outcome")).toHaveText("Send steers the current turn.");
     await input.fill("Focus on tests");
     await expect(queue).toBeEnabled();
     await expect(page.getByTestId("chat-send-button").filter({ visible: true })).toHaveAttribute(
@@ -171,6 +172,10 @@ for (const width of [390, 1440]) {
       true,
     );
     await page.screenshot({ path: testInfo.outputPath(`steering-${width}.png`) });
+    if (process.env.ORC_SCREENSHOT_DIR)
+      await page.screenshot({
+        path: `${process.env.ORC_SCREENSHOT_DIR}/composer-steers-${width}.png`,
+      });
     const send = page.getByTestId("chat-send-button").filter({ visible: true });
     await send.click();
     if (width === 390) {

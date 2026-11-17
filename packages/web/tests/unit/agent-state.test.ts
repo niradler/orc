@@ -5,6 +5,8 @@ import {
   liveSessionState,
   moreUrgent,
   rollupState,
+  sendOutcome,
+  waitingLabel,
 } from "../../src/lib/agent-state";
 
 describe("agent state language", () => {
@@ -43,5 +45,28 @@ describe("agent state language", () => {
     const states = Object.values(AGENT_STATES);
     expect(new Set(states.map((s) => s.label)).size).toBe(states.length);
     expect(new Set(states.map((s) => s.Icon)).size).toBe(states.length);
+  });
+
+  test("should say what a send does now for each run state", () => {
+    expect(waitingLabel({ reason: "permission", tool: "Bash" })).toBe("permission · Bash");
+    expect(waitingLabel({ reason: "question", tool: null })).toBe("question");
+    expect(sendOutcome({ streaming: false, steers: false, inbox: false })).toBeNull();
+    expect(sendOutcome({ streaming: true, steers: true, inbox: false })).toBe(
+      "Send steers the current turn.",
+    );
+    expect(sendOutcome({ streaming: true, steers: false, inbox: false })).toBe(
+      "Send queues until the turn ends.",
+    );
+    expect(sendOutcome({ streaming: false, steers: false, inbox: true, waitingFor: null })).toBe(
+      "Running in its own agent. Send queues your message for its next safe point.",
+    );
+    expect(
+      sendOutcome({
+        streaming: false,
+        steers: false,
+        inbox: true,
+        waitingFor: { reason: "permission", tool: "Bash" },
+      }),
+    ).toBe("Needs you · permission · Bash. Send queues until it is answered.");
   });
 });

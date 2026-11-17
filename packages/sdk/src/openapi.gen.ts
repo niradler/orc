@@ -1569,6 +1569,13 @@ export interface paths {
                                 tokens_estimated: boolean;
                                 /** @enum {string} */
                                 status: "idle" | "running" | "stopped" | "error";
+                                waiting_for_human: boolean;
+                                waiting_for: {
+                                    /** @enum {string} */
+                                    reason: "permission" | "question" | "dialog";
+                                    tool: string | null;
+                                } | null;
+                                background_work: boolean;
                                 /** Format: date-time */
                                 created_at: string;
                                 /** Format: date-time */
@@ -23184,6 +23191,20 @@ export interface components {
             status: "idle" | "running" | "stopped" | "error";
             /** @default false */
             waiting_for_human: boolean;
+            /**
+             * @description Why the session waits for a human, and the tool that waits
+             * @default null
+             */
+            waiting_for: {
+                /** @enum {string} */
+                reason: "permission" | "question" | "dialog";
+                tool: string | null;
+            } | null;
+            /**
+             * @description Idle between turns while the agent's background work still runs
+             * @default false
+             */
+            background_work: boolean;
             /** @default false */
             hidden: boolean;
             /** @default false */
