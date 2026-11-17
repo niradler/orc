@@ -107,6 +107,22 @@ describe("claude sessions after /clear", () => {
       join(projects, first, "subagents", "agent-a1b2c3.meta.json"),
       JSON.stringify({ agentType: "Explore", description: "Find the fullscreen button" }),
     );
+    writeFileSync(
+      join(projects, first, "subagents", "agent-d4e5f6.jsonl"),
+      jsonl([{ type: "user", isSidechain: true, timestamp: "2026-11-12T12:12:00Z" }]),
+    );
+    writeFileSync(
+      join(projects, first, "subagents", "agent-d4e5f6.meta.json"),
+      JSON.stringify({ description: "Review one caller", parentAgentId: "a1b2c3", spawnDepth: 2 }),
+    );
+    writeFileSync(
+      join(projects, first, "subagents", "agent-ffff00.jsonl"),
+      jsonl([{ type: "user", isSidechain: true, timestamp: "2026-11-12T12:13:00Z" }]),
+    );
+    writeFileSync(
+      join(projects, first, "subagents", "agent-ffff00.meta.json"),
+      JSON.stringify({ description: "Parent gone", parentAgentId: "000000" }),
+    );
     const adapter = claudeAdapter({
       registry,
       desktop: null,
@@ -151,6 +167,13 @@ describe("claude sessions after /clear", () => {
       parent_id: byNative.get(first)?.id,
       status: "stopped",
     });
+    expect(nested.find((row) => row.session_id === "agent-d4e5f6")).toMatchObject({
+      name: "Review one caller",
+      parent_id: child?.id,
+    });
+    expect(nested.find((row) => row.session_id === "agent-ffff00")?.parent_id).toBe(
+      byNative.get(first)?.id,
+    );
   });
 });
 
@@ -390,11 +413,13 @@ describe("opencode subagents", () => {
     insert.run("ses_parent01", null, "/tmp/oc", "Fix the build", 1_000, 2_000);
     insert.run("ses_child001", "ses_parent01", "/tmp/oc", "General subagent", 1_500, 1_800);
     insert.run("ses_orphan01", "ses_missing1", "/tmp/oc", "Orphan", 1_500, 1_800);
+    insert.run("ses_grand001", "ses_child001", "/tmp/oc", "Nested subagent", 1_600, 1_700);
     db.close();
 
     const records = await opencodeAdapter(path).list(new Map());
     const byId = new Map(records.map((record) => [record.externalId, record]));
     expect(byId.get("ses_child001")?.parentId).toBe("ses_parent01");
+    expect(byId.get("ses_grand001")?.parentId).toBe("ses_child001");
     expect(byId.get("ses_parent01")?.parentId).toBeUndefined();
     expect(byId.has("ses_orphan01")).toBe(false);
   });

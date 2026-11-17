@@ -50,15 +50,12 @@ function activity(): ChatActivity[] {
       input: JSON.stringify({ path: "README.md" }),
       result: "Read complete",
     },
-    {
-      type: "subagent",
-      id: "inline-child-native",
-      title: "Inline subagent",
-      status: "completed",
-      activity: [],
-      text: "The child finished.",
-    },
   ];
+}
+
+/** The discovered subagent tree is collapsed to its summary line until opened. */
+async function openSubagentTree(page: Page): Promise<void> {
+  await page.getByTestId("chat-subagents-toggle").click();
 }
 
 function seedParent(id: string, started: number): void {
@@ -170,18 +167,20 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/?chat=open&chatThread=${parentId}`);
 
-    // The subagent tool call is not folded into the turn's tool count; the child
-    // transcript and the row that opens it stay visible outside.
+    // The tool call that started the subagent is not counted as a finished tool,
+    // and the tree that opens the child sits outside the fold.
     const fold = page.getByTestId("chat-turn-fold");
     await expect(page.getByTestId("chat-turn-fold-label")).toHaveText("Worked for 40s · 1 tool");
-    await expect(page.getByTestId("chat-subagent-inline")).toBeVisible();
+    await expect(page.getByTestId("chat-subagents")).toBeVisible();
+    await openSubagentTree(page);
     const row = page.getByTestId("chat-subagent");
+    const open = row.getByRole("button");
     await expect(row).toContainText("Demo subagent render");
-    await expect(row).not.toBeHidden();
+    await expect(open).toBeVisible();
     await expect(fold).not.toContainText("Demo subagent render");
 
     await page.screenshot({ path: test.info().outputPath(`subagent-parent-${width}.png`) });
-    await row.click();
+    await open.click();
     const headerTitle = page.locator('[data-testid="chat-panel"] header h2');
     await expect(headerTitle).toContainText("Demo subagent render");
     await expect(page.getByTestId("chat-subagent-kind")).toBeVisible();
@@ -208,7 +207,8 @@ test("a docked subagent chat names its parent at 1440px", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/chat?chatThread=${parentId}`);
 
-  await page.getByTestId("chat-subagent").click();
+  await openSubagentTree(page);
+  await page.getByTestId("chat-subagent").getByRole("button").click();
   const headerTitle = page.locator('[data-testid="chat-panel"] header h2');
   await expect(headerTitle).toContainText("Demo subagent render");
   // The docked chat page has room for the whole path: project, parent, title.

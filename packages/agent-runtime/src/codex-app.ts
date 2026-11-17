@@ -1,4 +1,9 @@
-import { ChatAnswersSchema, type ChatQuestion, ChatQuestionSchema } from "@orc/core/chat";
+import {
+  ChatAnswersSchema,
+  type ChatQuestion,
+  ChatQuestionSchema,
+  type ChatSubagentPayload,
+} from "@orc/core/chat";
 import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import { type ExecHost, ensureSshMaster, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
@@ -72,6 +77,7 @@ export class CodexAppSession implements AgentSession {
     { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void }
   >();
   private readonly pending = new Map<string, Pending>();
+  private readonly subagents = new Map<string, ChatSubagentPayload>();
   private liveMode: LivePermissionMode | undefined;
   private nativeMode: string | undefined;
   private threadMode: LivePermissionMode | undefined;
@@ -327,6 +333,52 @@ export class CodexAppSession implements AgentSession {
       }
       return;
     }
+    const child = typeof params.threadId === "string" ? this.subagents.get(params.threadId) : null;
+    const activity = object(params.item);
+    if (
+      activity.type === "subAgentActivity" &&
+      typeof activity.agentThreadId === "string" &&
+      (params.threadId === this.runtimeId || child)
+    ) {
+      const id = activity.agentThreadId.slice(0, 200);
+      const known = this.subagents.get(id);
+      if (activity.kind === "started" && !known)
+        this.pushSubagent({
+          id,
+          ...(child ? { parentId: child.id } : {}),
+          title:
+            String(activity.agentPath ?? "")
+              .split("/")
+              .pop()
+              ?.slice(0, 200) || "Subagent",
+          status: "running",
+          startedAt: typeof activity.startedAtMs === "number" ? activity.startedAtMs : Date.now(),
+          activity: [],
+        });
+      else if (
+        known?.status === "running" &&
+        (activity.kind === "completed" || activity.kind === "interrupted")
+      )
+        this.pushSubagent({
+          ...known,
+          status: activity.kind === "completed" ? "completed" : "stopped",
+          durationMs: Math.max(0, Date.now() - (known.startedAt ?? Date.now())),
+        });
+      return;
+    }
+    if (child) {
+      if (method === "thread/tokenUsage/updated") {
+        const tokens = object(object(params.tokenUsage).total).totalTokens;
+        if (typeof tokens === "number" && tokens !== child.tokens)
+          this.pushSubagent({ ...child, tokens });
+      } else if (method === "turn/completed" && object(params.turn).status === "failed")
+        this.pushSubagent({
+          ...child,
+          status: "failed",
+          durationMs: Math.max(0, Date.now() - (child.startedAt ?? Date.now())),
+        });
+      return;
+    }
     if (params.threadId && params.threadId !== this.runtimeId) return;
     const nativeTurnId = typeof params.turnId === "string" ? params.turnId : object(params.turn).id;
     if (this.activeTurnId && nativeTurnId && nativeTurnId !== this.activeTurnId) return;
@@ -448,6 +500,8 @@ export class CodexAppSession implements AgentSession {
         });
       else if (turn.status === "interrupted")
         this.push({ type: "system_status", data: "Codex turn stopped." });
+      for (const subagent of this.subagents.values())
+        if (subagent.status === "running") this.pushSubagent({ ...subagent, status: "stopped" });
       this.completedTurn = true;
       for (const ready of this.readyWaiters) ready();
       if (!this.pending.size) {
@@ -477,6 +531,11 @@ export class CodexAppSession implements AgentSession {
       for (const ready of this.readyWaiters) ready();
       this.wake?.();
     }
+  }
+
+  private pushSubagent(subagent: ChatSubagentPayload): void {
+    this.subagents.set(subagent.id, subagent);
+    this.push({ type: "subagent", data: subagent });
   }
 
   private pushText(itemId: string, text: string): void {

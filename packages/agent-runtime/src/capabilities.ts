@@ -37,6 +37,7 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabil
   steering: true,
   // Both the Claude SDK (forkSession) and the CLI (--fork-session) fork natively.
   fork: true,
+  subagents: true,
 });
 export const CODEX_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabilities>({
   ...CLAUDE_CAPABILITIES,
@@ -66,6 +67,7 @@ export const OPENCODE_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapab
   // 1.x as a second session/prompt during a turn (verified against 1.19.5 over
   // `opencode acp`). steer() downgrades per session if an agent rejects one.
   steering: true,
+  subagents: true,
 });
 
 export function chatBackendFor(agent: string): string {

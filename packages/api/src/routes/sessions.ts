@@ -535,9 +535,11 @@ app.openapi(liveListRoute, async (c) => {
   const listed = new Set(
     rows.map((row) => nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id)),
   );
-  const parentIds = [...new Set(rows.flatMap((row) => row.runtime_session_id ?? []))];
-  const children =
-    include_children && parentIds.length
+  const children: typeof rows = [];
+  let level = rows;
+  while (include_children && level.length) {
+    const parentIds = [...new Set(level.flatMap((row) => row.runtime_session_id ?? []))];
+    level = parentIds.length
       ? (
           await getDb().query.gateway_sessions.findMany({
             where: and(
@@ -547,10 +549,16 @@ app.openapi(liveListRoute, async (c) => {
             ),
             orderBy: [desc(gateway_sessions.last_activity_at)],
           })
-        ).filter((row) =>
-          listed.has(nativeKey(row.backend, row.execution_host ?? null, row.parent_session_id)),
+        ).filter(
+          (row) =>
+            listed.has(nativeKey(row.backend, row.execution_host ?? null, row.parent_session_id)) &&
+            !listed.has(nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id)),
         )
       : [];
+    for (const row of level)
+      listed.add(nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id));
+    children.push(...level);
+  }
   return c.json({ sessions: await toLiveDtos([...rows, ...children]) });
 });
 
