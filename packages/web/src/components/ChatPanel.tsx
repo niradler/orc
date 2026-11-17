@@ -58,7 +58,7 @@ import {
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
-import { useChatContextUsage } from "@/components/ChatSessionStrip";
+import { ChatContextMeter, useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
@@ -519,6 +519,13 @@ export function ChatPanel({
     for (let index = messages.length - 1; index >= 0; index--) {
       const message = messages[index];
       if (message?.role === "assistant") return message;
+    }
+    return undefined;
+  }, [messages]);
+  const contextWindow = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const window = messages[index]?.turn?.usage?.context_window;
+      if (window) return window;
     }
     return undefined;
   }, [messages]);
@@ -1683,6 +1690,11 @@ export function ChatPanel({
                     <ChatPermissionChip />
                   </div>
                   <div className="flex items-center gap-1">
+                    <ChatContextMeter
+                      usage={latestUsage ?? frozenUsage}
+                      window={latestUsage?.context_window ?? contextWindow}
+                      compactions={contextUsage.data?.compactions?.length ?? 0}
+                    />
                     {streaming && canSteerLive && (
                       <ActionHelp
                         label="Queue message"

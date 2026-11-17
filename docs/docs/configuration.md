@@ -251,6 +251,12 @@ Claude sessions with slash commands explicitly disabled must enable them first.
 There is no ORC idle-compaction timer. Compaction summarizes model context and may
 use provider quota; it does not erase the displayed ORC transcript.
 
+The context meter beside **Send** shows how full the agent's context is. It shows a
+ring and a percentage when the agent reports its model's window (Codex, and Claude
+and Pi chats run through ORC), and raw tokens otherwise. From 80% it warns that the
+agent will soon compact or stop. Open it for exact tokens, cache reuse and the
+compaction count.
+
 ## Usage in Settings
 
 Open **Settings → Usage** for request-level token usage and account quotas. ORC

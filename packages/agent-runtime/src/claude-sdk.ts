@@ -160,6 +160,18 @@ async function sshSdkLaunch(
   };
 }
 
+export function claudeContextWindow(modelUsage: unknown, model: string | undefined) {
+  const entries = Object.entries(
+    modelUsage && typeof modelUsage === "object" ? (modelUsage as Record<string, unknown>) : {},
+  );
+  const match =
+    entries.find(([key]) => key === model) ?? (entries.length === 1 ? entries[0] : undefined);
+  const window = (match?.[1] as { contextWindow?: unknown } | undefined)?.contextWindow;
+  return typeof window === "number" && Number.isSafeInteger(window) && window > 0
+    ? window
+    : undefined;
+}
+
 function userMessage(content: string, uuid: NonNullable<SDKUserMessage["uuid"]>): SDKUserMessage {
   return { type: "user", uuid, message: { role: "user", content }, parent_tool_use_id: null };
 }
@@ -651,6 +663,7 @@ class ClaudeSDKSession implements AgentSession {
       let wroteText = false;
       let streamedText = false;
       let lastResult: SDKResultMessage | undefined;
+      let turnModel: string | undefined;
       const emitResult = (msg: SDKResultMessage) => {
         if (turn.closing) return;
         turn.closing = true;
@@ -667,6 +680,7 @@ class ClaudeSDKSession implements AgentSession {
             data: {
               runtimeSessionId: msg.session_id,
               usage: msg.usage,
+              contextWindow: claudeContextWindow(msg.modelUsage, turnModel),
               durationMs: msg.duration_ms,
               ...(turn.stopping ? { outcome: "stopped" as const } : {}),
             },
@@ -717,6 +731,7 @@ class ClaudeSDKSession implements AgentSession {
         if (msg.type === "system" && msg.subtype === "init") {
           this.runtimeSessionId = msg.session_id;
           this.forkPending = false;
+          turnModel = msg.model;
           continue;
         }
 

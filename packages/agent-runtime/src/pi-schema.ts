@@ -6,6 +6,7 @@ export const stateSchema = z.object({
   isCompacting: z.boolean(),
   pendingMessageCount: z.number().int().nonnegative(),
   sessionFile: z.string().min(1).max(4096).optional(),
+  model: z.object({ contextWindow: z.number().int().positive().optional() }).nullish().catch(null),
 });
 const contentSchema = z.array(
   z.object({ type: z.string(), text: z.string().optional() }).passthrough(),

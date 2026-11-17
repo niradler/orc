@@ -32,6 +32,7 @@ import {
   type ChatSpawn,
   type ChatThread,
   ChatThreadSchema,
+  type ChatTurn,
   ChatWorkspaceSchema,
   chatSystemPrompt,
   nativeChatAgent,
@@ -718,7 +719,8 @@ async function transcriptMark(thread: ChatThread, source?: NativeSource | null) 
 async function captureTurnUsage(
   thread: ChatThread,
   startedAt: number,
-): Promise<{ input_tokens: number; cached_input_tokens: number } | undefined> {
+  contextWindow: number | undefined,
+): Promise<NonNullable<ChatTurn["usage"]> | undefined> {
   try {
     const source = await nativeSource(thread);
     if (!source?.transcript_path || !["claude", "codex", "pi", "opencode"].includes(source.backend))
@@ -734,7 +736,13 @@ async function captureTurnUsage(
     const at = latest.recorded_at ? Date.parse(latest.recorded_at) : Number.NaN;
     // A figure recorded before this turn began belongs to an earlier turn.
     if (Number.isFinite(at) && at < startedAt) return undefined;
-    return { input_tokens: latest.input_tokens, cached_input_tokens: latest.cached_input_tokens };
+    const window = contextWindow ?? latest.context_window;
+    return {
+      input_tokens: latest.input_tokens,
+      cached_input_tokens: latest.cached_input_tokens,
+      ...(latest.context_tokens !== null ? { context_tokens: latest.context_tokens } : {}),
+      ...(window ? { context_window: window } : {}),
+    };
   } catch {
     return undefined;
   }
@@ -2226,6 +2234,7 @@ async function beginTurn(
   let noResumableSession = false;
   let agentDurationMs: number | undefined;
   let agentOutcome: "completed" | "stopped" | "failed" | undefined;
+  let agentContextWindow: number | undefined;
   const execute = async () => {
     // Activity watchdog: a quiet turn is stopped, but a turn waiting for a
     // human answer or a running tool call is re-checked instead of killed.
@@ -2451,6 +2460,7 @@ async function beginTurn(
             if (typeof duration === "number" && Number.isFinite(duration) && duration >= 0)
               agentDurationMs = duration;
             agentOutcome = event.data.outcome;
+            agentContextWindow = event.data.contextWindow;
             noResumableSession = event.data.resumable === false;
             if (agentOutcome === "stopped") stopped = true;
             if (agentOutcome === "failed") failure ??= "The agent could not complete the response.";
@@ -2579,7 +2589,7 @@ async function beginTurn(
       }
       const finishedAt = Date.now();
       const frozenUsage = await Promise.race([
-        captureTurnUsage(thread, startedAt),
+        captureTurnUsage(thread, startedAt, agentContextWindow),
         Bun.sleep(5000).then(() => undefined),
       ]);
       assistant.turn = {

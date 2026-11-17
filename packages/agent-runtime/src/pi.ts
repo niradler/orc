@@ -115,6 +115,7 @@ export class PiSession implements AgentSession {
   private reloadPending = false;
   private modelError: string | undefined;
   private usage: unknown;
+  private contextWindow: number | undefined;
   private mode: LivePermissionMode;
   private readonly dialogs = new Map<
     string,
@@ -299,6 +300,7 @@ export class PiSession implements AgentSession {
   ): Promise<void> {
     try {
       const state = await this.verifyIdentity();
+      this.contextWindow = state.model?.contextWindow;
       if (state.isStreaming || state.isCompacting || state.pendingMessageCount > 0) return;
       if (this.reloadPending) {
         await this.checkBridge();
@@ -335,6 +337,7 @@ export class PiSession implements AgentSession {
         // handing out an id the next send would fail to resume.
         ...(this.resumable ? { runtimeSessionId: this.runtimeId } : { resumable: false }),
         usage: this.usage,
+        contextWindow: this.contextWindow,
         outcome,
       },
     });

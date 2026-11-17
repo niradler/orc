@@ -387,6 +387,8 @@ export const ChatTurnSchema = z.object({
     .object({
       input_tokens: z.number().int().nonnegative(),
       cached_input_tokens: z.number().int().nonnegative(),
+      context_tokens: z.number().int().nonnegative().optional(),
+      context_window: z.number().int().positive().optional(),
     })
     .optional(),
 });
