@@ -106,7 +106,14 @@ export const ChatSettingsSchema = z
   .strict();
 export type ChatSettings = z.infer<typeof ChatSettingsSchema>;
 export const ChatModelsSchema = z.object({
-  models: z.array(z.object({ id: ChatModelSchema, label: z.string().max(120) })),
+  models: z.array(
+    z.object({
+      id: ChatModelSchema,
+      label: z.string().max(120),
+      description: z.string().max(300).optional(),
+      efforts: z.array(z.string().min(1).max(64)).max(16).optional(),
+    }),
+  ),
   warning: z.string().nullable(),
   /** Live effort levels for the agent's default model, when it exposes them. */
   effortChoices: z

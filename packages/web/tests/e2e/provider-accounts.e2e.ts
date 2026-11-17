@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import { openChatAgentModel, settingsSection } from "./_chat-ui";
+import { openChatAgentModel, settingsSection, showPickerTab } from "./_chat-ui";
 import { API_BASE, API_SECRET, AUTH_HEADERS, apiGet } from "./_helpers";
 
 type Profile = {
@@ -231,6 +231,7 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("chat-messages")).toContainText("FIRST");
 
       await openChatAgentModel(page);
+      await showPickerTab(page, "agent");
       await page.getByTestId("chat-provider-option-claude-two").click();
       await expect(
         page.getByTestId("chat-agent-model-button").filter({ visible: true }),

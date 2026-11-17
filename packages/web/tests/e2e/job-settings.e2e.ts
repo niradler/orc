@@ -135,8 +135,10 @@ for (const width of [1440, 390]) {
     await page.getByTestId("job-action-type").selectOption("agent");
     await page.getByTestId("job-host").selectOption("__local__");
     await page.getByTestId("job-agent-model-button").click();
-    await expect(page.getByTestId("job-agent-option-codex")).toBeVisible();
     await expect(page.getByTestId("job-model-option-codex-fixture")).toBeVisible();
+    if (await page.getByTestId("job-picker-tab-agent").isVisible())
+      await page.getByTestId("job-picker-tab-agent").click();
+    await expect(page.getByTestId("job-agent-option-codex")).toBeVisible();
     await page.getByTestId("job-agent-option-claude").click();
     await page.getByTestId("job-model-option-claude-fixture").click();
     await expect(page.getByTestId("job-model-current")).toContainText("claude fixture model");

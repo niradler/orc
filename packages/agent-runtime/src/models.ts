@@ -18,6 +18,8 @@ import { PiRpc } from "./pi-rpc.js";
 export interface AgentModel {
   id: string;
   label: string;
+  description?: string;
+  efforts?: string[];
 }
 
 /** Live effort levels for a new OpenCode chat; null when the agent exposes none. */
@@ -40,6 +42,24 @@ function object(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+function printable(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  return Array.from(value)
+    .filter((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127)
+    .join("")
+    .slice(0, max);
+}
+
+function words(text: string): string[] {
+  return text.toLowerCase().match(/[a-z0-9]+(?:\.[a-z0-9]+)*/g) ?? [];
+}
+
+export function informativeDescription(description: string, label: string, agent: string): string {
+  const known = new Set([...words(label), ...words(agent), "model"]);
+  const found = words(description);
+  return !found.length || found.some((word) => !known.has(word)) ? description : "";
+}
+
 export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
   if (!Array.isArray(value)) throw new Error("The agent returned no model catalog.");
   const models = new Map<string, AgentModel>();
@@ -56,14 +76,26 @@ export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
           : (row.model ?? row.id),
     );
     if (!parsed.success || !parsed.data) continue;
-    const label =
-      typeof (row.displayName ?? row.name) === "string"
-        ? Array.from(String(row.displayName ?? row.name))
-            .filter((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127)
-            .join("")
-            .slice(0, 120)
-        : parsed.data;
-    models.set(parsed.data, { id: parsed.data, label: label || parsed.data });
+    const label = printable(row.displayName ?? row.name, 120) || parsed.data;
+    const description = informativeDescription(printable(row.description, 300), label, agent);
+    const efforts = (
+      Array.isArray(row.supportedEffortLevels)
+        ? row.supportedEffortLevels
+        : Array.isArray(row.supportedReasoningEfforts)
+          ? row.supportedReasoningEfforts.map((effort) => object(effort)?.reasoningEffort)
+          : []
+    )
+      .filter(
+        (effort): effort is string =>
+          typeof effort === "string" && /^[a-z][a-z0-9_-]{0,63}$/i.test(effort),
+      )
+      .slice(0, 16);
+    models.set(parsed.data, {
+      id: parsed.data,
+      label,
+      ...(description ? { description } : {}),
+      ...(efforts.length ? { efforts } : {}),
+    });
   }
   return [...models.values()];
 }

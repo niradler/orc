@@ -1,5 +1,6 @@
 import { agentLabel } from "@orc/core/coding-agents";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { api } from "@/api/client";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
@@ -59,14 +60,33 @@ export function ChatAgentModelPicker() {
     : catalog.data?.warning;
   const modelName = choices.get(config.model) || config.model || "Agent default";
   const effortValue = agentEffortValue(config);
-  const effort = agentEffort(config);
   const capabilities = useAgentCapabilities(config.agent, thread);
   // OpenCode's effort levels are model-dependent: the session reports them live,
   // and the model catalog probes them for a chat that has not started yet.
-  const effortChoices =
-    config.agent === "opencode"
-      ? liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices)
-      : agentEffortChoices(config.agent);
+  const effortsFor = (model: string) => {
+    if (config.agent === "opencode")
+      return liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices);
+    const models = catalog.data?.models ?? [];
+    const entry = models.find((item) => item.id === model);
+    return agentEffortChoices(
+      config.agent,
+      entry && (entry.efforts ?? (models.some((item) => item.efforts) ? [] : undefined)),
+    );
+  };
+  const effortChoices = effortsFor(config.model);
+  const staleEffort =
+    config.agent !== "opencode" &&
+    !!effortValue &&
+    !!catalog.data?.models.some((item) => item.id === config.model) &&
+    !effortChoices.some((choice) => choice.value === effortValue);
+  const effort = staleEffort ? null : agentEffort(config);
+  useEffect(() => {
+    if (!staleEffort) return;
+    const next = withAgentEffort(config, "");
+    setConfig(next);
+    const options = next.agentOptions[config.agent];
+    if (thread && options) void chat.applyAgentOptions(config.agent, options).catch(() => {});
+  }, [staleEffort, config, setConfig, thread, chat]);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
@@ -108,6 +128,13 @@ export function ChatAgentModelPicker() {
       selectedModel={config.model}
       agents={agents}
       choices={choices}
+      descriptions={
+        new Map(
+          (catalog.data?.models ?? []).flatMap((entry) =>
+            entry.description ? [[entry.id, entry.description] as const] : [],
+          ),
+        )
+      }
       ready={ready}
       streaming={streaming}
       modelsDisabled={modelsDisabled}
@@ -126,7 +153,17 @@ export function ChatAgentModelPicker() {
         setConfig({ ...config, agent, providerId: undefined, model: "" });
         return false;
       }}
-      onModel={(model) => setConfig({ ...config, model })}
+      onModel={(model) => {
+        const next = { ...config, model };
+        setConfig(
+          effortValue &&
+            config.agent !== "opencode" &&
+            !effortsFor(model).some((choice) => choice.value === effortValue)
+            ? withAgentEffort(next, "")
+            : next,
+        );
+      }}
+      hasEfforts={(model) => effortsFor(model).length > 0}
       efforts={effortChoices}
       effort={effortValue}
       onEffort={(value) => {
