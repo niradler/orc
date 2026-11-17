@@ -5,8 +5,9 @@ import { ApiError, api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  DICTATION_LIMIT_MS,
+  createDecimator,
   dictationClock,
+  dictationLimitMs,
   insertDictation,
   microphoneError,
   wavFile,
@@ -20,23 +21,14 @@ const touchTarget =
   "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const keepFocus = (event: { preventDefault: () => void }) => event.preventDefault();
 const DICTATION_RATE = 16_000;
-const captureWorklet = `registerProcessor("pcm-capture", class extends AudioWorkletProcessor {
-  constructor() { super(); this.step = sampleRate / ${DICTATION_RATE}; this.pos = 0; this.sum = 0; this.count = 0; }
+const captureWorklet = `const createDecimator = ${createDecimator.toString()};
+registerProcessor("pcm-capture", class extends AudioWorkletProcessor {
+  constructor() { super(); this.decimate = createDecimator(sampleRate, ${DICTATION_RATE}); }
   process([input]) {
-    const channel = input[0];
-    if (!channel) return true;
-    const out = [];
-    for (const sample of channel) {
-      this.sum += sample;
-      this.count++;
-      if (++this.pos >= this.step) {
-        this.pos -= this.step;
-        out.push(this.sum / this.count);
-        this.sum = 0;
-        this.count = 0;
-      }
+    if (input[0]) {
+      const out = this.decimate(input[0]);
+      if (out.length) this.port.postMessage(out);
     }
-    if (out.length) this.port.postMessage(Float32Array.from(out));
     return true;
   }
 });`;
@@ -66,6 +58,7 @@ export function useDictation(
   setDraft: (value: string) => void,
 ) {
   const status = useQuery({ queryKey: ["speech-status"], queryFn: api.speech.status });
+  const maxBytes = status.data?.max_bytes ?? 0;
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
   const [startedAt, setStartedAt] = useState(0);
@@ -122,18 +115,19 @@ export function useDictation(
     let teardown = () => {};
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone needs HTTPS.");
+      const context = new AudioContext();
+      teardown = () => void context.close().catch(() => {});
+      const resumed = context.resume();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       teardown = () => {
         for (const track of stream.getTracks()) track.stop();
-      };
-      if (stale()) return teardown();
-      const context = new AudioContext();
-      teardown = () => {
-        for (const track of stream.getTracks()) track.stop();
         void context.close().catch(() => {});
       };
+      await resumed.catch(() => {});
+      if (stale()) return teardown();
+      if (context.state !== "running") throw new Error("Audio didn't start. Tap Retry.");
       const chunks: Float32Array[] = [];
       const workletUrl = URL.createObjectURL(
         new Blob([captureWorklet], { type: "text/javascript" }),
@@ -164,7 +158,7 @@ export function useDictation(
         }
         void transcribe(new Blob([wavFile(chunks, rate)], { type: "audio/wav" }));
       };
-      const limit = setTimeout(finish, DICTATION_LIMIT_MS);
+      const limit = setTimeout(finish, dictationLimitMs(maxBytes, rate));
       recorder.current = finish;
       setStartedAt(Date.now());
       setPhase("recording");
@@ -174,7 +168,7 @@ export function useDictation(
       setError(microphoneError(err));
       setPhase("error");
     }
-  }, [transcribe]);
+  }, [transcribe, maxBytes]);
 
   const stop = useCallback(() => {
     recorder.current?.();

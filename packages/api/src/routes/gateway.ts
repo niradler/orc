@@ -90,14 +90,19 @@ app.openapi(
       200: {
         content: {
           "application/json": {
-            schema: z.object({ available: z.boolean() }).openapi("SpeechStatus"),
+            schema: z
+              .object({ available: z.boolean(), max_bytes: z.number().int() })
+              .openapi("SpeechStatus"),
           },
         },
         description: "Speech availability",
       },
     },
   }),
-  (c) => c.json({ available: speechToText() !== null }),
+  (c) => {
+    const stt = speechToText();
+    return c.json({ available: stt !== null, max_bytes: stt?.maxBytes ?? 0 });
+  },
 );
 
 app.use(
@@ -142,7 +147,12 @@ app.openapi(
       throw new OrcError("Speech is not configured on this server.", "SPEECH_UNAVAILABLE", 409);
     const { audio } = c.req.valid("form");
     if (!audio.size) throw new ValidationError("Recording is empty");
-    if (audio.size > SPEECH_MAX_BYTES) throw new ValidationError("Recording exceeds 25 MB");
+    if (audio.size > stt.maxBytes)
+      throw new OrcError(
+        `Recording exceeds ${(stt.maxBytes / 1_000_000).toFixed(1)} MB`,
+        "TOO_LARGE",
+        413,
+      );
     const subtype = audio.type.split(";")[0]?.split("/")[1]?.replace(/^x-/, "") ?? "";
     const format =
       { webm: "webm", mp4: "mp4", m4a: "m4a", mpeg: "mp3", mp3: "mp3", wav: "wav", ogg: "ogg" }[

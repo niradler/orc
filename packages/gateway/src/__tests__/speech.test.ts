@@ -22,6 +22,7 @@ type Received = {
   bytes: Uint8Array;
 };
 let received: Received[] = [];
+let qwenAudioChars = 0;
 let ttsRequests: Record<string, unknown>[] = [];
 const provider = Bun.serve({
   hostname: "127.0.0.1",
@@ -47,9 +48,9 @@ const provider = Bun.serve({
       const body = (await request.json()) as {
         messages: { content: { input_audio: { data: string } }[] }[];
       };
-      const [, type = "", data = ""] =
-        /^data:([^;]+);base64,(.*)$/.exec(body.messages[0]?.content[0]?.input_audio.data ?? "") ??
-        [];
+      const audio = body.messages[0]?.content[0]?.input_audio.data ?? "";
+      qwenAudioChars = audio.length;
+      const [, type = "", data = ""] = /^data:([^;]+);base64,(.*)$/.exec(audio) ?? [];
       received.push({
         path: pathname,
         auth,
@@ -146,6 +147,20 @@ for (const name of ["openai", "groq", "qwen"] as const)
       if (name === "qwen") expect(request?.path).toBe("/qwen/chat/completions");
       else expect(request?.name).toBe(`audio.${clip.ext}`);
     });
+
+test("a recording at Qwen's byte limit still fits its 10 MB encoded audio cap", async () => {
+  received = [];
+  const stt = speechToText(sttConfig("qwen"));
+  const limit = stt?.maxBytes ?? 0;
+  expect(speechToText(sttConfig("openai"))?.maxBytes).toBe(25 * 1024 * 1024);
+  expect(limit).toBe(7_400_000);
+  const wav = new Uint8Array(limit);
+  wav.set(spokenWav.subarray(0, 44));
+  await stt?.transcribe({ audio: wav, format: "wav" });
+  expect(received[0]?.bytes.length).toBe(limit);
+  expect(qwenAudioChars).toBeGreaterThan(9_800_000);
+  expect(qwenAudioChars).toBeLessThanOrEqual(10_000_000);
+});
 
 test("OpenAI speech is requested as an OGG/Opus voice note", async () => {
   ttsRequests = [];

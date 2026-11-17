@@ -751,7 +751,7 @@ input level. **Insert** (or **Enter**, or the shortcut again) stops and
 transcribes; **Cancel** (or **Escape**) discards the clip. The transcript lands at
 the cursor, replacing any selection, and is never sent for you. Send, Queue and
 Send now stay disabled while recording and transcribing. A recording stops on its
-own after five minutes. A blocked or missing microphone, or a failed
+own after five minutes (sooner when the provider takes smaller clips). A blocked or missing microphone, or a failed
 transcription, shows the reason with **Retry**, which resends the same clip
 when the recording itself succeeded. The browser needs HTTPS or `localhost` to
 reach the microphone. The audio goes to the ORC server, which forwards it to the

@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { dictationClock, insertDictation, microphoneError, wavFile } from "../../src/lib/dictation";
+import {
+  createDecimator,
+  dictationClock,
+  dictationLimitMs,
+  insertDictation,
+  microphoneError,
+  wavFile,
+} from "../../src/lib/dictation";
 
 test("a transcript lands at the cursor with word spacing and the caret after it", () => {
   expect(insertDictation("", 0, 0, "  hello there ")).toEqual({
@@ -53,6 +60,32 @@ test("recorded samples become 16-bit mono WAV behind a 44-byte header", () => {
   const empty = wavFile([], 16_000);
   expect(empty.length).toBe(44);
   expect(new DataView(empty.buffer).getUint32(40, true)).toBe(0);
+});
+
+test("a 44.1 kHz microphone is averaged down to 16 kHz across chunk boundaries", () => {
+  const ramp = Float32Array.from({ length: 441 }, (_, i) => i);
+  const out = createDecimator(44_100, 16_000)(ramp);
+  expect(out.length).toBe(159);
+  expect(Array.from(out.slice(0, 6))).toEqual([1, 4, 7, 10, 12.5, 15]);
+  expect(out.at(-1)).toBe(437);
+
+  const second = Float32Array.from({ length: 44_100 }, (_, i) => Math.sin(i / 7));
+  const whole = createDecimator(44_100, 16_000)(second);
+  const chunked = createDecimator(44_100, 16_000);
+  const parts: number[] = [];
+  for (let i = 0; i < second.length; i += 128) parts.push(...chunked(second.subarray(i, i + 128)));
+  expect(whole.length).toBe(15_999);
+  expect(Float32Array.from(parts)).toEqual(whole);
+  expect(createDecimator(16_000, 16_000)(Float32Array.from([0.25, -0.5]))).toEqual(
+    Float32Array.from([0.25, -0.5]),
+  );
+});
+
+test("a provider byte limit shortens the recording so the WAV always fits", () => {
+  expect(dictationLimitMs(7_400_000, 16_000)).toBe(231_248);
+  expect(44 + (231_248 / 1000) * 16_000 * 2).toBeLessThanOrEqual(7_400_000);
+  expect(dictationLimitMs(25 * 1024 * 1024, 16_000)).toBe(300_000);
+  expect(dictationLimitMs(0, 16_000)).toBe(300_000);
 });
 
 test("elapsed time reads as minutes and seconds", () => {

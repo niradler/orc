@@ -15,6 +15,32 @@ export function insertDictation(
   return { value: `${head}${gap}${after}`, caret: head.length };
 }
 
+export function dictationLimitMs(maxBytes: number, sampleRate: number): number {
+  if (maxBytes <= 0) return DICTATION_LIMIT_MS;
+  return Math.min(DICTATION_LIMIT_MS, Math.floor(((maxBytes - 44) / (sampleRate * 2)) * 1000));
+}
+
+export function createDecimator(inputRate: number, outputRate: number) {
+  const step = inputRate / outputRate;
+  let position = 0;
+  let sum = 0;
+  let count = 0;
+  return (channel: Float32Array): Float32Array => {
+    const out: number[] = [];
+    for (const sample of channel) {
+      sum += sample;
+      count++;
+      if (++position >= step) {
+        position -= step;
+        out.push(sum / count);
+        sum = 0;
+        count = 0;
+      }
+    }
+    return Float32Array.from(out);
+  };
+}
+
 export function wavFile(chunks: Float32Array[], sampleRate: number): Uint8Array<ArrayBuffer> {
   const samples = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const view = new DataView(new ArrayBuffer(44 + samples * 2));

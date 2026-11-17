@@ -16,6 +16,7 @@ export function whisperSpeechToText(
   if (!apiKey) return null;
   const baseUrl = (settings.base_url ?? defaults.baseUrl).replace(/\/$/, "");
   return {
+    maxBytes: 25 * 1024 * 1024,
     async transcribe(input) {
       const { audio, format } = input;
       const form = new FormData();

@@ -208,6 +208,43 @@ for (const [label, size] of [
       await expect(pill).toHaveCount(0);
     });
 
+    test("a suspended audio context errors instead of recording silence", async ({ page }) => {
+      await page.addInitScript(() => {
+        const w = window as unknown as { streams: MediaStream[] };
+        w.streams = [];
+        const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          const stream = await original(constraints);
+          w.streams.push(stream);
+          return stream;
+        };
+        AudioContext.prototype.resume = () => Promise.resolve();
+        Object.defineProperty(BaseAudioContext.prototype, "state", { get: () => "suspended" });
+      });
+      await openComposer(page, true);
+      let transcribed = false;
+      await page.route("**/api/speech/transcribe", (route) => {
+        transcribed = true;
+        return route.fulfill({ json: { text: "silence" } });
+      });
+      await page.getByTestId("chat-dictation-button").click();
+      await expect(page.getByTestId("chat-dictation-pill")).toHaveAttribute("data-phase", "error");
+      await expect(page.getByTestId("chat-dictation-error")).toHaveText(
+        "Audio didn't start. Tap Retry.",
+      );
+      await expect(page.getByTestId("chat-dictation-retry")).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            (window as unknown as { streams: MediaStream[] }).streams.some((stream) =>
+              stream.getTracks().some((track) => track.readyState === "live"),
+            ),
+          ),
+        )
+        .toBe(false);
+      expect(transcribed).toBe(false);
+    });
+
     test("a blocked microphone says how to fix it and offers a retry", async ({ page }) => {
       await page.addInitScript(() => {
         navigator.mediaDevices.getUserMedia = () =>

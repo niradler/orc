@@ -24353,6 +24353,7 @@ export interface components {
         };
         SpeechStatus: {
             available: boolean;
+            max_bytes: number;
         };
         SpeechTranscript: {
             text: string;

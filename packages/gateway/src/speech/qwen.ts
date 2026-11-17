@@ -10,6 +10,7 @@ export function qwenSpeechToText(config: OrcConfig): SpeechToText | null {
     "",
   );
   return {
+    maxBytes: 7_400_000,
     async transcribe(input) {
       const { audio, format } = input;
       const response = await fetch(`${baseUrl}/chat/completions`, {

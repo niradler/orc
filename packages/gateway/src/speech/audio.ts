@@ -4,6 +4,7 @@ export type SpeechAudio = { audio: Uint8Array; format: string };
 export type SynthesizedSpeech = { audio: Uint8Array; format: "ogg" | "wav" };
 
 export interface SpeechToText {
+  maxBytes: number;
   transcribe(input: SpeechAudio & { signal?: AbortSignal }): Promise<string>;
 }
 
