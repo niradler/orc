@@ -214,6 +214,25 @@ test("should measure Codex context as the request's total tokens against its rep
   expect(result.timeline?.[0]?.context_tokens).toBe(351_805);
 });
 
+test("should fall back to Codex input tokens and report no window when the window is missing or invalid", () => {
+  const row = (info: Record<string, unknown>) => ({
+    type: "event_msg",
+    timestamp: "2026-11-12T11:35:37.824Z",
+    payload: {
+      type: "token_count",
+      info: {
+        last_token_usage: { input_tokens: 351_714, cached_input_tokens: 351_488 },
+        ...info,
+      },
+    },
+  });
+  for (const info of [{}, { model_context_window: 0 }, { model_context_window: 475_000.5 }])
+    expect(readSessionCacheUsage("codex", bytes([row(info)])).latest).toMatchObject({
+      context_tokens: 351_714,
+      context_window: null,
+    });
+});
+
 test("should hide unsupported, malformed or unreported cache evidence rather than invent zeroes or expiry", () => {
   for (const provider of ["cursor", "cursor-agent", "gemini", "opencode"])
     expect(readSessionCacheUsage(provider, bytes([claude("one", 80, 10)]))).toEqual({

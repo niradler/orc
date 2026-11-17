@@ -7,7 +7,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { formatTokenCount } from "@/lib/token-count";
 import { cn } from "@/lib/utils";
 
-/** The usage API only knows the session's recorded requests; it carries no model window. */
 export function useChatContextUsage(sourceId: string | null | undefined, live: boolean) {
   return useQuery({
     // Same key as SessionCacheUsage: one read feeds both surfaces.
@@ -22,11 +21,6 @@ export function useChatContextUsage(sourceId: string | null | undefined, live: b
 
 type ContextUsage = Pick<CacheTokenUsage, "input_tokens" | "cached_input_tokens">;
 
-/**
- * Context is the input an agent re-sends with each request. The only share the
- * usage API can express is how much of it came from the provider's cache; a
- * session with no recorded request has no figure at all, so it is omitted.
- */
 export function contextFigure(
   latest: ContextUsage | null | undefined,
 ): { tokens: number; percent: number } | null {

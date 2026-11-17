@@ -516,6 +516,13 @@ export function ChatPanel({
     }
     return undefined;
   }, [messages]);
+  const contextWindow = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const window = messages[index]?.turn?.usage?.context_window;
+      if (window) return window;
+    }
+    return undefined;
+  }, [messages]);
   // The latest recorded request belongs to the newest assistant turn only when it
   // was recorded after that turn started; otherwise the figure belongs elsewhere.
   const latestUsage = contextUsage.data?.latest ?? null;
@@ -1662,7 +1669,7 @@ export function ChatPanel({
                   <div className="flex items-center gap-1">
                     <ChatContextMeter
                       usage={latestUsage ?? frozenUsage}
-                      window={latestUsage?.context_window ?? frozenUsage?.context_window}
+                      window={latestUsage?.context_window ?? contextWindow}
                       compactions={contextUsage.data?.compactions?.length ?? 0}
                     />
                     {streaming && canSteerLive && (

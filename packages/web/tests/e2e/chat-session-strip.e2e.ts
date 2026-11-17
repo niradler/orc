@@ -270,3 +270,79 @@ for (const width of [1440, 390])
         animations: "disabled",
       });
     });
+
+test("chat context meter keeps the last reported window after a turn without usage", async ({
+  page,
+}) => {
+  const now = Date.now();
+  const at = (minutes: number) => now - minutes * 60_000;
+  const thread: ChatThread = {
+    id: HOME.chatA,
+    title: "Round cart totals to cents",
+    config: ChatSettingsSchema.parse({ agent: "claude", model: "claude-opus-4-1" }),
+    cwd: "/home/demo/acme-shop",
+    host: null,
+    runtimeId: null,
+    sourceId: "live-demo-claude",
+    backend: "claude-code",
+    updatedAt: at(1),
+    messages: [
+      { id: "q1", role: "user", content: "Round cart totals to cents.", timestamp: at(30) },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "Rounding now happens once at the money boundary.",
+        timestamp: at(25),
+        turn: {
+          startedAt: at(29),
+          finishedAt: at(25),
+          outcome: "completed",
+          usage: {
+            input_tokens: 170_000,
+            cached_input_tokens: 160_000,
+            context_tokens: 170_000,
+            context_window: 200_000,
+          },
+        },
+      },
+      { id: "q2", role: "user", content: "Add a test for refunds.", timestamp: at(10) },
+      {
+        id: "a2",
+        role: "assistant",
+        content: "The response failed.",
+        timestamp: at(5),
+        turn: { startedAt: at(9), finishedAt: at(5), outcome: "failed" },
+      },
+    ],
+  };
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mockSessionHome(page, now);
+  await page.route(`**/api/chat/threads/${HOME.chatA}`, (route) => route.fulfill({ json: thread }));
+  await page.route("**/api/sessions/live/live-demo-claude/cache", (route) =>
+    route.fulfill({
+      json: {
+        latest: {
+          input_tokens: 178_400,
+          cached_input_tokens: 170_000,
+          cache_write_tokens: null,
+          recorded_at: new Date(at(6)).toISOString(),
+          may_be_cold_after: null,
+          context_tokens: 178_400,
+          context_window: null,
+        },
+        totals: null,
+        output_tokens: null,
+        requests: 2,
+        compactions: null,
+        timeline: null,
+      },
+    }),
+  );
+
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await expect(page.getByTestId("chat-message-content").last()).toContainText("failed");
+  const meter = page.getByTestId("chat-context-meter");
+  await expect(meter).toHaveText("89%");
+  await expect(meter).toHaveAttribute("data-tone", "warning");
+  await expect(page.getByTestId("chat-context-ring")).toHaveCount(1);
+});
