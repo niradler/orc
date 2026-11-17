@@ -2,6 +2,8 @@ import type { ParsedUsage } from "./usage-parsers.js";
 
 export type SessionStatus = "running" | "idle" | "stopped";
 
+export type SessionWaiting = { reason: "permission" | "question" | "dialog"; tool: string | null };
+
 export type SessionRecord = {
   backend: string;
   externalId: string;
@@ -12,6 +14,8 @@ export type SessionRecord = {
   cwd?: string | null;
   status: SessionStatus;
   pendingHuman?: boolean;
+  waitingFor?: SessionWaiting;
+  background?: boolean;
   pid?: number | null;
   createdAt: Date;
   lastActivityAt: Date;

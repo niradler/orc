@@ -25,6 +25,7 @@ import { Highlight } from "@/components/Highlight";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
+  SessionRunChip,
   SubagentChip,
   sessionRowButtonClass,
   sessionRowClass,
@@ -827,6 +828,7 @@ export function HistoryRow({
   const agent = entryAgent(entry);
   const status = AGENT_STATES[state].label;
   const hidden = entry.kind === "native" && !!entry.session.hidden;
+  const live = entry.kind === "native" ? entry.session : null;
   const testId = terminal
     ? "chat-open-terminal"
     : entry.kind === "local"
@@ -873,7 +875,14 @@ export function HistoryRow({
               stateTestId="chat-session-status"
               mode={entry.kind === "native" ? entry.session.permission_mode : null}
               model={sessionModelName(entry)}
-              badge={entry.subagents ? <SubagentChip count={entry.subagents} /> : undefined}
+              badge={
+                entry.subagents || live?.waiting_for || live?.background_work ? (
+                  <>
+                    <SessionRunChip session={live} />
+                    <SubagentChip count={entry.subagents} />
+                  </>
+                ) : undefined
+              }
               marker={
                 <>
                   {entry.kind === "native" && entry.session.handoff?.status === "ready" && (

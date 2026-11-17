@@ -90,7 +90,7 @@ import {
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
-import { type AgentState, liveSessionState } from "@/lib/agent-state";
+import { type AgentState, liveSessionState, pendingLabel } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
@@ -1467,10 +1467,12 @@ export function ChatPanel({
                     className="text-xs text-on-surface-variant"
                   >
                     {agentInbox
-                      ? "Running in its own agent. Send queues your message for its next safe point."
+                      ? agentInbox.waiting_for
+                        ? pendingLabel(agentInbox.waiting_for)
+                        : "Running in its own agent · sends queue"
                       : agentOverride
                         ? "Sending unlocked. The running status may be stale."
-                        : "Running in its own agent. Sending unlocks when it finishes."}
+                        : "Running in its own agent · send unlocks when it finishes"}
                   </p>
                   {agentBlocked && (
                     <button
@@ -1494,6 +1496,15 @@ export function ChatPanel({
                     <SessionMessageInbox session={agentInbox} live={false} compose={false} />
                   )}
                 </div>
+              )}
+              {streaming && (
+                <p
+                  role="status"
+                  data-testid="chat-send-outcome"
+                  className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
+                >
+                  {canSteerLive ? "Sends steer this turn" : "Sends queue until the turn ends"}
+                </p>
               )}
               {savedPad && (
                 <p
@@ -1586,13 +1597,7 @@ export function ChatPanel({
                     aria-activedescendant={
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
-                    placeholder={
-                      agentInbox
-                        ? "Running in its own agent. Messages queue for its next safe point."
-                        : agentBlocked
-                          ? "Running in its own agent. Sending unlocks when it finishes."
-                          : "Ask anything. / for prompts and skills"
-                    }
+                    placeholder="Ask anything. / for prompts and skills"
                     disabled={!ready}
                     value={draft}
                     onChange={(event) => {
