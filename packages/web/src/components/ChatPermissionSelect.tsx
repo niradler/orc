@@ -1,4 +1,5 @@
 import type { ChatSettings } from "@orc/core/chat";
+import { agentLabel } from "@orc/core/coding-agents";
 import { Check, ChevronDown } from "lucide-react";
 import { useRef, useState } from "react";
 import {
@@ -33,8 +34,10 @@ export function ChatPermissionSelect({
   disabled?: boolean;
 }) {
   const capabilities = useAgentCapabilities(config.agent);
-  const supported = capabilities?.livePermissions === true;
-  const mode = effectivePermissionMode(config);
+  const modes = permissionModes(capabilities);
+  const supported = modes.length > 1;
+  const effective = effectivePermissionMode(config);
+  const mode = modes.includes(effective) ? effective : "default";
   return (
     <div className="space-y-2 text-sm">
       <div className="flex items-center gap-1">
@@ -57,31 +60,33 @@ export function ChatPermissionSelect({
         }
         className="min-h-8 w-full rounded-md border border-control-border bg-background px-3 text-base sm:text-sm disabled:opacity-50"
       >
-        {permissionModes(capabilities).map((option) => (
+        {modes.map((option) => (
           <option key={option} value={option}>
             {PERMISSION_LABELS[option]}
           </option>
         ))}
       </select>
-      {supported && (
-        <p data-testid="chat-permission-description" className="text-xs text-muted-foreground">
-          {PERMISSION_DESCRIPTIONS[mode]}
-        </p>
-      )}
+      <p data-testid="chat-permission-description" className="text-xs text-muted-foreground">
+        {supported && PERMISSION_DESCRIPTIONS[mode]}
+        {supported && !modes.includes("plan") && " · "}
+        {!modes.includes("plan") && `No Plan mode for ${agentLabel(config.agent)}`}
+      </p>
     </div>
   );
 }
 
 export function ChatPermissionChip() {
-  const { config, changePermissions, ready, thread } = useChat();
+  const { config, changePermissions, ready, thread, streaming } = useChat();
   const capabilities = useAgentCapabilities(config.agent, thread);
-  const supported = capabilities?.livePermissions === true;
+  const modes = permissionModes(capabilities);
+  const live = capabilities?.livePermissions === true;
   const [open, setOpen] = useState(false);
   const list = useRef<HTMLDivElement>(null);
-  const mode = effectivePermissionMode(config);
+  const effective = effectivePermissionMode(config);
+  const mode = modes.includes(effective) ? effective : "default";
   // New chats keep the default quiet; an open session always shows its mode so
   // the current permissions stay visible and changeable beside the composer.
-  if (!supported || (mode === "default" && !thread)) return null;
+  if (modes.length < 2 || (mode === "default" && !thread)) return null;
   const Icon = MODE_ICONS[mode];
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -92,7 +97,7 @@ export function ChatPermissionChip() {
           data-mode={mode}
           aria-label={`Permissions: ${PERMISSION_LABELS[mode]}`}
           title={`Permissions: ${PERMISSION_LABELS[mode]}`}
-          disabled={!ready}
+          disabled={!ready || (streaming && !live)}
           className={cn(composerChip, mode === "bypassPermissions" && "text-warning")}
         >
           <Icon size={14} aria-hidden="true" />
@@ -119,7 +124,7 @@ export function ChatPermissionChip() {
       >
         <div ref={list} role="menu" aria-label="Permissions" onKeyDown={onChipListKeyDown}>
           <p className={chipHeading}>Permissions</p>
-          {permissionModes(capabilities).map((option) => (
+          {modes.map((option) => (
             <button
               type="button"
               key={option}
@@ -142,9 +147,16 @@ export function ChatPermissionChip() {
               {option === mode && <Check size={14} aria-hidden="true" />}
             </button>
           ))}
-          <p className="px-2 pt-1 text-xs text-muted-foreground">
-            Loosening applies right away; stricter permissions apply to your next message.
-          </p>
+          {!modes.includes("plan") && (
+            <p className="px-2 pt-1 text-xs text-muted-foreground">
+              No Plan mode for {agentLabel(config.agent)}
+            </p>
+          )}
+          {live && (
+            <p className="px-2 pt-1 text-xs text-muted-foreground">
+              Loosening applies right away; stricter permissions apply to your next message.
+            </p>
+          )}
         </div>
       </PopoverContent>
     </Popover>

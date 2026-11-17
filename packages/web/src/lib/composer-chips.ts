@@ -23,7 +23,7 @@ export const PERMISSION_LABELS: Record<PermissionMode, string> = {
 };
 
 export const PERMISSION_DESCRIPTIONS: Record<PermissionMode, string> = {
-  default: "Asks before edits and commands",
+  default: "The agent's usual approvals",
   plan: "Reads and plans, never edits",
   acceptEdits: "Edits files, asks before commands",
   auto: "A classifier approves safe actions",
@@ -31,7 +31,10 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionMode, string> = {
 };
 
 export function permissionModes(capabilities: AgentCapabilities | undefined): PermissionMode[] {
-  return capabilities?.permissionModes ?? ["default", "acceptEdits", "bypassPermissions"];
+  return (
+    capabilities?.permissionModes ??
+    (capabilities?.livePermissions ? ["default", "acceptEdits", "bypassPermissions"] : [])
+  );
 }
 
 export const PASTE_ATTACHMENT_BYTES = 16 * 1024;

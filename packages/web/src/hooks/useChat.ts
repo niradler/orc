@@ -1038,7 +1038,8 @@ function useChatController() {
             // An open conversation keeps its stored choice; only a new one adopts
             // the composer value.
             ...(thread ? {} : { sendWhileRunning: config.sendWhileRunning }),
-            ...(config.permissionMode && ["claude", "codex", "pi"].includes(config.agent)
+            ...(config.permissionMode &&
+            ["claude", "codex", "pi", "opencode"].includes(config.agent)
               ? { permissionMode: config.permissionMode }
               : {}),
             ...(thread ? { threadId: thread.id } : { workspace }),

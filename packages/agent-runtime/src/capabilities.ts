@@ -40,7 +40,7 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabil
 });
 export const CODEX_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabilities>({
   ...CLAUDE_CAPABILITIES,
-  permissionModes: ["default", "acceptEdits", "bypassPermissions"],
+  permissionModes: ["default", "plan", "acceptEdits", "bypassPermissions"],
   interrupt: true,
   steering: true,
 });
@@ -55,8 +55,9 @@ export const ACP_CAPABILITIES: AgentCapabilities = Object.freeze({
   interrupt: true,
 });
 /** What `opencode acp` advertises; re-negotiated from the live handshake on every session. */
-export const OPENCODE_CAPABILITIES: AgentCapabilities = Object.freeze({
+export const OPENCODE_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabilities>({
   ...ACP_CAPABILITIES,
+  permissionModes: ["default", "plan"],
   resume: true,
   modelSelection: true,
   images: true,

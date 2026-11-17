@@ -501,3 +501,43 @@ for await (const line of createInterface({input:process.stdin})) {
     await session.close();
   }
 });
+
+test("plan mode starts Codex turns in its plan collaboration mode and shows the plan", async () => {
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-codex-plan-"));
+  const script = join(cwd, "plan.ts");
+  writeFileSync(
+    script,
+    `
+import { createInterface } from 'node:readline';
+const emit = value => console.log(JSON.stringify(value));
+for await (const line of createInterface({input:process.stdin})) {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') emit({id:m.id,result:{}});
+ else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'plan'},model:'gpt-fixture'}});
+ else if(m.method==='turn/start') {
+  emit({id:m.id,result:{}});
+  emit({method:'item/completed',params:{threadId:'plan',item:{type:'plan',id:'p',text:JSON.stringify(m.params.collaborationMode ?? null)}}});
+  emit({method:'turn/completed',params:{threadId:'plan',turn:{status:'completed'}}});
+ }
+}`,
+  );
+  const session = new CodexAppSession(
+    { cwd, orcMcp: false, permissionMode: "plan" },
+    { kind: "local" },
+    async () => [process.execPath, script],
+  );
+  const settings = { model: "gpt-fixture", reasoning_effort: null, developer_instructions: null };
+  try {
+    const sent: unknown[] = [];
+    for (const prompt of ["Plan", "Again", "Build"]) {
+      if (prompt === "Build") session.setPermissionMode("acceptEdits");
+      let text = "";
+      await session.send(prompt);
+      for await (const event of session.events()) if (event.type === "text") text += event.data;
+      sent.push(JSON.parse(text));
+    }
+    expect(sent).toEqual([{ mode: "plan", settings }, null, { mode: "default", settings }]);
+  } finally {
+    await session.close();
+  }
+});

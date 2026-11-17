@@ -665,6 +665,29 @@ export class AcpSession implements AgentSession {
         );
         if (changed?.configOptions?.length) configOptions = changed.configOptions;
       }
+      const mode = configOptions.find(
+        (option) => option.category === "mode" && option.type === "select",
+      );
+      const modes =
+        mode?.type === "select"
+          ? mode.options.flatMap((entry) => ("group" in entry ? entry.options : [entry]))
+          : [];
+      if (modes.some((entry) => entry.value === "plan")) {
+        this.capabilities = { ...this.capabilities, permissionModes: ["default", "plan"] };
+        const wanted =
+          this.opts.permissionMode === "plan"
+            ? "plan"
+            : modes.find((entry) => entry.value !== "plan")?.value;
+        if (mode && wanted && wanted !== mode.currentValue)
+          await this.request(
+            agent.request("session/set_config_option", {
+              sessionId: this.runtimeId,
+              configId: mode.id,
+              value: wanted,
+            }),
+            "session/set_config_option",
+          );
+      }
       const effort = thoughtLevelOption(configOptions);
       const choices = effortChoicesOf(effort);
       if (choices) this.capabilities = { ...this.capabilities, effortChoices: choices };

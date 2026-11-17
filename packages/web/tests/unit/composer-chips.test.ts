@@ -124,11 +124,12 @@ describe("permissions", () => {
   test("the picker lists the modes the agent offers", () => {
     const claude = { permissionModes: ["default", "plan", "acceptEdits"] } as AgentCapabilities;
     expect(permissionModes(claude)).toEqual(["default", "plan", "acceptEdits"]);
-    expect(permissionModes({} as AgentCapabilities)).toEqual([
+    expect(permissionModes({ livePermissions: true } as AgentCapabilities)).toEqual([
       "default",
       "acceptEdits",
       "bypassPermissions",
     ]);
+    expect(permissionModes({ livePermissions: false } as AgentCapabilities)).toEqual([]);
     const plan = withPermissionMode({ ...defaults, agent: "claude" }, "plan");
     expect(effectivePermissionMode(plan)).toBe("plan");
   });

@@ -2116,7 +2116,7 @@ async function openChat(
   if (input === "/compact" && uploads.length)
     throw new ValidationError("Send attachments separately from context compaction.");
   if (body.permissionMode !== undefined) {
-    if (createBackend(thread.backend).capabilities?.livePermissions === false)
+    if (!createBackend(thread.backend).capabilities?.permissionModes)
       throw new ValidationError("This backend does not support ORC permission modes.");
     thread.config.permissionMode = permissionModeSupported(thread.backend, body.permissionMode)
       ? body.permissionMode
@@ -2457,7 +2457,7 @@ async function beginTurn(
           cwd: thread.cwd,
           executionHost: thread.host,
           autoApprove: thread.config.autoApprove,
-          permissionMode: ["claude", "codex", "pi"].includes(thread.config.agent)
+          permissionMode: createBackend(thread.backend).capabilities?.permissionModes
             ? thread.config.permissionMode
             : undefined,
           model: thread.config.model,

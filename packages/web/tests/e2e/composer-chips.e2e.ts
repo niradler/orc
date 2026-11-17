@@ -361,7 +361,7 @@ test("permission chip appears only when the mode is not the default", async ({ p
 });
 
 for (const width of [1440, 390]) {
-  test(`Plan is offered to Claude only, with a description, at ${width}px`, async ({
+  test(`each agent lists only its own permission modes, with descriptions, at ${width}px`, async ({
     page,
     request,
   }) => {
@@ -389,8 +389,25 @@ for (const width of [1440, 390]) {
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
     await chip.click();
-    await expect(page.getByTestId("chat-permission-option-acceptEdits")).toBeVisible();
-    await expect(page.getByTestId("chat-permission-option-plan")).toHaveCount(0);
+    await expect(page.getByTestId("chat-permission-option-plan")).toBeVisible();
+    await expect(page.getByTestId("chat-permission-option-auto")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(() => localStorage.clear());
+    await request.patch("/api/settings", {
+      headers,
+      data: {
+        chat: { ...defaults, agent: "opencode", permissionMode: "plan" },
+      },
+    });
+    await openChat(page);
+    await expect(chip).toHaveAttribute("data-mode", "plan");
+    await chip.click();
+    await expect(
+      page.getByRole("menu", { name: "Permissions" }).getByRole("menuitemradio"),
+    ).toHaveCount(2);
+    await page.getByTestId("chat-permission-option-default").click();
+    await expect(chip).toHaveCount(0);
   });
 }
 
