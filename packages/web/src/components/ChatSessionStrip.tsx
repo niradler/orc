@@ -1,10 +1,12 @@
 import type { CacheTokenUsage } from "@orc/core/usage";
 import { useQuery } from "@tanstack/react-query";
 import { Gauge } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { api } from "@/api/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { contextUsageHelp } from "@/lib/session-cache";
 import { formatTokenCount } from "@/lib/token-count";
+import { cn } from "@/lib/utils";
 
 /** The usage API only knows the session's recorded requests; it carries no model window. */
 export function useChatContextUsage(sourceId: string | null | undefined, live: boolean) {
@@ -35,26 +37,48 @@ export function contextFigure(
 }
 
 const count = new Intl.NumberFormat();
+const ContextRing = lazy(() => import("@/components/ContextRing"));
 
 export function ChatContextMeter({
   usage,
+  window,
   compactions,
 }: {
-  usage: ContextUsage | null | undefined;
+  usage: (ContextUsage & { context_tokens?: number | null | undefined }) | null | undefined;
+  window: number | null | undefined;
   compactions: number;
 }) {
   const figure = contextFigure(usage);
-  if (!figure) return null;
+  if (!usage || !figure) return null;
+  const used = usage.context_tokens ?? figure.tokens;
+  const percent = window ? Math.min(100, Math.round((used / window) * 100)) : null;
+  const tone =
+    percent === null ? null : percent >= 90 ? "error" : percent >= 80 ? "warning" : "series-1";
   const help = contextUsageHelp(figure.tokens, figure.percent, compactions);
   return (
     <Popover>
       <PopoverTrigger
         data-testid="chat-context-meter"
-        aria-label={`Context: ${formatTokenCount(figure.tokens, false)} tokens`}
-        className="inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-xs tabular-nums text-on-surface-variant hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-ring max-sm:min-h-11"
+        data-tone={tone ?? "unknown"}
+        aria-label={
+          percent === null
+            ? `Context: ${formatTokenCount(used, false)} tokens`
+            : `Context: ${percent}% used`
+        }
+        className={cn(
+          "inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-xs tabular-nums text-on-surface-variant hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-ring max-sm:min-h-11",
+          tone === "error" && "text-error",
+          tone === "warning" && "text-warning",
+        )}
       >
-        <Gauge aria-hidden="true" size={14} />
-        {formatTokenCount(figure.tokens, false)}
+        {percent === null ? (
+          <Gauge aria-hidden="true" size={14} />
+        ) : (
+          <Suspense fallback={<span className="size-4" />}>
+            <ContextRing percent={percent} color={`var(--color-${tone})`} />
+          </Suspense>
+        )}
+        {percent === null ? formatTokenCount(used, false) : `${percent}%`}
       </PopoverTrigger>
       <PopoverContent
         data-testid="chat-context-meter-popover"
@@ -63,13 +87,24 @@ export function ChatContextMeter({
         className="w-72 space-y-2 text-xs leading-relaxed"
       >
         <p className="font-medium tabular-nums">
-          {count.format(figure.tokens)} context tokens
-          <span className="font-normal text-on-surface-variant"> · {figure.percent}% cached</span>
+          {window
+            ? `${count.format(used)} of ${count.format(window)} context tokens · ${percent}%`
+            : `${count.format(used)} context tokens`}
         </p>
+        {percent !== null && percent >= 80 && (
+          <p data-testid="chat-context-meter-warning" className="text-on-surface">
+            Context is almost full. When it fills, the agent compacts or stops, and the older
+            conversation is summarized. Compact now or start a new chat to choose what to keep.
+          </p>
+        )}
+        {!window && (
+          <p className="text-on-surface-variant">
+            The agent does not report its model's context window, so the share used is not shown.
+          </p>
+        )}
         <p className="text-on-surface-variant">
-          The agent does not report its model's context window, so the share used is not shown.
+          {figure.percent}% of the latest request came from the provider's cache.
         </p>
-        <p className="text-on-surface-variant">{help.explanation}</p>
         <p className="text-on-surface-variant">{help.note}</p>
       </PopoverContent>
     </Popover>

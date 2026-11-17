@@ -112,6 +112,7 @@ export type AgentEvent =
         /** The folder the backend actually resumed in, when it differs from the request. */
         cwd?: string | undefined;
         usage?: unknown;
+        contextWindow?: number | undefined;
         durationMs?: number | undefined;
         outcome?: "completed" | "stopped" | "failed" | undefined;
       };

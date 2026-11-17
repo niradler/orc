@@ -37,6 +37,8 @@ test("should deduplicate Claude input, include cache writes in the denominator, 
     cache_write_tokens: 20,
     recorded_at: "2026-11-06T12:00:00.000Z",
     may_be_cold_after: "2026-11-06T12:05:00.000Z",
+    context_tokens: 100,
+    context_window: null,
   });
   expect(result.totals?.input_tokens).toBe(100);
   expect(result.output_tokens).toBe(999);
@@ -194,6 +196,22 @@ test("should use Codex reported cumulative counters without adding duplicate sna
     },
   };
   expect(readSessionCacheUsage("codex", bytes([invalid])).latest).toBeNull();
+});
+
+test("should measure Codex context as the request's total tokens against its reported window", () => {
+  const rollout =
+    '{"timestamp":"2026-11-12T11:35:37.824Z","ordinal":1866,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":52689422,"cached_input_tokens":52406144,"cache_write_input_tokens":0,"output_tokens":101125,"reasoning_output_tokens":58863,"total_tokens":52790547},"last_token_usage":{"input_tokens":351714,"cached_input_tokens":351488,"cache_write_input_tokens":0,"output_tokens":91,"reasoning_output_tokens":0,"total_tokens":351805},"last_usage_includes_reasoning":true,"model_context_window":475000}}}';
+  const result = readSessionCacheUsage("codex", new TextEncoder().encode(rollout));
+  expect(result.latest).toEqual({
+    input_tokens: 351_714,
+    cached_input_tokens: 351_488,
+    cache_write_tokens: 0,
+    recorded_at: "2026-11-12T11:35:37.824Z",
+    may_be_cold_after: null,
+    context_tokens: 351_805,
+    context_window: 475_000,
+  });
+  expect(result.timeline?.[0]?.context_tokens).toBe(351_805);
 });
 
 test("should hide unsupported, malformed or unreported cache evidence rather than invent zeroes or expiry", () => {

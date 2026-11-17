@@ -1662,6 +1662,7 @@ export function ChatPanel({
                   <div className="flex items-center gap-1">
                     <ChatContextMeter
                       usage={latestUsage ?? frozenUsage}
+                      window={latestUsage?.context_window ?? frozenUsage?.context_window}
                       compactions={contextUsage.data?.compactions?.length ?? 0}
                     />
                     {streaming && canSteerLive && (

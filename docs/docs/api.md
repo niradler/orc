@@ -70,7 +70,8 @@ permission behavior.
 
 `GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence recorded by
 the agent: `latest` (including optional recorded time and a conservative
-`may_be_cold_after` hint) and `totals`. Claude, Codex and Pi are read from the
+`may_be_cold_after` hint, `context_tokens` as the agent counts its context, and
+`context_window` when the transcript records the model's window, as Codex does) and `totals`. Claude, Codex and Pi are read from the
 stored native transcript; OpenCode is read from its own session database on the
 execution host. Missing or unsupported evidence is `null`. No prompt text,
 credentials or transcript paths are returned.

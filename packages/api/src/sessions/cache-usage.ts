@@ -25,6 +25,7 @@ const CodexUsage = z
     cached_input_tokens: Count,
     cache_write_input_tokens: Count.optional(),
     output_tokens: Count.optional(),
+    total_tokens: Count.optional(),
   })
   .refine(
     (value) =>
@@ -104,6 +105,7 @@ type CachePoint = {
   cached_input_tokens: number;
   cache_write_tokens: number | null;
   output_tokens: number | null;
+  context_tokens?: number;
 };
 
 function recordCachePoint(
@@ -122,7 +124,13 @@ function recordCachePoint(
     !result.latest.recorded_at ||
     point.recorded_at >= result.latest.recorded_at
   )
-    result.latest = { ...tokens, recorded_at: point.recorded_at, may_be_cold_after: null };
+    result.latest = {
+      ...tokens,
+      recorded_at: point.recorded_at,
+      may_be_cold_after: null,
+      context_tokens: point.context_tokens ?? point.input_tokens,
+      context_window: null,
+    };
   const totals = result.totals ?? {
     input_tokens: 0,
     cached_input_tokens: 0,
@@ -140,7 +148,7 @@ function recordCachePoint(
   timeline.push({
     request: timeline.length + 1,
     recorded_at: point.recorded_at,
-    context_tokens: point.input_tokens,
+    context_tokens: point.context_tokens ?? point.input_tokens,
     cached_input_tokens: point.cached_input_tokens,
     output_tokens: point.output_tokens,
   });
@@ -329,7 +337,13 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
         !result.latest.recorded_at ||
         recordedAt >= result.latest.recorded_at
       )
-        result.latest = { ...tokens, recorded_at: recordedAt, may_be_cold_after: mayBeColdAfter };
+        result.latest = {
+          ...tokens,
+          recorded_at: recordedAt,
+          may_be_cold_after: mayBeColdAfter,
+          context_tokens: tokens.input_tokens,
+          context_window: null,
+        };
       const totals = result.totals ?? {
         input_tokens: 0,
         cached_input_tokens: 0,
@@ -369,11 +383,13 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       if (!latest.success || latest.data.input_tokens === 0) continue;
       const totals = CodexUsage.safeParse(info.total_token_usage);
       const total = totals.success ? totals.data.input_tokens : null;
+      const context = latest.data.total_tokens ?? latest.data.input_tokens;
+      const window = Count.positive().safeParse(info.model_context_window);
       if (total === null || total !== codexTotal)
         timeline.push({
           request: timeline.length + 1,
           recorded_at: recordedAt,
-          context_tokens: latest.data.input_tokens,
+          context_tokens: context,
           cached_input_tokens: latest.data.cached_input_tokens,
           output_tokens: latest.data.output_tokens ?? null,
         });
@@ -388,6 +404,8 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
           ...codexTokens(latest.data),
           recorded_at: recordedAt,
           may_be_cold_after: null,
+          context_tokens: context,
+          context_window: window.success ? window.data : null,
         };
         result.totals = totals.success ? codexTokens(totals.data) : null;
         result.output_tokens = totals.success ? (totals.data.output_tokens ?? null) : null;
