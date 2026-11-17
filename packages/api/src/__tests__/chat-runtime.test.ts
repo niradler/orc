@@ -1503,7 +1503,11 @@ describe("native chat runtime", () => {
       .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
     const path = `/chat/runs/${opened.runId}/permission-mode`;
     expect((await request(path, { mode: "yolo" })).status).toBe(400);
-    expect((await request(path, { mode: "auto" })).status).toBe(400);
+    const rejected = await request(path, { mode: "auto" });
+    expect(rejected.status).toBe(400);
+    expect(((await rejected.json()) as { error: string }).error).toContain(
+      'the "auto" permission mode',
+    );
     const changed = await request(path, { mode: "bypassPermissions" });
     expect(changed.status).toBe(200);
     expect(((await changed.json()) as ChatThread).config.permissionMode).toBe("bypassPermissions");
@@ -1519,9 +1523,17 @@ describe("native chat runtime", () => {
     waitPermission = false;
   });
 
-  test("a mode the agent does not offer starts as ask in chat", async () => {
-    await turn({ permissionMode: "auto", messages: [{ role: "user", content: "decide for me" }] });
-    expect(calls.at(-1)?.opts.permissionMode).toBe("default");
+  test("a send in a mode the agent does not offer is rejected by name", async () => {
+    const before = calls.length;
+    const response = await request("/chat/stream", {
+      permissionMode: "auto",
+      messages: [{ role: "user", content: "decide for me" }],
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toContain(
+      'the "auto" permission mode',
+    );
+    expect(calls.length).toBe(before);
   });
 
   test("a settings save failure does not loosen a pending permission", async () => {

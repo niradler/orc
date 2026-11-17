@@ -610,6 +610,10 @@ try {
     throw new Error("native modes: " + JSON.stringify(queries[0].modes));
   openGate();
   await reading;
+  await planned.send("build it");
+  for await (const event of planned.events()) {}
+  if (queries.at(-1).options.permissionMode !== "bypassPermissions")
+    throw new Error("next turn mode: " + queries.at(-1).options.permissionMode);
   console.log("verified");
 } finally { openGate(); await planned.close(); await session.close(); }
 `,

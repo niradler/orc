@@ -1,3 +1,4 @@
+import { unsupportedPermissionMode } from "@orc/core/chat-options";
 import { shortId, ulid } from "@orc/core/ids";
 import type { GatewayMode } from "@orc/core/types";
 import {
@@ -16,6 +17,8 @@ import {
   apiRejectTask,
   apiTriggerJob,
 } from "./api.js";
+import { applyPermissionMode, permissionModesFor } from "./agent-runner.js";
+import type { SessionOpts } from "./agent-runtime/index.js";
 import { escapeHtml } from "./html.js";
 import {
   assignTaskToSession,
@@ -458,7 +461,13 @@ export async function handleDirectCommand(input: {
 
       const resolved = modeMap[modeArg];
       if (!resolved) return { text: "Unknown mode. Valid: default, plan, edit, bypass" };
+      if (!permissionModesFor(active.id, active.backend).includes(resolved))
+        return { text: unsupportedPermissionMode(resolved) };
 
+      const applied = await applyPermissionMode(
+        active.id,
+        resolved as NonNullable<SessionOpts["permissionMode"]>,
+      );
       await updateGatewaySession(active.id, { permission_mode: resolved });
       if (resolved === "bypassPermissions") {
         await updateGatewaySession(active.id, { auto_approve: true });
@@ -466,7 +475,9 @@ export async function handleDirectCommand(input: {
         await updateGatewaySession(active.id, { auto_approve: false });
       }
 
-      return { text: `Mode set: ${modeLabels[resolved]}` };
+      return {
+        text: `Mode set: ${modeLabels[resolved]}${applied === "restart" ? "\nThe agent restarts on your next message to apply it." : ""}`,
+      };
     }
 
     return {

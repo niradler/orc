@@ -49,7 +49,7 @@ import {
   ChatTurnContextSchema,
   withOrcContext,
 } from "@orc/core/chat-context";
-import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
+import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
 import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
@@ -1830,7 +1830,7 @@ app.openapi(
     if (!run.session?.setPermissionMode)
       throw new ValidationError("This backend does not support changing live permissions.");
     if (!permissionModeSupported(thread.backend, mode))
-      throw new ValidationError("This agent does not support this permission mode.");
+      throw new ValidationError(unsupportedPermissionMode(mode));
     const updated: ChatThread = {
       ...thread,
       config: structuredClone(thread.config),
@@ -2118,9 +2118,9 @@ async function openChat(
   if (body.permissionMode !== undefined) {
     if (!createBackend(thread.backend).capabilities?.permissionModes)
       throw new ValidationError("This backend does not support ORC permission modes.");
-    thread.config.permissionMode = permissionModeSupported(thread.backend, body.permissionMode)
-      ? body.permissionMode
-      : "default";
+    if (!permissionModeSupported(thread.backend, body.permissionMode))
+      throw new ValidationError(unsupportedPermissionMode(body.permissionMode));
+    thread.config.permissionMode = body.permissionMode;
   }
   // Only a new conversation adopts the composer preference; an existing one owns
   // its setting, so another device cannot silently replace it.

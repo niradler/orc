@@ -74,6 +74,7 @@ export class CodexAppSession implements AgentSession {
   private readonly pending = new Map<string, Pending>();
   private liveMode: LivePermissionMode | undefined;
   private nativeMode: string | undefined;
+  private threadMode: LivePermissionMode | undefined;
   private nativeModel: string | undefined;
 
   constructor(
@@ -657,6 +658,7 @@ export class CodexAppSession implements AgentSession {
         throw new Error("Codex did not return the requested conversation identity.");
       this.runtimeId = id;
       this.forkSourceRuntimeId = undefined;
+      this.threadMode = mode;
       const nativeMode = object(result.collaborationMode).mode;
       this.nativeMode = typeof nativeMode === "string" ? nativeMode : undefined;
       this.nativeModel = typeof result.model === "string" ? result.model : undefined;
@@ -684,10 +686,31 @@ export class CodexAppSession implements AgentSession {
   }
 
   private collaborationMode(): Record<string, unknown> {
-    const mode = (this.liveMode ?? this.opts.permissionMode) === "plan" ? "plan" : "default";
-    if (mode === (this.nativeMode ?? "default") || !this.nativeModel) return {};
+    const live = this.liveMode ?? this.threadMode;
+    const policy =
+      live && live !== this.threadMode
+        ? {
+            approvalPolicy: live === "default" ? "on-request" : "never",
+            sandboxPolicy:
+              live === "bypassPermissions"
+                ? { type: "dangerFullAccess" }
+                : live === "acceptEdits"
+                  ? {
+                      type: "workspaceWrite",
+                      writableRoots: [],
+                      networkAccess: false,
+                      excludeTmpdirEnvVar: false,
+                      excludeSlashTmp: false,
+                    }
+                  : { type: "readOnly", networkAccess: false },
+          }
+        : {};
+    this.threadMode = live;
+    const mode = live === "plan" ? "plan" : "default";
+    if (mode === (this.nativeMode ?? "default") || !this.nativeModel) return policy;
     this.nativeMode = mode;
     return {
+      ...policy,
       collaborationMode: {
         mode,
         settings: { model: this.nativeModel, reasoning_effort: null, developer_instructions: null },

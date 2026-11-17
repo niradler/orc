@@ -7,6 +7,10 @@ export const ChatPermissionModeSchema = z.enum([
   "auto",
   "bypassPermissions",
 ]);
+
+export function unsupportedPermissionMode(mode: string): string {
+  return `This agent does not support the "${mode}" permission mode.`;
+}
 const argument = z
   .string()
   .min(1)

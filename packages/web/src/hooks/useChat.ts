@@ -19,6 +19,7 @@ import type { ChatAgentOptions } from "@orc/core/chat-options";
 import { projectForFolder } from "@orc/core/project-path";
 import type { ProviderProfile } from "@orc/core/providers";
 import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES } from "@orc/core/session-file-types";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   createElement,
@@ -37,6 +38,7 @@ import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { activeApiHeaders } from "@/lib/api-hosts";
 import { groupChatMessages } from "@/lib/chat-message-groups";
+import { permissionModes } from "@/lib/composer-chips";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
 import { getResourceConnection, subscribeResourceConnection } from "@/lib/resource-events";
@@ -299,6 +301,7 @@ function useChatController() {
   }, [activeKey, workspacePickerSession.reset]);
   const [ready, setReady] = useState(false);
   const [responding, setResponding] = useState(false);
+  const queryClient = useQueryClient();
   // Refs hold the latest tabs synchronously, so concurrent streams never update stale copies.
   const tabsRef = useRef(tabs);
   const activeRef = useRef(activeKey);
@@ -1027,6 +1030,16 @@ function useChatController() {
             workspace = { host: ssh.host, ...(last ? { cwd: last } : {}), worktree: false };
           }
           if (!thread && workspace?.cwd) rememberFolder(workspace.host ?? null, workspace.cwd);
+          const modes = permissionModes(
+            thread?.capabilities ??
+              (
+                await queryClient.fetchQuery({
+                  queryKey: ["agent-capabilities", config.agent, thread?.id],
+                  queryFn: () => api.chat.capabilities(config.agent, thread?.id),
+                  staleTime: 30000,
+                })
+              ).capabilities,
+          );
           const payload = {
             ...(!thread && current.projectId ? { projectId: current.projectId } : {}),
             messages: [{ role: "user", content: userMessage.content }],
@@ -1038,9 +1051,12 @@ function useChatController() {
             // An open conversation keeps its stored choice; only a new one adopts
             // the composer value.
             ...(thread ? {} : { sendWhileRunning: config.sendWhileRunning }),
-            ...(config.permissionMode &&
-            ["claude", "codex", "pi", "opencode"].includes(config.agent)
-              ? { permissionMode: config.permissionMode }
+            ...(config.permissionMode && modes.length
+              ? {
+                  permissionMode: modes.includes(config.permissionMode)
+                    ? config.permissionMode
+                    : "default",
+                }
               : {}),
             ...(thread ? { threadId: thread.id } : { workspace }),
             context: { source: "webchat", route: currentRoute() },
@@ -1122,7 +1138,7 @@ function useChatController() {
         ...(!accepted && pendingFiles.length ? { files: [...pendingFiles, ...tab.files] } : {}),
       }));
     },
-    [ready, follow, update, find, releaseQueue],
+    [ready, follow, update, find, releaseQueue, queryClient],
   );
   // Reserve a turn synchronously before opening its stream. Background tabs drain their
   // own queues, and an error or explicit Stop leaves remaining messages pending.

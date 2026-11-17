@@ -436,7 +436,8 @@ class ClaudeSDKSession implements AgentSession {
       const permissionMode =
         this.opts.toolAllowlist !== undefined
           ? "default"
-          : (options.permissionMode ??
+          : (this.liveMode ??
+            options.permissionMode ??
             this.opts.permissionMode ??
             (this.opts.autoApprove ? "bypassPermissions" : "default"));
       logger.info("Starting Claude SDK query", {

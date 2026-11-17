@@ -502,7 +502,7 @@ for await (const line of createInterface({input:process.stdin})) {
   }
 });
 
-test("plan mode starts Codex turns in its plan collaboration mode and shows the plan", async () => {
+test("plan mode starts Codex turns in its plan collaboration mode, shows the plan and widens the sandbox on leaving it", async () => {
   const cwd = temporaryDirectory(join(tmpdir(), "orc-codex-plan-"));
   const script = join(cwd, "plan.ts");
   writeFileSync(
@@ -516,7 +516,7 @@ for await (const line of createInterface({input:process.stdin})) {
  else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'plan'},model:'gpt-fixture'}});
  else if(m.method==='turn/start') {
   emit({id:m.id,result:{}});
-  emit({method:'item/completed',params:{threadId:'plan',item:{type:'plan',id:'p',text:JSON.stringify(m.params.collaborationMode ?? null)}}});
+  emit({method:'item/completed',params:{threadId:'plan',item:{type:'plan',id:'p',text:JSON.stringify([m.params.collaborationMode ?? null, m.params.approvalPolicy ?? null, m.params.sandboxPolicy?.type ?? null])}}});
   emit({method:'turn/completed',params:{threadId:'plan',turn:{status:'completed'}}});
  }
 }`,
@@ -536,7 +536,11 @@ for await (const line of createInterface({input:process.stdin})) {
       for await (const event of session.events()) if (event.type === "text") text += event.data;
       sent.push(JSON.parse(text));
     }
-    expect(sent).toEqual([{ mode: "plan", settings }, null, { mode: "default", settings }]);
+    expect(sent).toEqual([
+      [{ mode: "plan", settings }, null, null],
+      [null, null, null],
+      [{ mode: "default", settings }, "never", "workspaceWrite"],
+    ]);
   } finally {
     await session.close();
   }
