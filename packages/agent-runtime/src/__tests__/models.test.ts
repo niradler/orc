@@ -62,6 +62,16 @@ describe("native command discovery", () => {
       [process.execPath, "-e", codex],
       process.cwd(),
     );
+    const failing = `for await(const chunk of Bun.stdin.stream()){for(const line of new TextDecoder().decode(chunk).trim().split("\\n")){const m=JSON.parse(line);if(m.id)console.log(JSON.stringify(m.method==="initialize"?{id:m.id,result:{}}:{id:m.id,error:{code:-32603,message:"boom"}}));}}`;
+    await expect(
+      readAgentCatalog(
+        "commands",
+        "codex",
+        { kind: "local" },
+        [process.execPath, "-e", failing],
+        process.cwd(),
+      ),
+    ).rejects.toThrow("could not list its commands");
     expect(fromCodex.map((command) => command.name)).toEqual([
       "orc-release",
       "nir-collab",

@@ -2538,7 +2538,9 @@ async function beginTurn(
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
-          setup.context && !turn.startsWith("/") ? withOrcContext(turn, setup.context) : turn;
+          setup.context && !/^\/[\p{L}\p{N}][\p{L}\p{N}_:.-]*(?:\s|$)/u.test(turn)
+            ? withOrcContext(turn, setup.context)
+            : turn;
         const sent =
           setup.continuation && input.trim() !== "/compact"
             ? `${setup.continuation}\n\n${message}`

@@ -695,6 +695,13 @@ describe("native chat runtime", () => {
       context: { source: "webchat", route: "/tasks" },
     });
     expect(calls.at(-1)?.prompt).toBe("/code-review high");
+    await turn({
+      messages: [{ role: "user", content: "/var/log/app.log shows 500s" }],
+      context: { source: "webchat", route: "/tasks" },
+    });
+    expect(calls.at(-1)?.prompt).toBe(
+      "<orc-context>\nsource: webchat\nroute: /tasks\n</orc-context>\n\n/var/log/app.log shows 500s",
+    );
   });
   test("web chat context reaches the agent but is not stored in the conversation", async () => {
     const result = await turn({
@@ -797,6 +804,12 @@ describe("native chat runtime", () => {
       (await request(`/chat/models?agent=codex&threadId=${threadEvent.thread.id}&host=__local__`))
         .status,
     ).toBe(400);
+    for (const path of [
+      `/chat/files?threadId=${threadEvent.thread.id}&cwd=/tmp`,
+      `/chat/commands?agent=${threadEvent.thread.config.agent}&threadId=${threadEvent.thread.id}&host=__local__`,
+      `/chat/commands?agent=pi&threadId=${threadEvent.thread.id}`,
+    ])
+      expect((await request(path)).status).toBe(400);
     expect(
       (await request("/chat/models?agent=codex&threadId=00000000-0000-4000-8000-000000000999"))
         .status,

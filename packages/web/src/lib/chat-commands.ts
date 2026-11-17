@@ -19,13 +19,15 @@ export function activeCommand(draft: string, caret: number) {
 }
 
 export function activeMention(draft: string, caret: number) {
-  const match = /(^|\s)@([^\s"]*)$/.exec(draft.slice(0, caret));
+  const match = /(^|\s)@(?:"([^"]*)|([^\s"]*))$/.exec(draft.slice(0, caret));
   if (!match) return null;
-  const query = match[2] ?? "";
+  const quoted = match[2] !== undefined;
+  const query = match[2] ?? match[3] ?? "";
   const slash = query.lastIndexOf("/");
   return {
     query,
-    start: caret - query.length - 1,
+    quoted,
+    start: caret - query.length - (quoted ? 2 : 1),
     folder: query.slice(0, slash + 1),
     leaf: query.slice(slash + 1),
   };

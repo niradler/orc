@@ -50,11 +50,26 @@ describe("command highlighting", () => {
   test("detects the @ mention at the caret and splits its folder from the typed name", () => {
     expect(activeMention("@src/ap", 7)).toEqual({
       query: "src/ap",
+      quoted: false,
       start: 0,
       folder: "src/",
       leaf: "ap",
     });
-    expect(activeMention("read @", 6)).toEqual({ query: "", start: 5, folder: "", leaf: "" });
+    expect(activeMention("read @", 6)).toEqual({
+      query: "",
+      quoted: false,
+      start: 5,
+      folder: "",
+      leaf: "",
+    });
+    expect(activeMention('see @"My Docs/re', 16)).toEqual({
+      query: "My Docs/re",
+      quoted: true,
+      start: 4,
+      folder: "My Docs/",
+      leaf: "re",
+    });
+    expect(activeMention('@"My Docs/a.md" next', 20)).toBeNull();
     expect(activeMention("mail me@example.com", 19)).toBeNull();
     expect(activeMention("@src/a.ts done", 14)).toBeNull();
     expect(activeCommand("@src/ap", 7)).toBeNull();

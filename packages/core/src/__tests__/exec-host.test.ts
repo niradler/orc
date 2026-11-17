@@ -73,6 +73,15 @@ test("should list files and folders for composer mentions, following folder link
   }
 });
 
+test("should report an unreachable SSH host as a connection failure, not an unreadable folder", async () => {
+  await expect(
+    listHostEntries({ ...host, alias: "orc-unreachable.invalid", connectTimeoutSecs: 2 }, "/tmp"),
+  ).rejects.toMatchObject({
+    name: "SshError",
+    message: expect.stringContaining("does not resolve"),
+  });
+});
+
 async function runRemote(script: string): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn(["sh", "-c", script], {
     stdout: "pipe",

@@ -328,7 +328,7 @@ export async function readAgentCatalog(
   const stdout = child.proc.stdout;
   if (!stdout || typeof stdout === "number") {
     child.kill();
-    throw new Error("The agent model discovery stream is unavailable.");
+    throw new Error(`The agent ${kind} discovery stream is unavailable.`);
   }
   const reader = stdout.getReader();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -350,10 +350,10 @@ export async function readAgentCatalog(
       const models: AgentModel[] = [];
       while (true) {
         const chunk = await reader.read();
-        if (chunk.done) throw new Error("The agent closed before returning its model catalog.");
+        if (chunk.done) throw new Error(`The agent closed before returning its ${kind}.`);
         bytes += chunk.value.byteLength;
         if (bytes > 1024 * 1024)
-          throw new Error("The agent model catalog exceeded its size limit.");
+          throw new Error(`The agent ${kind} catalog exceeded its size limit.`);
         buffer += decoder.decode(chunk.value, { stream: true });
         let newline = buffer.indexOf("\n");
         while (newline >= 0) {
@@ -371,14 +371,14 @@ export async function readAgentCatalog(
             const response = object(message.response);
             if (message.type !== "control_response" || response?.request_id !== "models") continue;
             if (response.subtype !== "success")
-              throw new Error("The agent could not list its models.");
+              throw new Error(`The agent could not list its ${kind}.`);
             const catalog = object(response.response);
             return kind === "models"
               ? parseAgentModels(catalog?.models, agent)
               : parseAgentCommands(catalog?.commands, agent);
           }
           if (message.id !== 1 && message.id !== requestId) continue;
-          if (message.error) throw new Error("The agent could not list its models.");
+          if (message.error) throw new Error(`The agent could not list its ${kind}.`);
           if (message.id === 1) {
             send({ method: "initialized", params: {} });
             send(
@@ -417,7 +417,7 @@ export async function readAgentCatalog(
     return await Promise.race([
       read(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("Agent model discovery timed out.")), 15_000);
+        timer = setTimeout(() => reject(new Error(`Agent ${kind} discovery timed out.`)), 15_000);
       }),
     ]);
   } finally {

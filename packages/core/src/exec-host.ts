@@ -1563,6 +1563,11 @@ export async function listHostEntries(
       ],
       { login: false },
     );
+    if (result.code === 255)
+      throw new SshError(
+        describeSshFailure(host.alias, result.stderr),
+        isSshTransportFailure(result.stderr),
+      );
     if (result.code !== 0) throw new ValidationError(`Not a readable folder: ${path}`);
     entries = result.stdout
       .split("\n")

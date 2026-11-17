@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { KeyboardEvent, RefObject } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "@/api/client";
+import { ApiError, api } from "@/api/client";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
@@ -42,12 +42,13 @@ export function useChatPromptMenu(
     staleTime: 60_000,
   });
   const agentCommands = useQuery({
-    queryKey: ["chat-agent-commands", config.agent, config.providerId, thread?.id, host],
+    queryKey: ["chat-agent-commands", config.agent, config.providerId, thread?.id ?? [host, cwd]],
     queryFn: () =>
       api.chat.commands(
         config.agent,
         thread?.id,
         thread ? undefined : host,
+        cwd,
         config.providerId ?? undefined,
       ),
     enabled: !!command,
@@ -115,8 +116,10 @@ export function useChatPromptMenu(
     : files.isLoading;
   const status = !open
     ? null
-    : !command && files.isError
-      ? "Folder not readable"
+    : !command && files.error
+      ? files.error instanceof ApiError && files.error.status !== 400
+        ? files.error.message
+        : "Folder not readable"
       : matches.length
         ? command
           ? (agentCommands.data?.warning ?? null)
@@ -142,13 +145,16 @@ export function useChatPromptMenu(
 
   function choose(option: CommandOption) {
     if (!trigger) return;
-    const end = trigger.start + 1 + trigger.query.length;
+    const end = trigger.start + (mention?.quoted ? 2 : 1) + trigger.query.length;
     const rest = draft.slice(end);
     const folder = option.kind === "folder";
+    const path = mention ? `${mention.folder}${option.name}${folder ? "/" : ""}` : "";
     const text = mention
       ? folder
-        ? `@${mention.folder}${option.name}/`
-        : mentionToken(`${mention.folder}${option.name}`)
+        ? mention.quoted || /\s/.test(path)
+          ? `@"${path}`
+          : `@${path}`
+        : mentionToken(path)
       : (option.token ?? `/${option.name}`);
     const inserted = `${text}${folder || rest.startsWith(" ") ? "" : " "}`;
     const next = draft.slice(0, trigger.start) + inserted + rest;

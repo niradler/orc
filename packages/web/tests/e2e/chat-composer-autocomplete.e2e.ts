@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { expect, test } from "@playwright/test";
 import { chooseChatAgent } from "./_chat-ui";
 import { gotoView, repoRoot } from "./_helpers";
@@ -31,8 +33,9 @@ for (const width of [1440, 390]) {
     page.on("pageerror", (error) => errors.push(error.message));
     const agents: string[] = [];
     await page.route("**/api/chat/commands?**", (route) => {
-      const agent = new URL(route.request().url()).searchParams.get("agent") ?? "";
-      agents.push(agent);
+      const params = new URL(route.request().url()).searchParams;
+      const agent = params.get("agent") ?? "";
+      agents.push(`${agent}:${params.get("cwd")}`);
       return route.fulfill({
         json:
           agent === "claude"
@@ -84,6 +87,19 @@ for (const width of [1440, 390]) {
     await expect(input).toHaveValue("@packages/api/package.json ");
     await expect(menu).toHaveCount(0);
 
+    const spaced = testInfo.outputPath("mention fixture");
+    mkdirSync(spaced, { recursive: true });
+    writeFileSync(join(spaced, "notes.md"), "");
+    const parent = `${relative(root, dirname(spaced))}/`;
+    await input.fill("");
+    await input.pressSequentially(`@${parent}mention`);
+    await expect(options.first()).toContainText("mention fixture/");
+    await input.press("Enter");
+    await expect(input).toHaveValue(`@"${parent}mention fixture/`);
+    await expect(options.first()).toContainText("notes.md");
+    await input.press("Enter");
+    await expect(input).toHaveValue(`@"${parent}mention fixture/notes.md" `);
+
     await input.fill("");
     await input.pressSequentially("@missing-folder/");
     await expect(page.getByTestId("chat-prompt-status")).toHaveText("Folder not readable");
@@ -104,7 +120,7 @@ for (const width of [1440, 390]) {
     await input.fill("");
     await input.pressSequentially("/");
     await expect(page.getByTestId("chat-prompt-status")).toHaveText("Agent commands unavailable");
-    expect(agents).toContain("codex");
+    expect(agents).toEqual([`claude:${root}`, `codex:${root}`]);
     expect(errors).toEqual([]);
   });
 }
