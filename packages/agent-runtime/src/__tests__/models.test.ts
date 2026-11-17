@@ -105,7 +105,13 @@ describe("native model discovery", () => {
 
   test("keeps descriptions and supported efforts from real Claude and Codex catalogs", () => {
     const claude = parseAgentModels(claudeModels, "claude");
-    expect(claude.map((model) => model.id)).toEqual(["default", "sonnet", "haiku"]);
+    expect(claude.map((model) => model.id)).toEqual([
+      "default",
+      "opus[1m]",
+      "claude-fable-5-1[1m]",
+      "sonnet",
+      "haiku",
+    ]);
     expect(claude.find((model) => model.id === "sonnet")).toEqual({
       id: "sonnet",
       label: "Sonnet",
