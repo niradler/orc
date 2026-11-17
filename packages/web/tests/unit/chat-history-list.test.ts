@@ -7,6 +7,8 @@ import {
   folderProjectName,
   historyEntryState,
   nestedLabel,
+  sessionModeLabel,
+  sessionModelName,
   withDescendants,
 } from "../../src/lib/chat-history-list";
 
@@ -325,6 +327,8 @@ test("subagent sessions stay out of the list but lift their parent's state and r
   expect(entries.map((entry) => entry.id)).toEqual(["native:parent", "native:orphan"]);
   const [top] = entries;
   expect(top?.children).toBeUndefined();
+  expect(top?.subagents).toBe(1);
+  expect(entries[1]?.subagents).toBeUndefined();
   expect(top?.observedState).toBe("working");
   expect(top?.updatedAt).toBe(Date.parse("2026-10-31T00:00:00Z"));
   expect(top?.seenKeys).toContain("native:child");
@@ -433,4 +437,21 @@ test("a chat stays in the project it was started in when its session's folder ma
   const [entry] = chatHistoryList([], [thread], [session], []);
   expect(entry?.projectId).toBe("project-chat");
   expect(chatHistoryList([], [thread], [session], [], "", "project-folder")).toEqual([]);
+});
+
+test("a live session shows a short model name and a readable permission mode", () => {
+  const entry = (session: Partial<LiveSession>) =>
+    ({ kind: "native", session: { ...live, ...session } }) as Parameters<
+      typeof sessionModelName
+    >[0];
+  expect(sessionModelName(entry({ model: "claude-opus-5-5" }))).toBe("Opus 5.5");
+  expect(sessionModelName(entry({ model: "gpt-6.1-terra" }))).toBe("GPT-6.1 Terra");
+  expect(sessionModelName(entry({}))).toBe("");
+  expect(sessionModeLabel("acceptEdits")).toBe("Allow edits");
+  expect(sessionModeLabel("bypassPermissions")).toBe("Full access");
+  expect(sessionModeLabel("plan")).toBe("Plan");
+  expect(sessionModeLabel("never/danger-full-access")).toBe("Full access");
+  expect(sessionModeLabel("on-request/workspace-write")).toBe("Workspace write");
+  expect(sessionModeLabel("never/read-only")).toBe("Read only");
+  expect(sessionModeLabel("custom")).toBe("custom");
 });

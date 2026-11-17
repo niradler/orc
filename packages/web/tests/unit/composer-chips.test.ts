@@ -11,6 +11,7 @@ import {
   effectivePermissionMode,
   folderChipLabel,
   isWithin,
+  modelDisplayName,
   pastedTextName,
   pathName,
   resolveAgentId,
@@ -283,4 +284,16 @@ test("Pi thinking level is visible in the selected model label", () => {
       agentOptions: { pi: { runtime: "pi", options: { thinkingLevel: "high" } } },
     }),
   ).toBe("High");
+});
+
+test("model ids read as short display names", () => {
+  expect(modelDisplayName("claude-opus-5-5")).toBe("Opus 5.5");
+  expect(modelDisplayName("claude-haiku-4-5-20251001")).toBe("Haiku 4.5");
+  expect(modelDisplayName("claude-opus-5-5[1m]")).toBe("Opus 5.5");
+  expect(modelDisplayName("anthropic/claude-sonnet-4-6")).toBe("Sonnet 4.6");
+  expect(modelDisplayName("gpt-6.1-terra")).toBe("GPT-6.1 Terra");
+  expect(modelDisplayName("gpt-5.1-codex-max")).toBe("GPT-5.1 Codex Max");
+  expect(modelDisplayName("o3")).toBe("o3");
+  expect(modelDisplayName("gemini-2.5-pro")).toBe("Gemini 2.5 Pro");
+  expect(modelDisplayName("")).toBe("");
 });

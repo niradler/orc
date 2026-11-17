@@ -257,6 +257,21 @@ export function liveEffortChoices(
   return (choices ?? []).filter((choice) => choice.value && choice.value !== "default");
 }
 
+export function modelDisplayName(id: string): string {
+  const name = (id.split("/").pop() ?? id).replace(/\[[^\]]*\]$/, "").replace(/^claude-/, "");
+  const words: string[] = [];
+  for (const part of name.split("-")) {
+    if (!part || /^\d{8}$/.test(part)) continue;
+    const last = words[words.length - 1];
+    if (last && /^\d+$/.test(part) && /\d$/.test(last)) words[words.length - 1] = `${last}.${part}`;
+    else if (last === "GPT") words[words.length - 1] = `GPT-${part}`;
+    else if (part.toLowerCase() === "gpt") words.push("GPT");
+    else if (/^(\d|o\d)/.test(part)) words.push(part);
+    else words.push(part.charAt(0).toUpperCase() + part.slice(1));
+  }
+  return words.join(" ") || id;
+}
+
 export function agentModelLabel(model: string, effort: string | null): string {
   return effort ? `${model} · ${effort}` : model;
 }
