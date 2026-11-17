@@ -1,6 +1,8 @@
 import { unsupportedPermissionMode } from "@orc/core/chat-options";
 import { shortId, ulid } from "@orc/core/ids";
 import type { GatewayMode } from "@orc/core/types";
+import { applyPermissionMode, permissionModesFor } from "./agent-runner.js";
+import type { SessionOpts } from "./agent-runtime/index.js";
 import {
   apiApproveTask,
   apiCreateMemory,
@@ -17,8 +19,6 @@ import {
   apiRejectTask,
   apiTriggerJob,
 } from "./api.js";
-import { applyPermissionMode, permissionModesFor } from "./agent-runner.js";
-import type { SessionOpts } from "./agent-runtime/index.js";
 import { escapeHtml } from "./html.js";
 import {
   assignTaskToSession,
