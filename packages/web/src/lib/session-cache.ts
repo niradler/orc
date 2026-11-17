@@ -1,4 +1,6 @@
 import type { SessionCacheUsage } from "@orc/core/usage";
+import { queryOptions } from "@tanstack/react-query";
+import { api } from "../api/client";
 import { formatTokenCount } from "./token-count";
 
 const count = new Intl.NumberFormat();
@@ -37,4 +39,14 @@ export function sessionCacheIndicator(
       : `${percent}% cached input`,
     cold,
   };
+}
+
+export function sessionCacheQuery(sourceId: string | null | undefined, live: boolean) {
+  return queryOptions({
+    queryKey: ["session-cache", sourceId ?? "", live],
+    queryFn: () => api.sessions.cacheUsage(sourceId ?? ""),
+    enabled: !!sourceId,
+    staleTime: 15_000,
+    retry: 1,
+  });
 }

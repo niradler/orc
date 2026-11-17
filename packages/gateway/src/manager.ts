@@ -19,7 +19,7 @@ import { PermissionManager } from "./permission-manager.js";
 import { PreviewManager } from "./preview-manager.js";
 import { SessionLock } from "./session-lock.js";
 import "./slack.js";
-import { synthesizeSpeech, transcribeAudio } from "./speech.js";
+import { speechText, speechToText, textToSpeech } from "./speech.js";
 import "./telegram.js";
 import {
   appendMessage,
@@ -297,7 +297,9 @@ class GatewayManager {
 
     if (!text && audio && config.speech.enabled) {
       try {
-        const transcript = await transcribeAudio({
+        const stt = speechToText(config);
+        if (!stt) throw new Error("Speech API key is not configured.");
+        const transcript = await stt.transcribe({
           audio: audio.data,
           format: audio.format,
         });
@@ -363,7 +365,7 @@ class GatewayManager {
           parseMode,
         });
       }
-      if (message.fromVoice && plainText) await this.trySendVoiceReply(message, plainText);
+      if (plainText) await this.trySendVoiceReply(message, plainText);
       await appendMessage({
         chatKey: chat.id,
         direction: "out",
@@ -381,7 +383,7 @@ class GatewayManager {
         ? `Triggered ${job.name} → ${await executeJob({ jobId: job.id, triggerBy: "bridge-msg", envOverrides: { MSG: text } })}`
         : `Job not found: ${jobName}`;
       await this.sendText(message, reply);
-      if (message.fromVoice) await this.trySendVoiceReply(message, reply);
+      await this.trySendVoiceReply(message, reply);
       await appendMessage({
         chatKey: chat.id,
         direction: "out",
@@ -549,7 +551,7 @@ class GatewayManager {
         platformMessageId: previewMsgId,
       });
 
-      if (message.fromVoice) await this.trySendVoiceReply(message, result.output);
+      await this.trySendVoiceReply(message, result.output);
     } catch (err) {
       if (typingInterval) {
         clearInterval(typingInterval);
@@ -591,15 +593,21 @@ class GatewayManager {
 
   private async trySendVoiceReply(message: IncomingMessage, text: string): Promise<void> {
     const config = loadConfig();
-    if (!config.tts.enabled) return;
+    if (!message.fromVoice && config.tts.mode !== "always") return;
+    const tts = textToSpeech(config);
+    const spoken = speechText(text, config.tts.max_text_len);
     const adapter = this.adapters.get(message.platform);
-    if (!adapter || !("sendAudio" in adapter)) return;
+    if (config.tts.enabled && !tts) {
+      logger.warn("TTS failed", { err: "TTS API key is not configured." });
+      return;
+    }
+    if (!tts || !spoken || !adapter || !("sendAudio" in adapter)) return;
     try {
-      const tts = await synthesizeSpeech(text);
+      const speech = await tts.synthesize(spoken);
       await (adapter as GatewayAdapter & SupportsVoice).sendAudio(
         message.chatId,
-        tts.audio,
-        tts.format,
+        speech.audio,
+        speech.format,
         "Voice reply",
       );
     } catch (err) {
