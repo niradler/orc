@@ -49,17 +49,43 @@ for (const width of [1440, 390]) {
     await openChatHistory(page);
     const list = page.getByTestId("chat-session-list");
     const withRun = list.locator('[data-history-id="native:with-run"]');
-    await expect(withRun.getByTestId("chat-session-run")).toContainText("Opus 5.5 · Allow edits");
+    await expect(withRun.getByTestId("chat-session-run")).toContainText("Opus 5.5");
+    for (const [id, label] of [
+      ["with-run", "Allow edits"],
+      ["long-run", "Full access"],
+    ]) {
+      const row = list.locator(`[data-history-id="native:${id}"]`);
+      const icon = row.getByTestId("chat-session-mode");
+      await expect(icon).toBeVisible();
+      await expect(icon).toHaveAttribute("aria-label", label);
+      const iconBox = await icon.boundingBox();
+      const rowBox = await row.getByTestId("chat-resume-live").boundingBox();
+      expect(iconBox && rowBox).toBeTruthy();
+      if (!iconBox || !rowBox) continue;
+      expect(iconBox.width).toBeGreaterThan(0);
+      expect(iconBox.x).toBeGreaterThanOrEqual(rowBox.x);
+      expect(iconBox.x + iconBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+      expect(iconBox.y).toBeGreaterThanOrEqual(rowBox.y);
+      expect(iconBox.y + iconBox.height).toBeLessThanOrEqual(rowBox.y + rowBox.height);
+    }
+    await expect(
+      list.locator('[data-history-id="native:long-run"]').getByTestId("chat-session-mode"),
+    ).toHaveAttribute("data-mode", "never/danger-full-access");
+    if (width < 640)
+      await expect(withRun.getByTestId("chat-resume-live")).not.toContainText("Claude Code");
     await expect(withRun.getByTestId("chat-session-status")).toBeVisible();
     await expect(list.locator('[data-history-id="native:without-run"]')).toBeVisible();
     await expect(
       list.locator('[data-history-id="native:without-run"]').getByTestId("chat-session-run"),
     ).toHaveCount(0);
+    await expect(
+      list.locator('[data-history-id="native:without-run"]').getByTestId("chat-session-mode"),
+    ).toHaveCount(0);
 
     const longRun = list
       .locator('[data-history-id="native:long-run"]')
       .getByTestId("chat-session-run");
-    await expect(longRun).toContainText("Full access");
+    await expect(longRun).toContainText("GPT-6.1 Terra");
     const clipped = await longRun.evaluate((el) => {
       const box = el.closest(".truncate") as HTMLElement;
       return {
@@ -76,7 +102,9 @@ for (const width of [1440, 390]) {
     ).toBe(true);
 
     const rowButton = withRun.getByTestId("chat-resume-live");
-    await expect(rowButton.getByTestId("chat-session-subagent-count")).toHaveText("1 subagent");
+    const chip = rowButton.getByTestId("chat-session-subagent-count");
+    await expect(chip).toHaveText("1");
+    await expect(chip).toHaveAttribute("aria-label", "1 subagent");
     await expect(
       list
         .locator('[data-history-id="native:without-run"]')

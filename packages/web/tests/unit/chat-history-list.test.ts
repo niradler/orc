@@ -7,7 +7,8 @@ import {
   folderProjectName,
   historyEntryState,
   nestedLabel,
-  sessionRunLabel,
+  sessionModeLabel,
+  sessionModelName,
   withDescendants,
 } from "../../src/lib/chat-history-list";
 
@@ -438,16 +439,19 @@ test("a chat stays in the project it was started in when its session's folder ma
   expect(chatHistoryList([], [thread], [session], [], "", "project-folder")).toEqual([]);
 });
 
-test("a live session's run label joins its model and permission mode", () => {
+test("a live session shows a short model name and a readable permission mode", () => {
   const entry = (session: Partial<LiveSession>) =>
-    ({ kind: "native", session: { ...live, ...session } }) as Parameters<typeof sessionRunLabel>[0];
-  expect(sessionRunLabel(entry({ model: "claude-opus-5-5", permission_mode: "acceptEdits" }))).toBe(
-    "Opus 5.5 · Allow edits",
-  );
-  expect(sessionRunLabel(entry({ model: null, permission_mode: "plan" }))).toBe("Plan");
-  expect(
-    sessionRunLabel(entry({ model: "gpt-6.1-terra", permission_mode: "never/danger-full-access" })),
-  ).toBe("GPT-6.1 Terra · Full access");
-  expect(sessionRunLabel(entry({ model: null, permission_mode: "custom" }))).toBe("custom");
-  expect(sessionRunLabel(entry({}))).toBe("");
+    ({ kind: "native", session: { ...live, ...session } }) as Parameters<
+      typeof sessionModelName
+    >[0];
+  expect(sessionModelName(entry({ model: "claude-opus-5-5" }))).toBe("Opus 5.5");
+  expect(sessionModelName(entry({ model: "gpt-6.1-terra" }))).toBe("GPT-6.1 Terra");
+  expect(sessionModelName(entry({}))).toBe("");
+  expect(sessionModeLabel("acceptEdits")).toBe("Allow edits");
+  expect(sessionModeLabel("bypassPermissions")).toBe("Full access");
+  expect(sessionModeLabel("plan")).toBe("Plan");
+  expect(sessionModeLabel("never/danger-full-access")).toBe("Full access");
+  expect(sessionModeLabel("on-request/workspace-write")).toBe("Workspace write");
+  expect(sessionModeLabel("never/read-only")).toBe("Read only");
+  expect(sessionModeLabel("custom")).toBe("custom");
 });

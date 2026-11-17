@@ -48,7 +48,7 @@ import {
   type ChatHistoryEntry,
   entryAgent,
   nestedLabel,
-  sessionRunLabel,
+  sessionModelName,
 } from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
@@ -871,7 +871,8 @@ export function HistoryRow({
               }
               state={state}
               stateTestId="chat-session-status"
-              subtitle={sessionRunLabel(entry)}
+              mode={entry.kind === "native" ? entry.session.permission_mode : null}
+              model={sessionModelName(entry)}
               badge={entry.subagents ? <SubagentChip count={entry.subagents} /> : undefined}
               marker={
                 <>

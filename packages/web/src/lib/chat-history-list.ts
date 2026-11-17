@@ -52,13 +52,14 @@ const SESSION_MODE_LABELS: Record<string, string> = {
   "read-only": "Read only",
 };
 
-export function sessionRunLabel(entry: ChatHistoryEntry): string {
-  if (entry.kind !== "native") return "";
-  const { model, permission_mode: mode } = entry.session;
-  const scope = mode?.split("/").pop();
-  return [model && modelDisplayName(model), mode && ((scope && SESSION_MODE_LABELS[scope]) ?? mode)]
-    .filter(Boolean)
-    .join(" · ");
+export function sessionModeLabel(mode: string): string {
+  return SESSION_MODE_LABELS[mode.split("/").pop() ?? mode] ?? mode;
+}
+
+export function sessionModelName(entry: ChatHistoryEntry): string {
+  return entry.kind === "native" && entry.session.model
+    ? modelDisplayName(entry.session.model)
+    : "";
 }
 
 export function nestedLabel(children: readonly ChatHistoryEntry[]): string {

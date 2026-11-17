@@ -1,18 +1,71 @@
+import {
+  Bot,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldEllipsis,
+  ShieldHalf,
+  ShieldMinus,
+  ShieldQuestionMark,
+} from "lucide-react";
 import type { ReactNode } from "react";
+import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
 import { StateBadge } from "@/components/StateBadge";
 import type { AgentState } from "@/lib/agent-state";
+import { sessionModeLabel } from "@/lib/chat-history-list";
+import { cn } from "@/lib/utils";
 
 export const sessionRowClass = "group flex min-w-0 items-center rounded-md";
 export const sessionRowButtonClass =
   "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60 max-sm:min-h-11 pointer-coarse:min-h-11";
 
+const MODE_ICONS = {
+  default: ShieldQuestionMark,
+  acceptEdits: ShieldCheck,
+  "workspace-write": ShieldCheck,
+  auto: ShieldHalf,
+  plan: ShieldEllipsis,
+  "read-only": ShieldMinus,
+  bypassPermissions: ShieldAlert,
+  "danger-full-access": ShieldAlert,
+} as const;
+
+export function SessionModeIcon({ mode }: { mode: string | null | undefined }): ReactNode {
+  if (!mode) return null;
+  const scope = mode.split("/").pop() ?? mode;
+  const Icon = MODE_ICONS[scope as keyof typeof MODE_ICONS] ?? Shield;
+  const label = sessionModeLabel(mode);
+  return (
+    <ActionHelp label={label}>
+      <span
+        role="img"
+        aria-label={label}
+        data-testid="chat-session-mode"
+        data-mode={mode}
+        className={cn("inline-flex shrink-0", Icon === ShieldAlert && "text-warning")}
+      >
+        <Icon size={12} aria-hidden="true" />
+      </span>
+    </ActionHelp>
+  );
+}
+
 export function SubagentChip({ count }: { count: number | undefined }): ReactNode {
   if (!count) return null;
+  const label = `${count} ${count === 1 ? "subagent" : "subagents"}`;
   return (
-    <span data-testid="chat-session-subagent-count" className="shrink-0 text-[10px] text-outline">
-      {count} {count === 1 ? "subagent" : "subagents"}
-    </span>
+    <ActionHelp label={label}>
+      <span
+        role="img"
+        aria-label={label}
+        data-testid="chat-session-subagent-count"
+        className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-outline"
+      >
+        <Bot size={11} aria-hidden="true" />
+        {count}
+      </span>
+    </ActionHelp>
   );
 }
 
@@ -23,7 +76,8 @@ export function SessionRowContent({
   stateTestId,
   compact = true,
   marker,
-  subtitle,
+  mode,
+  model,
   badge,
 }: {
   agent: string;
@@ -32,7 +86,8 @@ export function SessionRowContent({
   stateTestId: string;
   compact?: boolean;
   marker?: ReactNode;
-  subtitle?: string;
+  mode?: string | null;
+  model?: string;
   badge?: ReactNode;
 }): ReactNode {
   return (
@@ -44,13 +99,14 @@ export function SessionRowContent({
         data-provider={agent || "unknown"}
         className="size-5 shrink-0 text-muted-foreground"
       />
-      {subtitle || badge ? (
+      {mode || model || badge ? (
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px]">{title}</span>
-          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-            {subtitle && (
+          <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+            <SessionModeIcon mode={mode} />
+            {model && (
               <span data-testid="chat-session-run" className="min-w-0 truncate">
-                {subtitle}
+                {model}
               </span>
             )}
             {badge}
