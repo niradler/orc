@@ -107,6 +107,7 @@ export async function transcribeAudio(input: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60_000),
     });
     const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
@@ -142,6 +143,7 @@ export async function transcribeAudio(input: {
     method: "POST",
     headers: { Authorization: `Bearer ${provider.api_key}` },
     body: form,
+    signal: AbortSignal.timeout(60_000),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(text || `Speech request failed (${response.status})`);

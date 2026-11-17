@@ -143,7 +143,11 @@ app.openapi(
     const { audio } = c.req.valid("form");
     if (!audio.size) throw new ValidationError("Recording is empty");
     if (audio.size > SPEECH_MAX_BYTES) throw new ValidationError("Recording exceeds 25 MB");
-    const format = audio.type.split(";")[0]?.split("/")[1]?.replace(/^x-/, "") || "webm";
+    const subtype = audio.type.split(";")[0]?.split("/")[1]?.replace(/^x-/, "") ?? "";
+    const format =
+      { webm: "webm", mp4: "mp4", m4a: "m4a", mpeg: "mp3", mp3: "mp3", wav: "wav", ogg: "ogg" }[
+        subtype
+      ] ?? "webm";
     try {
       const text = await transcribeAudio({
         audio: new Uint8Array(await audio.arrayBuffer()),

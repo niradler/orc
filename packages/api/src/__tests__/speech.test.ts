@@ -92,3 +92,19 @@ test("an empty recording is rejected before reaching the provider", async () => 
   expect(res.status).toBe(400);
   expect(received).toHaveLength(0);
 });
+
+test("an unknown audio type is sent as webm instead of reaching ffmpeg", async () => {
+  reply = { body: "ok", status: 200 };
+  received = [];
+  const res = await transcribe(new Blob([clip], { type: "audio/x\\..\\..\\evil" }));
+  expect(res.status).toBe(200);
+  expect(received.map((r) => r.name)).toEqual(["audio.webm"]);
+});
+
+test("an oversized recording is rejected with 413 before reaching the provider", async () => {
+  received = [];
+  const res = await transcribe(new Blob([new Uint8Array(25 * 1024 * 1024 + 128 * 1024)]));
+  expect(res.status).toBe(413);
+  expect(((await res.json()) as { code: string }).code).toBe("TOO_LARGE");
+  expect(received).toHaveLength(0);
+});

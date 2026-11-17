@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, CircleAlert, LoaderCircle, Mic, RotateCcw, X } from "lucide-react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/api/client";
+import { ApiError, api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -54,6 +54,7 @@ export function useDictation(
   const discard = useRef(false);
   const clip = useRef<Blob | null>(null);
   const request = useRef<AbortController | null>(null);
+  const attempt = useRef(0);
 
   const transcribe = useCallback(
     async (audio: Blob) => {
@@ -67,17 +68,21 @@ export function useDictation(
         const draft = field?.value ?? "";
         const end = field?.selectionEnd ?? draft.length;
         const next = insertDictation(draft, field?.selectionStart ?? end, end, text);
-        if (next) {
-          setDraft(next.value);
-          requestAnimationFrame(() => {
-            input.current?.focus();
-            input.current?.setSelectionRange(next.caret, next.caret);
-          });
-        }
         clip.current = null;
+        if (!next) {
+          setError("Nothing heard.");
+          setPhase("error");
+          return;
+        }
+        setDraft(next.value);
+        requestAnimationFrame(() => {
+          input.current?.focus();
+          input.current?.setSelectionRange(next.caret, next.caret);
+        });
         setPhase("idle");
       } catch (err) {
         if (controller.signal.aborted) return;
+        if (err instanceof ApiError && err.status === 400) clip.current = null;
         setError(err instanceof Error ? err.message : "Transcription failed.");
         setPhase("error");
       }
@@ -87,6 +92,8 @@ export function useDictation(
 
   const start = useCallback(async () => {
     if (recorder.current) return;
+    const run = ++attempt.current;
+    const stale = () => run !== attempt.current;
     setError("");
     clip.current = null;
     discard.current = false;
@@ -96,7 +103,7 @@ export function useDictation(
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
       });
-      if (discard.current) {
+      if (stale()) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
@@ -140,6 +147,7 @@ export function useDictation(
       setStartedAt(Date.now());
       setPhase("recording");
     } catch (err) {
+      if (stale()) return;
       release.current();
       setError(microphoneError(err));
       setPhase("error");
@@ -152,6 +160,7 @@ export function useDictation(
 
   const cancel = useCallback(() => {
     discard.current = true;
+    attempt.current++;
     if (recorder.current) {
       recorder.current.stop();
       return;
@@ -193,6 +202,7 @@ export function useDictation(
   useEffect(
     () => () => {
       discard.current = true;
+      attempt.current++;
       recorder.current?.stop();
       request.current?.abort();
     },

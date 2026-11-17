@@ -132,6 +132,73 @@ for (const [label, size] of [
       expect(transcribed).toBe(false);
     });
 
+    test("cancelling while the mic starts never leaves a second recording", async ({ page }) => {
+      await page.addInitScript(() => {
+        const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        const w = window as unknown as { streams: MediaStream[]; releaseFirst?: () => void };
+        w.streams = [];
+        let calls = 0;
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          const stream = await original(constraints);
+          w.streams.push(stream);
+          if (++calls === 1) await new Promise<void>((resolve) => (w.releaseFirst = resolve));
+          return stream;
+        };
+      });
+      await openComposer(page, true);
+      await page.route("**/api/speech/transcribe", (route) =>
+        route.fulfill({ json: { text: "second" } }),
+      );
+      const pill = page.getByTestId("chat-dictation-pill");
+      await page.getByTestId("chat-dictation-button").click();
+      await expect(pill).toHaveAttribute("data-phase", "starting");
+      await page.getByTestId("chat-dictation-cancel").click();
+      await expect(pill).toHaveCount(0);
+      await page.getByTestId("chat-dictation-button").click();
+      await expect(pill).toHaveAttribute("data-phase", "recording", { timeout: 20_000 });
+      await page.evaluate(() => (window as unknown as { releaseFirst: () => void }).releaseFirst());
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            (window as unknown as { streams: MediaStream[] }).streams.map((stream) =>
+              stream.getTracks().some((track) => track.readyState === "live"),
+            ),
+          ),
+        )
+        .toEqual([false, true]);
+      await page.getByTestId("chat-dictation-stop").click();
+      await expect(page.getByTestId("chat-input")).toHaveValue("second");
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            (window as unknown as { streams: MediaStream[] }).streams.some((stream) =>
+              stream.getTracks().some((track) => track.readyState === "live"),
+            ),
+          ),
+        )
+        .toBe(false);
+    });
+
+    test("silence shows Nothing heard and Retry records again", async ({ page }) => {
+      await openComposer(page, true);
+      let calls = 0;
+      await page.route("**/api/speech/transcribe", (route) => {
+        calls++;
+        return route.fulfill({ json: { text: "  " } });
+      });
+      await page.getByTestId("chat-dictation-button").click();
+      const pill = page.getByTestId("chat-dictation-pill");
+      await expect(pill).toHaveAttribute("data-phase", "recording", { timeout: 20_000 });
+      await page.getByTestId("chat-dictation-stop").click();
+      await expect(page.getByTestId("chat-dictation-error")).toHaveText("Nothing heard.");
+      await shoot(page, `nothing-heard-${label}`);
+      await page.getByTestId("chat-dictation-retry").click();
+      await expect(pill).toHaveAttribute("data-phase", "recording", { timeout: 20_000 });
+      expect(calls).toBe(1);
+      await page.keyboard.press("Escape");
+      await expect(pill).toHaveCount(0);
+    });
+
     test("a blocked microphone says how to fix it and offers a retry", async ({ page }) => {
       await page.addInitScript(() => {
         navigator.mediaDevices.getUserMedia = () =>
