@@ -156,3 +156,30 @@ test("should mark Gemini and unsplit totals as estimated instead of inventing a 
   expect(usage.events.every((event) => event.otherTokens > 0)).toBe(true);
   expect(usage.events[0]?.model).toBeNull();
 });
+
+test("should keep the latest permission mode from Claude and Codex transcripts", () => {
+  const jsonl = (lines: object[]) => lines.map((line) => JSON.stringify(line)).join("\n");
+  const claude = parseClaudeUsage(
+    jsonl([
+      { type: "permission-mode", permissionMode: "default" },
+      { type: "user", permissionMode: "plan", message: { content: "hi" } },
+    ]),
+  );
+  expect(claude.permissionMode).toBe("plan");
+  expect(parseClaudeUsage("").permissionMode).toBeNull();
+  const context = (approval: string | undefined, sandbox: object) => ({
+    type: "turn_context",
+    payload: { model: "gpt-6", approval_policy: approval, sandbox_policy: sandbox },
+  });
+  const codex = parseCodexUsage(
+    jsonl([
+      context("on-request", { type: "read-only" }),
+      context("never", { type: "danger-full-access" }),
+    ]),
+    null,
+  );
+  expect(codex.permissionMode).toBe("never/danger-full-access");
+  expect(parseCodexUsage(jsonl([context(undefined, { granular: {} })]), null).permissionMode).toBe(
+    "default/granular",
+  );
+});

@@ -15,6 +15,7 @@ export type ParsedUsage = {
   events: UsageEventInput[];
   tokens: number;
   model: string | null;
+  permissionMode?: string | null;
 };
 
 type Json = Record<string, unknown>;
@@ -139,7 +140,14 @@ export function parseClaudeUsage(content: string, fallbackTs = 0): ParsedUsage {
     model = event.model ?? model;
     events.push(event);
   }
-  return finish(events, model);
+  return { ...finish(events, model), permissionMode: claudePermissionMode(content) };
+}
+
+function claudePermissionMode(content: string): string | null {
+  const index = content.lastIndexOf('"permissionMode":"');
+  if (index === -1) return null;
+  const end = content.indexOf('"', index + 18);
+  return end === -1 ? null : text(content.slice(index + 18, end));
 }
 
 /**
@@ -154,6 +162,7 @@ export function parseCodexUsage(
 ): ParsedUsage {
   const events: UsageEventInput[] = [];
   let model: string | null = null;
+  let permissionMode: string | null = null;
   let index = 0;
   for (const line of content.split("\n")) {
     index += 1;
@@ -168,6 +177,12 @@ export function parseCodexUsage(
     if (parsed.type === "session_meta" || parsed.type === "turn_context") {
       const settings = payload?.settings as Json | undefined;
       model = text(payload?.model) ?? text(settings?.model) ?? model;
+      const sandbox = payload?.sandbox_policy as Json | string | undefined;
+      const scope =
+        typeof sandbox === "string"
+          ? sandbox
+          : (text(sandbox?.type) ?? Object.keys(sandbox ?? {})[0]);
+      if (scope) permissionMode = `${text(payload?.approval_policy) ?? "default"}/${scope}`;
       continue;
     }
     if (parsed.type !== "event_msg" || payload?.type !== "token_count") continue;
@@ -191,7 +206,7 @@ export function parseCodexUsage(
     if (reported > split) event.otherTokens = reported - split;
     events.push(event);
   }
-  const parsed = finish(events, model);
+  const parsed: ParsedUsage = { ...finish(events, model), permissionMode };
   const expected = count(expectedTokens);
   if (expected > parsed.tokens) {
     const remainder = emptyEvent("remainder", fallbackTs || Date.now());
