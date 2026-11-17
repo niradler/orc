@@ -442,8 +442,12 @@ test("a live session's run label joins its model and permission mode", () => {
   const entry = (session: Partial<LiveSession>) =>
     ({ kind: "native", session: { ...live, ...session } }) as Parameters<typeof sessionRunLabel>[0];
   expect(sessionRunLabel(entry({ model: "claude-opus-5-5", permission_mode: "acceptEdits" }))).toBe(
-    "claude-opus-5-5 · Allow edits",
+    "Opus 5.5 · Allow edits",
   );
-  expect(sessionRunLabel(entry({ model: null, permission_mode: "plan" }))).toBe("plan");
+  expect(sessionRunLabel(entry({ model: null, permission_mode: "plan" }))).toBe("Plan");
+  expect(
+    sessionRunLabel(entry({ model: "gpt-6.1-terra", permission_mode: "never/danger-full-access" })),
+  ).toBe("GPT-6.1 Terra · Full access");
+  expect(sessionRunLabel(entry({ model: null, permission_mode: "custom" }))).toBe("custom");
   expect(sessionRunLabel(entry({}))).toBe("");
 });

@@ -2,7 +2,6 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { runSync } from "../session-watcher.js";
 import { claudeAdapter } from "../sessions/claude.js";
@@ -30,7 +29,7 @@ async function row(): Promise<Row | undefined> {
   return ((await res.json()).sessions as Row[]).find((s) => s.session_id === native);
 }
 
-test("live sessions report the transcript model and the stored permission mode", async () => {
+test("live sessions report the transcript model and permission mode", async () => {
   const registry = join(root, "registry");
   const projects = join(root, "projects");
   mkdirSync(registry, { recursive: true });
@@ -48,7 +47,13 @@ test("live sessions report the transcript model and the stored permission mode",
   writeFileSync(
     join(projects, "-tmp-orc", `${native}.jsonl`),
     [
-      { type: "user", timestamp: "2026-11-12T12:00:00Z", message: { content: "hi" } },
+      { type: "permission-mode", permissionMode: "default" },
+      {
+        type: "user",
+        timestamp: "2026-11-12T12:00:00Z",
+        permissionMode: "acceptEdits",
+        message: { content: "hi" },
+      },
       {
         type: "assistant",
         timestamp: "2026-11-12T12:00:05Z",
@@ -69,11 +74,7 @@ test("live sessions report the transcript model and the stored permission mode",
     await Bun.sleep(20);
     found = await row();
   }
-  expect(found).toMatchObject({ model: "claude-opus-5-5", permission_mode: null });
-
-  getSqlite()
-    .query("UPDATE gateway_sessions SET permission_mode = 'acceptEdits' WHERE id = ?")
-    .run(found?.id ?? "");
+  expect(found).toMatchObject({ model: "claude-opus-5-5", permission_mode: "acceptEdits" });
   const one = await req(app, "GET", `/sessions/live/${found?.id}`);
   expect(await one.json()).toMatchObject({
     model: "claude-opus-5-5",

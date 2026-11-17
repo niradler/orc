@@ -4,7 +4,7 @@ import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
 import { type AgentState, liveSessionState, moreUrgent, rollupState } from "./agent-state";
-import { PERMISSION_LABELS } from "./composer-chips";
+import { modelDisplayName, PERMISSION_LABELS } from "./composer-chips";
 import { lastSeen, type SeenRecord, unseenState } from "./session-seen";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
@@ -42,13 +42,21 @@ export function withDescendants(entry: ChatHistoryEntry): ChatHistoryEntry[] {
   return [entry, ...(entry.children ?? []).flatMap(withDescendants)];
 }
 
+const SESSION_MODE_LABELS: Record<string, string> = {
+  ...PERMISSION_LABELS,
+  default: "Ask first",
+  plan: "Plan",
+  auto: "Auto",
+  "danger-full-access": "Full access",
+  "workspace-write": "Workspace write",
+  "read-only": "Read only",
+};
+
 export function sessionRunLabel(entry: ChatHistoryEntry): string {
   if (entry.kind !== "native") return "";
-  const mode = entry.session.permission_mode;
-  return [
-    entry.session.model,
-    mode && ((PERMISSION_LABELS as Record<string, string>)[mode] ?? mode),
-  ]
+  const { model, permission_mode: mode } = entry.session;
+  const scope = mode?.split("/").pop();
+  return [model && modelDisplayName(model), mode && ((scope && SESSION_MODE_LABELS[scope]) ?? mode)]
     .filter(Boolean)
     .join(" · ");
 }

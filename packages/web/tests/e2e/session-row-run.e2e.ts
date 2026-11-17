@@ -25,8 +25,8 @@ for (const width of [1440, 390]) {
         permission_mode: "acceptEdits",
       }),
       row("long-run", "Session with a long model name", {
-        model: "anthropic/claude-opus-5-5-with-a-very-long-provider-specific-model-identifier",
-        permission_mode: "bypassPermissions",
+        model: "gpt-6.1-terra-with-a-very-long-provider-specific-model-identifier",
+        permission_mode: "never/danger-full-access",
       }),
       row("without-run", "Session without model", { model: null, permission_mode: null }),
       row("child", "Explore subagent", { parent_id: "with-run", model: "claude-haiku-5" }),
@@ -49,9 +49,7 @@ for (const width of [1440, 390]) {
     await openChatHistory(page);
     const list = page.getByTestId("chat-session-list");
     const withRun = list.locator('[data-history-id="native:with-run"]');
-    await expect(withRun.getByTestId("chat-session-run")).toContainText(
-      "claude-opus-5-5 · Allow edits",
-    );
+    await expect(withRun.getByTestId("chat-session-run")).toContainText("Opus 5.5 · Allow edits");
     await expect(withRun.getByTestId("chat-session-status")).toBeVisible();
     await expect(list.locator('[data-history-id="native:without-run"]')).toBeVisible();
     await expect(
