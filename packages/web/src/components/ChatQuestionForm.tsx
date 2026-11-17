@@ -1,5 +1,6 @@
-import type { ChatQuestion } from "@orc/core/chat";
+import { CHAT_QUESTION_DISMISS_ANSWER, type ChatQuestion } from "@orc/core/chat";
 import { useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 
 export function ChatQuestionForm({
   request,
@@ -87,19 +88,41 @@ export function ChatQuestionForm({
           </fieldset>
         );
       })}
-      <button
-        type="submit"
-        data-testid="chat-question-submit"
-        disabled={
-          busy ||
-          request.questions.some(
-            (question) => !answers[question.id]?.some((answer) => answer.trim()),
-          )
-        }
-        className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground disabled:opacity-50 max-md:min-h-11 pointer-coarse:min-h-11"
-      >
-        {busy ? "Sending…" : "Send answer"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="submit"
+          data-testid="chat-question-submit"
+          disabled={
+            busy ||
+            request.questions.some(
+              (question) => !answers[question.id]?.some((answer) => answer.trim()),
+            )
+          }
+          className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground disabled:opacity-50 max-md:min-h-11 pointer-coarse:min-h-11"
+        >
+          {busy ? "Sending…" : "Send answer"}
+        </button>
+        <button
+          type="button"
+          data-testid="chat-question-dismiss"
+          disabled={busy}
+          onClick={() =>
+            void onAnswer(
+              Object.fromEntries(
+                request.questions.map((question) => [question.id, [CHAT_QUESTION_DISMISS_ANSWER]]),
+              ),
+            )
+          }
+          className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
+        >
+          Dismiss
+        </button>
+        <HelpPopover label="Answering questions" testId="chat-question-help">
+          Pick a suggestion, or type your own answer in the field under the options. Dismiss sends a
+          &ldquo;no answer&rdquo; note and lets the agent continue with its best judgment; the
+          conversation stays open.
+        </HelpPopover>
+      </div>
     </form>
   );
 }

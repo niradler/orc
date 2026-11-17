@@ -319,7 +319,8 @@ agents, and ACPX, keep steering disabled rather than assuming concurrency.
 
 Direct ACP advertises form elicitation and turns form questions into the same
 chat question card used by Codex and Claude, including single-choice,
-multi-choice, free-text and custom answers. URL elicitation or an unsupported
+multi-choice, free-text and custom answers, and a dismiss option that lets the
+agent continue without an answer. URL elicitation or an unsupported
 form schema is not guessed: ORC reports that the agent needs input in its native
 client and declines the form. ACP agents that do not use elicitation keep working
 unchanged.

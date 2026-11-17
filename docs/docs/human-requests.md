@@ -26,6 +26,15 @@ or add privileges. Privileged execution and Windows UAC are deferred.
 Private questions and prompts that cannot be represented in the inbox show a
 generic notice linking to the original chat. Their contents remain in that chat.
 
+In chat, the question card lists the agent's suggestions plus a field for your
+own answer; **Send answer** needs an answer for every question. **Dismiss** skips
+the question: it sends a "no answer" note and lets the agent continue with its
+best judgment, keeping the conversation open. Cancelling a pending request from
+the inbox instead withdraws it, and a managed agent waiting on that request stops.
+
+![Chat question card with suggestions, a custom answer field and Dismiss](/screens/chat-question-card-desktop.png)
+[Phone layout](/screens/chat-question-card-phone.png)
+
 The inbox and its header indicator use ORC's shared SSE resource feed. A periodic
 snapshot also recovers missed events and time-based expiration. Closing or
 reloading the browser does not discard the request or answer.

@@ -67,6 +67,12 @@ export const ChatQuestionSchema = z.object({
     .max(20),
 });
 export type ChatQuestion = z.infer<typeof ChatQuestionSchema>;
+/**
+ * Dismissing a question answers it with this note instead of cancelling the request:
+ * cancellation ends the runtime session, while an answer lets the agent continue.
+ */
+export const CHAT_QUESTION_DISMISS_ANSWER =
+  "The user dismissed this question without answering. Continue with your best judgment; ask again only if you are truly blocked.";
 export const ChatAnswersSchema = z
   .record(z.string().min(1).max(256), z.array(z.string().max(20000)).min(1).max(20))
   .refine((value) => Object.keys(value).length <= 20, "Too many answers");
