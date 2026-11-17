@@ -107,6 +107,23 @@ for (const width of [1440, 390]) {
     await input.press("Escape");
     await expect(menu).toHaveCount(0);
 
+    await page.route("**/api/chat/files?**", (route) =>
+      route.fulfill({
+        status: 502,
+        json: {
+          error: "box does not resolve. Check the HostName in ~/.ssh/config.",
+          code: "SSH_FAILED",
+        },
+      }),
+    );
+    await input.fill("");
+    await input.pressSequentially("@other/");
+    await expect(page.getByTestId("chat-prompt-status")).toHaveText(
+      "box does not resolve. Check the HostName in ~/.ssh/config.",
+    );
+    await page.unroute("**/api/chat/files?**");
+    await input.press("Escape");
+
     await input.fill("");
     await input.pressSequentially("/zzqqxx");
     await expect(page.getByTestId("chat-prompt-status")).toHaveText("No matches");
