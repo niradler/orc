@@ -25,6 +25,7 @@ import { Highlight } from "@/components/Highlight";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
+  SubagentChip,
   sessionRowButtonClass,
   sessionRowClass,
 } from "@/components/SessionRowContent";
@@ -43,7 +44,12 @@ import {
 } from "@/hooks/useSessionHistory";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
-import { type ChatHistoryEntry, entryAgent, nestedLabel } from "@/lib/chat-history-list";
+import {
+  type ChatHistoryEntry,
+  entryAgent,
+  nestedLabel,
+  sessionRunLabel,
+} from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
 export function ChatSessionPicker({
@@ -865,6 +871,8 @@ export function HistoryRow({
               }
               state={state}
               stateTestId="chat-session-status"
+              subtitle={sessionRunLabel(entry)}
+              badge={entry.subagents ? <SubagentChip count={entry.subagents} /> : undefined}
               marker={
                 <>
                   {entry.kind === "native" && entry.session.handoff?.status === "ready" && (

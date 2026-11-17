@@ -7,6 +7,7 @@ import {
   folderProjectName,
   historyEntryState,
   nestedLabel,
+  sessionRunLabel,
   withDescendants,
 } from "../../src/lib/chat-history-list";
 
@@ -325,6 +326,8 @@ test("subagent sessions stay out of the list but lift their parent's state and r
   expect(entries.map((entry) => entry.id)).toEqual(["native:parent", "native:orphan"]);
   const [top] = entries;
   expect(top?.children).toBeUndefined();
+  expect(top?.subagents).toBe(1);
+  expect(entries[1]?.subagents).toBeUndefined();
   expect(top?.observedState).toBe("working");
   expect(top?.updatedAt).toBe(Date.parse("2026-10-31T00:00:00Z"));
   expect(top?.seenKeys).toContain("native:child");
@@ -433,4 +436,14 @@ test("a chat stays in the project it was started in when its session's folder ma
   const [entry] = chatHistoryList([], [thread], [session], []);
   expect(entry?.projectId).toBe("project-chat");
   expect(chatHistoryList([], [thread], [session], [], "", "project-folder")).toEqual([]);
+});
+
+test("a live session's run label joins its model and permission mode", () => {
+  const entry = (session: Partial<LiveSession>) =>
+    ({ kind: "native", session: { ...live, ...session } }) as Parameters<typeof sessionRunLabel>[0];
+  expect(sessionRunLabel(entry({ model: "claude-opus-5-5", permission_mode: "acceptEdits" }))).toBe(
+    "claude-opus-5-5 · Allow edits",
+  );
+  expect(sessionRunLabel(entry({ model: null, permission_mode: "plan" }))).toBe("plan");
+  expect(sessionRunLabel(entry({}))).toBe("");
 });

@@ -7,6 +7,15 @@ export const sessionRowClass = "group flex min-w-0 items-center rounded-md";
 export const sessionRowButtonClass =
   "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60 max-sm:min-h-11 pointer-coarse:min-h-11";
 
+export function SubagentChip({ count }: { count: number | undefined }): ReactNode {
+  if (!count) return null;
+  return (
+    <span data-testid="chat-session-subagent-count" className="shrink-0 text-[10px] text-outline">
+      {count} {count === 1 ? "subagent" : "subagents"}
+    </span>
+  );
+}
+
 export function SessionRowContent({
   agent,
   title,
@@ -14,6 +23,8 @@ export function SessionRowContent({
   stateTestId,
   compact = true,
   marker,
+  subtitle,
+  badge,
 }: {
   agent: string;
   title: ReactNode;
@@ -21,6 +32,8 @@ export function SessionRowContent({
   stateTestId: string;
   compact?: boolean;
   marker?: ReactNode;
+  subtitle?: string;
+  badge?: ReactNode;
 }): ReactNode {
   return (
     <>
@@ -31,7 +44,21 @@ export function SessionRowContent({
         data-provider={agent || "unknown"}
         className="size-5 shrink-0 text-muted-foreground"
       />
-      <span className="min-w-0 flex-1 truncate text-[13px]">{title}</span>
+      {subtitle || badge ? (
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px]">{title}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            {subtitle && (
+              <span data-testid="chat-session-run" className="min-w-0 truncate">
+                {subtitle}
+              </span>
+            )}
+            {badge}
+          </span>
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-[13px]">{title}</span>
+      )}
       {marker}
       <StateBadge
         state={state}

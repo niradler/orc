@@ -4,6 +4,7 @@ import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
 import { type AgentState, liveSessionState, moreUrgent, rollupState } from "./agent-state";
+import { PERMISSION_LABELS } from "./composer-chips";
 import { lastSeen, type SeenRecord, unseenState } from "./session-seen";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
@@ -34,10 +35,22 @@ export type ChatHistoryEntry = HistorySource & {
   matched?: string[];
   children?: ChatHistoryEntry[];
   spawned?: boolean;
+  subagents?: number;
 };
 
 export function withDescendants(entry: ChatHistoryEntry): ChatHistoryEntry[] {
   return [entry, ...(entry.children ?? []).flatMap(withDescendants)];
+}
+
+export function sessionRunLabel(entry: ChatHistoryEntry): string {
+  if (entry.kind !== "native") return "";
+  const mode = entry.session.permission_mode;
+  return [
+    entry.session.model,
+    mode && ((PERMISSION_LABELS as Record<string, string>)[mode] ?? mode),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function nestedLabel(children: readonly ChatHistoryEntry[]): string {
@@ -324,6 +337,8 @@ export function chatHistoryList(
       );
   const keepSpawned = (entry: ChatHistoryEntry) => {
     if (!entry.children) return;
+    const subagents = entry.children.filter((child) => !child.spawned).length;
+    if (subagents) entry.subagents = subagents;
     entry.children = entry.children.filter((child) => child.spawned);
     for (const child of entry.children) keepSpawned(child);
     if (!entry.children.length) delete entry.children;
